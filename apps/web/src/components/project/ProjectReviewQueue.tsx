@@ -26,7 +26,7 @@ export function ProjectReviewQueue({ projectId: _ }: Props) {
 
       <div className="space-y-2">
         {REVIEWS.map((r) => {
-          const b = badge[r.status]
+          const b = badge[r.status] ?? { label: r.status, color: 'text-gray-400 bg-gray-400/10 border-gray-400/30' }
           return (
             <div key={r.id} className="flex items-start gap-2 group cursor-pointer">
               <div className="flex-1 min-w-0">

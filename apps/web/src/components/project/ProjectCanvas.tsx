@@ -34,7 +34,7 @@ export function ProjectCanvas({ projectId: _ }: Props) {
       {/* Scene grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {MOCK_SCENES.map((scene) => {
-          const st = sceneStatus[scene.status]
+          const st = sceneStatus[scene.status] ?? { label: scene.status, color: 'text-gray-500', bg: 'bg-city-border/30 border-city-border' }
           return (
             <div
               key={scene.id}

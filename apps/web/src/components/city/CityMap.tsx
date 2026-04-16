@@ -2,17 +2,8 @@
 
 import { useEffect } from 'react'
 import { useCityStore } from '@/store/city.store'
+import type { CityBase } from '@/store/city.store'
 import { apiClient } from '@/lib/api-client'
-
-interface CityBase {
-  id: string
-  name: string
-  positionX: number
-  positionY: number
-  reputation: number
-  buildings: { type: string; level: number }[]
-  owner: { username: string; displayName: string; reputation: number }
-}
 
 export function CityMap() {
   const { cityMap, setCityMap, selectedBaseId, selectBase } = useCityStore()

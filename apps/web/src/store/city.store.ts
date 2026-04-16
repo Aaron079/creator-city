@@ -1,15 +1,15 @@
 import { create } from 'zustand'
 
-interface Building {
-  id: string
+export interface Building {
+  id?: string
   type: string
   level: number
-  name: string
-  positionX: number
-  positionY: number
+  name?: string
+  positionX?: number
+  positionY?: number
 }
 
-interface CityBase {
+export interface CityBase {
   id: string
   name: string
   description?: string
@@ -17,6 +17,7 @@ interface CityBase {
   positionY: number
   reputation: number
   buildings: Building[]
+  owner?: { username: string; displayName: string; reputation: number }
 }
 
 interface CityState {

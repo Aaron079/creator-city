@@ -26,7 +26,7 @@ export function BuildingList() {
 
       <div className="space-y-2">
         {MOCK_BUILDINGS.map((b) => {
-          const st = statusLabel[b.status]
+          const st = statusLabel[b.status] ?? { label: b.status, color: 'text-gray-500' }
           const isLocked = b.status === 'locked'
           return (
             <div
