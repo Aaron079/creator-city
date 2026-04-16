@@ -1,0 +1,608 @@
+// ─── Creator City — Prisma Schema v2 ──────────────────────────────────────────
+// Run: pnpm --filter server prisma:generate && pnpm --filter server prisma:push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum UserRole        { CREATOR PRODUCER DIRECTOR INVESTOR ADMIN }
+enum UserStatus      { ACTIVE INACTIVE BANNED PENDING_VERIFICATION }
+enum LandTier        { STARTER STANDARD PREMIUM ELITE }
+enum LandSize        { S1X1 S2X2 S3X3 S4X4 }
+enum BuildingType    { STUDIO OFFICE LAB GALLERY THEATER MARKET ARCHIVE RENDER_FARM SOUND_STAGE }
+enum AgentRole       { SCRIPTWRITER DIRECTOR CINEMATOGRAPHER EDITOR COMPOSER VFX_ARTIST PRODUCER MARKETER RESEARCHER }
+enum AgentStatus     { IDLE WORKING RESTING UPGRADING UNAVAILABLE }
+enum AgentTier       { BASIC ADVANCED EXPERT LEGENDARY }
+enum ProjectType     { SHORT_FILM FEATURE_FILM WEB_SERIES DOCUMENTARY ANIMATION MUSIC_VIDEO COMMERCIAL INTERACTIVE }
+enum ProjectStatus   { DRAFT PRE_PRODUCTION IN_PRODUCTION POST_PRODUCTION COMPLETED PUBLISHED ARCHIVED }
+enum ProjectVisibility { PRIVATE COLLABORATORS PUBLIC }
+enum TaskStatus      { TODO IN_PROGRESS REVIEW DONE CANCELLED }
+enum TaskPriority    { LOW MEDIUM HIGH CRITICAL }
+enum AssetType       { VIDEO AUDIO IMAGE SCRIPT DOCUMENT MODEL_3D PRESET TEMPLATE }
+enum AssetStatus     { UPLOADING PROCESSING READY FAILED ARCHIVED }
+enum CommunityType   { PUBLIC PRIVATE INVITE_ONLY }
+enum PostType        { TEXT IMAGE VIDEO LINK POLL }
+enum InvitationStatus { PENDING ACCEPTED DECLINED EXPIRED }
+enum NotificationType { COLLAB_REQUEST PROJECT_UPDATE AGENT_COMPLETE REPUTATION_GAINED NEW_FOLLOWER MESSAGE SYSTEM INVITATION }
+enum ApiProvider     { OPENAI ANTHROPIC GOOGLE AZURE_OPENAI CUSTOM }
+enum TransactionType { CREDIT DEBIT REWARD PURCHASE UPGRADE WITHDRAWAL FEE REFUND }
+enum TransactionStatus { PENDING COMPLETED FAILED REVERSED }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USER
+// ══════════════════════════════════════════════════════════════════════════════
+
+model User {
+  id           String     @id @default(uuid())
+  username     String     @unique
+  displayName  String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(CREATOR)
+  status       UserStatus @default(ACTIVE)
+  reputation   Int        @default(0)
+  level        Int        @default(1)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  profile             UserProfile?
+  land                Land?
+  agents              Agent[]
+  ownedProjects       Project[]          @relation("ProjectOwner")
+  projectMemberships  ProjectMember[]
+  sentInvitations     Invitation[]       @relation("InvitationSender")
+  receivedInvitations Invitation[]       @relation("InvitationReceiver")
+  notifications       Notification[]
+  wallet              EconomyWallet?
+  followers           UserFollow[]       @relation("Following")
+  following           UserFollow[]       @relation("Follower")
+  communityPosts      CommunityPost[]
+  communityComments   CommunityComment[]
+  showcases           Showcase[]
+  apiCallLogs         ApiCallLog[]
+  ownedCommunities    Community[]        @relation("CommunityOwner")
+  assets              Asset[]
+
+  @@index([username])
+  @@index([email])
+  @@index([reputation])
+}
+
+model UserProfile {
+  userId       String   @id
+  bio          String?
+  avatarUrl    String?
+  bannerUrl    String?
+  skills       String[]
+  portfolioUrl String?
+  twitterUrl   String?
+  instagramUrl String?
+  youtubeUrl   String?
+  websiteUrl   String?
+  timezone     String?
+  language     String   @default("en")
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserFollow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower",  fields: [followerId],  references: [id])
+  following User @relation("Following", fields: [followingId], references: [id])
+
+  @@id([followerId, followingId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LAND / BUILDING
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Land {
+  id          String   @id @default(uuid())
+  ownerId     String   @unique
+  zoneId      String   @default("zone-1")
+  name        String
+  description String?
+  positionX   Float    @default(0)
+  positionY   Float    @default(0)
+  tier        LandTier @default(STARTER)
+  size        LandSize @default(S1X1)
+  reputation  Int      @default(0)
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner     User       @relation(fields: [ownerId], references: [id])
+  buildings Building[]
+  agents    Agent[]
+
+  @@index([zoneId])
+  @@index([tier])
+  @@index([reputation])
+}
+
+model Building {
+  id           String       @id @default(uuid())
+  landId       String
+  type         BuildingType
+  name         String
+  currentLevel Int          @default(1)
+  positionX    Float        @default(0)
+  positionY    Float        @default(0)
+  positionZ    Float        @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  land         Land            @relation(fields: [landId], references: [id])
+  levelHistory BuildingLevel[]
+  agents       Agent[]         @relation("AgentBuilding")
+
+  @@index([landId])
+  @@index([type])
+}
+
+model BuildingLevel {
+  id          String   @id @default(uuid())
+  buildingId  String
+  fromLevel   Int
+  toLevel     Int
+  upgradedBy  String
+  costCredits Int      @default(0)
+  upgradedAt  DateTime @default(now())
+
+  building Building @relation(fields: [buildingId], references: [id])
+
+  @@index([buildingId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AGENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Agent {
+  id         String      @id @default(uuid())
+  ownerId    String
+  landId     String
+  buildingId String?
+  name       String
+  role       AgentRole
+  tier       AgentTier   @default(BASIC)
+  status     AgentStatus @default(IDLE)
+  level      Int         @default(1)
+  experience Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  owner    User          @relation(fields: [ownerId], references: [id])
+  land     Land          @relation(fields: [landId], references: [id])
+  building Building?     @relation("AgentBuilding", fields: [buildingId], references: [id])
+  profile  AgentProfile?
+  growth   AgentGrowth[]
+  tasks    ProjectTask[]
+
+  @@index([ownerId])
+  @@index([landId])
+  @@index([status])
+}
+
+model AgentProfile {
+  agentId     String   @id
+  bio         String?
+  avatarUrl   String?
+  specialties String[]
+  traits      Json     @default("[]")
+  updatedAt   DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model AgentGrowth {
+  id             String   @id @default(uuid())
+  agentId        String
+  date           DateTime @default(now()) @db.Date
+  xpGained       Int      @default(0)
+  tasksCompleted Int      @default(0)
+  skillsUnlocked String[]
+  notes          String?
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([date])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROJECT
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Project {
+  id          String            @id @default(uuid())
+  title       String
+  description String
+  type        ProjectType
+  status      ProjectStatus     @default(DRAFT)
+  visibility  ProjectVisibility @default(PRIVATE)
+  ownerId     String
+  tags        String[]
+  genre       String[]
+  budgetTotal Int               @default(0)
+  deadline    DateTime?
+  views       Int               @default(0)
+  likes       Int               @default(0)
+  rating      Float             @default(0)
+  ratingCount Int               @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  tasks       ProjectTask[]
+  assets      ProjectAsset[]
+  reviews     ProjectReview[]
+  invitations Invitation[]
+  showcases   Showcase[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([visibility])
+  @@index([type])
+}
+
+model ProjectRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  permissions String[]
+  description String?
+  createdAt   DateTime @default(now())
+
+  members ProjectMember[]
+}
+
+model ProjectMember {
+  id        String    @id @default(uuid())
+  projectId String
+  userId    String
+  roleId    String?
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  isActive  Boolean   @default(true)
+
+  project Project      @relation(fields: [projectId], references: [id])
+  user    User         @relation(fields: [userId], references: [id])
+  role    ProjectRole? @relation(fields: [roleId], references: [id])
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+model ProjectTask {
+  id          String       @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  assignedTo  String?
+  agentId     String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  agent   Agent?  @relation(fields: [agentId], references: [id])
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assignedTo])
+}
+
+model ProjectAsset {
+  id        String   @id @default(uuid())
+  projectId String
+  assetId   String
+  addedBy   String
+  note      String?
+  addedAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  asset   Asset   @relation(fields: [assetId], references: [id])
+
+  @@unique([projectId, assetId])
+  @@index([projectId])
+}
+
+model ProjectReview {
+  id         String   @id @default(uuid())
+  projectId  String
+  reviewerId String
+  rating     Int
+  comment    String?
+  isPublic   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, reviewerId])
+  @@index([projectId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ASSET
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Asset {
+  id           String      @id @default(uuid())
+  name         String
+  type         AssetType
+  status       AssetStatus @default(UPLOADING)
+  ownerId      String
+  url          String
+  thumbnailUrl String?
+  mimeType     String
+  sizeBytes    BigInt      @default(0)
+  metadata     Json        @default("{}")
+  tags         String[]
+  isPublic     Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  owner         User           @relation(fields: [ownerId], references: [id])
+  projectAssets ProjectAsset[]
+
+  @@index([ownerId])
+  @@index([type])
+  @@index([status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COMMUNITY
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Community {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  description String?
+  avatarUrl   String?
+  bannerUrl   String?
+  ownerId     String
+  type        CommunityType @default(PUBLIC)
+  tags        String[]
+  memberCount Int           @default(1)
+  isVerified  Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  owner User            @relation("CommunityOwner", fields: [ownerId], references: [id])
+  posts CommunityPost[]
+
+  @@index([ownerId])
+  @@index([type])
+}
+
+model CommunityPost {
+  id           String   @id @default(uuid())
+  communityId  String
+  authorId     String
+  title        String
+  content      String
+  type         PostType @default(TEXT)
+  mediaUrls    String[]
+  tags         String[]
+  likeCount    Int      @default(0)
+  commentCount Int      @default(0)
+  isPinned     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  community Community        @relation(fields: [communityId], references: [id])
+  author    User             @relation(fields: [authorId], references: [id])
+  comments  CommunityComment[]
+
+  @@index([communityId])
+  @@index([authorId])
+}
+
+model CommunityComment {
+  id        String   @id @default(uuid())
+  postId    String
+  authorId  String
+  content   String
+  likeCount Int      @default(0)
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post    CommunityPost      @relation(fields: [postId], references: [id])
+  author  User               @relation(fields: [authorId], references: [id])
+  parent  CommunityComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies CommunityComment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SHOWCASE
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Showcase {
+  id           String   @id @default(uuid())
+  projectId    String
+  authorId     String
+  title        String
+  description  String?
+  thumbnailUrl String?
+  videoUrl     String?
+  tags         String[]
+  views        Int      @default(0)
+  likes        Int      @default(0)
+  isFeatured   Boolean  @default(false)
+  publishedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([authorId])
+  @@index([isFeatured])
+  @@index([publishedAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLABORATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Invitation {
+  id        String           @id @default(uuid())
+  fromId    String
+  toId      String
+  projectId String
+  roleId    String?
+  status    InvitationStatus @default(PENDING)
+  message   String?
+  expiresAt DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  from    User    @relation("InvitationSender",   fields: [fromId],    references: [id])
+  to      User    @relation("InvitationReceiver",  fields: [toId],      references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([fromId])
+  @@index([toId])
+  @@index([projectId])
+  @@index([status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NOTIFICATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PROVIDERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model ApiProviderConfig {
+  id          String      @id @default(uuid())
+  name        String
+  provider    ApiProvider
+  apiKey      String
+  baseUrl     String?
+  model       String?
+  maxTokens   Int         @default(4096)
+  temperature Float       @default(0.7)
+  isActive    Boolean     @default(true)
+  isDefault   Boolean     @default(false)
+  createdBy   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  callLogs ApiCallLog[]
+
+  @@index([provider])
+  @@index([isActive])
+}
+
+model ApiCallLog {
+  id               String   @id @default(uuid())
+  configId         String
+  userId           String?
+  agentId          String?
+  requestType      String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  costUSD          Float    @default(0)
+  latencyMs        Int      @default(0)
+  isSuccess        Boolean  @default(true)
+  errorMsg         String?
+  createdAt        DateTime @default(now())
+
+  config ApiProviderConfig @relation(fields: [configId], references: [id])
+  user   User?             @relation(fields: [userId], references: [id])
+
+  @@index([configId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ECONOMY
+// ══════════════════════════════════════════════════════════════════════════════
+
+model EconomyWallet {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  balance       Int      @default(0)
+  frozenBalance Int      @default(0)
+  totalEarned   Int      @default(0)
+  totalSpent    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id])
+  transactions EconomyTransaction[]
+
+  @@index([userId])
+}
+
+model EconomyTransaction {
+  id            String            @id @default(uuid())
+  walletId      String
+  type          TransactionType
+  status        TransactionStatus @default(PENDING)
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  description   String?
+  refType       String?
+  refId         String?
+  metadata      Json?
+  createdAt     DateTime          @default(now())
+
+  wallet EconomyWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
