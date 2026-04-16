@@ -42,7 +42,7 @@ export function BaseProjectPreview() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {MOCK_PROJECTS.map((p) => {
-          const st = statusLabel[p.status]
+          const st = statusLabel[p.status] ?? { label: p.status, color: 'text-gray-500' }
           return (
             <Link
               key={p.id}
