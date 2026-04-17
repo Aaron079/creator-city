@@ -1,7 +1,15 @@
 export default function Home() {
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center">
-      <h1 className="text-5xl">TEST 首页已接管</h1>
+    <main style={{
+      height: "100vh",
+      background: "black",
+      color: "white",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "42px"
+    }}>
+      🚨 首页已被接管 SUCCESS 🚨
     </main>
   );
 }
