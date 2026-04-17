@@ -2,24 +2,59 @@
 
 import { useState } from 'react'
 
+type Node = {
+  id: string
+  title: string
+  content: string
+}
+
 export default function CreatePage() {
   const [prompt, setPrompt] = useState('')
-  const [result, setResult] = useState<string[]>([])
+  const [nodes, setNodes] = useState<Node[]>([])
   const [loading, setLoading] = useState(false)
 
-  const generate = async () => {
+  const generateFlow = async () => {
     setLoading(true)
-    setResult([])
+    setNodes([])
 
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 600))
 
-    setResult([
-      '开场：建立世界观与人物状态',
-      '发展：冲突逐渐升级',
-      '高潮：关键抉择与转折',
-      '结尾：情绪回收与主题表达'
-    ])
+    const base = prompt || '一个失忆导演在影院看到未来的自己'
 
+    const newNodes: Node[] = [
+      {
+        id: '1',
+        title: 'Prompt',
+        content: base
+      },
+      {
+        id: '2',
+        title: '编剧',
+        content: '构建三幕式结构，确定人物动机与冲突'
+      },
+      {
+        id: '3',
+        title: '导演',
+        content: '设计镜头节奏与叙事方式'
+      },
+      {
+        id: '4',
+        title: '选角',
+        content: '匹配冷感主角，强化气质表达'
+      },
+      {
+        id: '5',
+        title: '摄影',
+        content: 'ARRI电影感，低饱和冷色调'
+      },
+      {
+        id: '6',
+        title: '输出',
+        content: '生成分镜结构 + 情绪推进'
+      }
+    ]
+
+    setNodes(newNodes)
     setLoading(false)
   }
 
@@ -27,7 +62,7 @@ export default function CreatePage() {
     <main className="min-h-screen bg-black text-white p-6">
       <a href="/" className="text-white/60 text-sm">← 返回首页</a>
 
-      <h1 className="text-3xl font-bold mt-6">创作工作台</h1>
+      <h1 className="text-3xl font-bold mt-6">节点画布（导演系统）</h1>
 
       <div className="mt-6">
         <textarea
@@ -39,18 +74,25 @@ export default function CreatePage() {
       </div>
 
       <button
-        onClick={generate}
+        onClick={generateFlow}
         className="mt-4 px-6 py-3 bg-indigo-500 rounded"
       >
-        开始生成
+        生成工作流
       </button>
 
-      <div className="mt-6">
-        {loading && <div>生成中...</div>}
+      <div className="mt-10 flex flex-col items-center gap-6">
+        {loading && <div>AI导演系统正在构建流程...</div>}
 
-        {result.map((item, i) => (
-          <div key={i} className="mt-2 p-3 border border-white/10 rounded">
-            {item}
+        {nodes.map((node, index) => (
+          <div key={node.id} className="flex flex-col items-center">
+            <div className="w-72 p-4 rounded-xl border border-white/10 bg-white/5 text-center">
+              <div className="text-sm text-indigo-300">{node.title}</div>
+              <div className="mt-2 text-white/70 text-sm">{node.content}</div>
+            </div>
+
+            {index < nodes.length - 1 && (
+              <div className="h-6 w-px bg-white/20 my-2"></div>
+            )}
           </div>
         ))}
       </div>
