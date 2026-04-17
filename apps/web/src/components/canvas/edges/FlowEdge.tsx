@@ -12,7 +12,7 @@ interface Props {
 const NODE_W = 140
 const NODE_H = 56
 
-export function FlowEdge({ from, to, id }: Props) {
+export function FlowEdge({ from, to }: Props) {
   const x1 = from.x + NODE_W
   const y1 = from.y + NODE_H / 2
   const x2 = to.x
