@@ -31,7 +31,6 @@ export function ImageNode({ id, enterDelay }: Props) {
         }}
       >
         {node.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={node.imageUrl}
             alt="AI 生成图像"

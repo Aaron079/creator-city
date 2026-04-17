@@ -25,8 +25,6 @@ export function FlowEdge({ from, to, id }: Props) {
   const c2y = y2
 
   const d = `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`
-  const dashId = `dash-${id}`
-
   return (
     <g>
       {/* static dim path */}
