@@ -1,3 +1,5 @@
+import { Onboarding } from "@/components/Onboarding"
+
 export default function Home() {
   const creatableItems = [
     { title: '电影短片', desc: '从一句创意生成剧情短片方向。' },
@@ -14,7 +16,9 @@ export default function Home() {
   ]
 
   return (
-    <main className="min-h-screen bg-black text-white overflow-hidden">
+    <>
+      <Onboarding />
+      <main className="min-h-screen bg-black text-white overflow-hidden">
       <section className="relative min-h-screen flex items-center justify-center px-6 md:px-10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.22),transparent_35%)]" />
         <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:48px_48px]" />
@@ -108,6 +112,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   )
 }
