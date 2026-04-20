@@ -1,9 +1,31 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
+import { AgentRole } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 
 @Injectable()
 export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private toTaskDescription(taskType: string, input: Record<string, unknown>) {
+    return JSON.stringify({ taskType, input })
+  }
+
+  private toTaskOutput(taskType: string): Record<string, unknown> {
+    return {
+      taskType,
+      completedAt: new Date().toISOString(),
+      result: `${taskType} completed successfully`,
+      quality: Math.floor(Math.random() * 30) + 70,
+    }
+  }
+
+  private ensureAgentRole(role: string): AgentRole {
+    if (!Object.values(AgentRole).includes(role as AgentRole)) {
+      throw new BadRequestException('Invalid agent role')
+    }
+
+    return role as AgentRole
+  }
 
   // ─── Agent CRUD ────────────────────────────────────────────────────
 
@@ -16,21 +38,40 @@ export class AgentService {
   }
 
   async hireAgent(userId: string, data: { name: string; role: string; baseId: string }) {
-    // Verify user owns the base
-    const base = await this.prisma.cityBase.findFirst({
+    // Verify user owns the land
+    const land = await this.prisma.land.findFirst({
       where: { id: data.baseId, ownerId: userId },
     })
-    if (!base) throw new ForbiddenException('You do not own this base')
+    if (!land) throw new ForbiddenException('You do not own this base')
 
-    return this.prisma.agent.create({
+    const role = this.ensureAgentRole(data.role)
+
+    const agent = await this.prisma.agent.create({
       data: {
         ownerId: userId,
-        baseId: data.baseId,
+        landId: data.baseId,
         name: data.name,
-        role: data.role as never,
+        role,
         tier: 'BASIC',
         status: 'IDLE',
-        personality: {
+      },
+    })
+
+    await this.prisma.agentProfile.upsert({
+      where: { agentId: agent.id },
+      update: {
+        specialties: [role.toLowerCase()],
+        traits: {
+          creativity: Math.floor(Math.random() * 40) + 60,
+          efficiency: Math.floor(Math.random() * 40) + 60,
+          collaboration: Math.floor(Math.random() * 40) + 60,
+          ambition: Math.floor(Math.random() * 40) + 60,
+        },
+      },
+      create: {
+        agentId: agent.id,
+        specialties: [role.toLowerCase()],
+        traits: {
           creativity: Math.floor(Math.random() * 40) + 60,
           efficiency: Math.floor(Math.random() * 40) + 60,
           collaboration: Math.floor(Math.random() * 40) + 60,
@@ -38,12 +79,15 @@ export class AgentService {
         },
       },
     })
+
+    return agent
   }
 
   async getAgent(userId: string, agentId: string) {
     const agent = await this.prisma.agent.findUnique({
       where: { id: agentId },
       include: {
+        profile: true,
         tasks: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     })
@@ -72,7 +116,10 @@ export class AgentService {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
-        OR: [{ ownerId: userId }, { collaborators: { some: { userId } } }],
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId, isActive: true } } },
+        ],
       },
     })
     if (!project) throw new NotFoundException('Project not found or no access')
@@ -80,15 +127,14 @@ export class AgentService {
     const estimatedMs = this.estimateDuration(taskType)
 
     const [task] = await this.prisma.$transaction([
-      this.prisma.agentTask.create({
+      this.prisma.projectTask.create({
         data: {
-          agentId,
           projectId,
-          type: taskType,
+          agentId,
+          assignedTo: userId,
+          title: taskType,
+          description: this.toTaskDescription(taskType, input),
           status: 'IN_PROGRESS',
-          input,
-          startedAt: new Date(),
-          estimatedDurationMs: estimatedMs,
         },
       }),
       this.prisma.agent.update({
@@ -98,23 +144,33 @@ export class AgentService {
     ])
 
     // Schedule task completion (simplified — production would use a queue)
-    setTimeout(() => this.completeTask(task.id, agentId), estimatedMs)
+    setTimeout(() => {
+      void this.completeTask(task.id, agentId, taskType)
+    }, estimatedMs)
 
     return task
   }
 
-  async completeTask(taskId: string, agentId: string) {
-    const task = await this.prisma.agentTask.findUnique({ where: { id: taskId } })
+  async completeTask(taskId: string, agentId: string, taskType: string) {
+    const task = await this.prisma.projectTask.findUnique({ where: { id: taskId } })
     if (!task || task.status !== 'IN_PROGRESS') return
 
-    const output = this.simulateOutput(task.type)
-    const now = new Date()
-    const actualMs = task.startedAt ? now.getTime() - task.startedAt.getTime() : task.estimatedDurationMs
+    const output = this.toTaskOutput(taskType)
+    const completedAt = new Date()
+    const outputNote = JSON.stringify(output)
+
+    const nextDescription = task.description
+      ? `${task.description}\n\nOutput: ${outputNote}`
+      : `Output: ${outputNote}`
 
     await this.prisma.$transaction([
-      this.prisma.agentTask.update({
+      this.prisma.projectTask.update({
         where: { id: taskId },
-        data: { status: 'COMPLETED', output, completedAt: now, actualDurationMs: actualMs },
+        data: {
+          status: 'REVIEW',
+          completedAt,
+          description: nextDescription,
+        },
       }),
       this.prisma.agent.update({
         where: { id: agentId },
@@ -127,7 +183,7 @@ export class AgentService {
     const agent = await this.prisma.agent.findUnique({ where: { id: agentId } })
     if (!agent || agent.ownerId !== userId) throw new ForbiddenException()
 
-    return this.prisma.agentTask.findMany({
+    return this.prisma.projectTask.findMany({
       where: { agentId },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -150,12 +206,4 @@ export class AgentService {
     return durations[taskType] ?? 30000
   }
 
-  private simulateOutput(taskType: string): Record<string, unknown> {
-    return {
-      taskType,
-      completedAt: new Date().toISOString(),
-      result: `${taskType} completed successfully`,
-      quality: Math.floor(Math.random() * 30) + 70,
-    }
-  }
 }

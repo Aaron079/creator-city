@@ -42,17 +42,27 @@ async function main() {
       role: 'CREATOR',
       reputation: 1250,
       level: 5,
+    },
+  })
+  await prisma.userProfile.upsert({
+    where: { userId: creator.id },
+    update: {
+      bio: 'Indie filmmaker and AI enthusiast.',
+      skills: ['screenwriting', 'directing', 'post-production'],
+    },
+    create: {
+      userId: creator.id,
       bio: 'Indie filmmaker and AI enthusiast.',
       skills: ['screenwriting', 'directing', 'post-production'],
     },
   })
   console.log(`  ✓ Demo creator: ${creator.email}`)
 
-  // ─── City bases ──────────────────────────────────────────────────────────────
+  // ─── Lands ───────────────────────────────────────────────────────────────────
   for (const user of [admin, creator]) {
-    const existing = await prisma.cityBase.findUnique({ where: { ownerId: user.id } })
+    const existing = await prisma.land.findUnique({ where: { ownerId: user.id } })
     if (!existing) {
-      await prisma.cityBase.create({
+      await prisma.land.create({
         data: {
           ownerId: user.id,
           name: `${user.displayName}'s Base`,
@@ -61,58 +71,79 @@ async function main() {
           reputation: user.reputation,
           buildings: {
             create: [
-              { type: 'STUDIO', level: 1, name: 'Main Studio', positionX: 0, positionY: 0 },
-              { type: 'OFFICE', level: 1, name: 'Operations', positionX: 2, positionY: 0 },
+              { type: 'STUDIO', currentLevel: 1, name: 'Main Studio', positionX: 0, positionY: 0 },
+              { type: 'OFFICE', currentLevel: 1, name: 'Operations', positionX: 2, positionY: 0 },
             ],
           },
         },
       })
-      console.log(`  ✓ Base created for ${user.username}`)
+      console.log(`  ✓ Land created for ${user.username}`)
     }
   }
 
   // ─── Demo agents ─────────────────────────────────────────────────────────────
-  const aliceBase = await prisma.cityBase.findUnique({ where: { ownerId: creator.id } })
-  if (aliceBase) {
+  const aliceLand = await prisma.land.findUnique({ where: { ownerId: creator.id } })
+  if (aliceLand) {
     const existingAgents = await prisma.agent.count({ where: { ownerId: creator.id } })
     if (existingAgents === 0) {
-      await prisma.agent.createMany({
-        data: [
-          {
-            ownerId: creator.id,
-            baseId: aliceBase.id,
-            name: 'Quill',
-            role: 'SCRIPTWRITER',
-            tier: 'ADVANCED',
-            status: 'IDLE',
-            level: 3,
-            experience: 2400,
-            personality: { creativity: 92, efficiency: 71, collaboration: 80, ambition: 75 },
-          },
-          {
-            ownerId: creator.id,
-            baseId: aliceBase.id,
-            name: 'Lens',
-            role: 'CINEMATOGRAPHER',
-            tier: 'BASIC',
-            status: 'IDLE',
-            level: 1,
-            experience: 200,
-            personality: { creativity: 78, efficiency: 85, collaboration: 70, ambition: 60 },
-          },
-        ],
+      const quill = await prisma.agent.create({
+        data: {
+          ownerId: creator.id,
+          landId: aliceLand.id,
+          name: 'Quill',
+          role: 'SCRIPTWRITER',
+          tier: 'ADVANCED',
+          status: 'IDLE',
+          level: 3,
+          experience: 2400,
+        },
       })
+
+      await prisma.agentProfile.upsert({
+        where: { agentId: quill.id },
+        update: {
+          specialties: ['screenwriting', 'story-structure'],
+          traits: { creativity: 92, efficiency: 71, collaboration: 80, ambition: 75 },
+        },
+        create: {
+          agentId: quill.id,
+          specialties: ['screenwriting', 'story-structure'],
+          traits: { creativity: 92, efficiency: 71, collaboration: 80, ambition: 75 },
+        },
+      })
+
+      const lens = await prisma.agent.create({
+        data: {
+          ownerId: creator.id,
+          landId: aliceLand.id,
+          name: 'Lens',
+          role: 'CINEMATOGRAPHER',
+          tier: 'BASIC',
+          status: 'IDLE',
+          level: 1,
+          experience: 200,
+        },
+      })
+
+      await prisma.agentProfile.upsert({
+        where: { agentId: lens.id },
+        update: {
+          specialties: ['cinematography', 'shot-design'],
+          traits: { creativity: 78, efficiency: 85, collaboration: 70, ambition: 60 },
+        },
+        create: {
+          agentId: lens.id,
+          specialties: ['cinematography', 'shot-design'],
+          traits: { creativity: 78, efficiency: 85, collaboration: 70, ambition: 60 },
+        },
+      })
+
       console.log('  ✓ Demo agents created')
     }
   }
 
-  // ─── Public chat channel ─────────────────────────────────────────────────────
-  await prisma.chatChannel.upsert({
-    where: { id: 'general' },
-    update: {},
-    create: { id: 'general', name: 'General', type: 'PUBLIC' },
-  })
-  console.log('  ✓ General chat channel ready')
+  // Current schema has no chat-channel model, so seed stops at users, land, buildings, and agents.
+  console.log('  • Chat seed skipped: current schema has no chat channel model')
 
   console.log('\n✅ Seed complete.')
 }

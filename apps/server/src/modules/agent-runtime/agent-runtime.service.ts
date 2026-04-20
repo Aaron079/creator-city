@@ -50,7 +50,7 @@ export class AgentRuntimeService {
     if (!task) throw new NotFoundException('Task not found')
     if (task.projectId !== input.projectId) throw new BadRequestException('Task/project mismatch')
 
-    const estimatedMs = TASK_DURATIONS['GENERIC']
+    const estimatedMs = TASK_DURATIONS['GENERIC'] ?? 20_000
 
     await this.prisma.$transaction([
       this.prisma.projectTask.update({

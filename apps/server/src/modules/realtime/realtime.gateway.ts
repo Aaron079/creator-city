@@ -44,7 +44,7 @@ export class RealtimeGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server
+  server!: Server
 
   private readonly logger = new Logger(RealtimeGateway.name)
 

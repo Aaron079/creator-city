@@ -4,6 +4,17 @@ import * as bcrypt from 'bcryptjs'
 import { UsersService } from '../users/users.service'
 import type { AuthTokenPayload } from '@creator-city/shared'
 
+type LoginUser = { id: string; username: string; role: string }
+
+function toLoginUser(user: unknown): LoginUser {
+  const candidate = user as { id: string; username: string; role: string }
+  return {
+    id: candidate.id,
+    username: candidate.username,
+    role: candidate.role,
+  }
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -38,11 +49,11 @@ export class AuthService {
 
   async register(input: { username: string; displayName: string; email: string; password: string }) {
     const user = await this.usersService.create(input)
-    return this.login(user as { id: string; username: string; role: string })
+    return this.login(toLoginUser(user))
   }
 
   async refreshToken(userId: string) {
     const user = await this.usersService.findById(userId)
-    return this.login(user as { id: string; username: string; role: string })
+    return this.login(toLoginUser(user))
   }
 }

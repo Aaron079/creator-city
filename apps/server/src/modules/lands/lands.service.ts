@@ -5,6 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service'
 export class LandsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private mapOwner<T extends { profile?: { avatarUrl: string | null } | null }>(owner: T) {
+    return {
+      ...owner,
+      avatarUrl: owner.profile?.avatarUrl ?? null,
+    }
+  }
+
   async getMyLand(userId: string) {
     const land = await this.prisma.land.findUnique({
       where: { ownerId: userId },
@@ -23,11 +30,22 @@ export class LandsService {
       where: { id },
       include: {
         buildings: true,
-        owner: { select: { id: true, username: true, displayName: true, reputation: true } },
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            reputation: true,
+            profile: { select: { avatarUrl: true } },
+          },
+        },
       },
     })
     if (!land) throw new NotFoundException('Land not found')
-    return land
+    return {
+      ...land,
+      owner: this.mapOwner(land.owner),
+    }
   }
 
   async updateLand(userId: string, data: { name?: string; description?: string }) {
@@ -37,7 +55,7 @@ export class LandsService {
   }
 
   async getCityMap(zoneId = 'zone-1', limit = 100) {
-    return this.prisma.land.findMany({
+    const lands = await this.prisma.land.findMany({
       where: { zoneId, isPublic: true },
       take: limit,
       orderBy: { reputation: 'desc' },
@@ -48,10 +66,22 @@ export class LandsService {
         positionY: true,
         tier: true,
         reputation: true,
-        owner: { select: { id: true, username: true, displayName: true, avatarUrl: false } },
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            profile: { select: { avatarUrl: true } },
+          },
+        },
         buildings: { select: { type: true, currentLevel: true } },
       },
     })
+
+    return lands.map((land) => ({
+      ...land,
+      owner: this.mapOwner(land.owner),
+    }))
   }
 
   /** Called during user registration to provision a starter land */
