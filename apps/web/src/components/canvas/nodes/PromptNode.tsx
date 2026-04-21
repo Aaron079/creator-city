@@ -1,6 +1,5 @@
 'use client'
 
-import { useRef } from 'react'
 import { useCanvasStore } from '@/store/canvas.store'
 import { BaseNode } from './BaseNode'
 
@@ -11,9 +10,7 @@ interface Props {
 
 export function PromptNode({ id, enterDelay }: Props) {
   const node = useCanvasStore((s) => s.nodes.find((n) => n.id === id))
-  const updateNode = useCanvasStore((s) => s.updateNode)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   if (!node || node.kind !== 'prompt') return null
 
@@ -27,10 +24,10 @@ export function PromptNode({ id, enterDelay }: Props) {
           background: 'rgba(10,15,26,0.80)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          border: '0.5px solid rgba(99,102,241,0.35)',
+          border: `0.5px solid ${selected ? 'rgba(99,102,241,0.7)' : 'rgba(99,102,241,0.3)'}`,
           boxShadow: selected
-            ? '0 0 0 1px rgba(99,102,241,0.6), 0 8px 32px rgba(99,102,241,0.3)'
-            : '0 4px 24px rgba(0,0,0,0.5)',
+            ? '0 0 0 1px rgba(99,102,241,0.6), 0 12px 48px rgba(0,0,0,0.65), 0 0 28px rgba(99,102,241,0.3)'
+            : '0 8px 36px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(99,102,241,0.12)',
         }}
       >
         {/* top accent */}
@@ -44,15 +41,17 @@ export function PromptNode({ id, enterDelay }: Props) {
             <span className="text-xs font-semibold text-indigo-300">创作灵感</span>
           </div>
 
-          <textarea
-            ref={textareaRef}
-            value={node.content ?? ''}
-            placeholder="输入你的故事创意…"
-            rows={3}
-            className="w-full bg-transparent text-sm text-white/90 placeholder-gray-600 resize-none outline-none leading-6 cursor-text"
-            onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) => updateNode(id, { content: e.target.value })}
-          />
+          <div
+            className="rounded-xl px-3 py-3"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <p className="text-sm leading-6 text-white/85 min-h-[72px]">
+              {node.content?.trim() || '从底部输入框继续写你的镜头创意，画布这里保持摘要视图。'}
+            </p>
+            <p className="mt-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.26)' }}>
+              编辑入口已收敛到底部输入框
+            </p>
+          </div>
         </div>
       </div>
     </BaseNode>

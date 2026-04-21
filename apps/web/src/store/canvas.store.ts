@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type NodeKind = 'prompt' | 'agent' | 'output' | 'image'
+export type NodeKind = 'prompt' | 'agent' | 'output' | 'image' | 'final-edit'
 
 export type AgentRole = '编剧' | '导演' | '演员' | '摄影' | '剪辑' | '音乐'
 
@@ -21,9 +21,27 @@ export interface CanvasNode {
   status?: NodeStatus
   progress?: number   // 0-100
   result?: string
-  // image-specific
+  source?: 'mock' | 'real' | 'fallback-mock'
+  // media
   imageUrl?: string
+  videoUrl?: string
+  // per-node skill params (model / resolution / lens etc.)
+  params?: Record<string, unknown>
   selected?: boolean
+  // ── Actor / Casting System ──────────────────────────────────────────────────
+  characterName?: string
+  personality?: string
+  lookSummary?: string
+  wardrobe?: string
+  consistencyKey?: string
+  // ── Camera / Cinematography System ─────────────────────────────────────────
+  shotDescription?: string
+  keyframePrompt?: string
+  // ── Video / Motion System ───────────────────────────────────────────────────
+  videoPrompt?: string
+  // ── Final Edit / Timeline System ────────────────────────────────────────────
+  timelineSummary?: string
+  finalVideoUrl?: string
 }
 
 export interface CanvasEdge {
@@ -73,6 +91,9 @@ interface CanvasState {
 
   // Prompt
   setPrompt: (p: string) => void
+
+  // Shot switching
+  resetCanvas: (nodes: CanvasNode[], edges: CanvasEdge[]) => void
 }
 
 const MIN_SCALE = 0.15
@@ -152,4 +173,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setPanning: (isPanning) => set({ isPanning }),
 
   setPrompt: (prompt) => set({ prompt }),
+
+  resetCanvas: (nodes, edges) =>
+    set({ nodes, edges, selectedIds: new Set() }),
 }))

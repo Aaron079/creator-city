@@ -25,10 +25,10 @@ export function OutputNode({ id, enterDelay }: Props) {
           background: 'rgba(10,15,26,0.80)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          border: '0.5px solid rgba(52,211,153,0.25)',
+          border: `0.5px solid ${selected ? 'rgba(52,211,153,0.6)' : 'rgba(52,211,153,0.2)'}`,
           boxShadow: selected
-            ? '0 0 0 1px rgba(52,211,153,0.5), 0 8px 32px rgba(52,211,153,0.2)'
-            : '0 4px 24px rgba(0,0,0,0.5)',
+            ? '0 0 0 1px rgba(52,211,153,0.5), 0 12px 48px rgba(0,0,0,0.65), 0 0 24px rgba(52,211,153,0.2)'
+            : '0 8px 36px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(52,211,153,0.08)',
         }}
       >
         <div className="h-[1.5px] w-full bg-gradient-to-r from-emerald-400 to-teal-400 opacity-70" />

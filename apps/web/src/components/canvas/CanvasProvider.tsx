@@ -2,9 +2,10 @@
 
 import { useEffect, useRef } from 'react'
 import { useCanvasStore, CanvasNode, CanvasEdge } from '@/store/canvas.store'
+import { useShotsStore } from '@/store/shots.store'
 
 // Default node positions for a cinematic left-to-right crew layout
-const DEFAULT_NODES: CanvasNode[] = [
+export const DEFAULT_NODES: CanvasNode[] = [
   {
     id: 'prompt-1',
     kind: 'prompt',
@@ -69,16 +70,25 @@ const DEFAULT_NODES: CanvasNode[] = [
     y: 220,
     content: '',
   },
+  {
+    id: 'final-edit-1',
+    kind: 'final-edit',
+    x: 1620,
+    y: 180,
+    status: 'idle',
+    progress: 0,
+  },
 ]
 
-const DEFAULT_EDGES: CanvasEdge[] = [
+export const DEFAULT_EDGES: CanvasEdge[] = [
   { id: 'e-p-w', fromId: 'prompt-1',     toId: 'agent-writer'   },
   { id: 'e-p-d', fromId: 'prompt-1',     toId: 'agent-director' },
   { id: 'e-p-a', fromId: 'prompt-1',     toId: 'agent-actor'    },
   { id: 'e-w-dop',fromId: 'agent-writer',  toId: 'agent-dop'    },
   { id: 'e-d-ed', fromId: 'agent-director',toId: 'agent-editor' },
-  { id: 'e-dop-o',fromId: 'agent-dop',    toId: 'output-1'      },
-  { id: 'e-ed-o', fromId: 'agent-editor', toId: 'output-1'      },
+  { id: 'e-dop-o',  fromId: 'agent-dop',    toId: 'output-1'      },
+  { id: 'e-ed-o',   fromId: 'agent-editor', toId: 'output-1'      },
+  { id: 'e-out-fe', fromId: 'output-1',     toId: 'final-edit-1'  },
 ]
 
 interface Props {
@@ -96,6 +106,9 @@ export function CanvasProvider({ initialPrompt, children }: Props) {
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
+
+    // Init shots store with default canvas layout (no-op if already initialized)
+    useShotsStore.getState().initShots(DEFAULT_NODES, DEFAULT_EDGES)
 
     // Load default crew into the canvas
     setNodes(DEFAULT_NODES)

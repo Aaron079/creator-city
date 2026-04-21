@@ -8,6 +8,7 @@ import { AgentNode } from './nodes/AgentNode'
 import { PromptNode } from './nodes/PromptNode'
 import { OutputNode } from './nodes/OutputNode'
 import { ImageNode } from './nodes/ImageNode'
+import { FinalEditNode } from './nodes/FinalEditNode'
 import { CanvasToolbar } from './controls/CanvasToolbar'
 
 export function EditorCanvas() {
@@ -45,19 +46,32 @@ export function EditorCanvas() {
     }
   }, [setPanning])
 
-  // ── Mouse wheel zoom ─────────────────────────────────────────────────────────
+  // ── Mouse wheel / trackpad ───────────────────────────────────────────────────
+  // Plain scroll        → pan vertically
+  // Shift + scroll      → pan horizontally
+  // Cmd/Ctrl + scroll   → zoom  (also handles trackpad pinch via ctrlKey)
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const { zoomTo } = useCanvasStore.getState()
-      const rect = el.getBoundingClientRect()
-      const cx = e.clientX - rect.left
-      const cy = e.clientY - rect.top
-      const delta = e.deltaY < 0 ? 1.08 : 0.93
-      zoomTo(useCanvasStore.getState().transform.scale * delta, cx, cy)
+      const { zoomTo, panBy } = useCanvasStore.getState()
+
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom: Cmd/Ctrl + scroll, or trackpad pinch (browsers fire ctrlKey for pinch)
+        const rect = el.getBoundingClientRect()
+        const cx = e.clientX - rect.left
+        const cy = e.clientY - rect.top
+        const factor = e.deltaY < 0 ? 1.08 : 0.93
+        zoomTo(useCanvasStore.getState().transform.scale * factor, cx, cy)
+      } else if (e.shiftKey) {
+        // Shift + scroll → horizontal pan
+        panBy(-e.deltaY, 0)
+      } else {
+        // Plain scroll → pan (respect both axes for trackpad two-finger scroll)
+        panBy(-e.deltaX, -e.deltaY)
+      }
     }
 
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -97,8 +111,11 @@ export function EditorCanvas() {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden bg-[#070b14]"
-      style={{ cursor: isPanning ? 'grab' : 'default' }}
+      className="relative w-full h-full overflow-hidden"
+      style={{
+        background: 'radial-gradient(ellipse 90% 70% at 52% 38%, #0e1628 0%, #070b14 65%, #050810 100%)',
+        cursor: isPanning ? 'grab' : 'default',
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -106,6 +123,14 @@ export function EditorCanvas() {
     >
       {/* Grid background — fixed to container */}
       <CanvasGrid />
+
+      {/* Radial vignette overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse 75% 65% at 50% 45%, transparent 40%, rgba(5,8,16,0.55) 100%)',
+        }}
+      />
 
       {/* Transformed canvas world */}
       <div
@@ -131,6 +156,8 @@ export function EditorCanvas() {
               return <OutputNode key={node.id} id={node.id} enterDelay={delay} />
             case 'image':
               return <ImageNode key={node.id} id={node.id} enterDelay={delay} />
+            case 'final-edit':
+              return <FinalEditNode key={node.id} id={node.id} enterDelay={delay} />
             default:
               return null
           }
@@ -140,9 +167,9 @@ export function EditorCanvas() {
       {/* HUD controls (not transformed) */}
       <CanvasToolbar />
 
-      {/* Hint */}
+      {/* Interaction hint */}
       <div className="absolute bottom-6 left-6 text-[10px] text-gray-700 select-none pointer-events-none">
-        滚轮缩放 · 空格+拖拽平移 · 点击节点选中
+        Space 平移 · Cmd/Ctrl + 滚轮缩放 · Shift + 滚轮横向滚动
       </div>
     </div>
   )
