@@ -52,6 +52,9 @@ type StageReadinessInput = {
   pendingLipSyncJobCount?: number
   strongAudioIssueCount?: number
   cueSheetDraftCount?: number
+  deliveryPackageCount?: number
+  deliveryPackageReadyCount?: number
+  deliveryPackageStrongRiskCount?: number
 }
 
 const STAGE_FLOW: ProjectStage[] = ['idea', 'storyboard', 'shooting', 'editing', 'delivery']
@@ -89,6 +92,9 @@ export function buildStageReadiness(input: StageReadinessInput): StageReadiness 
     pendingLipSyncJobCount = 0,
     strongAudioIssueCount = 0,
     cueSheetDraftCount = 0,
+    deliveryPackageCount = 0,
+    deliveryPackageReadyCount = 0,
+    deliveryPackageStrongRiskCount = 0,
   } = input
   const structureAnalysis = scoreSummary.breakdown.structureAnalysis
   let score = 100
@@ -344,6 +350,42 @@ export function buildStageReadiness(input: StageReadinessInput): StageReadiness 
       id: 'stage-open-audio-cue-sheet',
       label: '检查声画时间线',
       panel: 'audio',
+    })
+  }
+
+  if (enteringDelivery && deliveryPackageCount === 0) {
+    warnings.push({
+      id: 'stage-delivery-package-missing',
+      title: '还没有创建交付包',
+      message: '进入交付前建议先整理一份交付包，明确包含哪些资产、确认记录与版本依据。',
+    })
+    suggestedActions.push({
+      id: 'stage-open-delivery-package',
+      label: '创建交付包',
+    })
+  }
+
+  if (enteringDelivery && deliveryPackageCount > 0 && deliveryPackageReadyCount === 0) {
+    warnings.push({
+      id: 'stage-delivery-package-not-ready',
+      title: '交付包尚未 ready / submitted',
+      message: '当前交付包仍有未确认项或尚未整理完成，不建议直接交付。',
+    })
+    suggestedActions.push({
+      id: 'stage-review-delivery-package',
+      label: '检查交付包',
+    })
+  }
+
+  if (enteringDelivery && deliveryPackageStrongRiskCount > 0) {
+    warnings.push({
+      id: 'stage-delivery-package-strong-risk',
+      title: '交付包存在高风险项',
+      message: '当前交付包仍有未确认或高风险项，不建议直接交付。',
+    })
+    suggestedActions.push({
+      id: 'stage-review-delivery-risks',
+      label: '复查交付风险',
     })
   }
 

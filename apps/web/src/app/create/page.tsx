@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
+import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { useCanvasStore } from '@/store/canvas.store'
 import { useShotsStore } from '@/store/shots.store'
 import type { CastingSuggestion, CharacterBible, ClipReview, EditorClip, EditorTimeline, EditSuggestion, InsightContext, Narrative, NarrativeInsight, NarrativeType, RoleBible, SequenceSuggestion, Shot, ShotDerivativeJob, ShotSuggestion, ShotSnapshot, StoryboardFrame, StoryboardPrevis, StyleBible, SuggestionContext } from '@/store/shots.store'
@@ -13,6 +14,8 @@ import { useDirectorNotesStore } from '@/store/director-notes.store'
 import type { DirectorNote, DirectorNoteCategory, DirectorNotePriority, DirectorNoteStatus, DirectorNoteTargetType } from '@/store/director-notes.store'
 import { useApprovalStore } from '@/store/approval.store'
 import type { ApprovalDecision, ApprovalRequest, ApprovalRole, ApprovalTargetType } from '@/store/approval.store'
+import { useDeliveryPackageStore } from '@/store/delivery-package.store'
+import type { DeliveryAsset, DeliveryPackage } from '@/store/delivery-package.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
 import type { VersionChangeType, VersionedEntityType } from '@/store/version-history.store'
 import { useAudioDeskStore } from '@/store/audio-desk.store'
@@ -52,6 +55,8 @@ import { buildStageReadiness, type StageReadiness } from '@/lib/score/stageReadi
 import { generateStoryboardPrevis, regenerateStoryboardFrame } from '@/lib/storyboard/previs'
 import { buildCastingSuggestions } from '@/lib/casting/casting'
 import { analyzeAudioTimelineIssues, buildAudioSyncReview, buildCueSheet, buildMusicMotifs, createAudioTimelineClip, createMockLipSyncJob, generateMockMusicCues, generateMockSoundEffects, generateMockVoiceTakes } from '@/lib/audio/mock'
+import { buildDeliveryAssets } from '@/lib/delivery/aggregate'
+import { buildDeliveryProjectData, buildDeliverySummaryText } from '@/lib/delivery/export'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
   FOCAL_LENGTHS, FOCAL_LENS_CHARS, APERTURES, SPEEDS,
@@ -93,7 +98,7 @@ const SHOT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 type CanvasMode = 'simple' | 'advanced' | 'pro'
-type WorkspaceView = 'canvas' | 'previs' | 'footage' | 'editor' | 'audio'
+type WorkspaceView = 'canvas' | 'previs' | 'footage' | 'editor' | 'audio' | 'delivery'
 
 const DERIVATIVE_PROVIDERS = ['mock', 'runway', 'seedance', 'happyhorse', 'kling'] as const
 const DERIVATIVE_DURATIONS = [5, 10, 15] as const
@@ -107,6 +112,16 @@ function createId(prefix: string) {
 
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadText(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -664,7 +679,10 @@ function snapshotDelivery(input: {
   jobId?: string
   currentStage: string
   editorTimeline: EditorTimeline
+  deliveryPackage?: DeliveryPackage | null
 }) {
+  const includedAssetCount = input.deliveryPackage?.assets.filter((asset) => asset.included).length ?? 0
+  const strongRiskCount = input.deliveryPackage?.riskSummary?.issues.filter((issue) => issue.severity === 'strong').length ?? 0
   return {
     teamId: input.teamId,
     orderId: input.orderId,
@@ -672,6 +690,11 @@ function snapshotDelivery(input: {
     currentStage: input.currentStage,
     timelineClipCount: input.editorTimeline.clips.length,
     timelineStatus: input.editorTimeline.status,
+    packageId: input.deliveryPackage?.id,
+    packageStatus: input.deliveryPackage?.status,
+    includedAssetCount,
+    strongRiskCount,
+    finalVersion: input.deliveryPackage?.manifest?.finalVersion,
   }
 }
 
@@ -5962,6 +5985,15 @@ export default function CreatePage() {
   const currentUser = useAuthStore((s) => s.user)
   const versions = useVersionHistoryStore((s) => s.versions)
   const createVersion = useVersionHistoryStore((s) => s.createVersion)
+  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
+  const createDeliveryPackage = useDeliveryPackageStore((s) => s.createDeliveryPackage)
+  const syncDeliveryAssets = useDeliveryPackageStore((s) => s.syncDeliveryAssets)
+  const generateDeliveryManifest = useDeliveryPackageStore((s) => s.generateDeliveryManifest)
+  const generateDeliveryRiskSummary = useDeliveryPackageStore((s) => s.generateDeliveryRiskSummary)
+  const submitDeliveryPackage = useDeliveryPackageStore((s) => s.submitDeliveryPackage)
+  const markDeliveryApproved = useDeliveryPackageStore((s) => s.markDeliveryApproved)
+  const markDeliveryNeedsRevision = useDeliveryPackageStore((s) => s.markDeliveryNeedsRevision)
+  const submitJobDelivery = useJobsStore((s) => s.submitDelivery)
   const activeTeam = useMemo(
     () => teams.find((team) => team.stage !== 'delivery') ?? teams[0],
     [teams]
@@ -5981,6 +6013,33 @@ export default function CreatePage() {
   const activeJob = useMemo(
     () => (activeOrder ? jobs.find((job) => job.id === activeOrder.chatId) ?? null : null),
     [activeOrder, jobs]
+  )
+  const deliveryProjectId = useMemo(
+    () => activeOrder?.id ?? activeTeam?.projectId ?? activeJob?.id ?? 'creator-city',
+    [activeJob?.id, activeOrder?.id, activeTeam?.projectId]
+  )
+  const deliveryProjectTitle = useMemo(
+    () => activeJob?.title ?? (idea.trim() || 'Creator City 项目'),
+    [activeJob?.title, idea]
+  )
+  const deliveryPackagesForProject = useMemo(
+    () => deliveryPackages
+      .filter((pkg) => pkg.projectId === deliveryProjectId)
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()),
+    [deliveryPackages, deliveryProjectId]
+  )
+  const activeDeliveryPackage = deliveryPackagesForProject[0] ?? null
+  const latestDeliveryApproval = useMemo(
+    () => approvals
+      .filter((approval) => approval.targetType === 'delivery' && approval.targetId === deliveryProjectId)
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] ?? null,
+    [approvals, deliveryProjectId]
+  )
+  const latestDeliveryVersion = useMemo(
+    () => versions
+      .filter((version) => version.entityType === 'delivery' && version.entityId === deliveryProjectId)
+      .sort((left, right) => right.versionNumber - left.versionNumber)[0] ?? null,
+    [deliveryProjectId, versions]
   )
   const activeStoryboardFrame = storyboardPrevis?.frames.find((frame) => frame.id === activeStoryboardFrameId) ?? null
   const lockedRoleBible = useMemo(
@@ -6104,6 +6163,45 @@ export default function CreatePage() {
     () => (audioTimeline && cueSheet?.status !== 'approved' ? 1 : 0),
     [audioTimeline, cueSheet]
   )
+  const deliveryAssets = useMemo(
+    () => buildDeliveryAssets({
+      projectId: deliveryProjectId,
+      projectTitle: deliveryProjectTitle,
+      currentStage,
+      storyboardPrevis,
+      shotDerivativeJobs,
+      clipReviews,
+      editorTimeline,
+      audioTimeline,
+      dialogueLines,
+      voiceTakes,
+      musicCues,
+      audioReviews,
+      notes,
+      versions,
+      approvals,
+    }),
+    [
+      approvals,
+      audioReviews,
+      audioTimeline,
+      clipReviews,
+      currentStage,
+      deliveryProjectId,
+      deliveryProjectTitle,
+      dialogueLines,
+      editorTimeline,
+      musicCues,
+      notes,
+      shotDerivativeJobs,
+      storyboardPrevis,
+      versions,
+      voiceTakes,
+    ]
+  )
+  const deliveryPackageIncludedCount = activeDeliveryPackage?.assets.filter((asset) => asset.included).length ?? 0
+  const deliveryPackageStrongRiskCount = activeDeliveryPackage?.riskSummary?.issues.filter((issue) => issue.severity === 'strong').length ?? 0
+  const deliveryPackageReadyCount = activeDeliveryPackage && ['ready', 'submitted', 'approved'].includes(activeDeliveryPackage.status) ? 1 : 0
   const editorClipCount = editorTimeline.clips.length
   const allEditorClipsReady = editorTimeline.clips.length > 0 && editorTimeline.clips.every((clip) => clip.transition && clip.order >= 0)
   const unreviewedVideoShotCount = Object.values(clipReviews).filter((review) => !acceptedClipReviewIds.includes(review.id)).length
@@ -6229,8 +6327,11 @@ export default function CreatePage() {
       pendingLipSyncJobCount,
       strongAudioIssueCount,
       cueSheetDraftCount,
+      deliveryPackageCount: activeDeliveryPackage ? 1 : 0,
+      deliveryPackageReadyCount,
+      deliveryPackageStrongRiskCount,
     }),
-    [allEditorClipsReady, approvalStageSignals.blockers, approvalStageSignals.warnings, approvedDialogueWithoutSelectedVoiceCount, cueSheetDraftCount, currentStage, doneDerivativeJobCount, editorClipCount, insights, notes, pendingLipSyncJobCount, recentImportantVersionCount, roleBibles, scoreSummary, selectedMusicCueCount, selectedStoryboardFrameCount, strongAudioIssueCount, strongIssueClipCount, unapprovedDialogueCount, unknownLicenseMusicCount, unreviewedVideoShotCount]
+    [activeDeliveryPackage, allEditorClipsReady, approvalStageSignals.blockers, approvalStageSignals.warnings, approvedDialogueWithoutSelectedVoiceCount, cueSheetDraftCount, currentStage, deliveryPackageReadyCount, deliveryPackageStrongRiskCount, doneDerivativeJobCount, editorClipCount, insights, notes, pendingLipSyncJobCount, recentImportantVersionCount, roleBibles, scoreSummary, selectedMusicCueCount, selectedStoryboardFrameCount, strongAudioIssueCount, strongIssueClipCount, unapprovedDialogueCount, unknownLicenseMusicCount, unreviewedVideoShotCount]
   )
 
   const notesSummary = useMemo(() => buildNotesAiSummary(notes), [notes])
@@ -6287,6 +6388,30 @@ export default function CreatePage() {
     }))
   }, [musicMotifs.length, narrative?.sequences, narrative?.type, roleBibles, upsertMusicMotifs])
 
+  useEffect(() => {
+    if (!activeDeliveryPackage) return
+    syncDeliveryAssets(activeDeliveryPackage.id, deliveryAssets)
+  }, [activeDeliveryPackage, activeDeliveryPackage?.id, deliveryAssets, syncDeliveryAssets])
+
+  useEffect(() => {
+    if (!activeDeliveryPackage) return
+    generateDeliveryManifest(activeDeliveryPackage.id, {
+      projectTitle: deliveryProjectTitle,
+      projectStage: currentStage,
+      finalVersion: latestDeliveryVersion?.label ?? activeDeliveryPackage.manifest?.finalVersion ?? 'v0',
+    })
+    generateDeliveryRiskSummary(activeDeliveryPackage.id)
+  }, [activeDeliveryPackage, activeDeliveryPackage?.id, activeDeliveryPackage?.manifest?.finalVersion, currentStage, deliveryAssets, deliveryProjectTitle, generateDeliveryManifest, generateDeliveryRiskSummary, latestDeliveryVersion?.label])
+
+  useEffect(() => {
+    if (!activeDeliveryPackage || !latestDeliveryApproval) return
+    if (latestDeliveryApproval.status === 'approved') {
+      markDeliveryApproved(activeDeliveryPackage.id)
+    } else if (latestDeliveryApproval.status === 'changes-requested' || latestDeliveryApproval.status === 'rejected') {
+      markDeliveryNeedsRevision(activeDeliveryPackage.id)
+    }
+  }, [activeDeliveryPackage, activeDeliveryPackage?.id, latestDeliveryApproval, markDeliveryApproved, markDeliveryNeedsRevision])
+
   const noteTargets = useMemo(() => {
     const targets: Array<{ value: string; label: string; targetType: DirectorNoteTargetType; targetId: string }> = [
       { value: 'project:creator-city', label: '项目 · Creator City', targetType: 'project', targetId: 'creator-city' },
@@ -6319,7 +6444,7 @@ export default function CreatePage() {
     const targets: ApprovalTargetOption[] = [
       { value: 'project-brief:creator-city', label: '项目简报 · Creator City', targetType: 'project-brief', targetId: 'creator-city' },
       { value: `editor-timeline:${editorTimeline.id}`, label: '剪辑时间线 · 当前序列', targetType: 'editor-timeline', targetId: editorTimeline.id },
-      { value: `delivery:${activeOrder?.id ?? activeTeam?.id ?? 'delivery'}`, label: '交付确认 · 当前项目', targetType: 'delivery', targetId: activeOrder?.id ?? activeTeam?.id ?? 'delivery' },
+      { value: `delivery:${deliveryProjectId}`, label: '交付确认 · 当前项目', targetType: 'delivery', targetId: deliveryProjectId },
     ]
     ;(narrative?.sequences ?? []).forEach((sequence) => {
       targets.push({ value: `sequence:${sequence.id}`, label: `段落 · ${sequence.name}`, targetType: 'sequence', targetId: sequence.id })
@@ -6340,7 +6465,7 @@ export default function CreatePage() {
       targets.push({ value: `role-bible:${role.id}`, label: `角色 · ${role.name}`, targetType: 'role-bible', targetId: role.id })
     })
     return targets
-  }, [activeOrder?.id, activeTeam?.id, editorTimeline.clips, editorTimeline.id, narrative?.sequences, roleBibles, shotDerivativeJobs, shots, storyboardPrevis?.frames])
+  }, [deliveryProjectId, editorTimeline.clips, editorTimeline.id, narrative?.sequences, roleBibles, shotDerivativeJobs, shots, storyboardPrevis?.frames])
 
   const handleCreateEntityVersion = useCallback((args: {
     entityType: VersionedEntityType
@@ -6428,6 +6553,7 @@ export default function CreatePage() {
               jobId: activeJob?.id,
               currentStage,
               editorTimeline,
+              deliveryPackage: activeDeliveryPackage,
             }),
             summary: '创建交付版本',
           }
@@ -6447,7 +6573,7 @@ export default function CreatePage() {
       changeType: 'manual-edit',
       summary: entityInfo.summary,
     }).id
-  }, [activeJob?.id, activeOrder?.id, activeTeam?.id, currentStage, editorTimeline, handleCreateEntityVersion, idea, narrative, projectTemplate?.name, roleBibles, shotDerivativeJobs, shots, storyboardPrevis?.frames, versions])
+  }, [activeDeliveryPackage, activeJob?.id, activeOrder?.id, activeTeam?.id, currentStage, editorTimeline, handleCreateEntityVersion, idea, narrative, projectTemplate?.name, roleBibles, shotDerivativeJobs, shots, storyboardPrevis?.frames, versions])
 
   // AI tasks + pricing + crew
   const [aiTasks, setAiTasks]     = useState<DirectorTask[] | null>(null)
@@ -7665,8 +7791,10 @@ export default function CreatePage() {
         setWorkspaceView('audio')
         break
       case 'project-brief':
-      case 'delivery':
         setWorkspaceView('canvas')
+        break
+      case 'delivery':
+        setWorkspaceView('delivery')
         break
       case 'clip-review':
         setWorkspaceView('footage')
@@ -7725,9 +7853,10 @@ export default function CreatePage() {
     title: string
     description?: string
     requiredRoles: ApprovalRole[]
+    linkedVersionId?: string
   }) => {
     if (draft.requiredRoles.length === 0) return null
-    const linkedVersionId = ensureApprovalVersion(draft.targetType, draft.targetId)
+    const linkedVersionId = draft.linkedVersionId ?? ensureApprovalVersion(draft.targetType, draft.targetId)
     const created = createApprovalRequest(draft.targetType, draft.targetId, draft.requiredRoles, {
       title: draft.title,
       description: draft.description,
@@ -7848,7 +7977,7 @@ export default function CreatePage() {
         setWorkspaceView('editor')
         break
       case 'delivery':
-        setWorkspaceView('editor')
+        setWorkspaceView('delivery')
         break
       case 'project-brief':
         setWorkspaceView('canvas')
@@ -7861,6 +7990,213 @@ export default function CreatePage() {
   const handleRequestedPanelHandled = useCallback(() => {
     setRequestedPanel(null)
   }, [])
+
+  const handleCreateDeliveryPackage = useCallback(() => {
+    const existing = useDeliveryPackageStore.getState().deliveryPackages.find((pkg) => pkg.projectId === deliveryProjectId)
+    if (existing) {
+      setWorkspaceView('delivery')
+      return existing
+    }
+    const created = createDeliveryPackage(deliveryProjectId, {
+      title: `${deliveryProjectTitle} · 交付包`,
+      description: '商业交付包草稿。由你决定最终纳入哪些交付资产、确认记录与版本依据。',
+    })
+    setWorkspaceView('delivery')
+    return created
+  }, [createDeliveryPackage, deliveryProjectId, deliveryProjectTitle])
+
+  const handleToggleDeliveryAssetIncluded = useCallback((assetId: string) => {
+    if (!activeDeliveryPackage) return
+    useDeliveryPackageStore.getState().toggleAssetIncluded(activeDeliveryPackage.id, assetId)
+  }, [activeDeliveryPackage])
+
+  const handlePreviewDeliveryAsset = useCallback((asset: DeliveryAsset) => {
+    if (asset.url) {
+      window.open(asset.url, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    switch (asset.type) {
+      case 'storyboard-frame':
+        setWorkspaceView('previs')
+        setFocusedStoryboardFrameId(asset.sourceId)
+        setActiveStoryboardFrameId(asset.sourceId)
+        break
+      case 'video-shot':
+        setWorkspaceView('footage')
+        setFocusedVideoJobId(asset.sourceId)
+        break
+      case 'editor-timeline':
+        setWorkspaceView('editor')
+        break
+      case 'audio-timeline':
+      case 'music-cue':
+      case 'voice-take':
+        setWorkspaceView('audio')
+        break
+      case 'director-note': {
+        const note = notes.find((item) => item.id === asset.sourceId)
+        if (note) handleLocateDirectorNote(note)
+        break
+      }
+      case 'approval-record': {
+        const approval = approvals.find((item) => item.id === asset.sourceId)
+        if (approval) handleLocateApprovalTarget(approval.targetType, approval.targetId)
+        break
+      }
+      case 'version-record':
+        setWorkspaceView('delivery')
+        break
+      default:
+        break
+    }
+  }, [approvals, handleLocateApprovalTarget, handleLocateDirectorNote, notes])
+
+  const handleViewDeliveryVersion = useCallback((asset: DeliveryAsset) => {
+    const version = versions.find((item) => item.id === asset.sourceId)
+    if (!version) return
+    window.alert([
+      `版本：${version.label}`,
+      `类型：${version.entityType}`,
+      `摘要：${version.summary}`,
+      version.changedFields.length ? `变更字段：${version.changedFields.join('、')}` : '变更字段：无',
+      `时间：${new Date(version.createdAt).toLocaleString('zh-CN')}`,
+    ].join('\n'))
+  }, [versions])
+
+  const handleViewDeliveryApproval = useCallback((asset: DeliveryAsset) => {
+    const approval = approvals.find((item) => item.id === asset.sourceId)
+    if (!approval) return
+    window.alert([
+      `确认项：${approval.title}`,
+      `状态：${approval.status}`,
+      `目标：${approval.targetType}`,
+      `要求角色：${approval.requiredRoles.join(' / ')}`,
+      approval.description ? `说明：${approval.description}` : '说明：无',
+    ].join('\n'))
+    handleLocateApprovalTarget(approval.targetType, approval.targetId)
+  }, [approvals, handleLocateApprovalTarget])
+
+  const handleExportDeliverySummary = useCallback(() => {
+    if (!activeDeliveryPackage) return
+    const refreshedManifest = generateDeliveryManifest(activeDeliveryPackage.id, {
+      projectTitle: deliveryProjectTitle,
+      projectStage: currentStage,
+      finalVersion: latestDeliveryVersion?.label ?? activeDeliveryPackage.manifest?.finalVersion ?? 'v0',
+    })
+    const refreshedRisk = generateDeliveryRiskSummary(activeDeliveryPackage.id)
+    const pkg = {
+      ...(useDeliveryPackageStore.getState().deliveryPackages.find((item) => item.id === activeDeliveryPackage.id) ?? activeDeliveryPackage),
+      manifest: refreshedManifest ?? activeDeliveryPackage.manifest,
+      riskSummary: refreshedRisk ?? activeDeliveryPackage.riskSummary,
+    }
+    downloadText('delivery-summary.txt', buildDeliverySummaryText(pkg))
+  }, [activeDeliveryPackage, currentStage, deliveryProjectTitle, generateDeliveryManifest, generateDeliveryRiskSummary, latestDeliveryVersion?.label])
+
+  const handleExportDeliveryManifest = useCallback(() => {
+    if (!activeDeliveryPackage) return
+    const manifest = generateDeliveryManifest(activeDeliveryPackage.id, {
+      projectTitle: deliveryProjectTitle,
+      projectStage: currentStage,
+      finalVersion: latestDeliveryVersion?.label ?? activeDeliveryPackage.manifest?.finalVersion ?? 'v0',
+    })
+    if (manifest) {
+      downloadJson('manifest.json', {
+        ...manifest,
+        assets: activeDeliveryPackage.assets.map((asset) => ({
+          id: asset.id,
+          type: asset.type,
+          title: asset.title,
+          included: asset.included,
+          approvalStatus: asset.approvalStatus,
+          licenseStatus: asset.licenseStatus,
+          riskLevel: asset.riskLevel,
+        })),
+      })
+    }
+  }, [activeDeliveryPackage, currentStage, deliveryProjectTitle, generateDeliveryManifest, latestDeliveryVersion?.label])
+
+  const handleExportDeliveryProjectData = useCallback(() => {
+    if (!activeDeliveryPackage) return
+    downloadJson('project-data.json', buildDeliveryProjectData({
+      pkg: activeDeliveryPackage,
+      currentStage,
+      narrative,
+      shots,
+      audioTimeline,
+      approvals,
+      versions,
+      notes,
+    }))
+  }, [activeDeliveryPackage, approvals, audioTimeline, currentStage, narrative, notes, shots, versions])
+
+  const handleSubmitDeliveryPackage = useCallback(() => {
+    if (!activeDeliveryPackage) return
+    const manifest = generateDeliveryManifest(activeDeliveryPackage.id, {
+      projectTitle: deliveryProjectTitle,
+      projectStage: currentStage,
+      finalVersion: latestDeliveryVersion?.label ?? activeDeliveryPackage.manifest?.finalVersion ?? 'v0',
+    })
+    const riskSummary = generateDeliveryRiskSummary(activeDeliveryPackage.id)
+    const hasStrongRisk = riskSummary?.issues.some((issue) => issue.severity === 'strong')
+    if (hasStrongRisk) {
+      const confirmed = window.confirm('当前仍有高风险项，是否仍然提交？')
+      if (!confirmed) return
+    }
+
+    const submitted = submitDeliveryPackage(activeDeliveryPackage.id)
+    if (!submitted) return
+
+    if (activeJob?.id) {
+      submitJobDelivery(activeJob.id, shots.filter((shot) => shot.isDone).map(extractShotData))
+    }
+
+    const linkedVersion = handleCreateEntityVersion({
+      entityType: 'delivery',
+      entityId: deliveryProjectId,
+      snapshot: snapshotDelivery({
+        teamId: activeTeam?.id,
+        orderId: activeOrder?.id,
+        jobId: activeJob?.id,
+        currentStage,
+        editorTimeline,
+        deliveryPackage: {
+          ...submitted,
+          manifest: manifest ?? submitted.manifest,
+          riskSummary: riskSummary ?? submitted.riskSummary,
+        },
+      }),
+      changeType: 'manual-edit',
+      summary: '提交交付包客户确认',
+    })
+
+    const existingPendingApproval = approvals.find((approval) => (
+      approval.targetType === 'delivery'
+      && approval.targetId === deliveryProjectId
+      && (approval.status === 'pending' || approval.status === 'stale')
+    ))
+
+    if (!existingPendingApproval) {
+      handleCreateApprovalRequest({
+        targetType: 'delivery',
+        targetId: deliveryProjectId,
+        title: `交付包确认 · ${deliveryProjectTitle}`,
+        description: `已提交 ${submitted.assets.filter((asset) => asset.included).length} 项交付资产，请客户确认是否可交付。`,
+        requiredRoles: ['client'],
+        linkedVersionId: linkedVersion.id,
+      })
+    } else if (linkedVersion.id !== existingPendingApproval.linkedVersionId) {
+      useApprovalStore.getState().markApprovalStale('delivery', deliveryProjectId)
+      handleCreateApprovalRequest({
+        targetType: 'delivery',
+        targetId: deliveryProjectId,
+        title: `交付包确认 · ${deliveryProjectTitle}`,
+        description: `交付包已更新，本次提交包含 ${submitted.assets.filter((asset) => asset.included).length} 项资产。`,
+        requiredRoles: ['client'],
+        linkedVersionId: linkedVersion.id,
+      })
+    }
+  }, [activeDeliveryPackage, activeJob?.id, activeOrder?.id, activeTeam?.id, approvals, currentStage, deliveryProjectId, deliveryProjectTitle, editorTimeline, generateDeliveryManifest, generateDeliveryRiskSummary, handleCreateApprovalRequest, handleCreateEntityVersion, latestDeliveryVersion?.label, shots, submitDeliveryPackage, submitJobDelivery])
 
   const handleProductionAction = useCallback((decision: ProductionDecision) => {
     setFocusedSequenceId(decision.targetSequenceId ?? null)
@@ -8287,6 +8623,7 @@ export default function CreatePage() {
                 { id: 'footage', label: '视频镜头' },
                 { id: 'audio', label: '声音台' },
                 { id: 'editor', label: '剪辑台' },
+                { id: 'delivery', label: '交付' },
               ] as const).map((item) => (
                 <button
                   key={item.id}
@@ -8305,7 +8642,7 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
-            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>分镜预演负责候选与判断，视频镜头负责素材池，声音台负责配音/配乐/同步审查，剪辑台负责序列整理与导出方案。</p>
+            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>分镜预演负责候选与判断，视频镜头负责素材池，声音台负责配音/配乐/同步审查，剪辑台负责序列整理，交付页负责整理最终商业交付包。</p>
           </div>
 
           {workspaceView === 'canvas' || workspaceView === 'previs' ? (
@@ -8473,6 +8810,22 @@ export default function CreatePage() {
               onSendLipSyncToEditor={handleSendLipSyncToEditor}
               onOpenEditorDesk={() => setWorkspaceView('editor')}
               onBackToCanvas={() => setWorkspaceView('canvas')}
+            />
+          ) : workspaceView === 'delivery' ? (
+            <DeliveryTab
+              projectTitle={deliveryProjectTitle}
+              currentStage={currentStage}
+              deliveryPackage={activeDeliveryPackage}
+              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0)}
+              onCreatePackage={handleCreateDeliveryPackage}
+              onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
+              onPreviewAsset={handlePreviewDeliveryAsset}
+              onViewVersion={handleViewDeliveryVersion}
+              onViewApproval={handleViewDeliveryApproval}
+              onExportSummary={handleExportDeliverySummary}
+              onExportManifest={handleExportDeliveryManifest}
+              onExportProjectData={handleExportDeliveryProjectData}
+              onSubmitPackage={handleSubmitDeliveryPackage}
             />
           ) : (
             <EditorDesk
