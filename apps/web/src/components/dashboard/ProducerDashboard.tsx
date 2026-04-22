@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
+import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 
 function Card({
   title,
@@ -210,6 +211,10 @@ export function ProducerDashboard({ data }: { data: ProducerDashboardData }) {
           </div>
         </Card>
       </div>
+
+      <Card title="Production Planning" id="planning">
+        <PlanningPanel data={data} />
+      </Card>
 
       <Card title="Recent Activity">
         <div className="space-y-3">
