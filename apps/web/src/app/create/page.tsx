@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
+import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
+import { StoryboardAdapterPanel } from '@/components/storyboard/StoryboardAdapterPanel'
 import { useCanvasStore } from '@/store/canvas.store'
 import { useShotsStore } from '@/store/shots.store'
 import type { CastingSuggestion, CharacterBible, ClipReview, EditorClip, EditorTimeline, EditSuggestion, InsightContext, Narrative, NarrativeInsight, NarrativeType, RoleBible, SequenceSuggestion, Shot, ShotDerivativeJob, ShotSuggestion, ShotSnapshot, StoryboardFrame, StoryboardPrevis, StyleBible, SuggestionContext } from '@/store/shots.store'
@@ -1805,6 +1807,7 @@ function EditorDesk({
 
       <div className="flex-1 overflow-y-auto px-5 py-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="flex flex-col gap-3">
+          <EditorAdapterPanel timeline={timeline} />
           <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="text-[11px] font-semibold text-white/82">已生成镜头</p>
             <div className="flex flex-col gap-3 mt-3">
@@ -3901,6 +3904,8 @@ function CanvasBottomDock({
                             <p className="text-[10px] text-white/62 mt-1">先挑选需要的单帧，再决定是否衍生视频，不会自动批量生成。</p>
                           </div>
                         </div>
+
+                        <StoryboardAdapterPanel storyboardPrevis={storyboardPrevis} />
 
                         <div className="flex gap-3 overflow-x-auto pb-1">
                           {visibleStoryboardFrames.map((frame) => (
@@ -7528,11 +7533,16 @@ export default function CreatePage() {
     addDialogueLine(line)
   }, [addDialogueLine])
 
-  const handleGenerateVoiceTakes = useCallback((dialogueLineId: string) => {
+  const handleGenerateVoiceTakes = useCallback((dialogueLineId: string, provider: 'mock' | 'elevenlabs') => {
     const line = dialogueLines.find((item) => item.id === dialogueLineId)
     if (!line) return
     const role = line.roleBibleId ? roleBibles.find((item) => item.id === line.roleBibleId) ?? null : lockedRoleBible
-    upsertVoiceTakes(generateMockVoiceTakes(line, role))
+    upsertVoiceTakes(
+      generateMockVoiceTakes(line, role).map((take) => ({
+        ...take,
+        provider: provider === 'elevenlabs' ? 'elevenlabs' : 'mock',
+      }))
+    )
   }, [dialogueLines, lockedRoleBible, roleBibles, upsertVoiceTakes])
 
   const handleCreateLipSyncJob = useCallback((args: {
@@ -7544,19 +7554,29 @@ export default function CreatePage() {
     addLipSyncJob(job)
   }, [addLipSyncJob])
 
-  const handleGenerateMusicCueCandidates = useCallback((sequenceId?: string) => {
-    const sequence = sequenceId ? narrative?.sequences.find((item) => item.id === sequenceId) ?? null : narrative?.sequences[0] ?? null
-    upsertMusicCues(generateMockMusicCues({
-      sequence,
-      timelineId: editorTimeline.id,
-      existingClipCount: editorTimeline.clips.length,
-    }))
+  const handleGenerateMusicCueCandidates = useCallback((args?: { sequenceId?: string; provider?: 'mock' | 'elevenlabs' }) => {
+    const sequence = args?.sequenceId ? narrative?.sequences.find((item) => item.id === args.sequenceId) ?? null : narrative?.sequences[0] ?? null
+    upsertMusicCues(
+      generateMockMusicCues({
+        sequence,
+        timelineId: editorTimeline.id,
+        existingClipCount: editorTimeline.clips.length,
+      }).map((cue) => ({
+        ...cue,
+        provider: args?.provider === 'elevenlabs' ? 'eleven-music' : cue.provider,
+      }))
+    )
   }, [editorTimeline.clips.length, editorTimeline.id, narrative?.sequences, upsertMusicCues])
 
-  const handleGenerateSoundEffectCandidates = useCallback((clipId: string) => {
+  const handleGenerateSoundEffectCandidates = useCallback((clipId: string, provider: 'mock' | 'elevenlabs') => {
     const clip = editorTimeline.clips.find((item) => item.id === clipId)
     if (!clip) return
-    upsertSoundEffectCues(generateMockSoundEffects(clip))
+    upsertSoundEffectCues(
+      generateMockSoundEffects(clip).map((cue) => ({
+        ...cue,
+        provider: provider === 'elevenlabs' ? 'elevenlabs' : cue.provider,
+      }))
+    )
   }, [editorTimeline.clips, upsertSoundEffectCues])
 
   const handleSendLipSyncToEditor = useCallback((jobId: string) => {

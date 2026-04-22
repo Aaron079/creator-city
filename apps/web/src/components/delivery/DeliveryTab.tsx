@@ -2,6 +2,7 @@
 
 import type { DeliveryAsset, DeliveryPackage } from '@/store/delivery-package.store'
 import { DELIVERY_ASSET_SECTIONS, groupDeliveryAssets } from '@/lib/delivery/aggregate'
+import { DeliveryAdapterPanel } from '@/components/delivery/DeliveryAdapterPanel'
 
 interface DeliveryTabProps {
   projectTitle: string
@@ -194,6 +195,8 @@ export function DeliveryTab(props: DeliveryTabProps) {
             </div>
           </div>
         </section>
+
+        <DeliveryAdapterPanel deliveryPackage={props.deliveryPackage} />
       </div>
     </div>
   )

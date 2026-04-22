@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { getAdaptersByPanel } from '@/lib/adapters/registry'
+import { mapAudioDeskRequestToElevenLabsPayload, mapLipSyncJobToSyncPayload } from '@/lib/tools/mappers'
 import type {
   AudioSyncIssue,
   AudioSyncReview,
@@ -20,7 +22,8 @@ import type { EditorClip, EditorTimeline, RoleBible, Sequence, Shot } from '@/st
 type AudioDeskTab = 'dialogue' | 'voice' | 'lipsync' | 'music' | 'sfx' | 'timeline'
 
 const EMOTIONS: DialogueLine['emotion'][] = ['calm', 'sad', 'angry', 'excited', 'whisper', 'commercial']
-const LIP_SYNC_PROVIDERS: LipSyncJob['provider'][] = ['mock', 'sync', 'heygen']
+const AUDIO_PROVIDERS = ['mock', 'elevenlabs'] as const
+const LIP_SYNC_PROVIDERS = ['mock', 'sync'] as const
 
 function AudioTrackBadge({ label, count }: { label: string; count: number }) {
   return (
@@ -84,12 +87,12 @@ export function AudioDesk({
   timelineIssues: AudioSyncIssue[]
   onAddDialogueLine: (draft: Omit<DialogueLine, 'id'>) => void
   onUpdateDialogueLine: (id: string, patch: Partial<DialogueLine>) => void
-  onGenerateVoiceTakes: (dialogueLineId: string) => void
+  onGenerateVoiceTakes: (dialogueLineId: string, provider: typeof AUDIO_PROVIDERS[number]) => void
   onSelectVoiceTake: (voiceTakeId: string, status: VoiceTake['status']) => void
   onCreateLipSyncJob: (args: { targetVideoClipId: string; voiceTakeId: string; provider: LipSyncJob['provider'] }) => void
-  onGenerateMusicCues: (sequenceId?: string) => void
+  onGenerateMusicCues: (args?: { sequenceId?: string; provider?: typeof AUDIO_PROVIDERS[number] }) => void
   onSelectMusicCue: (musicCueId: string, status: MusicCue['status']) => void
-  onGenerateSoundEffects: (clipId: string) => void
+  onGenerateSoundEffects: (clipId: string, provider: typeof AUDIO_PROVIDERS[number]) => void
   onSelectSoundEffectCue: (sfxId: string, status: SoundEffectCue['status']) => void
   onSelectMusicMotif: (motifId: string, status: MusicMotif['status']) => void
   onAddAudioTimelineClipFromSource: (args: {
@@ -126,7 +129,8 @@ export function AudioDesk({
     endTime: 3,
   })
   const [activeDialogueId, setActiveDialogueId] = useState<string | null>(dialogueLines[0]?.id ?? null)
-  const [lipSyncProvider, setLipSyncProvider] = useState<LipSyncJob['provider']>('mock')
+  const [audioProvider, setAudioProvider] = useState<typeof AUDIO_PROVIDERS[number]>('mock')
+  const [lipSyncProvider, setLipSyncProvider] = useState<typeof LIP_SYNC_PROVIDERS[number]>('mock')
 
   const activeDialogue = dialogueLines.find((line) => line.id === activeDialogueId) ?? dialogueLines[0] ?? null
   const activeVoiceTakes = useMemo(
@@ -135,6 +139,27 @@ export function AudioDesk({
   )
   const selectedVoiceTake = activeVoiceTakes.find((take) => take.status === 'selected') ?? null
   const selectedMotifs = musicMotifs.filter((motif) => motif.status === 'selected')
+  const audioAdapters = useMemo(() => getAdaptersByPanel('audio-desk'), [])
+  const lipSyncAdapters = useMemo(() => getAdaptersByPanel('audio-desk').filter((item) => item.supports.includes('lipsync')), [])
+  const audioProviderPayload = useMemo(() => {
+    if (audioProvider !== 'elevenlabs') return null
+    return mapAudioDeskRequestToElevenLabsPayload({
+      kind: activeTab === 'music' ? 'music' : activeTab === 'sfx' ? 'sfx' : 'voice',
+      dialogueLine: activeTab === 'voice' ? activeDialogue : null,
+      sequence: activeTab === 'music' ? sequences[0] ?? null : null,
+      clip: activeTab === 'sfx' ? clips[0] ?? null : null,
+    })
+  }, [activeDialogue, activeTab, audioProvider, clips, sequences])
+  const lipSyncProviderPayload = useMemo(() => {
+    if (lipSyncProvider !== 'sync' || !selectedVoiceTake || !activeDialogue?.targetClipId) return null
+    const clip = clips.find((item) => item.id === activeDialogue.targetClipId)
+    if (!clip) return null
+    return mapLipSyncJobToSyncPayload({
+      targetVideoClipId: clip.sourceJobId,
+      voiceTakeId: selectedVoiceTake.id,
+      selectedVoiceTake,
+    })
+  }, [activeDialogue?.targetClipId, clips, lipSyncProvider, selectedVoiceTake])
 
   const getSourcePreview = (audioClip: AudioTimelineClip) => {
     switch (audioClip.sourceType) {
@@ -194,6 +219,9 @@ export function AudioDesk({
             <AudioTrackBadge label="已选配音" count={voiceTakes.filter((take) => take.status === 'selected').length} />
             <AudioTrackBadge label="音乐" count={musicCues.filter((cue) => cue.status === 'selected').length} />
             <AudioTrackBadge label="音轨片段" count={audioTimeline?.tracks.reduce((sum, track) => sum + track.clips.length, 0) ?? 0} />
+            {audioAdapters.map((adapter) => (
+              <AudioTrackBadge key={adapter.id} label={adapter.name} count={0} />
+            ))}
           </div>
         </div>
         <div className="flex gap-2">
@@ -342,10 +370,28 @@ export function AudioDesk({
                 <>
                   <p className="text-[10px] mt-3 font-semibold text-white/82">{activeDialogue.characterName} · {activeDialogue.emotion}</p>
                   <p className="text-[10px] mt-1 leading-[1.7]" style={{ color: 'rgba(255,255,255,0.42)' }}>{activeDialogue.text}</p>
+                  <div className="flex items-center gap-2 mt-4">
+                    <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.38)' }}>Provider</span>
+                    <select
+                      value={audioProvider}
+                      onChange={(e) => setAudioProvider(e.target.value as typeof AUDIO_PROVIDERS[number])}
+                      className="rounded-xl px-3 py-2 text-[10px] outline-none"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.72)' }}
+                    >
+                      {AUDIO_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                    </select>
+                  </div>
                   <div className="flex gap-2 mt-4">
-                    <button onClick={() => onGenerateVoiceTakes(activeDialogue.id)} className="px-3 py-1.5 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#c7d2fe' }}>生成 mock voice takes</button>
+                    <button onClick={() => onGenerateVoiceTakes(activeDialogue.id, audioProvider)} className="px-3 py-1.5 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#c7d2fe' }}>
+                      {audioProvider === 'elevenlabs' ? '生成 ElevenLabs skeleton takes' : '生成 mock voice takes'}
+                    </button>
                     <button onClick={() => setActiveTab('dialogue')} className="px-3 py-1.5 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.62)' }}>返回台词</button>
                   </div>
+                  {audioProviderPayload && (
+                    <pre className="mt-3 rounded-xl p-3 text-[9px] overflow-x-auto" style={{ background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(99,102,241,0.2)', color: 'rgba(255,255,255,0.62)' }}>
+                      {JSON.stringify(audioProviderPayload, null, 2)}
+                    </pre>
+                  )}
                 </>
               ) : (
                 <p className="text-[10px] mt-3" style={{ color: 'rgba(255,255,255,0.38)' }}>先在台词页选择一条 Dialogue Line。</p>
@@ -387,10 +433,21 @@ export function AudioDesk({
             <section className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-[11px] font-semibold text-white/82">口型同步</p>
               <p className="text-[10px] mt-2 leading-[1.7]" style={{ color: 'rgba(255,255,255,0.4)' }}>只有 selected VoiceTake 和目标视频镜头都明确后，才允许创建 lip sync job。系统不会自动替你同步所有镜头。</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {lipSyncAdapters.map((adapter) => (
+                  <span
+                    key={adapter.id}
+                    className="px-2 py-1 rounded-lg text-[9px]"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.56)' }}
+                  >
+                    {adapter.name} · {adapter.status}
+                  </span>
+                ))}
+              </div>
               <div className="grid gap-2 mt-4 md:grid-cols-[1fr_auto]">
                 <select
                   value={lipSyncProvider}
-                  onChange={(e) => setLipSyncProvider(e.target.value as LipSyncJob['provider'])}
+                  onChange={(e) => setLipSyncProvider(e.target.value as typeof LIP_SYNC_PROVIDERS[number])}
                   className="rounded-xl px-3 py-2 text-[10px] outline-none"
                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.72)' }}
                 >
@@ -409,6 +466,11 @@ export function AudioDesk({
                   运行 lip sync
                 </button>
               </div>
+              {lipSyncProviderPayload && (
+                <pre className="mt-3 rounded-xl p-3 text-[9px] overflow-x-auto" style={{ background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(99,102,241,0.2)', color: 'rgba(255,255,255,0.62)' }}>
+                  {JSON.stringify(lipSyncProviderPayload, null, 2)}
+                </pre>
+              )}
             </section>
             <section className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-[11px] font-semibold text-white/82">Lip Sync Jobs</p>
@@ -453,8 +515,25 @@ export function AudioDesk({
                   <p className="text-[11px] font-semibold text-white/82">Music Cues</p>
                   <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.38)' }}>配乐候选必须保留 licenseStatus，后续商业授权才能继续接。</p>
                 </div>
-                <button onClick={() => onGenerateMusicCues(sequences[0]?.id)} className="px-3 py-1.5 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#c7d2fe' }}>生成配乐候选</button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={audioProvider}
+                    onChange={(e) => setAudioProvider(e.target.value as typeof AUDIO_PROVIDERS[number])}
+                    className="rounded-xl px-3 py-2 text-[10px] outline-none"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.72)' }}
+                  >
+                    {AUDIO_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                  </select>
+                  <button onClick={() => onGenerateMusicCues({ sequenceId: sequences[0]?.id, provider: audioProvider })} className="px-3 py-1.5 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.35)', color: '#c7d2fe' }}>
+                    {audioProvider === 'elevenlabs' ? '生成 ElevenLabs music skeleton' : '生成配乐候选'}
+                  </button>
+                </div>
               </div>
+              {audioProviderPayload && (
+                <pre className="mt-3 rounded-xl p-3 text-[9px] overflow-x-auto" style={{ background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(99,102,241,0.2)', color: 'rgba(255,255,255,0.62)' }}>
+                  {JSON.stringify(audioProviderPayload, null, 2)}
+                </pre>
+              )}
               <div className="flex flex-col gap-3 mt-4">
                 {musicCues.length === 0 ? (
                   <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.38)' }}>还没有 music cue。</p>
@@ -521,13 +600,29 @@ export function AudioDesk({
             <section className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-[11px] font-semibold text-white/82">生成音效候选</p>
               <p className="text-[10px] mt-2" style={{ color: 'rgba(255,255,255,0.38)' }}>只为你指定的镜头生成音效候选，不会自动铺满整条时间线。</p>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.38)' }}>Provider</span>
+                <select
+                  value={audioProvider}
+                  onChange={(e) => setAudioProvider(e.target.value as typeof AUDIO_PROVIDERS[number])}
+                  className="rounded-xl px-3 py-2 text-[10px] outline-none"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.72)' }}
+                >
+                  {AUDIO_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                </select>
+              </div>
               <div className="flex flex-col gap-2 mt-4">
                 {clips.map((clip, index) => (
-                  <button key={clip.id} onClick={() => onGenerateSoundEffects(clip.id)} className="w-full text-left px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.68)' }}>
-                    为 #{index + 1} {clip.title} 生成候选
+                  <button key={clip.id} onClick={() => onGenerateSoundEffects(clip.id, audioProvider)} className="w-full text-left px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.68)' }}>
+                    为 #{index + 1} {clip.title} 生成{audioProvider === 'elevenlabs' ? ' ElevenLabs skeleton' : ''}候选
                   </button>
                 ))}
               </div>
+              {audioProviderPayload && (
+                <pre className="mt-3 rounded-xl p-3 text-[9px] overflow-x-auto" style={{ background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(99,102,241,0.2)', color: 'rgba(255,255,255,0.62)' }}>
+                  {JSON.stringify(audioProviderPayload, null, 2)}
+                </pre>
+              )}
             </section>
             <section className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-[11px] font-semibold text-white/82">Sound Effects</p>
