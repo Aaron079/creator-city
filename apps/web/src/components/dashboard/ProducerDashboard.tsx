@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
 import type { MatchCandidate, RoleNeed, TalentMatchingData } from '@/lib/matching/aggregate'
+import { getVisibleSectionsForRole, type WorkspaceRole } from '@/lib/roles/view-mode'
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 import { LicensingCenter } from '@/components/licensing/LicensingCenter'
 import { TeamAssemblyPanel } from '@/components/team/TeamAssemblyPanel'
@@ -66,6 +67,7 @@ export function ProducerDashboard({
   data,
   licensing,
   matching,
+  role,
 }: {
   data: ProducerDashboardData
   licensing: {
@@ -82,7 +84,10 @@ export function ProducerDashboard({
     data: TalentMatchingData
     onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate) => void
   }
+  role: WorkspaceRole
 }) {
+  const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -101,6 +106,7 @@ export function ProducerDashboard({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        {visibleSections.has('overview') ? (
         <Card title="Overview" id="overview">
           <div className="space-y-3">
             {data.overview.length === 0 ? (
@@ -150,8 +156,10 @@ export function ProducerDashboard({
             ))}
           </div>
         </Card>
+        ) : null}
 
         <div className="space-y-6">
+          {visibleSections.has('ai-summary') ? (
           <Card title="AI Summary">
             <div className="space-y-4">
               <div>
@@ -172,7 +180,9 @@ export function ProducerDashboard({
               </div>
             </div>
           </Card>
+          ) : null}
 
+          {visibleSections.has('quick-actions') ? (
           <Card title="Quick Actions" id="quick-actions">
             <div className="space-y-3">
               {data.quickActions.length === 0 ? (
@@ -191,10 +201,12 @@ export function ProducerDashboard({
               ))}
             </div>
           </Card>
+          ) : null}
         </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+        {visibleSections.has('action-queue') ? (
         <Card title="Action Queue" id="action-queue">
           <div className="space-y-3">
             {data.actionQueue.length === 0 ? (
@@ -223,7 +235,9 @@ export function ProducerDashboard({
             ))}
           </div>
         </Card>
+        ) : null}
 
+        {visibleSections.has('risk-radar') ? (
         <Card title="Risk Radar" id="risk-radar">
           <div className="grid gap-3 sm:grid-cols-2">
             <MetricTile label="Stale approvals" value={data.riskRadar.staleApprovals} tone={data.riskRadar.staleApprovals > 0 ? 'warning' : 'default'} />
@@ -237,19 +251,25 @@ export function ProducerDashboard({
             Risk Radar 只做风险归并与优先级提醒，不会自动替你推进阶段、提交客户确认或交付项目。
           </div>
         </Card>
+        ) : null}
       </div>
 
+      {visibleSections.has('planning') ? (
       <Card title="Production Planning" id="planning">
         <PlanningPanel data={data} />
       </Card>
+      ) : null}
 
+      {visibleSections.has('team-match') ? (
       <Card title="Team Match / Talent Suggestions" id="team-match">
         <TeamAssemblyPanel
           data={matching.data}
           onInvite={matching.onInvite}
         />
       </Card>
+      ) : null}
 
+      {visibleSections.has('licensing') ? (
       <Card title="Rights & Licensing Center" id="licensing">
         <LicensingCenter
           records={licensing.records}
@@ -262,7 +282,9 @@ export function ProducerDashboard({
           onAttachProof={licensing.onAttachProof}
         />
       </Card>
+      ) : null}
 
+      {visibleSections.has('recent-activity') ? (
       <Card title="Recent Activity">
         <div className="space-y-3">
           {data.activity.length === 0 ? (
@@ -278,6 +300,7 @@ export function ProducerDashboard({
           ))}
         </div>
       </Card>
+      ) : null}
     </div>
   )
 }

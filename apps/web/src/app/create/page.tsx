@@ -8,6 +8,7 @@ import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canva
 import { AudioDesk } from '@/components/audio/AudioDesk'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
+import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { StoryboardAdapterPanel } from '@/components/storyboard/StoryboardAdapterPanel'
 import { useCanvasStore } from '@/store/canvas.store'
 import { useShotsStore } from '@/store/shots.store'
@@ -59,6 +60,7 @@ import { buildCastingSuggestions } from '@/lib/casting/casting'
 import { analyzeAudioTimelineIssues, buildAudioSyncReview, buildCueSheet, buildMusicMotifs, createAudioTimelineClip, createMockLipSyncJob, generateMockMusicCues, generateMockSoundEffects, generateMockVoiceTakes } from '@/lib/audio/mock'
 import { buildDeliveryAssets } from '@/lib/delivery/aggregate'
 import { buildDeliveryProjectData, buildDeliverySummaryText } from '@/lib/delivery/export'
+import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
   FOCAL_LENGTHS, FOCAL_LENS_CHARS, APERTURES, SPEEDS,
@@ -5839,6 +5841,7 @@ function LeftPanel({
 // ─── Page (three-column layout) ────────────────────────────────────────────────
 
 export default function CreatePage() {
+  const { role, setRole } = useMockRoleMode('creator')
   const router = useRouter()
 
   // ── Shared state ──────────────────────────────────────────────────────────────
@@ -5902,6 +5905,10 @@ export default function CreatePage() {
   const [focusedEditorClipId, setFocusedEditorClipId] = useState<string | null>(null)
   const [focusedRoleBibleId, setFocusedRoleBibleId] = useState<string | null>(null)
   const [requestedReviewId, setRequestedReviewId] = useState<string | null>(null)
+  const visibleWorkspaceViews = useMemo(
+    () => getVisibleSectionsForRole(role, 'create') as WorkspaceView[],
+    [role],
+  )
 
   const dialogueLines = useAudioDeskStore((s) => s.dialogueLines)
   const voiceTakes = useAudioDeskStore((s) => s.voiceTakes)
@@ -8594,12 +8601,19 @@ export default function CreatePage() {
     recordDirectorSession({ source: 'director', idea, style: selectedStyle, shots: dirShots.map((d) => ({ label: d.shotType, idea: d.description, shotType: d.shotType, mood: d.mood })), prompts: dirShots.map((d) => d.description) })
   }, [idea, running, selectedStyle, resetCanvas, setPrompt, updateNode])
 
+  useEffect(() => {
+    if (!visibleWorkspaceViews.includes(workspaceView)) {
+      setWorkspaceView(visibleWorkspaceViews[0] ?? 'delivery')
+    }
+  }, [visibleWorkspaceViews, workspaceView])
+
   // ── Render ─────────────────────────────────────────────────────────────────────
 
   return (
     <CanvasProvider>
       <div className="flex h-screen bg-[#060a14] overflow-hidden">
 
+        {role === 'creator' ? (
         <LeftPanel
           idea={idea}
           running={running}
@@ -8633,10 +8647,17 @@ export default function CreatePage() {
           onCanvasModeChange={setCanvasMode}
           currentIntent={currentShot?.intent}
         />
+        ) : null}
 
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="px-5 pt-4 pb-2 flex items-center justify-between" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="flex gap-2">
+            <div className="flex-1">
+              <RoleViewSwitcher role={role} onChange={setRole} compact />
+            </div>
+          </div>
+
+          <div className="px-5 pt-2 pb-2 flex items-center justify-between gap-4" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex gap-2 flex-wrap">
               {([
                 { id: 'canvas', label: '创作画布' },
                 { id: 'previs', label: '分镜预演' },
@@ -8644,7 +8665,7 @@ export default function CreatePage() {
                 { id: 'audio', label: '声音台' },
                 { id: 'editor', label: '剪辑台' },
                 { id: 'delivery', label: '交付' },
-              ] as const).map((item) => (
+              ] as const).filter((item) => visibleWorkspaceViews.includes(item.id)).map((item) => (
                 <button
                   key={item.id}
                   onClick={() => {
@@ -8662,7 +8683,13 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
-            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>分镜预演负责候选与判断，视频镜头负责素材池，声音台负责配音/配乐/同步审查，剪辑台负责序列整理，交付页负责整理最终商业交付包。</p>
+            <p className="text-[10px] max-w-[640px] text-right" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              {role === 'creator'
+                ? '创作者视图保留完整工作区，覆盖分镜、视频、声音、剪辑和交付。'
+                : role === 'producer'
+                  ? '制片视图只保留产出与交付相关面板，不显示完整创作控制台。'
+                  : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
+            </p>
           </div>
 
           {workspaceView === 'canvas' || workspaceView === 'previs' ? (

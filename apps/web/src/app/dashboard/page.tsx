@@ -15,6 +15,7 @@ import { useLicensingStore } from '@/store/licensing.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
 import { aggregateTalentMatching, getRoleNeedLabel, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
+import { useMockRoleMode } from '@/lib/roles/view-mode'
 import { useProfileStore } from '@/store/profile.store'
 import { useReviewStore } from '@/store/review.store'
 import { useTaskStore } from '@/store/task.store'
@@ -23,8 +24,10 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildLicenseRecords } from '@/lib/licensing/aggregate'
 import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
+import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 
 export default function DashboardPage() {
+  const { role, setRole } = useMockRoleMode('producer')
   const { user, isAuthenticated } = useAuthStore()
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
@@ -134,6 +137,9 @@ export default function DashboardPage() {
 
   return (
     <DashboardShell>
+      <div className="mb-6">
+        <RoleViewSwitcher role={role} onChange={setRole} />
+      </div>
       <ProducerDashboard
         data={dashboard}
         licensing={{
@@ -150,6 +156,7 @@ export default function DashboardPage() {
           data: matching,
           onInvite: handleInviteCandidate,
         }}
+        role={role}
       />
     </DashboardShell>
   )
