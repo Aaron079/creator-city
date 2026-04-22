@@ -212,20 +212,29 @@ function buildPreviewData(args: {
         },
       }
     }
-    case 'delivery':
+    case 'delivery': {
+      const packageStatus = typeof snapshot.packageStatus === 'string' ? snapshot.packageStatus : undefined
+      const includedAssetCount = typeof snapshot.includedAssetCount === 'number' ? snapshot.includedAssetCount : undefined
+      const strongRiskCount = typeof snapshot.strongRiskCount === 'number' ? snapshot.strongRiskCount : undefined
+      const finalVersion = typeof snapshot.finalVersion === 'string' ? snapshot.finalVersion : undefined
       return {
         previewType: 'delivery',
         previewData: {
           type: 'delivery',
-          finalStatus: activeJob?.delivery?.status ?? (typeof snapshot.timelineStatus === 'string' ? snapshot.timelineStatus : 'pending'),
+          finalStatus: packageStatus ?? activeJob?.delivery?.status ?? (typeof snapshot.timelineStatus === 'string' ? snapshot.timelineStatus : 'pending'),
           approvalSummary: approval.status === 'approved' ? '客户已确认交付' : approval.status === 'changes-requested' ? '客户提出了修改意见' : '等待客户确认交付版本',
           assetChecklist: [
+            packageStatus ? `交付包状态 ${stringifyValue(packageStatus)}` : '交付包状态 draft',
+            includedAssetCount !== undefined ? `纳入资产 ${stringifyValue(includedAssetCount)}` : '纳入资产待确认',
             `时间线片段 ${stringifyValue(snapshot.timelineClipCount ?? activeJob?.delivery?.shotCount ?? 0)}`,
             `阶段 ${stringifyValue(snapshot.currentStage ?? 'delivery')}`,
+            finalVersion ? `最终版本 ${stringifyValue(finalVersion)}` : '最终版本待确认',
+            strongRiskCount ? `高风险项 ${stringifyValue(strongRiskCount)}` : '高风险项 0',
             activeJob?.delivery?.data?.length ? '已包含交付素材摘要' : '交付素材摘要待确认',
           ],
         },
       }
+    }
     default:
       return {
         previewType: 'generic',

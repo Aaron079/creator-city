@@ -23,17 +23,17 @@ export class CreateProjectDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
-  title: string
+  title!: string
 
   @ApiProperty({ example: 'A sci-fi short film about first contact.' })
   @IsString()
   @MinLength(10)
   @MaxLength(2000)
-  description: string
+  description!: string
 
   @ApiProperty({ enum: ProjectTypeEnum })
   @IsEnum(ProjectTypeEnum)
-  type: string
+  type!: string
 
   @ApiProperty({ enum: ProjectVisibilityEnum, required: false })
   @IsOptional()

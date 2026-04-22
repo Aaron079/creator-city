@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useCanvasStore } from '@/store/canvas.store'
 import { BaseNode } from './BaseNode'
 
@@ -31,13 +32,17 @@ export function ImageNode({ id, enterDelay }: Props) {
         }}
       >
         {node.imageUrl ? (
-          <img
-            src={node.imageUrl}
-            alt="AI 生成图像"
-            className="w-full object-cover"
-            style={{ aspectRatio: '3/4' }}
-            draggable={false}
-          />
+          <div className="relative w-full" style={{ aspectRatio: '3/4' }}>
+            <Image
+              src={node.imageUrl}
+              alt="AI 生成图像"
+              fill
+              unoptimized
+              sizes="220px"
+              className="object-cover"
+              draggable={false}
+            />
+          </div>
         ) : (
           <div
             className="w-full flex items-center justify-center text-4xl"

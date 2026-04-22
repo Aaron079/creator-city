@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 
 type NotificationType =
@@ -16,6 +17,44 @@ interface CreateNotificationInput {
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toInputJsonValue(value: unknown): Prisma.InputJsonValue | null {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value
+    }
+
+    if (value === null) {
+      return null
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.toInputJsonValue(item))
+    }
+
+    if (typeof value === 'object') {
+      const result: Record<string, Prisma.InputJsonValue | null> = {}
+      for (const [key, item] of Object.entries(value)) {
+        result[key] = this.toInputJsonValue(item)
+      }
+      return result
+    }
+
+    return String(value)
+  }
+
+  private toInputJsonObject(value: Record<string, unknown>): Prisma.InputJsonObject {
+    const result: Record<string, Prisma.InputJsonValue | null> = {}
+
+    for (const [key, item] of Object.entries(value)) {
+      result[key] = this.toInputJsonValue(item)
+    }
+
+    return result
+  }
+
   async create(userId: string, type: NotificationType, input: CreateNotificationInput) {
     return this.prisma.notification.create({
       data: {
@@ -23,7 +62,7 @@ export class NotificationsService {
         type,
         title: input.title,
         body: input.body,
-        data: input.data ?? null,
+        ...(input.data !== undefined && { data: this.toInputJsonObject(input.data) }),
       },
     })
   }

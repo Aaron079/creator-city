@@ -8,6 +8,7 @@ export function ReviewDecisionPanel({
   followUp,
   assignedTo,
   assigneeOptions,
+  showInternalFollowUp = true,
   onCommentChange,
   onFollowUpChange,
   onAssignedToChange,
@@ -19,6 +20,7 @@ export function ReviewDecisionPanel({
   followUp: 'note' | 'task' | 'comment'
   assignedTo: string
   assigneeOptions: Array<{ id: string; label: string }>
+  showInternalFollowUp?: boolean
   onCommentChange: (value: string) => void
   onFollowUpChange: (value: 'note' | 'task' | 'comment') => void
   onAssignedToChange: (value: string) => void
@@ -47,7 +49,7 @@ export function ReviewDecisionPanel({
         />
       )}
 
-      {status === 'changes-requested' && (
+      {status === 'changes-requested' && showInternalFollowUp && (
         <div className="grid gap-3 mt-3 md:grid-cols-2">
           <div className="rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <p className="text-[10px] font-semibold text-white/72">修改意见后续处理</p>
@@ -84,6 +86,15 @@ export function ReviewDecisionPanel({
               </select>
             </div>
           )}
+        </div>
+      )}
+
+      {status === 'changes-requested' && !showInternalFollowUp && (
+        <div className="rounded-2xl p-3 mt-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <p className="text-[10px] font-semibold text-white/72">客户视图说明</p>
+          <p className="text-[10px] mt-2 leading-[1.7]" style={{ color: 'rgba(255,255,255,0.52)' }}>
+            这里会记录你的修改意见，但不会展示内部任务分配、导演批注流转或团队执行细节。
+          </p>
         </div>
       )}
 

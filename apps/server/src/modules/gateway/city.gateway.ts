@@ -26,7 +26,7 @@ export class CityGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: TypedServer
+  server!: TypedServer
 
   private readonly logger = new Logger(CityGateway.name)
   private readonly connectedUsers = new Map<string, string>() // socketId → userId
@@ -110,11 +110,25 @@ export class CityGateway
 
   // ─── Emit helpers (called by other services) ──────────────────────
 
-  emitToUser(userId: string, event: keyof ServerToClientEvents, data: unknown) {
-    this.server.to(`user:${userId}`).emit(event as string, data)
+  emitToUser<E extends keyof ServerToClientEvents>(
+    userId: string,
+    event: E,
+    data: Parameters<ServerToClientEvents[E]>[0],
+  ) {
+    ;(this.server.to(`user:${userId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void)(
+      event,
+      data,
+    )
   }
 
-  emitToProject(projectId: string, event: keyof ServerToClientEvents, data: unknown) {
-    this.server.to(`project:${projectId}`).emit(event as string, data)
+  emitToProject<E extends keyof ServerToClientEvents>(
+    projectId: string,
+    event: E,
+    data: Parameters<ServerToClientEvents[E]>[0],
+  ) {
+    ;(this.server.to(`project:${projectId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void)(
+      event,
+      data,
+    )
   }
 }

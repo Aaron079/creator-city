@@ -23,6 +23,7 @@ export function ReviewItemCard({
   item,
   latestClientDecision,
   isEditing,
+  showInternalMeta = true,
   onApprove,
   onRequestChanges,
   onReject,
@@ -33,6 +34,7 @@ export function ReviewItemCard({
   item: ReviewItem
   latestClientDecision?: ApprovalDecision
   isEditing: boolean
+  showInternalMeta?: boolean
   onApprove: () => void
   onRequestChanges: () => void
   onReject: () => void
@@ -59,17 +61,25 @@ export function ReviewItemCard({
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.28)' }}>所需确认角色</p>
-          <div className="flex gap-1.5 flex-wrap justify-end mt-2">
-            {item.requiredRoles.map((role) => (
-              <span key={role} className="px-2 py-1 rounded-lg text-[9px]" style={{ background: role === 'client' ? 'rgba(236,72,153,0.12)' : 'rgba(255,255,255,0.04)', color: role === 'client' ? '#f9a8d4' : 'rgba(255,255,255,0.5)' }}>
-                {role}
-              </span>
-            ))}
-          </div>
-          <p className="text-[10px] mt-3" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            批注 {item.noteCount} 条{item.blockerCount > 0 ? ` · blocker ${item.blockerCount}` : ''}
-          </p>
+          {showInternalMeta ? (
+            <>
+              <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.28)' }}>所需确认角色</p>
+              <div className="flex gap-1.5 flex-wrap justify-end mt-2">
+                {item.requiredRoles.map((role) => (
+                  <span key={role} className="px-2 py-1 rounded-lg text-[9px]" style={{ background: role === 'client' ? 'rgba(236,72,153,0.12)' : 'rgba(255,255,255,0.04)', color: role === 'client' ? '#f9a8d4' : 'rgba(255,255,255,0.5)' }}>
+                    {role}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] mt-3" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                批注 {item.noteCount} 条{item.blockerCount > 0 ? ` · blocker ${item.blockerCount}` : ''}
+              </p>
+            </>
+          ) : (
+            <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.34)' }}>
+              客户只看到当前待确认内容、版本状态和自己的最近反馈。
+            </p>
+          )}
           {latestClientDecision && (
             <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.36)' }}>
               你的最近意见：{latestClientDecision.status}

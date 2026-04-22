@@ -1,113 +1,397 @@
-export default function Home() {
-  const creatableItems = [
-    { title: '电影短片', desc: '从一句创意生成剧情短片方向。' },
-    { title: '广告脚本', desc: '快速组合商业叙事与品牌表达。' },
-    { title: '剧情分镜', desc: '生成结构清晰的镜头与画面节奏。' },
-    { title: '视觉概念', desc: '先确定人物、气质、摄影与氛围。' },
-  ]
+'use client'
 
-  const outputs = [
-    { title: '故事结构', desc: '开场、冲突、高潮、落点' },
-    { title: '角色设定', desc: '演员气质与角色功能' },
-    { title: '导演方案', desc: '节奏、表达、镜头语言' },
-    { title: '摄影风格', desc: '电影感、手持、稳定器、航拍' },
-  ]
+import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { motion } from 'framer-motion'
+import { useShotsStore } from '@/store/shots.store'
+import { Onboarding } from '@/components/Onboarding'
+
+// ─── Floating orb ─────────────────────────────────────────────────────────────
+
+function Orb({
+  size, top, left, bottom, right, color, blur, delay, duration,
+}: {
+  size: number; color: string; blur?: number; delay?: number; duration?: number
+  top?: string; left?: string; bottom?: string; right?: string
+}) {
+  return (
+    <motion.div
+      aria-hidden
+      className="absolute rounded-full pointer-events-none"
+      style={{
+        width: size, height: size,
+        top, left, bottom, right,
+        background: `radial-gradient(circle, ${color} 0%, transparent 70%)`,
+        filter: `blur(${blur ?? 40}px)`,
+      }}
+      animate={{ scale: [1, 1.18, 1], opacity: [0.7, 1, 0.7] }}
+      transition={{ duration: duration ?? 14, repeat: Infinity, ease: 'easeInOut', delay: delay ?? 0 }}
+    />
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function Home() {
+  const router  = useRouter()
+  const [idea, setIdea]     = useState('')
+  const [focused, setFocus] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleEnterCanvas = () => {
+    router.push('/create')
+  }
+
+  const handleQuickGenerate = () => {
+    const trimmed = idea.trim()
+    if (trimmed) {
+      const store = useShotsStore.getState()
+      const first = store.shots[0]
+      if (first) {
+        store.updateShot(first.id, { idea: trimmed })
+        store.setCurrentShotId(first.id)
+      }
+    }
+    router.push('/create')
+  }
 
   return (
-    <main className="min-h-screen bg-black text-white overflow-hidden">
-      <section className="relative min-h-screen flex items-center justify-center px-6 md:px-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.22),transparent_35%)]" />
-        <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:48px_48px]" />
+    <>
+      <Onboarding />
+      <main
+        className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
+        style={{ background: '#050810' }}
+      >
+        {/* ── Background orbs ─────────────────────────────────────────────── */}
+        <Orb size={900} top="-220px"    left="-180px"  color="rgba(99,102,241,0.22)"  blur={70} duration={18} delay={0} />
+        <Orb size={700} bottom="-180px" right="-120px" color="rgba(168,85,247,0.16)"  blur={70} duration={22} delay={3} />
+        <Orb size={420} top="12%"       right="4%"     color="rgba(6,182,212,0.10)"   blur={55} duration={26} delay={6} />
+        <Orb size={320} bottom="18%"    left="6%"      color="rgba(244,63,94,0.07)"   blur={55} duration={30} delay={9} />
 
-        <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 text-indigo-200 text-sm mb-6">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              Creator City 抢先体验
-            </div>
+        {/* Center static glow */}
+        <div
+          aria-hidden
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: 600, height: 600,
+            top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'radial-gradient(circle, rgba(99,102,241,0.05) 0%, transparent 70%)',
+            filter: 'blur(80px)',
+          }}
+        />
 
-            <h1 className="text-5xl md:text-7xl font-black leading-[1.05] tracking-tight">
-              让 AI 剧组为你开始创作
+        {/* Subtle grid */}
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.014) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px)',
+            backgroundSize: '80px 80px',
+          }}
+        />
+
+        {/* Deep vignette */}
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'radial-gradient(ellipse 85% 80% at 50% 50%, transparent 20%, #050810 100%)' }}
+        />
+
+        {/* ── Content ─────────────────────────────────────────────────────── */}
+        <div className="relative z-10 w-full max-w-2xl mx-auto px-6 flex flex-col items-center gap-10 text-center">
+
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] font-semibold tracking-[0.12em] uppercase"
+            style={{
+              background:     'rgba(255,255,255,0.04)',
+              border:         '1px solid rgba(255,255,255,0.1)',
+              color:          'rgba(255,255,255,0.38)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <span
+              style={{
+                width: 5, height: 5,
+                borderRadius: '50%',
+                background: '#34d399',
+                display: 'inline-block',
+                boxShadow: '0 0 6px #34d399',
+              }}
+            />
+            Creator City · Professional Studio
+          </motion.div>
+
+          {/* Headline */}
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            className="-mt-2"
+          >
+            <h1
+              className="font-black tracking-tight leading-[1.06] select-none"
+              style={{ fontSize: 'clamp(40px, 7vw, 72px)', color: 'rgba(255,255,255,0.93)' }}
+            >
+              一个属于创作者的
+              <br />
+              <span className="text-gradient-animated">生产系统</span>
             </h1>
+          </motion.div>
 
-            <p className="mt-6 text-lg md:text-xl text-white/65 leading-8 max-w-2xl">
-              一句创意，进入电影级创作流程。编剧、导演、演员、摄影协同工作，把灵感推进成可执行的作品方案。
-            </p>
+          {/* Sub */}
+          <motion.p
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.18 }}
+            className="-mt-4 text-[15px] leading-relaxed"
+            style={{ color: 'rgba(255,255,255,0.32)', maxWidth: 480 }}
+          >
+            从创意到成片，你可以控制每一个镜头与团队协作流程
+          </motion.p>
 
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <a
-                href="/create"
-                className="h-14 px-8 rounded-xl bg-indigo-500 hover:bg-indigo-400 transition flex items-center justify-center text-base font-semibold shadow-lg shadow-indigo-500/30"
+          {/* ── Split cards ─────────────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65, delay: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 -mt-2"
+          >
+            {/* PRO 创作 — primary */}
+            <motion.button
+              onClick={handleEnterCanvas}
+              whileHover={{ y: -4, scale: 1.015 }}
+              whileTap={{ scale: 0.98 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="relative flex flex-col items-start text-left overflow-hidden"
+              style={{
+                background:     'rgba(16,20,40,0.8)',
+                border:         '1px solid rgba(99,102,241,0.28)',
+                borderRadius:   20,
+                padding:        '28px 28px 24px',
+                backdropFilter: 'blur(24px)',
+                boxShadow:      '0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                cursor:         'pointer',
+              }}
+            >
+              {/* Ambient glow */}
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute', inset: 0,
+                  background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99,102,241,0.12) 0%, transparent 70%)',
+                  pointerEvents: 'none',
+                }}
+              />
+
+              {/* Shimmer */}
+              <motion.div
+                aria-hidden
+                style={{
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.05) 50%, transparent 65%)',
+                  pointerEvents: 'none',
+                }}
+                animate={{ x: ['-100%', '160%'] }}
+                transition={{ duration: 3.2, repeat: Infinity, repeatDelay: 2, ease: 'easeInOut' }}
+              />
+
+              {/* PRO badge */}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  background: 'rgba(99,102,241,0.18)',
+                  border: '1px solid rgba(99,102,241,0.35)',
+                  color: '#a5b4fc',
+                  marginBottom: 16,
+                  position: 'relative',
+                }}
               >
-                进入创作工作台
-              </a>
+                PRO
+              </span>
 
-              <a
-                href="/explore"
-                className="h-14 px-8 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 transition flex items-center justify-center text-base"
+              <h2
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: 'rgba(255,255,255,0.93)',
+                  marginBottom: 8,
+                  letterSpacing: '-0.02em',
+                  position: 'relative',
+                }}
               >
-                浏览作品
-              </a>
-            </div>
-          </div>
+                专业创作模式
+              </h2>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: 'rgba(255,255,255,0.38)',
+                  lineHeight: 1.6,
+                  marginBottom: 24,
+                  position: 'relative',
+                }}
+              >
+                镜头画布 · 团队协作 · 完整制作流程
+              </p>
 
-          <div className="relative">
-            <div className="aspect-[16/10] rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden shadow-2xl shadow-indigo-900/20">
-              <div className="h-full w-full flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.30),transparent_38%)]">
-                <div className="text-center px-6">
-                  <div className="text-sm uppercase tracking-[0.3em] text-white/40 mb-4">Main Visual</div>
-                  <div className="text-2xl md:text-3xl font-bold">这里放你的主视频 / 动图</div>
-                  <div className="mt-3 text-white/50 text-sm md:text-base">
-                    建议使用电影感动态视觉，突出“AI 剧组正在工作”的感觉
-                  </div>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  borderRadius: 12,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#fff',
+                  background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #06b6d4 100%)',
+                  boxShadow: '0 4px 20px rgba(99,102,241,0.45)',
+                  position: 'relative',
+                }}
+              >
+                进入画布
+                <span style={{ fontSize: 13, opacity: 0.85 }}>→</span>
+              </div>
+            </motion.button>
+
+            {/* AI 快速生成 — secondary */}
+            <motion.div
+              className="flex flex-col"
+              style={{ gap: 0 }}
+            >
+              <motion.button
+                onClick={handleQuickGenerate}
+                whileHover={{ y: -2, scale: 1.008 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="relative flex flex-col items-start text-left overflow-hidden flex-1"
+                style={{
+                  background:     'rgba(12,15,28,0.6)',
+                  border:         '1px solid rgba(255,255,255,0.07)',
+                  borderRadius:   20,
+                  padding:        '28px 28px 24px',
+                  backdropFilter: 'blur(16px)',
+                  boxShadow:      '0 4px 24px rgba(0,0,0,0.4)',
+                  cursor:         'pointer',
+                  height:         '100%',
+                }}
+              >
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 10px',
+                    borderRadius: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.35)',
+                    marginBottom: 16,
+                  }}
+                >
+                  AI
+                </span>
+
+                <h2
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: 'rgba(255,255,255,0.6)',
+                    marginBottom: 8,
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  快速灵感生成
+                </h2>
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: 'rgba(255,255,255,0.25)',
+                    lineHeight: 1.6,
+                    marginBottom: 20,
+                  }}
+                >
+                  描述创意，AI 自动生成团队与报价
+                </p>
+
+                {/* Inline input */}
+                <div style={{ width: '100%', position: 'relative', marginBottom: 16 }}>
+                  <input
+                    ref={inputRef}
+                    value={idea}
+                    onChange={(e) => setIdea(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleQuickGenerate()}
+                    onFocus={() => setFocus(true)}
+                    onBlur={() => setFocus(false)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="例：品牌形象短片…"
+                    className="w-full outline-none"
+                    style={{
+                      background:     'rgba(255,255,255,0.04)',
+                      border:         focused
+                        ? '1px solid rgba(255,255,255,0.2)'
+                        : '1px solid rgba(255,255,255,0.07)',
+                      borderRadius:   10,
+                      padding:        '10px 14px',
+                      fontSize:       13,
+                      color:          'rgba(255,255,255,0.75)',
+                      caretColor:     '#a5b4fc',
+                      transition:     'border-color 0.2s',
+                    }}
+                  />
+                  <style>{`.ai-input::placeholder { color: rgba(255,255,255,0.18); }`}</style>
                 </div>
-              </div>
-            </div>
-          </div>
+
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'rgba(255,255,255,0.45)',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.09)',
+                  }}
+                >
+                  快速生成
+                  <span style={{ fontSize: 12 }}>→</span>
+                </div>
+              </motion.button>
+            </motion.div>
+          </motion.div>
+
+          {/* Footer hint */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="-mt-4 text-[11px] tracking-wide"
+            style={{ color: 'rgba(255,255,255,0.14)' }}
+          >
+            专业模式支持多人实时协作 · AI 模式适合快速验证创意
+          </motion.p>
         </div>
-      </section>
-
-      <section className="px-6 md:px-10 pb-10">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-sm text-indigo-200/80">你可以开始创作</div>
-          <h2 className="mt-2 text-3xl md:text-5xl font-black tracking-tight">
-            从灵感到作品的起点
-          </h2>
-
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {creatableItems.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5"
-              >
-                <div className="text-lg font-semibold">{item.title}</div>
-                <div className="mt-2 text-sm leading-7 text-white/55">{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="px-6 md:px-10 pb-24">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-sm text-indigo-200/80">生成结果会包含</div>
-          <h2 className="mt-2 text-3xl md:text-5xl font-black tracking-tight">
-            清晰的输出形式
-          </h2>
-
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {outputs.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-2xl border border-white/10 bg-black/25 p-5"
-              >
-                <div className="text-lg font-semibold">{item.title}</div>
-                <div className="mt-2 text-sm leading-7 text-white/55">{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </main>
+      </main>
+    </>
   )
 }

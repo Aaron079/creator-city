@@ -4,30 +4,63 @@ import { RegisterDto } from '../auth/dto/register.dto'
 
 type CreateUserInput = RegisterDto & { passwordHash: string }
 
+type UserProfileSelect = {
+  avatarUrl: string | null
+  bio: string | null
+  skills: string[]
+}
+
+type UserWithProfile = {
+  id: string
+  username: string
+  displayName: string
+  email?: string
+  role: string
+  status?: string
+  reputation: number
+  level: number
+  createdAt?: Date
+  updatedAt?: Date
+  profile: UserProfileSelect | null
+}
+
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private mapUser<T extends UserWithProfile>(user: T) {
+    return {
+      ...user,
+      avatarUrl: user.profile?.avatarUrl ?? null,
+      bio: user.profile?.bio ?? null,
+      skills: user.profile?.skills ?? [],
+    }
+  }
+
   async findById(id: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
         username: true,
         displayName: true,
         email: true,
-        avatarUrl: true,
         role: true,
         status: true,
         reputation: true,
         level: true,
-        credits: true,
-        bio: true,
-        skills: true,
         createdAt: true,
         updatedAt: true,
+        profile: {
+          select: {
+            avatarUrl: true,
+            bio: true,
+            skills: true,
+          },
+        },
       },
     })
+    return user ? this.mapUser(user) : null
   }
 
   async findByEmail(email: string) {
@@ -41,17 +74,21 @@ export class UserService {
         id: true,
         username: true,
         displayName: true,
-        avatarUrl: true,
         role: true,
         reputation: true,
         level: true,
-        bio: true,
-        skills: true,
         createdAt: true,
+        profile: {
+          select: {
+            avatarUrl: true,
+            bio: true,
+            skills: true,
+          },
+        },
       },
     })
     if (!user) throw new NotFoundException(`User @${username} not found`)
-    return user
+    return this.mapUser(user)
   }
 
   async create(input: CreateUserInput) {
@@ -70,17 +107,22 @@ export class UserService {
         displayName: input.displayName,
         email: input.email,
         passwordHash: input.passwordHash,
+        profile: {
+          create: {
+            skills: [],
+          },
+        },
       },
     })
 
-    // Auto-create city base for new user
-    await this.prisma.cityBase.create({
+    // Auto-create land for new user
+    await this.prisma.land.create({
       data: {
         ownerId: user.id,
         name: `${user.displayName}'s Base`,
         buildings: {
           create: [
-            { type: 'STUDIO', level: 1, name: 'Starter Studio', positionX: 0, positionY: 0 },
+            { type: 'STUDIO', currentLevel: 1, name: 'Starter Studio', positionX: 0, positionY: 0 },
           ],
         },
       },
@@ -93,35 +135,65 @@ export class UserService {
   async updateProfile(id: string, data: { displayName?: string; bio?: string; skills?: string[]; avatarUrl?: string }) {
     const user = await this.prisma.user.update({
       where: { id },
-      data,
+      data: {
+        ...(data.displayName && { displayName: data.displayName }),
+        profile: {
+          upsert: {
+            update: {
+              ...(data.bio !== undefined && { bio: data.bio }),
+              ...(data.skills !== undefined && { skills: data.skills }),
+              ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
+            },
+            create: {
+              bio: data.bio,
+              skills: data.skills ?? [],
+              avatarUrl: data.avatarUrl,
+            },
+          },
+        },
+      },
       select: {
         id: true,
         username: true,
         displayName: true,
         email: true,
-        avatarUrl: true,
         role: true,
-        bio: true,
-        skills: true,
         updatedAt: true,
+        reputation: true,
+        level: true,
+        profile: {
+          select: {
+            avatarUrl: true,
+            bio: true,
+            skills: true,
+          },
+        },
       },
     })
-    return user
+    return this.mapUser(user)
   }
 
   async getLeaderboard(limit = 20) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       take: limit,
       orderBy: { reputation: 'desc' },
       select: {
         id: true,
         username: true,
         displayName: true,
-        avatarUrl: true,
         reputation: true,
         level: true,
         role: true,
+        profile: {
+          select: {
+            avatarUrl: true,
+            bio: true,
+            skills: true,
+          },
+        },
       },
     })
+
+    return users.map((user) => this.mapUser(user))
   }
 }
