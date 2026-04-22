@@ -42,6 +42,7 @@ export interface DashboardProjectOverview {
   submittedForClient: boolean
   strongRiskCount: number
   unknownLicenseCount: number
+  strongLicensingRiskCount: number
   canAdvance: boolean
   links: {
     review: string
@@ -66,6 +67,7 @@ export interface ProducerDashboardData {
   riskRadar: {
     staleApprovals: number
     unknownLicenses: number
+    strongLicensingRisk: number
     openBlockerNotes: number
     strongAudioRisk: number
     strongClipRisk: number
@@ -123,6 +125,8 @@ interface ProjectAggregateContext extends DashboardActionProjectContext {
   readinessReason: string
   canAdvance: boolean
   unknownLicenseCount: number
+  strongLicensingRiskCount: number
+  missingProofCount: number
   taskOpenCount: number
   taskInProgressCount: number
   taskDoneCount: number
@@ -202,6 +206,8 @@ function buildProjectContext(projectId: string, input: AggregateDashboardInput):
   const strongAudioRiskCount = deliveryIssues.filter((issue) => issue.type === 'audio-risk' && issue.severity === 'strong').length
   const strongClipRiskCount = deliveryIssues.filter((issue) => issue.type === 'clip-review-risk' && issue.severity === 'strong').length
   const unknownLicenseCount = deliveryIssues.filter((issue) => issue.type === 'license-unknown').length
+  const strongLicensingRiskCount = deliveryIssues.filter((issue) => ['restricted-usage', 'expired-license'].includes(issue.type) && issue.severity === 'strong').length
+  const missingProofCount = deliveryIssues.filter((issue) => issue.type === 'missing-proof').length
   const submittedForClient = deliveryPackage?.status === 'submitted'
     || deliveryPackage?.status === 'approved'
     || projectApprovals.some((approval) => approval.targetType === 'delivery' && approval.status === 'approved')
@@ -255,6 +261,8 @@ function buildProjectContext(projectId: string, input: AggregateDashboardInput):
     deliveryExists: Boolean(deliveryPackage),
     deliveryStatus: deliveryPackage?.status ?? 'missing',
     deliveryStrongRiskCount: strongRiskCount,
+    strongLicensingRiskCount,
+    missingProofCount,
     strongAudioRiskCount,
     strongClipRiskCount,
     submittedForClient,
@@ -359,6 +367,7 @@ export function aggregateProducerDashboard(input: AggregateDashboardInput): Prod
       submittedForClient: project.submittedForClient,
       strongRiskCount: project.deliveryStrongRiskCount,
       unknownLicenseCount: project.unknownLicenseCount,
+      strongLicensingRiskCount: project.strongLicensingRiskCount,
       canAdvance: project.canAdvance,
       links: {
         review: project.reviewHref,
@@ -371,9 +380,11 @@ export function aggregateProducerDashboard(input: AggregateDashboardInput): Prod
       const leftScore = (left.readinessStatus === 'blocked' ? 3 : left.readinessStatus === 'needs-review' ? 2 : 1)
         + left.blockerCount
         + left.pendingApprovalCount
+        + left.unknownLicenseCount
       const rightScore = (right.readinessStatus === 'blocked' ? 3 : right.readinessStatus === 'needs-review' ? 2 : 1)
         + right.blockerCount
         + right.pendingApprovalCount
+        + right.unknownLicenseCount
       return rightScore - leftScore
     })
 
@@ -388,6 +399,7 @@ export function aggregateProducerDashboard(input: AggregateDashboardInput): Prod
   const riskRadar = {
     staleApprovals: projectContexts.reduce((sum, project) => sum + project.staleApprovalCount, 0),
     unknownLicenses: projectContexts.reduce((sum, project) => sum + project.unknownLicenseCount, 0),
+    strongLicensingRisk: projectContexts.reduce((sum, project) => sum + project.strongLicensingRiskCount, 0),
     openBlockerNotes: projectContexts.reduce((sum, project) => sum + project.blockerCount, 0),
     strongAudioRisk: projectContexts.reduce((sum, project) => sum + project.strongAudioRiskCount, 0),
     strongClipRisk: projectContexts.reduce((sum, project) => sum + project.strongClipRiskCount, 0),

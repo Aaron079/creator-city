@@ -4,6 +4,9 @@ import Link from 'next/link'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
+import { LicensingCenter } from '@/components/licensing/LicensingCenter'
+import type { DeliveryPackage } from '@/store/delivery-package.store'
+import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 
 function Card({
   title,
@@ -57,7 +60,22 @@ function MetricTile({ label, value, tone = 'default' }: { label: string; value: 
   )
 }
 
-export function ProducerDashboard({ data }: { data: ProducerDashboardData }) {
+export function ProducerDashboard({
+  data,
+  licensing,
+}: {
+  data: ProducerDashboardData
+  licensing: {
+    records: LicenseRecord[]
+    summary: LicensingSummary
+    issues: LicensingIssue[]
+    deliveryPackages: DeliveryPackage[]
+    onMarkCommercialCleared: (assetType: LicenseAssetType, assetId: string) => void
+    onMarkRestricted: (assetType: LicenseAssetType, assetId: string) => void
+    onSetUsageScope: (assetType: LicenseAssetType, assetId: string, usageScope: LicenseUsageScope) => void
+    onAttachProof: (assetType: LicenseAssetType, assetId: string, proofUrl: string) => void
+  }
+}) {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -105,6 +123,7 @@ export function ProducerDashboard({ data }: { data: ProducerDashboardData }) {
                   <span>可推进：{project.canAdvance ? '是' : '否'}</span>
                   <span>Strong risks：{project.strongRiskCount}</span>
                   <span>Unknown licenses：{project.unknownLicenseCount}</span>
+                  <span>Strong licensing：{project.strongLicensingRiskCount}</span>
                   <span>客户确认：{project.submittedForClient ? '已提交' : '未提交'}</span>
                 </div>
                 <p className="mt-3 text-sm text-white/65">{project.readinessReason}</p>
@@ -202,6 +221,7 @@ export function ProducerDashboard({ data }: { data: ProducerDashboardData }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <MetricTile label="Stale approvals" value={data.riskRadar.staleApprovals} tone={data.riskRadar.staleApprovals > 0 ? 'warning' : 'default'} />
             <MetricTile label="Unknown licenses" value={data.riskRadar.unknownLicenses} tone={data.riskRadar.unknownLicenses > 0 ? 'danger' : 'default'} />
+            <MetricTile label="Strong licensing risk" value={data.riskRadar.strongLicensingRisk} tone={data.riskRadar.strongLicensingRisk > 0 ? 'danger' : 'default'} />
             <MetricTile label="Open blocker notes" value={data.riskRadar.openBlockerNotes} tone={data.riskRadar.openBlockerNotes > 0 ? 'danger' : 'default'} />
             <MetricTile label="Strong audio risk" value={data.riskRadar.strongAudioRisk} tone={data.riskRadar.strongAudioRisk > 0 ? 'warning' : 'default'} />
             <MetricTile label="Strong clip risk" value={data.riskRadar.strongClipRisk} tone={data.riskRadar.strongClipRisk > 0 ? 'warning' : 'default'} />
@@ -214,6 +234,19 @@ export function ProducerDashboard({ data }: { data: ProducerDashboardData }) {
 
       <Card title="Production Planning" id="planning">
         <PlanningPanel data={data} />
+      </Card>
+
+      <Card title="Rights & Licensing Center" id="licensing">
+        <LicensingCenter
+          records={licensing.records}
+          summary={licensing.summary}
+          issues={licensing.issues}
+          deliveryPackages={licensing.deliveryPackages}
+          onMarkCommercialCleared={licensing.onMarkCommercialCleared}
+          onMarkRestricted={licensing.onMarkRestricted}
+          onSetUsageScope={licensing.onSetUsageScope}
+          onAttachProof={licensing.onAttachProof}
+        />
       </Card>
 
       <Card title="Recent Activity">

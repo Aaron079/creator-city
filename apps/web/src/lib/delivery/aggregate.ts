@@ -97,7 +97,7 @@ function createAsset(input: {
     url: input.url,
     included: input.included,
     approvalStatus: input.approvalStatus,
-    licenseStatus: input.licenseStatus ?? 'user-provided',
+    licenseStatus: input.licenseStatus ?? 'unknown',
     riskLevel: input.riskLevel ?? 'none',
   }
 }
@@ -142,10 +142,11 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
         title: `视频镜头 · ${job.provider} ${job.duration}s`,
         description: job.videoPrompt,
         url: job.videoUrl,
-        included: Boolean(job.videoUrl),
-        approvalStatus,
-        riskLevel: toRiskLevel(strongestIssue),
-      })
+      included: Boolean(job.videoUrl),
+      approvalStatus,
+      licenseStatus: 'user-provided',
+      riskLevel: toRiskLevel(strongestIssue),
+    })
     })
   assets.push(...videoAssets)
 
@@ -170,6 +171,7 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
       description: `总时长 ${input.audioTimeline.duration}s`,
       included: input.audioTimeline.tracks.some((track) => track.clips.length > 0),
       approvalStatus: input.audioTimeline.status === 'locked' ? 'approved' : 'pending',
+      licenseStatus: 'user-provided',
       riskLevel: timelineRisk,
     }))
   }
@@ -185,6 +187,7 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
       url: take.audioUrl,
       included: true,
       approvalStatus: line?.status === 'approved' ? 'approved' : 'pending',
+      licenseStatus: take.provider === 'mock' ? 'user-provided' : 'unknown',
       riskLevel: line?.status === 'approved' ? 'none' : 'warning',
     })
   }))
@@ -213,6 +216,7 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
       description: note.content,
       included: note.priority === 'blocker' || note.status === 'resolved',
       approvalStatus: note.status === 'resolved' ? 'approved' : 'pending',
+      licenseStatus: 'user-provided',
       riskLevel: note.priority === 'blocker' && note.status !== 'resolved' ? 'strong' : note.priority === 'high' ? 'warning' : 'info',
     })
   )))
@@ -228,6 +232,7 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
       description: version.summary,
       included: version.entityType === 'delivery' || version.entityType === 'editor-timeline',
       approvalStatus: 'approved',
+      licenseStatus: 'user-provided',
       riskLevel: 'none',
     })
   )))
@@ -241,6 +246,7 @@ export function buildDeliveryAssets(input: DeliveryAggregationInput): DeliveryAs
       description: approval.description,
       included: approval.status === 'approved' || approval.status === 'changes-requested' || approval.targetType === 'delivery',
       approvalStatus: mapApprovalStatus(approval.status),
+      licenseStatus: 'user-provided',
       riskLevel: approval.status === 'stale' ? 'warning' : approval.status === 'rejected' ? 'strong' : 'none',
     })
   )))

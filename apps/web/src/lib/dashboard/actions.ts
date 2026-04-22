@@ -2,7 +2,7 @@ import type { OrderStatus, PaymentStatus } from '@/store/order.store'
 import type { ProjectStage } from '@/store/team.store'
 
 export type DashboardActionSeverity = 'strong' | 'warning' | 'info'
-export type DashboardActionKind = 'approval' | 'delivery' | 'note' | 'order' | 'audio' | 'clip'
+export type DashboardActionKind = 'approval' | 'delivery' | 'note' | 'order' | 'audio' | 'clip' | 'licensing'
 
 export interface ProducerDashboardAction {
   id: string
@@ -23,9 +23,12 @@ export interface DashboardActionProjectContext {
   blockerCount: number
   pendingApprovalCount: number
   staleApprovalCount: number
+  unknownLicenseCount: number
   deliveryExists: boolean
   deliveryStatus: 'draft' | 'ready' | 'submitted' | 'approved' | 'needs-revision' | 'missing'
   deliveryStrongRiskCount: number
+  strongLicensingRiskCount: number
+  missingProofCount: number
   strongAudioRiskCount: number
   strongClipRiskCount: number
   submittedForClient: boolean
@@ -120,6 +123,48 @@ export function buildProducerActionQueue(projects: DashboardActionProjectContext
         detail: `${project.projectTitle} 的交付包里仍有 ${project.deliveryStrongRiskCount} 个 strong risk。`,
         href: project.deliveryHref,
         ctaLabel: '检查交付包',
+      })
+    }
+
+    if (project.strongLicensingRiskCount > 0) {
+      actions.push({
+        id: `${project.projectId}-licensing-risk`,
+        projectId: project.projectId,
+        projectTitle: project.projectTitle,
+        kind: 'licensing',
+        severity: 'strong',
+        title: '存在 restricted / expired 授权资产',
+        detail: `${project.projectTitle} 当前有 ${project.strongLicensingRiskCount} 个高风险授权项，建议先由制片或用户人工确认。`,
+        href: '#licensing',
+        ctaLabel: '查看授权中心',
+      })
+    }
+
+    if (project.unknownLicenseCount > 0) {
+      actions.push({
+        id: `${project.projectId}-unknown-license`,
+        projectId: project.projectId,
+        projectTitle: project.projectTitle,
+        kind: 'licensing',
+        severity: 'warning',
+        title: '交付包存在未确认授权',
+        detail: `${project.projectTitle} 还有 ${project.unknownLicenseCount} 个资产授权状态未知，不建议直接交付。`,
+        href: '#licensing',
+        ctaLabel: '检查授权状态',
+      })
+    }
+
+    if (project.missingProofCount > 0) {
+      actions.push({
+        id: `${project.projectId}-missing-proof`,
+        projectId: project.projectId,
+        projectTitle: project.projectTitle,
+        kind: 'licensing',
+        severity: 'strong',
+        title: '缺少 proof 的高风险资产',
+        detail: `${project.projectTitle} 还有 ${project.missingProofCount} 个高风险资产没有 proof，当前不适合作为商业交付依据。`,
+        href: '#licensing',
+        ctaLabel: '补充授权 proof',
       })
     }
 

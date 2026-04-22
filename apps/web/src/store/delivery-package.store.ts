@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useLicensingStore } from '@/store/licensing.store'
+import { findLicensingRecordForDeliveryAsset } from '@/lib/licensing/aggregate'
 
 export type DeliveryAssetType =
   | 'storyboard-frame'
@@ -14,7 +16,7 @@ export type DeliveryAssetType =
   | 'project-json'
 
 export type DeliveryApprovalStatus = 'pending' | 'approved' | 'changes-requested' | 'rejected' | 'stale'
-export type DeliveryLicenseStatus = 'unknown' | 'user-provided' | 'commercial-cleared'
+export type DeliveryLicenseStatus = 'unknown' | 'user-provided' | 'commercial-cleared' | 'restricted' | 'expired'
 export type DeliveryRiskLevel = 'none' | 'info' | 'warning' | 'strong'
 
 export interface DeliveryAsset {
@@ -48,7 +50,7 @@ export interface DeliveryManifest {
 
 export interface DeliveryRiskIssue {
   id: string
-  type: 'approval-missing' | 'stale-approval' | 'license-unknown' | 'blocker-note' | 'audio-risk' | 'clip-review-risk'
+  type: 'approval-missing' | 'stale-approval' | 'license-unknown' | 'expired-license' | 'restricted-usage' | 'missing-proof' | 'blocker-note' | 'audio-risk' | 'clip-review-risk'
   message: string
   severity: 'info' | 'warning' | 'strong'
 }
@@ -150,6 +152,7 @@ function buildManifest(pkg: DeliveryPackage, overrides?: Partial<Pick<DeliveryMa
 function buildRiskSummary(pkg: DeliveryPackage): DeliveryRiskSummary {
   const includedAssets = pkg.assets.filter((asset) => asset.included)
   const issues: DeliveryRiskIssue[] = []
+  const licensingRecords = useLicensingStore.getState().records
 
   const pendingAssets = includedAssets.filter((asset) => asset.approvalStatus === 'pending')
   if (pendingAssets.length > 0) {
@@ -171,12 +174,51 @@ function buildRiskSummary(pkg: DeliveryPackage): DeliveryRiskSummary {
     })
   }
 
-  const unknownLicenseAssets = includedAssets.filter((asset) => asset.licenseStatus === 'unknown')
+  const effectiveLicenseEntries = includedAssets.map((asset) => ({
+    asset,
+    record: findLicensingRecordForDeliveryAsset(licensingRecords, asset),
+  }))
+
+  const unknownLicenseAssets = effectiveLicenseEntries.filter(({ asset, record }) => (record?.licenseStatus ?? asset.licenseStatus) === 'unknown')
   if (unknownLicenseAssets.length > 0) {
     issues.push({
       id: 'delivery-license-unknown',
       type: 'license-unknown',
       message: `当前还有 ${unknownLicenseAssets.length} 个交付资产的授权状态未知。`,
+      severity: 'strong',
+    })
+  }
+
+  const restrictedLicenseAssets = effectiveLicenseEntries.filter(({ asset, record }) => (record?.licenseStatus ?? asset.licenseStatus) === 'restricted')
+  if (restrictedLicenseAssets.length > 0) {
+    issues.push({
+      id: 'delivery-license-restricted',
+      type: 'restricted-usage',
+      message: `当前还有 ${restrictedLicenseAssets.length} 个交付资产被标记为 restricted，不建议直接交付。`,
+      severity: 'strong',
+    })
+  }
+
+  const expiredLicenseAssets = effectiveLicenseEntries.filter(({ asset, record }) => (record?.licenseStatus ?? asset.licenseStatus) === 'expired')
+  if (expiredLicenseAssets.length > 0) {
+    issues.push({
+      id: 'delivery-license-expired',
+      type: 'expired-license',
+      message: `当前还有 ${expiredLicenseAssets.length} 个交付资产授权已过期，需要重新确认。`,
+      severity: 'strong',
+    })
+  }
+
+  const missingProofAssets = effectiveLicenseEntries.filter(({ record }) => (
+    record
+    && (record.usageScope === 'commercial' || record.usageScope === 'broadcast' || record.usageScope === 'global')
+    && !record.proofUrl
+  ))
+  if (missingProofAssets.length > 0) {
+    issues.push({
+      id: 'delivery-license-proof',
+      type: 'missing-proof',
+      message: `当前还有 ${missingProofAssets.length} 个交付资产缺少可追溯 proof，商业交付依据不足。`,
       severity: 'strong',
     })
   }
