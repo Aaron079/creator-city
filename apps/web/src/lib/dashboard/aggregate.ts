@@ -6,13 +6,19 @@ import type { Order } from '@/store/order.store'
 import type { Task } from '@/store/task.store'
 import type { ProjectStage, Team } from '@/store/team.store'
 import type { VersionRecord } from '@/store/version-history.store'
+import {
+  buildProducerActionQueue,
+  type DashboardActionProjectContext,
+  type ProducerDashboardAction,
+} from '@/lib/dashboard/actions'
 
 export interface DashboardActivityItem {
   id: string
   title: string
   detail: string
   createdAt: string
-  kind: 'approval' | 'task' | 'version' | 'delivery'
+  kind: 'approval' | 'task' | 'version' | 'delivery' | 'note'
+  projectId: string
 }
 
 export interface DashboardApprovalRoleStatus {
@@ -21,20 +27,48 @@ export interface DashboardApprovalRoleStatus {
   label: string
 }
 
-export interface ProducerDashboardData {
-  projectTitle: string
+export interface DashboardProjectOverview {
+  projectId: string
+  title: string
   currentStage: ProjectStage
   nextStage: ProjectStage | null
   readinessStatus: 'blocked' | 'needs-review' | 'ready'
-  hasBlockers: boolean
-  canAdvance: boolean
   readinessReason: string
-  riskOverview: {
-    blockerNotes: number
+  blockerCount: number
+  pendingApprovalCount: number
+  staleApprovalCount: number
+  deliveryStatus: DeliveryPackage['status'] | 'missing'
+  orderStatus: Order['status'] | 'missing'
+  submittedForClient: boolean
+  strongRiskCount: number
+  unknownLicenseCount: number
+  canAdvance: boolean
+  links: {
+    review: string
+    create: string
+    delivery: string
+    detail: string
+  }
+}
+
+export interface ProducerQuickAction {
+  id: string
+  label: string
+  description: string
+  href: string
+}
+
+export interface ProducerDashboardData {
+  totalProjects: number
+  overview: DashboardProjectOverview[]
+  actionQueue: ProducerDashboardAction[]
+  quickActions: ProducerQuickAction[]
+  riskRadar: {
     staleApprovals: number
-    pendingApprovals: number
-    strongDeliveryRisks: number
     unknownLicenses: number
+    openBlockerNotes: number
+    strongAudioRisk: number
+    strongClipRisk: number
   }
   approvals: {
     director: DashboardApprovalRoleStatus
@@ -83,6 +117,22 @@ interface AggregateDashboardInput {
   versions: VersionRecord[]
 }
 
+interface ProjectAggregateContext extends DashboardActionProjectContext {
+  nextStage: ProjectStage | null
+  readinessStatus: DashboardProjectOverview['readinessStatus']
+  readinessReason: string
+  canAdvance: boolean
+  unknownLicenseCount: number
+  taskOpenCount: number
+  taskInProgressCount: number
+  taskDoneCount: number
+  latestChangesRequested: ApprovalRequest | null
+  orderPaymentStatus: Order['paymentStatus'] | 'unknown'
+  quoteId?: string
+  deliveryJobStatus?: Job['delivery'] extends infer T ? T extends { status?: infer S } ? S : never : never
+  price?: number
+}
+
 const STAGE_FLOW: ProjectStage[] = ['idea', 'storyboard', 'shooting', 'editing', 'delivery']
 
 function getNextStage(stage: ProjectStage): ProjectStage | null {
@@ -123,193 +173,278 @@ function deriveRoleStatus(role: ApprovalRole, approvals: ApprovalRequest[]): Das
   }
 }
 
-function buildActivity(args: {
-  approvals: ApprovalRequest[]
-  tasks: Task[]
-  versions: VersionRecord[]
-  deliveryPackage: DeliveryPackage | null
-}): DashboardActivityItem[] {
-  const approvalItems: DashboardActivityItem[] = args.approvals.map((approval) => ({
-    id: `approval-${approval.id}`,
-    title: approval.title,
-    detail: `确认状态 ${approval.status}`,
-    createdAt: approval.createdAt,
-    kind: 'approval',
-  }))
-
-  const taskItems: DashboardActivityItem[] = args.tasks.map((task) => ({
-    id: `task-${task.id}`,
-    title: task.title,
-    detail: `任务状态 ${task.status}`,
-    createdAt: new Date(task.createdAt).toISOString(),
-    kind: 'task',
-  }))
-
-  const versionItems: DashboardActivityItem[] = args.versions.map((version) => ({
-    id: `version-${version.id}`,
-    title: version.label,
-    detail: version.summary,
-    createdAt: version.createdAt,
-    kind: 'version',
-  }))
-
-  const deliveryItems: DashboardActivityItem[] = args.deliveryPackage ? [{
-    id: `delivery-${args.deliveryPackage.id}`,
-    title: args.deliveryPackage.title,
-    detail: `交付包状态 ${args.deliveryPackage.status}`,
-    createdAt: args.deliveryPackage.updatedAt,
-    kind: 'delivery',
-  }] : []
-
-  return [...deliveryItems, ...approvalItems, ...taskItems, ...versionItems]
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .slice(0, 6)
+function getProjectIds(input: AggregateDashboardInput) {
+  return Array.from(new Set([
+    ...input.teams.map((team) => team.projectId),
+    ...input.orders.map((order) => order.id),
+    ...input.deliveryPackages.map((pkg) => pkg.projectId),
+  ]))
 }
 
-export function aggregateProducerDashboard(input: AggregateDashboardInput): ProducerDashboardData {
-  const activeTeam = input.teams.find((team) => team.stage !== 'delivery') ?? input.teams[0] ?? null
-  const currentStage = activeTeam?.stage ?? 'idea'
-  const nextStage = getNextStage(currentStage)
-  const activeOrder = activeTeam ? input.orders.find((order) => order.id === activeTeam.projectId) ?? null : input.orders[0] ?? null
-  const activeJob = activeOrder ? input.jobs.find((job) => job.id === activeOrder.chatId) ?? null : null
-  const projectId = activeOrder?.id ?? activeTeam?.projectId ?? activeJob?.id ?? 'creator-city'
-  const projectTitle = activeJob?.title ?? `项目 ${projectId}`
+function buildProjectContext(projectId: string, input: AggregateDashboardInput): ProjectAggregateContext {
+  const team = input.teams.find((item) => item.projectId === projectId) ?? null
+  const order = input.orders.find((item) => item.id === projectId) ?? null
+  const job = order ? input.jobs.find((item) => item.id === order.chatId) ?? null : null
   const deliveryPackage = latestByTime(input.deliveryPackages.filter((pkg) => pkg.projectId === projectId))
+  const currentStage = team?.stage
+    ?? (deliveryPackage ? 'delivery' : order?.status === 'in_progress' ? 'shooting' : 'idea')
+  const nextStage = getNextStage(currentStage)
+  const title = job?.title ?? deliveryPackage?.title ?? `项目 ${projectId}`
+  const targetIds = new Set<string>([projectId, order?.id, order?.chatId, job?.id].filter((value): value is string => Boolean(value)))
+  const projectNotes = input.notes.filter((note) => targetIds.has(note.targetId))
+  const projectApprovals = input.approvals.filter((approval) => targetIds.has(approval.targetId))
+  const latestChangesRequested = latestByTime(projectApprovals.filter((approval) => approval.status === 'changes-requested'))
+  const blockerNotes = projectNotes.filter((note) => note.priority === 'blocker' && (note.status === 'open' || note.status === 'in-progress'))
+  const pendingApprovals = projectApprovals.filter((approval) => approval.status === 'pending')
+  const staleApprovals = projectApprovals.filter((approval) => approval.status === 'stale')
+  const deliveryIssues = deliveryPackage?.riskSummary?.issues ?? []
+  const strongRiskCount = deliveryIssues.filter((issue) => issue.severity === 'strong').length
+  const strongAudioRiskCount = deliveryIssues.filter((issue) => issue.type === 'audio-risk' && issue.severity === 'strong').length
+  const strongClipRiskCount = deliveryIssues.filter((issue) => issue.type === 'clip-review-risk' && issue.severity === 'strong').length
+  const unknownLicenseCount = deliveryIssues.filter((issue) => issue.type === 'license-unknown').length
+  const submittedForClient = deliveryPackage?.status === 'submitted'
+    || deliveryPackage?.status === 'approved'
+    || projectApprovals.some((approval) => approval.targetType === 'delivery' && approval.status === 'approved')
+  const taskGroup = team ? input.tasks.filter((task) => task.teamId === team.id) : []
+  const taskOpenCount = taskGroup.filter((task) => task.status === 'todo').length
+  const taskInProgressCount = taskGroup.filter((task) => task.status === 'doing').length
+  const taskDoneCount = taskGroup.filter((task) => task.status === 'done').length
   const gate = input.approvalGates.find((item) => item.stage === currentStage) ?? null
 
-  const blockerNotes = input.notes.filter((note) => note.priority === 'blocker' && (note.status === 'open' || note.status === 'in-progress'))
-  const staleApprovals = input.approvals.filter((approval) => approval.status === 'stale')
-  const pendingApprovals = input.approvals.filter((approval) => approval.status === 'pending')
-  const latestChangesRequested = latestByTime(input.approvals.filter((approval) => approval.status === 'changes-requested'))
-
-  const strongDeliveryRisks = deliveryPackage?.riskSummary?.issues.filter((issue) => issue.severity === 'strong').length ?? 0
-  const unknownLicenses = deliveryPackage?.riskSummary?.issues.filter((issue) => issue.type === 'license-unknown').length ?? 0
-  const submittedForClient = deliveryPackage?.status === 'submitted' || deliveryPackage?.status === 'approved' || Boolean(
-    input.approvals.find((approval) => approval.targetType === 'delivery' && approval.targetId === projectId),
-  )
-
-  let readinessStatus: ProducerDashboardData['readinessStatus'] = gate?.status === 'blocked'
+  let readinessStatus: DashboardProjectOverview['readinessStatus'] = gate?.status === 'blocked'
     ? 'blocked'
     : gate?.status === 'needs-review'
       ? 'needs-review'
       : 'ready'
 
   let readinessReason = gate?.status === 'blocked'
-    ? '当前阶段的审批门仍是 blocked。'
+    ? '当前阶段审批门是 blocked。'
     : gate?.status === 'needs-review'
       ? '当前阶段仍有待确认项。'
       : '当前阶段暂无明显阻塞。'
 
   if (blockerNotes.length > 0) {
     readinessStatus = 'blocked'
-    readinessReason = '存在 blocker notes，需要先处理。'
+    readinessReason = '存在 blocker 批注，建议先处理。'
+  } else if (staleApprovals.length > 0) {
+    readinessStatus = 'needs-review'
+    readinessReason = '存在 stale approvals，需要重新确认。'
+  } else if (pendingApprovals.length > 0) {
+    readinessStatus = 'needs-review'
+    readinessReason = '存在待处理确认项。'
   } else if (currentStage === 'delivery' && !deliveryPackage) {
     readinessStatus = 'needs-review'
     readinessReason = '还没有建立 Delivery Package。'
   } else if (currentStage === 'delivery' && deliveryPackage && !['ready', 'submitted', 'approved'].includes(deliveryPackage.status)) {
     readinessStatus = 'needs-review'
-    readinessReason = 'Delivery Package 仍未达到 ready / submitted 状态。'
-  } else if (currentStage === 'delivery' && strongDeliveryRisks > 0) {
+    readinessReason = '交付包还没有进入 ready / submitted 状态。'
+  } else if (currentStage === 'delivery' && strongRiskCount > 0) {
     readinessStatus = 'needs-review'
-    readinessReason = 'Delivery Package 中仍有高风险项。'
+    readinessReason = '交付包仍有 strong risks。'
   }
 
-  const tasksForActiveTeam = activeTeam ? input.tasks.filter((task) => task.teamId === activeTeam.id) : input.tasks
-  const openTasks = tasksForActiveTeam.filter((task) => task.status === 'todo').length
-  const inProgressTasks = tasksForActiveTeam.filter((task) => task.status === 'doing').length
-  const doneTasks = tasksForActiveTeam.filter((task) => task.status === 'done').length
-  const blockerLikeTasks = blockerNotes.length
-
-  const approvalsScope = input.approvals.filter((approval) => (
-    approval.targetType === 'delivery'
-      ? approval.targetId === projectId
-      : true
-  ))
-
-  const directorStatus = deriveRoleStatus('director', approvalsScope)
-  const clientStatus = deriveRoleStatus('client', approvalsScope)
-  const producerStatus = deriveRoleStatus('producer', approvalsScope)
-  const editorStatus = deriveRoleStatus('editor', approvalsScope)
-
-  const activity = buildActivity({
-    approvals: approvalsScope,
-    tasks: tasksForActiveTeam,
-    versions: input.versions.filter((version) => ['delivery', 'editor-timeline', 'editor-clip', 'video-shot', 'storyboard-frame'].includes(version.entityType)),
-    deliveryPackage,
-  })
-
-  const issuePool = [
-    blockerNotes.length > 0 ? `有 ${blockerNotes.length} 条 blocker notes 仍未解除。` : null,
-    staleApprovals.length > 0 ? `有 ${staleApprovals.length} 个 stale approvals 需要重新确认。` : null,
-    pendingApprovals.length > 0 ? `有 ${pendingApprovals.length} 个 pending approvals 仍待处理。` : null,
-    strongDeliveryRisks > 0 ? `交付包中还有 ${strongDeliveryRisks} 个 strong risks。` : null,
-    deliveryPackage && !submittedForClient ? '交付包已存在，但还没有提交客户确认。' : null,
-    !deliveryPackage ? '还没有创建交付包。' : null,
-  ].filter((item): item is string => Boolean(item)).slice(0, 3)
-
-  const nearestBlocker = blockerNotes[0]?.content
-    ?? latestChangesRequested?.title
-    ?? (strongDeliveryRisks > 0 ? '交付包高风险项仍待人工确认。' : '当前没有明显 blocker。')
-
-  const recommendedAction = !deliveryPackage
-    ? '先建立 Delivery Package，明确交付资产与确认边界。'
-    : staleApprovals.length > 0
-      ? '优先处理 stale approvals，避免交付依据失效。'
-      : blockerNotes.length > 0
-        ? '先清理 blocker notes，再决定是否推进阶段。'
-        : pendingApprovals.length > 0
-          ? '补齐待确认项，尤其是客户和导演确认。'
-          : currentStage === 'delivery' && !submittedForClient
-            ? '交付包已就绪后，再由用户决定是否提交客户确认。'
-            : '当前最适合推进的是整理最近版本和任务优先级。'
-
   return {
-    projectTitle,
+    projectId,
+    projectTitle: title,
     currentStage,
     nextStage,
+    blockerCount: blockerNotes.length,
+    pendingApprovalCount: pendingApprovals.length,
+    staleApprovalCount: staleApprovals.length,
+    unknownLicenseCount,
+    deliveryExists: Boolean(deliveryPackage),
+    deliveryStatus: deliveryPackage?.status ?? 'missing',
+    deliveryStrongRiskCount: strongRiskCount,
+    strongAudioRiskCount,
+    strongClipRiskCount,
+    submittedForClient,
+    orderStatus: order?.status ?? 'missing',
+    paymentStatus: order?.paymentStatus ?? 'unknown',
+    reviewHref: `/review/${projectId}`,
+    createHref: '/create',
+    deliveryHref: '/create#delivery',
+    detailHref: `#project-${projectId}`,
     readinessStatus,
-    hasBlockers: blockerNotes.length > 0,
-    canAdvance: readinessStatus === 'ready' && blockerNotes.length === 0,
     readinessReason,
-    riskOverview: {
-      blockerNotes: blockerNotes.length,
-      staleApprovals: staleApprovals.length,
-      pendingApprovals: pendingApprovals.length,
-      strongDeliveryRisks,
-      unknownLicenses,
-    },
+    canAdvance: readinessStatus === 'ready',
+    taskOpenCount,
+    taskInProgressCount,
+    taskDoneCount,
+    latestChangesRequested,
+    orderPaymentStatus: order?.paymentStatus ?? 'unknown',
+    quoteId: order?.quoteId,
+    deliveryJobStatus: job?.delivery?.status,
+    price: order?.price,
+  }
+}
+
+function buildActivity(projects: ProjectAggregateContext[], input: AggregateDashboardInput): DashboardActivityItem[] {
+  const projectIds = new Set(projects.map((project) => project.projectId))
+  const approvalItems: DashboardActivityItem[] = input.approvals
+    .filter((approval) => projectIds.has(approval.targetId))
+    .map((approval) => ({
+      id: `approval-${approval.id}`,
+      title: approval.title,
+      detail: `确认状态 ${approval.status}`,
+      createdAt: approval.createdAt,
+      kind: 'approval',
+      projectId: approval.targetId,
+    }))
+
+  const noteItems: DashboardActivityItem[] = input.notes
+    .filter((note) => projectIds.has(note.targetId))
+    .map((note) => ({
+      id: `note-${note.id}`,
+      title: `导演批注 · ${note.category}`,
+      detail: note.content,
+      createdAt: note.createdAt,
+      kind: 'note',
+      projectId: note.targetId,
+    }))
+
+  const deliveryItems: DashboardActivityItem[] = input.deliveryPackages.map((pkg) => ({
+    id: `delivery-${pkg.id}`,
+    title: pkg.title,
+    detail: `交付包状态 ${pkg.status}`,
+    createdAt: pkg.updatedAt,
+    kind: 'delivery',
+    projectId: pkg.projectId,
+  }))
+
+  const versionItems: DashboardActivityItem[] = input.versions
+    .filter((version) => projectIds.has(version.entityId))
+    .map((version) => ({
+      id: `version-${version.id}`,
+      title: version.label,
+      detail: version.summary,
+      createdAt: version.createdAt,
+      kind: 'version',
+      projectId: version.entityId,
+    }))
+
+  const teamByProjectId = new Map(input.teams.map((team) => [team.projectId, team.id]))
+  const taskItems: DashboardActivityItem[] = input.tasks.flatMap((task) => {
+    const projectId = Array.from(teamByProjectId.entries()).find(([, teamId]) => teamId === task.teamId)?.[0]
+    if (!projectId) return []
+    return [{
+      id: `task-${task.id}`,
+      title: task.title,
+      detail: `任务状态 ${task.status}`,
+      createdAt: new Date(task.createdAt).toISOString(),
+      kind: 'task' as const,
+      projectId,
+    }]
+  })
+
+  return [...deliveryItems, ...approvalItems, ...noteItems, ...versionItems, ...taskItems]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 8)
+}
+
+export function aggregateProducerDashboard(input: AggregateDashboardInput): ProducerDashboardData {
+  const projectContexts = getProjectIds(input).map((projectId) => buildProjectContext(projectId, input))
+  const overview: DashboardProjectOverview[] = projectContexts
+    .map((project) => ({
+      projectId: project.projectId,
+      title: project.projectTitle,
+      currentStage: project.currentStage,
+      nextStage: project.nextStage,
+      readinessStatus: project.readinessStatus,
+      readinessReason: project.readinessReason,
+      blockerCount: project.blockerCount,
+      pendingApprovalCount: project.pendingApprovalCount,
+      staleApprovalCount: project.staleApprovalCount,
+      deliveryStatus: project.deliveryStatus,
+      orderStatus: project.orderStatus,
+      submittedForClient: project.submittedForClient,
+      strongRiskCount: project.deliveryStrongRiskCount,
+      unknownLicenseCount: project.unknownLicenseCount,
+      canAdvance: project.canAdvance,
+      links: {
+        review: project.reviewHref,
+        create: project.createHref,
+        delivery: project.deliveryHref,
+        detail: project.detailHref,
+      },
+    }))
+    .sort((left, right) => {
+      const leftScore = (left.readinessStatus === 'blocked' ? 3 : left.readinessStatus === 'needs-review' ? 2 : 1)
+        + left.blockerCount
+        + left.pendingApprovalCount
+      const rightScore = (right.readinessStatus === 'blocked' ? 3 : right.readinessStatus === 'needs-review' ? 2 : 1)
+        + right.blockerCount
+        + right.pendingApprovalCount
+      return rightScore - leftScore
+    })
+
+  const actionQueue = buildProducerActionQueue(projectContexts)
+  const quickActions: ProducerQuickAction[] = actionQueue.slice(0, 4).map((action) => ({
+    id: action.id,
+    label: action.title,
+    description: `${action.projectTitle} · ${action.ctaLabel}`,
+    href: action.href,
+  }))
+
+  const riskRadar = {
+    staleApprovals: projectContexts.reduce((sum, project) => sum + project.staleApprovalCount, 0),
+    unknownLicenses: projectContexts.reduce((sum, project) => sum + project.unknownLicenseCount, 0),
+    openBlockerNotes: projectContexts.reduce((sum, project) => sum + project.blockerCount, 0),
+    strongAudioRisk: projectContexts.reduce((sum, project) => sum + project.strongAudioRiskCount, 0),
+    strongClipRisk: projectContexts.reduce((sum, project) => sum + project.strongClipRiskCount, 0),
+  }
+
+  const focusProject = projectContexts[0] ?? null
+  const approvalsScope = focusProject
+    ? input.approvals.filter((approval) => (
+        approval.targetId === focusProject.projectId
+        || approval.targetId === focusProject.projectId
+      ))
+    : input.approvals
+
+  const activity = buildActivity(projectContexts, input)
+  const topIssues = actionQueue.slice(0, 3).map((action) => action.detail)
+
+  return {
+    totalProjects: overview.length,
+    overview,
+    actionQueue,
+    quickActions,
+    riskRadar,
     approvals: {
-      director: directorStatus,
-      client: clientStatus,
-      producer: producerStatus,
-      editor: editorStatus,
-      latestChangesRequested,
+      director: deriveRoleStatus('director', approvalsScope),
+      client: deriveRoleStatus('client', approvalsScope),
+      producer: deriveRoleStatus('producer', approvalsScope),
+      editor: deriveRoleStatus('editor', approvalsScope),
+      latestChangesRequested: focusProject?.latestChangesRequested ?? null,
     },
     delivery: {
-      exists: Boolean(deliveryPackage),
-      status: deliveryPackage?.status ?? 'missing',
-      includedAssetCount: deliveryPackage?.assets.filter((asset) => asset.included).length ?? 0,
-      strongRiskCount: strongDeliveryRisks,
-      submittedForClient,
+      exists: Boolean(focusProject?.deliveryExists),
+      status: focusProject?.deliveryStatus ?? 'missing',
+      includedAssetCount: (input.deliveryPackages.find((pkg) => pkg.projectId === focusProject?.projectId)?.assets ?? []).filter((asset) => asset.included).length,
+      strongRiskCount: focusProject?.deliveryStrongRiskCount ?? 0,
+      submittedForClient: Boolean(focusProject?.submittedForClient),
     },
     tasks: {
-      open: openTasks,
-      inProgress: inProgressTasks,
-      done: doneTasks,
-      blockerLike: blockerLikeTasks,
+      open: focusProject?.taskOpenCount ?? 0,
+      inProgress: focusProject?.taskInProgressCount ?? 0,
+      done: focusProject?.taskDoneCount ?? 0,
+      blockerLike: focusProject?.blockerCount ?? 0,
     },
     order: {
-      status: activeOrder?.status ?? 'missing',
-      paymentStatus: activeOrder?.paymentStatus ?? 'unknown',
-      quoteId: activeOrder?.quoteId,
-      deliveryStatus: activeJob?.delivery?.status,
-      price: activeOrder?.price,
+      status: focusProject?.orderStatus ?? 'missing',
+      paymentStatus: focusProject?.orderPaymentStatus ?? 'unknown',
+      quoteId: focusProject?.quoteId,
+      deliveryStatus: focusProject?.deliveryJobStatus,
+      price: focusProject?.price,
     },
     activity,
     aiSummary: {
-      topIssues: issuePool.length > 0 ? issuePool : ['当前没有明显高优先问题。'],
-      nearestBlocker,
-      recommendedAction,
+      topIssues: topIssues.length > 0 ? topIssues : ['当前没有明显高优先问题。'],
+      nearestBlocker: actionQueue[0]?.detail ?? '当前没有明显 blocker。',
+      recommendedAction: actionQueue[0]?.ctaLabel
+        ? `优先执行：${actionQueue[0].ctaLabel}。`
+        : '当前最适合做的是整理项目优先级并继续人工判断。'
+      ,
     },
   }
 }
