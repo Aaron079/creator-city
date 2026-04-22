@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
 import { ReviewItemCard } from '@/components/review/ReviewItemCard'
 import { ReviewSummaryCard } from '@/components/review/ReviewSummaryCard'
 import { VersionComparePanel } from '@/components/review/VersionComparePanel'
+import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { buildClientReviewContext } from '@/lib/review/review-data'
 import { useApprovalStore } from '@/store/approval.store'
 import type { ApprovalDecision, ApprovalTargetType } from '@/store/approval.store'
@@ -54,8 +56,10 @@ function mapApprovalTargetToNoteTarget(targetType: ApprovalTargetType): Director
 }
 
 export default function ClientReviewPortalPage() {
+  const { role, setRole } = useMockRoleMode('client')
   const params = useParams<{ projectId: string }>()
   const projectId = decodeURIComponent(params.projectId)
+  const visibleSections = new Set(getVisibleSectionsForRole(role, 'review'))
 
   const approvals = useApprovalStore((s) => s.approvals)
   const addApprovalDecision = useApprovalStore((s) => s.addApprovalDecision)
@@ -187,33 +191,46 @@ export default function ClientReviewPortalPage() {
   return (
     <div className="min-h-screen" style={{ background: '#060a14' }}>
       <div className="max-w-6xl mx-auto px-5 py-8">
-        <ClientReviewHeader
-          title={reviewContext.projectTitle}
-          description={reviewContext.projectDescription}
-        />
+        <div className="mb-6">
+          <RoleViewSwitcher role={role} onChange={setRole} />
+        </div>
 
-        <ReviewSummaryCard
-          currentStage={reviewContext.currentStage}
-          currentVersion={reviewContext.currentVersion}
-          reviewStatus={reviewContext.reviewStatus}
-          pendingCount={reviewContext.pendingCount}
-          approvedCount={reviewContext.approvedCount}
-          aiSummary={reviewContext.aiSummary}
-          deliveryApproved={reviewContext.deliveryApproved}
-        />
+        {visibleSections.has('header') ? (
+          <ClientReviewHeader
+            title={reviewContext.projectTitle}
+            description={reviewContext.projectDescription}
+          />
+        ) : null}
 
+        {visibleSections.has('summary') ? (
+          <ReviewSummaryCard
+            currentStage={reviewContext.currentStage}
+            currentVersion={reviewContext.currentVersion}
+            reviewStatus={reviewContext.reviewStatus}
+            pendingCount={reviewContext.pendingCount}
+            approvedCount={reviewContext.approvedCount}
+            aiSummary={reviewContext.aiSummary}
+            deliveryApproved={reviewContext.deliveryApproved}
+          />
+        ) : null}
+
+        {visibleSections.has('items') ? (
         <div className="mt-8 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <p className="text-[11px] font-semibold text-white/82">待确认内容</p>
             <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.34)' }}>
-              客户只看需要确认的对象，不暴露完整画布、复杂参数面板或内部制作细节。
+              {role === 'client'
+                ? '客户只看需要确认的对象，不暴露完整画布、复杂参数面板或内部制作细节。'
+                : '这里会根据当前 mock role 裁剪内部信息与确认操作，但底层项目数据保持一致。'}
             </p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-[10px]" style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.52)' }}>
             {reviewContext.items.length} 个确认对象
           </span>
         </div>
+        ) : null}
 
+        {visibleSections.has('items') ? (
         <div className="grid gap-4 mt-4">
           {reviewContext.items.length === 0 && (
             <div className="rounded-[28px] p-6" style={{ background: 'rgba(9,14,24,0.82)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -237,11 +254,12 @@ export default function ClientReviewPortalPage() {
                 item={item}
                 latestClientDecision={latestClientDecision}
                 isEditing={isEditingThis}
+                showInternalMeta={visibleSections.has('internal-meta')}
                 onApprove={() => handleStartDecision(item.id, 'approved')}
                 onRequestChanges={() => handleStartDecision(item.id, 'changes-requested')}
                 onReject={() => handleStartDecision(item.id, 'rejected')}
-                onOpenCompare={item.versionId && item.previousVersionId ? () => setCompareDraft({ itemId: item.id }) : undefined}
-                comparePanel={isComparingThis && compareResult && compareItem ? (
+                onOpenCompare={visibleSections.has('compare') && item.versionId && item.previousVersionId ? () => setCompareDraft({ itemId: item.id }) : undefined}
+                comparePanel={visibleSections.has('compare') && isComparingThis && compareResult && compareItem ? (
                   <VersionComparePanel
                     compare={compareResult}
                     fromLabel={compareItem.previousVersionId
@@ -251,13 +269,14 @@ export default function ClientReviewPortalPage() {
                     onClose={() => setCompareDraft(null)}
                   />
                 ) : undefined}
-                decisionPanel={isEditingThis && actionDraft ? (
+                decisionPanel={visibleSections.has('decision-panel') && isEditingThis && actionDraft ? (
                   <ReviewDecisionPanel
                     status={actionDraft.status}
                     comment={actionDraft.comment}
                     followUp={actionDraft.followUp}
                     assignedTo={actionDraft.assignedTo}
                     assigneeOptions={teamAssigneeOptions}
+                    showInternalFollowUp={visibleSections.has('internal-follow-up')}
                     onCommentChange={(value) => setActionDraft((prev) => prev ? { ...prev, comment: value } : prev)}
                     onFollowUpChange={(value) => setActionDraft((prev) => prev ? { ...prev, followUp: value } : prev)}
                     onAssignedToChange={(value) => setActionDraft((prev) => prev ? { ...prev, assignedTo: value } : prev)}
@@ -269,6 +288,7 @@ export default function ClientReviewPortalPage() {
             )
           })}
         </div>
+        ) : null}
       </div>
     </div>
   )
