@@ -3,8 +3,10 @@
 import Link from 'next/link'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
+import type { MatchCandidate, RoleNeed, TalentMatchingData } from '@/lib/matching/aggregate'
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 import { LicensingCenter } from '@/components/licensing/LicensingCenter'
+import { TeamAssemblyPanel } from '@/components/team/TeamAssemblyPanel'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 
@@ -63,6 +65,7 @@ function MetricTile({ label, value, tone = 'default' }: { label: string; value: 
 export function ProducerDashboard({
   data,
   licensing,
+  matching,
 }: {
   data: ProducerDashboardData
   licensing: {
@@ -74,6 +77,10 @@ export function ProducerDashboard({
     onMarkRestricted: (assetType: LicenseAssetType, assetId: string) => void
     onSetUsageScope: (assetType: LicenseAssetType, assetId: string, usageScope: LicenseUsageScope) => void
     onAttachProof: (assetType: LicenseAssetType, assetId: string, proofUrl: string) => void
+  }
+  matching: {
+    data: TalentMatchingData
+    onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate) => void
   }
 }) {
   return (
@@ -234,6 +241,13 @@ export function ProducerDashboard({
 
       <Card title="Production Planning" id="planning">
         <PlanningPanel data={data} />
+      </Card>
+
+      <Card title="Team Match / Talent Suggestions" id="team-match">
+        <TeamAssemblyPanel
+          data={matching.data}
+          onInvite={matching.onInvite}
+        />
       </Card>
 
       <Card title="Rights & Licensing Center" id="licensing">
