@@ -1,46 +1,54 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
 import { DashboardShell } from '@/components/layout/DashboardShell'
-import { StatsCards } from '@/components/city/StatsCards'
-import { AgentList } from '@/components/agent/AgentList'
-import { ProjectGrid } from '@/components/project/ProjectGrid'
+import { useApprovalStore } from '@/store/approval.store'
+import { useDeliveryPackageStore } from '@/store/delivery-package.store'
+import { useDirectorNotesStore } from '@/store/director-notes.store'
+import { useJobsStore } from '@/store/jobs.store'
+import { useOrderStore } from '@/store/order.store'
+import { useTaskStore } from '@/store/task.store'
+import { useTeamStore } from '@/store/team.store'
+import { useVersionHistoryStore } from '@/store/version-history.store'
+import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
+import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
 
 export default function DashboardPage() {
   const { user, isAuthenticated } = useAuthStore()
+  const approvals = useApprovalStore((s) => s.approvals)
+  const approvalGates = useApprovalStore((s) => s.gates)
+  const notes = useDirectorNotesStore((s) => s.notes)
+  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
+  const jobs = useJobsStore((s) => s.jobs)
+  const orders = useOrderStore((s) => s.orders)
+  const tasks = useTaskStore((s) => s.tasks)
+  const teams = useTeamStore((s) => s.teams)
+  const versions = useVersionHistoryStore((s) => s.versions)
   const router = useRouter()
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
   }, [isAuthenticated, router])
 
+  const dashboard = useMemo(() => aggregateProducerDashboard({
+    teams,
+    approvals,
+    approvalGates,
+    notes,
+    tasks,
+    orders,
+    jobs,
+    deliveryPackages,
+    versions,
+  }), [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions])
+
   if (!user) return null
 
   return (
     <DashboardShell>
-      <div className="space-y-8 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold">
-            Welcome back, <span className="text-gradient">{user.displayName}</span>
-          </h1>
-          <p className="text-gray-400 mt-1">Here&apos;s what&apos;s happening in your city.</p>
-        </div>
-
-        <StatsCards />
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4">Active Projects</h2>
-            <ProjectGrid />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold mb-4">Your Agents</h2>
-            <AgentList compact />
-          </div>
-        </div>
-      </div>
+      <ProducerDashboard data={dashboard} />
     </DashboardShell>
   )
 }
