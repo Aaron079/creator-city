@@ -119,6 +119,8 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
   const invitationInboxHref = getActionTarget({ actionType: 'invitation-inbox' }).actionHref
   const meHref = getActionTarget({ actionType: 'me' }).actionHref
   const planningHref = getActionTarget({ actionType: 'project-planning', projectId: data.projectId }).actionHref
+  const producerHome = data.producerHome
+  const creatorHome = data.creatorHome
 
   if (data.surface === 'outsider') {
     return (
@@ -198,17 +200,27 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
 
           {data.surface === 'producer' ? (
             <>
-              <Card title="Producer Summary" subtitle="总控视角下的项目风险、团队和排期快照。">
+              <Card title="Producer Control Summary" subtitle="进入项目后先看 readiness、审批、交付、风险和修改闭环。">
                 <div className="grid gap-3 md:grid-cols-3">
-                  <Metric label="Blocker notes" value={data.producer.blockerCount} tone={data.producer.blockerCount > 0 ? 'danger' : 'default'} />
-                  <Metric label="Pending approvals" value={data.producer.pendingApprovalCount} tone={data.producer.pendingApprovalCount > 0 ? 'warning' : 'default'} />
-                  <Metric label="Team status" value={data.producer.teamStatus} />
+                  <Metric label="Readiness" value={producerHome?.statusSummary.readiness ?? data.readinessStatus} />
+                  <Metric label="Blocker notes" value={producerHome?.statusSummary.blockerCount ?? data.producer.blockerCount} tone={(producerHome?.statusSummary.blockerCount ?? data.producer.blockerCount) > 0 ? 'danger' : 'default'} />
+                  <Metric label="Pending approvals" value={producerHome?.statusSummary.pendingApprovalCount ?? data.producer.pendingApprovalCount} tone={(producerHome?.statusSummary.pendingApprovalCount ?? data.producer.pendingApprovalCount) > 0 ? 'warning' : 'default'} />
+                  <Metric label="Delivery status" value={producerHome?.statusSummary.deliveryStatus ?? data.producer.deliveryStatus} tone={data.delivery.strongRiskCount > 0 ? 'warning' : 'default'} />
+                  <Metric label="Open resolutions" value={producerHome?.statusSummary.openResolutionCount ?? 0} tone={(producerHome?.statusSummary.openResolutionCount ?? 0) > 0 ? 'warning' : 'default'} />
+                  <Metric label="Notifications" value={producerHome?.notificationsSummary.unreadCount ?? data.notifications.length} tone={(producerHome?.notificationsSummary.strongCount ?? 0) > 0 ? 'warning' : 'default'} />
                 </div>
               </Card>
 
-              <Card title="Planning Snapshot" subtitle="当前项目的排期、blocked 项和依赖冲突。">
+              <Card title="Planning Snapshot" subtitle="当前项目的排期焦点、blocked 项和依赖冲突。">
                 <div className="space-y-3">
-                  {data.planning.project ? (
+                  {producerHome ? (
+                    <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                      <div className="font-medium text-white">{producerHome.planningSummary.nextFocus}</div>
+                      <div className="mt-1">
+                        Blocked {producerHome.planningSummary.blockedCount} · Conflicts {producerHome.planningSummary.conflictCount} · Upcoming {producerHome.planningSummary.upcomingCount}
+                      </div>
+                    </div>
+                  ) : data.planning.project ? (
                     <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
                       <div className="font-medium text-white">{data.planning.project.nextFocus}</div>
                       <div className="mt-1">
@@ -233,13 +245,20 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
                 </div>
               </Card>
 
-              <Card title="Team Status" subtitle="成员、待响应邀请和最近团队动作。">
+              <Card title="Team / Risk Snapshot" subtitle="团队状态、开放角色与最危险的环节。">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Metric label="Active members" value={data.team.memberCount} />
-                  <Metric label="Pending invites" value={data.team.pendingInvitationCount} tone={data.team.pendingInvitationCount > 0 ? 'warning' : 'default'} />
+                  <Metric label="Active members" value={producerHome?.teamSummary.memberCount ?? data.team.memberCount} />
+                  <Metric label="Pending invites" value={producerHome?.teamSummary.pendingInvitationCount ?? data.team.pendingInvitationCount} tone={(producerHome?.teamSummary.pendingInvitationCount ?? data.team.pendingInvitationCount) > 0 ? 'warning' : 'default'} />
+                  <Metric label="Open roles" value={producerHome?.teamSummary.openRolesCount ?? 0} />
+                  <Metric label="Strong risks" value={producerHome?.riskSummary.strongRiskCount ?? data.delivery.strongRiskCount} tone={(producerHome?.riskSummary.strongRiskCount ?? data.delivery.strongRiskCount) > 0 ? 'danger' : 'default'} />
                 </div>
                 <div className="mt-4 space-y-3">
-                  {data.team.members.slice(0, 4).map((member) => (
+                  {(producerHome?.teamSummary.highlights ?? data.team.members.slice(0, 4).map((member) => `${member.displayName} · ${member.role}`)).map((highlight) => (
+                    <div key={highlight} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                      <div className="font-medium text-white">{highlight}</div>
+                    </div>
+                  ))}
+                  {data.team.members.slice(0, 3).map((member) => (
                     <div key={member.profileId} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
                       <div className="font-medium text-white">{member.displayName}</div>
                       <div className="mt-1">{member.role} · {member.status} · {member.city ?? 'Remote'}</div>
@@ -247,18 +266,39 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
                   ))}
                 </div>
               </Card>
+
+              <Card title="Recent Activity" subtitle="最近发生了什么，以及下一步最应该点哪里。">
+                <ActivityList items={producerHome?.recentActivity ?? data.latestActivity} />
+              </Card>
             </>
           ) : null}
 
           {data.surface === 'creator' ? (
             <>
+              <Card title="Creator Work Summary" subtitle="进入项目后先看自己的任务、修改项和最新反馈。">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Metric label="Assigned tasks" value={creatorHome?.taskSummary.assignedCount ?? data.creator.currentTasks.length} />
+                  <Metric label="Blocking tasks" value={creatorHome?.taskSummary.blockingCount ?? data.creator.currentTasks.filter((item) => item.isBlocking).length} tone={(creatorHome?.taskSummary.blockingCount ?? data.creator.currentTasks.filter((item) => item.isBlocking).length) > 0 ? 'warning' : 'default'} />
+                  <Metric label="Open resolutions" value={creatorHome?.resolutionSummary.openCount ?? 0} tone={(creatorHome?.resolutionSummary.strongCount ?? 0) > 0 ? 'danger' : 'default'} />
+                </div>
+              </Card>
+
+              <Card title="Next Suggested Action" subtitle="优先把当前最可能推进项目的一步放在最上面。">
+                <QueueItemRow
+                  title={creatorHome?.nextAction.label ?? '去 Review'}
+                  meta={creatorHome?.nextAction.detail ?? '查看最新反馈与任务'}
+                  href={creatorHome?.nextAction.href ?? getActionTarget({ actionType: 'project-review', projectId: data.projectId }).actionHref}
+                  label="现在处理"
+                />
+              </Card>
+
               <Card title="Current Task Summary" subtitle="创作者视角下当前最该推进的事项。">
                 <div className="space-y-3">
-                  {data.creator.currentTasks.length === 0 ? (
+                  {(creatorHome?.personalQueue.length ?? data.creator.currentTasks.length) === 0 ? (
                     <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
                       当前没有直接指派给你的任务。
                     </div>
-                  ) : data.creator.currentTasks.map((item) => (
+                  ) : (creatorHome?.personalQueue.slice(0, 4) ?? data.creator.currentTasks).map((item) => (
                     <QueueItemRow
                       key={item.id}
                       title={item.title}
@@ -270,9 +310,14 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
                 </div>
               </Card>
 
-              <Card title="Pending Review & Delivery" subtitle="需要你回看的确认项、修改请求和交付提醒。">
+              <Card title="Review / Resolution / Delivery" subtitle="需要你回看的反馈、修改闭环和交付提醒。">
+                <div className="mb-4 grid gap-3 md:grid-cols-3">
+                  <Metric label="Pending review" value={creatorHome?.reviewSummary.pendingReviewCount ?? data.creator.pendingReviewItems.length} tone={(creatorHome?.reviewSummary.pendingReviewCount ?? data.creator.pendingReviewItems.length) > 0 ? 'warning' : 'default'} />
+                  <Metric label="In progress" value={creatorHome?.resolutionSummary.inProgressCount ?? 0} />
+                  <Metric label="Delivery reminders" value={creatorHome?.deliveryReminderSummary.reminderCount ?? data.creator.deliveryReminders.length} tone={(creatorHome?.deliveryReminderSummary.highestSeverity ?? 'info') === 'strong' ? 'danger' : (creatorHome?.deliveryReminderSummary.highestSeverity ?? 'info') === 'warning' ? 'warning' : 'default'} />
+                </div>
                 <div className="space-y-3">
-                  {[...data.creator.pendingReviewItems, ...data.creator.deliveryReminders].slice(0, 6).map((item) => (
+                  {[...(data.creator.pendingReviewItems ?? []), ...(data.creator.deliveryReminders ?? []), ...(creatorHome?.personalQueue.filter((item) => item.category === 'review' || item.category === 'approval' || item.category === 'delivery' || item.category === 'licensing').slice(0, 4) ?? [])].slice(0, 6).map((item) => (
                     <QueueItemRow
                       key={item.id}
                       title={item.title}
@@ -282,6 +327,13 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
                     />
                   ))}
                 </div>
+                <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/65">
+                  最新反馈：{creatorHome?.reviewSummary.latestFeedback ?? '当前没有新的 review 反馈。'}
+                </div>
+              </Card>
+
+              <Card title="Recent Activity" subtitle="最近版本、交付和修改闭环变化。">
+                <ActivityList items={creatorHome?.recentActivity ?? data.latestActivity} />
               </Card>
             </>
           ) : null}
@@ -292,7 +344,7 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
             </>
           ) : null}
 
-          {data.surface !== 'client' ? (
+          {data.surface !== 'client' && !producerHome && !creatorHome ? (
             <Card title="Latest Activity / Changes" subtitle="不重建流程，只把最近需要回看的动作放在一处。">
               <ActivityList items={data.latestActivity} />
             </Card>
@@ -317,6 +369,46 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
               ))}
             </div>
           </Card>
+
+          {data.surface === 'producer' && producerHome ? (
+            <Card title="Producer AI Summary" subtitle="只做摘要与优先级提示，不替你执行。">
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                  <div className="font-medium text-white">最危险环节</div>
+                  <div className="mt-1">{producerHome.aiSummary.mostDangerousArea}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                  <div className="font-medium text-white">推荐先做</div>
+                  <div className="mt-1">{producerHome.aiSummary.recommendedAction}</div>
+                </div>
+                {producerHome.aiSummary.topItems.map((item) => (
+                  <div key={item} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {data.surface === 'creator' && creatorHome ? (
+            <Card title="Creator AI Summary" subtitle="只提示最应该先看的环节，不代替你处理。">
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                  <div className="font-medium text-white">当前角色</div>
+                  <div className="mt-1">{data.resolvedRoleLabel}</div>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                  <div className="font-medium text-white">最危险环节</div>
+                  <div className="mt-1">{creatorHome.aiSummary.mostDangerousArea}</div>
+                </div>
+                {creatorHome.aiSummary.topItems.map((item) => (
+                  <div key={item} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
 
           <Card title="Delivery Snapshot" subtitle="交付状态、资产规模和当前风险。">
             <div className="grid gap-3 md:grid-cols-2">

@@ -8,7 +8,9 @@ import { buildActivityLogItems } from '@/lib/activity/aggregate'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildProducerPlanningData, loadPlanningSettings } from '@/lib/dashboard/planning'
 import { buildClientProjectStatusFeed } from '@/lib/projects/client-feed'
+import { buildCreatorProjectHomeData } from '@/lib/projects/creator-home'
 import { buildRoleAwareProjectHome } from '@/lib/projects/home'
+import { buildProducerProjectHomeData } from '@/lib/projects/producer-home'
 import { buildReviewResolutionSeeds } from '@/lib/review/resolution'
 import { useReviewResolutionStore } from '@/lib/review/resolution-store'
 import { getProjectAccessState } from '@/lib/roles/access'
@@ -167,6 +169,69 @@ export default function ProjectHomePage() {
     [activity, approvals, deliveryPackages, projectId, projectOverview?.currentStage, projectResolutions, projectTitle, versions],
   )
 
+  const projectNotifications = useMemo(
+    () => notifications.filter((item) => item.projectId === projectId),
+    [notifications, projectId],
+  )
+
+  const producerHome = useMemo(
+    () => buildProducerProjectHomeData({
+      projectId,
+      overview: projectOverview ?? dashboard.overview[0] ?? {
+        projectId,
+        title: projectTitle,
+        currentStage: 'idea',
+        nextStage: null,
+        readinessStatus: 'needs-review',
+        readinessReason: '当前项目还没有完整聚合数据。',
+        blockerCount: 0,
+        pendingApprovalCount: 0,
+        staleApprovalCount: 0,
+        deliveryStatus: 'missing',
+        orderStatus: 'missing',
+        submittedForClient: false,
+        strongRiskCount: 0,
+        unknownLicenseCount: 0,
+        strongLicensingRiskCount: 0,
+        canAdvance: false,
+        links: {
+          review: `/review/${projectId}`,
+          create: `/create?projectId=${projectId}`,
+          delivery: `/create?projectId=${projectId}&tab=delivery`,
+          detail: `/projects/${projectId}`,
+        },
+      },
+      dashboard,
+      planning,
+      notifications: projectNotifications,
+      members: getProjectMembers(projectId),
+      invitations: getPendingInvitations(projectId),
+      activity,
+      resolutions: projectResolutions,
+      delivery: {
+        status: deliveryPackages.find((pkg) => pkg.projectId === projectId)?.status ?? 'missing',
+        includedAssetCount: deliveryPackages.find((pkg) => pkg.projectId === projectId)?.assets.filter((asset) => asset.included).length ?? 0,
+        strongRiskCount: deliveryPackages.find((pkg) => pkg.projectId === projectId)?.riskSummary?.issues.filter((issue) => issue.severity === 'strong').length ?? 0,
+        finalVersion: deliveryPackages.find((pkg) => pkg.projectId === projectId)?.manifest?.finalVersion ?? '未记录版本',
+      },
+    }),
+    [activity, dashboard, deliveryPackages, getPendingInvitations, getProjectMembers, planning, projectId, projectNotifications, projectOverview, projectResolutions, projectTitle],
+  )
+
+  const creatorHome = useMemo(
+    () => buildCreatorProjectHomeData({
+      projectId,
+      role: roleContext?.role ?? 'creator',
+      userId: currentUserId,
+      profileId: currentProfile,
+      workQueue: workQueue.items.filter((item) => item.projectId === projectId),
+      notifications: projectNotifications,
+      activity,
+      resolutions: projectResolutions,
+    }),
+    [activity, currentProfile, currentUserId, projectId, projectNotifications, projectResolutions, roleContext?.role, workQueue.items],
+  )
+
   const homeData = useMemo(
     () => buildRoleAwareProjectHome({
       projectId,
@@ -178,6 +243,8 @@ export default function ProjectHomePage() {
       notifications,
       activity,
       clientFeed,
+      producerHome,
+      creatorHome,
       deliveryPackage: deliveryPackages.find((pkg) => pkg.projectId === projectId) ?? null,
       members: getProjectMembers(projectId),
       invitations: getPendingInvitations(projectId),
@@ -187,6 +254,7 @@ export default function ProjectHomePage() {
       access,
       activity,
       clientFeed,
+      creatorHome,
       dashboard,
       deliveryPackages,
       getInvitationActivity,
@@ -195,6 +263,7 @@ export default function ProjectHomePage() {
       notifications,
       planning,
       projectId,
+      producerHome,
       roleContext,
       workQueue,
     ],

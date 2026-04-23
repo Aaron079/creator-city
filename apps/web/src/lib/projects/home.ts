@@ -2,6 +2,8 @@ import type { ActivityLogItem } from '@/lib/activity/aggregate'
 import type { ProducerDashboardData, DashboardProjectOverview } from '@/lib/dashboard/aggregate'
 import type { ProducerPlanningData, PlanningProjectRow, ProductionConflict, ProductionScheduleItem } from '@/lib/dashboard/planning'
 import type { ClientProjectStatusFeedData } from '@/lib/projects/client-feed'
+import type { CreatorProjectHomeData } from '@/lib/projects/creator-home'
+import type { ProducerProjectHomeData } from '@/lib/projects/producer-home'
 import type { ProjectAccessInfo } from '@/lib/roles/access'
 import type { CurrentProjectRoleContext } from '@/lib/roles/currentRole'
 import { getProjectRoleLabel } from '@/lib/roles/projectRoles'
@@ -35,6 +37,8 @@ export interface RoleAwareProjectHomeData {
   latestActivity: ActivityLogItem[]
   latestChanges: ActivityLogItem[]
   clientFeed: ClientProjectStatusFeedData | null
+  producerHome: ProducerProjectHomeData | null
+  creatorHome: CreatorProjectHomeData | null
   notifications: NotificationItem[]
   workQueue: WorkQueueItem[]
   delivery: {
@@ -148,6 +152,8 @@ export function buildRoleAwareProjectHome(input: {
   notifications: NotificationItem[]
   activity: ActivityLogItem[]
   clientFeed: ClientProjectStatusFeedData | null
+  producerHome: ProducerProjectHomeData | null
+  creatorHome: CreatorProjectHomeData | null
   deliveryPackage: DeliveryPackage | null
   members: TeamMemberSummary[]
   invitations: TeamInvitation[]
@@ -246,6 +252,8 @@ export function buildRoleAwareProjectHome(input: {
     latestActivity,
     latestChanges,
     clientFeed: input.clientFeed,
+    producerHome: input.producerHome,
+    creatorHome: input.creatorHome,
     notifications,
     workQueue,
     delivery,
