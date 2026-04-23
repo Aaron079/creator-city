@@ -119,7 +119,17 @@ export function ProducerDashboard({
   role: WorkspaceRole
 }) {
   const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
-  const shouldShowNotifications = role !== 'client' || notifications.summary.unreadCount > 0
+  const shouldShowNotifications = role !== 'client'
+    || notifications.items.some((item) => (
+      !item.isDismissed
+      && (
+        item.roleScope === 'client'
+        || item.roleScope === 'shared'
+        || item.sourceType.startsWith('invitation')
+        || item.category === 'delivery'
+        || item.category === 'review'
+      )
+    ))
 
   return (
     <div className="space-y-8 animate-fade-in">

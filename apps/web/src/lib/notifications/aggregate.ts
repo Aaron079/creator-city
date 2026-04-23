@@ -33,6 +33,8 @@ function severityScore(severity: NotificationItem['severity']) {
 }
 
 function compareNotifications(left: NotificationItem, right: NotificationItem) {
+  const byPinned = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned))
+  if (byPinned !== 0) return byPinned
   const bySeverity = severityScore(right.severity) - severityScore(left.severity)
   if (bySeverity !== 0) return bySeverity
   const leftDue = left.dueAt ? new Date(left.dueAt).getTime() : Infinity
@@ -103,6 +105,56 @@ function buildProjectMaps(input: BuildNotificationsInput) {
   }
 
   return { getProjectMeta }
+}
+
+function enrichNotificationItem(
+  item: NotificationItem,
+  getProjectMeta: (targetId: string) => {
+    projectId?: string
+    title: string
+    reviewHref: string
+    createHref: string
+    deliveryHref: string
+  },
+): NotificationItem {
+  const projectMeta = item.projectId ? getProjectMeta(item.projectId) : getProjectMeta(item.sourceId)
+  const projectTitle = item.projectTitle ?? (projectMeta.projectId ? projectMeta.title : undefined)
+
+  const roleScope = (() => {
+    if (item.sourceType.startsWith('invitation')) return 'shared' as const
+    if (item.category === 'delivery') return 'producer' as const
+    if (item.category === 'planning') return 'producer' as const
+    if (item.category === 'order') return 'producer' as const
+    if (item.category === 'licensing') return 'producer' as const
+    if (item.category === 'approval' && item.sourceType !== 'changes-requested') return 'producer' as const
+    if (item.category === 'audio' || item.category === 'video' || item.category === 'review') return 'creator' as const
+    return 'shared' as const
+  })()
+
+  const section = (() => {
+    if (item.sourceType.startsWith('invitation')) return 'invitation' as const
+    if (item.category === 'approval' || item.category === 'review') return 'approval' as const
+    if (item.category === 'delivery') return 'delivery' as const
+    if (item.category === 'planning') return 'planning' as const
+    return 'risk' as const
+  })()
+
+  const isPinned = item.isPinned ?? (
+    item.sourceType === 'invitation'
+    || item.sourceType === 'delivery-risk'
+    || item.sourceType === 'changes-requested'
+    || item.sourceType === 'stale-approval'
+    || item.sourceType === 'blocker-open'
+    || item.severity === 'strong'
+  )
+
+  return {
+    ...item,
+    projectTitle,
+    roleScope,
+    section,
+    isPinned,
+  }
 }
 
 export function buildNotifications(input: BuildNotificationsInput): NotificationItem[] {
@@ -369,7 +421,9 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
     })
   }
 
-  return items.sort(compareNotifications)
+  return items
+    .map((item) => enrichNotificationItem(item, getProjectMeta))
+    .sort(compareNotifications)
 }
 
 export function buildNotificationAiSummary(items: NotificationItem[]): NotificationAiSummary {
@@ -383,7 +437,8 @@ export function buildNotificationAiSummary(items: NotificationItem[]): Notificat
   })
 
   const mostDangerousProject = Array.from(projectRiskMap.entries())
-    .sort((left, right) => right[1] - left[1])[0]?.[0] ?? '当前没有明显高危项目'
+    .sort((left, right) => right[1] - left[1])
+    .map(([projectId]) => activeItems.find((item) => item.projectId === projectId)?.projectTitle ?? projectId)[0] ?? '当前没有明显高危项目'
 
   const mostUrgentApproval = activeItems.find((item) => item.category === 'approval')?.title ?? '当前没有需要立即重提的审批'
 

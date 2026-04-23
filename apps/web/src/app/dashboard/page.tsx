@@ -231,14 +231,14 @@ export default function DashboardPage() {
   const generatedNotifications = useMemo(() => buildNotifications({
     dashboard,
     planning,
-    approvals,
-    notes,
-    deliveryPackages,
-    orders,
-    jobs,
-    teams,
+    approvals: filteredApprovals,
+    notes: filteredNotes,
+    deliveryPackages: filteredDeliveryPackages,
+    orders: filteredOrders,
+    jobs: filteredJobs,
+    teams: filteredTeams,
     rules: notificationRules,
-  }), [dashboard, planning, approvals, notes, deliveryPackages, orders, jobs, teams, notificationRules])
+  }), [dashboard, planning, filteredApprovals, filteredNotes, filteredDeliveryPackages, filteredOrders, filteredJobs, filteredTeams, notificationRules])
 
   useEffect(() => {
     syncNotifications(generatedNotifications)

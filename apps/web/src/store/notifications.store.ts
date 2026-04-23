@@ -1,21 +1,31 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+export type NotificationCategory = 'approval' | 'blocker' | 'delivery' | 'planning' | 'review' | 'audio' | 'video' | 'order' | 'team' | 'licensing'
+export type NotificationSeverity = 'info' | 'warning' | 'strong'
+export type NotificationRoleScope = 'producer' | 'creator' | 'client' | 'shared'
+export type NotificationSection = 'invitation' | 'approval' | 'delivery' | 'planning' | 'risk'
+
 export interface NotificationItem {
   id: string
   projectId?: string
-  category: 'approval' | 'blocker' | 'delivery' | 'planning' | 'review' | 'audio' | 'video' | 'order' | 'team' | 'licensing'
-  severity: 'info' | 'warning' | 'strong'
+  projectTitle?: string
+  category: NotificationCategory
+  severity: NotificationSeverity
+  roleScope?: NotificationRoleScope
+  section?: NotificationSection
   title: string
   message: string
   sourceType: string
   sourceId: string
   actionLabel: string
   actionHref: string
+  isPinned?: boolean
   isRead: boolean
   isDismissed: boolean
   createdAt: string
   dueAt?: string
+  snoozeUntil?: string
   relatedProfileId?: string
   relatedRole?: string
 }
@@ -28,6 +38,7 @@ export interface NotificationSummary {
   approvalsPendingCount: number
   deliveryRiskCount: number
   staleApprovalCount: number
+  invitationPendingCount: number
 }
 
 export interface ReminderRule {
@@ -61,8 +72,12 @@ const DEFAULT_RULES: ReminderRule[] = [
   { id: 'rule-missing-license', type: 'missing-license', enabled: true, thresholdDays: 0, severity: 'strong' },
 ]
 
-function buildSummary(items: NotificationItem[]): NotificationSummary {
-  const active = items.filter((item) => !item.isDismissed)
+function isVisibleNotification(item: NotificationItem) {
+  return !item.isDismissed && (!item.snoozeUntil || new Date(item.snoozeUntil).getTime() <= Date.now())
+}
+
+export function buildNotificationSummary(items: NotificationItem[]): NotificationSummary {
+  const active = items.filter(isVisibleNotification)
   return {
     unreadCount: active.filter((item) => !item.isRead).length,
     strongCount: active.filter((item) => item.severity === 'strong').length,
@@ -71,6 +86,7 @@ function buildSummary(items: NotificationItem[]): NotificationSummary {
     approvalsPendingCount: active.filter((item) => item.category === 'approval' && item.sourceType === 'pending-approval').length,
     deliveryRiskCount: active.filter((item) => item.category === 'delivery').length,
     staleApprovalCount: active.filter((item) => item.category === 'approval' && item.sourceType === 'stale-approval').length,
+    invitationPendingCount: active.filter((item) => item.category === 'team' && item.sourceType === 'invitation').length,
   }
 }
 
@@ -149,9 +165,9 @@ export const useNotificationsStore = create<NotificationsState>()(
         }))
       },
 
-      getUnread: () => get().items.filter((item) => !item.isDismissed && !item.isRead),
+      getUnread: () => get().items.filter((item) => isVisibleNotification(item) && !item.isRead),
 
-      getSummary: () => buildSummary(get().items),
+      getSummary: () => buildNotificationSummary(get().items),
 
       upsertRule: (rule) => {
         set((state) => ({
@@ -161,6 +177,6 @@ export const useNotificationsStore = create<NotificationsState>()(
         }))
       },
     }),
-    { name: 'cc:notifications-v1' },
+    { name: 'cc:notifications-v2' },
   ),
 )
