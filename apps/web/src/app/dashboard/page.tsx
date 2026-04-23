@@ -18,9 +18,10 @@ import { useNotificationsStore } from '@/store/notifications.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
 import { aggregateTalentMatching, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
-import { getPermissionsForRole } from '@/lib/roles/permissions'
+import { resolveDashboardRoleContext } from '@/lib/roles/currentRole'
 import { useMockRoleMode } from '@/lib/roles/view-mode'
 import { useProfileStore } from '@/store/profile.store'
+import { useProjectRoleStore } from '@/store/project-role.store'
 import { useReviewStore } from '@/store/review.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
@@ -31,8 +32,10 @@ import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 
 export default function DashboardPage() {
-  const { role, setRole } = useMockRoleMode('producer')
+  const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
   const { user, isAuthenticated } = useAuthStore()
+  const currentProfileId = useProfileStore((s) => s.currentUserId)
+  const projectRoleAssignments = useProjectRoleStore((s) => s.assignments)
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
   const voiceTakes = useAudioDeskStore((s) => s.voiceTakes)
@@ -186,14 +189,45 @@ export default function DashboardPage() {
     () => buildNotificationAiSummary(notificationItems),
     [notificationItems],
   )
-  const permissions = useMemo(() => getPermissionsForRole(role), [role])
+  const roleContext = useMemo(
+    () => resolveDashboardRoleContext(
+      dashboard.overview.map((item) => item.projectId),
+      {
+        userId: user?.id ?? null,
+        profileId: currentProfileId ?? null,
+        assignments: projectRoleAssignments,
+        fallbackRole: 'producer',
+        overrideRole: roleOverride,
+      },
+    ),
+    [currentProfileId, dashboard.overview, projectRoleAssignments, roleOverride, user?.id],
+  )
+  const dashboardRole = roleContext.source === 'fallback' ? 'client' : roleContext.role
+  const dashboardPermissions = useMemo(
+    () => roleContext.source === 'fallback'
+      ? {
+          ...roleContext.permissions,
+          canViewDashboard: false,
+          canManagePlanning: false,
+          canManageDelivery: false,
+          canInviteTeam: false,
+          canViewCommercialStatus: false,
+        }
+      : roleContext.permissions,
+    [roleContext],
+  )
 
   if (!user) return null
 
   return (
     <DashboardShell>
       <div className="mb-6">
-        <RoleViewSwitcher role={role} onChange={setRole} />
+        <RoleViewSwitcher
+          resolvedRole={roleContext.role}
+          overrideRole={roleOverride}
+          onChange={setRoleOverride}
+          onClear={clearRoleOverride}
+        />
       </div>
       <ProducerDashboard
         data={dashboard}
@@ -227,8 +261,8 @@ export default function DashboardPage() {
           onDismiss: dismissNotification,
           onToggleRule: upsertNotificationRule,
         }}
-        permissions={permissions}
-        role={role}
+        permissions={dashboardPermissions}
+        role={dashboardRole}
       />
     </DashboardShell>
   )

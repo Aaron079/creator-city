@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { DEV_ROLE_OVERRIDE_KEY, shouldUseDevRoleOverride } from '@/lib/roles/currentRole'
 import { getProjectRoleLabel, type ProjectRole } from '@/lib/roles/projectRoles'
 
 export type WorkspaceRole = ProjectRole
@@ -13,8 +14,6 @@ type VisibleSectionMap = {
 }
 
 type SectionId<T extends RoleSurface> = VisibleSectionMap[T][number]
-
-const ROLE_VIEW_KEY = 'cc:mock-view-role'
 
 const VISIBLE_SECTIONS: { [K in WorkspaceRole]: VisibleSectionMap } = {
   producer: {
@@ -84,30 +83,33 @@ export function getRoleLabel(role: WorkspaceRole) {
 }
 
 export function useMockRoleMode(defaultRole: WorkspaceRole) {
-  const [role, setRole] = useState<WorkspaceRole>(defaultRole)
+  const [roleOverride, setRoleOverride] = useState<WorkspaceRole | null>(null)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const stored = window.localStorage.getItem(ROLE_VIEW_KEY)
+    if (typeof window === 'undefined' || !shouldUseDevRoleOverride()) return
+    const stored = window.localStorage.getItem(DEV_ROLE_OVERRIDE_KEY)
     if (stored === 'producer' || stored === 'creator' || stored === 'client' || stored === 'director' || stored === 'editor' || stored === 'cinematographer') {
-      setRole(stored)
-    } else {
-      window.localStorage.setItem(ROLE_VIEW_KEY, defaultRole)
+      setRoleOverride(stored)
     }
   }, [defaultRole])
 
-  const updateRole = (nextRole: WorkspaceRole) => {
-    setRole(nextRole)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(ROLE_VIEW_KEY, nextRole)
+  const updateRole = (nextRole: WorkspaceRole | null) => {
+    setRoleOverride(nextRole)
+    if (typeof window === 'undefined') return
+    if (!nextRole) {
+      window.localStorage.removeItem(DEV_ROLE_OVERRIDE_KEY)
+      return
     }
+    window.localStorage.setItem(DEV_ROLE_OVERRIDE_KEY, nextRole)
   }
 
-  const landing = useMemo(() => getDefaultLandingForRole(role), [role])
+  const landing = useMemo(() => getDefaultLandingForRole(roleOverride ?? defaultRole), [defaultRole, roleOverride])
 
   return {
-    role,
-    setRole: updateRole,
+    roleOverride,
+    setRoleOverride: updateRole,
+    clearRoleOverride: () => updateRole(null),
+    hasRoleOverride: Boolean(roleOverride),
     landing,
   }
 }

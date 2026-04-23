@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
-import { canPerformAction, getPermissionsForRole } from '@/lib/roles/permissions'
+import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
 import { ReviewItemCard } from '@/components/review/ReviewItemCard'
@@ -21,6 +21,7 @@ import { useDirectorNotesStore } from '@/store/director-notes.store'
 import type { DirectorNoteTargetType } from '@/store/director-notes.store'
 import { useJobsStore } from '@/store/jobs.store'
 import { useOrderStore } from '@/store/order.store'
+import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
@@ -60,10 +61,9 @@ function mapApprovalTargetToNoteTarget(targetType: ApprovalTargetType): Director
 }
 
 export default function ClientReviewPortalPage() {
-  const { role, setRole } = useMockRoleMode('client')
+  const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('client')
   const params = useParams<{ projectId: string }>()
   const projectId = decodeURIComponent(params.projectId)
-  const visibleSections = new Set(getVisibleSectionsForRole(role, 'review'))
 
   const approvals = useApprovalStore((s) => s.approvals)
   const addApprovalDecision = useApprovalStore((s) => s.addApprovalDecision)
@@ -77,19 +77,36 @@ export default function ClientReviewPortalPage() {
   const jobs = useJobsStore((s) => s.jobs)
   const createTask = useTaskStore((s) => s.createTask)
   const currentUser = useAuthStore((s) => s.user)
-  const setProjectRole = useProjectRoleStore((s) => s.setProjectRole)
-  const getRoleForProject = useProjectRoleStore((s) => s.getRoleForProject)
+  const currentProfileId = useProfileStore((s) => s.currentUserId)
+  const projectRoleAssignments = useProjectRoleStore((s) => s.assignments)
   const audioTimelines = useAudioDeskStore((s) => s.audioTimelines)
-  const effectiveProjectRole = useMemo(
-    () => currentUser?.id
-      ? getRoleForProject(projectId, currentUser.id, role)
-      : role,
-    [currentUser?.id, getRoleForProject, projectId, role],
+  const roleContext = useMemo(
+    () => resolveProjectRoleContext(projectId, {
+      userId: currentUser?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      fallbackRole: 'client',
+      overrideRole: roleOverride,
+    }),
+    [currentProfileId, currentUser?.id, projectId, projectRoleAssignments, roleOverride],
   )
+  const resolvedProjectRole = roleContext.role
+  const effectiveProjectRole = roleContext.source === 'fallback' ? 'client' : resolvedProjectRole
   const permissions = useMemo(
-    () => getPermissionsForRole(effectiveProjectRole),
-    [effectiveProjectRole],
+    () => roleContext.source === 'fallback'
+      ? {
+          ...roleContext.permissions,
+          canApproveAsClient: false,
+          canSubmitApproval: false,
+          canManageDelivery: false,
+          canManagePlanning: false,
+          canInviteTeam: false,
+          canViewCommercialStatus: false,
+        }
+      : roleContext.permissions,
+    [roleContext],
   )
+  const visibleSections = new Set(getVisibleSectionsForRole(effectiveProjectRole, 'review'))
 
   const reviewContext = useMemo(
     () => buildClientReviewContext({
@@ -104,12 +121,6 @@ export default function ClientReviewPortalPage() {
     }),
     [projectId, approvals, versions, notes, orders, teams, jobs, audioTimelines],
   )
-  useEffect(() => {
-    if (currentUser?.id) {
-      setProjectRole(projectId, currentUser.id, role)
-    }
-  }, [currentUser?.id, projectId, role, setProjectRole])
-
   const activeOrder = useMemo(
     () => orders.find((order) => order.id === projectId) ?? orders.find((order) => order.chatId === projectId) ?? null,
     [orders, projectId],
@@ -143,7 +154,7 @@ export default function ClientReviewPortalPage() {
   }, [compareItem, compareVersions])
 
   const handleStartDecision = (approvalId: string, status: ClientDecisionStatus) => {
-    if (!canPerformAction(effectiveProjectRole, 'approve-as-client')) return
+    if (!permissions.canApproveAsClient) return
     setActionDraft({
       approvalId,
       status,
@@ -215,16 +226,25 @@ export default function ClientReviewPortalPage() {
       <div className="max-w-6xl mx-auto px-5 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-3">
-            <RoleViewSwitcher role={role} onChange={setRole} />
-            <RoleBadge role={effectiveProjectRole} />
+            <RoleViewSwitcher
+              resolvedRole={resolvedProjectRole}
+              overrideRole={roleOverride}
+              onChange={setRoleOverride}
+              onClear={clearRoleOverride}
+            />
+            <RoleBadge role={resolvedProjectRole} />
           </div>
         </div>
 
         {!permissions.canApproveAsClient ? (
           <div className="mb-6">
             <AccessNotice
-              title="当前角色只能查看审片内容"
-              message="你现在可以查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要客户动作，请切换到 Client 角色视图。"
+              title={roleContext.source === 'fallback' ? '当前账号尚未绑定到这个项目' : '当前角色只能查看审片内容'}
+              message={roleContext.source === 'fallback'
+                ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目里没有找到对应的 active role assignment。你现在可以只读查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要操作权限，请联系 Producer 完成项目角色绑定。`
+                : `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。你现在可以查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要客户动作，请切换到 Client 角色开发辅助视图，或由真实 client 身份操作。`}
+              href="/dashboard"
+              ctaLabel="查看项目概览"
             />
           </div>
         ) : null}
@@ -253,9 +273,11 @@ export default function ClientReviewPortalPage() {
           <div>
             <p className="text-[11px] font-semibold text-white/82">待确认内容</p>
             <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.34)' }}>
-              {role === 'client'
-                ? '客户只看需要确认的对象，不暴露完整画布、复杂参数面板或内部制作细节。'
-                : '这里会根据当前 mock role 裁剪内部信息与确认操作，但底层项目数据保持一致。'}
+              {roleContext.source === 'fallback'
+                ? '当前账号尚未绑定 active project role，因此这里只开放只读审片视图，不提供确认动作。'
+                : effectiveProjectRole === 'client'
+                  ? '客户只看需要确认的对象，不暴露完整画布、复杂参数面板或内部制作细节。'
+                  : '这里会根据当前项目角色裁剪内部信息与确认操作，开发辅助 override 只作为调试入口。'}
             </p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-[10px]" style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.52)' }}>
