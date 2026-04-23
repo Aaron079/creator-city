@@ -4,19 +4,27 @@ import { useMemo } from 'react'
 import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
 import { Nav } from '@/components/layout/Nav'
 import { ProfileView } from '@/components/profile/ProfileView'
+import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
+import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { InvitationInbox } from '@/components/team/InvitationInbox'
+import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
+import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
 import { getActionTarget } from '@/lib/routing/actions'
 import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
 import { useDeliveryPackageStore } from '@/store/delivery-package.store'
+import { useDirectorNotesStore } from '@/store/director-notes.store'
+import { useJobsStore } from '@/store/jobs.store'
 import { useNotificationsStore } from '@/store/notifications.store'
+import { useOrderStore } from '@/store/order.store'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
+import { useVersionHistoryStore } from '@/store/version-history.store'
 
 export default function MePage() {
   const currentUserId = useProfileStore((s) => s.currentUserId)
@@ -24,10 +32,15 @@ export default function MePage() {
   const inboxProfileId = authUser?.id ?? currentUserId
   const assignments = useProjectRoleStore((s) => s.assignments)
   const approvals = useApprovalStore((s) => s.approvals)
+  const approvalGates = useApprovalStore((s) => s.gates)
   const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
+  const notes = useDirectorNotesStore((s) => s.notes)
+  const jobs = useJobsStore((s) => s.jobs)
   const notificationItems = useNotificationsStore((s) => s.items)
+  const orders = useOrderStore((s) => s.orders)
   const tasks = useTaskStore((s) => s.tasks)
   const teams = useTeamStore((s) => s.teams)
+  const versions = useVersionHistoryStore((s) => s.versions)
   const invitations = useTeamStore((s) => s.getInvitationsForProfile(inboxProfileId))
   const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
   const declineInvitation = useTeamStore((s) => s.declineInvitation)
@@ -38,6 +51,20 @@ export default function MePage() {
   const activeAssignments = useMemo(
     () => assignments.filter((item) => item.status === 'active' && (item.userId === (authUser?.id ?? null) || item.userId === currentUserId)),
     [assignments, authUser?.id, currentUserId],
+  )
+  const dashboard = useMemo(
+    () => aggregateProducerDashboard({
+      teams,
+      approvals,
+      approvalGates,
+      notes,
+      tasks,
+      orders,
+      jobs,
+      deliveryPackages,
+      versions,
+    }),
+    [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions],
   )
   const workQueue = useMemo(
     () => buildPersonalWorkQueue({
@@ -52,6 +79,21 @@ export default function MePage() {
       notifications: notificationItems,
     }),
     [approvals, assignments, authUser?.id, currentUserId, deliveryPackages, inboxProfileId, invitations, notificationItems, tasks, teams],
+  )
+  const portfolio = useMemo(
+    () => buildWorkspacePortfolio({
+      userId: authUser?.id ?? currentUserId ?? 'user-me',
+      profileId: inboxProfileId ?? authUser?.id ?? currentUserId ?? 'user-me',
+      assignments,
+      teams,
+      invitations,
+      dashboard,
+      workQueue,
+      notifications: notificationItems,
+      deliveryPackages,
+      approvals,
+    }),
+    [approvals, assignments, authUser?.id, currentUserId, dashboard, deliveryPackages, inboxProfileId, invitations, notificationItems, teams, workQueue],
   )
   const pendingInvitationAction = pendingInvitations[0]
     ? getActionTarget({
@@ -111,6 +153,18 @@ export default function MePage() {
                 </div>
               </div>
             </div>
+          </div>
+          <div className="mb-6 space-y-6">
+            <WorkspaceSwitcher
+              recentProjects={portfolio.recentProjects}
+              highPriorityProjects={portfolio.highPriorityProjects}
+              waitingProjects={portfolio.waitingProjects}
+            />
+            <UserProjectPortfolio
+              data={portfolio}
+              title="Cross-project Summary"
+              subtitle="在进入单个项目前，先看你当前参与项目里哪些正在等你、哪些风险最高、哪些最值得优先切换。"
+            />
           </div>
           <PersonalCommandCenter queue={workQueue} />
           <InvitationInbox
