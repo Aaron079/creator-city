@@ -18,8 +18,10 @@ import { useNotificationsStore } from '@/store/notifications.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
 import { aggregateTalentMatching, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
+import { summarizeActivity } from '@/lib/activity/aggregate'
 import { resolveDashboardRoleContext } from '@/lib/roles/currentRole'
 import { useMockRoleMode } from '@/lib/roles/view-mode'
+import { useActivityLogStore } from '@/store/activity-log.store'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useReviewStore } from '@/store/review.store'
@@ -189,6 +191,37 @@ export default function DashboardPage() {
     () => buildNotificationAiSummary(notificationItems),
     [notificationItems],
   )
+  const activityItems = useActivityLogStore((s) => s.items)
+  const syncActivityLog = useActivityLogStore((s) => s.syncFromExistingSystems)
+  const activityProjectIds = useMemo(
+    () => Array.from(new Set(dashboard.overview.map((item) => item.projectId))),
+    [dashboard.overview],
+  )
+  useEffect(() => {
+    activityProjectIds.forEach((projectId) => {
+      syncActivityLog(projectId)
+    })
+  }, [
+    activityProjectIds,
+    syncActivityLog,
+    approvals,
+    notes,
+    deliveryPackages,
+    versions,
+    teams,
+    notificationItems,
+  ])
+  const activityTimelineItems = useMemo(
+    () => activityItems
+      .filter((item) => activityProjectIds.includes(item.projectId))
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 12),
+    [activityItems, activityProjectIds],
+  )
+  const activitySummary = useMemo(
+    () => summarizeActivity(activityItems.filter((item) => activityProjectIds.includes(item.projectId))),
+    [activityItems, activityProjectIds],
+  )
   const roleContext = useMemo(
     () => resolveDashboardRoleContext(
       dashboard.overview.map((item) => item.projectId),
@@ -260,6 +293,10 @@ export default function DashboardPage() {
           onMarkAllRead: markAllNotificationsRead,
           onDismiss: dismissNotification,
           onToggleRule: upsertNotificationRule,
+        }}
+        activity={{
+          items: activityTimelineItems,
+          summary: activitySummary,
         }}
         permissions={dashboardPermissions}
         role={dashboardRole}

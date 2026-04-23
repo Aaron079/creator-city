@@ -9,8 +9,10 @@ import { getVisibleSectionsForRole, type WorkspaceRole } from '@/lib/roles/view-
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 import { LicensingCenter } from '@/components/licensing/LicensingCenter'
 import { NotificationCenter } from '@/components/notifications/NotificationCenter'
+import { ActivityTimeline } from '@/components/activity/ActivityTimeline'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { TeamAssemblyPanel } from '@/components/team/TeamAssemblyPanel'
+import type { ActivityLogItem, ActivitySummary } from '@/lib/activity/aggregate'
 import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
@@ -74,6 +76,7 @@ export function ProducerDashboard({
   licensing,
   matching,
   notifications,
+  activity,
   permissions,
   role,
 }: {
@@ -107,6 +110,10 @@ export function ProducerDashboard({
     onMarkAllRead: () => void
     onDismiss: (id: string) => void
     onToggleRule: (rule: ReminderRule) => void
+  }
+  activity: {
+    items: ActivityLogItem[]
+    summary: ActivitySummary
   }
   permissions: RolePermission
   role: WorkspaceRole
@@ -346,19 +353,7 @@ export function ProducerDashboard({
 
       {visibleSections.has('recent-activity') ? (
       <Card title="Recent Activity">
-        <div className="space-y-3">
-          {data.activity.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">当前还没有可展示的活动摘要。</div>
-          ) : data.activity.map((item) => (
-            <div key={item.id} className="rounded-xl border border-white/6 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-white">{item.title}</div>
-                <div className="text-[11px] text-gray-500">{new Date(item.createdAt).toLocaleString('zh-CN')}</div>
-              </div>
-              <div className="mt-1 text-sm text-white/60">{item.detail}</div>
-            </div>
-          ))}
-        </div>
+        <ActivityTimeline items={activity.items} summary={activity.summary} />
       </Card>
       ) : null}
     </div>
