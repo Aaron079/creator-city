@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { Nav } from '@/components/layout/Nav'
 import { ProfileView } from '@/components/profile/ProfileView'
+import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { InvitationInbox } from '@/components/team/InvitationInbox'
 import { useAuthStore } from '@/store/auth.store'
@@ -18,6 +19,10 @@ export default function MePage() {
   const invitations = useTeamStore((s) => s.getInvitationsForProfile(inboxProfileId))
   const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
   const declineInvitation = useTeamStore((s) => s.declineInvitation)
+  const pendingInvitations = useMemo(
+    () => invitations.filter((item) => item.status === 'pending'),
+    [invitations],
+  )
   const activeAssignments = useMemo(
     () => assignments.filter((item) => item.status === 'active' && (item.userId === (authUser?.id ?? null) || item.userId === currentUserId)),
     [assignments, authUser?.id, currentUserId],
@@ -29,6 +34,19 @@ export default function MePage() {
       <div className="space-y-6 pt-14">
         <ProfileView userId={currentUserId} />
         <div className="mx-auto max-w-6xl px-4 pb-10">
+          {pendingInvitations.length > 0 ? (
+            <div className="mb-6">
+              <AccessNotice
+                title="你有待处理的项目邀请"
+                message="在接受项目邀请之前，相关 create / dashboard 入口不会完全开放。先处理邀请，再进入对应项目页，权限会按你的项目角色自动生效。"
+                details={pendingInvitations.slice(0, 3).map((invitation) => (
+                  `${invitation.projectTitle ?? invitation.projectId} · ${invitation.role} · 邀请人 ${invitation.invitedByName ?? invitation.invitedByUserId}`
+                ))}
+                href={pendingInvitations[0] ? `/review/${pendingInvitations[0].projectId}` : '/me'}
+                ctaLabel={pendingInvitations[0] ? '查看相关项目' : '查看邀请'}
+              />
+            </div>
+          ) : null}
           <div className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
             <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Current Identity</p>
             <div className="mt-3 grid gap-3 md:grid-cols-3">

@@ -63,6 +63,7 @@ import { analyzeAudioTimelineIssues, buildAudioSyncReview, buildCueSheet, buildM
 import { buildDeliveryAssets } from '@/lib/delivery/aggregate'
 import { buildDeliveryProjectData, buildDeliverySummaryText } from '@/lib/delivery/export'
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
+import { canEnterCreate, getProjectAccessState } from '@/lib/roles/access'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
@@ -5980,6 +5981,7 @@ export default function CreatePage() {
     [insights, narrative, scoreSummary, shots]
   )
   const teams = useTeamStore((s) => s.teams)
+  const invitations = useTeamStore((s) => s.invitations)
   const updateTeamStage = useTeamStore((s) => s.updateStage)
   const createTask = useTaskStore((s) => s.createTask)
   const orders = useOrderStore((s) => s.orders)
@@ -6049,6 +6051,28 @@ export default function CreatePage() {
   )
   const resolvedProjectRole = roleContext.role
   const effectiveProjectRole = roleContext.source === 'fallback' ? 'client' : resolvedProjectRole
+  const projectAccess = useMemo(
+    () => getProjectAccessState(deliveryProjectId, {
+      userId: currentUser?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      teams,
+      invitations,
+    }),
+    [currentProfileId, currentUser?.id, deliveryProjectId, invitations, projectRoleAssignments, teams],
+  )
+  const canAccessCreateWorkspace = useMemo(
+    () => canEnterCreate(deliveryProjectId, {
+      userId: currentUser?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      teams,
+      invitations,
+    }),
+    [currentProfileId, currentUser?.id, deliveryProjectId, invitations, projectRoleAssignments, teams],
+  )
+  const canViewCreateSnapshot = projectAccess.state === 'client-only'
+  const isCreateRouteBlocked = !canAccessCreateWorkspace && !canViewCreateSnapshot
   const projectPermissions = useMemo(
     () => roleContext.source === 'fallback'
       ? {
@@ -8645,7 +8669,7 @@ export default function CreatePage() {
     <CanvasProvider>
       <div className="flex h-screen bg-[#060a14] overflow-hidden">
 
-        {projectPermissions.canEditCreateWorkspace ? (
+        {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace ? (
         <LeftPanel
           idea={idea}
           running={running}
@@ -8695,25 +8719,49 @@ export default function CreatePage() {
             </div>
           </div>
 
-          {!projectPermissions.canEditCreateWorkspace ? (
+          {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
               <AccessNotice
-                title={roleContext.source === 'fallback'
-                  ? '当前账号尚未绑定到这个项目'
-                  : resolvedProjectRole === 'client'
+                title={projectAccess.state === 'invited'
+                  ? '你已收到项目邀请，接受后可进入工作区'
+                  : projectAccess.state === 'outsider'
+                    ? '当前账号还不是这个项目的成员'
+                    : roleContext.source === 'fallback'
+                      ? '当前账号尚未绑定到这个项目'
+                      : resolvedProjectRole === 'client'
                     ? '当前角色只能查看交付快照'
                     : '当前角色以只读方式进入工作区'}
-                message={roleContext.source === 'fallback'
-                  ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目还没有找到对应的 active role assignment。为了避免暴露完整创作工作区，你现在只会看到交付相关信息。若需要编辑权限，请让 Producer 将你加入项目团队并激活项目角色。`
-                  : resolvedProjectRole === 'client'
+                message={projectAccess.state === 'invited'
+                  ? `当前身份已经收到这个项目的邀请，但在你点击接受之前，不会开放完整 create workspace。先去“我的邀请”接受加入，随后对应项目角色和工作区权限会自动生效。`
+                  : projectAccess.state === 'outsider'
+                    ? `当前账号还没有被加入这个项目，因此不能进入完整 create workspace。你可以先查看当前身份信息，或联系 Producer 把你加入团队。`
+                    : roleContext.source === 'fallback'
+                      ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目还没有找到对应的 active role assignment。为了避免暴露完整创作工作区，你现在只会看到交付相关信息。若需要编辑权限，请让 Producer 将你加入项目团队并激活项目角色。`
+                      : resolvedProjectRole === 'client'
                     ? `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。Client 角色不能进入完整 create workspace，也不会看到内部创作与复杂参数。你可以在这里查看交付信息，或前往 review portal 完成确认。`
                     : `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。当前项目角色没有完整创作编辑权限。你仍然可以查看与当前项目相关的交付信息和输出状态。`}
-                href={roleContext.source === 'fallback' || resolvedProjectRole === 'client' ? `/review/${deliveryProjectId}` : '/dashboard'}
-                ctaLabel={roleContext.source === 'fallback' || resolvedProjectRole === 'client' ? '前往 Review Portal' : '返回 Dashboard'}
+                details={[
+                  `当前账号：${currentUser?.displayName ?? currentUser?.id ?? '未解析'}`,
+                  `当前 Profile：${currentProfileId ?? '未解析'}`,
+                  `项目访问状态：${projectAccess.state}`,
+                ]}
+                href={projectAccess.state === 'invited'
+                  ? '/me'
+                  : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
+                    ? `/review/${deliveryProjectId}`
+                    : '/me'}
+                ctaLabel={projectAccess.state === 'invited'
+                  ? '前往我的邀请页'
+                  : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
+                    ? '前往 Review Portal'
+                    : '查看当前身份'}
+                secondaryHref={projectAccess.state === 'outsider' ? '/review/' + deliveryProjectId : undefined}
+                secondaryLabel={projectAccess.state === 'outsider' ? '尝试查看 Review' : undefined}
               />
             </div>
           ) : null}
 
+          {!isCreateRouteBlocked ? (
           <div className="px-5 pt-2 pb-2 flex items-center justify-between gap-4" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="flex gap-2 flex-wrap">
               {([
@@ -8751,8 +8799,9 @@ export default function CreatePage() {
                     : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
             </p>
           </div>
+          ) : null}
 
-          {workspaceView === 'canvas' || workspaceView === 'previs' ? (
+          {!isCreateRouteBlocked && (workspaceView === 'canvas' || workspaceView === 'previs') ? (
             <ShotTimeline
               shots={shots}
               narrative={narrative}
@@ -8883,7 +8932,7 @@ export default function CreatePage() {
               onApplyCinematicSkill={handleApplyCinematicSkill}
               currentStage={currentStage}
             />
-          ) : workspaceView === 'audio' ? (
+          ) : !isCreateRouteBlocked && workspaceView === 'audio' ? (
             <AudioDesk
               roleBibles={roleBibles}
               shots={shots}
@@ -8918,7 +8967,7 @@ export default function CreatePage() {
               onOpenEditorDesk={() => setWorkspaceView('editor')}
               onBackToCanvas={() => setWorkspaceView('canvas')}
             />
-          ) : workspaceView === 'delivery' ? (
+          ) : !isCreateRouteBlocked && workspaceView === 'delivery' ? (
             <DeliveryTab
               projectTitle={deliveryProjectTitle}
               currentStage={currentStage}
@@ -8935,7 +8984,7 @@ export default function CreatePage() {
               onExportProjectData={handleExportDeliveryProjectData}
               onSubmitPackage={handleSubmitDeliveryPackage}
             />
-          ) : (
+          ) : !isCreateRouteBlocked ? (
             <EditorDesk
               jobs={shotDerivativeJobs}
               timeline={editorTimeline}
@@ -8971,7 +9020,7 @@ export default function CreatePage() {
                 setRequestedPanel('previs')
               }}
             />
-          )}
+          ) : null}
         </div>
 
         <div className="hidden">

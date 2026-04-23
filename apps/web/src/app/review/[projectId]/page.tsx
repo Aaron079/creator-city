@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
+import { canEnterReview, getProjectAccessState } from '@/lib/roles/access'
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
@@ -73,6 +74,7 @@ export default function ClientReviewPortalPage() {
   const versions = useVersionHistoryStore((s) => s.versions)
   const compareVersions = useVersionHistoryStore((s) => s.compareVersions)
   const teams = useTeamStore((s) => s.teams)
+  const invitations = useTeamStore((s) => s.invitations)
   const orders = useOrderStore((s) => s.orders)
   const jobs = useJobsStore((s) => s.jobs)
   const createTask = useTaskStore((s) => s.createTask)
@@ -92,6 +94,26 @@ export default function ClientReviewPortalPage() {
   )
   const resolvedProjectRole = roleContext.role
   const effectiveProjectRole = roleContext.source === 'fallback' ? 'client' : resolvedProjectRole
+  const projectAccess = useMemo(
+    () => getProjectAccessState(projectId, {
+      userId: currentUser?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      teams,
+      invitations,
+    }),
+    [currentProfileId, currentUser?.id, invitations, projectId, projectRoleAssignments, teams],
+  )
+  const canOpenReview = useMemo(
+    () => canEnterReview(projectId, {
+      userId: currentUser?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      teams,
+      invitations,
+    }),
+    [currentProfileId, currentUser?.id, invitations, projectId, projectRoleAssignments, teams],
+  )
   const permissions = useMemo(
     () => roleContext.source === 'fallback'
       ? {
@@ -236,27 +258,52 @@ export default function ClientReviewPortalPage() {
           </div>
         </div>
 
-        {!permissions.canApproveAsClient ? (
+        {!canOpenReview ? (
           <div className="mb-6">
             <AccessNotice
-              title={roleContext.source === 'fallback' ? '当前账号尚未绑定到这个项目' : '当前角色只能查看审片内容'}
-              message={roleContext.source === 'fallback'
-                ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目里没有找到对应的 active role assignment。你现在可以只读查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要操作权限，请联系 Producer 完成项目角色绑定。`
-                : `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。你现在可以查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要客户动作，请切换到 Client 角色开发辅助视图，或由真实 client 身份操作。`}
-              href="/dashboard"
-              ctaLabel="查看项目概览"
+              title="当前账号还不是这个项目的成员"
+              message="Review Portal 只对项目成员或被绑定的客户身份开放。当前账号还没有 active project membership，因此只能先查看身份信息或联系 Producer 加入项目。"
+              details={[
+                `当前账号：${currentUser?.displayName ?? currentUser?.id ?? '未解析'}`,
+                `当前 Profile：${currentProfileId ?? '未解析'}`,
+                `项目访问状态：${projectAccess.state}`,
+              ]}
+              href="/me"
+              ctaLabel="查看我的身份"
+            />
+          </div>
+        ) : !permissions.canApproveAsClient ? (
+          <div className="mb-6">
+            <AccessNotice
+              title={projectAccess.state === 'invited'
+                ? '你已收到项目邀请，接受后可完整参与 Review'
+                : roleContext.source === 'fallback'
+                  ? '当前账号尚未绑定到这个项目'
+                  : '当前角色只能查看审片内容'}
+              message={projectAccess.state === 'invited'
+                ? '当前账号已经收到这个项目的邀请。你现在可以只读查看审片内容，但在接受邀请之前，不会开放成员级入口与动作权限。先去“我的邀请”接受加入，随后项目角色会自动生效。'
+                : roleContext.source === 'fallback'
+                  ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目里没有找到对应的 active role assignment。你现在可以只读查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要操作权限，请联系 Producer 完成项目角色绑定。`
+                  : `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。你现在可以查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要客户动作，请切换到 Client 角色开发辅助视图，或由真实 client 身份操作。`}
+              details={[
+                `当前账号：${currentUser?.displayName ?? currentUser?.id ?? '未解析'}`,
+                `当前 Profile：${currentProfileId ?? '未解析'}`,
+                `项目访问状态：${projectAccess.state}`,
+              ]}
+              href={projectAccess.state === 'invited' ? '/me' : '/dashboard'}
+              ctaLabel={projectAccess.state === 'invited' ? '前往我的邀请页' : '查看项目概览'}
             />
           </div>
         ) : null}
 
-        {visibleSections.has('header') ? (
+        {canOpenReview && visibleSections.has('header') ? (
           <ClientReviewHeader
             title={reviewContext.projectTitle}
             description={reviewContext.projectDescription}
           />
         ) : null}
 
-        {visibleSections.has('summary') ? (
+        {canOpenReview && visibleSections.has('summary') ? (
           <ReviewSummaryCard
             currentStage={reviewContext.currentStage}
             currentVersion={reviewContext.currentVersion}
@@ -268,7 +315,7 @@ export default function ClientReviewPortalPage() {
           />
         ) : null}
 
-        {visibleSections.has('items') ? (
+        {canOpenReview && visibleSections.has('items') ? (
         <div className="mt-8 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <p className="text-[11px] font-semibold text-white/82">待确认内容</p>
@@ -286,7 +333,7 @@ export default function ClientReviewPortalPage() {
         </div>
         ) : null}
 
-        {visibleSections.has('items') ? (
+        {canOpenReview && visibleSections.has('items') ? (
         <div className="grid gap-4 mt-4">
           {reviewContext.items.length === 0 && (
             <div className="rounded-[28px] p-6" style={{ background: 'rgba(9,14,24,0.82)', border: '1px solid rgba(255,255,255,0.07)' }}>

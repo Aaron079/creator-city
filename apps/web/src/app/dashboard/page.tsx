@@ -31,7 +31,9 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildLicenseRecords } from '@/lib/licensing/aggregate'
 import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
+import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
+import { canEnterDashboard, getProjectAccessState } from '@/lib/roles/access'
 
 export default function DashboardPage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
@@ -62,6 +64,7 @@ export default function DashboardPage() {
   const orders = useOrderStore((s) => s.orders)
   const tasks = useTaskStore((s) => s.tasks)
   const teams = useTeamStore((s) => s.teams)
+  const invitations = useTeamStore((s) => s.invitations)
   const createTeam = useTeamStore((s) => s.createTeam)
   const inviteMember = useTeamStore((s) => s.inviteMember)
   const cancelInvitation = useTeamStore((s) => s.cancelInvitation)
@@ -114,17 +117,110 @@ export default function DashboardPage() {
     })
   }, [deliveryPackageIds, generateDeliveryRiskSummary, licensingSignature])
 
+  const allProjectIds = useMemo(
+    () => Array.from(new Set([
+      ...teams.map((team) => team.projectId),
+      ...orders.map((order) => order.id),
+      ...deliveryPackages.map((pkg) => pkg.projectId),
+      ...projectRoleAssignments.map((assignment) => assignment.projectId),
+      ...invitations.map((invitation) => invitation.projectId),
+    ].filter(Boolean))),
+    [deliveryPackages, invitations, orders, projectRoleAssignments, teams],
+  )
+  const accessByProject = useMemo(
+    () => allProjectIds.map((projectId) => getProjectAccessState(projectId, {
+      userId: user?.id ?? null,
+      profileId: currentProfileId ?? null,
+      assignments: projectRoleAssignments,
+      teams,
+      invitations,
+    })),
+    [allProjectIds, currentProfileId, invitations, projectRoleAssignments, teams, user?.id],
+  )
+  const accessibleProjectIds = useMemo(
+    () => accessByProject
+      .filter((item) => canEnterDashboard(item.projectId, {
+        userId: item.userId,
+        profileId: item.profileId,
+        assignments: projectRoleAssignments,
+        teams,
+        invitations,
+      }))
+      .map((item) => item.projectId),
+    [accessByProject, invitations, projectRoleAssignments, teams],
+  )
+  const invitedProjectIds = useMemo(
+    () => accessByProject.filter((item) => item.state === 'invited').map((item) => item.projectId),
+    [accessByProject],
+  )
+  const clientOnlyProjectIds = useMemo(
+    () => accessByProject.filter((item) => item.state === 'client-only').map((item) => item.projectId),
+    [accessByProject],
+  )
+  const filteredTeams = useMemo(
+    () => teams.filter((team) => accessibleProjectIds.includes(team.projectId)),
+    [accessibleProjectIds, teams],
+  )
+  const filteredOrders = useMemo(
+    () => orders.filter((order) => accessibleProjectIds.includes(order.id) || accessibleProjectIds.includes(order.chatId)),
+    [accessibleProjectIds, orders],
+  )
+  const allowedJobIds = useMemo(
+    () => new Set([
+      ...accessibleProjectIds,
+      ...filteredOrders.map((order) => order.chatId),
+    ].filter(Boolean)),
+    [accessibleProjectIds, filteredOrders],
+  )
+  const filteredJobs = useMemo(
+    () => jobs.filter((job) => allowedJobIds.has(job.id)),
+    [allowedJobIds, jobs],
+  )
+  const allowedTargetIds = useMemo(
+    () => new Set([
+      ...accessibleProjectIds,
+      ...filteredJobs.map((job) => job.id),
+      ...filteredOrders.map((order) => order.id),
+      ...filteredOrders.map((order) => order.chatId),
+    ].filter(Boolean)),
+    [accessibleProjectIds, filteredJobs, filteredOrders],
+  )
+  const filteredApprovals = useMemo(
+    () => approvals.filter((approval) => allowedTargetIds.has(approval.targetId)),
+    [allowedTargetIds, approvals],
+  )
+  const filteredNotes = useMemo(
+    () => notes.filter((note) => allowedTargetIds.has(note.targetId)),
+    [allowedTargetIds, notes],
+  )
+  const filteredDeliveryPackages = useMemo(
+    () => deliveryPackages.filter((pkg) => accessibleProjectIds.includes(pkg.projectId)),
+    [accessibleProjectIds, deliveryPackages],
+  )
+  const filteredVersions = useMemo(
+    () => versions.filter((version) => allowedTargetIds.has(version.entityId)),
+    [allowedTargetIds, versions],
+  )
+  const allowedTeamIds = useMemo(
+    () => new Set(filteredTeams.map((team) => team.id)),
+    [filteredTeams],
+  )
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => allowedTeamIds.has(task.teamId)),
+    [allowedTeamIds, tasks],
+  )
+
   const dashboard = useMemo(() => aggregateProducerDashboard({
-    teams,
-    approvals,
+    teams: filteredTeams,
+    approvals: filteredApprovals,
     approvalGates,
-    notes,
-    tasks,
-    orders,
-    jobs,
-    deliveryPackages,
-    versions,
-  }), [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions])
+    notes: filteredNotes,
+    tasks: filteredTasks,
+    orders: filteredOrders,
+    jobs: filteredJobs,
+    deliveryPackages: filteredDeliveryPackages,
+    versions: filteredVersions,
+  }), [approvalGates, filteredApprovals, filteredDeliveryPackages, filteredJobs, filteredNotes, filteredOrders, filteredTasks, filteredTeams, filteredVersions])
 
   const planningSettings = useMemo(() => loadPlanningSettings(), [])
   const planning = useMemo(
@@ -249,6 +345,7 @@ export default function DashboardPage() {
       : roleContext.permissions,
     [roleContext],
   )
+  const hasDashboardAccess = accessibleProjectIds.length > 0
 
   if (!user) return null
 
@@ -262,45 +359,69 @@ export default function DashboardPage() {
           onClear={clearRoleOverride}
         />
       </div>
-      <ProducerDashboard
-        data={dashboard}
-        licensing={{
-          records,
-          summary: licensingSummary,
-          issues: licensingIssues,
-          deliveryPackages,
-          onMarkCommercialCleared: markCommercialCleared,
-          onMarkRestricted: markRestricted,
-          onSetUsageScope: setUsageScope,
-          onAttachProof: attachProof,
-        }}
-        matching={{
-          data: matching,
-          getProjectMembers,
-          getPendingInvitations,
-          getInvitationActivity,
-          onInvite: handleInviteCandidate,
-          onCancelInvitation: cancelInvitation,
-          onChangeMemberRole: changeMemberRole,
-          onRemoveMember: removeMember,
-        }}
-        notifications={{
-          items: notificationItems,
-          summary: notificationSummary,
-          rules: notificationRules,
-          aiSummary: notificationAiSummary,
-          onMarkRead: markNotificationRead,
-          onMarkAllRead: markAllNotificationsRead,
-          onDismiss: dismissNotification,
-          onToggleRule: upsertNotificationRule,
-        }}
-        activity={{
-          items: activityTimelineItems,
-          summary: activitySummary,
-        }}
-        permissions={dashboardPermissions}
-        role={dashboardRole}
-      />
+      {!hasDashboardAccess ? (
+        <AccessNotice
+          title={invitedProjectIds.length > 0
+            ? '你已收到项目邀请，接受后可进入 Dashboard'
+            : clientOnlyProjectIds.length > 0
+              ? '当前账号以 Client 角色绑定到项目'
+              : '当前账号还不能进入项目 Dashboard'}
+          message={invitedProjectIds.length > 0
+            ? '这些项目已经邀请你加入，但在你接受邀请之前，Dashboard 不会开放完整的项目总控视图。先去我的邀请页确认加入，之后项目级视图和动作权限会自动生效。'
+            : clientOnlyProjectIds.length > 0
+              ? 'Client 角色不会进入完整 Producer Dashboard。你可以继续通过 Review Portal 查看待确认内容和交付快照。'
+              : '当前账号没有 active project membership，因此暂时不能进入项目 Dashboard。你可以先查看我的身份概览，或联系 Producer 完成项目成员绑定。'}
+          details={[
+            `当前账号：${user.displayName ?? user.id}`,
+            `当前 Profile：${currentProfileId ?? '未解析'}`,
+            invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
+          ]}
+          href={invitedProjectIds.length > 0 ? '/me' : clientOnlyProjectIds.length > 0 ? `/review/${clientOnlyProjectIds[0]}` : '/me'}
+          ctaLabel={invitedProjectIds.length > 0 ? '前往我的邀请页' : clientOnlyProjectIds.length > 0 ? '前往 Review Portal' : '查看当前身份'}
+          secondaryHref={clientOnlyProjectIds.length > 0 ? '/me' : undefined}
+          secondaryLabel={clientOnlyProjectIds.length > 0 ? '查看我的项目身份' : undefined}
+        />
+      ) : (
+        <ProducerDashboard
+          data={dashboard}
+          licensing={{
+            records,
+            summary: licensingSummary,
+            issues: licensingIssues,
+            deliveryPackages: filteredDeliveryPackages,
+            onMarkCommercialCleared: markCommercialCleared,
+            onMarkRestricted: markRestricted,
+            onSetUsageScope: setUsageScope,
+            onAttachProof: attachProof,
+          }}
+          matching={{
+            data: matching,
+            getProjectMembers,
+            getPendingInvitations,
+            getInvitationActivity,
+            onInvite: handleInviteCandidate,
+            onCancelInvitation: cancelInvitation,
+            onChangeMemberRole: changeMemberRole,
+            onRemoveMember: removeMember,
+          }}
+          notifications={{
+            items: notificationItems,
+            summary: notificationSummary,
+            rules: notificationRules,
+            aiSummary: notificationAiSummary,
+            onMarkRead: markNotificationRead,
+            onMarkAllRead: markAllNotificationsRead,
+            onDismiss: dismissNotification,
+            onToggleRule: upsertNotificationRule,
+          }}
+          activity={{
+            items: activityTimelineItems,
+            summary: activitySummary,
+          }}
+          permissions={dashboardPermissions}
+          role={dashboardRole}
+        />
+      )}
     </DashboardShell>
   )
 }
