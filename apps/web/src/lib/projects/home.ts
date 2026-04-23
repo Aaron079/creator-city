@@ -1,6 +1,7 @@
 import type { ActivityLogItem } from '@/lib/activity/aggregate'
 import type { ProducerDashboardData, DashboardProjectOverview } from '@/lib/dashboard/aggregate'
 import type { ProducerPlanningData, PlanningProjectRow, ProductionConflict, ProductionScheduleItem } from '@/lib/dashboard/planning'
+import type { ClientProjectStatusFeedData } from '@/lib/projects/client-feed'
 import type { ProjectAccessInfo } from '@/lib/roles/access'
 import type { CurrentProjectRoleContext } from '@/lib/roles/currentRole'
 import { getProjectRoleLabel } from '@/lib/roles/projectRoles'
@@ -33,6 +34,7 @@ export interface RoleAwareProjectHomeData {
   quickActions: ProjectHomeAction[]
   latestActivity: ActivityLogItem[]
   latestChanges: ActivityLogItem[]
+  clientFeed: ClientProjectStatusFeedData | null
   notifications: NotificationItem[]
   workQueue: WorkQueueItem[]
   delivery: {
@@ -145,6 +147,7 @@ export function buildRoleAwareProjectHome(input: {
   workQueue: PersonalWorkQueueData
   notifications: NotificationItem[]
   activity: ActivityLogItem[]
+  clientFeed: ClientProjectStatusFeedData | null
   deliveryPackage: DeliveryPackage | null
   members: TeamMemberSummary[]
   invitations: TeamInvitation[]
@@ -242,6 +245,7 @@ export function buildRoleAwareProjectHome(input: {
     quickActions,
     latestActivity,
     latestChanges,
+    clientFeed: input.clientFeed,
     notifications,
     workQueue,
     delivery,

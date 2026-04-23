@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import type { ActivityLogItem } from '@/lib/activity/aggregate'
 import type { RoleAwareProjectHomeData } from '@/lib/projects/home'
+import { ClientProjectStatusFeed } from '@/components/projects/ClientProjectStatusFeed'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { getActionTarget } from '@/lib/routing/actions'
 
@@ -287,34 +288,15 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
 
           {data.surface === 'client' ? (
             <>
-              <Card title="Client Summary" subtitle="你最关心的是版本、待确认项和交付快照。">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <Metric label="Latest version" value={data.client.latestVersion} />
-                  <Metric label="Pending confirmations" value={data.client.pendingConfirmations} tone={data.client.pendingConfirmations > 0 ? 'warning' : 'default'} />
-                  <Metric label="Delivery status" value={data.delivery.status} tone={data.delivery.strongRiskCount > 0 ? 'warning' : 'default'} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {data.client.actionButtons.map((action) => (
-                    <Link
-                      key={action.id}
-                      href={action.href}
-                      className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
-                    >
-                      {action.label}
-                    </Link>
-                  ))}
-                </div>
-              </Card>
-
-              <Card title="Latest Changes" subtitle="最近发生的变更和需要你关注的更新。">
-                <ActivityList items={data.client.latestChanges} />
-              </Card>
+              {data.clientFeed ? <ClientProjectStatusFeed data={data.clientFeed} /> : null}
             </>
           ) : null}
 
-          <Card title="Latest Activity / Changes" subtitle="不重建流程，只把最近需要回看的动作放在一处。">
-            <ActivityList items={data.latestActivity} />
-          </Card>
+          {data.surface !== 'client' ? (
+            <Card title="Latest Activity / Changes" subtitle="不重建流程，只把最近需要回看的动作放在一处。">
+              <ActivityList items={data.latestActivity} />
+            </Card>
+          ) : null}
         </div>
 
         <div className="space-y-6">

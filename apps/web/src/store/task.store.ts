@@ -1,24 +1,53 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useReviewResolutionStore } from '@/lib/review/resolution-store'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TaskStatus = 'todo' | 'doing' | 'done'
+export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export interface Task {
   id:           string
   teamId:       string
+  description?: string
+  priority?:    TaskPriority
   title:        string
   assignedTo:   string
   assignedName: string
   status:       TaskStatus
+  relatedResolutionId?: string
+  relatedProjectId?: string
+  relatedResolutionStatusSnapshot?: string
   createdAt:    number
 }
 
 interface TaskState {
   tasks:        Task[]
-  createTask:   (teamId: string, title: string, assignedTo: string, assignedName: string) => Task
+  createTask:   (
+    teamId: string,
+    title: string,
+    assignedTo: string,
+    assignedName: string,
+    options?: {
+      description?: string
+      priority?: TaskPriority
+      relatedResolutionId?: string
+      relatedProjectId?: string
+      relatedResolutionStatusSnapshot?: string
+    },
+  ) => Task
   updateStatus: (taskId: string, status: TaskStatus) => void
+  linkTaskResolution: (
+    taskId: string,
+    resolutionId: string,
+    options?: {
+      projectId?: string
+      resolutionStatusSnapshot?: string
+    },
+  ) => void
+  markLinkedResolutionInProgress: (taskId: string) => void
+  markLinkedResolutionResolved: (taskId: string) => void
   getTeamTasks: (teamId: string) => Task[]
 }
 
@@ -76,14 +105,19 @@ export const useTaskStore = create<TaskState>()(
     (set, get) => ({
       tasks: SEED_TASKS,
 
-      createTask: (teamId, title, assignedTo, assignedName) => {
+      createTask: (teamId, title, assignedTo, assignedName, options) => {
         const task: Task = {
           id:           uid(),
           teamId,
+          description:  options?.description,
+          priority:     options?.priority,
           title,
           assignedTo,
           assignedName,
           status:       'todo',
+          relatedResolutionId: options?.relatedResolutionId,
+          relatedProjectId: options?.relatedProjectId,
+          relatedResolutionStatusSnapshot: options?.relatedResolutionStatusSnapshot,
           createdAt:    Date.now(),
         }
         set((s) => ({ tasks: [...s.tasks, task] }))
@@ -93,6 +127,41 @@ export const useTaskStore = create<TaskState>()(
       updateStatus: (taskId, status) => {
         set((s) => ({
           tasks: s.tasks.map((t) => t.id === taskId ? { ...t, status } : t),
+        }))
+      },
+
+      linkTaskResolution: (taskId, resolutionId, options) => {
+        set((s) => ({
+          tasks: s.tasks.map((item) => item.id === taskId
+            ? {
+                ...item,
+                relatedResolutionId: resolutionId,
+                relatedProjectId: options?.projectId ?? item.relatedProjectId,
+                relatedResolutionStatusSnapshot: options?.resolutionStatusSnapshot ?? item.relatedResolutionStatusSnapshot,
+              }
+            : item),
+        }))
+      },
+
+      markLinkedResolutionInProgress: (taskId) => {
+        const task = get().tasks.find((item) => item.id === taskId)
+        if (!task?.relatedResolutionId) return
+        useReviewResolutionStore.getState().markResolutionInProgress(task.relatedResolutionId)
+        set((s) => ({
+          tasks: s.tasks.map((item) => item.id === taskId
+            ? { ...item, relatedResolutionStatusSnapshot: 'in-progress' }
+            : item),
+        }))
+      },
+
+      markLinkedResolutionResolved: (taskId) => {
+        const task = get().tasks.find((item) => item.id === taskId)
+        if (!task?.relatedResolutionId) return
+        useReviewResolutionStore.getState().markResolutionResolved(task.relatedResolutionId)
+        set((s) => ({
+          tasks: s.tasks.map((item) => item.id === taskId
+            ? { ...item, relatedResolutionStatusSnapshot: 'resolved' }
+            : item),
         }))
       },
 
