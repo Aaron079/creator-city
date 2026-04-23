@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
@@ -9,12 +9,15 @@ import { canEnterReview, getProjectAccessState } from '@/lib/roles/access'
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
 import { DeliveryApprovalCard } from '@/components/review/DeliveryApprovalCard'
+import { ResolutionLoopPanel } from '@/components/review/ResolutionLoopPanel'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
 import { ReviewItemCard } from '@/components/review/ReviewItemCard'
 import { ReviewSummaryCard } from '@/components/review/ReviewSummaryCard'
 import { VersionComparePanel } from '@/components/review/VersionComparePanel'
+import { buildReviewResolutionSeeds, filterResolutionItemsForRole } from '@/lib/review/resolution'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { buildClientReviewContext } from '@/lib/review/review-data'
+import { useReviewResolutionStore } from '@/lib/review/resolution-store'
 import { useApprovalStore } from '@/store/approval.store'
 import type { ApprovalDecision, ApprovalTargetType } from '@/store/approval.store'
 import { useAudioDeskStore } from '@/store/audio-desk.store'
@@ -87,6 +90,14 @@ export default function ClientReviewPortalPage() {
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const projectRoleAssignments = useProjectRoleStore((s) => s.assignments)
   const audioTimelines = useAudioDeskStore((s) => s.audioTimelines)
+  const resolutionItems = useReviewResolutionStore((s) => s.items)
+  const createResolutionItem = useReviewResolutionStore((s) => s.createResolutionItem)
+  const syncResolutionItems = useReviewResolutionStore((s) => s.syncResolutionItems)
+  const assignResolution = useReviewResolutionStore((s) => s.assignResolution)
+  const markResolutionInProgress = useReviewResolutionStore((s) => s.markResolutionInProgress)
+  const markResolutionResolved = useReviewResolutionStore((s) => s.markResolutionResolved)
+  const markResolutionResubmitted = useReviewResolutionStore((s) => s.markResolutionResubmitted)
+  const linkResolutionTask = useReviewResolutionStore((s) => s.linkResolutionTask)
   const roleContext = useMemo(
     () => resolveProjectRoleContext(projectId, {
       userId: currentUser?.id ?? null,
@@ -181,6 +192,45 @@ export default function ClientReviewPortalPage() {
     () => reviewContext.items.filter((item) => item.targetType !== 'delivery'),
     [reviewContext.items],
   )
+  const resolutionSeeds = useMemo(
+    () => buildReviewResolutionSeeds({
+      projectId,
+      approvals: approvals.filter((approval) => reviewContext.items.some((item) => item.id === approval.id)),
+      notes: notes.filter((note) => note.targetId === projectId || reviewContext.items.some((item) => item.targetId === note.targetId)),
+      versions,
+    }),
+    [approvals, notes, projectId, reviewContext.items, versions],
+  )
+  const allProjectResolutionItems = useMemo(
+    () => resolutionItems
+      .filter((item) => item.projectId === projectId)
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()),
+    [projectId, resolutionItems],
+  )
+  const visibleResolutionItems = useMemo(
+    () => filterResolutionItemsForRole({
+      items: allProjectResolutionItems,
+      role: effectiveProjectRole,
+      userId: currentUser?.id,
+      profileId: currentProfileId,
+    }),
+    [allProjectResolutionItems, currentProfileId, currentUser?.id, effectiveProjectRole],
+  )
+  const resolutionSummary = useMemo(
+    () => ({
+      openCount: visibleResolutionItems.filter((item) => item.status === 'open').length,
+      inProgressCount: visibleResolutionItems.filter((item) => item.status === 'in-progress').length,
+      resolvedCount: visibleResolutionItems.filter((item) => item.status === 'resolved').length,
+      strongCount: visibleResolutionItems.filter((item) => item.severity === 'strong').length,
+      resubmittedCount: visibleResolutionItems.filter((item) => item.status === 'resubmitted').length,
+    }),
+    [visibleResolutionItems],
+  )
+
+  useEffect(() => {
+    if (resolutionSeeds.length === 0) return
+    syncResolutionItems(projectId, resolutionSeeds)
+  }, [projectId, resolutionSeeds, syncResolutionItems])
 
   const [actionDraft, setActionDraft] = useState<{
     approvalId: string
@@ -244,7 +294,9 @@ export default function ClientReviewPortalPage() {
       }
     }
 
-    if (actionDraft.status === 'changes-requested' && !isDeliveryApproval) {
+    let createdTaskId: string | undefined
+
+    if ((actionDraft.status === 'changes-requested' || actionDraft.status === 'rejected') && !isDeliveryApproval) {
       if (actionDraft.followUp === 'note') {
         const confirmed = window.confirm('确认把这条客户修改意见保存为导演批注吗？')
         if (confirmed) {
@@ -268,8 +320,36 @@ export default function ClientReviewPortalPage() {
         const assignee = activeTeam.members.find((member) => member.userId === actionDraft.assignedTo) ?? activeTeam.members[0]
         const confirmed = window.confirm('确认把这条客户修改意见转成任务吗？')
         if (confirmed && assignee) {
-          createTask(activeTeam.id, `[客户修改] ${approval.title}`, assignee.userId, assignee.name)
+          const nextTask = createTask(activeTeam.id, `[客户修改] ${approval.title}`, assignee.userId, assignee.name)
+          createdTaskId = nextTask.id
         }
+      }
+    }
+
+    if (actionDraft.status === 'changes-requested' || actionDraft.status === 'rejected') {
+      const nextResolution = createResolutionItem({
+        projectId,
+        sourceType: 'client-review',
+        sourceId: approval.id,
+        title: approval.title,
+        description: actionDraft.comment.trim() || approval.description || '客户已提交修改意见。',
+        severity: actionDraft.status === 'rejected' ? 'strong' : 'warning',
+        assignedRole: approval.targetType === 'delivery'
+          ? 'producer'
+          : approval.targetType === 'video-shot'
+            ? 'cinematographer'
+            : approval.targetType === 'editor-clip' || approval.targetType === 'editor-timeline'
+              ? 'editor'
+              : approval.targetType === 'audio-timeline'
+                ? 'creator'
+                : 'director',
+        assignedUserId: actionDraft.assignedTo || undefined,
+        relatedTaskId: createdTaskId,
+        relatedVersionId: approval.versionId,
+      })
+
+      if (createdTaskId) {
+        linkResolutionTask(nextResolution.id, createdTaskId)
       }
     }
 
@@ -289,6 +369,21 @@ export default function ClientReviewPortalPage() {
       addApprovalSystemMessage(`${TARGET_LABELS[approval.targetType]}「${approval.title}」客户${actionLabel}。`)
     }
     setActionDraft(null)
+  }
+
+  const canAssignResolution = effectiveProjectRole === 'producer'
+  const canManageResubmission = effectiveProjectRole === 'producer'
+  const canUpdateResolution = (itemId: string) => {
+    const item = allProjectResolutionItems.find((entry) => entry.id === itemId)
+    if (!item) return false
+    if (effectiveProjectRole === 'producer') return true
+    if (effectiveProjectRole === 'client') return false
+    return (
+      item.assignedUserId === currentUser?.id
+      || item.assignedUserId === currentProfileId
+      || item.assignedRole === effectiveProjectRole
+      || (effectiveProjectRole === 'creator' && item.assignedRole === 'creator')
+    )
   }
 
   return (
@@ -394,6 +489,25 @@ export default function ClientReviewPortalPage() {
                 onCancel={() => setActionDraft(null)}
               />
             ) : undefined}
+          />
+        ) : null}
+
+        {canOpenReview ? (
+          <ResolutionLoopPanel
+            items={visibleResolutionItems}
+            summary={resolutionSummary}
+            canAssign={canAssignResolution}
+            canManageResubmission={canManageResubmission}
+            canUpdateResolution={(item) => canUpdateResolution(item.id)}
+            assigneeOptions={teamAssigneeOptions}
+            onAssign={assignResolution}
+            onMarkInProgress={markResolutionInProgress}
+            onMarkResolved={markResolutionResolved}
+            onMarkResubmitted={(id) => {
+              const item = allProjectResolutionItems.find((entry) => entry.id === id)
+              markResolutionResubmitted(id, item?.relatedVersionId)
+              addApprovalSystemMessage(`修改项「${item?.title ?? id}」已标记为重新提交 review。`)
+            }}
           />
         ) : null}
 

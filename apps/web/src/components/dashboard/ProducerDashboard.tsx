@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useMemo } from 'react'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
+import { isResolutionOverdue, useReviewResolutionStore } from '@/lib/review/resolution-store'
 import type { MatchCandidate, RoleNeed, TalentMatchingData } from '@/lib/matching/aggregate'
 import type { RolePermission } from '@/lib/roles/permissions'
 import { getVisibleSectionsForRole, type WorkspaceRole } from '@/lib/roles/view-mode'
@@ -124,7 +126,25 @@ export function ProducerDashboard({
   permissions: RolePermission
   role: WorkspaceRole
 }) {
+  const resolutionItems = useReviewResolutionStore((s) => s.items)
   const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
+  const projectIds = useMemo(
+    () => data.overview.map((project) => project.projectId),
+    [data.overview],
+  )
+  const producerResolutionItems = useMemo(
+    () => resolutionItems
+      .filter((item) => projectIds.includes(item.projectId))
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()),
+    [projectIds, resolutionItems],
+  )
+  const resolutionSummary = useMemo(() => ({
+    open: producerResolutionItems.filter((item) => item.status === 'open').length,
+    strong: producerResolutionItems.filter((item) => item.severity === 'strong').length,
+    overdue: producerResolutionItems.filter((item) => isResolutionOverdue(item)).length,
+    resubmitted: producerResolutionItems.filter((item) => item.status === 'resubmitted').length,
+  }), [producerResolutionItems])
+
   const shouldShowNotifications = role !== 'client'
     || notifications.items.some((item) => (
       !item.isDismissed
@@ -344,6 +364,47 @@ export function ProducerDashboard({
         </Card>
         ) : null}
       </div>
+
+      {permissions.canViewDashboard ? (
+      <Card title="Resolution Loop" id="resolution-loop">
+        <div className="grid gap-3 md:grid-cols-4">
+          <MetricTile label="Open resolutions" value={resolutionSummary.open} tone={resolutionSummary.open > 0 ? 'warning' : 'default'} />
+          <MetricTile label="Strong resolutions" value={resolutionSummary.strong} tone={resolutionSummary.strong > 0 ? 'danger' : 'default'} />
+          <MetricTile label="Overdue" value={resolutionSummary.overdue} tone={resolutionSummary.overdue > 0 ? 'warning' : 'default'} />
+          <MetricTile label="Resubmitted" value={resolutionSummary.resubmitted} />
+        </div>
+        <div className="mt-4 space-y-3">
+          {producerResolutionItems.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+              当前没有需要 producer 跟进的修改闭环项。
+            </div>
+          ) : producerResolutionItems.slice(0, 4).map((item) => (
+            <div key={item.id} className="rounded-xl border border-white/8 bg-black/10 px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs text-white/45">{data.overview.find((project) => project.projectId === item.projectId)?.title ?? item.projectId}</div>
+                  <div className="mt-1 text-sm font-medium text-white">{item.title}</div>
+                </div>
+                <ActionSeverityBadge severity={item.severity} />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-white/45">
+                <span>状态 {item.status}</span>
+                <span>负责人 {item.assignedUserId ?? item.assignedRole}</span>
+                {isResolutionOverdue(item) ? <span className="text-amber-300">已进入 overdue 区</span> : null}
+              </div>
+              <div className="mt-3">
+                <Link
+                  href={`${getReviewHref(item.projectId)}#resolution-loop`}
+                  className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
+                >
+                  去处理修改闭环
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      ) : null}
 
       {visibleSections.has('planning') ? (
       <Card title="Production Planning" id="planning">
