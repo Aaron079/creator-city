@@ -4,6 +4,7 @@ import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTeamStore } from '@/store/team.store'
 
 export type ActionTargetType =
+  | 'project-home'
   | 'project-overview'
   | 'project-review'
   | 'project-workspace'
@@ -75,6 +76,15 @@ export function getProjectHref(projectId: string) {
   if (access?.state === 'outsider') return getMeHref()
 
   return getDashboardProjectHref(projectId)
+}
+
+export function getProjectHomeHref(projectId: string) {
+  const access = resolveAccess(projectId)
+
+  if (access?.state === 'invited') return getInvitationInboxHref()
+  if (access?.state === 'outsider') return getMeHref()
+
+  return `/projects/${encodeProjectId(projectId)}`
 }
 
 export function getWorkspaceHref(projectId?: string) {
@@ -152,6 +162,12 @@ export function getActionTarget(input: {
   const { actionType, projectId } = input
 
   switch (actionType) {
+    case 'project-home':
+      return {
+        actionType,
+        actionLabel: input.actionLabel ?? '查看项目首页',
+        actionHref: projectId ? getProjectHomeHref(projectId) : getDashboardHref(),
+      }
     case 'invitation-inbox':
       return {
         actionType,

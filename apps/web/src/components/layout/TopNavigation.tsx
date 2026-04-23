@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo } from 'react'
 import { usePathname } from 'next/navigation'
+import { CommandPalette } from '@/components/command/CommandPalette'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
@@ -129,6 +130,12 @@ export function TopNavigation() {
         </div>
 
         <div className="flex items-center gap-3">
+          <CommandPalette
+            portfolio={portfolio}
+            workQueue={workQueue}
+            notifications={notifications}
+          />
+
           <WorkspaceSwitcher
             recentProjects={portfolio.recentProjects}
             highPriorityProjects={portfolio.highPriorityProjects}
