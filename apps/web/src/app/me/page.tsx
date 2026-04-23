@@ -4,12 +4,14 @@ import { useMemo } from 'react'
 import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
 import { Nav } from '@/components/layout/Nav'
 import { ProfileView } from '@/components/profile/ProfileView'
+import { QuickActionsCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
 import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { InvitationInbox } from '@/components/team/InvitationInbox'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
+import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
 import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
 import { getActionTarget } from '@/lib/routing/actions'
@@ -95,6 +97,15 @@ export default function MePage() {
     }),
     [approvals, assignments, authUser?.id, currentUserId, dashboard, deliveryPackages, inboxProfileId, invitations, notificationItems, teams, workQueue],
   )
+  const entryData = useMemo(
+    () => buildCrossProjectEntryData({
+      portfolio,
+      queue: workQueue,
+      invitationCount: pendingInvitations.length,
+      queueHref: '#personal-command-center',
+    }),
+    [pendingInvitations.length, portfolio, workQueue],
+  )
   const pendingInvitationAction = pendingInvitations[0]
     ? getActionTarget({
         actionType: 'invitation-inbox',
@@ -155,6 +166,23 @@ export default function MePage() {
             </div>
           </div>
           <div className="mb-6 space-y-6">
+            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <StatusSummaryCard
+                title="Status Summary"
+                subtitle="Me / Projects / Project Home 统一使用这套入口指标。"
+                metrics={entryData.statusMetrics}
+              />
+              <QuickActionsCard
+                title="Quick Actions"
+                subtitle="把最常用的项目入口、待办入口和邀请入口放在一处。"
+                actions={entryData.quickActions}
+              />
+            </div>
+            <RiskOrWaitingCard
+              title="Risk / Waiting"
+              subtitle="当前最值得先切换、先处理的项目会统一出现在这里。"
+              items={entryData.waitingItems}
+            />
             <WorkspaceSwitcher
               recentProjects={portfolio.recentProjects}
               highPriorityProjects={portfolio.highPriorityProjects}

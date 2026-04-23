@@ -1,38 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import type { CrossProjectSummary, UserProjectCard, WorkspacePortfolioData } from '@/lib/projects/workspace'
-
-function SummaryTile({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string
-  value: number | string
-  tone?: 'default' | 'warning' | 'danger'
-}) {
-  const cls = tone === 'danger'
-    ? 'border-rose-500/20 bg-rose-500/8'
-    : tone === 'warning'
-      ? 'border-amber-500/20 bg-amber-500/8'
-      : 'border-white/6 bg-white/[0.03]'
-
-  return (
-    <div className={`rounded-xl border px-4 py-3 ${cls}`}>
-      <div className="text-xs text-white/45">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-white">{value}</div>
-    </div>
-  )
-}
-
-function summaryTone(summary: CrossProjectSummary, label: keyof CrossProjectSummary) {
-  if (label === 'highRiskCount' && summary.highRiskCount > 0) return 'danger' as const
-  if ((label === 'waitingForMeCount' && summary.waitingForMeCount > 0) || (label === 'approvalsPendingCount' && summary.approvalsPendingCount > 0) || (label === 'deliveryPendingCount' && summary.deliveryPendingCount > 0)) {
-    return 'warning' as const
-  }
-  return 'default' as const
-}
+import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
+import type { UserProjectCard, WorkspacePortfolioData } from '@/lib/projects/workspace'
+import { PersonalQueueCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
 
 function riskMeta(level: UserProjectCard['riskLevel']) {
   if (level === 'strong') {
@@ -65,10 +36,17 @@ function ProjectCard({ item }: { item: UserProjectCard }) {
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <SummaryTile label="Stage" value={item.stage} />
-        <SummaryTile label="Readiness" value={item.readiness} tone={item.riskLevel === 'strong' ? 'danger' : item.riskLevel === 'warning' ? 'warning' : 'default'} />
-        <SummaryTile label="Pending" value={item.pendingCount} tone={item.pendingCount > 0 ? 'warning' : 'default'} />
-        <SummaryTile label="Delivery" value={item.deliveryStatus} tone={item.deliveryStatus === 'needs-revision' ? 'danger' : item.deliveryStatus === 'submitted' || item.deliveryStatus === 'ready' ? 'warning' : 'default'} />
+        {[
+          { label: 'Stage', value: item.stage },
+          { label: 'Readiness', value: item.readiness },
+          { label: 'Pending', value: item.pendingCount },
+          { label: 'Delivery', value: item.deliveryStatus },
+        ].map((metric) => (
+          <div key={`${item.projectId}-${metric.label}`} className="rounded-xl border border-white/6 bg-white/[0.03] px-4 py-3">
+            <div className="text-xs text-white/45">{metric.label}</div>
+            <div className="mt-2 text-lg font-semibold text-white">{metric.value}</div>
+          </div>
+        ))}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -107,6 +85,31 @@ export function UserProjectPortfolio({
   title?: string
   subtitle?: string
 }) {
+  const entryData = buildCrossProjectEntryData({
+    portfolio: data,
+    queue: {
+      items: [],
+      priorityQueue: [],
+      summary: {
+        totalCount: 0,
+        dueSoonCount: 0,
+        invitationCount: 0,
+        approvalCount: 0,
+        taskCount: 0,
+        deliveryCount: 0,
+        strongCount: 0,
+        blockedCount: 0,
+      },
+      aiSummary: {
+        topPriorities: [],
+        mostDangerousProject: '',
+        mostDelayedArea: '',
+      },
+    },
+    invitationCount: 0,
+    queueHref: '/me#personal-command-center',
+  })
+
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -119,30 +122,24 @@ export function UserProjectPortfolio({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-5">
-        <SummaryTile label="项目数" value={data.summary.totalProjects} tone={summaryTone(data.summary, 'totalProjects')} />
-        <SummaryTile label="等待我处理" value={data.summary.waitingForMeCount} tone={summaryTone(data.summary, 'waitingForMeCount')} />
-        <SummaryTile label="高风险项目" value={data.summary.highRiskCount} tone={summaryTone(data.summary, 'highRiskCount')} />
-        <SummaryTile label="待审批项目" value={data.summary.approvalsPendingCount} tone={summaryTone(data.summary, 'approvalsPendingCount')} />
-        <SummaryTile label="待交付项目" value={data.summary.deliveryPendingCount} tone={summaryTone(data.summary, 'deliveryPendingCount')} />
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-white/8 bg-black/10 p-4">
-        <div className="text-sm font-medium text-white">AI Priority Summary</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3 text-sm text-white/70">
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-            <div className="text-white/45">最值得先切换</div>
-            <div className="mt-1 text-white">{data.aiSummary.bestProjectToOpen}</div>
-          </div>
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-            <div className="text-white/45">最危险项目</div>
-            <div className="mt-1 text-white">{data.aiSummary.mostDangerousProject}</div>
-          </div>
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-            <div className="text-white/45">推荐优先处理</div>
-            <div className="mt-1 text-white">{data.aiSummary.recommendedFocus}</div>
-          </div>
+      <div className="mt-5 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          <StatusSummaryCard
+            title="Status Summary"
+            subtitle="跨项目用同一套指标看等待我处理、高风险、审批和交付状态。"
+            metrics={entryData.statusMetrics}
+          />
+          <RiskOrWaitingCard
+            title="Risk / Waiting"
+            subtitle="先看最值得切换去处理的项目。"
+            items={entryData.waitingItems}
+          />
         </div>
+        <PersonalQueueCard
+          title="Recent Projects"
+          subtitle="最近项目也统一用同一套入口行表达方式。"
+          items={entryData.recentItems}
+        />
       </div>
 
       <div className="mt-6 space-y-4">

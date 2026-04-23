@@ -2,9 +2,11 @@
 
 import { useMemo } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { QuickActionsCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
 import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
+import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
 import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
 import { useApprovalStore } from '@/store/approval.store'
@@ -84,6 +86,14 @@ export default function ProjectsPage() {
     }),
     [approvals, assignments, currentUserId, dashboard, deliveryPackages, invitations, notifications, profileId, teams, workQueue],
   )
+  const entryData = useMemo(
+    () => buildCrossProjectEntryData({
+      portfolio,
+      queue: workQueue,
+      invitationCount: workQueue.summary.invitationCount,
+    }),
+    [portfolio, workQueue],
+  )
 
   return (
     <DashboardShell>
@@ -94,6 +104,23 @@ export default function ProjectsPage() {
             <p className="mt-1 text-gray-400">Your productions and collaborations.</p>
           </div>
         </div>
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <StatusSummaryCard
+            title="Status Summary"
+            subtitle="Projects / Me / Project Home 统一用这套入口指标。"
+            metrics={entryData.statusMetrics}
+          />
+          <QuickActionsCard
+            title="Quick Actions"
+            subtitle="跨项目也用同一套动作卡表达常用入口。"
+            actions={entryData.quickActions}
+          />
+        </div>
+        <RiskOrWaitingCard
+          title="Risk / Waiting"
+          subtitle="先看当前最值得切换去处理的项目。"
+          items={entryData.waitingItems}
+        />
         <WorkspaceSwitcher
           recentProjects={portfolio.recentProjects}
           highPriorityProjects={portfolio.highPriorityProjects}
