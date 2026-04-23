@@ -295,10 +295,14 @@ export default function DashboardPage() {
   )
   useEffect(() => {
     activityProjectIds.forEach((projectId) => {
-      syncActivityLog(projectId)
+      const project = dashboard.overview.find((item) => item.projectId === projectId)
+      syncActivityLog(projectId, {
+        projectTitle: project?.title,
+      })
     })
   }, [
     activityProjectIds,
+    dashboard.overview,
     syncActivityLog,
     approvals,
     notes,

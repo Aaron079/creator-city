@@ -11,7 +11,7 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 interface ActivityLogState {
   items: ActivityLogItem[]
   append: (item: ActivityLogItem) => void
-  syncFromExistingSystems: (projectId: string) => void
+  syncFromExistingSystems: (projectId: string, options?: { projectTitle?: string }) => void
   getByProject: (projectId?: string) => ActivityLogItem[]
   getRecent: (projectId?: string, limit?: number) => ActivityLogItem[]
   getSummary: (projectId?: string) => ActivitySummary
@@ -35,10 +35,12 @@ export const useActivityLogStore = create<ActivityLogState>()(
         }))
       },
 
-      syncFromExistingSystems: (projectId) => {
+      syncFromExistingSystems: (projectId, options) => {
         const nextItems = buildActivityLogItems({
           projectId,
+          projectTitle: options?.projectTitle,
           invitationActivities: useTeamStore.getState().activities,
+          roleChanges: useTeamStore.getState().roleChanges,
           approvals: useApprovalStore.getState().approvals,
           notes: useDirectorNotesStore.getState().notes,
           versions: useVersionHistoryStore.getState().versions,
