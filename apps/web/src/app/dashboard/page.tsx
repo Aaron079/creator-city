@@ -18,6 +18,7 @@ import { useNotificationsStore } from '@/store/notifications.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
 import { aggregateTalentMatching, getRoleNeedLabel, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
+import { getPermissionsForRole } from '@/lib/roles/permissions'
 import { useMockRoleMode } from '@/lib/roles/view-mode'
 import { useProfileStore } from '@/store/profile.store'
 import { useReviewStore } from '@/store/review.store'
@@ -170,6 +171,7 @@ export default function DashboardPage() {
     () => buildNotificationAiSummary(notificationItems),
     [notificationItems],
   )
+  const permissions = useMemo(() => getPermissionsForRole(role), [role])
 
   if (!user) return null
 
@@ -204,6 +206,7 @@ export default function DashboardPage() {
           onDismiss: dismissNotification,
           onToggleRule: upsertNotificationRule,
         }}
+        permissions={permissions}
         role={role}
       />
     </DashboardShell>
