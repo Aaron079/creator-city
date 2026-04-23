@@ -19,6 +19,7 @@ import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 import type { NotificationItem, NotificationSection, NotificationSummary, ReminderRule } from '@/store/notifications.store'
+import { useTaskStore } from '@/store/task.store'
 import type { InvitationActivity, TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 import { getActionTarget, getDeliveryHref, getReviewHref, getWorkspaceHref } from '@/lib/routing/actions'
 
@@ -127,6 +128,7 @@ export function ProducerDashboard({
   role: WorkspaceRole
 }) {
   const resolutionItems = useReviewResolutionStore((s) => s.items)
+  const tasks = useTaskStore((s) => s.tasks)
   const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
   const projectIds = useMemo(
     () => data.overview.map((project) => project.projectId),
@@ -144,6 +146,15 @@ export function ProducerDashboard({
     overdue: producerResolutionItems.filter((item) => isResolutionOverdue(item)).length,
     resubmitted: producerResolutionItems.filter((item) => item.status === 'resubmitted').length,
   }), [producerResolutionItems])
+  const linkedResolutionTasks = useMemo(
+    () => tasks.filter((task) => task.relatedResolutionId && projectIds.includes(task.relatedProjectId ?? '')),
+    [projectIds, tasks],
+  )
+  const linkedTaskSummary = useMemo(() => ({
+    linked: linkedResolutionTasks.length,
+    unresolved: linkedResolutionTasks.filter((task) => task.status !== 'done').length,
+    overdue: linkedResolutionTasks.filter((task) => task.status !== 'done' && Date.now() - task.createdAt > 72 * 3600_000).length,
+  }), [linkedResolutionTasks])
 
   const shouldShowNotifications = role !== 'client'
     || notifications.items.some((item) => (
@@ -367,11 +378,14 @@ export function ProducerDashboard({
 
       {permissions.canViewDashboard ? (
       <Card title="Resolution Loop" id="resolution-loop">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-7">
           <MetricTile label="Open resolutions" value={resolutionSummary.open} tone={resolutionSummary.open > 0 ? 'warning' : 'default'} />
           <MetricTile label="Strong resolutions" value={resolutionSummary.strong} tone={resolutionSummary.strong > 0 ? 'danger' : 'default'} />
           <MetricTile label="Overdue" value={resolutionSummary.overdue} tone={resolutionSummary.overdue > 0 ? 'warning' : 'default'} />
           <MetricTile label="Resubmitted" value={resolutionSummary.resubmitted} />
+          <MetricTile label="Linked tasks" value={linkedTaskSummary.linked} tone={linkedTaskSummary.linked > 0 ? 'warning' : 'default'} />
+          <MetricTile label="Unresolved linked" value={linkedTaskSummary.unresolved} tone={linkedTaskSummary.unresolved > 0 ? 'warning' : 'default'} />
+          <MetricTile label="Overdue linked" value={linkedTaskSummary.overdue} tone={linkedTaskSummary.overdue > 0 ? 'danger' : 'default'} />
         </div>
         <div className="mt-4 space-y-3">
           {producerResolutionItems.length === 0 ? (

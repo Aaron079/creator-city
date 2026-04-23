@@ -15,6 +15,7 @@ import { ReviewItemCard } from '@/components/review/ReviewItemCard'
 import { ReviewSummaryCard } from '@/components/review/ReviewSummaryCard'
 import { VersionComparePanel } from '@/components/review/VersionComparePanel'
 import { buildReviewResolutionSeeds, filterResolutionItemsForRole } from '@/lib/review/resolution'
+import { createTaskFromResolution } from '@/lib/review/task-linking'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { buildClientReviewContext } from '@/lib/review/review-data'
 import { useReviewResolutionStore } from '@/lib/review/resolution-store'
@@ -86,6 +87,10 @@ export default function ClientReviewPortalPage() {
   const orders = useOrderStore((s) => s.orders)
   const jobs = useJobsStore((s) => s.jobs)
   const createTask = useTaskStore((s) => s.createTask)
+  const tasks = useTaskStore((s) => s.tasks)
+  const linkTaskResolution = useTaskStore((s) => s.linkTaskResolution)
+  const markLinkedResolutionInProgress = useTaskStore((s) => s.markLinkedResolutionInProgress)
+  const markLinkedResolutionResolved = useTaskStore((s) => s.markLinkedResolutionResolved)
   const currentUser = useAuthStore((s) => s.user)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const projectRoleAssignments = useProjectRoleStore((s) => s.assignments)
@@ -226,6 +231,10 @@ export default function ClientReviewPortalPage() {
     }),
     [visibleResolutionItems],
   )
+  const tasksById = useMemo(
+    () => Object.fromEntries(tasks.map((task) => [task.id, task])),
+    [tasks],
+  )
 
   useEffect(() => {
     if (resolutionSeeds.length === 0) return
@@ -320,7 +329,11 @@ export default function ClientReviewPortalPage() {
         const assignee = activeTeam.members.find((member) => member.userId === actionDraft.assignedTo) ?? activeTeam.members[0]
         const confirmed = window.confirm('确认把这条客户修改意见转成任务吗？')
         if (confirmed && assignee) {
-          const nextTask = createTask(activeTeam.id, `[客户修改] ${approval.title}`, assignee.userId, assignee.name)
+          const nextTask = createTask(activeTeam.id, `[客户修改] ${approval.title}`, assignee.userId, assignee.name, {
+            description: actionDraft.comment.trim(),
+            priority: actionDraft.status === 'rejected' ? 'critical' : 'high',
+            relatedProjectId: projectId,
+          })
           createdTaskId = nextTask.id
         }
       }
@@ -350,6 +363,10 @@ export default function ClientReviewPortalPage() {
 
       if (createdTaskId) {
         linkResolutionTask(nextResolution.id, createdTaskId)
+        linkTaskResolution(createdTaskId, nextResolution.id, {
+          projectId,
+          resolutionStatusSnapshot: nextResolution.status,
+        })
       }
     }
 
@@ -500,7 +517,15 @@ export default function ClientReviewPortalPage() {
             canManageResubmission={canManageResubmission}
             canUpdateResolution={(item) => canUpdateResolution(item.id)}
             assigneeOptions={teamAssigneeOptions}
+            tasksById={tasksById}
+            canCreateTask={effectiveProjectRole === 'producer'}
             onAssign={assignResolution}
+            onCreateTask={(id) => {
+              const nextTask = createTaskFromResolution(id)
+              if (!nextTask) {
+                window.alert('当前还没有可用的项目团队上下文，暂时无法从修改项创建任务。')
+              }
+            }}
             onMarkInProgress={markResolutionInProgress}
             onMarkResolved={markResolutionResolved}
             onMarkResubmitted={(id) => {
@@ -508,6 +533,8 @@ export default function ClientReviewPortalPage() {
               markResolutionResubmitted(id, item?.relatedVersionId)
               addApprovalSystemMessage(`修改项「${item?.title ?? id}」已标记为重新提交 review。`)
             }}
+            onMarkLinkedResolutionInProgress={markLinkedResolutionInProgress}
+            onMarkLinkedResolutionResolved={markLinkedResolutionResolved}
           />
         ) : null}
 

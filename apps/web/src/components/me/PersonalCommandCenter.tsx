@@ -8,6 +8,7 @@ import { getReviewHref } from '@/lib/routing/actions'
 import { useAuthStore } from '@/store/auth.store'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
+import { TASK_STATUS_META, useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import type { PersonalWorkQueueData, WorkQueueCategory, WorkQueueItem } from '@/lib/workqueue/aggregate'
 
@@ -119,6 +120,7 @@ export function PersonalCommandCenter({
   const currentUser = useAuthStore((s) => s.user)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const assignments = useProjectRoleStore((s) => s.assignments)
+  const tasks = useTaskStore((s) => s.tasks)
   const teams = useTeamStore((s) => s.teams)
   const resolutionItems = useReviewResolutionStore((s) => s.items)
   const relevantProjectIds = useMemo(
@@ -147,9 +149,19 @@ export function PersonalCommandCenter({
       .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()),
     [activeRole, currentProfileId, currentUser?.id, relevantProjectIds, resolutionItems],
   )
+  const linkedTasks = useMemo(
+    () => tasks
+      .filter((task) => (
+        relevantProjectIds.includes(task.relatedProjectId ?? '')
+        && (task.assignedTo === currentUser?.id || task.assignedTo === currentProfileId)
+        && task.relatedResolutionId
+      ))
+      .sort((left, right) => right.createdAt - left.createdAt),
+    [currentProfileId, currentUser?.id, relevantProjectIds, tasks],
+  )
 
   return (
-    <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
+    <section id="personal-command-center" className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Personal Command Center</p>
@@ -222,6 +234,7 @@ export function PersonalCommandCenter({
                 </div>
               ) : myResolutionItems.slice(0, 5).map((item) => {
                 const meta = severityMeta(item.severity)
+                const linkedTask = item.relatedTaskId ? linkedTasks.find((task) => task.id === item.relatedTaskId) : undefined
                 return (
                   <div key={item.id} className="rounded-2xl border border-white/8 bg-black/15 px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -240,6 +253,7 @@ export function PersonalCommandCenter({
                     <div className="mt-3 flex flex-wrap gap-3 text-xs text-white/40">
                       <span>状态 {item.status}</span>
                       <span>负责人角色 {item.assignedRole}</span>
+                      {linkedTask ? <span>已联动任务 {TASK_STATUS_META[linkedTask.status].label}</span> : <span>尚未联动任务</span>}
                     </div>
                     <div className="mt-4">
                       <Link
@@ -247,6 +261,49 @@ export function PersonalCommandCenter({
                         className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
                       >
                         去处理修改项
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-white">Linked Tasks</div>
+              <div className="text-xs text-white/40">与你相关的任务 / 修改闭环联动</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {linkedTasks.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+                  当前没有与你直接关联的 resolution task。
+                </div>
+              ) : linkedTasks.slice(0, 5).map((task) => {
+                const meta = TASK_STATUS_META[task.status]
+                return (
+                  <div key={task.id} className="rounded-2xl border border-white/8 bg-black/15 px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-white/40">{task.relatedProjectId ?? '未绑定项目'}</div>
+                        <div className="mt-1 text-base font-semibold text-white">{task.title}</div>
+                      </div>
+                      <span className="inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: meta.color, background: meta.bg, color: meta.color }}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-white/65">{task.description ?? '这是一个和修改闭环关联的任务项。'}</p>
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs text-white/40">
+                      <span>类型：任务</span>
+                      <span>已联动 resolution</span>
+                      <span>快照 {task.relatedResolutionStatusSnapshot ?? '未记录'}</span>
+                    </div>
+                    <div className="mt-4">
+                      <Link
+                        href={`${getReviewHref(task.relatedProjectId ?? '')}#resolution-loop`}
+                        className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
+                      >
+                        返回修改闭环
                       </Link>
                     </div>
                   </div>

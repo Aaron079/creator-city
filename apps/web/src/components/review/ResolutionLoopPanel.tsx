@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react'
 import type { ProjectRole } from '@/lib/roles/projectRoles'
 import { getProjectRoleLabel } from '@/lib/roles/projectRoles'
+import { getResolutionTaskConsistency } from '@/lib/review/task-linking'
 import type { ReviewResolutionItem, ReviewResolutionSummary, ReviewResolutionStatus } from '@/lib/review/resolution-store'
+import type { Task, TaskStatus } from '@/store/task.store'
 
 function sourceLabel(sourceType: ReviewResolutionItem['sourceType']) {
   switch (sourceType) {
@@ -54,6 +56,17 @@ function SummaryTile({ label, value, tone = 'default' }: { label: string; value:
 
 const ASSIGNABLE_ROLES: ProjectRole[] = ['producer', 'creator', 'director', 'editor', 'cinematographer', 'client']
 
+function taskStatusMeta(status: TaskStatus) {
+  switch (status) {
+    case 'doing':
+      return { label: '任务进行中', cls: 'border-amber-500/25 bg-amber-500/10 text-amber-300' }
+    case 'done':
+      return { label: '任务已完成', cls: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' }
+    default:
+      return { label: '任务待处理', cls: 'border-white/10 bg-white/5 text-white/70' }
+  }
+}
+
 export function ResolutionLoopPanel({
   items,
   summary,
@@ -61,10 +74,15 @@ export function ResolutionLoopPanel({
   canManageResubmission,
   canUpdateResolution,
   assigneeOptions,
+  tasksById,
+  canCreateTask,
   onAssign,
+  onCreateTask,
   onMarkInProgress,
   onMarkResolved,
   onMarkResubmitted,
+  onMarkLinkedResolutionInProgress,
+  onMarkLinkedResolutionResolved,
 }: {
   items: ReviewResolutionItem[]
   summary: ReviewResolutionSummary
@@ -72,10 +90,15 @@ export function ResolutionLoopPanel({
   canManageResubmission: boolean
   canUpdateResolution: (item: ReviewResolutionItem) => boolean
   assigneeOptions: Array<{ id: string; label: string }>
+  tasksById: Record<string, Task | undefined>
+  canCreateTask: boolean
   onAssign: (id: string, assignedRole: ProjectRole, assignedUserId?: string) => void
+  onCreateTask: (id: string) => void
   onMarkInProgress: (id: string) => void
   onMarkResolved: (id: string) => void
   onMarkResubmitted: (id: string) => void
+  onMarkLinkedResolutionInProgress: (taskId: string) => void
+  onMarkLinkedResolutionResolved: (taskId: string) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, { assignedRole: ProjectRole; assignedUserId: string }>>({})
 
@@ -112,6 +135,9 @@ export function ResolutionLoopPanel({
         ) : sortedItems.map((item) => {
           const severity = severityMeta(item.severity)
           const status = statusMeta(item.status)
+          const linkedTask = item.relatedTaskId ? tasksById[item.relatedTaskId] : undefined
+          const linkedTaskMeta = linkedTask ? taskStatusMeta(linkedTask.status) : null
+          const consistencyIssues = getResolutionTaskConsistency(item, linkedTask)
           const draft = drafts[item.id] ?? {
             assignedRole: item.assignedRole,
             assignedUserId: item.assignedUserId ?? '',
@@ -143,10 +169,36 @@ export function ResolutionLoopPanel({
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-white/45">
                 <span>负责人角色：{getProjectRoleLabel(item.assignedRole)}</span>
                 <span>负责人：{item.assignedUserId || '待分配'}</span>
-                {item.relatedTaskId ? <span>关联任务：{item.relatedTaskId}</span> : null}
+                {item.relatedTaskId ? <span>关联任务：{item.relatedTaskId}</span> : <span>尚未创建任务</span>}
                 {item.relatedVersionId ? <span>关联版本：{item.relatedVersionId}</span> : null}
                 {item.resubmittedAt ? <span>重新提交：{new Date(item.resubmittedAt).toLocaleString('zh-CN')}</span> : null}
               </div>
+
+              {linkedTaskMeta ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${linkedTaskMeta.cls}`}>
+                    {linkedTaskMeta.label}
+                  </span>
+                  <span className="text-xs text-white/45">{linkedTask?.title}</span>
+                </div>
+              ) : null}
+
+              {consistencyIssues.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {consistencyIssues.map((issue) => (
+                    <div
+                      key={`${item.id}-${issue.type}`}
+                      className={`rounded-xl border px-3 py-2 text-[11px] ${
+                        issue.severity === 'strong'
+                          ? 'border-rose-500/25 bg-rose-500/10 text-rose-200'
+                          : 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+                      }`}
+                    >
+                      {issue.message}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               {canAssign ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-[0.8fr_1fr_auto]">
@@ -194,6 +246,24 @@ export function ResolutionLoopPanel({
               ) : null}
 
               <div className="mt-4 flex flex-wrap gap-2">
+                {canCreateTask && !item.relatedTaskId ? (
+                  <button
+                    onClick={() => onCreateTask(item.id)}
+                    className="rounded-xl px-3 py-2 text-[11px] font-semibold"
+                    style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.22)', color: '#d8b4fe' }}
+                  >
+                    创建任务
+                  </button>
+                ) : null}
+                {linkedTask ? (
+                  <a
+                    href="/me#personal-command-center"
+                    className="rounded-xl px-3 py-2 text-[11px] font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
+                  >
+                    查看任务
+                  </a>
+                ) : null}
                 {canUpdateResolution(item) && item.status === 'open' ? (
                   <button
                     onClick={() => onMarkInProgress(item.id)}
@@ -203,6 +273,15 @@ export function ResolutionLoopPanel({
                     标记处理中
                   </button>
                 ) : null}
+                {linkedTask && canUpdateResolution(item) && linkedTask.status !== 'done' ? (
+                  <button
+                    onClick={() => onMarkLinkedResolutionInProgress(linkedTask.id)}
+                    className="rounded-xl px-3 py-2 text-[11px] font-semibold"
+                    style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.16)', color: '#fde68a' }}
+                  >
+                    按任务回写处理中
+                  </button>
+                ) : null}
                 {canUpdateResolution(item) && item.status !== 'resolved' && item.status !== 'resubmitted' ? (
                   <button
                     onClick={() => onMarkResolved(item.id)}
@@ -210,6 +289,15 @@ export function ResolutionLoopPanel({
                     style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.22)', color: '#6ee7b7' }}
                   >
                     标记已解决
+                  </button>
+                ) : null}
+                {linkedTask && canUpdateResolution(item) ? (
+                  <button
+                    onClick={() => onMarkLinkedResolutionResolved(linkedTask.id)}
+                    className="rounded-xl px-3 py-2 text-[11px] font-semibold"
+                    style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.16)', color: '#a7f3d0' }}
+                  >
+                    按任务回写已解决
                   </button>
                 ) : null}
                 {canManageResubmission && item.status !== 'resubmitted' ? (
