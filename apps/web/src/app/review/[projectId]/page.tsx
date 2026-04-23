@@ -1,8 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { AccessNotice } from '@/components/roles/AccessNotice'
+import { RoleBadge } from '@/components/roles/RoleBadge'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
+import { canPerformAction, getPermissionsForRole } from '@/lib/roles/permissions'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
 import { ReviewItemCard } from '@/components/review/ReviewItemCard'
@@ -18,6 +21,7 @@ import { useDirectorNotesStore } from '@/store/director-notes.store'
 import type { DirectorNoteTargetType } from '@/store/director-notes.store'
 import { useJobsStore } from '@/store/jobs.store'
 import { useOrderStore } from '@/store/order.store'
+import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
@@ -73,7 +77,19 @@ export default function ClientReviewPortalPage() {
   const jobs = useJobsStore((s) => s.jobs)
   const createTask = useTaskStore((s) => s.createTask)
   const currentUser = useAuthStore((s) => s.user)
+  const setProjectRole = useProjectRoleStore((s) => s.setProjectRole)
+  const getRoleForProject = useProjectRoleStore((s) => s.getRoleForProject)
   const audioTimelines = useAudioDeskStore((s) => s.audioTimelines)
+  const effectiveProjectRole = useMemo(
+    () => currentUser?.id
+      ? getRoleForProject(projectId, currentUser.id, role)
+      : role,
+    [currentUser?.id, getRoleForProject, projectId, role],
+  )
+  const permissions = useMemo(
+    () => getPermissionsForRole(effectiveProjectRole),
+    [effectiveProjectRole],
+  )
 
   const reviewContext = useMemo(
     () => buildClientReviewContext({
@@ -88,6 +104,11 @@ export default function ClientReviewPortalPage() {
     }),
     [projectId, approvals, versions, notes, orders, teams, jobs, audioTimelines],
   )
+  useEffect(() => {
+    if (currentUser?.id) {
+      setProjectRole(projectId, currentUser.id, role)
+    }
+  }, [currentUser?.id, projectId, role, setProjectRole])
 
   const activeOrder = useMemo(
     () => orders.find((order) => order.id === projectId) ?? orders.find((order) => order.chatId === projectId) ?? null,
@@ -122,6 +143,7 @@ export default function ClientReviewPortalPage() {
   }, [compareItem, compareVersions])
 
   const handleStartDecision = (approvalId: string, status: ClientDecisionStatus) => {
+    if (!canPerformAction(effectiveProjectRole, 'approve-as-client')) return
     setActionDraft({
       approvalId,
       status,
@@ -192,8 +214,20 @@ export default function ClientReviewPortalPage() {
     <div className="min-h-screen" style={{ background: '#060a14' }}>
       <div className="max-w-6xl mx-auto px-5 py-8">
         <div className="mb-6">
-          <RoleViewSwitcher role={role} onChange={setRole} />
+          <div className="flex items-center gap-3">
+            <RoleViewSwitcher role={role} onChange={setRole} />
+            <RoleBadge role={effectiveProjectRole} />
+          </div>
         </div>
+
+        {!permissions.canApproveAsClient ? (
+          <div className="mb-6">
+            <AccessNotice
+              title="当前角色只能查看审片内容"
+              message="你现在可以查看版本、批注和交付快照，但不能代替 client 提交 approve / changes-requested / reject。若需要客户动作，请切换到 Client 角色视图。"
+            />
+          </div>
+        ) : null}
 
         {visibleSections.has('header') ? (
           <ClientReviewHeader
@@ -255,6 +289,7 @@ export default function ClientReviewPortalPage() {
                 latestClientDecision={latestClientDecision}
                 isEditing={isEditingThis}
                 showInternalMeta={visibleSections.has('internal-meta')}
+                allowDecisionActions={permissions.canApproveAsClient}
                 onApprove={() => handleStartDecision(item.id, 'approved')}
                 onRequestChanges={() => handleStartDecision(item.id, 'changes-requested')}
                 onReject={() => handleStartDecision(item.id, 'rejected')}

@@ -24,6 +24,7 @@ export function ReviewItemCard({
   latestClientDecision,
   isEditing,
   showInternalMeta = true,
+  allowDecisionActions = true,
   onApprove,
   onRequestChanges,
   onReject,
@@ -35,6 +36,7 @@ export function ReviewItemCard({
   latestClientDecision?: ApprovalDecision
   isEditing: boolean
   showInternalMeta?: boolean
+  allowDecisionActions?: boolean
   onApprove: () => void
   onRequestChanges: () => void
   onReject: () => void
@@ -97,27 +99,35 @@ export function ReviewItemCard({
       )}
 
       <div className="flex gap-2 flex-wrap mt-4">
-        <button
-          onClick={onApprove}
-          className="px-3 py-2 rounded-xl text-[11px] font-semibold"
-          style={{ background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.28)', color: '#a7f3d0' }}
-        >
-          确认通过
-        </button>
-        <button
-          onClick={onRequestChanges}
-          className="px-3 py-2 rounded-xl text-[11px] font-semibold"
-          style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.24)', color: '#fde68a' }}
-        >
-          请求修改
-        </button>
-        <button
-          onClick={onReject}
-          className="px-3 py-2 rounded-xl text-[11px] font-semibold"
-          style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.24)', color: '#fda4af' }}
-        >
-          拒绝
-        </button>
+        {allowDecisionActions ? (
+          <>
+            <button
+              onClick={onApprove}
+              className="px-3 py-2 rounded-xl text-[11px] font-semibold"
+              style={{ background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.28)', color: '#a7f3d0' }}
+            >
+              确认通过
+            </button>
+            <button
+              onClick={onRequestChanges}
+              className="px-3 py-2 rounded-xl text-[11px] font-semibold"
+              style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.24)', color: '#fde68a' }}
+            >
+              请求修改
+            </button>
+            <button
+              onClick={onReject}
+              className="px-3 py-2 rounded-xl text-[11px] font-semibold"
+              style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.24)', color: '#fda4af' }}
+            >
+              拒绝
+            </button>
+          </>
+        ) : (
+          <div className="rounded-xl border border-white/8 px-3 py-2 text-[11px] text-white/45">
+            当前角色只能查看确认内容，不能代替客户提交 approval 决定。
+          </div>
+        )}
         {onOpenCompare && item.versionId && item.previousVersionId && (
           <button
             onClick={onOpenCompare}

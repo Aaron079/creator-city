@@ -2,8 +2,9 @@
 
 import type { WorkspaceRole } from '@/lib/roles/view-mode'
 import { getDefaultLandingForRole, getRoleLabel } from '@/lib/roles/view-mode'
+import { PROJECT_ROLES } from '@/lib/roles/projectRoles'
 
-const ROLES: WorkspaceRole[] = ['producer', 'creator', 'client']
+const ROLES: WorkspaceRole[] = PROJECT_ROLES
 
 export function RoleViewSwitcher({
   role,

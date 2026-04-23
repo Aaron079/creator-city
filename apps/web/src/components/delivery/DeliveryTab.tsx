@@ -9,6 +9,7 @@ interface DeliveryTabProps {
   currentStage: string
   deliveryPackage: DeliveryPackage | null
   canSubmit: boolean
+  canManageDelivery?: boolean
   onCreatePackage: () => void
   onToggleAssetIncluded: (assetId: string) => void
   onPreviewAsset: (asset: DeliveryAsset) => void
@@ -33,6 +34,7 @@ export function DeliveryTab(props: DeliveryTabProps) {
   const statusMeta = props.deliveryPackage ? STATUS_META[props.deliveryPackage.status] : STATUS_META.draft
   const riskIssues = props.deliveryPackage?.riskSummary?.issues ?? []
   const includedCount = props.deliveryPackage?.assets.filter((asset) => asset.included).length ?? 0
+  const canManageDelivery = props.canManageDelivery ?? true
 
   if (!props.deliveryPackage) {
     return (
@@ -46,6 +48,7 @@ export function DeliveryTab(props: DeliveryTabProps) {
           <div className="mt-6 flex items-center gap-3">
             <button
               onClick={props.onCreatePackage}
+              disabled={!canManageDelivery}
               className="rounded-2xl bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
             >
               创建交付包
@@ -122,7 +125,11 @@ export function DeliveryTab(props: DeliveryTabProps) {
                           <button onClick={() => props.onPreviewAsset(asset)} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/80">
                             预览
                           </button>
-                          <button onClick={() => props.onToggleAssetIncluded(asset.id)} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/80">
+                          <button
+                            onClick={() => props.onToggleAssetIncluded(asset.id)}
+                            disabled={!canManageDelivery}
+                            className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/80 disabled:cursor-not-allowed disabled:text-white/25"
+                          >
                             {asset.included ? '移出' : '加入'}
                           </button>
                           <button
@@ -187,7 +194,7 @@ export function DeliveryTab(props: DeliveryTabProps) {
               </button>
               <button
                 onClick={props.onSubmitPackage}
-                disabled={!props.canSubmit}
+                disabled={!props.canSubmit || !canManageDelivery}
                 className="rounded-2xl bg-indigo-500 px-4 py-3 text-left text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
               >
                 提交客户确认

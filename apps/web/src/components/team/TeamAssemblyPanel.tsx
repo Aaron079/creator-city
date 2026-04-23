@@ -42,9 +42,10 @@ function RoleStatusBadge({ status }: { status: RoleNeed['status'] }) {
 interface TeamAssemblyPanelProps {
   data: TalentMatchingData
   onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate) => void
+  canInviteTeam?: boolean
 }
 
-export function TeamAssemblyPanel({ data, onInvite }: TeamAssemblyPanelProps) {
+export function TeamAssemblyPanel({ data, onInvite, canInviteTeam = true }: TeamAssemblyPanelProps) {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
   const [ignoredIds, setIgnoredIds] = useState<string[]>([])
 
@@ -201,7 +202,8 @@ export function TeamAssemblyPanel({ data, onInvite }: TeamAssemblyPanelProps) {
                             <button
                               type="button"
                               onClick={() => onInvite(project.projectId, group.need, candidate)}
-                              className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-100 transition hover:border-indigo-300/40 hover:bg-indigo-500/15"
+                              disabled={!canInviteTeam}
+                              className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-100 transition hover:border-indigo-300/40 hover:bg-indigo-500/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
                             >
                               邀请加入
                             </button>
