@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { getProjectRoleLabel, type ProjectRole } from '@/lib/roles/projectRoles'
 
-export type WorkspaceRole = 'producer' | 'creator' | 'client'
+export type WorkspaceRole = ProjectRole
 export type RoleSurface = 'dashboard' | 'create' | 'review'
 
 type VisibleSectionMap = {
@@ -31,6 +32,21 @@ const VISIBLE_SECTIONS: { [K in WorkspaceRole]: VisibleSectionMap } = {
     create: ['delivery'],
     review: ['header', 'summary', 'items', 'decision-panel', 'compare'],
   },
+  director: {
+    dashboard: ['overview', 'quick-actions', 'action-queue', 'risk-radar', 'recent-activity'],
+    create: ['canvas', 'previs', 'footage', 'audio', 'editor', 'delivery'],
+    review: ['header', 'summary', 'items', 'decision-panel', 'compare', 'internal-meta'],
+  },
+  editor: {
+    dashboard: ['overview', 'quick-actions', 'action-queue', 'risk-radar', 'recent-activity'],
+    create: ['canvas', 'previs', 'footage', 'audio', 'editor', 'delivery'],
+    review: ['header', 'summary', 'items', 'decision-panel', 'compare', 'internal-meta'],
+  },
+  cinematographer: {
+    dashboard: ['overview', 'quick-actions', 'action-queue', 'risk-radar', 'recent-activity'],
+    create: ['canvas', 'previs', 'footage', 'audio', 'editor', 'delivery'],
+    review: ['header', 'summary', 'items', 'decision-panel', 'compare', 'internal-meta'],
+  },
 }
 
 export function getVisibleSectionsForRole<T extends RoleSurface>(role: WorkspaceRole, surface: T): VisibleSectionMap[T] {
@@ -52,6 +68,9 @@ export function getDefaultLandingForRole(role: WorkspaceRole) {
     case 'producer':
       return '/dashboard'
     case 'creator':
+    case 'director':
+    case 'editor':
+    case 'cinematographer':
       return '/create'
     case 'client':
       return '/review'
@@ -61,16 +80,7 @@ export function getDefaultLandingForRole(role: WorkspaceRole) {
 }
 
 export function getRoleLabel(role: WorkspaceRole) {
-  switch (role) {
-    case 'producer':
-      return 'Producer'
-    case 'creator':
-      return 'Creator'
-    case 'client':
-      return 'Client'
-    default:
-      return role
-  }
+  return getProjectRoleLabel(role)
 }
 
 export function useMockRoleMode(defaultRole: WorkspaceRole) {
@@ -79,7 +89,7 @@ export function useMockRoleMode(defaultRole: WorkspaceRole) {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const stored = window.localStorage.getItem(ROLE_VIEW_KEY)
-    if (stored === 'producer' || stored === 'creator' || stored === 'client') {
+    if (stored === 'producer' || stored === 'creator' || stored === 'client' || stored === 'director' || stored === 'editor' || stored === 'cinematographer') {
       setRole(stored)
     } else {
       window.localStorage.setItem(ROLE_VIEW_KEY, defaultRole)

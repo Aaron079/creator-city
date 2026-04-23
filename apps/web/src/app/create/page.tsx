@@ -8,6 +8,8 @@ import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canva
 import { AudioDesk } from '@/components/audio/AudioDesk'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
+import { AccessNotice } from '@/components/roles/AccessNotice'
+import { RoleBadge } from '@/components/roles/RoleBadge'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { StoryboardAdapterPanel } from '@/components/storyboard/StoryboardAdapterPanel'
 import { useCanvasStore } from '@/store/canvas.store'
@@ -60,7 +62,9 @@ import { buildCastingSuggestions } from '@/lib/casting/casting'
 import { analyzeAudioTimelineIssues, buildAudioSyncReview, buildCueSheet, buildMusicMotifs, createAudioTimelineClip, createMockLipSyncJob, generateMockMusicCues, generateMockSoundEffects, generateMockVoiceTakes } from '@/lib/audio/mock'
 import { buildDeliveryAssets } from '@/lib/delivery/aggregate'
 import { buildDeliveryProjectData, buildDeliverySummaryText } from '@/lib/delivery/export'
+import { getPermissionsForRole } from '@/lib/roles/permissions'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
+import { useProjectRoleStore } from '@/store/project-role.store'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
   FOCAL_LENGTHS, FOCAL_LENS_CHARS, APERTURES, SPEEDS,
@@ -5905,10 +5909,6 @@ export default function CreatePage() {
   const [focusedEditorClipId, setFocusedEditorClipId] = useState<string | null>(null)
   const [focusedRoleBibleId, setFocusedRoleBibleId] = useState<string | null>(null)
   const [requestedReviewId, setRequestedReviewId] = useState<string | null>(null)
-  const visibleWorkspaceViews = useMemo(
-    () => getVisibleSectionsForRole(role, 'create') as WorkspaceView[],
-    [role],
-  )
 
   const dialogueLines = useAudioDeskStore((s) => s.dialogueLines)
   const voiceTakes = useAudioDeskStore((s) => s.voiceTakes)
@@ -5995,6 +5995,8 @@ export default function CreatePage() {
   const markApprovalStale = useApprovalStore((s) => s.markApprovalStale)
   const upsertApprovalGate = useApprovalStore((s) => s.upsertApprovalGate)
   const currentUser = useAuthStore((s) => s.user)
+  const setProjectRole = useProjectRoleStore((s) => s.setProjectRole)
+  const getRoleForProject = useProjectRoleStore((s) => s.getRoleForProject)
   const versions = useVersionHistoryStore((s) => s.versions)
   const createVersion = useVersionHistoryStore((s) => s.createVersion)
   const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
@@ -6034,6 +6036,20 @@ export default function CreatePage() {
     () => activeJob?.title ?? (idea.trim() || 'Creator City 项目'),
     [activeJob?.title, idea]
   )
+  const effectiveProjectRole = useMemo(
+    () => currentUser?.id
+      ? getRoleForProject(deliveryProjectId, currentUser.id, role)
+      : role,
+    [currentUser?.id, deliveryProjectId, getRoleForProject, role],
+  )
+  const projectPermissions = useMemo(
+    () => getPermissionsForRole(effectiveProjectRole),
+    [effectiveProjectRole],
+  )
+  const visibleWorkspaceViews = useMemo(
+    () => getVisibleSectionsForRole(effectiveProjectRole, 'create') as WorkspaceView[],
+    [effectiveProjectRole],
+  )
   const deliveryPackagesForProject = useMemo(
     () => deliveryPackages
       .filter((pkg) => pkg.projectId === deliveryProjectId)
@@ -6053,6 +6069,10 @@ export default function CreatePage() {
       .sort((left, right) => right.versionNumber - left.versionNumber)[0] ?? null,
     [deliveryProjectId, versions]
   )
+  useEffect(() => {
+    if (!currentUser?.id) return
+    setProjectRole(deliveryProjectId, currentUser.id, role)
+  }, [currentUser?.id, deliveryProjectId, role, setProjectRole])
   const activeStoryboardFrame = storyboardPrevis?.frames.find((frame) => frame.id === activeStoryboardFrameId) ?? null
   const lockedRoleBible = useMemo(
     () => roleBibles.find((role) => role.status === 'locked') ?? null,
@@ -8613,7 +8633,7 @@ export default function CreatePage() {
     <CanvasProvider>
       <div className="flex h-screen bg-[#060a14] overflow-hidden">
 
-        {role === 'creator' ? (
+        {projectPermissions.canEditCreateWorkspace ? (
         <LeftPanel
           idea={idea}
           running={running}
@@ -8651,10 +8671,24 @@ export default function CreatePage() {
 
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="px-5 pt-4 pb-2 flex items-center justify-between" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="flex-1">
+            <div className="flex-1 flex items-center gap-3">
               <RoleViewSwitcher role={role} onChange={setRole} compact />
+              <RoleBadge role={effectiveProjectRole} />
             </div>
           </div>
+
+          {!projectPermissions.canEditCreateWorkspace ? (
+            <div className="px-5 pt-3">
+              <AccessNotice
+                title={effectiveProjectRole === 'client' ? '当前角色只能查看交付快照' : '当前角色以只读方式进入工作区'}
+                message={effectiveProjectRole === 'client'
+                  ? 'Client 角色不能进入完整 create workspace，也不会看到内部创作与复杂参数。你可以在这里查看交付信息，或前往 review portal 完成确认。'
+                  : '当前项目角色没有完整创作编辑权限。你仍然可以查看与当前项目相关的交付信息和输出状态。'}
+                href={effectiveProjectRole === 'client' ? `/review/${deliveryProjectId}` : '/dashboard'}
+                ctaLabel={effectiveProjectRole === 'client' ? '前往 Review Portal' : '返回 Dashboard'}
+              />
+            </div>
+          ) : null}
 
           <div className="px-5 pt-2 pb-2 flex items-center justify-between gap-4" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="flex gap-2 flex-wrap">
@@ -8684,9 +8718,9 @@ export default function CreatePage() {
               ))}
             </div>
             <p className="text-[10px] max-w-[640px] text-right" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              {role === 'creator'
+              {effectiveProjectRole === 'creator' || effectiveProjectRole === 'director' || effectiveProjectRole === 'editor' || effectiveProjectRole === 'cinematographer'
                 ? '创作者视图保留完整工作区，覆盖分镜、视频、声音、剪辑和交付。'
-                : role === 'producer'
+                : effectiveProjectRole === 'producer'
                   ? '制片视图只保留产出与交付相关面板，不显示完整创作控制台。'
                   : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
             </p>
@@ -8863,7 +8897,8 @@ export default function CreatePage() {
               projectTitle={deliveryProjectTitle}
               currentStage={currentStage}
               deliveryPackage={activeDeliveryPackage}
-              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0)}
+              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0 && projectPermissions.canManageDelivery)}
+              canManageDelivery={projectPermissions.canManageDelivery}
               onCreatePackage={handleCreateDeliveryPackage}
               onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
               onPreviewAsset={handlePreviewDeliveryAsset}

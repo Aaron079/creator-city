@@ -4,10 +4,12 @@ import Link from 'next/link'
 import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { DashboardActionSeverity } from '@/lib/dashboard/actions'
 import type { MatchCandidate, RoleNeed, TalentMatchingData } from '@/lib/matching/aggregate'
+import type { RolePermission } from '@/lib/roles/permissions'
 import { getVisibleSectionsForRole, type WorkspaceRole } from '@/lib/roles/view-mode'
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 import { LicensingCenter } from '@/components/licensing/LicensingCenter'
 import { NotificationCenter } from '@/components/notifications/NotificationCenter'
+import { AccessNotice } from '@/components/roles/AccessNotice'
 import { TeamAssemblyPanel } from '@/components/team/TeamAssemblyPanel'
 import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
@@ -71,6 +73,7 @@ export function ProducerDashboard({
   licensing,
   matching,
   notifications,
+  permissions,
   role,
 }: {
   data: ProducerDashboardData
@@ -98,6 +101,7 @@ export function ProducerDashboard({
     onDismiss: (id: string) => void
     onToggleRule: (rule: ReminderRule) => void
   }
+  permissions: RolePermission
   role: WorkspaceRole
 }) {
   const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
@@ -119,6 +123,15 @@ export function ProducerDashboard({
           <div className="text-sm text-white/55">当前纳入监控的项目</div>
         </div>
       </div>
+
+      {!permissions.canViewDashboard ? (
+        <AccessNotice
+          title="当前角色使用的是精简总览"
+          message="Client 角色不会看到完整的 producer dashboard、内部 planning 或商业后台。这里保留的是轻量状态摘要，方便你快速定位需要确认的内容。"
+          href="/review"
+          ctaLabel="前往 Review Portal"
+        />
+      ) : null}
 
       {shouldShowNotifications ? (
         <NotificationCenter
@@ -158,7 +171,11 @@ export function ProducerDashboard({
                   <MetricTile label="Blockers" value={project.blockerCount} tone={project.blockerCount > 0 ? 'danger' : 'default'} />
                   <MetricTile label="Pending approvals" value={project.pendingApprovalCount} tone={project.pendingApprovalCount > 0 ? 'warning' : 'default'} />
                   <MetricTile label="Delivery" value={project.deliveryStatus} tone={project.strongRiskCount > 0 ? 'warning' : 'default'} />
-                  <MetricTile label="Order" value={project.orderStatus} />
+                  {permissions.canViewCommercialStatus ? (
+                    <MetricTile label="Order" value={project.orderStatus} />
+                  ) : (
+                    <MetricTile label="Readiness" value={project.canAdvance ? 'ready' : 'watch'} />
+                  )}
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/65">
@@ -166,7 +183,7 @@ export function ProducerDashboard({
                   <span>Strong risks：{project.strongRiskCount}</span>
                   <span>Unknown licenses：{project.unknownLicenseCount}</span>
                   <span>Strong licensing：{project.strongLicensingRiskCount}</span>
-                  <span>客户确认：{project.submittedForClient ? '已提交' : '未提交'}</span>
+                  {permissions.canViewCommercialStatus ? <span>客户确认：{project.submittedForClient ? '已提交' : '未提交'}</span> : null}
                 </div>
                 <p className="mt-3 text-sm text-white/65">{project.readinessReason}</p>
 
@@ -294,6 +311,7 @@ export function ProducerDashboard({
         <TeamAssemblyPanel
           data={matching.data}
           onInvite={matching.onInvite}
+          canInviteTeam={permissions.canInviteTeam}
         />
       </Card>
       ) : null}

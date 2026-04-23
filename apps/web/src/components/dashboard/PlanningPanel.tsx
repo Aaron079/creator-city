@@ -9,6 +9,9 @@ import {
   savePlanningSettings,
   type PlanningSettings,
   type PlanningWeekday,
+  type ProductionConflictSeverity,
+  type ProductionMilestone,
+  type ProductionScheduleItem,
 } from '@/lib/dashboard/planning'
 
 const WEEKDAYS: Array<{ id: PlanningWeekday; label: string }> = [
@@ -21,13 +24,50 @@ const WEEKDAYS: Array<{ id: PlanningWeekday; label: string }> = [
   { id: 'sun', label: 'Sun' },
 ]
 
-function PlanningAlertBadge({ severity }: { severity: 'strong' | 'warning' | 'info' }) {
+function AlertBadge({ severity }: { severity: ProductionConflictSeverity | 'warning' | 'strong' | 'info' }) {
   const meta = severity === 'strong'
     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
     : severity === 'warning'
       ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
       : 'border-sky-500/30 bg-sky-500/10 text-sky-300'
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${meta}`}>{severity}</span>
+}
+
+function milestoneStatusMeta(status: ProductionMilestone['status']) {
+  switch (status) {
+    case 'done':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+    case 'blocked':
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-300'
+    case 'in-progress':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-300'
+    default:
+      return 'border-white/10 bg-white/5 text-white/60'
+  }
+}
+
+function scheduleStatusMeta(status: ProductionScheduleItem['status']) {
+  switch (status) {
+    case 'done':
+      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+    case 'blocked':
+      return 'border-rose-500/25 bg-rose-500/10 text-rose-300'
+    case 'at-risk':
+      return 'border-amber-500/25 bg-amber-500/10 text-amber-300'
+    default:
+      return 'border-sky-500/25 bg-sky-500/10 text-sky-300'
+  }
+}
+
+function findMilestone(milestones: ProductionMilestone[], milestoneId: string) {
+  return milestones.find((item) => item.id === milestoneId) ?? null
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 export function PlanningPanel({ data }: { data: ProducerDashboardData }) {
@@ -57,12 +97,12 @@ export function PlanningPanel({ data }: { data: ProducerDashboardData }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-white">Production Planning</div>
           <div className="mt-1 text-sm text-white/55">
-            只服务于 dashboard 内的制片排期与执行判断，不会扩散成平台全局设置。
+            这里只做制片排期、依赖和执行风险聚合，不会自动重排、自动推进阶段或自动指派负责人。
           </div>
         </div>
         <button
@@ -72,6 +112,45 @@ export function PlanningPanel({ data }: { data: ProducerDashboardData }) {
         >
           {showSettings ? '收起 Settings' : 'Settings'}
         </button>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="text-sm font-medium text-white">AI Planning Summary</div>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-white/8 px-4 py-3">
+              <div className="text-xs text-white/45">建议优先处理</div>
+              <div className="mt-1 text-sm text-white/75">{planning.aiSummary.nextMilestone}</div>
+            </div>
+            <div className="rounded-xl border border-white/8 px-4 py-3">
+              <div className="text-xs text-white/45">最可能拖慢交付的依赖</div>
+              <div className="mt-1 text-sm text-white/75">{planning.aiSummary.riskyDependency}</div>
+            </div>
+            <div className="rounded-xl border border-white/8 px-4 py-3">
+              <div className="text-xs text-white/45">当前最危险的阶段</div>
+              <div className="mt-1 text-sm text-white/75">{planning.aiSummary.mostDangerousStage}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+            <div className="text-xs text-white/45">Milestones</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{planning.milestones.length}</div>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+            <div className="text-xs text-white/45">Upcoming</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{planning.upcoming.length}</div>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+            <div className="text-xs text-white/45">Blocked</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{planning.blocked.length}</div>
+          </div>
+          <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+            <div className="text-xs text-white/45">Conflicts</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{planning.conflicts.length}</div>
+          </div>
+        </div>
       </div>
 
       {showSettings ? (
@@ -194,34 +273,127 @@ export function PlanningPanel({ data }: { data: ProducerDashboardData }) {
         </div>
       ) : null}
 
-      <div className="grid gap-3">
-        {planning.projects.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            当前没有可排期的项目。
+      <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-white">Milestones</div>
+            <div className="text-xs text-white/45">默认依赖链：Brief → 分镜 → 视频 → 剪辑 → 声音 → 交付 → 客户确认</div>
           </div>
-        ) : planning.projects.map((project) => (
-          <div key={project.projectId} className="rounded-2xl border border-white/8 bg-black/10 px-4 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-base font-semibold text-white">{project.title}</div>
-                <div className="mt-1 text-sm text-white/55">
-                  阶段 {project.currentStage} · Target Delivery {project.targetDeliveryAt}
+
+          <div className="mt-4 space-y-3">
+            {planning.milestones.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+                当前没有可排期的项目。
+              </div>
+            ) : planning.milestones.map((milestone) => (
+              <div key={milestone.id} className="rounded-xl border border-white/8 bg-black/15 px-4 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{milestone.title}</div>
+                    <div className="mt-1 text-xs text-white/45">
+                      项目 {milestone.projectId} · owner {milestone.ownerRole} · due {formatDate(milestone.dueAt)}
+                    </div>
+                  </div>
+                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${milestoneStatusMeta(milestone.status)}`}>
+                    {milestone.status}
+                  </span>
                 </div>
+                <div className="mt-2 text-sm text-white/65">{milestone.description}</div>
+                {milestone.dependsOn.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {milestone.dependsOn.map((dependencyId) => {
+                      const dependency = findMilestone(planning.milestones, dependencyId)
+                      return (
+                        <span key={dependencyId} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/60">
+                          依赖 {dependency?.title ?? dependencyId}
+                        </span>
+                      )
+                    })}
+                  </div>
+                ) : null}
               </div>
-              <div className="text-right text-sm text-white/55">
-                <div>Owner: {project.primaryOwner}</div>
-                <div>Buffer: {project.bufferDays} days</div>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-3 text-sm text-white/65">
-              <span>Blockers {project.blockerCount}</span>
-              <span>Pending approvals {project.pendingApprovalCount}</span>
-              <span>Strong risks {project.strongRiskCount}</span>
-              <span>Status {project.readinessStatus}</span>
-            </div>
-            <div className="mt-3 text-sm text-white/70">{project.nextFocus}</div>
+            ))}
           </div>
-        ))}
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <div className="text-sm font-medium text-white">This Week / Upcoming</div>
+            <div className="mt-4 space-y-3">
+              {planning.upcoming.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+                  当前没有即将到期的排期项。
+                </div>
+              ) : planning.upcoming.map((item) => {
+                const milestone = findMilestone(planning.milestones, item.milestoneId)
+                if (!milestone) return null
+                return (
+                  <div key={item.id} className="rounded-xl border border-white/8 px-4 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-white">{milestone.title}</div>
+                        <div className="mt-1 text-xs text-white/45">
+                          {milestone.projectId} · {formatDate(item.startAt)} - {formatDate(item.endAt)}
+                        </div>
+                      </div>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${scheduleStatusMeta(item.status)}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-white/65">
+                      priority {item.priority}{item.riskReason ? ` · ${item.riskReason}` : ''}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <div className="text-sm font-medium text-white">Blocked</div>
+            <div className="mt-4 space-y-3">
+              {planning.blocked.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+                  当前没有 blocked milestones。
+                </div>
+              ) : planning.blocked.map((item) => (
+                <div key={item.id} className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3">
+                  <div className="text-sm font-medium text-rose-200">{item.title}</div>
+                  <div className="mt-1 text-xs text-rose-100/70">
+                    项目 {item.projectId} · owner {item.ownerRole} · due {formatDate(item.dueAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+        <div className="text-sm font-medium text-white">Conflicts</div>
+        <div className="mt-4 space-y-3">
+          {planning.conflicts.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+              当前没有新的 planning conflicts。
+            </div>
+          ) : planning.conflicts.map((conflict) => {
+            const milestone = findMilestone(planning.milestones, conflict.relatedMilestoneId)
+            return (
+              <div key={conflict.id} className="rounded-xl border border-white/8 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-white">{milestone?.title ?? conflict.relatedMilestoneId}</div>
+                    <div className="mt-1 text-xs text-white/45">
+                      {conflict.type} · 项目 {conflict.relatedProjectId}
+                    </div>
+                  </div>
+                  <AlertBadge severity={conflict.severity} />
+                </div>
+                <div className="mt-2 text-sm text-white/65">{conflict.message}</div>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -234,7 +406,7 @@ export function PlanningPanel({ data }: { data: ProducerDashboardData }) {
           <div key={alert.id} className="rounded-xl border border-white/8 bg-black/10 px-4 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm font-medium text-white">{alert.label}</div>
-              <PlanningAlertBadge severity={alert.severity} />
+              <AlertBadge severity={alert.severity} />
             </div>
             <div className="mt-2 text-sm text-white/65">{alert.message}</div>
           </div>
