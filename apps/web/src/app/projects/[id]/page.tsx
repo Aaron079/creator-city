@@ -7,7 +7,10 @@ import { RoleAwareProjectHome } from '@/components/projects/RoleAwareProjectHome
 import { buildActivityLogItems } from '@/lib/activity/aggregate'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildProducerPlanningData, loadPlanningSettings } from '@/lib/dashboard/planning'
+import { buildClientProjectStatusFeed } from '@/lib/projects/client-feed'
 import { buildRoleAwareProjectHome } from '@/lib/projects/home'
+import { buildReviewResolutionSeeds } from '@/lib/review/resolution'
+import { useReviewResolutionStore } from '@/lib/review/resolution-store'
 import { getProjectAccessState } from '@/lib/roles/access'
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
@@ -43,6 +46,8 @@ export default function ProjectHomePage() {
   const getInvitationActivity = useTeamStore((s) => s.getInvitationActivity)
   const roleChanges = useTeamStore((s) => s.roleChanges)
   const versions = useVersionHistoryStore((s) => s.versions)
+  const resolutionItems = useReviewResolutionStore((s) => s.items)
+  const syncResolutionItems = useReviewResolutionStore((s) => s.syncResolutionItems)
   const router = useRouter()
   const params = useParams()
   const projectId = params?.id as string
@@ -129,6 +134,38 @@ export default function ProjectHomePage() {
     }),
     [approvals, deliveryPackages, getInvitationActivity, notes, notifications, projectId, projectTitle, roleChanges, versions],
   )
+  const resolutionSeeds = useMemo(
+    () => buildReviewResolutionSeeds({
+      projectId,
+      approvals: approvals.filter((approval) => activity.some((item) => item.targetId === approval.targetId)),
+      notes: notes.filter((note) => note.targetId === projectId || activity.some((item) => item.targetId === note.targetId)),
+      versions,
+    }),
+    [activity, approvals, notes, projectId, versions],
+  )
+  const projectResolutions = useMemo(
+    () => resolutionItems.filter((item) => item.projectId === projectId),
+    [projectId, resolutionItems],
+  )
+
+  useEffect(() => {
+    if (resolutionSeeds.length === 0) return
+    syncResolutionItems(projectId, resolutionSeeds)
+  }, [projectId, resolutionSeeds, syncResolutionItems])
+
+  const clientFeed = useMemo(
+    () => buildClientProjectStatusFeed({
+      projectId,
+      projectTitle,
+      currentStage: projectOverview?.currentStage ?? 'idea',
+      approvals,
+      versions,
+      deliveryPackage: deliveryPackages.find((pkg) => pkg.projectId === projectId) ?? null,
+      activity,
+      resolutions: projectResolutions,
+    }),
+    [activity, approvals, deliveryPackages, projectId, projectOverview?.currentStage, projectResolutions, projectTitle, versions],
+  )
 
   const homeData = useMemo(
     () => buildRoleAwareProjectHome({
@@ -140,6 +177,7 @@ export default function ProjectHomePage() {
       workQueue,
       notifications,
       activity,
+      clientFeed,
       deliveryPackage: deliveryPackages.find((pkg) => pkg.projectId === projectId) ?? null,
       members: getProjectMembers(projectId),
       invitations: getPendingInvitations(projectId),
@@ -148,6 +186,7 @@ export default function ProjectHomePage() {
     [
       access,
       activity,
+      clientFeed,
       dashboard,
       deliveryPackages,
       getInvitationActivity,
