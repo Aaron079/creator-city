@@ -26,8 +26,12 @@ function severityMeta(severity: NotificationItem['severity']) {
   }
 }
 
-function categoryLabel(category: NotificationItem['category']) {
-  switch (category) {
+function categoryLabel(item: NotificationItem) {
+  if (item.category === 'team' && item.sourceType === 'invitation') {
+    return '邀请'
+  }
+
+  switch (item.category) {
     case 'approval':
       return '审批'
     case 'blocker':
@@ -49,7 +53,7 @@ function categoryLabel(category: NotificationItem['category']) {
     case 'licensing':
       return '授权'
     default:
-      return category
+      return item.category
   }
 }
 
@@ -155,7 +159,7 @@ export function NotificationCenter({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-white/45">{categoryLabel(item.category)}</span>
+                      <span className="text-sm text-white/45">{categoryLabel(item)}</span>
                       {item.projectId ? <span className="text-xs text-white/35">项目 {item.projectId}</span> : null}
                     </div>
                     <div className="mt-1 text-base font-semibold text-white">{item.title}</div>

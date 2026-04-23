@@ -43,7 +43,7 @@ export function InvitationInbox({
   const pendingCount = invitations.filter((item) => item.status === 'pending').length
 
   return (
-    <section className="rounded-2xl border border-white/8 bg-black/10 p-5 shadow-[0_8px_30px_rgba(0,0,0,0.16)]">
+    <section id="invitation-inbox" className="rounded-2xl border border-white/8 bg-black/10 p-5 shadow-[0_8px_30px_rgba(0,0,0,0.16)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-400">Invitation Inbox</h2>

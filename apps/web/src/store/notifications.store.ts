@@ -16,6 +16,8 @@ export interface NotificationItem {
   isDismissed: boolean
   createdAt: string
   dueAt?: string
+  relatedProfileId?: string
+  relatedRole?: string
 }
 
 export interface NotificationSummary {
@@ -40,6 +42,8 @@ interface NotificationsState {
   items: NotificationItem[]
   rules: ReminderRule[]
   syncNotifications: (items: NotificationItem[]) => void
+  upsertNotification: (item: NotificationItem) => void
+  markSourceHandled: (sourceType: string, sourceId: string) => void
   markRead: (id: string) => void
   markAllRead: () => void
   dismissNotification: (id: string) => void
@@ -78,18 +82,53 @@ export const useNotificationsStore = create<NotificationsState>()(
 
       syncNotifications: (nextItems) => {
         const previous = new Map(get().items.map((item) => [item.id, item]))
+        const preserved = get().items.filter((item) => (
+          item.sourceType === 'invitation'
+          || item.sourceType === 'invitation-accepted'
+          || item.sourceType === 'invitation-declined'
+          || item.sourceType === 'invitation-cancelled'
+        ))
         set({
-          items: nextItems.map((item) => {
-            const existing = previous.get(item.id)
-            return existing
-              ? {
-                  ...item,
-                  isRead: existing.isRead,
-                  isDismissed: existing.isDismissed,
-                }
-              : item
-          }),
+          items: [
+            ...nextItems.map((item) => {
+              const existing = previous.get(item.id)
+              return existing
+                ? {
+                    ...item,
+                    isRead: existing.isRead,
+                    isDismissed: existing.isDismissed,
+                  }
+                : item
+            }),
+            ...preserved.filter((item) => !nextItems.some((candidate) => candidate.id === item.id)),
+          ],
         })
+      },
+
+      upsertNotification: (item) => {
+        set((state) => ({
+          items: state.items.some((existing) => existing.id === item.id)
+            ? state.items.map((existing) => (
+                existing.id === item.id
+                  ? {
+                      ...item,
+                      isRead: existing.isRead,
+                      isDismissed: existing.isDismissed,
+                    }
+                  : existing
+              ))
+            : [item, ...state.items],
+        }))
+      },
+
+      markSourceHandled: (sourceType, sourceId) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.sourceType === sourceType && item.sourceId === sourceId
+              ? { ...item, isRead: true, isDismissed: true }
+              : item
+          )),
+        }))
       },
 
       markRead: (id) => {

@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { CREATORS } from '@/lib/data/creators'
+import { buildInvitationNotification, buildInvitationResolvedNotification } from '@/lib/notifications/invitations'
 import { getProjectRoleLabel, isProjectRole } from '@/lib/roles/projectRoles'
+import { useNotificationsStore } from '@/store/notifications.store'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useReviewStore } from '@/store/review.store'
@@ -302,7 +304,10 @@ export const useTeamStore = create<TeamState>()(
         const profileId = isLegacy ? profileOrMember.userId : profileOrMember
         const role = isLegacy ? profileOrMember.role : (roleArg ?? 'creator')
         const existingPending = state.invitations.find((item) => item.projectId === projectId && item.profileId === profileId && item.status === 'pending')
-        if (existingPending) return existingPending
+        if (existingPending) {
+          useNotificationsStore.getState().upsertNotification(buildInvitationNotification(existingPending))
+          return existingPending
+        }
 
         const meta = isLegacy
           ? {
@@ -369,6 +374,8 @@ export const useTeamStore = create<TeamState>()(
           activities: [activity, ...current.activities],
         }))
 
+        useNotificationsStore.getState().upsertNotification(buildInvitationNotification(invitation))
+
         return invitation
       }) as TeamState['inviteMember'],
 
@@ -399,6 +406,17 @@ export const useTeamStore = create<TeamState>()(
           ] : state.activities,
         }))
         useProjectRoleStore.getState().updateAssignmentStatus(projectId, profileId, 'removed')
+        if (invitation) {
+          useNotificationsStore.getState().markSourceHandled('invitation', invitation.id)
+          useNotificationsStore.getState().upsertNotification(buildInvitationResolvedNotification({
+            invitation: {
+              ...invitation,
+              status: 'cancelled',
+              respondedAt: nowIso(),
+            },
+            type: 'cancelled',
+          }))
+        }
       },
 
       acceptInvitation: (projectId, profileId) => {
@@ -435,6 +453,15 @@ export const useTeamStore = create<TeamState>()(
         }))
 
         syncProjectRole(projectId, profileId, invitation.role, 'active')
+        useNotificationsStore.getState().markSourceHandled('invitation', invitation.id)
+        useNotificationsStore.getState().upsertNotification(buildInvitationResolvedNotification({
+          invitation: {
+            ...invitation,
+            status: 'accepted',
+            respondedAt: nowIso(),
+          },
+          type: 'accepted',
+        }))
       },
 
       declineInvitation: (projectId, profileId) => {
@@ -464,6 +491,17 @@ export const useTeamStore = create<TeamState>()(
           ] : state.activities,
         }))
         useProjectRoleStore.getState().updateAssignmentStatus(projectId, profileId, 'removed')
+        if (invitation) {
+          useNotificationsStore.getState().markSourceHandled('invitation', invitation.id)
+          useNotificationsStore.getState().upsertNotification(buildInvitationResolvedNotification({
+            invitation: {
+              ...invitation,
+              status: 'declined',
+              respondedAt: nowIso(),
+            },
+            type: 'declined',
+          }))
+        }
       },
 
       acceptInvite: (teamId, userId) => {
