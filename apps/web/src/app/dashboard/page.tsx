@@ -7,11 +7,14 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useApprovalStore } from '@/store/approval.store'
 import { useAudioDeskStore } from '@/store/audio-desk.store'
 import { useCaseStore } from '@/lib/case/caseStore'
+import { buildProducerPlanningData, loadPlanningSettings } from '@/lib/dashboard/planning'
 import { useDeliveryPackageStore } from '@/store/delivery-package.store'
 import { useDirectorNotesStore } from '@/store/director-notes.store'
 import { useJobsStore } from '@/store/jobs.store'
 import { CREATORS } from '@/lib/data/creators'
 import { useLicensingStore } from '@/store/licensing.store'
+import { buildNotificationAiSummary, buildNotifications } from '@/lib/notifications/aggregate'
+import { useNotificationsStore } from '@/store/notifications.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
 import { aggregateTalentMatching, getRoleNeedLabel, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
@@ -56,6 +59,14 @@ export default function DashboardPage() {
   const createTeam = useTeamStore((s) => s.createTeam)
   const inviteMember = useTeamStore((s) => s.inviteMember)
   const versions = useVersionHistoryStore((s) => s.versions)
+  const notificationItems = useNotificationsStore((s) => s.items)
+  const notificationRules = useNotificationsStore((s) => s.rules)
+  const syncNotifications = useNotificationsStore((s) => s.syncNotifications)
+  const markNotificationRead = useNotificationsStore((s) => s.markRead)
+  const markAllNotificationsRead = useNotificationsStore((s) => s.markAllRead)
+  const dismissNotification = useNotificationsStore((s) => s.dismissNotification)
+  const getNotificationSummary = useNotificationsStore((s) => s.getSummary)
+  const upsertNotificationRule = useNotificationsStore((s) => s.upsertRule)
   const router = useRouter()
 
   useEffect(() => {
@@ -103,6 +114,28 @@ export default function DashboardPage() {
     versions,
   }), [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions])
 
+  const planningSettings = useMemo(() => loadPlanningSettings(), [])
+  const planning = useMemo(
+    () => buildProducerPlanningData(dashboard, planningSettings),
+    [dashboard, planningSettings],
+  )
+
+  const generatedNotifications = useMemo(() => buildNotifications({
+    dashboard,
+    planning,
+    approvals,
+    notes,
+    deliveryPackages,
+    orders,
+    jobs,
+    teams,
+    rules: notificationRules,
+  }), [dashboard, planning, approvals, notes, deliveryPackages, orders, jobs, teams, notificationRules])
+
+  useEffect(() => {
+    syncNotifications(generatedNotifications)
+  }, [generatedNotifications, syncNotifications])
+
   const matching = useMemo(() => aggregateTalentMatching({
     overview: dashboard.overview,
     teams,
@@ -132,6 +165,11 @@ export default function DashboardPage() {
 
   const licensingSummary = useMemo(() => getSummary(), [getSummary])
   const licensingIssues = useMemo(() => getIssues(), [getIssues])
+  const notificationSummary = useMemo(() => getNotificationSummary(), [getNotificationSummary])
+  const notificationAiSummary = useMemo(
+    () => buildNotificationAiSummary(notificationItems),
+    [notificationItems],
+  )
 
   if (!user) return null
 
@@ -155,6 +193,16 @@ export default function DashboardPage() {
         matching={{
           data: matching,
           onInvite: handleInviteCandidate,
+        }}
+        notifications={{
+          items: notificationItems,
+          summary: notificationSummary,
+          rules: notificationRules,
+          aiSummary: notificationAiSummary,
+          onMarkRead: markNotificationRead,
+          onMarkAllRead: markAllNotificationsRead,
+          onDismiss: dismissNotification,
+          onToggleRule: upsertNotificationRule,
         }}
         role={role}
       />
