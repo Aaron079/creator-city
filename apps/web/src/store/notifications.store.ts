@@ -5,6 +5,7 @@ export type NotificationCategory = 'approval' | 'blocker' | 'delivery' | 'planni
 export type NotificationSeverity = 'info' | 'warning' | 'strong'
 export type NotificationRoleScope = 'producer' | 'creator' | 'client' | 'shared'
 export type NotificationSection = 'invitation' | 'approval' | 'delivery' | 'planning' | 'risk'
+export type NotificationSnoozePreset = 'later-today' | 'tomorrow' | 'this-week'
 
 export interface NotificationItem {
   id: string
@@ -39,6 +40,9 @@ export interface NotificationSummary {
   deliveryRiskCount: number
   staleApprovalCount: number
   invitationPendingCount: number
+  actionableCount: number
+  snoozedCount: number
+  groupedActionCount: number
 }
 
 export interface ReminderRule {
@@ -57,7 +61,13 @@ interface NotificationsState {
   markSourceHandled: (sourceType: string, sourceId: string) => void
   markRead: (id: string) => void
   markAllRead: () => void
+  markSectionRead: (section: NotificationSection) => void
+  markProjectRead: (projectId: string) => void
   dismissNotification: (id: string) => void
+  dismissAllInSection: (section: NotificationSection) => void
+  dismissAllInProject: (projectId: string) => void
+  snoozeNotification: (id: string, until: string) => void
+  unsnoozeExpired: () => void
   getUnread: () => NotificationItem[]
   getSummary: () => NotificationSummary
   upsertRule: (rule: ReminderRule) => void
@@ -76,8 +86,37 @@ function isVisibleNotification(item: NotificationItem) {
   return !item.isDismissed && (!item.snoozeUntil || new Date(item.snoozeUntil).getTime() <= Date.now())
 }
 
+export function isSnoozedNotification(item: NotificationItem) {
+  return !item.isDismissed && Boolean(item.snoozeUntil) && new Date(item.snoozeUntil as string).getTime() > Date.now()
+}
+
+export function isActionableNotification(item: NotificationItem) {
+  if (item.isDismissed) return false
+  if (isSnoozedNotification(item)) return false
+  return (
+    item.sourceType === 'invitation'
+    || item.sourceType === 'pending-approval'
+    || item.sourceType === 'stale-approval'
+    || item.sourceType === 'delivery-risk'
+    || item.sourceType === 'delivery-status'
+    || item.sourceType === 'director-note'
+    || item.sourceType === 'changes-requested'
+    || item.sourceType === 'missing-license'
+    || item.sourceType === 'audio-risk'
+    || item.sourceType === 'clip-review-risk'
+    || item.sourceType === 'milestone-due'
+    || item.severity === 'strong'
+  )
+}
+
 export function buildNotificationSummary(items: NotificationItem[]): NotificationSummary {
   const active = items.filter(isVisibleNotification)
+  const snoozed = items.filter(isSnoozedNotification)
+  const groupedActionCount = new Set(
+    active
+      .filter(isActionableNotification)
+      .map((item) => item.section ?? item.category),
+  ).size
   return {
     unreadCount: active.filter((item) => !item.isRead).length,
     strongCount: active.filter((item) => item.severity === 'strong').length,
@@ -87,6 +126,9 @@ export function buildNotificationSummary(items: NotificationItem[]): Notificatio
     deliveryRiskCount: active.filter((item) => item.category === 'delivery').length,
     staleApprovalCount: active.filter((item) => item.category === 'approval' && item.sourceType === 'stale-approval').length,
     invitationPendingCount: active.filter((item) => item.category === 'team' && item.sourceType === 'invitation').length,
+    actionableCount: active.filter(isActionableNotification).length,
+    snoozedCount: snoozed.length,
+    groupedActionCount,
   }
 }
 
@@ -113,6 +155,7 @@ export const useNotificationsStore = create<NotificationsState>()(
                     ...item,
                     isRead: existing.isRead,
                     isDismissed: existing.isDismissed,
+                    snoozeUntil: existing.snoozeUntil,
                   }
                 : item
             }),
@@ -130,6 +173,7 @@ export const useNotificationsStore = create<NotificationsState>()(
                       ...item,
                       isRead: existing.isRead,
                       isDismissed: existing.isDismissed,
+                      snoozeUntil: existing.snoozeUntil,
                     }
                   : existing
               ))
@@ -159,9 +203,59 @@ export const useNotificationsStore = create<NotificationsState>()(
         }))
       },
 
+      markSectionRead: (section) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.section === section ? { ...item, isRead: true } : item
+          )),
+        }))
+      },
+
+      markProjectRead: (projectId) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.projectId === projectId ? { ...item, isRead: true } : item
+          )),
+        }))
+      },
+
       dismissNotification: (id) => {
         set((state) => ({
           items: state.items.map((item) => item.id === id ? { ...item, isDismissed: true, isRead: true } : item),
+        }))
+      },
+
+      dismissAllInSection: (section) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.section === section ? { ...item, isDismissed: true, isRead: true } : item
+          )),
+        }))
+      },
+
+      dismissAllInProject: (projectId) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.projectId === projectId ? { ...item, isDismissed: true, isRead: true } : item
+          )),
+        }))
+      },
+
+      snoozeNotification: (id, until) => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.id === id ? { ...item, snoozeUntil: until, isRead: true } : item
+          )),
+        }))
+      },
+
+      unsnoozeExpired: () => {
+        set((state) => ({
+          items: state.items.map((item) => (
+            item.snoozeUntil && new Date(item.snoozeUntil).getTime() <= Date.now()
+              ? { ...item, snoozeUntil: undefined }
+              : item
+          )),
         }))
       },
 

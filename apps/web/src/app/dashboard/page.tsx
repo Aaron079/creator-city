@@ -79,7 +79,13 @@ export default function DashboardPage() {
   const syncNotifications = useNotificationsStore((s) => s.syncNotifications)
   const markNotificationRead = useNotificationsStore((s) => s.markRead)
   const markAllNotificationsRead = useNotificationsStore((s) => s.markAllRead)
+  const markNotificationSectionRead = useNotificationsStore((s) => s.markSectionRead)
+  const markNotificationProjectRead = useNotificationsStore((s) => s.markProjectRead)
   const dismissNotification = useNotificationsStore((s) => s.dismissNotification)
+  const dismissNotificationSection = useNotificationsStore((s) => s.dismissAllInSection)
+  const dismissNotificationProject = useNotificationsStore((s) => s.dismissAllInProject)
+  const snoozeNotification = useNotificationsStore((s) => s.snoozeNotification)
+  const unsnoozeExpired = useNotificationsStore((s) => s.unsnoozeExpired)
   const getNotificationSummary = useNotificationsStore((s) => s.getSummary)
   const upsertNotificationRule = useNotificationsStore((s) => s.upsertRule)
   const router = useRouter()
@@ -87,6 +93,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
   }, [isAuthenticated, router])
+
+  useEffect(() => {
+    unsnoozeExpired()
+  }, [unsnoozeExpired])
 
   const syncedLicenseRecords = useMemo(() => buildLicenseRecords({
     voiceTakes,
@@ -408,16 +418,21 @@ export default function DashboardPage() {
             onChangeMemberRole: changeMemberRole,
             onRemoveMember: removeMember,
           }}
-          notifications={{
-            items: notificationItems,
-            summary: notificationSummary,
-            rules: notificationRules,
-            aiSummary: notificationAiSummary,
-            onMarkRead: markNotificationRead,
-            onMarkAllRead: markAllNotificationsRead,
-            onDismiss: dismissNotification,
-            onToggleRule: upsertNotificationRule,
-          }}
+      notifications={{
+        items: notificationItems,
+        summary: notificationSummary,
+        rules: notificationRules,
+        aiSummary: notificationAiSummary,
+        onMarkRead: markNotificationRead,
+        onMarkAllRead: markAllNotificationsRead,
+        onMarkSectionRead: markNotificationSectionRead,
+        onMarkProjectRead: markNotificationProjectRead,
+        onDismiss: dismissNotification,
+        onDismissSection: dismissNotificationSection,
+        onDismissProject: dismissNotificationProject,
+        onSnooze: snoozeNotification,
+        onToggleRule: upsertNotificationRule,
+      }}
           activity={{
             items: activityTimelineItems,
             summary: activitySummary,

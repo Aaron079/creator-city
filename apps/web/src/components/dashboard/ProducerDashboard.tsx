@@ -16,7 +16,7 @@ import type { ActivityLogItem, ActivitySummary } from '@/lib/activity/aggregate'
 import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
-import type { NotificationItem, NotificationSummary, ReminderRule } from '@/store/notifications.store'
+import type { NotificationItem, NotificationSection, NotificationSummary, ReminderRule } from '@/store/notifications.store'
 import type { InvitationActivity, TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 
 function Card({
@@ -108,7 +108,12 @@ export function ProducerDashboard({
     aiSummary: NotificationAiSummary
     onMarkRead: (id: string) => void
     onMarkAllRead: () => void
+    onMarkSectionRead: (section: NotificationSection) => void
+    onMarkProjectRead: (projectId: string) => void
     onDismiss: (id: string) => void
+    onDismissSection: (section: NotificationSection) => void
+    onDismissProject: (projectId: string) => void
+    onSnooze: (id: string, until: string) => void
     onToggleRule: (rule: ReminderRule) => void
   }
   activity: {
@@ -166,7 +171,12 @@ export function ProducerDashboard({
           role={role}
           onMarkRead={notifications.onMarkRead}
           onMarkAllRead={notifications.onMarkAllRead}
+          onMarkSectionRead={notifications.onMarkSectionRead}
+          onMarkProjectRead={notifications.onMarkProjectRead}
           onDismiss={notifications.onDismiss}
+          onDismissSection={notifications.onDismissSection}
+          onDismissProject={notifications.onDismissProject}
+          onSnooze={notifications.onSnooze}
           onToggleRule={notifications.onToggleRule}
         />
       ) : null}
