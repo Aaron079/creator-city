@@ -17,7 +17,7 @@ import { buildNotificationAiSummary, buildNotifications } from '@/lib/notificati
 import { useNotificationsStore } from '@/store/notifications.store'
 import { useOrderStore } from '@/store/order.store'
 import { useCreatorStore } from '@/lib/user/creator'
-import { aggregateTalentMatching, getRoleNeedLabel, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
+import { aggregateTalentMatching, type MatchCandidate, type RoleNeed } from '@/lib/matching/aggregate'
 import { getPermissionsForRole } from '@/lib/roles/permissions'
 import { useMockRoleMode } from '@/lib/roles/view-mode'
 import { useProfileStore } from '@/store/profile.store'
@@ -59,6 +59,13 @@ export default function DashboardPage() {
   const teams = useTeamStore((s) => s.teams)
   const createTeam = useTeamStore((s) => s.createTeam)
   const inviteMember = useTeamStore((s) => s.inviteMember)
+  const cancelInvitation = useTeamStore((s) => s.cancelInvitation)
+  const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
+  const declineInvitation = useTeamStore((s) => s.declineInvitation)
+  const changeMemberRole = useTeamStore((s) => s.changeMemberRole)
+  const removeMember = useTeamStore((s) => s.removeMember)
+  const getProjectMembers = useTeamStore((s) => s.getProjectMembers)
+  const getPendingInvitations = useTeamStore((s) => s.getPendingInvitations)
   const versions = useVersionHistoryStore((s) => s.versions)
   const notificationItems = useNotificationsStore((s) => s.items)
   const notificationRules = useNotificationsStore((s) => s.rules)
@@ -149,19 +156,25 @@ export default function DashboardPage() {
     creatorPool: CREATORS,
   }), [cases, creatorProfiles, creatorReviews, creatorStats, dashboard.overview, jobs, orders, teams])
 
-  const handleInviteCandidate = useCallback((projectId: string, need: RoleNeed, candidate: MatchCandidate) => {
-    const team = createTeam(
+  const handleInviteCandidate = useCallback((projectId: string, need: RoleNeed, candidate: MatchCandidate, role: string) => {
+    createTeam(
       projectId,
       user?.id ?? 'user-me',
       user?.displayName ?? '我 (发布方)',
     )
 
-    inviteMember(team.id, {
-      userId: candidate.profileId,
-      name: candidate.displayName,
-      role: getRoleNeedLabel(need.role),
-      split: 20,
-    })
+    inviteMember(
+      projectId,
+      candidate.profileId,
+      role,
+      user?.id ?? 'user-me',
+      {
+        displayName: candidate.displayName,
+        city: candidate.city,
+        ratingSummary: candidate.ratingSummary,
+        matchedCaseIds: candidate.matchedCaseIds,
+      },
+    )
   }, [createTeam, inviteMember, user?.displayName, user?.id])
 
   const licensingSummary = useMemo(() => getSummary(), [getSummary])
@@ -194,7 +207,14 @@ export default function DashboardPage() {
         }}
         matching={{
           data: matching,
+          getProjectMembers,
+          getPendingInvitations,
           onInvite: handleInviteCandidate,
+          onCancelInvitation: cancelInvitation,
+          onAcceptInvitation: acceptInvitation,
+          onDeclineInvitation: declineInvitation,
+          onChangeMemberRole: changeMemberRole,
+          onRemoveMember: removeMember,
         }}
         notifications={{
           items: notificationItems,

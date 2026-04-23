@@ -15,6 +15,7 @@ import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 import type { NotificationItem, NotificationSummary, ReminderRule } from '@/store/notifications.store'
+import type { TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 
 function Card({
   title,
@@ -89,7 +90,14 @@ export function ProducerDashboard({
   }
   matching: {
     data: TalentMatchingData
-    onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate) => void
+    getProjectMembers: (projectId: string) => TeamMemberSummary[]
+    getPendingInvitations: (projectId: string) => TeamInvitation[]
+    onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate, role: string) => void
+    onCancelInvitation: (projectId: string, profileId: string) => void
+    onAcceptInvitation: (projectId: string, profileId: string) => void
+    onDeclineInvitation: (projectId: string, profileId: string) => void
+    onChangeMemberRole: (projectId: string, profileId: string, role: string) => void
+    onRemoveMember: (projectId: string, profileId: string) => void
   }
   notifications: {
     items: NotificationItem[]
@@ -307,10 +315,17 @@ export function ProducerDashboard({
       ) : null}
 
       {visibleSections.has('team-match') ? (
-      <Card title="Team Match / Talent Suggestions" id="team-match">
+      <Card title="Team Management / Talent Suggestions" id="team-match">
         <TeamAssemblyPanel
           data={matching.data}
+          getProjectMembers={matching.getProjectMembers}
+          getPendingInvitations={matching.getPendingInvitations}
           onInvite={matching.onInvite}
+          onCancelInvitation={matching.onCancelInvitation}
+          onAcceptInvitation={matching.onAcceptInvitation}
+          onDeclineInvitation={matching.onDeclineInvitation}
+          onChangeMemberRole={matching.onChangeMemberRole}
+          onRemoveMember={matching.onRemoveMember}
           canInviteTeam={permissions.canInviteTeam}
         />
       </Card>

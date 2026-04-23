@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getPermissionsForRole, type RolePermission } from '@/lib/roles/permissions'
-import type { ProjectRole, ProjectRoleAssignment } from '@/lib/roles/projectRoles'
+import type { ProjectRole, ProjectRoleAssignment, ProjectRoleAssignmentStatus } from '@/lib/roles/projectRoles'
 
 interface ProjectRoleState {
   assignments: ProjectRoleAssignment[]
   setProjectRole: (projectId: string, userId: string, role: ProjectRole) => void
+  assignProjectRole: (projectId: string, userId: string, role: ProjectRole, status?: ProjectRoleAssignmentStatus) => void
+  updateAssignmentStatus: (projectId: string, userId: string, status: ProjectRoleAssignmentStatus) => void
   getRoleForProject: (projectId: string, userId: string, fallbackRole?: ProjectRole) => ProjectRole
   getPermissions: (projectId: string, userId: string, fallbackRole?: ProjectRole) => RolePermission
 }
@@ -20,13 +22,17 @@ export const useProjectRoleStore = create<ProjectRoleState>()(
       assignments: [],
 
       setProjectRole: (projectId, userId, role) => {
+        get().assignProjectRole(projectId, userId, role, 'active')
+      },
+
+      assignProjectRole: (projectId, userId, role, status = 'active') => {
         set((state) => {
           const existing = state.assignments.find((item) => item.projectId === projectId && item.userId === userId)
           if (existing) {
             return {
               assignments: state.assignments.map((item) => (
                 item.id === existing.id
-                  ? { ...item, role, status: 'active' }
+                  ? { ...item, role, status }
                   : item
               )),
             }
@@ -39,12 +45,22 @@ export const useProjectRoleStore = create<ProjectRoleState>()(
                 projectId,
                 userId,
                 role,
-                status: 'active',
+                status,
               },
               ...state.assignments,
             ],
           }
         })
+      },
+
+      updateAssignmentStatus: (projectId, userId, status) => {
+        set((state) => ({
+          assignments: state.assignments.map((item) => (
+            item.projectId === projectId && item.userId === userId
+              ? { ...item, status }
+              : item
+          )),
+        }))
       },
 
       getRoleForProject: (projectId, userId, fallbackRole = 'creator') => {

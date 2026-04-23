@@ -25,6 +25,10 @@ export const PROJECT_ROLES: ProjectRole[] = [
   'cinematographer',
 ]
 
+export function isProjectRole(role: string): role is ProjectRole {
+  return PROJECT_ROLES.includes(role as ProjectRole)
+}
+
 export function getProjectRoleLabel(role: ProjectRole) {
   switch (role) {
     case 'producer':
