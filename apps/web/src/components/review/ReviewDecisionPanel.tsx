@@ -9,6 +9,12 @@ export function ReviewDecisionPanel({
   assignedTo,
   assigneeOptions,
   showInternalFollowUp = true,
+  approvedLabel,
+  changesRequestedLabel,
+  rejectedLabel,
+  approvedDescription,
+  pendingDescription,
+  commentPlaceholder,
   onCommentChange,
   onFollowUpChange,
   onAssignedToChange,
@@ -21,21 +27,33 @@ export function ReviewDecisionPanel({
   assignedTo: string
   assigneeOptions: Array<{ id: string; label: string }>
   showInternalFollowUp?: boolean
+  approvedLabel?: string
+  changesRequestedLabel?: string
+  rejectedLabel?: string
+  approvedDescription?: string
+  pendingDescription?: string
+  commentPlaceholder?: string
   onCommentChange: (value: string) => void
   onFollowUpChange: (value: 'note' | 'task' | 'comment') => void
   onAssignedToChange: (value: string) => void
   onSubmit: () => void
   onCancel: () => void
 }) {
+  const statusLabel = status === 'approved'
+    ? (approvedLabel ?? '确认通过')
+    : status === 'changes-requested'
+      ? (changesRequestedLabel ?? '请求修改')
+      : (rejectedLabel ?? '拒绝确认')
+
   return (
     <div className="rounded-2xl p-4 mt-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <p className="text-[11px] font-semibold text-white/82">
-        {status === 'approved' ? '确认通过' : status === 'changes-requested' ? '请求修改' : '拒绝确认'}
+        {statusLabel}
       </p>
       <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.34)' }}>
         {status === 'approved'
-          ? '这会只记录客户确认决定，不会自动推进阶段、完成订单或修改作品内容。'
-          : '请留下清晰 comment，方便创作团队理解你的修改意见。'}
+          ? (approvedDescription ?? '这会只记录客户确认决定，不会自动推进阶段、完成订单或修改作品内容。')
+          : (pendingDescription ?? '请留下清晰 comment，方便创作团队理解你的修改意见。')}
       </p>
 
       {status !== 'approved' && (
@@ -45,7 +63,7 @@ export function ReviewDecisionPanel({
           rows={4}
           className="w-full rounded-2xl px-4 py-3 mt-3 text-[11px] outline-none resize-none"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.82)' }}
-          placeholder="请写下你希望修改或拒绝的原因"
+          placeholder={commentPlaceholder ?? '请写下你希望修改或拒绝的原因'}
         />
       )}
 

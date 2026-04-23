@@ -8,6 +8,7 @@ import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { canEnterReview, getProjectAccessState } from '@/lib/roles/access'
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { ClientReviewHeader } from '@/components/review/ClientReviewHeader'
+import { DeliveryApprovalCard } from '@/components/review/DeliveryApprovalCard'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
 import { ReviewItemCard } from '@/components/review/ReviewItemCard'
 import { ReviewSummaryCard } from '@/components/review/ReviewSummaryCard'
@@ -20,6 +21,7 @@ import { useAudioDeskStore } from '@/store/audio-desk.store'
 import { useAuthStore } from '@/store/auth.store'
 import { useDirectorNotesStore } from '@/store/director-notes.store'
 import type { DirectorNoteTargetType } from '@/store/director-notes.store'
+import { useDeliveryPackageStore } from '@/store/delivery-package.store'
 import { useJobsStore } from '@/store/jobs.store'
 import { useOrderStore } from '@/store/order.store'
 import { useProfileStore } from '@/store/profile.store'
@@ -71,6 +73,9 @@ export default function ClientReviewPortalPage() {
   const addApprovalSystemMessage = useApprovalStore((s) => s.addSystemMessage)
   const notes = useDirectorNotesStore((s) => s.notes)
   const addDirectorNote = useDirectorNotesStore((s) => s.addNote)
+  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
+  const markDeliveryApproved = useDeliveryPackageStore((s) => s.markDeliveryApproved)
+  const markDeliveryNeedsRevision = useDeliveryPackageStore((s) => s.markDeliveryNeedsRevision)
   const versions = useVersionHistoryStore((s) => s.versions)
   const compareVersions = useVersionHistoryStore((s) => s.compareVersions)
   const teams = useTeamStore((s) => s.teams)
@@ -156,6 +161,26 @@ export default function ClientReviewPortalPage() {
     () => activeTeam?.members.map((member) => ({ id: member.userId, label: `${member.name} · ${member.role}` })) ?? [],
     [activeTeam?.members],
   )
+  const activeDeliveryPackage = useMemo(
+    () => deliveryPackages
+      .filter((pkg) => pkg.projectId === projectId)
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null,
+    [deliveryPackages, projectId],
+  )
+  const deliveryReviewItem = useMemo(
+    () => reviewContext.items.find((item) => item.targetType === 'delivery') ?? null,
+    [reviewContext.items],
+  )
+  const latestDeliveryDecision = useMemo(
+    () => deliveryReviewItem?.decisions
+      .filter((decision) => decision.role === 'client')
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] ?? null,
+    [deliveryReviewItem?.decisions],
+  )
+  const nonDeliveryItems = useMemo(
+    () => reviewContext.items.filter((item) => item.targetType !== 'delivery'),
+    [reviewContext.items],
+  )
 
   const [actionDraft, setActionDraft] = useState<{
     approvalId: string
@@ -194,6 +219,13 @@ export default function ClientReviewPortalPage() {
       window.alert('请求修改或拒绝时必须填写 comment。')
       return
     }
+    const isDeliveryApproval = approval.targetType === 'delivery'
+    const hasStrongDeliveryRisk = isDeliveryApproval && (activeDeliveryPackage?.riskSummary?.issues.some((issue) => issue.severity === 'strong') ?? false)
+
+    if (isDeliveryApproval && actionDraft.status === 'approved' && hasStrongDeliveryRisk) {
+      const confirmed = window.confirm('当前交付包仍有高风险项。确认后只会记录你的客户交付决定，不会自动推进订单或商业流程。是否仍然 Confirm Delivery？')
+      if (!confirmed) return
+    }
 
     const nextApproval = addApprovalDecision(actionDraft.approvalId, {
       role: 'client',
@@ -204,7 +236,15 @@ export default function ClientReviewPortalPage() {
     })
     if (!nextApproval) return
 
-    if (actionDraft.status === 'changes-requested') {
+    if (isDeliveryApproval && activeDeliveryPackage) {
+      if (actionDraft.status === 'approved') {
+        markDeliveryApproved(activeDeliveryPackage.id)
+      } else if (actionDraft.status === 'changes-requested' || actionDraft.status === 'rejected') {
+        markDeliveryNeedsRevision(activeDeliveryPackage.id)
+      }
+    }
+
+    if (actionDraft.status === 'changes-requested' && !isDeliveryApproval) {
       if (actionDraft.followUp === 'note') {
         const confirmed = window.confirm('确认把这条客户修改意见保存为导演批注吗？')
         if (confirmed) {
@@ -233,13 +273,21 @@ export default function ClientReviewPortalPage() {
       }
     }
 
-    const actionLabel = actionDraft.status === 'approved'
-      ? '已确认通过'
-      : actionDraft.status === 'changes-requested'
-        ? '请求修改'
-        : '已拒绝'
-
-    addApprovalSystemMessage(`${TARGET_LABELS[approval.targetType]}「${approval.title}」客户${actionLabel}。`)
+    if (isDeliveryApproval) {
+      const decisionLabel = actionDraft.status === 'approved'
+        ? 'Confirm Delivery'
+        : actionDraft.status === 'changes-requested'
+          ? 'Request Changes'
+          : 'Reject Delivery'
+      addApprovalSystemMessage(`交付包「${approval.title}」客户已提交 ${decisionLabel} 决定。`)
+    } else {
+      const actionLabel = actionDraft.status === 'approved'
+        ? '已确认通过'
+        : actionDraft.status === 'changes-requested'
+          ? '请求修改'
+          : '已拒绝'
+      addApprovalSystemMessage(`${TARGET_LABELS[approval.targetType]}「${approval.title}」客户${actionLabel}。`)
+    }
     setActionDraft(null)
   }
 
@@ -315,6 +363,40 @@ export default function ClientReviewPortalPage() {
           />
         ) : null}
 
+        {canOpenReview && deliveryReviewItem ? (
+          <DeliveryApprovalCard
+            deliveryPackage={activeDeliveryPackage}
+            latestDecision={latestDeliveryDecision}
+            actorName={latestDeliveryDecision?.userId === currentUser?.id ? (currentUser?.displayName ?? currentUser?.id) : latestDeliveryDecision?.userId}
+            canAct={permissions.canApproveAsClient}
+            isEditing={actionDraft?.approvalId === deliveryReviewItem.id}
+            onConfirm={() => handleStartDecision(deliveryReviewItem.id, 'approved')}
+            onRequestChanges={() => handleStartDecision(deliveryReviewItem.id, 'changes-requested')}
+            onReject={() => handleStartDecision(deliveryReviewItem.id, 'rejected')}
+            decisionPanel={actionDraft?.approvalId === deliveryReviewItem.id && actionDraft ? (
+              <ReviewDecisionPanel
+                status={actionDraft.status}
+                comment={actionDraft.comment}
+                followUp={actionDraft.followUp}
+                assignedTo={actionDraft.assignedTo}
+                assigneeOptions={teamAssigneeOptions}
+                showInternalFollowUp={false}
+                approvedLabel="Confirm Delivery"
+                changesRequestedLabel="Request Changes"
+                rejectedLabel="Reject Delivery"
+                approvedDescription="这会记录本次交付确认决定，不会自动推进订单、合同或付款。"
+                pendingDescription="请写清楚你希望修改或拒绝本次交付的原因，这些备注会作为客户交付确认依据保存。"
+                commentPlaceholder="请写下你对本次交付的修改意见或拒绝原因"
+                onCommentChange={(value) => setActionDraft((prev) => prev ? { ...prev, comment: value } : prev)}
+                onFollowUpChange={(value) => setActionDraft((prev) => prev ? { ...prev, followUp: value } : prev)}
+                onAssignedToChange={(value) => setActionDraft((prev) => prev ? { ...prev, assignedTo: value } : prev)}
+                onSubmit={handleSubmitDecision}
+                onCancel={() => setActionDraft(null)}
+              />
+            ) : undefined}
+          />
+        ) : null}
+
         {canOpenReview && visibleSections.has('items') ? (
         <div className="mt-8 flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -328,14 +410,14 @@ export default function ClientReviewPortalPage() {
             </p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-[10px]" style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.52)' }}>
-            {reviewContext.items.length} 个确认对象
+            {nonDeliveryItems.length} 个常规确认对象
           </span>
         </div>
         ) : null}
 
         {canOpenReview && visibleSections.has('items') ? (
         <div className="grid gap-4 mt-4">
-          {reviewContext.items.length === 0 && (
+          {nonDeliveryItems.length === 0 && !deliveryReviewItem && (
             <div className="rounded-[28px] p-6" style={{ background: 'rgba(9,14,24,0.82)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <p className="text-[13px] font-semibold text-white/82">当前没有待客户确认的对象</p>
               <p className="text-[11px] mt-2 leading-[1.7]" style={{ color: 'rgba(255,255,255,0.4)' }}>
@@ -344,7 +426,7 @@ export default function ClientReviewPortalPage() {
             </div>
           )}
 
-          {reviewContext.items.map((item) => {
+          {nonDeliveryItems.map((item) => {
             const latestClientDecision = item.decisions
               .filter((decision) => decision.role === 'client')
               .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
@@ -380,7 +462,7 @@ export default function ClientReviewPortalPage() {
                     followUp={actionDraft.followUp}
                     assignedTo={actionDraft.assignedTo}
                     assigneeOptions={teamAssigneeOptions}
-                    showInternalFollowUp={visibleSections.has('internal-follow-up')}
+                    showInternalFollowUp={visibleSections.has('internal-follow-up') && item.targetType !== 'delivery'}
                     onCommentChange={(value) => setActionDraft((prev) => prev ? { ...prev, comment: value } : prev)}
                     onFollowUpChange={(value) => setActionDraft((prev) => prev ? { ...prev, followUp: value } : prev)}
                     onAssignedToChange={(value) => setActionDraft((prev) => prev ? { ...prev, assignedTo: value } : prev)}
