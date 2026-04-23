@@ -36,11 +36,31 @@ export function WorkspaceSwitcher({
   recentProjects,
   highPriorityProjects,
   waitingProjects,
+  compact = false,
 }: {
   recentProjects: UserProjectCard[]
   highPriorityProjects: UserProjectCard[]
   waitingProjects: UserProjectCard[]
+  compact?: boolean
 }) {
+  if (compact) {
+    return (
+      <details className="relative">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
+          <span>Projects</span>
+          <span className="text-white/35">切换</span>
+        </summary>
+        <div className="absolute right-0 z-50 mt-3 w-[22rem] rounded-2xl border border-white/10 bg-[#0b1220]/95 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl">
+          <div className="space-y-4">
+            <SwitcherSection title="Waiting For Me" items={waitingProjects.slice(0, 4)} />
+            <SwitcherSection title="High Priority" items={highPriorityProjects.slice(0, 4)} />
+            <SwitcherSection title="Recent Projects" items={recentProjects.slice(0, 4)} />
+          </div>
+        </div>
+      </details>
+    )
+  }
+
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">

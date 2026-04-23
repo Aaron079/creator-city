@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { DashboardShell } from '@/components/layout/DashboardShell'
 import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
-import { Nav } from '@/components/layout/Nav'
 import { ProfileView } from '@/components/profile/ProfileView'
 import { QuickActionsCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
 import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
@@ -118,11 +118,10 @@ export default function MePage() {
       })
 
   return (
-    <main className="min-h-screen bg-city-bg">
-      <Nav />
-      <div className="space-y-6 pt-14">
+    <DashboardShell>
+      <div className="space-y-6">
         <ProfileView userId={currentUserId} />
-        <div className="mx-auto max-w-6xl px-4 pb-10">
+        <div className="px-4">
           {pendingInvitations.length > 0 ? (
             <div className="mb-6">
               <AccessNotice
@@ -202,6 +201,6 @@ export default function MePage() {
           />
         </div>
       </div>
-    </main>
+    </DashboardShell>
   )
 }
