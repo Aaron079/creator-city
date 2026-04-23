@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
+import { ProjectTemplateSummaryPanel } from '@/components/create/ProjectTemplateSummaryPanel'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
 import { AccessNotice } from '@/components/roles/AccessNotice'
@@ -65,8 +66,10 @@ import { buildDeliveryProjectData, buildDeliverySummaryText } from '@/lib/delive
 import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { canEnterCreate, getProjectAccessState } from '@/lib/roles/access'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
+import { PROJECT_WORKFLOW_TEMPLATES, PROJECT_WORKFLOW_TEMPLATE_MAP, getWorkflowTemplateByLegacyId, recommendProjectTemplate } from '@/lib/templates/projectTemplates'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
+import { useProjectTemplateStore } from '@/store/project-template.store'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
   FOCAL_LENGTHS, FOCAL_LENS_CHARS, APERTURES, SPEEDS,
@@ -6039,6 +6042,21 @@ export default function CreatePage() {
     () => activeJob?.title ?? (idea.trim() || 'Creator City 项目'),
     [activeJob?.title, idea]
   )
+  const setProjectTemplateForProject = useProjectTemplateStore((s) => s.setTemplateForProject)
+  const savedProjectTemplateSelection = useProjectTemplateStore((s) => s.selections.find((item) => item.projectId === deliveryProjectId))
+  const activeWorkflowTemplate = useMemo(
+    () => (activeTemplateId ? PROJECT_WORKFLOW_TEMPLATE_MAP[activeTemplateId] : undefined)
+      ?? getWorkflowTemplateByLegacyId(projectTemplate?.id)
+      ?? (savedProjectTemplateSelection ? PROJECT_WORKFLOW_TEMPLATE_MAP[savedProjectTemplateSelection.templateId] : undefined),
+    [activeTemplateId, projectTemplate?.id, savedProjectTemplateSelection],
+  )
+  const templateRecommendation = useMemo(
+    () => recommendProjectTemplate({
+      idea,
+      selectedStyle,
+    }),
+    [idea, selectedStyle],
+  )
   const roleContext = useMemo(
     () => resolveProjectRoleContext(deliveryProjectId, {
       userId: currentUser?.id ?? null,
@@ -8339,6 +8357,14 @@ export default function CreatePage() {
     updateTeamStage(activeTeam.id, stageReadiness.nextStage)
   }, [activeTeam, stageReadiness, updateTeamStage])
 
+  useEffect(() => {
+    const nextTemplateId = savedProjectTemplateSelection?.templateId
+      ?? getWorkflowTemplateByLegacyId(narrative?.templateId)?.id
+      ?? null
+
+    setActiveTemplateId((current) => current === nextTemplateId ? current : nextTemplateId)
+  }, [narrative?.templateId, savedProjectTemplateSelection?.templateId])
+
   const handleInsightAction = useCallback((insight: NarrativeInsight) => {
     setFocusedSequenceId(insight.targetSequenceId ?? null)
     const targetShotId = insight.targetShotId
@@ -8394,6 +8420,7 @@ export default function CreatePage() {
     const projectTemplate = PROJECT_TEMPLATE_MAP[templateId]
     if (!tpl || !projectTemplate) return
     setActiveTemplateId(templateId)
+    setProjectTemplateForProject(deliveryProjectId, templateId)
     const firstId = useShotsStore.getState().resetShots(
       tpl.shots,
       tpl.style,
@@ -8423,7 +8450,7 @@ export default function CreatePage() {
     }
     setCompareSuggestionId(null)
     setInsightOpen(false)
-  }, [resetCanvas, setPrompt, updateNode])
+  }, [deliveryProjectId, resetCanvas, setProjectTemplateForProject, setPrompt, updateNode])
 
   const handleGenerate = useCallback(async () => {
     if (!idea.trim() || running) return
@@ -8718,6 +8745,14 @@ export default function CreatePage() {
               <RoleBadge role={resolvedProjectRole} />
             </div>
           </div>
+
+          <ProjectTemplateSummaryPanel
+            templates={PROJECT_WORKFLOW_TEMPLATES}
+            activeTemplateId={activeWorkflowTemplate?.id ?? activeTemplateId}
+            projectId={deliveryProjectId}
+            onSelectTemplate={handleApplyTemplate}
+            recommendation={templateRecommendation}
+          />
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
