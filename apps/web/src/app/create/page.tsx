@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
+import { ProjectKickoffSummaryCard } from '@/components/create/ProjectKickoffSummaryCard'
 import { ProjectTemplateSummaryPanel } from '@/components/create/ProjectTemplateSummaryPanel'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
@@ -67,6 +68,7 @@ import { resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { canEnterCreate, getProjectAccessState } from '@/lib/roles/access'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { PROJECT_WORKFLOW_TEMPLATES, PROJECT_WORKFLOW_TEMPLATE_MAP, getWorkflowTemplateByLegacyId, recommendProjectTemplate } from '@/lib/templates/projectTemplates'
+import { buildProjectKickoffSummary } from '@/lib/projects/kickoff'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useProjectTemplateStore } from '@/store/project-template.store'
@@ -6127,6 +6129,18 @@ export default function CreatePage() {
       .sort((left, right) => right.versionNumber - left.versionNumber)[0] ?? null,
     [deliveryProjectId, versions]
   )
+  const kickoffSummary = useMemo(
+    () => activeWorkflowTemplate ? buildProjectKickoffSummary({
+      projectId: deliveryProjectId,
+      projectTitle: deliveryProjectTitle,
+      template: activeWorkflowTemplate,
+      currentStage,
+      hasShotIdeas: shots.some((shot) => shot.idea.trim().length > 0),
+      hasDeliveryPackage: Boolean(activeDeliveryPackage),
+      recommendation: templateRecommendation,
+    }) : null,
+    [activeDeliveryPackage, activeWorkflowTemplate, currentStage, deliveryProjectId, deliveryProjectTitle, shots, templateRecommendation],
+  )
   const activeStoryboardFrame = storyboardPrevis?.frames.find((frame) => frame.id === activeStoryboardFrameId) ?? null
   const lockedRoleBible = useMemo(
     () => roleBibles.find((role) => role.status === 'locked') ?? null,
@@ -8753,6 +8767,8 @@ export default function CreatePage() {
             onSelectTemplate={handleApplyTemplate}
             recommendation={templateRecommendation}
           />
+
+          {kickoffSummary ? <ProjectKickoffSummaryCard summary={kickoffSummary} /> : null}
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
