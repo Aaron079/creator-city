@@ -36,19 +36,32 @@ export interface Team {
 export interface TeamInvitation {
   id: string
   projectId: string
+  projectTitle?: string
   profileId: string
+  displayName?: string
   invitedByUserId: string
+  invitedByName?: string
   role: string
   status: InvitationStatus
   createdAt: string
   respondedAt?: string
-  displayName?: string
   city?: string
   ratingSummary?: {
     rating: number
     reviewCount: number
   }
   matchedCaseIds?: string[]
+}
+
+export interface InvitationActivity {
+  id: string
+  projectId: string
+  profileId: string
+  type: 'invited' | 'accepted' | 'declined' | 'cancelled' | 'role-changed' | 'removed'
+  actorUserId: string
+  actorName: string
+  createdAt: string
+  message: string
 }
 
 export interface TeamMemberSummary {
@@ -77,7 +90,9 @@ export interface RoleChangeRecord {
 type InviteLegacyMember = Omit<TeamMember, 'status'>
 
 interface InviteMemberMeta {
+  projectTitle?: string
   displayName?: string
+  invitedByName?: string
   city?: string
   ratingSummary?: {
     rating: number
@@ -89,6 +104,7 @@ interface InviteMemberMeta {
 interface TeamState {
   teams: Team[]
   invitations: TeamInvitation[]
+  activities: InvitationActivity[]
   roleChanges: RoleChangeRecord[]
   createTeam: (projectId: string, ownerId: string, ownerName: string) => Team
   inviteMember: {
@@ -104,6 +120,9 @@ interface TeamState {
   updateStage: (teamId: string, stage: ProjectStage) => void
   getProjectMembers: (projectId: string) => TeamMemberSummary[]
   getPendingInvitations: (projectId: string) => TeamInvitation[]
+  getInvitationsForProfile: (profileId: string) => TeamInvitation[]
+  getPendingInvitationsForProfile: (profileId: string) => TeamInvitation[]
+  getInvitationActivity: (projectId: string) => InvitationActivity[]
   getTeamByOrder: (orderId: string) => Team | undefined
 }
 
@@ -117,6 +136,10 @@ function nowIso() {
 
 function normalizeNameFallback(profileId: string) {
   return profileId.replace(/^user-/, '').replace(/^city-/, '').replace(/-/g, ' ')
+}
+
+function formatTeamRole(role: string) {
+  return isProjectRole(role) ? getProjectRoleLabel(role) : role
 }
 
 function resolveProfileMeta(profileId: string, _fallbackRole?: string): Required<InviteMemberMeta> {
@@ -133,7 +156,9 @@ function resolveProfileMeta(profileId: string, _fallbackRole?: string): Required
       : 0)
 
   return {
+    projectTitle: '',
     displayName: profile?.name ?? creator?.name ?? normalizeNameFallback(profileId),
+    invitedByName: 'Producer',
     city: creator?.city ?? 'Remote',
     ratingSummary: {
       rating: Number(rating.toFixed(2)),
@@ -152,6 +177,26 @@ function toMemberSummary(member: TeamMember): TeamMemberSummary {
     city: member.city,
     ratingSummary: member.ratingSummary,
     matchedCaseIds: member.matchedCaseIds ?? [],
+  }
+}
+
+function makeActivity(params: {
+  projectId: string
+  profileId: string
+  type: InvitationActivity['type']
+  actorUserId: string
+  actorName: string
+  message: string
+}): InvitationActivity {
+  return {
+    id: uid('invite-activity'),
+    projectId: params.projectId,
+    profileId: params.profileId,
+    type: params.type,
+    actorUserId: params.actorUserId,
+    actorName: params.actorName,
+    message: params.message,
+    createdAt: nowIso(),
   }
 }
 
@@ -182,8 +227,10 @@ const SEED_INVITATIONS: TeamInvitation[] = [
   {
     id: 'team-invite-seed-1',
     projectId: 'order-seed-1',
+    projectTitle: '城市夜景品牌短片',
     profileId: 'city-creator-3',
     invitedByUserId: 'user-me',
+    invitedByName: '我 (发布方)',
     role: 'editor',
     status: 'pending',
     createdAt: new Date(Date.now() - 2 * 24 * 3600_000).toISOString(),
@@ -194,11 +241,25 @@ const SEED_INVITATIONS: TeamInvitation[] = [
   },
 ]
 
+const SEED_ACTIVITIES: InvitationActivity[] = [
+  {
+    id: 'invite-activity-seed-1',
+    projectId: 'order-seed-1',
+    profileId: 'city-creator-3',
+    type: 'invited',
+    actorUserId: 'user-me',
+    actorName: '我 (发布方)',
+    createdAt: new Date(Date.now() - 2 * 24 * 3600_000).toISOString(),
+    message: '邀请 林泽宇 以 Editor 角色加入项目。',
+  },
+]
+
 export const useTeamStore = create<TeamState>()(
   persist(
     (set, get) => ({
       teams: SEED_TEAMS,
       invitations: SEED_INVITATIONS,
+      activities: SEED_ACTIVITIES,
       roleChanges: [],
 
       createTeam: (projectId, ownerId, ownerName) => {
@@ -245,7 +306,9 @@ export const useTeamStore = create<TeamState>()(
 
         const meta = isLegacy
           ? {
+              projectTitle: projectId,
               displayName: profileOrMember.name,
+              invitedByName: 'Producer',
               city: profileOrMember.city,
               ratingSummary: profileOrMember.ratingSummary,
               matchedCaseIds: profileOrMember.matchedCaseIds,
@@ -255,8 +318,10 @@ export const useTeamStore = create<TeamState>()(
         const invitation: TeamInvitation = {
           id: uid('team-invite'),
           projectId,
+          projectTitle: meta.projectTitle || projectId,
           profileId,
           invitedByUserId,
+          invitedByName: meta.invitedByName || 'Producer',
           role,
           status: 'pending',
           createdAt: nowIso(),
@@ -278,6 +343,14 @@ export const useTeamStore = create<TeamState>()(
         }
 
         syncProjectRole(projectId, profileId, role, 'invited')
+        const activity = makeActivity({
+          projectId,
+          profileId,
+          type: 'invited',
+          actorUserId: invitedByUserId,
+          actorName: meta.invitedByName || 'Producer',
+          message: `邀请 ${meta.displayName ?? normalizeNameFallback(profileId)} 以 ${formatTeamRole(role)} 角色加入项目。`,
+        })
 
         set((current) => ({
           teams: current.teams.map((item) => (
@@ -293,12 +366,14 @@ export const useTeamStore = create<TeamState>()(
             }
           )),
           invitations: [invitation, ...current.invitations.filter((item) => !(item.projectId === projectId && item.profileId === profileId))],
+          activities: [activity, ...current.activities],
         }))
 
         return invitation
       }) as TeamState['inviteMember'],
 
       cancelInvitation: (projectId, profileId) => {
+        const invitation = get().invitations.find((item) => item.projectId === projectId && item.profileId === profileId && item.status === 'pending')
         set((state) => ({
           teams: state.teams.map((team) => (
             team.projectId !== projectId ? team : {
@@ -311,6 +386,17 @@ export const useTeamStore = create<TeamState>()(
               ? { ...invitation, status: 'cancelled', respondedAt: nowIso() }
               : invitation
           )),
+          activities: invitation ? [
+            makeActivity({
+              projectId,
+              profileId,
+              type: 'cancelled',
+              actorUserId: invitation.invitedByUserId,
+              actorName: invitation.invitedByName ?? invitation.invitedByUserId,
+              message: `取消了 ${invitation.displayName ?? profileId} 的邀请。`,
+            }),
+            ...state.activities,
+          ] : state.activities,
         }))
         useProjectRoleStore.getState().updateAssignmentStatus(projectId, profileId, 'removed')
       },
@@ -335,12 +421,24 @@ export const useTeamStore = create<TeamState>()(
               ? { ...item, status: 'accepted', respondedAt: nowIso() }
               : item
           )),
+          activities: [
+            makeActivity({
+              projectId,
+              profileId,
+              type: 'accepted',
+              actorUserId: profileId,
+              actorName: invitation.displayName ?? profileId,
+              message: `${invitation.displayName ?? profileId} 接受了 ${formatTeamRole(invitation.role)} 邀请。`,
+            }),
+            ...state.activities,
+          ],
         }))
 
         syncProjectRole(projectId, profileId, invitation.role, 'active')
       },
 
       declineInvitation: (projectId, profileId) => {
+        const invitation = get().invitations.find((item) => item.projectId === projectId && item.profileId === profileId && item.status === 'pending')
         set((state) => ({
           teams: state.teams.map((team) => (
             team.projectId !== projectId ? team : {
@@ -353,6 +451,17 @@ export const useTeamStore = create<TeamState>()(
               ? { ...item, status: 'declined', respondedAt: nowIso() }
               : item
           )),
+          activities: invitation ? [
+            makeActivity({
+              projectId,
+              profileId,
+              type: 'declined',
+              actorUserId: profileId,
+              actorName: invitation.displayName ?? profileId,
+              message: `${invitation.displayName ?? profileId} 拒绝了 ${formatTeamRole(invitation.role)} 邀请。`,
+            }),
+            ...state.activities,
+          ] : state.activities,
         }))
         useProjectRoleStore.getState().updateAssignmentStatus(projectId, profileId, 'removed')
       },
@@ -394,6 +503,17 @@ export const useTeamStore = create<TeamState>()(
             },
             ...state.roleChanges,
           ],
+          activities: [
+            makeActivity({
+              projectId,
+              profileId,
+              type: 'role-changed',
+              actorUserId: changedByUserId,
+              actorName: changedByUserId,
+              message: `将 ${existingMember.name} 的角色从 ${formatTeamRole(existingMember.role)} 调整为 ${formatTeamRole(role)}。`,
+            }),
+            ...state.activities,
+          ],
         }))
 
         syncProjectRole(projectId, profileId, role, existingMember.status === 'joined' ? 'active' : 'invited')
@@ -428,6 +548,17 @@ export const useTeamStore = create<TeamState>()(
             },
             ...state.roleChanges,
           ],
+          activities: [
+            makeActivity({
+              projectId,
+              profileId,
+              type: 'removed',
+              actorUserId: 'user-current',
+              actorName: 'Producer',
+              message: `将 ${existingMember.name} 从项目团队中移除。`,
+            }),
+            ...state.activities,
+          ],
         }))
 
         useProjectRoleStore.getState().updateAssignmentStatus(projectId, profileId, 'removed')
@@ -441,16 +572,49 @@ export const useTeamStore = create<TeamState>()(
 
       getProjectMembers: (projectId) => {
         const team = get().teams.find((item) => item.projectId === projectId)
-        return (team?.members ?? []).map(toMemberSummary)
+        const activeOrInvited = (team?.members ?? []).map(toMemberSummary)
+        const activeIds = new Set(activeOrInvited.map((member) => member.profileId))
+        const removed = get().roleChanges
+          .filter((item) => item.projectId === projectId && item.toRole === 'removed' && !activeIds.has(item.profileId))
+          .sort((left, right) => right.changedAt.localeCompare(left.changedAt))
+          .filter((item, index, array) => array.findIndex((candidate) => candidate.profileId === item.profileId) === index)
+          .map((item) => {
+            const meta = resolveProfileMeta(item.profileId)
+            return {
+              profileId: item.profileId,
+              displayName: meta.displayName,
+              role: item.fromRole ?? 'removed',
+              status: 'removed' as const,
+              city: meta.city,
+              ratingSummary: meta.ratingSummary,
+              matchedCaseIds: meta.matchedCaseIds,
+            } satisfies TeamMemberSummary
+          })
+
+        return [...activeOrInvited, ...removed]
       },
 
       getPendingInvitations: (projectId) => (
         get().invitations.filter((item) => item.projectId === projectId && item.status === 'pending')
       ),
 
+      getInvitationsForProfile: (profileId) => (
+        get().invitations.filter((item) => item.profileId === profileId)
+      ),
+
+      getPendingInvitationsForProfile: (profileId) => (
+        get().invitations.filter((item) => item.profileId === profileId && item.status === 'pending')
+      ),
+
+      getInvitationActivity: (projectId) => (
+        get().activities
+          .filter((item) => item.projectId === projectId)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      ),
+
       getTeamByOrder: (orderId) => get().teams.find((team) => team.projectId === orderId),
     }),
-    { name: 'cc:teams-v3' },
+    { name: 'cc:teams-v4' },
   ),
 )
 

@@ -60,12 +60,11 @@ export default function DashboardPage() {
   const createTeam = useTeamStore((s) => s.createTeam)
   const inviteMember = useTeamStore((s) => s.inviteMember)
   const cancelInvitation = useTeamStore((s) => s.cancelInvitation)
-  const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
-  const declineInvitation = useTeamStore((s) => s.declineInvitation)
   const changeMemberRole = useTeamStore((s) => s.changeMemberRole)
   const removeMember = useTeamStore((s) => s.removeMember)
   const getProjectMembers = useTeamStore((s) => s.getProjectMembers)
   const getPendingInvitations = useTeamStore((s) => s.getPendingInvitations)
+  const getInvitationActivity = useTeamStore((s) => s.getInvitationActivity)
   const versions = useVersionHistoryStore((s) => s.versions)
   const notificationItems = useNotificationsStore((s) => s.items)
   const notificationRules = useNotificationsStore((s) => s.rules)
@@ -157,6 +156,7 @@ export default function DashboardPage() {
   }), [cases, creatorProfiles, creatorReviews, creatorStats, dashboard.overview, jobs, orders, teams])
 
   const handleInviteCandidate = useCallback((projectId: string, need: RoleNeed, candidate: MatchCandidate, role: string) => {
+    const project = matching.projects.find((item) => item.projectId === projectId)
     createTeam(
       projectId,
       user?.id ?? 'user-me',
@@ -169,13 +169,15 @@ export default function DashboardPage() {
       role,
       user?.id ?? 'user-me',
       {
+        projectTitle: project?.title ?? projectId,
         displayName: candidate.displayName,
+        invitedByName: user?.displayName ?? '我 (发布方)',
         city: candidate.city,
         ratingSummary: candidate.ratingSummary,
         matchedCaseIds: candidate.matchedCaseIds,
       },
     )
-  }, [createTeam, inviteMember, user?.displayName, user?.id])
+  }, [createTeam, inviteMember, matching.projects, user?.displayName, user?.id])
 
   const licensingSummary = useMemo(() => getSummary(), [getSummary])
   const licensingIssues = useMemo(() => getIssues(), [getIssues])
@@ -209,10 +211,9 @@ export default function DashboardPage() {
           data: matching,
           getProjectMembers,
           getPendingInvitations,
+          getInvitationActivity,
           onInvite: handleInviteCandidate,
           onCancelInvitation: cancelInvitation,
-          onAcceptInvitation: acceptInvitation,
-          onDeclineInvitation: declineInvitation,
           onChangeMemberRole: changeMemberRole,
           onRemoveMember: removeMember,
         }}

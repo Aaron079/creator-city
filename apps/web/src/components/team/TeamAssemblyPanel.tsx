@@ -9,7 +9,7 @@ import {
   type RoleNeed,
   type TalentMatchingData,
 } from '@/lib/matching/aggregate'
-import type { TeamInvitation, TeamMemberSummary } from '@/store/team.store'
+import type { InvitationActivity, TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 
 type ManageableRole =
   | RoleNeed['role']
@@ -104,10 +104,9 @@ interface TeamAssemblyPanelProps {
   data: TalentMatchingData
   getProjectMembers: (projectId: string) => TeamMemberSummary[]
   getPendingInvitations: (projectId: string) => TeamInvitation[]
+  getInvitationActivity: (projectId: string) => InvitationActivity[]
   onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate, role: string) => void
   onCancelInvitation: (projectId: string, profileId: string) => void
-  onAcceptInvitation: (projectId: string, profileId: string) => void
-  onDeclineInvitation: (projectId: string, profileId: string) => void
   onChangeMemberRole: (projectId: string, profileId: string, role: string) => void
   onRemoveMember: (projectId: string, profileId: string) => void
   canInviteTeam?: boolean
@@ -117,10 +116,9 @@ export function TeamAssemblyPanel({
   data,
   getProjectMembers,
   getPendingInvitations,
+  getInvitationActivity,
   onInvite,
   onCancelInvitation,
-  onAcceptInvitation,
-  onDeclineInvitation,
   onChangeMemberRole,
   onRemoveMember,
   canInviteTeam = true,
@@ -234,6 +232,7 @@ export function TeamAssemblyPanel({
         </div>
       ) : data.projects.map((project) => {
         const pendingInvitations = getPendingInvitations(project.projectId)
+        const invitationActivity = getInvitationActivity(project.projectId).slice(0, 6)
         const members = getProjectMembers(project.projectId)
 
         return (
@@ -396,7 +395,7 @@ export function TeamAssemblyPanel({
                           <div>
                             <div className="text-sm font-semibold text-white">{invitation.displayName ?? invitation.profileId}</div>
                             <div className="mt-1 text-xs text-white/50">
-                              {formatTeamRole(invitation.role)} · 由 {invitation.invitedByUserId} 发起 · {formatDate(invitation.createdAt)}
+                              {formatTeamRole(invitation.role)} · 由 {invitation.invitedByName ?? invitation.invitedByUserId} 发起 · {formatDate(invitation.createdAt)}
                             </div>
                           </div>
                           <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
@@ -411,22 +410,6 @@ export function TeamAssemblyPanel({
                             className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 disabled:cursor-not-allowed disabled:text-white/35"
                           >
                             取消邀请
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onAcceptInvitation(project.projectId, invitation.profileId)}
-                            disabled={!canInviteTeam}
-                            className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
-                          >
-                            Mock 接受
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeclineInvitation(project.projectId, invitation.profileId)}
-                            disabled={!canInviteTeam}
-                            className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/35"
-                          >
-                            Mock 拒绝
                           </button>
                         </div>
                       </div>
@@ -457,7 +440,7 @@ export function TeamAssemblyPanel({
                                 {member.city ?? 'Remote'} · {member.ratingSummary ? `评分 ${member.ratingSummary.rating.toFixed(1)} / ${member.ratingSummary.reviewCount}` : '暂无评分'}
                               </div>
                             </div>
-                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${member.status === 'active' ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/25 bg-amber-500/10 text-amber-300'}`}>
+                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${member.status === 'active' ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : member.status === 'invited' ? 'border-amber-500/25 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-white/5 text-white/55'}`}>
                               {member.status}
                             </span>
                           </div>
@@ -496,6 +479,34 @@ export function TeamAssemblyPanel({
                       )
                     })}
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/8 bg-black/15 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-base font-semibold text-white">邀请活动</div>
+                  <div className="text-xs text-white/45">{invitationActivity.length} recent</div>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {invitationActivity.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
+                      当前还没有邀请活动记录。
+                    </div>
+                  ) : invitationActivity.map((activity) => (
+                    <div key={activity.id} className="rounded-xl border border-white/8 bg-white/5 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-white">{activity.message}</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            {activity.actorName} · {formatDate(activity.createdAt)}
+                          </div>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-white/55">
+                          {activity.type}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

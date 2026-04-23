@@ -15,7 +15,7 @@ import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 import type { NotificationItem, NotificationSummary, ReminderRule } from '@/store/notifications.store'
-import type { TeamInvitation, TeamMemberSummary } from '@/store/team.store'
+import type { InvitationActivity, TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 
 function Card({
   title,
@@ -92,10 +92,9 @@ export function ProducerDashboard({
     data: TalentMatchingData
     getProjectMembers: (projectId: string) => TeamMemberSummary[]
     getPendingInvitations: (projectId: string) => TeamInvitation[]
+    getInvitationActivity: (projectId: string) => InvitationActivity[]
     onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate, role: string) => void
     onCancelInvitation: (projectId: string, profileId: string) => void
-    onAcceptInvitation: (projectId: string, profileId: string) => void
-    onDeclineInvitation: (projectId: string, profileId: string) => void
     onChangeMemberRole: (projectId: string, profileId: string, role: string) => void
     onRemoveMember: (projectId: string, profileId: string) => void
   }
@@ -320,10 +319,9 @@ export function ProducerDashboard({
           data={matching.data}
           getProjectMembers={matching.getProjectMembers}
           getPendingInvitations={matching.getPendingInvitations}
+          getInvitationActivity={matching.getInvitationActivity}
           onInvite={matching.onInvite}
           onCancelInvitation={matching.onCancelInvitation}
-          onAcceptInvitation={matching.onAcceptInvitation}
-          onDeclineInvitation={matching.onDeclineInvitation}
           onChangeMemberRole={matching.onChangeMemberRole}
           onRemoveMember={matching.onRemoveMember}
           canInviteTeam={permissions.canInviteTeam}
