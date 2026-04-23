@@ -1,14 +1,20 @@
 'use client'
 
 import { useMemo } from 'react'
+import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
 import { Nav } from '@/components/layout/Nav'
 import { ProfileView } from '@/components/profile/ProfileView'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { InvitationInbox } from '@/components/team/InvitationInbox'
+import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
+import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
+import { useDeliveryPackageStore } from '@/store/delivery-package.store'
+import { useNotificationsStore } from '@/store/notifications.store'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
+import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 
 export default function MePage() {
@@ -16,6 +22,11 @@ export default function MePage() {
   const authUser = useAuthStore((s) => s.user)
   const inboxProfileId = authUser?.id ?? currentUserId
   const assignments = useProjectRoleStore((s) => s.assignments)
+  const approvals = useApprovalStore((s) => s.approvals)
+  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
+  const notificationItems = useNotificationsStore((s) => s.items)
+  const tasks = useTaskStore((s) => s.tasks)
+  const teams = useTeamStore((s) => s.teams)
   const invitations = useTeamStore((s) => s.getInvitationsForProfile(inboxProfileId))
   const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
   const declineInvitation = useTeamStore((s) => s.declineInvitation)
@@ -26,6 +37,20 @@ export default function MePage() {
   const activeAssignments = useMemo(
     () => assignments.filter((item) => item.status === 'active' && (item.userId === (authUser?.id ?? null) || item.userId === currentUserId)),
     [assignments, authUser?.id, currentUserId],
+  )
+  const workQueue = useMemo(
+    () => buildPersonalWorkQueue({
+      userId: authUser?.id ?? currentUserId ?? 'user-me',
+      profileId: inboxProfileId ?? authUser?.id ?? currentUserId ?? 'user-me',
+      invitations,
+      assignments,
+      tasks,
+      teams,
+      approvals,
+      deliveryPackages,
+      notifications: notificationItems,
+    }),
+    [approvals, assignments, authUser?.id, currentUserId, deliveryPackages, inboxProfileId, invitations, notificationItems, tasks, teams],
   )
 
   return (
@@ -76,6 +101,7 @@ export default function MePage() {
               </div>
             </div>
           </div>
+          <PersonalCommandCenter queue={workQueue} />
           <InvitationInbox
             invitations={invitations}
             onAccept={acceptInvitation}
