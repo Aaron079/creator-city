@@ -34,6 +34,7 @@ import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { canEnterDashboard, getProjectAccessState } from '@/lib/roles/access'
+import { getActionTarget, getMeHref } from '@/lib/routing/actions'
 
 export default function DashboardPage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
@@ -360,6 +361,18 @@ export default function DashboardPage() {
     [roleContext],
   )
   const hasDashboardAccess = accessibleProjectIds.length > 0
+  const dashboardFallbackAction = invitedProjectIds.length > 0
+    ? getActionTarget({ actionType: 'invitation-inbox', actionLabel: '前往我的邀请页' })
+    : clientOnlyProjectIds.length > 0
+      ? getActionTarget({
+          actionType: 'project-review',
+          projectId: clientOnlyProjectIds[0],
+          actionLabel: '前往 Review Portal',
+        })
+      : getActionTarget({
+          actionType: 'me',
+          actionLabel: '查看当前身份',
+        })
 
   if (!user) return null
 
@@ -390,9 +403,9 @@ export default function DashboardPage() {
             `当前 Profile：${currentProfileId ?? '未解析'}`,
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}
-          href={invitedProjectIds.length > 0 ? '/me' : clientOnlyProjectIds.length > 0 ? `/review/${clientOnlyProjectIds[0]}` : '/me'}
-          ctaLabel={invitedProjectIds.length > 0 ? '前往我的邀请页' : clientOnlyProjectIds.length > 0 ? '前往 Review Portal' : '查看当前身份'}
-          secondaryHref={clientOnlyProjectIds.length > 0 ? '/me' : undefined}
+          href={dashboardFallbackAction.actionHref}
+          ctaLabel={dashboardFallbackAction.actionLabel}
+          secondaryHref={clientOnlyProjectIds.length > 0 ? getMeHref() : undefined}
           secondaryLabel={clientOnlyProjectIds.length > 0 ? '查看我的项目身份' : undefined}
         />
       ) : (

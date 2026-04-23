@@ -6,6 +6,8 @@ import type { ProjectRoleAssignment } from '@/lib/roles/projectRoles'
 import { getProjectRoleLabel, isProjectRole, type ProjectRole } from '@/lib/roles/projectRoles'
 import type { Task } from '@/store/task.store'
 import type { Team, TeamInvitation } from '@/store/team.store'
+import type { ActionTargetType } from '@/lib/routing/actions'
+import { getDeliveryHref, getInvitationInboxHref, getReviewHref, getTeamManagementHref } from '@/lib/routing/actions'
 
 export type WorkQueueCategory =
   | 'invitation'
@@ -28,6 +30,7 @@ export interface WorkQueueItem {
   sourceType: string
   sourceId: string
   dueAt?: string
+  actionType?: ActionTargetType
   actionLabel: string
   actionHref: string
   isBlocking: boolean
@@ -216,8 +219,9 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         sourceType: 'invitation',
         sourceId: invitation.id,
         dueAt: invitation.createdAt,
+        actionType: 'invitation-inbox',
         actionLabel: '处理邀请',
-        actionHref: '/me#invitation-inbox',
+        actionHref: getInvitationInboxHref(),
         isBlocking: true,
         isDone: false,
       })
@@ -242,8 +246,9 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         message: `当前任务状态：${task.status === 'doing' ? '进行中' : '待处理'}。`,
         sourceType: 'task',
         sourceId: task.id,
+        actionType: 'project-team',
         actionLabel: '查看项目概览',
-        actionHref: '/dashboard#team-match',
+        actionHref: getTeamManagementHref(team.projectId),
         isBlocking: task.status === 'todo',
         isDone: false,
       })
@@ -283,8 +288,9 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         sourceType: approval.status,
         sourceId: approval.id,
         dueAt: approval.createdAt,
+        actionType: 'project-review',
         actionLabel: '打开 Review',
-        actionHref: `/review/${projectId}`,
+        actionHref: getReviewHref(projectId),
         isBlocking: approval.status !== 'pending',
         isDone: false,
       })
@@ -313,8 +319,9 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         sourceType: 'delivery',
         sourceId: pkg.id,
         dueAt: pkg.updatedAt,
+        actionType: 'project-delivery',
         actionLabel: '查看交付状态',
-        actionHref: '/dashboard#overview',
+        actionHref: getDeliveryHref(pkg.projectId),
         isBlocking: strongRiskCount > 0,
         isDone: false,
       })
@@ -333,8 +340,9 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         sourceType: 'delivery-submitted',
         sourceId: pkg.id,
         dueAt: pkg.updatedAt,
+        actionType: 'project-review',
         actionLabel: '打开 Review',
-        actionHref: `/review/${pkg.projectId}`,
+        actionHref: getReviewHref(pkg.projectId),
         isBlocking: true,
         isDone: false,
       })
@@ -382,6 +390,7 @@ export function buildPersonalWorkQueue(input: BuildPersonalWorkQueueInput): Pers
         sourceType: item.sourceType,
         sourceId: item.sourceId,
         dueAt: item.dueAt ?? item.createdAt,
+        actionType: item.actionType,
         actionLabel: item.actionLabel,
         actionHref: item.actionHref,
         isBlocking: item.severity === 'strong' || item.sourceType === 'invitation',

@@ -1,11 +1,18 @@
 import type { NotificationItem } from '@/store/notifications.store'
 import type { TeamInvitation } from '@/store/team.store'
+import { getActionTarget } from '@/lib/routing/actions'
 
 function nowIso() {
   return new Date().toISOString()
 }
 
 export function buildInvitationNotification(invitation: TeamInvitation): NotificationItem {
+  const action = getActionTarget({
+    actionType: 'invitation-inbox',
+    projectId: invitation.projectId,
+    actionLabel: '查看邀请',
+  })
+
   return {
     id: `notification:invitation:${invitation.id}`,
     projectId: invitation.projectId,
@@ -18,8 +25,9 @@ export function buildInvitationNotification(invitation: TeamInvitation): Notific
     message: `${invitation.projectTitle ?? invitation.projectId} 邀请你以 ${invitation.role} 角色加入项目，邀请人：${invitation.invitedByName ?? invitation.invitedByUserId}。`,
     sourceType: 'invitation',
     sourceId: invitation.id,
-    actionLabel: '查看邀请',
-    actionHref: '/me#invitation-inbox',
+    actionType: action.actionType,
+    actionLabel: action.actionLabel,
+    actionHref: action.actionHref,
     isPinned: true,
     isRead: false,
     isDismissed: false,
@@ -54,7 +62,13 @@ export function buildInvitationResolvedNotification(params: {
           title: '项目邀请已取消',
           message: `${invitation.projectTitle ?? invitation.projectId} 的 ${invitation.role} 邀请已被取消。`,
           sourceType: 'invitation-cancelled',
-        }
+      }
+
+  const action = getActionTarget({
+    actionType: 'invitation-inbox',
+    projectId: invitation.projectId,
+    actionLabel: '查看邀请页',
+  })
 
   return {
     id: `notification:invitation:${invitation.id}:${type}`,
@@ -68,8 +82,9 @@ export function buildInvitationResolvedNotification(params: {
     message: meta.message,
     sourceType: meta.sourceType,
     sourceId: invitation.id,
-    actionLabel: '查看邀请页',
-    actionHref: '/me#invitation-inbox',
+    actionType: action.actionType,
+    actionLabel: action.actionLabel,
+    actionHref: action.actionHref,
     isPinned: false,
     isRead: false,
     isDismissed: false,

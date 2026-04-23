@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import type { TeamInvitation } from '@/store/team.store'
+import { getProjectHref, getReviewHref } from '@/lib/routing/actions'
 
 function formatDate(value?: string) {
   if (!value) return '—'
@@ -98,13 +99,13 @@ export function InvitationInbox({
                 </>
               ) : null}
               <Link
-                href="/dashboard"
+                href={getProjectHref(invitation.projectId)}
                 className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
               >
                 查看项目概览
               </Link>
               <Link
-                href={`/review/${invitation.projectId}`}
+                href={getReviewHref(invitation.projectId)}
                 className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
               >
                 打开 Review

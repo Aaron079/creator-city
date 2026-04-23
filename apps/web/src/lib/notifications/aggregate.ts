@@ -7,6 +7,7 @@ import type { ProducerDashboardData } from '@/lib/dashboard/aggregate'
 import type { Job } from '@/store/jobs.store'
 import type { Order } from '@/store/order.store'
 import type { Team } from '@/store/team.store'
+import { getActionTarget, getDeliveryHref, getReviewHref, getWorkspaceHref } from '@/lib/routing/actions'
 
 interface BuildNotificationsInput {
   dashboard: ProducerDashboardData
@@ -85,9 +86,9 @@ function buildProjectMaps(input: BuildNotificationsInput) {
       return {
         projectId: undefined,
         title: '未映射项目',
-        reviewHref: '/dashboard#action-queue',
-        createHref: '/create',
-        deliveryHref: '/create#delivery',
+        reviewHref: getActionTarget({ actionType: 'dashboard-action-queue' }).actionHref,
+        createHref: getWorkspaceHref(),
+        deliveryHref: getDeliveryHref(),
       }
     }
 
@@ -98,9 +99,9 @@ function buildProjectMaps(input: BuildNotificationsInput) {
     return {
       projectId,
       title: project?.title ?? job?.title ?? projectTitles.get(projectId) ?? `项目 ${projectId}`,
-      reviewHref: project?.links.review ?? `/review/${projectId}`,
-      createHref: project?.links.create ?? '/create',
-      deliveryHref: project?.links.delivery ?? '/create#delivery',
+      reviewHref: getReviewHref(projectId),
+      createHref: getWorkspaceHref(projectId),
+      deliveryHref: getDeliveryHref(projectId),
     }
   }
 
@@ -188,6 +189,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: `当前还有 ${project.pendingApprovalCount} 个审批待处理，建议尽快推进人工确认。`,
         sourceType: 'pending-approval',
         sourceId: project.projectId,
+        actionType: 'project-review',
         actionLabel: '打开审片页',
         actionHref: project.links.review,
         isRead: false,
@@ -207,6 +209,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: `当前有 ${project.staleApprovalCount} 个确认已经过期，需要重新发起。`,
         sourceType: 'stale-approval',
         sourceId: project.projectId,
+        actionType: 'project-review',
         actionLabel: '重新发起确认',
         actionHref: project.links.review,
         isRead: false,
@@ -226,6 +229,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: `当前有 ${project.blockerCount} 条 blocker note 未解除，建议先回到工作区处理。`,
         sourceType: 'blocker-open',
         sourceId: project.projectId,
+        actionType: 'project-workspace',
         actionLabel: '回到工作区',
         actionHref: project.links.create,
         isRead: false,
@@ -246,6 +250,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
           message: `当前交付状态为 ${project.deliveryStatus}，不建议直接推进交付。`,
           sourceType: 'delivery-status',
           sourceId: project.projectId,
+          actionType: 'project-delivery',
           actionLabel: '打开交付区',
           actionHref: project.links.delivery,
           isRead: false,
@@ -265,6 +270,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
           message: `当前还有 ${project.strongRiskCount} 个 strong risk，需要用户手动决定是否继续提交。`,
           sourceType: 'delivery-risk',
           sourceId: project.projectId,
+          actionType: 'project-delivery',
           actionLabel: '检查交付包',
           actionHref: project.links.delivery,
           isRead: false,
@@ -285,6 +291,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: '订单已具备推进条件，但项目仍停留在前期阶段。',
         sourceType: 'order-ready',
         sourceId: project.projectId,
+        actionType: 'project-workspace',
         actionLabel: '打开工作区',
         actionHref: project.links.create,
         isRead: false,
@@ -307,6 +314,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: `审批对象「${approval.title}」被标记为 changes-requested，建议优先整理修改意见。`,
         sourceType: 'changes-requested',
         sourceId: approval.id,
+        actionType: 'project-review',
         actionLabel: '查看确认详情',
         actionHref: project.reviewHref,
         isRead: false,
@@ -328,6 +336,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: note.content,
         sourceType: 'director-note',
         sourceId: note.id,
+        actionType: 'project-workspace',
         actionLabel: '回到工作区',
         actionHref: project.createHref,
         isRead: false,
@@ -342,6 +351,11 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
     const issues = pkg.riskSummary?.issues ?? []
     const licensingIssues = issues.filter((issue) => ['license-unknown', 'expired-license', 'restricted-usage', 'missing-proof'].includes(issue.type))
     if (licenseRule?.enabled && licensingIssues.length > 0) {
+      const licensingAction = getActionTarget({
+        actionType: 'dashboard-licensing',
+        projectId: pkg.projectId,
+        actionLabel: '查看授权中心',
+      })
       items.push({
         id: `notification:${pkg.id}:licensing-risk`,
         projectId: pkg.projectId,
@@ -351,8 +365,9 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: `当前有 ${licensingIssues.length} 个授权相关风险项，包含 missing proof / restricted / expired / unknown。`,
         sourceType: 'missing-license',
         sourceId: pkg.id,
-        actionLabel: '查看授权中心',
-        actionHref: '/dashboard#licensing',
+        actionType: licensingAction.actionType,
+        actionLabel: licensingAction.actionLabel,
+        actionHref: licensingAction.actionHref,
         isRead: false,
         isDismissed: false,
         createdAt: pkg.updatedAt,
@@ -371,6 +386,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: audioIssue.message,
         sourceType: 'audio-risk',
         sourceId: pkg.id,
+        actionType: 'project-delivery',
         actionLabel: '检查交付包',
         actionHref: project.deliveryHref,
         isRead: false,
@@ -391,6 +407,7 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: clipIssue.message,
         sourceType: 'clip-review-risk',
         sourceId: pkg.id,
+        actionType: 'project-delivery',
         actionLabel: '检查交付包',
         actionHref: project.deliveryHref,
         isRead: false,
@@ -403,6 +420,10 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
 
   if (milestoneRule?.enabled) {
     input.planning.alerts.forEach((alert) => {
+      const planningAction = getActionTarget({
+        actionType: 'project-planning',
+        actionLabel: '查看排期',
+      })
       items.push({
         id: `notification:planning:${alert.id}`,
         category: 'planning',
@@ -411,8 +432,9 @@ export function buildNotifications(input: BuildNotificationsInput): Notification
         message: alert.message,
         sourceType: 'milestone-due',
         sourceId: alert.id,
-        actionLabel: '查看排期',
-        actionHref: '/dashboard#planning',
+        actionType: planningAction.actionType,
+        actionLabel: planningAction.actionLabel,
+        actionHref: planningAction.actionHref,
         isRead: false,
         isDismissed: false,
         createdAt: now,

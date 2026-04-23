@@ -8,6 +8,7 @@ import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { InvitationInbox } from '@/components/team/InvitationInbox'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
+import { getActionTarget } from '@/lib/routing/actions'
 import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
 import { useDeliveryPackageStore } from '@/store/delivery-package.store'
@@ -52,6 +53,16 @@ export default function MePage() {
     }),
     [approvals, assignments, authUser?.id, currentUserId, deliveryPackages, inboxProfileId, invitations, notificationItems, tasks, teams],
   )
+  const pendingInvitationAction = pendingInvitations[0]
+    ? getActionTarget({
+        actionType: 'invitation-inbox',
+        projectId: pendingInvitations[0].projectId,
+        actionLabel: '查看邀请',
+      })
+    : getActionTarget({
+        actionType: 'me',
+        actionLabel: '查看邀请',
+      })
 
   return (
     <main className="min-h-screen bg-city-bg">
@@ -67,8 +78,8 @@ export default function MePage() {
                 details={pendingInvitations.slice(0, 3).map((invitation) => (
                   `${invitation.projectTitle ?? invitation.projectId} · ${invitation.role} · 邀请人 ${invitation.invitedByName ?? invitation.invitedByUserId}`
                 ))}
-                href={pendingInvitations[0] ? `/review/${pendingInvitations[0].projectId}` : '/me'}
-                ctaLabel={pendingInvitations[0] ? '查看相关项目' : '查看邀请'}
+                href={pendingInvitationAction.actionHref}
+                ctaLabel={pendingInvitationAction.actionLabel}
               />
             </div>
           ) : null}

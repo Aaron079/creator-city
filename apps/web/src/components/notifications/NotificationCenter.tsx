@@ -18,6 +18,7 @@ import {
   isSnoozedNotification,
 } from '@/store/notifications.store'
 import type { WorkspaceRole } from '@/lib/roles/view-mode'
+import { getActionTarget } from '@/lib/routing/actions'
 
 type InboxFilter = 'all' | NotificationSection
 type SeverityFilter = 'all' | NotificationSeverity
@@ -333,6 +334,12 @@ export function NotificationCenter({
     () => buildNotificationActionGroups(activeItems),
     [activeItems],
   )
+  const inboxEntryAction = useMemo(
+    () => role === 'client'
+      ? getActionTarget({ actionType: 'invitation-inbox', actionLabel: '打开邀请页' })
+      : getActionTarget({ actionType: 'dashboard-action-queue', actionLabel: '查看总控动作队列' }),
+    [role],
+  )
 
   const hasFilters = sectionFilter !== 'all'
     || severityFilter !== 'all'
@@ -381,10 +388,10 @@ export function NotificationCenter({
             </>
           ) : null}
           <Link
-            href={role === 'client' ? '/me#invitation-inbox' : '#action-queue'}
+            href={inboxEntryAction.actionHref}
             className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
           >
-            {role === 'client' ? '打开邀请页' : '查看总控动作队列'}
+            {inboxEntryAction.actionLabel}
           </Link>
         </div>
       </div>

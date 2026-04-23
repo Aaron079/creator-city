@@ -4,6 +4,8 @@ import type { DirectorNote } from '@/store/director-notes.store'
 import type { NotificationItem } from '@/store/notifications.store'
 import type { InvitationActivity, RoleChangeRecord } from '@/store/team.store'
 import type { VersionRecord } from '@/store/version-history.store'
+import type { ActionTargetType } from '@/lib/routing/actions'
+import { getActionHref as resolveActionHref, getActionTarget } from '@/lib/routing/actions'
 
 export type ActivityLogType =
   | 'invitation-sent'
@@ -49,6 +51,7 @@ export interface ActivityLogItem {
   message: string
   createdAt: string
   severity: ActivitySeverity
+  actionType?: ActionTargetType
   actionLabel?: string
   actionHref?: string
   groupingKey?: string
@@ -195,37 +198,42 @@ function defaultActionForType(projectId: string, type: ActivityLogType) {
     case 'invitation-cancelled':
     case 'member-role-changed':
     case 'member-removed':
-      return {
+      return getActionTarget({
+        actionType: 'project-team',
+        projectId,
         actionLabel: '查看团队',
-        actionHref: '/dashboard#team-match',
-      }
+      })
     case 'approval-requested':
     case 'approval-approved':
     case 'approval-changes-requested':
     case 'approval-rejected':
     case 'director-note-added':
     case 'version-created':
-      return {
+      return getActionTarget({
+        actionType: 'project-review',
+        projectId,
         actionLabel: '查看审片',
-        actionHref: `/review/${encodeURIComponent(projectId)}`,
-      }
+      })
     case 'delivery-submitted':
     case 'delivery-approved':
     case 'delivery-needs-revision':
-      return {
+      return getActionTarget({
+        actionType: 'project-delivery',
+        projectId,
         actionLabel: '查看交付',
-        actionHref: '/create#delivery',
-      }
+      })
     case 'notification-dismissed':
-      return {
+      return getActionTarget({
+        actionType: 'dashboard-notifications',
+        projectId,
         actionLabel: '查看提醒',
-        actionHref: '/dashboard#notifications',
-      }
+      })
     default:
-      return {
+      return getActionTarget({
+        actionType: 'project-overview',
+        projectId,
         actionLabel: '查看上下文',
-        actionHref: '/dashboard',
-      }
+      })
   }
 }
 
@@ -268,6 +276,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: item.message,
         createdAt: item.createdAt,
         severity: invitationSeverity(item.type),
+        actionType: action.actionType,
         actionLabel: action.actionLabel,
         actionHref: action.actionHref,
         groupingKey: `invitation:${item.projectId}:${item.profileId}`,
@@ -293,6 +302,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: `发起了「${approval.title}」审批请求。`,
         createdAt: approval.createdAt,
         severity: approval.requiredRoles.includes('client') ? 'warning' : 'info',
+        actionType: requestAction.actionType,
         actionLabel: requestAction.actionLabel,
         actionHref: requestAction.actionHref,
         groupingKey: `approval:${approval.id}`,
@@ -316,6 +326,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
           message: `${decision.role} 对「${approval.title}」做出了 ${decision.status}。`,
           createdAt: decision.createdAt,
           severity: inferApprovalDecisionSeverity(decision.status),
+          actionType: action.actionType,
           actionLabel: action.actionLabel,
           actionHref: action.actionHref,
           groupingKey: `approval:${approval.id}`,
@@ -344,6 +355,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: `新增导演批注：${note.content}`,
         createdAt: note.createdAt,
         severity: note.priority === 'blocker' ? 'strong' : note.priority === 'high' ? 'warning' : 'info',
+        actionType: action.actionType,
         actionLabel: action.actionLabel,
         actionHref: action.actionHref,
         groupingKey: `note:${note.targetId}`,
@@ -368,6 +380,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: `创建了 ${version.label}：${version.summary}`,
         createdAt: version.createdAt,
         severity: 'info',
+        actionType: action.actionType,
         actionLabel: action.actionLabel,
         actionHref: action.actionHref,
         groupingKey: `version:${version.entityId}`,
@@ -395,6 +408,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: `交付包「${pkg.title}」状态变为 ${pkg.status}。`,
         createdAt: pkg.updatedAt,
         severity: deliverySeverity(pkg.status),
+        actionType: action.actionType,
         actionLabel: action.actionLabel,
         actionHref: action.actionHref,
         groupingKey: `delivery:${pkg.id}`,
@@ -419,6 +433,7 @@ export function buildActivityLogItems(input: BuildActivityLogInput): ActivityLog
         message: `忽略了提醒：${item.title}`,
         createdAt: item.createdAt,
         severity: item.severity,
+        actionType: action.actionType,
         actionLabel: action.actionLabel,
         actionHref: action.actionHref,
         groupingKey: `notification:${item.sourceId}`,
@@ -497,7 +512,7 @@ export function buildActivityGroups(items: ActivityLogItem[], filter: ActivityFi
 }
 
 export function getActivityHref(item: ActivityLogItem) {
-  return item.actionHref ?? '/dashboard'
+  return resolveActionHref(item)
 }
 
 export function getActivityTypeLabel(type: ActivityLogType) {

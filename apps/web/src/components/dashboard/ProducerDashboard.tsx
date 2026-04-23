@@ -18,6 +18,7 @@ import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
 import type { NotificationItem, NotificationSection, NotificationSummary, ReminderRule } from '@/store/notifications.store'
 import type { InvitationActivity, TeamInvitation, TeamMemberSummary } from '@/store/team.store'
+import { getActionTarget, getDeliveryHref, getReviewHref, getWorkspaceHref } from '@/lib/routing/actions'
 
 function Card({
   title,
@@ -135,6 +136,16 @@ export function ProducerDashboard({
         || item.category === 'review'
       )
     ))
+  const summaryFallbackAction = data.overview[0]
+    ? getActionTarget({
+        actionType: 'project-review',
+        projectId: data.overview[0].projectId,
+        actionLabel: '前往 Review Portal',
+      })
+    : getActionTarget({
+        actionType: 'me',
+        actionLabel: '查看我的页面',
+      })
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -157,8 +168,8 @@ export function ProducerDashboard({
         <AccessNotice
           title="当前角色使用的是精简总览"
           message="Client 角色不会看到完整的 producer dashboard、内部 planning 或商业后台。这里保留的是轻量状态摘要，方便你快速定位需要确认的内容。"
-          href="/review"
-          ctaLabel="前往 Review Portal"
+          href={summaryFallbackAction.actionHref}
+          ctaLabel={summaryFallbackAction.actionLabel}
         />
       ) : null}
 
@@ -222,13 +233,13 @@ export function ProducerDashboard({
                 <p className="mt-3 text-sm text-white/65">{project.readinessReason}</p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Link href={project.links.review} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
+                  <Link href={getReviewHref(project.projectId)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
                     打开审片页
                   </Link>
-                  <Link href={project.links.create} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
+                  <Link href={getWorkspaceHref(project.projectId)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
                     打开工作区
                   </Link>
-                  <Link href={project.links.delivery} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
+                  <Link href={getDeliveryHref(project.projectId)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white">
                     交付工作区
                   </Link>
                 </div>
@@ -272,7 +283,7 @@ export function ProducerDashboard({
               ) : data.quickActions.map((action) => (
                 <Link
                   key={action.id}
-                  href={action.href}
+                  href={action.href.startsWith('#') ? `/dashboard${action.href}` : action.href}
                   className="block rounded-xl border border-white/8 bg-black/10 px-4 py-3 transition hover:border-white/18 hover:bg-black/20"
                 >
                   <div className="text-sm font-medium text-white">{action.label}</div>
@@ -305,7 +316,7 @@ export function ProducerDashboard({
                 <p className="mt-3 text-sm text-white/65">{action.detail}</p>
                 <div className="mt-4">
                   <Link
-                    href={action.href}
+                    href={action.href.startsWith('#') ? `/dashboard${action.href}` : action.href}
                     className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
                   >
                     {action.ctaLabel}

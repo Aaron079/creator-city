@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { ActionTargetType } from '@/lib/routing/actions'
 
 export type NotificationCategory = 'approval' | 'blocker' | 'delivery' | 'planning' | 'review' | 'audio' | 'video' | 'order' | 'team' | 'licensing'
 export type NotificationSeverity = 'info' | 'warning' | 'strong'
@@ -19,6 +20,7 @@ export interface NotificationItem {
   message: string
   sourceType: string
   sourceId: string
+  actionType?: ActionTargetType
   actionLabel: string
   actionHref: string
   isPinned?: boolean
