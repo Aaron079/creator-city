@@ -7,9 +7,12 @@ import type { MatchCandidate, RoleNeed, TalentMatchingData } from '@/lib/matchin
 import { getVisibleSectionsForRole, type WorkspaceRole } from '@/lib/roles/view-mode'
 import { PlanningPanel } from '@/components/dashboard/PlanningPanel'
 import { LicensingCenter } from '@/components/licensing/LicensingCenter'
+import { NotificationCenter } from '@/components/notifications/NotificationCenter'
 import { TeamAssemblyPanel } from '@/components/team/TeamAssemblyPanel'
+import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import type { DeliveryPackage } from '@/store/delivery-package.store'
 import type { LicenseAssetType, LicenseRecord, LicensingIssue, LicensingSummary, LicenseUsageScope } from '@/store/licensing.store'
+import type { NotificationItem, NotificationSummary, ReminderRule } from '@/store/notifications.store'
 
 function Card({
   title,
@@ -67,6 +70,7 @@ export function ProducerDashboard({
   data,
   licensing,
   matching,
+  notifications,
   role,
 }: {
   data: ProducerDashboardData
@@ -84,9 +88,20 @@ export function ProducerDashboard({
     data: TalentMatchingData
     onInvite: (projectId: string, need: RoleNeed, candidate: MatchCandidate) => void
   }
+  notifications: {
+    items: NotificationItem[]
+    summary: NotificationSummary
+    rules: ReminderRule[]
+    aiSummary: NotificationAiSummary
+    onMarkRead: (id: string) => void
+    onMarkAllRead: () => void
+    onDismiss: (id: string) => void
+    onToggleRule: (rule: ReminderRule) => void
+  }
   role: WorkspaceRole
 }) {
   const visibleSections = new Set(getVisibleSectionsForRole(role, 'dashboard'))
+  const shouldShowNotifications = role !== 'client' || notifications.summary.unreadCount > 0
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -104,6 +119,20 @@ export function ProducerDashboard({
           <div className="text-sm text-white/55">当前纳入监控的项目</div>
         </div>
       </div>
+
+      {shouldShowNotifications ? (
+        <NotificationCenter
+          items={notifications.items}
+          summary={notifications.summary}
+          rules={notifications.rules}
+          aiSummary={notifications.aiSummary}
+          role={role}
+          onMarkRead={notifications.onMarkRead}
+          onMarkAllRead={notifications.onMarkAllRead}
+          onDismiss={notifications.onDismiss}
+          onToggleRule={notifications.onToggleRule}
+        />
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
         {visibleSections.has('overview') ? (
