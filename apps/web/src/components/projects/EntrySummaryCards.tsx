@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import type { ActivityLogItem } from '@/lib/activity/aggregate'
 import type { EntryActionModel, EntryListItemModel, EntryMetricModel } from '@/lib/projects/entry-layer'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader } from '@/components/ui/SectionHeader'
 
 function EntryPanel({
   title,
@@ -15,10 +17,7 @@ function EntryPanel({
 }) {
   return (
     <section className="rounded-2xl border border-white/8 bg-black/10 p-5">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/45">{title}</h2>
-        {subtitle ? <p className="mt-2 text-sm text-white/55">{subtitle}</p> : null}
-      </div>
+      <SectionHeader title={title} description={subtitle} />
       <div className="mt-4">{children}</div>
     </section>
   )
@@ -133,9 +132,10 @@ export function RiskOrWaitingCard({
     <EntryPanel title={title} subtitle={subtitle}>
       <div className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            {emptyMessage ?? '当前没有额外提醒。'}
-          </div>
+          <EmptyState
+            title="暂无额外提醒"
+            message={emptyMessage ?? '当前没有额外风险或等待项。'}
+          />
         ) : items.map((item) => (
           <div key={item} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
             {item}
@@ -161,9 +161,10 @@ export function PersonalQueueCard({
     <EntryPanel title={title} subtitle={subtitle}>
       <div className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            {emptyMessage ?? '当前没有待处理项。'}
-          </div>
+          <EmptyState
+            title="暂无待处理项"
+            message={emptyMessage ?? '当前没有需要优先打开的入口。'}
+          />
         ) : items.map((item) => (
           <QueueRow key={item.id} item={item} />
         ))}
@@ -207,9 +208,10 @@ export function RecentActivityCard({
     <EntryPanel title={title} subtitle={subtitle}>
       <div className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            当前还没有新的活动。
-          </div>
+          <EmptyState
+            title="暂无活动"
+            message="当前还没有新的项目活动。"
+          />
         ) : items.map((item) => (
           <div key={item.id} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">

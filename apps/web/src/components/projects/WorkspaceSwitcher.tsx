@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { memo } from 'react'
 import type { UserProjectCard } from '@/lib/projects/workspace'
 
 function SwitcherSection({
@@ -32,7 +33,7 @@ function SwitcherSection({
   )
 }
 
-export function WorkspaceSwitcher({
+function WorkspaceSwitcherComponent({
   recentProjects,
   highPriorityProjects,
   waitingProjects,
@@ -81,3 +82,5 @@ export function WorkspaceSwitcher({
     </section>
   )
 }
+
+export const WorkspaceSwitcher = memo(WorkspaceSwitcherComponent)

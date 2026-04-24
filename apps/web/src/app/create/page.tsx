@@ -11,7 +11,7 @@ import { ProjectStartChecklistCard } from '@/components/create/ProjectStartCheck
 import { ProjectTemplateSummaryPanel } from '@/components/create/ProjectTemplateSummaryPanel'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
-import { AccessNotice } from '@/components/roles/AccessNotice'
+import { AccessFallback } from '@/components/ui/AccessFallback'
 import { RoleBadge } from '@/components/roles/RoleBadge'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { StoryboardAdapterPanel } from '@/components/storyboard/StoryboardAdapterPanel'
@@ -8801,7 +8801,7 @@ export default function CreatePage() {
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
-              <AccessNotice
+              <AccessFallback
                 title={projectAccess.state === 'invited'
                   ? '你已收到项目邀请，接受后可进入工作区'
                   : projectAccess.state === 'outsider'
@@ -8825,12 +8825,12 @@ export default function CreatePage() {
                   `当前 Profile：${currentProfileId ?? '未解析'}`,
                   `项目访问状态：${projectAccess.state}`,
                 ]}
-                href={projectAccess.state === 'invited'
+                actionHref={projectAccess.state === 'invited'
                   ? '/me'
                   : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
                     ? `/review/${deliveryProjectId}`
                     : '/me'}
-                ctaLabel={projectAccess.state === 'invited'
+                actionLabel={projectAccess.state === 'invited'
                   ? '前往我的邀请页'
                   : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
                     ? '前往 Review Portal'

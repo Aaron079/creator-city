@@ -1,8 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getExternalAccessTypeLabel, getExternalEffectiveStatus, getExternalLinkHref, getExternalLinkSuggestedSummary, getExternalRoleHintLabel } from '@/lib/external/access'
 import { useExternalAccessStore, type ExternalAccessType, type ExternalRoleHint } from '@/store/external-access.store'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 function defaultRoleHint(accessType: ExternalAccessType): ExternalRoleHint {
   switch (accessType) {
@@ -44,6 +48,7 @@ export function ExternalAccessPanel({
   deliveryStatus: string
   openRoles: number
 }) {
+  const feedback = useFeedback()
   const links = useExternalAccessStore((state) => state.getLinksByProject(projectId))
   const createExternalLink = useExternalAccessStore((state) => state.createExternalLink)
   const revokeExternalLink = useExternalAccessStore((state) => state.revokeExternalLink)
@@ -60,6 +65,22 @@ export function ExternalAccessPanel({
     expiresInDays: '7',
   })
 
+  const copyLink = useCallback(async (id: string, href: string) => {
+    if (typeof window === 'undefined' || !navigator.clipboard) {
+      feedback.warning('当前环境不支持自动复制，请手动复制链接')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${href}`)
+      setCopiedId(id)
+      window.setTimeout(() => setCopiedId(null), 1800)
+      feedback.success('已复制链接')
+    } catch {
+      feedback.error('复制失败，请稍后再试')
+    }
+  }, [feedback])
+
   const suggestionText = suggestedType === 'client-review'
     ? '当前更适合发 Client Review Link，因为项目正在等外部确认。'
     : suggestedType === 'creator-invite'
@@ -68,7 +89,7 @@ export function ExternalAccessPanel({
         ? '当前更适合发 Delivery Preview Link，用于正式预览当前交付。'
         : '当前更适合发 Project Overview Link，用于先共享项目摘要。'
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const expiresAt = draft.expiresInDays
       ? new Date(Date.now() + Number(draft.expiresInDays || '0') * 24 * 3600_000).toISOString()
       : undefined
@@ -85,23 +106,18 @@ export function ExternalAccessPanel({
       note: draft.note,
     })
 
-    if (typeof window !== 'undefined') {
-      const href = getExternalLinkHref(created)
-      navigator.clipboard.writeText(`${window.location.origin}${href}`).catch(() => undefined)
-      setCopiedId(created.id)
-      window.setTimeout(() => setCopiedId(null), 1800)
-    }
+    feedback.success('外部链接已创建')
+    await copyLink(created.id, getExternalLinkHref(created))
   }
 
   return (
     <section className="rounded-2xl border border-white/8 bg-black/10 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/45">External Access</h2>
-          <p className="mt-2 text-sm text-white/58">
-            为外部客户、外部创作者和外部审片人创建受控入口，不暴露内部管理信息。
-          </p>
-        </div>
+        <SectionHeader
+          eyebrow="External Access"
+          title="外部协作入口"
+          description="为外部客户、外部创作者和外部审片人创建受控入口，不暴露内部管理信息。"
+        />
         <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/8 px-4 py-3 text-sm text-cyan-100">
           {suggestionText}
         </div>
@@ -152,9 +168,10 @@ export function ExternalAccessPanel({
 
       <div className="mt-6 space-y-3">
         {links.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            当前还没有为这个项目创建外部链接。
-          </div>
+          <EmptyState
+            title="暂无外部链接"
+            message="当前还没有为这个项目创建外部协作链接。"
+          />
         ) : links.map((link) => {
           const effectiveStatus = getExternalEffectiveStatus(link)
           const href = getExternalLinkHref(link)
@@ -177,23 +194,27 @@ export function ExternalAccessPanel({
                     {' · '}
                     Last used：{link.lastUsedAt ? new Date(link.lastUsedAt).toLocaleString('zh-CN') : '未使用'}
                   </div>
+                  <div className="mt-2">
+                    <StatusBadge
+                      label={effectiveStatus}
+                      tone={effectiveStatus === 'active' ? 'success' : effectiveStatus === 'expired' ? 'warning' : 'danger'}
+                    />
+                  </div>
                   {link.note ? <div className="mt-2 text-sm text-white/60">{link.note}</div> : null}
                 </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => {
-                      if (typeof window === 'undefined') return
-                      navigator.clipboard.writeText(`${window.location.origin}${href}`).catch(() => undefined)
-                      setCopiedId(link.id)
-                      window.setTimeout(() => setCopiedId(null), 1800)
-                    }}
+                    onClick={() => copyLink(link.id, href)}
                     className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75"
                   >
                     {copiedId === link.id ? '已复制' : 'Copy'}
                   </button>
                   <button
-                    onClick={() => revokeExternalLink(link.id)}
+                    onClick={() => {
+                      revokeExternalLink(link.id)
+                      feedback.warning('外部链接已撤销')
+                    }}
                     disabled={effectiveStatus !== 'active'}
                     className="rounded-xl border border-rose-500/25 px-3 py-2 text-sm text-rose-200 disabled:opacity-40"
                   >

@@ -1,14 +1,15 @@
 'use client'
 
+import { memo } from 'react'
 import { DeliveryOrApprovalCard, PersonalQueueCard, QuickActionsCard, RecentActivityCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
 import { ExternalAccessPanel } from '@/components/external/ExternalAccessPanel'
 import { buildProjectEntryData } from '@/lib/projects/entry-layer'
 import type { RoleAwareProjectHomeData } from '@/lib/projects/home'
 import { ClientProjectStatusFeed } from '@/components/projects/ClientProjectStatusFeed'
-import { AccessNotice } from '@/components/roles/AccessNotice'
 import { getActionTarget } from '@/lib/routing/actions'
 import type { EntryListItemModel } from '@/lib/projects/entry-layer'
 import { getCurrentUserId } from '@/lib/roles/currentRole'
+import { AccessFallback } from '@/components/ui/AccessFallback'
 
 function resolutionStatusLabel(status: 'open' | 'in-progress' | 'resolved' | 'resubmitted') {
   return {
@@ -57,7 +58,7 @@ function queueItemsFromResolutions(data: NonNullable<RoleAwareProjectHomeData['c
   }))
 }
 
-export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData }) {
+function RoleAwareProjectHomeComponent({ data }: { data: RoleAwareProjectHomeData }) {
   const invitationInboxHref = getActionTarget({ actionType: 'invitation-inbox' }).actionHref
   const meHref = getActionTarget({ actionType: 'me' }).actionHref
   const entryData = buildProjectEntryData(data)
@@ -71,7 +72,7 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
 
   if (data.surface === 'outsider') {
     return (
-      <AccessNotice
+      <AccessFallback
         title="当前账号还不是这个项目的成员"
         message="你现在没有这个项目的 active membership，所以不会直接看到完整项目首页。可以先回到我的页面确认身份，或者联系 Producer 完成项目绑定。"
         details={[
@@ -79,15 +80,15 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
           `当前身份状态：${data.access.state}`,
           `项目角色：${data.resolvedRoleLabel}`,
         ]}
-        href={meHref}
-        ctaLabel="查看我的身份"
+        actionHref={meHref}
+        actionLabel="查看我的身份"
       />
     )
   }
 
   if (data.surface === 'invited') {
     return (
-      <AccessNotice
+      <AccessFallback
         title="你已经收到项目邀请"
         message="在你接受邀请前，项目首页不会开放完整工作区视图。先去 Invitation Inbox 响应，接受后这里会自动切换到对应角色首页。"
         details={[
@@ -95,8 +96,8 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
           `邀请状态：${data.access.invitationStatus}`,
           `待生效角色：${data.resolvedRoleLabel}`,
         ]}
-        href={invitationInboxHref}
-        ctaLabel="前往 Invitation Inbox"
+        actionHref={invitationInboxHref}
+        actionLabel="前往 Invitation Inbox"
         secondaryHref={data.overview?.links.review}
         secondaryLabel="先看 Review 概览"
       />
@@ -397,3 +398,5 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
     </div>
   )
 }
+
+export const RoleAwareProjectHome = memo(RoleAwareProjectHomeComponent)

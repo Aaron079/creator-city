@@ -8,6 +8,8 @@ import type { ClientProjectStatusFeedData } from '@/lib/projects/client-feed'
 import { getExternalAccessTypeLabel, getExternalPermissionSummary, getExternalRoleHintLabel } from '@/lib/external/access'
 import { DeliveryApprovalCard } from '@/components/review/DeliveryApprovalCard'
 import { ReviewDecisionPanel } from '@/components/review/ReviewDecisionPanel'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 function Metric({
   label,
@@ -50,6 +52,7 @@ export function GuestReviewPortal({
     comment?: string
   }) => void
 }) {
+  const feedback = useFeedback()
   const [draft, setDraft] = useState<{
     status: ApprovalDecision['status']
     comment: string
@@ -128,13 +131,20 @@ export function GuestReviewPortal({
                 onAssignedToChange={() => undefined}
                 onSubmit={() => {
                   if (draft.status !== 'approved' && !draft.comment.trim()) {
-                    window.alert('Request Changes 或 Reject 必须填写原因。')
+                    feedback.warning('Request Changes 或 Reject 必须填写原因')
                     return
                   }
                   onSubmitDecision({
                     status: draft.status,
                     comment: draft.comment.trim() || undefined,
                   })
+                  feedback.success(
+                    draft.status === 'approved'
+                      ? '已记录确认决定'
+                      : draft.status === 'changes-requested'
+                        ? '已记录修改请求'
+                        : '已记录拒绝原因',
+                  )
                   setDraft(null)
                 }}
                 onCancel={() => setDraft(null)}
@@ -146,9 +156,10 @@ export function GuestReviewPortal({
             <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/42">Recent Changes</h2>
             <div className="mt-4 space-y-3">
               {clientFeed.activities.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 px-4 py-4 text-sm text-white/45">
-                  当前没有新的外部可见项目变化。
-                </div>
+                <EmptyState
+                  title="暂无最近变化"
+                  message="当前没有新的外部可见项目变化。"
+                />
               ) : clientFeed.activities.slice(0, 6).map((item) => (
                 <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
                   <div className="text-sm font-medium text-white">{item.title}</div>

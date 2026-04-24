@@ -31,10 +31,10 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildLicenseRecords } from '@/lib/licensing/aggregate'
 import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
-import { AccessNotice } from '@/components/roles/AccessNotice'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { canEnterDashboard, getProjectAccessState } from '@/lib/roles/access'
 import { getActionTarget, getMeHref } from '@/lib/routing/actions'
+import { AccessFallback } from '@/components/ui/AccessFallback'
 
 export default function DashboardPage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
@@ -387,7 +387,7 @@ export default function DashboardPage() {
         />
       </div>
       {!hasDashboardAccess ? (
-        <AccessNotice
+        <AccessFallback
           title={invitedProjectIds.length > 0
             ? '你已收到项目邀请，接受后可进入 Dashboard'
             : clientOnlyProjectIds.length > 0
@@ -403,8 +403,8 @@ export default function DashboardPage() {
             `当前 Profile：${currentProfileId ?? '未解析'}`,
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}
-          href={dashboardFallbackAction.actionHref}
-          ctaLabel={dashboardFallbackAction.actionLabel}
+          actionHref={dashboardFallbackAction.actionHref}
+          actionLabel={dashboardFallbackAction.actionLabel}
           secondaryHref={clientOnlyProjectIds.length > 0 ? getMeHref() : undefined}
           secondaryLabel={clientOnlyProjectIds.length > 0 ? '查看我的项目身份' : undefined}
         />

@@ -6,6 +6,8 @@ import type { ExternalAccessLink } from '@/store/external-access.store'
 import type { ClientProjectStatusFeedData } from '@/lib/projects/client-feed'
 import { getExternalAccessTypeLabel, getExternalPermissionSummary, getExternalRoleHintLabel } from '@/lib/external/access'
 import { getExternalReviewHref } from '@/lib/routing/actions'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 function SummaryCard({
   title,
@@ -35,6 +37,7 @@ export function SharedProjectOverview({
     note?: string
   }) => void
 }) {
+  const feedback = useFeedback()
   const [inviteDraft, setInviteDraft] = useState({
     invitedName: link.invitedName ?? '',
     invitedEmail: link.invitedEmail ?? '',
@@ -88,9 +91,10 @@ export function SharedProjectOverview({
           <SummaryCard title="Recent Changes">
             <div className="space-y-3">
               {clientFeed.activities.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 px-4 py-4 text-sm text-white/45">
-                  当前没有新的外部可见项目变化。
-                </div>
+                <EmptyState
+                  title="暂无最近变化"
+                  message="当前没有新的外部可见项目变化。"
+                />
               ) : clientFeed.activities.slice(0, 6).map((item) => (
                 <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
                   <div className="text-sm font-medium text-white">{item.title}</div>
@@ -161,6 +165,7 @@ export function SharedProjectOverview({
                   onClick={() => {
                     onSubmitCreatorIntent?.(inviteDraft)
                     setIntentSubmitted(true)
+                    feedback.success('已记录外部加入意向')
                   }}
                   className="inline-flex rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100"
                 >

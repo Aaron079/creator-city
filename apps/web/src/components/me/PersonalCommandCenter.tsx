@@ -11,6 +11,7 @@ import { useProjectRoleStore } from '@/store/project-role.store'
 import { TASK_STATUS_META, useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import type { PersonalWorkQueueData, WorkQueueCategory, WorkQueueItem } from '@/lib/workqueue/aggregate'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function severityMeta(severity: WorkQueueItem['severity']) {
   if (severity === 'strong') {
@@ -190,9 +191,10 @@ export function PersonalCommandCenter({
             </div>
             <div className="mt-4 space-y-3">
               {queue.priorityQueue.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-                  当前没有待处理事项。
-                </div>
+                <EmptyState
+                  title="暂无待处理事项"
+                  message="当前没有需要你优先处理的事项。"
+                />
               ) : queue.priorityQueue.map((item) => (
                 <QueueCard key={item.id} item={item} />
               ))}
@@ -229,9 +231,10 @@ export function PersonalCommandCenter({
             </div>
             <div className="mt-4 space-y-3">
               {myResolutionItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-                  当前没有分配给你的修改闭环项。
-                </div>
+                <EmptyState
+                  title="暂无修改闭环项"
+                  message="当前没有分配给你的修改处理项。"
+                />
               ) : myResolutionItems.slice(0, 5).map((item) => {
                 const meta = severityMeta(item.severity)
                 const linkedTask = item.relatedTaskId ? linkedTasks.find((task) => task.id === item.relatedTaskId) : undefined
@@ -276,9 +279,10 @@ export function PersonalCommandCenter({
             </div>
             <div className="mt-4 space-y-3">
               {linkedTasks.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-                  当前没有与你直接关联的 resolution task。
-                </div>
+                <EmptyState
+                  title="暂无联动任务"
+                  message="当前没有与你直接关联的 resolution task。"
+                />
               ) : linkedTasks.slice(0, 5).map((task) => {
                 const meta = TASK_STATUS_META[task.status]
                 return (

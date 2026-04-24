@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { NotificationAiSummary } from '@/lib/notifications/aggregate'
 import { buildNotificationActionGroups, resolveSnoozeUntil } from '@/lib/notifications/actions'
 import type {
@@ -19,6 +19,10 @@ import {
 } from '@/store/notifications.store'
 import type { WorkspaceRole } from '@/lib/roles/view-mode'
 import { getActionTarget } from '@/lib/routing/actions'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 type InboxFilter = 'all' | NotificationSection
 type SeverityFilter = 'all' | NotificationSeverity
@@ -239,7 +243,7 @@ function SnoozeMenu({
   )
 }
 
-export function NotificationCenter({
+function NotificationCenterComponent({
   items,
   summary,
   rules,
@@ -270,6 +274,7 @@ export function NotificationCenter({
   onSnooze: (id: string, until: string) => void
   onToggleRule: (rule: ReminderRule) => void
 }) {
+  const feedback = useFeedback()
   const [sectionFilter, setSectionFilter] = useState<InboxFilter>('all')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
   const [projectFilter, setProjectFilter] = useState<'all' | string>('all')
@@ -355,16 +360,18 @@ export function NotificationCenter({
       className="rounded-2xl border border-city-border bg-city-surface/60 p-5 shadow-[0_8px_30px_rgba(0,0,0,0.16)]"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-400">Notification Inbox</h2>
-          <p className="mt-2 max-w-3xl text-sm text-white/60">
-            这里把邀请、审批、交付、排期和风险提醒收成一个统一收件箱。系统只负责排序和摘要，处理动作仍然由你自己决定。
-          </p>
-        </div>
+        <SectionHeader
+          eyebrow="Notification Inbox"
+          title="统一提醒收件箱"
+          description="这里把邀请、审批、交付、排期和风险提醒收成一个统一收件箱。系统只负责排序和摘要，处理动作仍然由你自己决定。"
+        />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={onMarkAllRead}
+            onClick={() => {
+              onMarkAllRead()
+              feedback.success('全部提醒已标记为已读')
+            }}
             className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
           >
             全部标记已读
@@ -373,14 +380,20 @@ export function NotificationCenter({
             <>
               <button
                 type="button"
-                onClick={() => onMarkSectionRead(sectionFilter)}
+                onClick={() => {
+                  onMarkSectionRead(sectionFilter)
+                  feedback.success(`已将${sectionLabel(sectionFilter)}标记为已读`)
+                }}
                 className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/65 transition hover:border-white/20 hover:text-white"
               >
                 当前分类标记已读
               </button>
               <button
                 type="button"
-                onClick={() => onDismissSection(sectionFilter)}
+                onClick={() => {
+                  onDismissSection(sectionFilter)
+                  feedback.info(`已忽略${sectionLabel(sectionFilter)}提醒`)
+                }}
                 className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/55 transition hover:border-white/20 hover:text-white"
               >
                 当前分类忽略
@@ -489,14 +502,20 @@ export function NotificationCenter({
                     <>
                       <button
                         type="button"
-                        onClick={() => onMarkProjectRead(projectFilter)}
+                        onClick={() => {
+                          onMarkProjectRead(projectFilter)
+                          feedback.success('当前项目提醒已标记为已读')
+                        }}
                         className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white/65 transition hover:border-white/20 hover:text-white"
                       >
                         项目标记已读
                       </button>
                       <button
                         type="button"
-                        onClick={() => onDismissProject(projectFilter)}
+                        onClick={() => {
+                          onDismissProject(projectFilter)
+                          feedback.info('当前项目提醒已忽略')
+                        }}
                         className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white/55 transition hover:border-white/20 hover:text-white"
                       >
                         项目忽略
@@ -530,9 +549,10 @@ export function NotificationCenter({
 
           <div className="space-y-3">
             {filteredItems.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-                当前筛选下没有提醒。{visibleItems.length === 0 ? '这会儿挺安静，像制作统筹难得的一杯热咖啡。' : '你可以试着放宽筛选条件。'}
-              </div>
+              <EmptyState
+                title="暂无提醒"
+                message={visibleItems.length === 0 ? '当前没有需要你处理的提醒。' : '当前筛选下没有提醒，你可以试着放宽筛选条件。'}
+              />
             ) : filteredItems.map((item) => {
               const meta = severityMeta(item.severity)
               const isSnoozed = isSnoozedNotification(item)
@@ -551,9 +571,10 @@ export function NotificationCenter({
                       </div>
                       <div className="mt-1 text-base font-semibold text-white">{item.title}</div>
                     </div>
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${meta.cls}`}>
-                      {meta.label}
-                    </span>
+                    <StatusBadge
+                      label={meta.label}
+                      tone={item.severity === 'strong' ? 'danger' : item.severity === 'warning' ? 'warning' : 'info'}
+                    />
                   </div>
 
                   <p className="mt-3 text-sm text-white/65">{item.message}</p>
@@ -575,7 +596,10 @@ export function NotificationCenter({
                     {!item.isRead ? (
                       <button
                         type="button"
-                        onClick={() => onMarkRead(item.id)}
+                        onClick={() => {
+                          onMarkRead(item.id)
+                          feedback.success('已标记为已读')
+                        }}
                         className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/65 transition hover:border-white/20 hover:text-white"
                       >
                         标记已读
@@ -583,12 +607,18 @@ export function NotificationCenter({
                     ) : null}
                     {!isSnoozed ? (
                       <SnoozeMenu
-                        onSnooze={(preset) => onSnooze(item.id, resolveSnoozeUntil(preset))}
+                        onSnooze={(preset) => {
+                          onSnooze(item.id, resolveSnoozeUntil(preset))
+                          feedback.info('已标记为稍后处理')
+                        }}
                       />
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => onDismiss(item.id)}
+                      onClick={() => {
+                        onDismiss(item.id)
+                        feedback.info('已忽略提醒')
+                      }}
                       className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/55 transition hover:border-white/20 hover:text-white"
                     >
                       忽略
@@ -657,3 +687,5 @@ export function NotificationCenter({
     </section>
   )
 }
+
+export const NotificationCenter = memo(NotificationCenterComponent)

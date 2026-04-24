@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
 import type { UserProjectCard, WorkspacePortfolioData } from '@/lib/projects/workspace'
 import { PersonalQueueCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader } from '@/components/ui/SectionHeader'
 
 function riskMeta(level: UserProjectCard['riskLevel']) {
   if (level === 'strong') {
@@ -112,15 +114,11 @@ export function UserProjectPortfolio({
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Cross-Project Overview</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">{title ?? 'My Projects / My Portfolio'}</h2>
-          <p className="mt-2 max-w-3xl text-sm text-white/55">
-            {subtitle ?? '按你当前在项目中的角色，把跨项目风险、待处理项和快捷入口收成一个统一总览。'}
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        eyebrow="Cross-Project Overview"
+        title={title ?? 'My Projects / My Portfolio'}
+        description={subtitle ?? '按你当前在项目中的角色，把跨项目风险、待处理项和快捷入口收成一个统一总览。'}
+      />
 
       <div className="mt-5 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
@@ -144,9 +142,12 @@ export function UserProjectPortfolio({
 
       <div className="mt-6 space-y-4">
         {data.cards.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/8 px-4 py-5 text-sm text-white/45">
-            当前还没有 active 项目。你可以先从 Explore、Invitation Inbox 或 Producer 邀请流程进入新项目。
-          </div>
+          <EmptyState
+            title="暂无项目"
+            message="当前没有可进入的 active 项目。你可以先从邀请页、项目列表或 Producer 邀请流程进入新项目。"
+            actionHref="/me#invitation-inbox"
+            actionLabel="查看邀请页"
+          />
         ) : data.cards.map((item) => (
           <ProjectCard key={item.projectId} item={item} />
         ))}

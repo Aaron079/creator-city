@@ -6,6 +6,10 @@ import { getProjectRoleLabel } from '@/lib/roles/projectRoles'
 import { getResolutionTaskConsistency } from '@/lib/review/task-linking'
 import type { ReviewResolutionItem, ReviewResolutionSummary, ReviewResolutionStatus } from '@/lib/review/resolution-store'
 import type { Task, TaskStatus } from '@/store/task.store'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 function sourceLabel(sourceType: ReviewResolutionItem['sourceType']) {
   switch (sourceType) {
@@ -100,6 +104,7 @@ export function ResolutionLoopPanel({
   onMarkLinkedResolutionInProgress: (taskId: string) => void
   onMarkLinkedResolutionResolved: (taskId: string) => void
 }) {
+  const feedback = useFeedback()
   const [drafts, setDrafts] = useState<Record<string, { assignedRole: ProjectRole; assignedUserId: string }>>({})
 
   const sortedItems = useMemo(
@@ -110,13 +115,11 @@ export function ResolutionLoopPanel({
   return (
     <section id="resolution-loop" className="mt-8 rounded-[28px] p-6" style={{ background: 'rgba(9,14,24,0.82)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/35">Resolution Loop</p>
-          <h2 className="mt-2 text-xl font-semibold text-white">待处理修改闭环</h2>
-          <p className="mt-2 max-w-3xl text-[11px] leading-[1.7]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-            这里把客户 changes requested、reject 和导演 blocker note 收成统一修改项。系统只做摘要、状态聚合和负责人提示，不会自动关闭、自动重提或自动代客户确认。
-          </p>
-        </div>
+        <SectionHeader
+          eyebrow="Resolution Loop"
+          title="待处理修改闭环"
+          description="这里把客户 changes requested、reject 和导演 blocker note 收成统一修改项。系统只做摘要、状态聚合和负责人提示，不会自动关闭、自动重提或自动代客户确认。"
+        />
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-5">
@@ -129,9 +132,10 @@ export function ResolutionLoopPanel({
 
       <div className="mt-5 space-y-4">
         {sortedItems.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/8 px-4 py-4 text-sm text-white/45">
-            当前没有待处理修改项。
-          </div>
+          <EmptyState
+            title="暂无修改项"
+            message="当前没有待处理修改项。"
+          />
         ) : sortedItems.map((item) => {
           const severity = severityMeta(item.severity)
           const status = statusMeta(item.status)
@@ -155,12 +159,8 @@ export function ResolutionLoopPanel({
                   <div className="mt-1 text-base font-semibold text-white">{item.title}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${severity.cls}`}>
-                    {severity.label}
-                  </span>
-                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${status.cls}`}>
-                    {status.label}
-                  </span>
+                  <StatusBadge label={severity.label} tone={item.severity === 'strong' ? 'danger' : item.severity === 'warning' ? 'warning' : 'info'} />
+                  <StatusBadge label={status.label} tone={item.status === 'resolved' ? 'success' : item.status === 'resubmitted' ? 'info' : item.status === 'in-progress' ? 'warning' : 'default'} className="normal-case tracking-normal" />
                 </div>
               </div>
 
@@ -236,7 +236,10 @@ export function ResolutionLoopPanel({
                     ))}
                   </select>
                   <button
-                    onClick={() => onAssign(item.id, draft.assignedRole, draft.assignedUserId || undefined)}
+                    onClick={() => {
+                      onAssign(item.id, draft.assignedRole, draft.assignedUserId || undefined)
+                      feedback.success('负责人已更新')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
                   >
@@ -248,7 +251,10 @@ export function ResolutionLoopPanel({
               <div className="mt-4 flex flex-wrap gap-2">
                 {canCreateTask && !item.relatedTaskId ? (
                   <button
-                    onClick={() => onCreateTask(item.id)}
+                    onClick={() => {
+                      onCreateTask(item.id)
+                      feedback.success('已创建关联任务')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.22)', color: '#d8b4fe' }}
                   >
@@ -266,7 +272,10 @@ export function ResolutionLoopPanel({
                 ) : null}
                 {canUpdateResolution(item) && item.status === 'open' ? (
                   <button
-                    onClick={() => onMarkInProgress(item.id)}
+                    onClick={() => {
+                      onMarkInProgress(item.id)
+                      feedback.info('修改项已标记为处理中')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.22)', color: '#fcd34d' }}
                   >
@@ -275,7 +284,10 @@ export function ResolutionLoopPanel({
                 ) : null}
                 {linkedTask && canUpdateResolution(item) && linkedTask.status !== 'done' ? (
                   <button
-                    onClick={() => onMarkLinkedResolutionInProgress(linkedTask.id)}
+                    onClick={() => {
+                      onMarkLinkedResolutionInProgress(linkedTask.id)
+                      feedback.info('已按任务状态回写为处理中')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.16)', color: '#fde68a' }}
                   >
@@ -284,7 +296,10 @@ export function ResolutionLoopPanel({
                 ) : null}
                 {canUpdateResolution(item) && item.status !== 'resolved' && item.status !== 'resubmitted' ? (
                   <button
-                    onClick={() => onMarkResolved(item.id)}
+                    onClick={() => {
+                      onMarkResolved(item.id)
+                      feedback.success('修改项已标记为已解决')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.22)', color: '#6ee7b7' }}
                   >
@@ -293,7 +308,10 @@ export function ResolutionLoopPanel({
                 ) : null}
                 {linkedTask && canUpdateResolution(item) ? (
                   <button
-                    onClick={() => onMarkLinkedResolutionResolved(linkedTask.id)}
+                    onClick={() => {
+                      onMarkLinkedResolutionResolved(linkedTask.id)
+                      feedback.success('已按任务状态回写为已解决')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.16)', color: '#a7f3d0' }}
                   >
@@ -302,7 +320,10 @@ export function ResolutionLoopPanel({
                 ) : null}
                 {canManageResubmission && item.status !== 'resubmitted' ? (
                   <button
-                    onClick={() => onMarkResubmitted(item.id)}
+                    onClick={() => {
+                      onMarkResubmitted(item.id)
+                      feedback.success('修改项已标记为已重新提交')
+                    }}
                     className="rounded-xl px-3 py-2 text-[11px] font-semibold"
                     style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.22)', color: '#93c5fd' }}
                   >

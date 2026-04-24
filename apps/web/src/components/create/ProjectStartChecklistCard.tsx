@@ -2,24 +2,27 @@
 
 import Link from 'next/link'
 import type { ProjectStartChecklist } from '@/lib/projects/start-checklist'
+import { useFeedback } from '@/lib/feedback/useFeedback'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 function statusMeta(status: ProjectStartChecklist['items'][number]['status']) {
   switch (status) {
     case 'done':
       return {
         label: 'Done',
-        cls: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
+        tone: 'success' as const,
       }
     case 'ready':
       return {
         label: 'Ready',
-        cls: 'border-sky-500/25 bg-sky-500/10 text-sky-300',
+        tone: 'info' as const,
       }
     case 'todo':
     default:
       return {
         label: 'Todo',
-        cls: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        tone: 'warning' as const,
       }
   }
 }
@@ -31,6 +34,8 @@ export function ProjectStartChecklistCard({
   checklist: ProjectStartChecklist
   onToggleDone: (itemId: string, nextDone: boolean) => void
 }) {
+  const feedback = useFeedback()
+
   return (
     <section id="project-start-checklist" className="px-5 pt-3">
       <div
@@ -38,13 +43,11 @@ export function ProjectStartChecklistCard({
         style={{ boxShadow: '0 18px 46px rgba(0,0,0,0.18)', backdropFilter: 'blur(18px)' }}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Start Checklist</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">项目启动检查单</h2>
-            <p className="mt-2 max-w-3xl text-sm text-white/55">
-              系统会自动判断哪些条件已经具备，但不会替你打勾。只有你手动确认后，检查项才会进入 Done。
-            </p>
-          </div>
+          <SectionHeader
+            eyebrow="Start Checklist"
+            title="项目启动检查单"
+            description="系统会自动判断哪些条件已经具备，但不会替你打勾。只有你手动确认后，检查项才会进入 Done。"
+          />
           <div className="rounded-2xl border border-white/8 bg-black/15 px-4 py-3">
             <div className="text-[11px] text-white/45">准备度摘要</div>
             <div className="mt-2 text-sm text-white/75">
@@ -63,11 +66,9 @@ export function ProjectStartChecklistCard({
               return (
                 <div key={item.id} className="rounded-[24px] border border-white/8 bg-black/15 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                  <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${meta.cls}`}>
-                          {meta.label}
-                        </span>
+                        <StatusBadge label={meta.label} tone={meta.tone} className="px-2 py-0.5 text-[10px]" />
                         <span className="text-[11px] uppercase tracking-[0.16em] text-white/35">{item.category}</span>
                         {item.isBlocking ? <span className="text-[11px] text-rose-300/90">Blocking</span> : null}
                       </div>
@@ -77,7 +78,11 @@ export function ProjectStartChecklistCard({
 
                     <button
                       type="button"
-                      onClick={() => onToggleDone(item.id, item.status !== 'done')}
+                      onClick={() => {
+                        const nextDone = item.status !== 'done'
+                        onToggleDone(item.id, nextDone)
+                        feedback.success(nextDone ? '启动检查项已标记完成' : '启动检查项已恢复为未完成')
+                      }}
                       className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/72 transition hover:border-white/20 hover:text-white"
                     >
                       {item.status === 'done' ? '撤销完成' : '标记完成'}
