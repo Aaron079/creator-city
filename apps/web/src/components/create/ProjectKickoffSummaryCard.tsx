@@ -9,7 +9,7 @@ export function ProjectKickoffSummaryCard({
   summary: ProjectKickoffSummary
 }) {
   return (
-    <section className="px-5 pt-3">
+    <section id="project-kickoff-summary" className="px-5 pt-3">
       <div
         className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5"
         style={{ boxShadow: '0 18px 46px rgba(0,0,0,0.18)', backdropFilter: 'blur(18px)' }}

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
 import { ProjectKickoffSummaryCard } from '@/components/create/ProjectKickoffSummaryCard'
+import { ProjectStartChecklistCard } from '@/components/create/ProjectStartChecklistCard'
 import { ProjectTemplateSummaryPanel } from '@/components/create/ProjectTemplateSummaryPanel'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
@@ -69,6 +70,7 @@ import { canEnterCreate, getProjectAccessState } from '@/lib/roles/access'
 import { getVisibleSectionsForRole, useMockRoleMode } from '@/lib/roles/view-mode'
 import { PROJECT_WORKFLOW_TEMPLATES, PROJECT_WORKFLOW_TEMPLATE_MAP, getWorkflowTemplateByLegacyId, recommendProjectTemplate } from '@/lib/templates/projectTemplates'
 import { buildProjectKickoffSummary } from '@/lib/projects/kickoff'
+import { buildProjectStartChecklist } from '@/lib/projects/start-checklist'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useProjectTemplateStore } from '@/store/project-template.store'
@@ -6045,7 +6047,9 @@ export default function CreatePage() {
     [activeJob?.title, idea]
   )
   const setProjectTemplateForProject = useProjectTemplateStore((s) => s.setTemplateForProject)
+  const setChecklistItemDone = useProjectTemplateStore((s) => s.setChecklistItemDone)
   const savedProjectTemplateSelection = useProjectTemplateStore((s) => s.selections.find((item) => item.projectId === deliveryProjectId))
+  const checklistCompletion = useProjectTemplateStore((s) => s.checklistCompletions.find((item) => item.projectId === deliveryProjectId))
   const activeWorkflowTemplate = useMemo(
     () => (activeTemplateId ? PROJECT_WORKFLOW_TEMPLATE_MAP[activeTemplateId] : undefined)
       ?? getWorkflowTemplateByLegacyId(projectTemplate?.id)
@@ -6140,6 +6144,20 @@ export default function CreatePage() {
       recommendation: templateRecommendation,
     }) : null,
     [activeDeliveryPackage, activeWorkflowTemplate, currentStage, deliveryProjectId, deliveryProjectTitle, shots, templateRecommendation],
+  )
+  const startChecklist = useMemo(
+    () => activeWorkflowTemplate ? buildProjectStartChecklist({
+      projectId: deliveryProjectId,
+      projectTitle: deliveryProjectTitle,
+      template: activeWorkflowTemplate,
+      idea,
+      currentStage,
+      firstWorkflowTab: activeWorkflowTemplate.defaultWorkflowTabs[0],
+      checklistCompletion,
+      hasDeliveryPackage: Boolean(activeDeliveryPackage),
+      hasAccessibleNextAction: Boolean(kickoffSummary?.quickActions[0]?.href),
+    }) : null,
+    [activeDeliveryPackage, activeWorkflowTemplate, checklistCompletion, currentStage, deliveryProjectId, deliveryProjectTitle, idea, kickoffSummary?.quickActions,],
   )
   const activeStoryboardFrame = storyboardPrevis?.frames.find((frame) => frame.id === activeStoryboardFrameId) ?? null
   const lockedRoleBible = useMemo(
@@ -8379,6 +8397,11 @@ export default function CreatePage() {
     setActiveTemplateId((current) => current === nextTemplateId ? current : nextTemplateId)
   }, [narrative?.templateId, savedProjectTemplateSelection?.templateId])
 
+  const handleToggleChecklistDone = useCallback((itemId: string, nextDone: boolean) => {
+    if (!activeWorkflowTemplate) return
+    setChecklistItemDone(deliveryProjectId, itemId, nextDone, activeWorkflowTemplate.id)
+  }, [activeWorkflowTemplate, deliveryProjectId, setChecklistItemDone])
+
   const handleInsightAction = useCallback((insight: NarrativeInsight) => {
     setFocusedSequenceId(insight.targetSequenceId ?? null)
     const targetShotId = insight.targetShotId
@@ -8769,6 +8792,12 @@ export default function CreatePage() {
           />
 
           {kickoffSummary ? <ProjectKickoffSummaryCard summary={kickoffSummary} /> : null}
+          {startChecklist ? (
+            <ProjectStartChecklistCard
+              checklist={startChecklist}
+              onToggleDone={handleToggleChecklistDone}
+            />
+          ) : null}
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
