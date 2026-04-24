@@ -100,14 +100,14 @@ export function getProjectHomeHref(projectId: string) {
 }
 
 export function getWorkspaceHref(projectId?: string) {
-  if (!projectId) return '/create'
+  if (!projectId) return '/create#workspace'
 
   const access = resolveAccess(projectId)
   if (access?.state === 'invited') return getInvitationInboxHref()
   if (access?.state === 'client-only') return `${getReviewHref(projectId)}#delivery-snapshot`
   if (access?.state === 'outsider') return getMeHref()
 
-  return '/create'
+  return '/create#workspace'
 }
 
 export function getDeliveryHref(projectId?: string) {

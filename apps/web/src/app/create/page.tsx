@@ -9,6 +9,8 @@ import { AudioDesk } from '@/components/audio/AudioDesk'
 import { ProjectKickoffSummaryCard } from '@/components/create/ProjectKickoffSummaryCard'
 import { ProjectStartChecklistCard } from '@/components/create/ProjectStartChecklistCard'
 import { ProjectTemplateSummaryPanel } from '@/components/create/ProjectTemplateSummaryPanel'
+import { VisualCanvasWorkspace } from '@/components/create/VisualCanvasWorkspace'
+import { WorkspaceAssetsPanel } from '@/components/create/WorkspaceAssetsPanel'
 import { DeliveryTab } from '@/components/delivery/DeliveryTab'
 import { EditorAdapterPanel } from '@/components/editor/EditorAdapterPanel'
 import { AccessFallback } from '@/components/ui/AccessFallback'
@@ -116,6 +118,7 @@ const SHOT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 type CanvasMode = 'simple' | 'advanced' | 'pro'
 type WorkspaceView = 'canvas' | 'previs' | 'footage' | 'editor' | 'audio' | 'delivery'
+type WorkspaceSurface = 'canvas' | 'timeline' | 'assets' | 'delivery'
 
 const DERIVATIVE_PROVIDERS = ['mock', 'runway', 'seedance', 'happyhorse', 'kling'] as const
 const DERIVATIVE_DURATIONS = [5, 10, 15] as const
@@ -2350,27 +2353,24 @@ function ShotCard({
     <motion.div
       layout
       onClick={onSelect}
-      className="relative flex-shrink-0 flex flex-col cursor-pointer overflow-hidden"
+      className={`${isActive ? 'create-liquid-border' : isHighlighted ? 'create-iridescent-border' : ''} relative flex-shrink-0 flex flex-col cursor-pointer overflow-hidden`}
       style={{
         width: 280,
-        background: isActive ? 'rgba(14,18,36,0.95)' : 'rgba(10,14,26,0.8)',
-        border: isHighlighted
-          ? '1px solid rgba(110,231,183,0.4)'
-          : isActive
-            ? '1px solid rgba(99,102,241,0.45)'
-            : '1px solid rgba(255,255,255,0.07)',
-        borderRadius: 16,
+        background: isActive ? 'rgba(11,14,20,0.88)' : 'rgba(11,14,20,0.74)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 24,
+        backdropFilter: 'blur(24px)',
         boxShadow: isHighlighted
-          ? '0 0 0 1px rgba(110,231,183,0.14), 0 10px 28px rgba(16,185,129,0.12)'
+          ? '0 0 0 1px rgba(110,231,183,0.14), 0 18px 44px rgba(16,185,129,0.1)'
           : isActive
-            ? '0 0 0 1px rgba(99,102,241,0.12), 0 8px 32px rgba(0,0,0,0.5)'
-            : '0 4px 16px rgba(0,0,0,0.35)',
-        transition: 'border-color 0.2s, box-shadow 0.2s',
+            ? '0 0 0 1px rgba(99,102,241,0.12), 0 24px 56px rgba(0,0,0,0.4)'
+            : '0 12px 32px rgba(0,0,0,0.28)',
+        transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s',
       }}
     >
       {/* Active indicator bar */}
       {(isActive || isHighlighted) && (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4)', borderRadius: '16px 16px 0 0' }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, #8A2BE2, #00FFFF, #00FF7F)', borderRadius: '24px 24px 0 0' }} />
       )}
 
       {/* Thumbnail + header */}
@@ -2387,7 +2387,7 @@ function ShotCard({
         ) : (
           <div
             className="w-full h-full flex items-center justify-center"
-            style={{ background: isActive ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.02)' }}
+            style={{ background: isActive ? 'rgba(138,43,226,0.08)' : 'rgba(255,255,255,0.02)' }}
           >
             <span style={{ fontSize: 32, opacity: 0.2 }}>🎬</span>
           </div>
@@ -2441,7 +2441,7 @@ function ShotCard({
 
         {/* Label + idea */}
         <div>
-          <p className="text-[12px] font-semibold mb-0.5" style={{ color: isActive ? '#e0e7ff' : 'rgba(255,255,255,0.65)' }}>
+          <p className="mb-0.5 text-[12px] font-medium" style={{ color: isActive ? '#eef6ff' : 'rgba(255,255,255,0.72)' }}>
             {shot.label}
           </p>
           <div className="mt-1">
@@ -2460,11 +2460,11 @@ function ShotCard({
           )}
           {shot.cinematicSkillIds?.[0] && (
             <span
-              className="inline-flex mt-1 ml-1 px-2 py-0.5 rounded-full text-[9px] font-medium"
-              style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.18)', color: '#c7d2fe' }}
-            >
-              {shot.cinematicSkillIds[shot.cinematicSkillIds.length - 1]}
-            </span>
+            className="inline-flex mt-1 ml-1 px-2 py-0.5 rounded-full text-[9px] font-medium"
+            style={{ background: 'rgba(138,43,226,0.12)', border: '1px solid rgba(138,43,226,0.18)', color: '#dccbff' }}
+          >
+            {shot.cinematicSkillIds[shot.cinematicSkillIds.length - 1]}
+          </span>
           )}
           {shot.idea && (
             <p className="text-[10px] leading-[1.4]" style={{ color: 'rgba(255,255,255,0.28)' }}>
@@ -2501,8 +2501,7 @@ function ShotCard({
               e.stopPropagation()
               onUpdate({ presetParams: { ...params } })
             }}
-            className="px-2 py-1 rounded-lg text-[9px] font-semibold"
-            style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', color: '#a5b4fc' }}
+            className="create-glass-pill rounded-full px-2.5 py-1 text-[9px] font-semibold text-[#bcd7ff] transition hover:border-white/18"
           >
             底部编辑
           </button>
@@ -2708,13 +2707,12 @@ function ShotTimeline({
 
   return (
     <div
-      className="flex-1 min-w-0 flex flex-col"
-      style={{ background: '#060a14', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}
+      className="relative flex-1 min-w-0 flex flex-col overflow-hidden"
+      style={{ background: 'transparent' }}
     >
       {/* Header bar */}
       <div
-        className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(6,10,20,0.9)' }}
+        className="create-glass-panel-soft mx-5 mt-3 flex items-center justify-between rounded-[28px] px-5 py-3 flex-shrink-0"
       >
         <div className="flex items-center gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.3)' }}>
@@ -2772,8 +2770,7 @@ function ShotTimeline({
           {/* Add shot */}
           <button
             onClick={() => onAddShot()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-            style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}
+            className="create-glass-pill flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-[#a5b4fc] transition-all hover:border-white/20"
           >
             + 新镜头
           </button>
@@ -2838,9 +2835,22 @@ function ShotTimeline({
       <div
         ref={containerRef}
         onWheel={handleWheel}
-        className="flex-1 overflow-x-auto overflow-y-auto"
-        style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(99,102,241,0.3) transparent' }}
+        className="create-quiet-grid relative mx-5 mt-3 flex-1 overflow-x-auto overflow-y-auto rounded-[30px]"
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(138,43,226,0.3) transparent',
+          backgroundColor: 'rgba(255,255,255,0.015)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}
       >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 15%, rgba(138,43,226,0.11), transparent 28%), radial-gradient(circle at 80% 85%, rgba(0,255,255,0.05), transparent 32%)',
+          }}
+        />
         <div
           className="flex flex-col gap-4 px-6 py-6"
           style={{
@@ -2908,8 +2918,7 @@ function ShotTimeline({
                     </div>
                 <button
                   onClick={() => onAddShot(sequence.id)}
-                  className="px-3 py-1.5 rounded-xl text-[10px] font-semibold"
-                  style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', color: '#c7d2fe' }}
+                  className="create-glass-pill rounded-full px-3 py-1.5 text-[10px] font-semibold text-[#c7d2fe] transition hover:border-white/20"
                 >
                   + 添加到 {sequence.name}
                 </button>
@@ -2967,8 +2976,8 @@ function ShotTimeline({
 
       {/* Bottom hint */}
       <div
-        className="relative flex-shrink-0 px-5 pt-3 pb-5 flex flex-col gap-3"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(6,10,20,0.92)' }}
+        className="sticky bottom-0 z-20 flex-shrink-0 px-5 pb-5 pt-4 flex flex-col gap-3"
+        style={{ background: 'linear-gradient(180deg, rgba(5,5,5,0) 0%, rgba(5,5,5,0.86) 22%, rgba(5,5,5,0.96) 100%)' }}
       >
         <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.15)' }}>
           滚轮横向滚动 · Ctrl/Cmd + 滚轮缩放 · 专业能力已收纳到底部操作栏
@@ -3480,8 +3489,8 @@ function CanvasBottomDock({
             className="absolute left-0 right-0 bottom-full mb-3 z-30"
           >
             <div
-              className="mx-auto max-w-4xl rounded-3xl overflow-hidden"
-              style={{ background: 'rgba(10,15,26,0.84)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 24px 72px rgba(0,0,0,0.42)', backdropFilter: 'blur(24px)' }}
+              className="create-glass-panel mx-auto max-w-4xl overflow-hidden rounded-[30px]"
+              style={{ background: 'rgba(10,15,26,0.84)' }}
             >
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                 <div>
@@ -4945,9 +4954,11 @@ function CanvasBottomDock({
         )}
       </AnimatePresence>
 
-      <div
-        className="rounded-[28px] p-3 md:p-4"
-        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 12px 48px rgba(0,0,0,0.22)' }}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="create-floating-console mx-auto w-full max-w-5xl rounded-[32px] p-3 md:p-4"
       >
         <div className="flex flex-col gap-3">
           <textarea
@@ -4955,8 +4966,8 @@ function CanvasBottomDock({
             onChange={(e) => onIdeaChange(e.target.value)}
             placeholder="在这里继续描述当前镜头，底部操作栏负责所有专业控制…"
             rows={2}
-            className="w-full rounded-2xl px-4 py-3 text-[13px] text-white/90 placeholder-gray-500 outline-none resize-none"
-            style={{ background: 'rgba(7,11,20,0.9)', border: '1px solid rgba(255,255,255,0.06)', lineHeight: 1.6 }}
+            className="w-full rounded-[26px] px-4 py-3 text-[13px] text-white/92 placeholder:text-white/28 outline-none resize-none"
+            style={{ background: 'rgba(7,11,20,0.72)', border: '1px solid rgba(255,255,255,0.08)', lineHeight: 1.6, backdropFilter: 'blur(20px)' }}
           />
 
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -4992,12 +5003,10 @@ function CanvasBottomDock({
                     onClick={() => togglePanel(item.id as CanvasActionPanel)}
                     whileHover={{ y: -1, scale: 1.01 }}
                     whileTap={{ scale: 0.98 }}
-                    className="px-3 py-2 rounded-2xl text-[11px] font-semibold transition-all"
+                    className={`rounded-full px-3 py-2 text-[11px] font-semibold transition-all ${active ? 'create-iridescent-button' : 'create-glass-pill'}`}
                     style={{
-                      background: active ? `${item.accent}16` : 'rgba(255,255,255,0.035)',
-                      border: `1px solid ${active ? `${item.accent}70` : 'rgba(255,255,255,0.07)'}`,
-                      color: active ? item.accent : 'rgba(255,255,255,0.54)',
-                      boxShadow: active ? `0 0 0 1px ${item.accent}22 inset, 0 8px 18px rgba(0,0,0,0.18)` : 'none',
+                      color: active ? '#031014' : 'rgba(255,255,255,0.62)',
+                      boxShadow: active ? `0 10px 28px rgba(0,0,0,0.22)` : 'none',
                     }}
                   >
                     <span className="flex items-center gap-2">
@@ -5013,14 +5022,13 @@ function CanvasBottomDock({
             <button
               onClick={onGenerateCurrent}
               disabled={running || !idea.trim()}
-              className="px-4 py-2.5 rounded-2xl text-[12px] font-semibold disabled:opacity-40"
-              style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white' }}
+              className="create-iridescent-button rounded-full px-4 py-2.5 text-[12px] font-semibold disabled:opacity-40"
             >
               {running ? '生成中…' : '生成当前镜头'}
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   )
 }
@@ -5552,7 +5560,10 @@ function LeftPanel({
   currentIntent?: string
 }) {
   return (
-    <aside className="relative flex-shrink-0 flex flex-col" style={{ width: 260, background: '#070b14', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+    <aside
+      className="create-glass-panel relative m-4 mr-0 flex flex-shrink-0 flex-col overflow-hidden rounded-[32px]"
+      style={{ width: 252, background: 'rgba(8, 10, 16, 0.7)' }}
+    >
 
       {/* Loading overlays */}
       <AnimatePresence>
@@ -5618,15 +5629,15 @@ function LeftPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <div>
-          <h1 className="text-[13px] font-bold text-white tracking-tight">AI 导演工作台</h1>
-          <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>Pro Canvas</p>
+          <h1 className="text-[14px] font-light tracking-[-0.03em] text-white">AI 导演工作台</h1>
+          <p className="mt-1 text-[10px]" style={{ color: 'rgba(255,255,255,0.34)' }}>Spatial Canvas Console</p>
         </div>
         <ExportMenu globalPro={globalPro} />
       </div>
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto flex flex-col gap-3 px-4 py-4">
-        <div className="rounded-2xl px-3.5 py-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="create-glass-panel-soft rounded-[24px] px-3.5 py-3">
           <div className="flex items-center justify-between gap-3 mb-2.5">
             <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.24)' }}>Canvas Mode</p>
             <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(99,102,241,0.14)', color: '#a5b4fc' }}>
@@ -5657,7 +5668,7 @@ function LeftPanel({
           </p>
         </div>
 
-        <div className="rounded-2xl px-3.5 py-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="create-glass-panel-soft rounded-[24px] px-3.5 py-3">
           <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: 'rgba(255,255,255,0.24)' }}>Canvas Status</p>
           <p className="text-[12px] leading-6 text-white/85">
             {idea.trim() || '从底部输入框开始描述你的镜头创意。'}
@@ -5680,8 +5691,8 @@ function LeftPanel({
           <button
             onClick={onAutoDirector}
             disabled={!idea.trim() || running || autoRunning}
-            className="w-full py-2.5 rounded-xl text-[12px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-            style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%)', boxShadow: autoRunning ? 'none' : '0 4px 16px rgba(245,158,11,0.3)', color: 'white' }}
+            className="create-iridescent-button w-full rounded-2xl py-2.5 text-[12px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
+            style={{ boxShadow: autoRunning ? 'none' : '0 10px 28px rgba(0,0,0,0.24)' }}
           >
             <span>🎬</span><span>一键导演方案</span>
           </button>
@@ -5689,8 +5700,8 @@ function LeftPanel({
           <button
             onClick={onDirector}
             disabled={!idea.trim() || running || autoRunning}
-            className="w-full py-2 rounded-xl text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-            style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.22)', color: '#a5b4fc' }}
+            className="create-glass-pill w-full rounded-2xl py-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
+            style={{ color: '#bcd7ff' }}
           >
             <span>🧭</span><span>导演拆镜</span>
           </button>
@@ -5698,11 +5709,11 @@ function LeftPanel({
           <button
             onClick={onCommercialMode}
             disabled={running || autoRunning || commercialRunning}
-            className="w-full py-2 rounded-xl text-[11px] font-bold transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
+            className="w-full py-2 rounded-2xl text-[11px] font-semibold transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
             style={{
-              background: commercialMode ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'rgba(245,158,11,0.1)',
-              border: `1px solid ${commercialMode ? 'rgba(245,158,11,0.7)' : 'rgba(245,158,11,0.25)'}`,
-              color: '#fbbf24',
+              background: commercialMode ? 'linear-gradient(135deg, rgba(245,158,11,0.75), rgba(217,119,6,0.75))' : 'rgba(245,158,11,0.1)',
+              border: `1px solid ${commercialMode ? 'rgba(245,158,11,0.55)' : 'rgba(245,158,11,0.22)'}`,
+              color: commercialMode ? '#fff3d5' : '#fbbf24',
             }}
           >
             <span>📢</span><span>接单模式{commercialMode ? ' ✓' : ''}</span>
@@ -5900,6 +5911,7 @@ export default function CreatePage() {
     status: 'draft',
   })
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('canvas')
+  const [showStartupPanels, setShowStartupPanels] = useState(false)
   const [acceptedClipReviewIds, setAcceptedClipReviewIds] = useState<string[]>([])
   const [ignoredClipReviewActions, setIgnoredClipReviewActions] = useState<string[]>([])
   const [derivativeProvider, setDerivativeProvider] = useState<(typeof DERIVATIVE_PROVIDERS)[number]>('mock')
@@ -5918,6 +5930,8 @@ export default function CreatePage() {
   const [focusedEditorClipId, setFocusedEditorClipId] = useState<string | null>(null)
   const [focusedRoleBibleId, setFocusedRoleBibleId] = useState<string | null>(null)
   const [requestedReviewId, setRequestedReviewId] = useState<string | null>(null)
+  const workspaceAnchorRef = useRef<HTMLDivElement | null>(null)
+  const workspaceScrollRef = useRef<HTMLDivElement | null>(null)
 
   const dialogueLines = useAudioDeskStore((s) => s.dialogueLines)
   const voiceTakes = useAudioDeskStore((s) => s.voiceTakes)
@@ -6042,6 +6056,8 @@ export default function CreatePage() {
     () => activeOrder?.id ?? activeTeam?.projectId ?? activeJob?.id ?? 'creator-city',
     [activeJob?.id, activeOrder?.id, activeTeam?.projectId]
   )
+  // True only when a real project is bound — synthetic 'creator-city' fallback should not trigger access gates
+  const hasRealProjectContext = !!(activeOrder?.id ?? activeTeam?.projectId ?? activeJob?.id)
   const deliveryProjectTitle = useMemo(
     () => activeJob?.title ?? (idea.trim() || 'Creator City 项目'),
     [activeJob?.title, idea]
@@ -6074,7 +6090,8 @@ export default function CreatePage() {
     [currentProfileId, currentUser?.id, deliveryProjectId, projectRoleAssignments, roleOverride],
   )
   const resolvedProjectRole = roleContext.role
-  const effectiveProjectRole = roleContext.source === 'fallback' ? 'client' : resolvedProjectRole
+  // Only demote to 'client' view when a real project is bound AND role is genuinely unresolved
+  const effectiveProjectRole = (hasRealProjectContext && roleContext.source === 'fallback') ? 'client' : resolvedProjectRole
   const projectAccess = useMemo(
     () => getProjectAccessState(deliveryProjectId, {
       userId: currentUser?.id ?? null,
@@ -6086,19 +6103,21 @@ export default function CreatePage() {
     [currentProfileId, currentUser?.id, deliveryProjectId, invitations, projectRoleAssignments, teams],
   )
   const canAccessCreateWorkspace = useMemo(
-    () => canEnterCreate(deliveryProjectId, {
-      userId: currentUser?.id ?? null,
-      profileId: currentProfileId ?? null,
-      assignments: projectRoleAssignments,
-      teams,
-      invitations,
-    }),
-    [currentProfileId, currentUser?.id, deliveryProjectId, invitations, projectRoleAssignments, teams],
+    () => !hasRealProjectContext
+      || roleContext.permissions.canEditCreateWorkspace
+      || canEnterCreate(deliveryProjectId, {
+          userId: currentUser?.id ?? null,
+          profileId: currentProfileId ?? null,
+          assignments: projectRoleAssignments,
+          teams,
+          invitations,
+        }),
+    [hasRealProjectContext, roleContext.permissions.canEditCreateWorkspace, currentProfileId, currentUser?.id, deliveryProjectId, invitations, projectRoleAssignments, teams],
   )
   const canViewCreateSnapshot = projectAccess.state === 'client-only'
   const isCreateRouteBlocked = !canAccessCreateWorkspace && !canViewCreateSnapshot
   const projectPermissions = useMemo(
-    () => roleContext.source === 'fallback'
+    () => (hasRealProjectContext && roleContext.source === 'fallback' && !roleContext.permissions.canEditCreateWorkspace)
       ? {
           ...roleContext.permissions,
           canEditCreateWorkspace: false,
@@ -6108,12 +6127,22 @@ export default function CreatePage() {
           canViewCommercialStatus: false,
         }
       : roleContext.permissions,
-    [roleContext],
+    [hasRealProjectContext, roleContext],
   )
   const visibleWorkspaceViews = useMemo(
-    () => getVisibleSectionsForRole(effectiveProjectRole, 'create') as WorkspaceView[],
-    [effectiveProjectRole],
+    () => (
+      projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && !isCreateRouteBlocked
+        ? ['canvas', 'previs', 'footage', 'audio', 'editor', 'delivery']
+        : (getVisibleSectionsForRole(effectiveProjectRole, 'create') as WorkspaceView[])
+    ),
+    [canAccessCreateWorkspace, effectiveProjectRole, isCreateRouteBlocked, projectPermissions.canEditCreateWorkspace],
   )
+  const workspaceSurface = useMemo<WorkspaceSurface>(() => {
+    if (workspaceView === 'delivery') return 'delivery'
+    if (workspaceView === 'footage') return 'assets'
+    if (workspaceView === 'previs' || workspaceView === 'audio' || workspaceView === 'editor') return 'timeline'
+    return 'canvas'
+  }, [workspaceView])
   const deliveryPackagesForProject = useMemo(
     () => deliveryPackages
       .filter((pkg) => pkg.projectId === deliveryProjectId)
@@ -6132,6 +6161,15 @@ export default function CreatePage() {
       .filter((version) => version.entityType === 'delivery' && version.entityId === deliveryProjectId)
       .sort((left, right) => right.versionNumber - left.versionNumber)[0] ?? null,
     [deliveryProjectId, versions]
+  )
+  const assetSnapshot = useMemo(
+    () => ({
+      shotCount: shots.length,
+      storyboardFrameCount: storyboardPrevis?.frames.filter((frame) => frame.status !== 'discarded').length ?? 0,
+      versionCount: versions.length,
+      audioCueCount: musicCues.length + soundEffectCues.length + voiceTakes.length,
+    }),
+    [musicCues.length, shots.length, soundEffectCues.length, storyboardPrevis?.frames, versions.length, voiceTakes.length],
   )
   const kickoffSummary = useMemo(
     () => activeWorkflowTemplate ? buildProjectKickoffSummary({
@@ -8402,6 +8440,46 @@ export default function CreatePage() {
     setChecklistItemDone(deliveryProjectId, itemId, nextDone, activeWorkflowTemplate.id)
   }, [activeWorkflowTemplate, deliveryProjectId, setChecklistItemDone])
 
+  const scrollToWorkspace = useCallback(() => {
+    if (typeof window === 'undefined') return
+    window.requestAnimationFrame(() => {
+      workspaceAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
+
+  const handleEnterWorkspace = useCallback((skipStartup = false) => {
+    if (!projectPermissions.canEditCreateWorkspace || !canAccessCreateWorkspace || isCreateRouteBlocked) return
+    setWorkspaceView('canvas')
+    setRequestedPanel(null)
+    if (skipStartup) {
+      setShowStartupPanels(false)
+    }
+    scrollToWorkspace()
+  }, [canAccessCreateWorkspace, isCreateRouteBlocked, projectPermissions.canEditCreateWorkspace, scrollToWorkspace])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const applyHashTarget = () => {
+      if (window.location.hash === '#workspace') {
+        setShowStartupPanels(false)
+        setWorkspaceView('canvas')
+        setRequestedPanel(null)
+        scrollToWorkspace()
+      }
+
+      if (window.location.hash === '#delivery') {
+        setShowStartupPanels(false)
+        setWorkspaceView('delivery')
+        scrollToWorkspace()
+      }
+    }
+
+    applyHashTarget()
+    window.addEventListener('hashchange', applyHashTarget)
+    return () => window.removeEventListener('hashchange', applyHashTarget)
+  }, [scrollToWorkspace])
+
   const handleInsightAction = useCallback((insight: NarrativeInsight) => {
     setFocusedSequenceId(insight.targetSequenceId ?? null)
     const targetShotId = insight.targetShotId
@@ -8723,7 +8801,7 @@ export default function CreatePage() {
 
   useEffect(() => {
     if (!visibleWorkspaceViews.includes(workspaceView)) {
-      setWorkspaceView(visibleWorkspaceViews[0] ?? 'delivery')
+      setWorkspaceView((visibleWorkspaceViews[0] as WorkspaceView | undefined) ?? 'delivery')
     }
   }, [visibleWorkspaceViews, workspaceView])
 
@@ -8731,9 +8809,129 @@ export default function CreatePage() {
 
   return (
     <CanvasProvider>
-      <div className="flex h-screen bg-[#060a14] overflow-hidden">
+      <style jsx global>{`
+        @keyframes createGradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
 
-        {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace ? (
+        @keyframes createIridescentSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        .create-obsidian-bg {
+          background:
+            radial-gradient(circle at 50% 20%, rgba(138, 43, 226, 0.12), transparent 32%),
+            radial-gradient(circle at 80% 80%, rgba(0, 255, 255, 0.06), transparent 36%),
+            #050505;
+        }
+
+        .create-glass-panel {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(30px);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 24px 64px rgba(0, 0, 0, 0.32);
+        }
+
+        .create-glass-panel-soft {
+          background: rgba(255, 255, 255, 0.024);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          backdrop-filter: blur(26px);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 18px 44px rgba(0, 0, 0, 0.24);
+        }
+
+        .create-glass-pill {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(24px);
+        }
+
+        .create-iridescent-button {
+          background: linear-gradient(120deg, #8a2be2, #00ffff, #00ff7f);
+          background-size: 200% 200%;
+          animation: createGradientShift 8s ease infinite;
+          color: #031014;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.28),
+            0 12px 32px rgba(0, 0, 0, 0.26);
+        }
+
+        .create-floating-console {
+          background: rgba(10, 12, 16, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(30px);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 28px 72px rgba(0, 0, 0, 0.4);
+        }
+
+        .create-quiet-grid {
+          background-image:
+            radial-gradient(circle at center, rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
+          background-size: 22px 22px;
+        }
+
+        .create-iridescent-border {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .create-iridescent-border::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          padding: 1px;
+          border-radius: inherit;
+          background: conic-gradient(from 180deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
+          -webkit-mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+          mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+          mask-composite: exclude;
+          animation: createIridescentSpin 10s linear infinite;
+          opacity: 0.82;
+          pointer-events: none;
+        }
+
+        .create-liquid-border {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .create-liquid-border::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          padding: 1px;
+          border-radius: inherit;
+          background: conic-gradient(from 0deg, rgba(138,43,226,0.95), rgba(0,255,255,0.88), rgba(0,255,127,0.86), rgba(138,43,226,0.95));
+          -webkit-mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+          mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+          mask-composite: exclude;
+          animation: createIridescentSpin 5.5s linear infinite;
+          opacity: 0.9;
+          pointer-events: none;
+        }
+      `}</style>
+
+      <div className="create-obsidian-bg flex h-screen overflow-hidden text-white">
+
+        {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && workspaceSurface !== 'canvas' ? (
         <LeftPanel
           idea={idea}
           running={running}
@@ -8769,8 +8967,11 @@ export default function CreatePage() {
         />
         ) : null}
 
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="px-5 pt-4 pb-2 flex items-center justify-between" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+        <div ref={workspaceScrollRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto">
+          <div
+            className="sticky top-0 z-30 mx-4 mt-4 flex items-center justify-between rounded-[28px] px-5 py-3 create-glass-panel"
+            style={{ background: 'rgba(7, 9, 14, 0.72)' }}
+          >
             <div className="flex-1 flex items-center gap-3">
               <RoleViewSwitcher
                 resolvedRole={resolvedProjectRole}
@@ -8781,23 +8982,21 @@ export default function CreatePage() {
               />
               <RoleBadge role={resolvedProjectRole} />
             </div>
+            {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStartupPanels((current) => !current)
+                  if (!showStartupPanels) {
+                    scrollToWorkspace()
+                  }
+                }}
+                className="create-glass-pill rounded-full px-3.5 py-2 text-[11px] font-semibold text-white/75 transition hover:border-white/20 hover:text-white"
+              >
+                {showStartupPanels ? '收起 Setup' : '打开 Setup'}
+              </button>
+            ) : null}
           </div>
-
-          <ProjectTemplateSummaryPanel
-            templates={PROJECT_WORKFLOW_TEMPLATES}
-            activeTemplateId={activeWorkflowTemplate?.id ?? activeTemplateId}
-            projectId={deliveryProjectId}
-            onSelectTemplate={handleApplyTemplate}
-            recommendation={templateRecommendation}
-          />
-
-          {kickoffSummary ? <ProjectKickoffSummaryCard summary={kickoffSummary} /> : null}
-          {startChecklist ? (
-            <ProjectStartChecklistCard
-              checklist={startChecklist}
-              onToggleDone={handleToggleChecklistDone}
-            />
-          ) : null}
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
@@ -8841,36 +9040,49 @@ export default function CreatePage() {
             </div>
           ) : null}
 
+          <div id="workspace" ref={workspaceAnchorRef} />
           {!isCreateRouteBlocked ? (
-          <div className="px-5 pt-2 pb-2 flex items-center justify-between gap-4" style={{ background: 'rgba(6,10,20,0.9)', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="mx-4 mt-3 flex items-center justify-between gap-4 rounded-[26px] px-4 py-3 create-glass-panel-soft">
             <div className="flex gap-2 flex-wrap">
               {([
-                { id: 'canvas', label: '创作画布' },
-                { id: 'previs', label: '分镜预演' },
-                { id: 'footage', label: '视频镜头' },
-                { id: 'audio', label: '声音台' },
-                { id: 'editor', label: '剪辑台' },
-                { id: 'delivery', label: '交付' },
-              ] as const).filter((item) => visibleWorkspaceViews.includes(item.id)).map((item) => (
+                { id: 'canvas', label: 'Canvas', detail: '节点工作流画布' },
+                { id: 'timeline', label: 'Timeline', detail: '镜头与时间线' },
+                { id: 'assets', label: 'Assets', detail: '资源占位层' },
+                { id: 'delivery', label: 'Delivery', detail: '交付准备' },
+              ] as const)
+                .filter((item) => item.id !== 'delivery' || visibleWorkspaceViews.includes('delivery'))
+                .map((item) => (
                 <button
                   key={item.id}
                   onClick={() => {
-                    setWorkspaceView(item.id)
-                    if (item.id === 'previs') setRequestedPanel('previs')
+                    if (item.id === 'canvas') {
+                      setWorkspaceView('canvas')
+                      return
+                    }
+                    if (item.id === 'timeline') {
+                      setWorkspaceView('editor')
+                      return
+                    }
+                    if (item.id === 'assets') {
+                      setWorkspaceView('footage')
+                      return
+                    }
+                    setWorkspaceView('delivery')
                   }}
-                  className="px-3 py-1.5 rounded-xl text-[10px] font-semibold"
+                  className={`rounded-full px-3.5 py-2 text-[10px] font-semibold transition-all ${workspaceSurface === item.id ? 'create-iridescent-button' : 'create-glass-pill text-white/62 hover:text-white'}`}
                   style={{
-                    background: workspaceView === item.id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.04)',
-                    border: workspaceView === item.id ? '1px solid rgba(99,102,241,0.28)' : '1px solid rgba(255,255,255,0.08)',
-                    color: workspaceView === item.id ? '#c7d2fe' : 'rgba(255,255,255,0.56)',
+                    color: workspaceSurface === item.id ? '#031014' : undefined,
                   }}
                 >
-                  {item.label}
+                  <span className="flex items-center gap-2">
+                    <span>{item.label}</span>
+                    <span className="hidden text-[9px] opacity-70 lg:inline">{item.detail}</span>
+                  </span>
                 </button>
               ))}
             </div>
-            <p className="text-[10px] max-w-[640px] text-right" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              {roleContext.source === 'fallback'
+            <p className="text-[10px] max-w-[640px] text-right leading-[1.7]" style={{ color: 'rgba(255,255,255,0.36)' }}>
+              {roleContext.source === 'fallback' && !canAccessCreateWorkspace
                 ? '当前没有检测到这个账号在项目中的 active role assignment，因此工作区已自动降级为安全只读交付视图。'
                 : effectiveProjectRole === 'creator' || effectiveProjectRole === 'director' || effectiveProjectRole === 'editor' || effectiveProjectRole === 'cinematographer'
                   ? '创作者视图保留完整工作区，覆盖分镜、视频、声音、剪辑和交付。'
@@ -8881,7 +9093,21 @@ export default function CreatePage() {
           </div>
           ) : null}
 
-          {!isCreateRouteBlocked && (workspaceView === 'canvas' || workspaceView === 'previs') ? (
+          {!isCreateRouteBlocked && workspaceSurface === 'canvas' ? (
+            <div className="px-4 pb-5 pt-3">
+              <VisualCanvasWorkspace
+                projectTitle={deliveryProjectTitle}
+                templateName={activeWorkflowTemplate?.name ?? null}
+                onOpenTimeline={() => setWorkspaceView('editor')}
+                onOpenAssets={() => setWorkspaceView('footage')}
+                onOpenDelivery={() => setWorkspaceView('delivery')}
+                onShowStartup={() => {
+                  setShowStartupPanels(true)
+                  scrollToWorkspace()
+                }}
+              />
+            </div>
+          ) : !isCreateRouteBlocked && workspaceView === 'previs' ? (
             <ShotTimeline
               shots={shots}
               narrative={narrative}
@@ -9012,59 +9238,7 @@ export default function CreatePage() {
               onApplyCinematicSkill={handleApplyCinematicSkill}
               currentStage={currentStage}
             />
-          ) : !isCreateRouteBlocked && workspaceView === 'audio' ? (
-            <AudioDesk
-              roleBibles={roleBibles}
-              shots={shots}
-              sequences={narrative?.sequences ?? []}
-              clips={[...editorTimeline.clips].sort((a, b) => a.order - b.order)}
-              timeline={editorTimeline}
-              dialogueLines={dialogueLines}
-              voiceTakes={voiceTakes}
-              lipSyncJobs={lipSyncJobs}
-              musicCues={musicCues}
-              soundEffectCues={soundEffectCues}
-              audioTimeline={audioTimeline}
-              cueSheet={cueSheet}
-              musicMotifs={musicMotifs}
-              audioReviews={audioReviews}
-              timelineIssues={timelineIssues}
-              onAddDialogueLine={handleAddDialogueLine}
-              onUpdateDialogueLine={updateDialogueLine}
-              onGenerateVoiceTakes={handleGenerateVoiceTakes}
-              onSelectVoiceTake={updateVoiceTakeStatus}
-              onCreateLipSyncJob={handleCreateLipSyncJob}
-              onGenerateMusicCues={handleGenerateMusicCueCandidates}
-              onSelectMusicCue={updateMusicCueStatus}
-              onGenerateSoundEffects={handleGenerateSoundEffectCandidates}
-              onSelectSoundEffectCue={updateSoundEffectCueStatus}
-              onSelectMusicMotif={handleSelectMusicMotif}
-              onAddAudioTimelineClipFromSource={handleAddAudioTimelineClipFromSource}
-              onUpdateAudioTimelineClip={handleUpdateAudioTimelineClip}
-              onUpdateCuePoint={handleUpdateCuePoint}
-              onUpdateCueSheetStatus={handleUpdateCueSheetState}
-              onSendLipSyncToEditor={handleSendLipSyncToEditor}
-              onOpenEditorDesk={() => setWorkspaceView('editor')}
-              onBackToCanvas={() => setWorkspaceView('canvas')}
-            />
-          ) : !isCreateRouteBlocked && workspaceView === 'delivery' ? (
-            <DeliveryTab
-              projectTitle={deliveryProjectTitle}
-              currentStage={currentStage}
-              deliveryPackage={activeDeliveryPackage}
-              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0 && projectPermissions.canManageDelivery)}
-              canManageDelivery={projectPermissions.canManageDelivery}
-              onCreatePackage={handleCreateDeliveryPackage}
-              onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
-              onPreviewAsset={handlePreviewDeliveryAsset}
-              onViewVersion={handleViewDeliveryVersion}
-              onViewApproval={handleViewDeliveryApproval}
-              onExportSummary={handleExportDeliverySummary}
-              onExportManifest={handleExportDeliveryManifest}
-              onExportProjectData={handleExportDeliveryProjectData}
-              onSubmitPackage={handleSubmitDeliveryPackage}
-            />
-          ) : !isCreateRouteBlocked ? (
+          ) : !isCreateRouteBlocked && workspaceView === 'editor' ? (
             <EditorDesk
               jobs={shotDerivativeJobs}
               timeline={editorTimeline}
@@ -9095,11 +9269,135 @@ export default function CreatePage() {
               onTimelineMusicDirectionChange={handleTimelineMusicDirectionChange}
               onRetryJob={handleRetryShotDerivativeJob}
               onBackToCanvas={() => setWorkspaceView('canvas')}
-              onOpenPrevis={() => {
-                setWorkspaceView('previs')
-                setRequestedPanel('previs')
-              }}
+              onOpenPrevis={() => setWorkspaceView('previs')}
             />
+          ) : !isCreateRouteBlocked && workspaceView === 'audio' ? (
+            <AudioDesk
+              roleBibles={roleBibles}
+              shots={shots}
+              sequences={narrative?.sequences ?? []}
+              clips={orderedEditorClips}
+              timeline={editorTimeline}
+              dialogueLines={dialogueLines}
+              voiceTakes={voiceTakes}
+              lipSyncJobs={lipSyncJobs}
+              musicCues={musicCues}
+              soundEffectCues={soundEffectCues}
+              audioTimeline={audioTimeline}
+              cueSheet={cueSheet}
+              musicMotifs={musicMotifs}
+              audioReviews={audioReviews}
+              timelineIssues={timelineIssues}
+              onAddDialogueLine={handleAddDialogueLine}
+              onUpdateDialogueLine={updateDialogueLine}
+              onGenerateVoiceTakes={handleGenerateVoiceTakes}
+              onSelectVoiceTake={updateVoiceTakeStatus}
+              onCreateLipSyncJob={handleCreateLipSyncJob}
+              onGenerateMusicCues={handleGenerateMusicCueCandidates}
+              onSelectMusicCue={updateMusicCueStatus}
+              onGenerateSoundEffects={handleGenerateSoundEffectCandidates}
+              onSelectSoundEffectCue={updateSoundEffectCueStatus}
+              onSelectMusicMotif={handleSelectMusicMotif}
+              onAddAudioTimelineClipFromSource={handleAddAudioTimelineClipFromSource}
+              onUpdateAudioTimelineClip={handleUpdateAudioTimelineClip}
+              onUpdateCuePoint={handleUpdateCuePoint}
+              onUpdateCueSheetStatus={handleUpdateCueSheetState}
+              onSendLipSyncToEditor={handleSendLipSyncToEditor}
+              onOpenEditorDesk={() => setWorkspaceView('editor')}
+              onBackToCanvas={() => setWorkspaceView('canvas')}
+            />
+          ) : !isCreateRouteBlocked && workspaceSurface === 'assets' ? (
+            <WorkspaceAssetsPanel
+              shotCount={assetSnapshot.shotCount}
+              storyboardFrameCount={assetSnapshot.storyboardFrameCount}
+              versionCount={assetSnapshot.versionCount}
+              audioCueCount={assetSnapshot.audioCueCount}
+            />
+          ) : !isCreateRouteBlocked && workspaceView === 'delivery' ? (
+            <DeliveryTab
+              projectTitle={deliveryProjectTitle}
+              currentStage={currentStage}
+              deliveryPackage={activeDeliveryPackage}
+              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0 && projectPermissions.canManageDelivery)}
+              canManageDelivery={projectPermissions.canManageDelivery}
+              onCreatePackage={handleCreateDeliveryPackage}
+              onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
+              onPreviewAsset={handlePreviewDeliveryAsset}
+              onViewVersion={handleViewDeliveryVersion}
+              onViewApproval={handleViewDeliveryApproval}
+              onExportSummary={handleExportDeliverySummary}
+              onExportManifest={handleExportDeliveryManifest}
+              onExportProjectData={handleExportDeliveryProjectData}
+              onSubmitPackage={handleSubmitDeliveryPackage}
+            />
+          ) : null}
+
+          {showStartupPanels && projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && !isCreateRouteBlocked ? (
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-40 flex w-full justify-end p-4">
+              <motion.div
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 24 }}
+                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className="pointer-events-auto flex h-full w-full max-w-[460px] flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[#090b11]/88 backdrop-blur-3xl"
+                style={{ boxShadow: '0 24px 72px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-white/8 px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/35">Setup Panel</p>
+                    <h2 className="mt-2 text-xl font-light tracking-[-0.03em] text-white">
+                      {activeWorkflowTemplate?.name ?? '项目启动设置'}
+                    </h2>
+                    <p className="mt-2 text-sm leading-[1.7] text-white/58">
+                      模板、Kickoff 和 Checklist 现在收在侧边浮层里，主视图默认就是专业画布。
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEnterWorkspace(true)}
+                      className="create-iridescent-button rounded-full px-3.5 py-2 text-[11px] font-semibold transition hover:scale-[1.01]"
+                    >
+                      进入画布
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowStartupPanels(false)}
+                      className="create-glass-pill rounded-full px-3 py-2 text-[11px] font-semibold text-white/72 transition hover:border-white/20 hover:text-white"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto pb-4">
+                  <ProjectTemplateSummaryPanel
+                    templates={PROJECT_WORKFLOW_TEMPLATES}
+                    activeTemplateId={activeWorkflowTemplate?.id ?? activeTemplateId}
+                    projectId={deliveryProjectId}
+                    onSelectTemplate={handleApplyTemplate}
+                    recommendation={templateRecommendation}
+                  />
+
+                  {kickoffSummary ? (
+                    <ProjectKickoffSummaryCard
+                      summary={kickoffSummary}
+                      canEnterWorkspace={projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && !isCreateRouteBlocked}
+                      onEnterWorkspace={() => handleEnterWorkspace(true)}
+                      onSkipToWorkspace={() => handleEnterWorkspace(true)}
+                    />
+                  ) : null}
+
+                  {startChecklist ? (
+                    <ProjectStartChecklistCard
+                      checklist={startChecklist}
+                      onToggleDone={handleToggleChecklistDone}
+                    />
+                  ) : null}
+                </div>
+              </motion.div>
+            </div>
           ) : null}
         </div>
 

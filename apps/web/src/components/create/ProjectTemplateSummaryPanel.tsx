@@ -20,18 +20,18 @@ export function ProjectTemplateSummaryPanel({
   return (
     <section id="project-template-summary" className="px-5 pt-3">
       <div
-        className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5"
-        style={{ boxShadow: '0 18px 46px rgba(0,0,0,0.18)', backdropFilter: 'blur(18px)' }}
+        className="rounded-[32px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur-3xl"
+        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 28px 70px rgba(0,0,0,0.3)' }}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Project Templates</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">先选一个更像样的项目起步结构</h2>
+            <h2 className="mt-2 text-2xl font-light tracking-[-0.03em] text-white">先选一个更像样的项目起步结构</h2>
             <p className="mt-2 max-w-3xl text-sm text-white/55">
               模板只决定启动建议，不会替你自动创建复杂镜头、任务或审批流。你可以先选一个更贴合的项目结构，再进入创作工作区细化。
             </p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/15 px-4 py-3">
+          <div className="rounded-[24px] border border-white/8 bg-black/20 px-4 py-3 backdrop-blur-2xl">
             <div className="text-[11px] text-white/45">当前项目</div>
             <div className="mt-1 text-sm font-semibold text-white">{projectId}</div>
             <div className="mt-1 text-xs text-white/45">
@@ -49,10 +49,12 @@ export function ProjectTemplateSummaryPanel({
                 key={template.id}
                 type="button"
                 onClick={() => onSelectTemplate(template.id)}
-                className="rounded-[22px] border p-4 text-left transition-all"
+                className="rounded-[24px] border p-4 text-left transition-all hover:-translate-y-0.5"
                 style={{
-                  background: active ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
-                  borderColor: active ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)',
+                  background: active ? 'rgba(138,43,226,0.14)' : 'rgba(255,255,255,0.026)',
+                  borderColor: active ? 'rgba(138,43,226,0.34)' : 'rgba(255,255,255,0.08)',
+                  boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.08), 0 18px 36px rgba(0,0,0,0.24)' : 'none',
+                  backdropFilter: 'blur(24px)',
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -87,11 +89,11 @@ export function ProjectTemplateSummaryPanel({
 
         {activeTemplate ? (
           <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-[24px] border border-white/8 bg-black/15 p-4">
+            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">Template Summary</p>
-                  <h3 className="mt-2 text-lg font-semibold text-white">{activeTemplate.name}</h3>
+                  <h3 className="mt-2 text-lg font-light tracking-[-0.03em] text-white">{activeTemplate.name}</h3>
                 </div>
                 <span className="rounded-full border border-indigo-500/25 bg-indigo-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-indigo-300">
                   起步结构
@@ -108,7 +110,7 @@ export function ProjectTemplateSummaryPanel({
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-[24px] border border-white/8 bg-black/15 p-4">
+              <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">推荐角色</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {activeTemplate.recommendedRoles.map((role) => (
@@ -123,7 +125,7 @@ export function ProjectTemplateSummaryPanel({
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-white/8 bg-black/15 p-4">
+              <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">流程与风险重点</div>
                 <div className="mt-3 space-y-2 text-sm text-white/65">
                   {activeTemplate.defaultMilestones.map((milestone) => <div key={milestone}>• {milestone}</div>)}
