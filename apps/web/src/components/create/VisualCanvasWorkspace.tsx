@@ -154,17 +154,11 @@ export function VisualCanvasWorkspace({
   }, [])
 
   return (
-    <div className="relative h-full min-h-[780px] overflow-hidden rounded-[32px] border border-white/8 bg-[#050505]">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(circle at 50% 20%, rgba(138,43,226,0.12), transparent 32%), radial-gradient(circle at 80% 80%, rgba(0,255,255,0.06), transparent 36%), #050505',
-        }}
-      />
-      <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 0.9px, transparent 0.9px)', backgroundSize: '24px 24px' }} />
+    <div className="canvas-root">
+      <div className="canvas-background-glow" />
+      <div className="canvas-grid" />
 
-      <div className="absolute inset-x-5 top-5 z-20 flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.03] px-5 py-3 backdrop-blur-3xl">
+      <div className="canvas-topbar create-glass-panel">
         <div>
           <div className="text-[10px] uppercase tracking-[0.2em] text-white/34">AI Canvas Workspace</div>
           <div className="mt-1 text-xl font-light tracking-[-0.03em] text-white">{projectTitle}</div>
@@ -174,16 +168,16 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={onShowStartup} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] text-white/72 backdrop-blur-2xl transition hover:border-white/18 hover:text-white">
+          <button type="button" onClick={onShowStartup} className="canvas-secondary-button">
             查看启动区
           </button>
-          <button type="button" onClick={onOpenTimeline} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] text-white/72 backdrop-blur-2xl transition hover:border-white/18 hover:text-white">
+          <button type="button" onClick={onOpenTimeline} className="canvas-secondary-button">
             Timeline
           </button>
-          <button type="button" onClick={onOpenAssets} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] text-white/72 backdrop-blur-2xl transition hover:border-white/18 hover:text-white">
+          <button type="button" onClick={onOpenAssets} className="canvas-secondary-button">
             Assets
           </button>
-          <button type="button" onClick={onOpenDelivery} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] text-white/72 backdrop-blur-2xl transition hover:border-white/18 hover:text-white">
+          <button type="button" onClick={onOpenDelivery} className="canvas-secondary-button">
             Delivery
           </button>
         </div>
@@ -197,7 +191,7 @@ export function VisualCanvasWorkspace({
         onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
       />
 
-      <div className="absolute inset-x-0 bottom-0 top-24 overflow-auto px-24 py-10">
+      <div className="canvas-viewport">
         {positionedNodes.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="rounded-[32px] border border-white/10 bg-white/[0.03] px-8 py-8 text-center backdrop-blur-3xl">
@@ -208,7 +202,7 @@ export function VisualCanvasWorkspace({
             </div>
           </div>
         ) : (
-          <div className="relative min-h-[720px] min-w-[1800px]">
+          <div className="canvas-flow-surface">
             {positionedNodes.map((node, index) => {
               const next = positionedNodes[index + 1]
               if (!next) return null
@@ -250,7 +244,7 @@ export function VisualCanvasWorkspace({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 overflow-x-auto rounded-full border border-white/10 bg-white/[0.03] px-4 py-3 backdrop-blur-3xl"
+        className="canvas-quick-console create-floating-console"
       >
         <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">Quick Open</span>
         {[
@@ -264,7 +258,7 @@ export function VisualCanvasWorkspace({
             key={item.label}
             type="button"
             onClick={item.action}
-            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] text-white/74 transition hover:border-white/18 hover:text-white"
+            className="canvas-secondary-button"
           >
             {item.label}
           </button>

@@ -16,10 +16,7 @@ export function ProjectKickoffSummaryCard({
 }) {
   return (
     <section id="project-kickoff-summary" className="px-5 pt-3">
-      <div
-        className="rounded-[32px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur-3xl"
-        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 28px 70px rgba(0,0,0,0.3)' }}
-      >
+      <div className="create-setup-shell">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Kickoff Summary</p>
@@ -28,7 +25,7 @@ export function ProjectKickoffSummaryCard({
               这是一张项目启动建议单，只帮你把模板、角色、先做什么和风险重点收清楚，不会替你自动生成任务或审批流。
             </p>
           </div>
-          <div className="rounded-[24px] border border-white/8 bg-black/20 px-4 py-3 backdrop-blur-2xl">
+          <div className="create-setup-chip">
             <div className="text-[11px] text-white/45">当前模板</div>
             <div className="mt-1 text-sm font-semibold text-white">{summary.templateName}</div>
             <div className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{summary.templateCategory}</div>
@@ -37,7 +34,7 @@ export function ProjectKickoffSummaryCard({
 
         <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">Project Summary</div>
               <div className="mt-2 text-lg font-light tracking-[-0.03em] text-white">{summary.projectTitle}</div>
               <p className="mt-3 text-sm leading-[1.8] text-white/60">{summary.summary}</p>
@@ -47,7 +44,7 @@ export function ProjectKickoffSummaryCard({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">推荐先做的 3 步</div>
               <div className="mt-3 space-y-3">
                 {summary.recommendedFirstSteps.map((step, index) => (
@@ -63,7 +60,7 @@ export function ProjectKickoffSummaryCard({
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">推荐角色</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {summary.recommendedRoles.map((role) => (
@@ -74,7 +71,7 @@ export function ProjectKickoffSummaryCard({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">推荐交付形式</div>
               <div className="mt-3 space-y-2 text-sm text-white/68">
                 {summary.recommendedOutputs.map((item) => <div key={item}>• {item}</div>)}
@@ -100,15 +97,14 @@ export function ProjectKickoffSummaryCard({
               <button
                 type="button"
                 onClick={onEnterWorkspace}
-                className="rounded-full border border-white/18 px-4 py-3 text-sm font-semibold text-[#031014] transition hover:scale-[1.01]"
-                style={{ background: 'linear-gradient(120deg, #8A2BE2, #00FFFF, #00FF7F)', backgroundSize: '200% 200%', animation: 'createGradientShift 8s ease infinite' }}
+                className="create-iridescent-button rounded-full px-4 py-3 text-sm font-semibold transition hover:scale-[1.01]"
               >
                 进入专业画布
               </button>
               <button
                 type="button"
                 onClick={onSkipToWorkspace}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80 backdrop-blur-2xl transition hover:border-white/20 hover:text-white"
+                className="canvas-secondary-button"
               >
                 跳过启动检查，开始创作
               </button>
@@ -118,7 +114,7 @@ export function ProjectKickoffSummaryCard({
             <Link
               key={action.id}
               href={action.href}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/75 backdrop-blur-2xl transition hover:border-white/20 hover:text-white"
+              className="create-setup-link"
             >
               <div className="font-medium text-white">{action.label}</div>
               <div className="mt-1 text-xs text-white/45">{action.detail}</div>

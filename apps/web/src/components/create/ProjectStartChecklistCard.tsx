@@ -38,17 +38,14 @@ export function ProjectStartChecklistCard({
 
   return (
     <section id="project-start-checklist" className="px-5 pt-3">
-      <div
-        className="rounded-[32px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur-3xl"
-        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 28px 70px rgba(0,0,0,0.3)' }}
-      >
+      <div className="create-setup-shell">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <SectionHeader
             eyebrow="Start Checklist"
             title="项目启动检查单"
             description="系统会自动判断哪些条件已经具备，但不会替你打勾。只有你手动确认后，检查项才会进入 Done。"
           />
-          <div className="rounded-[24px] border border-white/8 bg-black/20 px-4 py-3 backdrop-blur-2xl">
+          <div className="create-setup-chip">
             <div className="text-[11px] text-white/45">准备度摘要</div>
             <div className="mt-2 text-sm text-white/75">
               Ready {checklist.summary.readyCount} / Done {checklist.summary.doneCount}
@@ -64,7 +61,7 @@ export function ProjectStartChecklistCard({
             {checklist.items.map((item) => {
               const meta = statusMeta(item.status)
               return (
-                <div key={item.id} className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+                <div key={item.id} className="create-setup-card">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -83,7 +80,7 @@ export function ProjectStartChecklistCard({
                         onToggleDone(item.id, nextDone)
                         feedback.success(nextDone ? '启动检查项已标记完成' : '启动检查项已恢复为未完成')
                       }}
-                      className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/72 backdrop-blur-2xl transition hover:border-white/20 hover:text-white"
+                      className="canvas-secondary-button"
                     >
                       {item.status === 'done' ? '撤销完成' : '标记完成'}
                     </button>
@@ -92,7 +89,7 @@ export function ProjectStartChecklistCard({
                   <div className="mt-4">
                     <Link
                       href={item.actionHref}
-                      className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75 backdrop-blur-2xl transition hover:border-white/20 hover:text-white"
+                      className="create-setup-link"
                     >
                       {item.actionLabel}
                     </Link>
@@ -103,13 +100,13 @@ export function ProjectStartChecklistCard({
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">Next Required Step</div>
               <div className="mt-2 text-lg font-semibold text-white">{checklist.summary.nextRequiredStep}</div>
               <div className="mt-3 text-sm leading-[1.8] text-white/60">{checklist.summary.aiSummary}</div>
             </div>
 
-            <div className="rounded-[28px] border border-white/8 bg-black/20 p-4 backdrop-blur-2xl">
+            <div className="create-setup-card">
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">Checklist Notes</div>
               <div className="mt-3 space-y-2 text-sm text-white/65">
                 <div>• `todo` 代表当前条件还不够。</div>

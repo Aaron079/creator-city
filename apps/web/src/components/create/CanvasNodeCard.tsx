@@ -102,6 +102,15 @@ export function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const meta = NODE_ACCENTS[node.kind]
   const status = STATUS_META[node.status]
+  const nodeClassName = [
+    'canvas-node-card',
+    `node-${node.kind}`,
+    active ? 'is-active' : '',
+    node.status === 'generating' ? 'is-generating' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const statusClassName = `canvas-node-status status-${node.status}`
 
   return (
     <motion.button
@@ -111,39 +120,15 @@ export function CanvasNodeCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       whileHover={{ y: -2 }}
       onClick={onSelect}
-      className="group relative w-[290px] overflow-hidden rounded-[30px] text-left"
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: active ? '1px solid rgba(255,255,255,0.16)' : '1px solid rgba(255,255,255,0.08)',
-        boxShadow: active
-          ? `0 22px 48px rgba(0,0,0,0.34), 0 0 0 1px ${meta.glow}`
-          : '0 14px 34px rgba(0,0,0,0.24)',
-        backdropFilter: 'blur(30px)',
-      }}
+      className={`${nodeClassName} group text-left`}
     >
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, ${meta.glow}, transparent)` }}
-      />
-      {node.status === 'generating' ? (
-        <div
-          className="pointer-events-none absolute inset-0 rounded-[30px]"
-          style={{
-            padding: 1,
-            background: 'conic-gradient(from 0deg, #8A2BE2, #00FFFF, #00FF7F, #8A2BE2)',
-            WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-            WebkitMaskComposite: 'xor',
-            animation: 'createIridescentSpin 4.8s linear infinite',
-            opacity: 0.82,
-          }}
-        />
-      ) : null}
+      <div className="canvas-node-topline" />
 
       <div className="relative z-[1] flex h-full flex-col gap-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-[13px] text-white/78">
+              <span className="canvas-node-icon">
                 {meta.icon}
               </span>
               <div>
@@ -153,14 +138,7 @@ export function CanvasNodeCard({
             </div>
             <p className="mt-3 text-[12px] leading-[1.7] text-white/52">{node.subtitle}</p>
           </div>
-          <span
-            className="rounded-full border px-2.5 py-1 text-[10px] font-medium"
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              borderColor: 'rgba(255,255,255,0.1)',
-              color: status.tone,
-            }}
-          >
+          <span className={statusClassName} style={{ color: status.tone }}>
             {status.label}
           </span>
         </div>
@@ -177,11 +155,11 @@ export function CanvasNodeCard({
           placeholder={meta.placeholder}
         />
 
-        <div className="rounded-[24px] border border-white/8 bg-black/25 px-3.5 py-3">
+        <div className={node.status === 'done' ? 'canvas-node-output' : 'canvas-node-dialog'}>
           {node.status === 'done' ? (
             <>
               <div className="text-[10px] uppercase tracking-[0.16em] text-white/34">Output Preview</div>
-              <div className="mt-2 rounded-[20px] border border-white/8 bg-white/[0.03] px-3 py-4 text-sm text-white/74">
+              <div className="canvas-node-output-card">
                 {node.outputLabel ?? '生成结果已就绪，可以继续进入下一阶段。'}
               </div>
             </>
@@ -204,12 +182,7 @@ export function CanvasNodeCard({
               event.stopPropagation()
               onGenerate()
             }}
-            className="rounded-full px-3.5 py-2 text-[11px] font-medium text-[#031014] transition hover:scale-[1.01]"
-            style={{
-              background: 'linear-gradient(120deg, #8A2BE2, #00FFFF, #00FF7F)',
-              backgroundSize: '200% 200%',
-              animation: 'createGradientShift 8s ease infinite',
-            }}
+            className="create-iridescent-button rounded-full px-3.5 py-2 text-[11px] font-medium transition hover:scale-[1.01]"
           >
             {node.status === 'generating' ? '生成中…' : node.status === 'done' ? '重新生成' : '生成'}
           </button>
@@ -219,7 +192,7 @@ export function CanvasNodeCard({
               event.stopPropagation()
               onUpload()
             }}
-            className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[11px] font-medium text-white/76 backdrop-blur-2xl transition hover:border-white/18 hover:text-white"
+            className="canvas-secondary-button"
           >
             上传
           </button>

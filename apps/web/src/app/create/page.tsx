@@ -76,6 +76,7 @@ import { buildProjectStartChecklist } from '@/lib/projects/start-checklist'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useProjectTemplateStore } from '@/store/project-template.store'
+import canvasStyles from '@/components/create/canvas.module.css'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
   FOCAL_LENGTHS, FOCAL_LENS_CHARS, APERTURES, SPEEDS,
@@ -8809,127 +8810,7 @@ export default function CreatePage() {
 
   return (
     <CanvasProvider>
-      <style jsx global>{`
-        @keyframes createGradientShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-
-        @keyframes createIridescentSpin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        .create-obsidian-bg {
-          background:
-            radial-gradient(circle at 50% 20%, rgba(138, 43, 226, 0.12), transparent 32%),
-            radial-gradient(circle at 80% 80%, rgba(0, 255, 255, 0.06), transparent 36%),
-            #050505;
-        }
-
-        .create-glass-panel {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(30px);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.08),
-            0 24px 64px rgba(0, 0, 0, 0.32);
-        }
-
-        .create-glass-panel-soft {
-          background: rgba(255, 255, 255, 0.024);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          backdrop-filter: blur(26px);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.06),
-            0 18px 44px rgba(0, 0, 0, 0.24);
-        }
-
-        .create-glass-pill {
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(24px);
-        }
-
-        .create-iridescent-button {
-          background: linear-gradient(120deg, #8a2be2, #00ffff, #00ff7f);
-          background-size: 200% 200%;
-          animation: createGradientShift 8s ease infinite;
-          color: #031014;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.28),
-            0 12px 32px rgba(0, 0, 0, 0.26);
-        }
-
-        .create-floating-console {
-          background: rgba(10, 12, 16, 0.72);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(30px);
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.08),
-            0 28px 72px rgba(0, 0, 0, 0.4);
-        }
-
-        .create-quiet-grid {
-          background-image:
-            radial-gradient(circle at center, rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
-          background-size: 22px 22px;
-        }
-
-        .create-iridescent-border {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .create-iridescent-border::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          padding: 1px;
-          border-radius: inherit;
-          background: conic-gradient(from 180deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
-          -webkit-mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          -webkit-mask-composite: xor;
-          mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          mask-composite: exclude;
-          animation: createIridescentSpin 10s linear infinite;
-          opacity: 0.82;
-          pointer-events: none;
-        }
-
-        .create-liquid-border {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .create-liquid-border::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          padding: 1px;
-          border-radius: inherit;
-          background: conic-gradient(from 0deg, rgba(138,43,226,0.95), rgba(0,255,255,0.88), rgba(0,255,127,0.86), rgba(138,43,226,0.95));
-          -webkit-mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          -webkit-mask-composite: xor;
-          mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          mask-composite: exclude;
-          animation: createIridescentSpin 5.5s linear infinite;
-          opacity: 0.9;
-          pointer-events: none;
-        }
-      `}</style>
-
-      <div className="create-obsidian-bg flex h-screen overflow-hidden text-white">
+      <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
 
         {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && workspaceSurface !== 'canvas' ? (
         <LeftPanel
@@ -8970,7 +8851,6 @@ export default function CreatePage() {
         <div ref={workspaceScrollRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto">
           <div
             className="sticky top-0 z-30 mx-4 mt-4 flex items-center justify-between rounded-[28px] px-5 py-3 create-glass-panel"
-            style={{ background: 'rgba(7, 9, 14, 0.72)' }}
           >
             <div className="flex-1 flex items-center gap-3">
               <RoleViewSwitcher
@@ -9339,8 +9219,7 @@ export default function CreatePage() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 24 }}
                 transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className="pointer-events-auto flex h-full w-full max-w-[460px] flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[#090b11]/88 backdrop-blur-3xl"
-                style={{ boxShadow: '0 24px 72px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)' }}
+                className="pointer-events-auto create-setup-shell flex h-full w-full max-w-[460px] flex-col overflow-hidden bg-[#090b11]/88"
               >
                 <div className="flex items-start justify-between gap-3 border-b border-white/8 px-5 py-4">
                   <div className="min-w-0">

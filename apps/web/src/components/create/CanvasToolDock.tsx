@@ -38,7 +38,7 @@ export function CanvasToolDock({
 }: CanvasToolDockProps) {
   return (
     <div className="absolute left-5 top-1/2 z-20 -translate-y-1/2">
-      <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-2 backdrop-blur-3xl">
+      <div className="canvas-toolbar-shell">
         <div className="flex flex-col gap-2">
           {TOOLS.map((tool) => {
             const active = activeTool === tool.id
@@ -53,12 +53,7 @@ export function CanvasToolDock({
                   }
                   onToolSelect(tool.id)
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-medium transition"
-                style={{
-                  background: active || (tool.id === 'add' && isAddMenuOpen) ? 'rgba(138,43,226,0.16)' : 'rgba(255,255,255,0.04)',
-                  border: active || (tool.id === 'add' && isAddMenuOpen) ? '1px solid rgba(138,43,226,0.34)' : '1px solid rgba(255,255,255,0.08)',
-                  color: active || (tool.id === 'add' && isAddMenuOpen) ? '#f1e9ff' : 'rgba(255,255,255,0.66)',
-                }}
+                className={`canvas-toolbar-button ${active || (tool.id === 'add' && isAddMenuOpen) ? 'is-active' : ''}`}
                 title={tool.label}
               >
                 {tool.icon}
@@ -75,7 +70,7 @@ export function CanvasToolDock({
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: -8, scale: 0.98 }}
             transition={{ duration: 0.18 }}
-            className="absolute left-[72px] top-0 w-64 rounded-[28px] border border-white/10 bg-[#0c0f14]/88 p-3 backdrop-blur-3xl"
+            className="canvas-add-menu"
           >
             <div className="mb-2 px-2">
               <div className="text-[10px] uppercase tracking-[0.2em] text-white/34">Add Node</div>
@@ -90,7 +85,7 @@ export function CanvasToolDock({
                     onAddNode(option.id)
                     onToggleAddMenu()
                   }}
-                  className="w-full rounded-[22px] border border-white/8 bg-white/[0.04] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-white/16"
+                  className="canvas-add-option"
                 >
                   <div className="text-sm text-white">{option.label}</div>
                   <div className="mt-1 text-[11px] text-white/46">{option.hint}</div>
