@@ -1,0 +1,528 @@
+.scope {}
+
+@keyframes createGradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes createIridescentSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes createFlowPulse {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -38; }
+}
+
+:global(.create-obsidian-bg).scope {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(138, 43, 226, 0.12), transparent 32%),
+    radial-gradient(circle at 80% 80%, rgba(0, 255, 255, 0.06), transparent 36%),
+    #050505;
+}
+
+.scope :global(.create-glass-panel) {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(30px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 64px rgba(0, 0, 0, 0.32);
+}
+
+.scope :global(.create-glass-panel-soft) {
+  background: rgba(255, 255, 255, 0.024);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(26px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.24);
+}
+
+.scope :global(.create-glass-pill) {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.create-iridescent-button) {
+  background: linear-gradient(120deg, #8a2be2, #00ffff, #00ff7f);
+  background-size: 200% 200%;
+  animation: createGradientShift 8s ease infinite;
+  color: #031014;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 12px 32px rgba(0, 0, 0, 0.26);
+}
+
+.scope :global(.create-floating-console) {
+  background: rgba(10, 12, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(30px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 28px 72px rgba(0, 0, 0, 0.4);
+}
+
+.scope :global(.create-quiet-grid) {
+  background-image:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
+  background-size: 22px 22px;
+}
+
+.scope :global(.create-iridescent-border) {
+  position: relative;
+  overflow: hidden;
+}
+
+.scope :global(.create-iridescent-border)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(from 180deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: createIridescentSpin 10s linear infinite;
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.scope :global(.create-liquid-border) {
+  position: relative;
+  overflow: hidden;
+}
+
+.scope :global(.create-liquid-border)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(from 180deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: createIridescentSpin 5.5s linear infinite;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.scope :global(.canvas-root) {
+  position: relative;
+  height: 100%;
+  min-height: 780px;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #050505;
+}
+
+.scope :global(.canvas-background-glow) {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(138, 43, 226, 0.12), transparent 32%),
+    radial-gradient(circle at 78% 82%, rgba(0, 255, 255, 0.06), transparent 36%);
+}
+
+.scope :global(.canvas-grid) {
+  position: absolute;
+  inset: 0;
+  opacity: 0.72;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.9px, transparent 0.9px);
+  background-size: 24px 24px;
+}
+
+.scope :global(.canvas-topbar) {
+  position: absolute;
+  inset-inline: 20px;
+  top: 20px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 28px;
+  padding: 12px 20px;
+}
+
+.scope :global(.canvas-toolbar-shell) {
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px;
+  backdrop-filter: blur(30px);
+}
+
+.scope :global(.canvas-toolbar-button) {
+  display: flex;
+  height: 44px;
+  width: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.66);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.scope :global(.canvas-toolbar-button:hover) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.scope :global(.canvas-toolbar-button.is-active) {
+  border-color: rgba(138, 43, 226, 0.34);
+  background: rgba(138, 43, 226, 0.16);
+  color: #f1e9ff;
+}
+
+.scope :global(.canvas-add-menu) {
+  position: absolute;
+  left: 72px;
+  top: 0;
+  width: 256px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 15, 20, 0.88);
+  padding: 12px;
+  backdrop-filter: blur(30px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.scope :global(.canvas-add-option) {
+  width: 100%;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 12px;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.scope :global(.canvas-add-option:hover) {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.scope :global(.canvas-viewport) {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  top: 96px;
+  overflow: auto;
+  padding: 40px 96px;
+}
+
+.scope :global(.canvas-flow-surface) {
+  position: relative;
+  min-height: 720px;
+  min-width: 1800px;
+}
+
+.scope :global(.canvas-node-card) {
+  --canvas-glow: rgba(255, 255, 255, 0.16);
+  position: relative;
+  width: 290px;
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(30px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.scope :global(.canvas-node-card:hover) {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.scope :global(.canvas-node-card.is-active) {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.34),
+    0 0 0 1px var(--canvas-glow);
+}
+
+.scope :global(.canvas-node-card.is-generating)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: createIridescentSpin 4.8s linear infinite;
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.28); }
+.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 255, 255, 0.28); }
+.scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(138, 43, 226, 0.28); }
+.scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.24); }
+.scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.24); }
+.scope :global(.canvas-node-card.node-world) { --canvas-glow: rgba(0, 255, 255, 0.2); }
+.scope :global(.canvas-node-card.node-upload) { --canvas-glow: rgba(255, 255, 255, 0.18); }
+
+.scope :global(.canvas-node-topline) {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--canvas-glow), transparent);
+}
+
+.scope :global(.canvas-node-icon) {
+  display: flex;
+  height: 32px;
+  width: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.scope :global(.canvas-node-status) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.scope :global(.canvas-node-status.status-idle) { color: rgba(255, 255, 255, 0.38); }
+.scope :global(.canvas-node-status.status-ready) { color: #9ad7ff; }
+.scope :global(.canvas-node-status.status-generating) { color: #d6f8ff; }
+.scope :global(.canvas-node-status.status-done) { color: #baffd9; }
+
+.scope :global(.canvas-prompt-box) { display: grid; gap: 12px; }
+
+.scope :global(.canvas-prompt-input) {
+  width: 100%;
+  resize: none;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.88);
+  outline: none;
+}
+
+.scope :global(.canvas-prompt-input::placeholder) {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.scope :global(.canvas-pill-row) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope :global(.canvas-pill-button) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(18px);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.scope :global(.canvas-pill-button.is-model-active) {
+  border-color: rgba(138, 43, 226, 0.35);
+  background: rgba(138, 43, 226, 0.16);
+  color: #f5ecff;
+}
+
+.scope :global(.canvas-pill-button.is-ratio-active) {
+  border-color: rgba(0, 255, 255, 0.28);
+  background: rgba(0, 255, 255, 0.12);
+  color: #d9ffff;
+}
+
+.scope :global(.canvas-node-dialog),
+.scope :global(.canvas-node-output) {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 12px 14px;
+}
+
+.scope :global(.canvas-node-output-card) {
+  margin-top: 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.scope :global(.canvas-secondary-button) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(24px);
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.scope :global(.canvas-secondary-button:hover) {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.scope :global(.canvas-quick-console) {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  border-radius: 999px;
+  padding: 12px 16px;
+}
+
+.scope :global(.canvas-flow) {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: visible;
+}
+
+.scope :global(.canvas-flow-path) {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 7 12;
+}
+
+.scope :global(.canvas-flow-path.is-active) {
+  stroke: rgba(140, 255, 246, 0.88);
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.2));
+  animation: createFlowPulse 2.6s linear infinite;
+}
+
+.scope :global(.canvas-assets-shell) {
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 20px;
+  backdrop-filter: blur(30px);
+}
+
+.scope :global(.canvas-assets-card) {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.create-setup-shell) {
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 20px;
+  backdrop-filter: blur(30px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 28px 70px rgba(0, 0, 0, 0.3);
+}
+
+.scope :global(.create-setup-card) {
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.create-setup-chip) {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px 16px;
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.create-setup-link) {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 12px 16px;
+  color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(24px);
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.scope :global(.create-setup-link:hover) {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: white;
+  transform: translateY(-1px);
+}
