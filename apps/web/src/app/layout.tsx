@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { PageTransition } from "@/components/layout/PageTransition";
+import { FeedbackProvider } from "@/lib/feedback/useFeedback";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -20,7 +21,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} bg-city-bg text-white`}>
-        <PageTransition>{children}</PageTransition>
+        <FeedbackProvider>
+          <PageTransition>{children}</PageTransition>
+        </FeedbackProvider>
       </body>
     </html>
   );
