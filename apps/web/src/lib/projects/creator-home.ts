@@ -8,6 +8,12 @@ import type { NotificationItem } from '@/store/notifications.store'
 import type { ProjectRole } from '@/lib/roles/projectRoles'
 
 export interface CreatorProjectHomeData {
+  workSummary: {
+    assignedCount: number
+    blockingCount: number
+    reviewCount: number
+    deliveryReminderCount: number
+  }
   taskSummary: {
     assignedCount: number
     blockingCount: number
@@ -25,8 +31,13 @@ export interface CreatorProjectHomeData {
     reminderCount: number
     highestSeverity: 'info' | 'warning' | 'strong'
   }
+  currentTasks: WorkQueueItem[]
+  resolutionQueue: ReviewResolutionItem[]
+  reviewItems: WorkQueueItem[]
+  deliveryReminders: WorkQueueItem[]
   personalQueue: WorkQueueItem[]
   recentActivity: ActivityLogItem[]
+  quickActions: ProjectHomeAction[]
   nextAction: ProjectHomeAction
   aiSummary: {
     topItems: string[]
@@ -52,9 +63,9 @@ export function buildCreatorProjectHomeData(input: {
   resolutions: ReviewResolutionItem[]
 }): CreatorProjectHomeData {
   const personalQueue = input.workQueue.slice(0, 8)
-  const taskItems = input.workQueue.filter((item) => item.category === 'task' || item.category === 'planning')
-  const reviewItems = input.workQueue.filter((item) => item.category === 'approval' || item.category === 'review')
-  const deliveryItems = input.workQueue.filter((item) => item.category === 'delivery' || item.category === 'licensing')
+  const taskItems = input.workQueue.filter((item) => item.category === 'task' || item.category === 'planning').slice(0, 6)
+  const reviewItems = input.workQueue.filter((item) => item.category === 'approval' || item.category === 'review').slice(0, 6)
+  const deliveryItems = input.workQueue.filter((item) => item.category === 'delivery' || item.category === 'licensing').slice(0, 6)
   const visibleResolutions = filterResolutionItemsForRole({
     items: input.resolutions.filter((item) => item.projectId === input.projectId),
     role: input.role,
@@ -90,7 +101,43 @@ export function buildCreatorProjectHomeData(input: {
     ?? input.notifications.find((item) => item.projectId === input.projectId && (item.category === 'review' || item.category === 'approval'))?.message
     ?? '当前没有新的 review 反馈。'
 
+  const quickActions: ProjectHomeAction[] = [
+    nextAction,
+    {
+      id: 'creator-review-feedback',
+      label: '去 Review 反馈',
+      href: getActionTarget({ actionType: 'project-review', projectId: input.projectId }).actionHref,
+      detail: latestFeedback,
+    },
+    {
+      id: 'creator-resolution-loop',
+      label: '去 Resolution Loop',
+      href: `${getActionTarget({ actionType: 'project-review', projectId: input.projectId }).actionHref}#resolution-loop`,
+      detail: `${openResolutions.length + inProgressResolutions.length} 个修改项等待推进`,
+    },
+    {
+      id: 'creator-delivery',
+      label: '去 Delivery 相关项',
+      href: getActionTarget({ actionType: 'project-delivery', projectId: input.projectId }).actionHref,
+      detail: `${deliveryItems.length} 条交付相关提醒`,
+    },
+    {
+      id: 'creator-recent-version',
+      label: '去最近版本',
+      href: getActionTarget({ actionType: 'project-review', projectId: input.projectId }).actionHref,
+      detail: '查看最近版本与最新变更',
+    },
+  ].filter((action, index, list) => (
+    list.findIndex((candidate) => candidate.label === action.label && candidate.href === action.href) === index
+  ))
+
   return {
+    workSummary: {
+      assignedCount: taskItems.length,
+      blockingCount: taskItems.filter((item) => item.isBlocking).length,
+      reviewCount: reviewItems.length,
+      deliveryReminderCount: deliveryItems.length,
+    },
     taskSummary: {
       assignedCount: taskItems.length,
       blockingCount: taskItems.filter((item) => item.isBlocking).length,
@@ -108,8 +155,13 @@ export function buildCreatorProjectHomeData(input: {
       reminderCount: deliveryItems.length,
       highestSeverity: highestDeliverySeverity,
     },
+    currentTasks: taskItems,
+    resolutionQueue: visibleResolutions.slice(0, 6),
+    reviewItems,
+    deliveryReminders: deliveryItems,
     personalQueue,
     recentActivity: input.activity.slice(0, 5),
+    quickActions,
     nextAction,
     aiSummary: {
       topItems: [

@@ -3,7 +3,7 @@ import type { DashboardProjectOverview, ProducerDashboardData } from '@/lib/dash
 import type { ProducerPlanningData } from '@/lib/dashboard/planning'
 import type { ProjectHomeAction } from '@/lib/projects/home'
 import { getActionTarget } from '@/lib/routing/actions'
-import type { ReviewResolutionItem } from '@/lib/review/resolution-store'
+import { buildResolutionSummary, isResolutionOverdue, type ReviewResolutionItem } from '@/lib/review/resolution-store'
 import type { NotificationItem } from '@/store/notifications.store'
 import type { TeamInvitation, TeamMemberSummary } from '@/store/team.store'
 
@@ -44,9 +44,18 @@ export interface ProducerProjectHomeData {
     unknownLicenseCount: number
     strongLicensingRiskCount: number
   }
+  resolutionSummary: {
+    openCount: number
+    inProgressCount: number
+    resolvedCount: number
+    strongCount: number
+    resubmittedCount: number
+    overdueCount: number
+  }
   notificationsSummary: {
     unreadCount: number
     strongCount: number
+    actionableCount: number
   }
   recentActivity: ActivityLogItem[]
   quickActions: ProjectHomeAction[]
@@ -78,11 +87,13 @@ export function buildProducerProjectHomeData(input: {
   const blockedCount = input.planning.blocked.filter((item) => item.projectId === input.projectId).length
   const conflicts = input.planning.conflicts.filter((item) => item.relatedProjectId === input.projectId)
   const upcoming = input.planning.upcoming.filter((item) => item.milestoneId.startsWith(`${input.projectId}:`))
-  const openResolutionCount = input.resolutions.filter((item) => item.status === 'open' || item.status === 'in-progress').length
+  const resolutionSummary = buildResolutionSummary(input.resolutions)
+  const openResolutionCount = resolutionSummary.openCount + resolutionSummary.inProgressCount
+  const overdueResolutionCount = input.resolutions.filter((item) => isResolutionOverdue(item)).length
   const unreadNotifications = input.notifications.filter((item) => !item.isRead && !item.isDismissed)
   const projectActions = input.dashboard.actionQueue
     .filter((action) => action.projectId === input.projectId)
-    .slice(0, 5)
+    .slice(0, 6)
     .map((action) => ({
       id: action.id,
       label: action.ctaLabel,
@@ -121,14 +132,41 @@ export function buildProducerProjectHomeData(input: {
       href: `${getActionTarget({ actionType: 'project-review', projectId: input.projectId }).actionHref}#resolution-loop`,
       detail: '查看修改闭环',
     },
+    {
+      id: 'producer-notifications',
+      label: '去通知中心',
+      href: getActionTarget({ actionType: 'dashboard-notifications', projectId: input.projectId }).actionHref,
+      detail: '查看这个项目的提醒与风险',
+    },
   ]
+
+  const quickActions = [...projectActions, ...fallbackActions]
+    .filter((action, index, list) => (
+      list.findIndex((candidate) => candidate.label === action.label && candidate.href === action.href) === index
+    ))
+    .slice(0, 6)
 
   const topItems = [
     input.overview.blockerCount > 0 ? `当前有 ${input.overview.blockerCount} 条 blocker，需要先处理。` : null,
     input.overview.pendingApprovalCount > 0 ? `当前仍有 ${input.overview.pendingApprovalCount} 个待确认项。` : null,
     input.delivery.strongRiskCount > 0 ? `交付包仍有 ${input.delivery.strongRiskCount} 个高风险项。` : null,
     openResolutionCount > 0 ? `还有 ${openResolutionCount} 个修改闭环项未关掉。` : null,
+    overdueResolutionCount > 0 ? `其中 ${overdueResolutionCount} 个修改项已经超过 72 小时未推进。` : null,
+    unreadNotifications.filter((item) => item.severity === 'strong').length > 0
+      ? `提醒中心里还有 ${unreadNotifications.filter((item) => item.severity === 'strong').length} 条 strong 级提醒。`
+      : null,
   ].filter((item): item is string => Boolean(item))
+  const mostDangerousArea = input.delivery.strongRiskCount > 0
+    ? '交付风险'
+    : input.overview.blockerCount > 0
+      ? 'Blocker 批注'
+      : overdueResolutionCount > 0
+        ? '修改闭环滞后'
+        : unreadNotifications.some((item) => item.severity === 'strong')
+          ? '提醒中心强风险'
+          : input.overview.pendingApprovalCount > 0
+            ? '审批等待'
+            : '暂无明显危险环节'
 
   return {
     statusSummary: {
@@ -162,22 +200,21 @@ export function buildProducerProjectHomeData(input: {
       unknownLicenseCount: input.overview.unknownLicenseCount,
       strongLicensingRiskCount: input.overview.strongLicensingRiskCount,
     },
+    resolutionSummary: {
+      ...resolutionSummary,
+      overdueCount: overdueResolutionCount,
+    },
     notificationsSummary: {
       unreadCount: unreadNotifications.length,
       strongCount: unreadNotifications.filter((item) => item.severity === 'strong').length,
+      actionableCount: unreadNotifications.filter((item) => item.actionHref && item.actionLabel).length,
     },
     recentActivity: input.activity.slice(0, 5),
-    quickActions: projectActions.length > 0 ? projectActions : fallbackActions,
+    quickActions,
     aiSummary: {
       topItems: topItems.length > 0 ? topItems.slice(0, 3) : ['当前项目没有明显阻塞。'],
-      mostDangerousArea: input.delivery.strongRiskCount > 0
-        ? '交付风险'
-        : input.overview.blockerCount > 0
-          ? 'Blocker 批注'
-          : input.overview.pendingApprovalCount > 0
-            ? '审批等待'
-            : '暂无明显危险环节',
-      recommendedAction: projectActions[0]?.label ?? fallbackActions[0]?.label ?? '查看项目概览',
+      mostDangerousArea,
+      recommendedAction: quickActions[0]?.label ?? '查看项目概览',
     },
   }
 }
