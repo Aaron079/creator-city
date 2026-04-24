@@ -35,6 +35,8 @@ import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { canEnterDashboard, getProjectAccessState } from '@/lib/roles/access'
 import { getActionTarget, getMeHref } from '@/lib/routing/actions'
 import { AccessFallback } from '@/components/ui/AccessFallback'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { useFeedback } from '@/lib/feedback/useFeedback'
 
 export default function DashboardPage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
@@ -90,6 +92,7 @@ export default function DashboardPage() {
   const getNotificationSummary = useNotificationsStore((s) => s.getSummary)
   const upsertNotificationRule = useNotificationsStore((s) => s.upsertRule)
   const router = useRouter()
+  const feedback = useFeedback()
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
@@ -289,7 +292,8 @@ export default function DashboardPage() {
         matchedCaseIds: candidate.matchedCaseIds,
       },
     )
-  }, [createTeam, inviteMember, matching.projects, user?.displayName, user?.id])
+    feedback.success(`已向 ${candidate.displayName} 发出 ${role} 邀请`)
+  }, [createTeam, feedback, inviteMember, matching.projects, user?.displayName, user?.id])
 
   const licensingSummary = useMemo(() => getSummary(), [getSummary])
   const licensingIssues = useMemo(() => getIssues(), [getIssues])
@@ -374,7 +378,13 @@ export default function DashboardPage() {
           actionLabel: '查看当前身份',
         })
 
-  if (!user) return null
+  if (!user) {
+    return (
+      <DashboardShell>
+        <LoadingState title="正在加载 Dashboard" message="正在验证当前账号与项目权限。" count={3} />
+      </DashboardShell>
+    )
+  }
 
   return (
     <DashboardShell>
