@@ -58,6 +58,14 @@ function uid() {
   return `order-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+function mergeOrders(seedOrders: Order[], persistedOrders?: Order[]) {
+  const merged = new Map(seedOrders.map((order) => [order.id, order]))
+  for (const order of persistedOrders ?? []) {
+    merged.set(order.id, order)
+  }
+  return Array.from(merged.values())
+}
+
 export const useOrderStore = create<OrderState>()(
   persist(
     (set, get) => ({
@@ -127,7 +135,17 @@ export const useOrderStore = create<OrderState>()(
 
       getOrdersForChat: (chatId) => get().orders.filter((o) => o.chatId === chatId),
     }),
-    { name: 'cc:orders-v3' },
+    {
+      name: 'cc:orders-v3',
+      merge: (persistedState, currentState) => {
+        const typed = persistedState as Partial<OrderState> | undefined
+        return {
+          ...currentState,
+          ...typed,
+          orders: mergeOrders(SEED_ORDERS, typed?.orders),
+        }
+      },
+    },
   ),
 )
 

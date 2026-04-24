@@ -66,6 +66,14 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function mergeJobs(seedJobs: Job[], persistedJobs?: Job[]) {
+  const merged = new Map(seedJobs.map((job) => [job.id, job]))
+  for (const job of persistedJobs ?? []) {
+    merged.set(job.id, job)
+  }
+  return Array.from(merged.values())
+}
+
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
 const SEED_JOBS: Job[] = [
@@ -321,7 +329,17 @@ export const useJobsStore = create<JobsState>()(
         }))
       },
     }),
-    { name: 'creator-city-jobs' },
+    {
+      name: 'creator-city-jobs',
+      merge: (persistedState, currentState) => {
+        const typed = persistedState as Partial<JobsState> | undefined
+        return {
+          ...currentState,
+          ...typed,
+          jobs: mergeJobs(SEED_JOBS, typed?.jobs),
+        }
+      },
+    },
   ),
 )
 

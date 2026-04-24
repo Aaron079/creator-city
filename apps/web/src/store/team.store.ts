@@ -211,16 +211,64 @@ function syncProjectRole(projectId: string, profileId: string, role: string, sta
   useProjectRoleStore.getState().assignProjectRole(projectId, profileId, role, status)
 }
 
+const CURRENT_USER_ID = 'user-current'
+
+function normalizeLegacyUserId(userId: string) {
+  return userId === 'user-me' ? CURRENT_USER_ID : userId
+}
+
+function normalizeLegacyRole(role: string) {
+  if (role === '发布方') return 'producer'
+  if (role === '摄影师') return 'cinematographer'
+  if (role === '剪辑师') return 'editor'
+  return role
+}
+
+function normalizeTeam(team: Team): Team {
+  return {
+    ...team,
+    ownerId: normalizeLegacyUserId(team.ownerId),
+    members: team.members.map((member) => ({
+      ...member,
+      userId: normalizeLegacyUserId(member.userId),
+      role: normalizeLegacyRole(member.role),
+    })),
+  }
+}
+
+function normalizeInvitation(invitation: TeamInvitation): TeamInvitation {
+  return {
+    ...invitation,
+    invitedByUserId: normalizeLegacyUserId(invitation.invitedByUserId),
+    role: normalizeLegacyRole(invitation.role),
+  }
+}
+
+function normalizeActivity(activity: InvitationActivity): InvitationActivity {
+  return {
+    ...activity,
+    actorUserId: normalizeLegacyUserId(activity.actorUserId),
+  }
+}
+
+function mergeRecordsById<T extends { id: string }>(seedRecords: T[], persistedRecords?: T[]) {
+  const merged = new Map(seedRecords.map((record) => [record.id, record]))
+  for (const record of persistedRecords ?? []) {
+    merged.set(record.id, record)
+  }
+  return Array.from(merged.values())
+}
+
 const SEED_TEAMS: Team[] = [
   {
     id: 'team-seed-1',
     projectId: 'order-seed-1',
-    ownerId: 'user-me',
+    ownerId: CURRENT_USER_ID,
     stage: 'shooting',
     members: [
-      { userId: 'user-me', name: '我 (发布方)', role: '发布方', status: 'joined', split: 50 },
-      { userId: 'city-creator-1', name: '陈灵一', role: '摄影师', status: 'joined', split: 30, city: '杭州', ratingSummary: { rating: 4.8, reviewCount: 6 }, matchedCaseIds: [] },
-      { userId: 'city-creator-3', name: '林泽宇', role: '剪辑师', status: 'invited', split: 20, city: '上海', ratingSummary: { rating: 4.6, reviewCount: 4 }, matchedCaseIds: [] },
+      { userId: CURRENT_USER_ID, name: '我 (发布方)', role: 'producer', status: 'joined', split: 50 },
+      { userId: 'city-creator-1', name: '陈灵一', role: 'cinematographer', status: 'joined', split: 30, city: '杭州', ratingSummary: { rating: 4.8, reviewCount: 6 }, matchedCaseIds: [] },
+      { userId: 'city-creator-3', name: '林泽宇', role: 'editor', status: 'invited', split: 20, city: '上海', ratingSummary: { rating: 4.6, reviewCount: 4 }, matchedCaseIds: [] },
     ],
   },
 ]
@@ -231,7 +279,7 @@ const SEED_INVITATIONS: TeamInvitation[] = [
     projectId: 'order-seed-1',
     projectTitle: '城市夜景品牌短片',
     profileId: 'city-creator-3',
-    invitedByUserId: 'user-me',
+    invitedByUserId: CURRENT_USER_ID,
     invitedByName: '我 (发布方)',
     role: 'editor',
     status: 'pending',
@@ -249,7 +297,7 @@ const SEED_ACTIVITIES: InvitationActivity[] = [
     projectId: 'order-seed-1',
     profileId: 'city-creator-3',
     type: 'invited',
-    actorUserId: 'user-me',
+    actorUserId: CURRENT_USER_ID,
     actorName: '我 (发布方)',
     createdAt: new Date(Date.now() - 2 * 24 * 3600_000).toISOString(),
     message: '邀请 林泽宇 以 Editor 角色加入项目。',
@@ -652,7 +700,20 @@ export const useTeamStore = create<TeamState>()(
 
       getTeamByOrder: (orderId) => get().teams.find((team) => team.projectId === orderId),
     }),
-    { name: 'cc:teams-v4' },
+    {
+      name: 'cc:teams-v4',
+      merge: (persistedState, currentState) => {
+        const typed = persistedState as Partial<TeamState> | undefined
+        return {
+          ...currentState,
+          ...typed,
+          teams: mergeRecordsById(SEED_TEAMS, typed?.teams?.map(normalizeTeam)),
+          invitations: mergeRecordsById(SEED_INVITATIONS, typed?.invitations?.map(normalizeInvitation)),
+          activities: mergeRecordsById(SEED_ACTIVITIES, typed?.activities?.map(normalizeActivity)),
+          roleChanges: typed?.roleChanges ?? currentState.roleChanges,
+        }
+      },
+    },
   ),
 )
 
