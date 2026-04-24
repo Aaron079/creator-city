@@ -49,6 +49,18 @@ export function getMeHref() {
   return '/me'
 }
 
+export function getExternalReviewHref(token: string) {
+  return `/guest/review/${encodeURIComponent(token)}`
+}
+
+export function getSharedProjectHref(token: string) {
+  return `/share/${encodeURIComponent(token)}`
+}
+
+export function getExternalInviteHref(token: string) {
+  return getSharedProjectHref(token)
+}
+
 export function getReviewHref(projectId: string) {
   return `/review/${encodeProjectId(projectId)}`
 }

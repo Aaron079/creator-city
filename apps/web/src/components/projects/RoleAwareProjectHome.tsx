@@ -1,12 +1,14 @@
 'use client'
 
 import { DeliveryOrApprovalCard, PersonalQueueCard, QuickActionsCard, RecentActivityCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
+import { ExternalAccessPanel } from '@/components/external/ExternalAccessPanel'
 import { buildProjectEntryData } from '@/lib/projects/entry-layer'
 import type { RoleAwareProjectHomeData } from '@/lib/projects/home'
 import { ClientProjectStatusFeed } from '@/components/projects/ClientProjectStatusFeed'
 import { AccessNotice } from '@/components/roles/AccessNotice'
 import { getActionTarget } from '@/lib/routing/actions'
 import type { EntryListItemModel } from '@/lib/projects/entry-layer'
+import { getCurrentUserId } from '@/lib/roles/currentRole'
 
 function resolutionStatusLabel(status: 'open' | 'in-progress' | 'resolved' | 'resubmitted') {
   return {
@@ -60,6 +62,7 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
   const meHref = getActionTarget({ actionType: 'me' }).actionHref
   const entryData = buildProjectEntryData(data)
   const projectHomeHref = getActionTarget({ actionType: 'project-home', projectId: data.projectId }).actionHref
+  const currentUserId = getCurrentUserId() ?? 'producer'
   const creatorQuickActions = data.creatorHome?.quickActions ?? (
     data.creatorHome?.nextAction
       ? [data.creatorHome.nextAction]
@@ -376,6 +379,17 @@ export function RoleAwareProjectHome({ data }: { data: RoleAwareProjectHomeData 
                   detail: '回到 role-aware project home 顶部概览',
                 },
               ]}
+            />
+          ) : null}
+
+          {data.surface === 'producer' ? (
+            <ExternalAccessPanel
+              projectId={data.projectId}
+              projectTitle={data.title}
+              currentUserId={currentUserId}
+              pendingApprovals={data.producerHome?.approvalsSummary.pendingCount ?? 0}
+              deliveryStatus={data.producerHome?.deliverySummary.status ?? data.delivery.status}
+              openRoles={data.producerHome?.teamSummary.openRolesCount ?? data.team.pendingInvitationCount}
             />
           ) : null}
         </div>
