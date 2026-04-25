@@ -23,10 +23,14 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { getActionTarget } from '@/lib/routing/actions'
 
 const LINKS = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/projects', label: 'Projects' },
-  { href: '/explore', label: 'Explore' },
-  { href: '/me', label: 'My Work' },
+  { href: '/', label: '首页' },
+  { href: '/create', label: 'AI 画布' },
+  { href: '/templates', label: '模板库' },
+  { href: '/projects', label: '工作空间' },
+  { href: '/explore', label: '探索' },
+  { href: '/community', label: '社群' },
+  { href: '/tools', label: '工具 / API' },
+  { href: '/me', label: '我的' },
 ]
 
 export function TopNavigation() {
@@ -104,19 +108,19 @@ export function TopNavigation() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-6">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-sm font-bold tracking-wide text-gradient">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="text-xs font-bold tracking-[0.02em] text-gradient">
             Creator City
           </Link>
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden items-center gap-0.5 md:flex">
             {LINKS.map((link) => {
               const active = pathname === link.href || pathname.startsWith(`${link.href}/`)
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`rounded-lg px-3 py-2 text-sm transition ${
+                  className={`rounded-xl px-2.5 py-1.5 text-[12px] transition ${
                     active
                       ? 'bg-white/[0.08] text-white'
                       : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
@@ -129,23 +133,32 @@ export function TopNavigation() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="hidden rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white/60 transition hover:border-white/20 hover:text-white lg:inline-flex"
+          >
+            ZH / EN
+          </button>
+
           <CommandPalette
             portfolio={portfolio}
             workQueue={workQueue}
             notifications={notifications}
           />
 
-          <WorkspaceSwitcher
-            recentProjects={portfolio.recentProjects}
-            highPriorityProjects={portfolio.highPriorityProjects}
-            waitingProjects={portfolio.waitingProjects}
-            compact
-          />
+          <div className="hidden xl:block">
+            <WorkspaceSwitcher
+              recentProjects={portfolio.recentProjects}
+              highPriorityProjects={portfolio.highPriorityProjects}
+              waitingProjects={portfolio.waitingProjects}
+              compact
+            />
+          </div>
 
           <Link
             href={notificationHref}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/75 transition hover:border-white/20 hover:text-white"
           >
             <span>Notifications</span>
             <span className="text-white/35">{notificationSummary.unreadCount}</span>
@@ -156,20 +169,13 @@ export function TopNavigation() {
             ) : null}
           </Link>
 
-          <Link
-            href="/me"
-            className="hidden rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white md:inline-flex"
-          >
-            My Work
-          </Link>
-
-          <div className="hidden items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 md:flex">
-            <div className="h-8 w-8 rounded-full bg-white/[0.08] text-center text-sm font-semibold leading-8 text-white">
+          <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
+            <div className="h-7 w-7 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
               {user?.displayName?.[0]?.toUpperCase() ?? '?'}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-white">{user?.displayName ?? 'Guest'}</div>
-              <div className="truncate text-[11px] text-white/40">{profileId}</div>
+              <div className="truncate text-[12px] font-medium text-white">{user?.displayName ?? 'Guest'}</div>
+              <div className="truncate text-[10px] text-white/40">{profileId}</div>
             </div>
             <button
               onClick={logout}

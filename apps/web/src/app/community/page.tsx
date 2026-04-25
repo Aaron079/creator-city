@@ -1,182 +1,133 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { Nav } from '@/components/layout/Nav'
+import { TopNavigation } from '@/components/layout/TopNavigation'
 
-const POSTS = [
+const COMMUNITY_CHANNELS = [
   {
-    id: '1', user: 'NeonDirector', avatar: '🎭', time: '2小时前',
-    content: '刚用商业大片组合生成了一个赛博朋克悬疑脚本，结果直接满分 🔥 强烈推荐暗夜编剧 PRO + 作者导演的组合。',
-    work: { title: '《暗流》短片脚本', tags: ['悬疑', '赛博朋克'], score: 98, icon: '🎬', from: '#1f0508', accent: '#f43f5e' },
-    likes: 142, comments: 23,
+    title: '灵感分享',
+    description: '发布片段、视觉风格、脚本灵感和创作方法，给团队一个公开的起点。',
   },
   {
-    id: '2', user: 'SynthWave_Pro', avatar: '🎹', time: '5小时前',
-    content: '分享一个发现：用极简角色 + 胶片质感组合做音乐短片效果绝了，情绪强度直接拉到 9/10。',
-    work: { title: '城市低语 MV', tags: ['音乐', 'Lo-fi'], score: 91, icon: '🎵', from: '#1a1200', accent: '#f59e0b' },
-    likes: 87, comments: 11,
+    title: '项目讨论',
+    description: '围绕具体项目交流推进方式、镜头拆解、节奏和交付预期。',
   },
   {
-    id: '3', user: 'PixelForge', avatar: '✏️', time: '1天前',
-    content: '史诗编剧 PRO 真的是神器，把我一个"平庸的公路片创意"直接扩展成了三线叙事史诗。代价是整个脚本字数暴涨 3 倍 😂',
-    work: { title: '《迷途·归途》剧本', tags: ['史诗', '公路片'], score: 97, icon: '📜', from: '#0c0818', accent: '#818cf8' },
-    likes: 215, comments: 47,
+    title: '创作者问答',
+    description: '向导演、制片、摄影、剪辑和创作者同行发起具体问题。',
   },
   {
-    id: '4', user: 'IndieGhost', avatar: '👾', time: '2天前',
-    content: '终于把"末日帝国"那个创意做出来了！用控制型导演 + 无人机的组合，画面冲击力超乎想象。',
-    work: { title: '《末日协议》预告片', tags: ['动作', '科幻'], score: 94, icon: '🚀', from: '#0a1220', accent: '#60a5fa' },
-    likes: 308, comments: 56,
+    title: '案例复盘',
+    description: '把一次创作过程拆开看，讨论为什么这个方案有效或失效。',
+  },
+  {
+    title: '协作招募',
+    description: '寻找摄影、剪辑、声音、后期或联合作品伙伴。',
+  },
+  {
+    title: '开源工作流',
+    description: '把自己的节点工作流公开到社群，供其他创作者学习、讨论和复用。',
   },
 ]
 
-const AGENTS = [
-  { id:'commercial', icon:'⚡', name:'商业编剧',    uses:'12.4K', rating:4.8, tag:'🔥热门' },
-  { id:'pro_noir',   icon:'🌑', name:'暗夜编剧 PRO', uses:'8.1K',  rating:4.9, tag:'✦ PRO' },
-  { id:'art',        icon:'🎨', name:'艺术编剧',    uses:'6.7K',  rating:4.7, tag:'影展级' },
-  { id:'pro_epic',   icon:'👑', name:'史诗编剧 PRO', uses:'5.3K',  rating:4.9, tag:'✦ PRO' },
+const COMMUNITY_FEED = [
+  {
+    title: '赛博城市广告片在画布里怎么起手？',
+    meta: '灵感分享 · 12 分钟前',
+    summary: '大家在讨论是先用文本节点搭结构，还是先抓一张视觉 keyframe 再推视频节点。',
+  },
+  {
+    title: '品牌短片复盘：为什么这次交付比脚本阶段快了两轮？',
+    meta: '案例复盘 · 46 分钟前',
+    summary: '团队把时间花在前置镜头测试上，最后审片轮次明显减少。',
+  },
+  {
+    title: '正在招募声音设计师，偏电影感与低频氛围方向',
+    meta: '协作招募 · 2 小时前',
+    summary: '需求是短片级别的声音氛围与音乐结构，支持远程协作。',
+  },
+  {
+    title: '把“文本 -> 首帧 -> 视频”工作流开源给社区复用',
+    meta: '开源工作流 · 刚刚',
+    summary: '作者把自己的节点顺序、参数选择和阶段说明发布出来，其他人可以从这里学习创作路径。',
+  },
 ]
-
-const TABS = ['动态', '作品', 'Agent']
 
 export default function CommunityPage() {
-  const [tab, setTab] = useState('动态')
-
   return (
-    <main className="min-h-screen bg-city-bg">
-      <Nav />
+    <div className="min-h-screen bg-[#050505] text-white">
+      <TopNavigation />
 
-      <div className="pt-14">
-        {/* Page header */}
-        <div className="px-6 py-10 border-b border-white/[0.05]">
-          <div className="max-w-4xl mx-auto">
-            <p className="text-xs text-city-emerald tracking-[0.2em] uppercase mb-2 font-medium">Community</p>
-            <h1 className="text-3xl font-bold tracking-tight mb-6">创作者社区</h1>
+      <main className="mx-auto max-w-7xl px-6 pb-16 pt-24">
+        <section className="rounded-[34px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur-[28px]">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">Community</div>
+          <h1 className="mt-4 text-4xl font-light tracking-[-0.05em] text-white">创作者社群</h1>
+          <p className="mt-4 max-w-3xl text-base leading-8 text-white/56">
+            这里是 Creator City 的公开交流入口。第一版先用前端 mock 把灵感分享、项目讨论、创作者问答、案例复盘、协作招募和开源工作流做清楚，不假装已经有完整社区后端。
+          </p>
 
-            {/* Tabs */}
-            <div className="flex gap-1">
-              {TABS.map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    tab === t
-                      ? 'bg-white/[0.08] text-white'
-                      : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
-                  }`}
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/explore"
+              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
+            >
+              去探索
+            </Link>
+            <Link
+              href="/create"
+              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
+            >
+              回到 AI 画布
+            </Link>
+            <Link
+              href="/templates"
+              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
+            >
+              查看模板
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-[24px]">
+            <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">讨论区</div>
+            <div className="mt-4 grid gap-3">
+              {COMMUNITY_CHANNELS.map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-[22px] border border-white/8 bg-black/20 p-4"
                 >
-                  {t}
-                </button>
+                  <div className="text-lg font-light tracking-[-0.03em] text-white">{item.title}</div>
+                  <p className="mt-2 text-sm leading-7 text-white/52">{item.description}</p>
+                </div>
               ))}
             </div>
           </div>
-        </div>
 
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          {tab === '动态' && (
-            <div className="space-y-4">
-              {POSTS.map((post, i) => (
-                <motion.div
-                  key={post.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.06, duration: 0.4 }}
-                  className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5 space-y-4 hover:border-white/[0.12] transition-colors"
+          <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-[24px]">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">Mock Feed</div>
+                <div className="mt-3 text-2xl font-light tracking-[-0.04em] text-white">近期讨论</div>
+              </div>
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/38">
+                前端 mock
+              </span>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {COMMUNITY_FEED.map((item) => (
+                <article
+                  key={item.title}
+                  className="rounded-[22px] border border-white/8 bg-black/20 p-5"
                 >
-                  {/* User row */}
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-city-surface border border-white/[0.08] flex items-center justify-center text-lg">
-                      {post.avatar}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-white">{post.user}</p>
-                      <p className="text-xs text-gray-600">{post.time}</p>
-                    </div>
-                  </div>
-
-                  {/* Content */}
-                  <p className="text-sm text-gray-300 leading-relaxed">{post.content}</p>
-
-                  {/* Attached work */}
-                  <div
-                    className="flex items-center gap-3 rounded-xl p-3 border border-white/[0.06]"
-                    style={{ background: `linear-gradient(135deg, ${post.work.from}80 0%, #0a0f1a 100%)` }}
-                  >
-                    <span className="text-2xl">{post.work.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{post.work.title}</p>
-                      <div className="flex gap-1 mt-0.5">
-                        {post.work.tags.map(t => (
-                          <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-black/40 text-gray-400 border border-white/10">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <span
-                      className="text-sm font-bold flex-shrink-0"
-                      style={{ color: post.work.accent }}
-                    >
-                      {post.work.score}
-                    </span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-4 text-xs text-gray-500 pt-1">
-                    <button className="flex items-center gap-1.5 hover:text-gray-300 transition-colors">
-                      <span>♥</span> {post.likes}
-                    </button>
-                    <button className="flex items-center gap-1.5 hover:text-gray-300 transition-colors">
-                      <span>💬</span> {post.comments}
-                    </button>
-                    <button className="flex items-center gap-1.5 hover:text-gray-300 transition-colors ml-auto">
-                      <span>↗</span> 分享
-                    </button>
-                  </div>
-                </motion.div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-white/34">{item.meta}</div>
+                  <h2 className="mt-3 text-lg font-light tracking-[-0.03em] text-white">{item.title}</h2>
+                  <p className="mt-3 text-sm leading-7 text-white/54">{item.summary}</p>
+                </article>
               ))}
             </div>
-          )}
-
-          {tab === 'Agent' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {AGENTS.map((a, i) => (
-                <motion.div
-                  key={a.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.06, duration: 0.4 }}
-                  className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5 flex items-center gap-4 hover:border-white/[0.12] transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-xl bg-city-surface border border-city-accent/20 flex items-center justify-center text-2xl flex-shrink-0">
-                    {a.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white">{a.name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{a.uses} 次使用</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-city-gold font-bold">★ {a.rating}</p>
-                    <p className="text-[9px] text-gray-600 mt-0.5">{a.tag}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-
-          {tab === '作品' && (
-            <div className="text-center py-20">
-              <p className="text-4xl mb-4">🎬</p>
-              <p className="text-gray-500 text-sm mb-6">精选社区作品即将上线</p>
-              <Link href="/explore" className="text-sm text-city-accent-glow hover:underline">
-                前往探索页面 →
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
-    </main>
+          </div>
+        </section>
+      </main>
+    </div>
   )
 }
