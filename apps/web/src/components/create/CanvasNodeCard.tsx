@@ -40,9 +40,10 @@ interface CanvasNodeCardProps {
   onRatioChange?: (value: string) => void
   onGenerate: () => void
   onUpload: () => void
-  onAddNext: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onAddNext: (clientX: number, clientY: number) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
+  onEdit: () => void
   dragging?: boolean
 }
 
@@ -114,6 +115,7 @@ export function CanvasNodeCard({
   onAddNext,
   onDragStart,
   onOpenContextMenu,
+  onEdit,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
@@ -137,6 +139,11 @@ export function CanvasNodeCard({
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       onClick={onSelect}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onEdit()
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
@@ -163,9 +170,14 @@ export function CanvasNodeCard({
       />
       <button
         type="button"
-        onClick={(event) => {
+        onPointerDown={(event) => {
+          event.preventDefault()
           event.stopPropagation()
-          onAddNext(event)
+          onAddNext(event.clientX, event.clientY)
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
         }}
         className="canvas-node-connector is-right"
         aria-label="Add next node"
@@ -239,9 +251,14 @@ export function CanvasNodeCard({
           <div className="canvas-node-actions">
             <button
               type="button"
-              onClick={(event) => {
+              onPointerDown={(event) => {
+                event.preventDefault()
                 event.stopPropagation()
-                onAddNext(event)
+                onAddNext(event.clientX, event.clientY)
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
               }}
               className="canvas-secondary-button"
             >

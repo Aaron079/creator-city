@@ -49,7 +49,7 @@ const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string;
 
 const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }> = {
   text: { width: 360, height: 260 },
-  image: { width: 360, height: 320 },
+  image: { width: 380, height: 320 },
   video: { width: 420, height: 300 },
   audio: { width: 360, height: 220 },
   asset: { width: 360, height: 260 },
@@ -60,21 +60,12 @@ const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }>
 }
 
 const ENTRY_ACTIONS: Array<{ label: string; kind: EntryKind; hint: string }> = [
-  { label: '写文本', kind: 'text', hint: '先从脚本、文案或结构开始' },
-  { label: '生成图片', kind: 'image', hint: '先做风格和关键画面' },
-  { label: '直接生成视频', kind: 'video', hint: '直接推进镜头与动作' },
-  { label: '做声音', kind: 'audio', hint: '生成旁白、配乐或声音氛围' },
-  { label: '上传素材', kind: 'upload', hint: '先导入参考图、视频或音频' },
-  { label: '打开模板', kind: 'template', hint: '用 Setup 浮层查看模板入口' },
-]
-
-const EMPTY_CAPABILITIES = [
-  '写脚本 / 文案',
-  '生成图片',
-  '生成视频',
-  '做声音 / 配乐',
-  '组织素材',
-  '准备审片与交付',
+  { label: '文本', kind: 'text', hint: '脚本 / 文案' },
+  { label: '图片', kind: 'image', hint: '关键画面' },
+  { label: '视频', kind: 'video', hint: '镜头生成' },
+  { label: '音频', kind: 'audio', hint: '旁白 / 配乐' },
+  { label: '上传', kind: 'upload', hint: '参考素材' },
+  { label: '模板', kind: 'template', hint: 'Setup' },
 ]
 
 const WORKSPACE_RATIOS = ['16:9', '9:16', '1:1']
@@ -85,6 +76,8 @@ const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 190
 const NODE_ADD_MENU_HEIGHT = 228
+const INTENT_MENU_WIDTH = 286
+const INTENT_MENU_HEIGHT = 220
 const STAGE_OPTIONS = [
   { value: 'draft', label: '起稿', hint: '先把方向和内容结构定下来' },
   { value: 'lookdev', label: '视觉开发', hint: '推进风格、关键帧和 look & feel' },
@@ -231,14 +224,16 @@ export function VisualCanvasWorkspace({
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
   const [promptAssetMode, setPromptAssetMode] = useState<(typeof ASSET_OPTIONS)[number]['value']>('none')
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
-  const [composer, setComposer] = useState<{ open: boolean; x: number; y: number }>({
+  const [composer, setComposer] = useState<{ open: boolean; x: number; y: number; worldX: number; worldY: number }>({
     open: false,
     x: 420,
     y: 240,
+    worldX: 420,
+    worldY: 240,
   })
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
-  const [clipboardNode, setClipboardNode] = useState<VisualCanvasNode | null>(null)
+  const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
@@ -247,6 +242,7 @@ export function VisualCanvasWorkspace({
   const timersRef = useRef<number[]>([])
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
+  const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const panStartRef = useRef({
     pointerId: 0,
     clientX: 0,
@@ -436,19 +432,20 @@ export function VisualCanvasWorkspace({
   }, [activeNode])
 
   useEffect(() => {
-    if (!contextMenu && !nodeAddMenu && !isAddMenuOpen) return
+    if (!contextMenu && !nodeAddMenu && !isAddMenuOpen && !composer.open) return
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-add-menu, .canvas-toolbar-shell')) return
+      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-intent-popover, .canvas-add-menu, .canvas-toolbar-shell')) return
       setContextMenu(null)
       setNodeAddMenu(null)
       setIsAddMenuOpen(false)
+      setComposer((current) => ({ ...current, open: false }))
     }
 
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [contextMenu, isAddMenuOpen, nodeAddMenu])
+  }, [composer.open, contextMenu, isAddMenuOpen, nodeAddMenu])
 
   const createNode = useCallback((
     kind: VisualCanvasNodeKind,
@@ -618,6 +615,15 @@ export function VisualCanvasWorkspace({
     }
   }, [])
 
+  const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
+    setActiveNodeId(node.id)
+    syncPromptPreset(node.kind)
+    window.setTimeout(() => {
+      promptInputRef.current?.focus()
+      promptInputRef.current?.select()
+    }, 0)
+  }, [syncPromptPreset])
+
   const buildResultLabel = useCallback((title: string) => {
     const assetCopy = promptAssetMode === 'none' ? '无素材' : assetLabel
     const providerCopy = activeProviderNotice ? ` · ${activeProviderNotice}` : ''
@@ -631,16 +637,23 @@ export function VisualCanvasWorkspace({
     }
 
     const rect = viewportRef.current?.getBoundingClientRect()
-    const fallbackX = rect ? (rect.width / 2 - canvasPan.x) / canvasZoom - 112 : 420
-    const fallbackY = rect ? (rect.height / 2 - canvasPan.y) / canvasZoom - 88 : 240
-    const nextX = clampCanvasPoint(input?.x ?? fallbackX, -400, 2400)
-    const nextY = clampCanvasPoint(input?.y ?? fallbackY, -300, 1600)
+    const fallbackWorldX = rect ? (rect.width / 2 - canvasPan.x) / canvasZoom - 150 : 420
+    const fallbackWorldY = rect ? (rect.height / 2 - canvasPan.y) / canvasZoom - 110 : 240
+    const worldX = clampCanvasPoint(input?.x ?? fallbackWorldX, -400, 2400)
+    const worldY = clampCanvasPoint(input?.y ?? fallbackWorldY, -300, 1600)
+    const screenPoint = rect
+      ? {
+        x: rect.left + worldX * canvasZoom + canvasPan.x,
+        y: rect.top + worldY * canvasZoom + canvasPan.y,
+      }
+      : { x: 420, y: 240 }
+    const menuPoint = clampMenuPosition(screenPoint.x, screenPoint.y, INTENT_MENU_WIDTH, INTENT_MENU_HEIGHT)
 
     if (input?.kind) {
       syncPromptPreset(input.kind)
     }
 
-    setComposer({ open: true, x: nextX, y: nextY })
+    setComposer({ open: true, x: menuPoint.x, y: menuPoint.y, worldX, worldY })
     setIsAddMenuOpen(false)
   }, [canvasPan.x, canvasPan.y, canvasZoom, onShowStartup, syncPromptPreset])
 
@@ -666,8 +679,8 @@ export function VisualCanvasWorkspace({
       ratio: getNodeRatio(kind, promptRatio),
       parentNodeId: activeNode?.id,
       position: {
-        x: composer.x + 118,
-        y: composer.y + 32,
+        x: composer.worldX,
+        y: composer.worldY,
       },
     })
 
@@ -679,7 +692,7 @@ export function VisualCanvasWorkspace({
     }
 
     handleGenerate(nextNode.id, buildResultLabel(nextNode.title))
-  }, [activeNode?.id, buildResultLabel, canvasPrompt, closeComposer, composer.x, composer.y, createNode, handleGenerate, handleUpload, preferredKind, promptModel, promptRatio])
+  }, [activeNode?.id, buildResultLabel, canvasPrompt, closeComposer, composer.worldX, composer.worldY, createNode, handleGenerate, handleUpload, preferredKind, promptModel, promptRatio])
 
   const handleWorkspaceGenerate = useCallback(() => {
     const trimmedPrompt = canvasPrompt.trim()
@@ -733,8 +746,9 @@ export function VisualCanvasWorkspace({
     createNode(kind, {
       model: getCanvasProvider(getProviderKind(kind), NODE_META[kind].model)?.id ?? NODE_META[kind].model,
       parentNodeId: activeNode?.id,
+      position: activeNode ? undefined : { x: composer.worldX, y: composer.worldY },
     })
-  }, [activeNode?.id, createNode, syncPromptPreset])
+  }, [activeNode, composer.worldX, composer.worldY, createNode, syncPromptPreset])
 
   const handleAddSpecificNextNode = useCallback((nodeId: string, kind: VisualCanvasNodeKind) => {
     syncPromptPreset(kind)
@@ -766,11 +780,6 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
   }, [])
 
-  const pasteClipboardNode = useCallback(() => {
-    if (!clipboardNode) return
-    duplicateNode(clipboardNode, 80)
-  }, [clipboardNode, duplicateNode])
-
   const markNodeSaved = useCallback((nodeId: string, label: string) => {
     handleNodePatch(nodeId, {
       resultPreview: label,
@@ -791,7 +800,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu')
+    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-intent-popover')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -962,20 +971,7 @@ export function VisualCanvasWorkspace({
         >
           {nodes.length === 0 && !composer.open ? (
             <div className="canvas-empty-state">
-              <div className="canvas-empty-label">AI Canvas 可以帮你做什么？</div>
-              <div className="canvas-empty-capabilities">
-                {EMPTY_CAPABILITIES.map((item) => (
-                  <span key={item} className="canvas-empty-capability">
-                    {item}
-                  </span>
-                ))}
-              </div>
-              <div className="canvas-empty-title">双击画布开始，或选择一个创作入口。</div>
-              <p className="canvas-empty-copy">
-                这里不再默认铺开 Brief → Image → Video → Audio → Delivery。你先决定从文本、图片、视频或素材开始，节点只会在你主动创建后出现。
-              </p>
-
-              <div className="canvas-empty-hint">双击空白画布，或使用左侧 + 添加第一个节点。</div>
+              <div className="canvas-empty-title">双击画布开始创作</div>
             </div>
           ) : null}
 
@@ -1024,9 +1020,10 @@ export function VisualCanvasWorkspace({
                 onRatioChange={node.ratio ? (value) => handleNodePatch(node.id, { ratio: value }) : undefined}
                 onGenerate={() => handleGenerate(node.id)}
                 onUpload={() => handleUpload(node.id)}
-                onAddNext={(event) => openNodeAddMenu(node.id, event.clientX, event.clientY)}
+                onAddNext={(clientX, clientY) => openNodeAddMenu(node.id, clientX, clientY)}
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
+                onEdit={() => focusPromptForNode(node)}
               />
             </div>
           ))}
@@ -1034,20 +1031,21 @@ export function VisualCanvasWorkspace({
       </div>
 
       {composer.open ? (
-        <div className="canvas-intent-popover">
+        <div
+          className="canvas-intent-popover"
+          style={{ left: composer.x, top: composer.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.16 }}
             className="canvas-composer-card canvas-composer-intent"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="canvas-composer-label">创作入口</div>
-                <div className="canvas-composer-title">你想先做什么？</div>
-              </div>
-              <button type="button" onClick={closeComposer} className="canvas-detail-button">
-                关闭
+            <div className="canvas-composer-head">
+              <div className="canvas-composer-title">选择起点</div>
+              <button type="button" onClick={closeComposer} className="canvas-composer-close" aria-label="关闭">
+                ×
               </button>
             </div>
             <div className="canvas-composer-options">
@@ -1119,14 +1117,6 @@ export function VisualCanvasWorkspace({
           </button>
           <button
             type="button"
-            onClick={pasteClipboardNode}
-            disabled={!clipboardNode}
-            className="canvas-menu-item"
-          >
-            粘贴
-          </button>
-          <button
-            type="button"
             onClick={() => duplicateNode(menuNode)}
             className="canvas-menu-item"
           >
@@ -1192,11 +1182,13 @@ export function VisualCanvasWorkspace({
           ratio={promptRatio}
           ratios={WORKSPACE_RATIOS}
           onRatioChange={setPromptRatio}
-          placeholder="描述你想生成的内容"
+          placeholder="描述你想创作的内容……"
           onGenerate={composer.open ? handleComposerGenerate : handleWorkspaceGenerate}
           generateLabel={activeNode?.status === 'generating' ? '生成中…' : preferredKind === 'upload' ? '添加' : '生成'}
           footerItems={promptFooterItems}
-          extraPills={['自由创作', getEntryKindLabel(preferredKind), stageLabel]}
+          inputRef={(element) => {
+            promptInputRef.current = element
+          }}
         />
       </div>
     </div>

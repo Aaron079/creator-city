@@ -328,8 +328,8 @@
 .scope :global(.canvas-empty-state) {
   position: absolute;
   left: 50%;
-  top: 42%;
-  width: min(560px, calc(100vw - 220px));
+  top: 44%;
+  width: auto;
   transform: translate(-50%, -50%);
   text-align: center;
 }
@@ -360,11 +360,17 @@
 }
 
 .scope :global(.canvas-empty-title) {
-  margin-top: 12px;
-  font-size: clamp(20px, 2.7vw, 28px);
+  margin-top: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 12, 16, 0.52);
+  padding: 10px 14px;
+  backdrop-filter: blur(18px);
+  font-size: 13px;
   font-weight: 300;
-  letter-spacing: -0.04em;
-  color: rgba(255, 255, 255, 0.96);
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .scope :global(.canvas-empty-copy) {
@@ -399,23 +405,20 @@
 
 .scope :global(.canvas-intent-popover) {
   position: fixed;
-  left: 50%;
-  bottom: 196px;
-  z-index: 34;
-  width: min(420px, calc(100vw - 48px));
-  transform: translateX(-50%);
+  z-index: 58;
+  width: 286px;
   pointer-events: auto;
 }
 
 .scope :global(.canvas-composer-card) {
-  border-radius: 26px;
+  border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(10, 12, 16, 0.88);
-  padding: 16px;
-  backdrop-filter: blur(30px);
+  background: rgba(8, 10, 14, 0.9);
+  padding: 10px;
+  backdrop-filter: blur(26px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 22px 60px rgba(0, 0, 0, 0.42);
+    0 18px 52px rgba(0, 0, 0, 0.42);
 }
 
 .scope :global(.canvas-composer-intent) {
@@ -428,24 +431,38 @@
   width: 424px;
 }
 
-.scope :global(.canvas-composer-label) {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: rgba(255, 255, 255, 0.3);
+.scope :global(.canvas-composer-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 8px 6px;
 }
 
 .scope :global(.canvas-composer-title) {
-  margin-top: 8px;
-  font-size: 15px;
-  font-weight: 300;
-  letter-spacing: -0.03em;
-  color: rgba(255, 255, 255, 0.96);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.scope :global(.canvas-composer-close) {
+  display: inline-flex;
+  height: 24px;
+  width: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .scope :global(.canvas-composer-options) {
-  margin-top: 14px;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -454,10 +471,10 @@
   width: 100%;
   flex-direction: column;
   gap: 4px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
-  padding: 10px 12px;
+  padding: 10px;
   text-align: left;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.84);
@@ -759,8 +776,8 @@
 
 .scope :global(.canvas-prompt-box.is-workspace) {
   position: relative;
-  min-height: 176px;
-  gap: 10px;
+  min-height: 152px;
+  gap: 8px;
 }
 
 .scope :global(.canvas-prompt-main) {
@@ -770,7 +787,7 @@
 }
 
 .scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-main) {
-  min-height: 90px;
+  min-height: 78px;
 }
 
 .scope :global(.canvas-prompt-select) {
@@ -800,14 +817,14 @@
 }
 
 .scope :global(.canvas-prompt-input.is-workspace) {
-  min-height: 88px;
+  min-height: 76px;
   border-radius: 16px;
-  padding: 16px;
+  padding: 14px 16px;
   font-size: 13px;
 }
 
 .scope :global(.canvas-prompt-input.is-single-line) {
-  height: 88px;
+  height: 76px;
 }
 
 .scope :global(.canvas-prompt-result) {
@@ -839,8 +856,8 @@
   z-index: 3;
   display: grid;
   gap: 10px;
-  width: min(920px, 100%);
-  max-height: min(360px, calc(100vh - 290px));
+  width: min(880px, 100%);
+  max-height: min(280px, calc(100vh - 260px));
   overflow: auto;
   transform: translateX(-50%);
   border-radius: 18px;
@@ -884,7 +901,7 @@
 
 .scope :global(.canvas-footer-button) {
   display: flex;
-  min-height: 46px;
+  min-height: 42px;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
@@ -1034,7 +1051,7 @@
 .scope :global(.canvas-generate-button) {
   display: inline-flex;
   min-width: 92px;
-  min-height: 56px;
+  min-height: 52px;
   align-items: center;
   justify-content: center;
   border-radius: 18px;
@@ -1085,10 +1102,11 @@
   left: 50%;
   bottom: 28px;
   z-index: 32;
-  width: min(920px, calc(100vw - 180px));
+  width: min(880px, calc(100vw - 180px));
+  min-height: 180px;
   transform: translateX(-50%);
   border-radius: 26px;
-  padding: 14px;
+  padding: 12px;
 }
 
 .scope :global(.canvas-zoom-controls) {
@@ -1204,11 +1222,8 @@
 @media (max-width: 900px) {
   .scope :global(.canvas-prompt-console) {
     bottom: 20px;
-    width: calc(100vw - 32px);
-  }
-
-  .scope :global(.canvas-intent-popover) {
-    bottom: 184px;
+    left: calc(50% + 36px);
+    width: min(880px, calc(100vw - 104px));
   }
 
   .scope :global(.canvas-prompt-main) {
