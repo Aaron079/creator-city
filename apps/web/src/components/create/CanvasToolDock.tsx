@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 
 interface CanvasToolDockProps {
-  onAddNode: (kind: VisualCanvasNodeKind) => void
+  onAddNode: (kind: VisualCanvasNodeKind, presetTitle?: string) => void
   activeTool: string
   onToolSelect: (tool: string) => void
   isAddMenuOpen: boolean
@@ -12,21 +12,30 @@ interface CanvasToolDockProps {
 }
 
 const TOOLS = [
-  { id: 'add', label: '添加节点', icon: '+' },
-  { id: 'files', label: '文件 / 资源', icon: '⌂' },
-  { id: 'layers', label: '分层 / 列表', icon: '≣' },
+  { id: 'add', label: '添加', icon: '+' },
+  { id: 'media', label: '素材', icon: '◫' },
+  { id: 'layers', label: '图层', icon: '≣' },
   { id: 'comments', label: '评论', icon: '◌' },
   { id: 'history', label: '历史', icon: '↺' },
-  { id: 'settings', label: '设置', icon: '⚙' },
+  { id: 'tools', label: '工具', icon: '⌘' },
+  { id: 'user', label: '用户', icon: '◍' },
 ] as const
 
-const NODE_OPTIONS: Array<{ id: VisualCanvasNodeKind; label: string; hint: string }> = [
-  { id: 'text', label: '文本', hint: 'Brief / 文案 / 脚本' },
-  { id: 'image', label: '图片', hint: '生成图像与参考' },
-  { id: 'video', label: '视频', hint: '镜头与视频生成' },
-  { id: 'audio', label: '音频', hint: '配乐 / 音效 / 旁白' },
-  { id: 'world', label: '3D 世界', hint: '空间与场景结构' },
-  { id: 'upload', label: '上传', hint: '导入参考资产' },
+const NODE_OPTIONS: Array<{
+  id: string
+  kind: VisualCanvasNodeKind
+  icon: string
+  label: string
+  hint: string
+  presetTitle?: string
+}> = [
+  { id: 'text', kind: 'text', icon: '✦', label: '文本', hint: '写脚本、文案与创意方向' },
+  { id: 'image', kind: 'image', icon: '◫', label: '图片', hint: '先做视觉风格与关键画面' },
+  { id: 'video', kind: 'video', icon: '▣', label: '视频', hint: '直接生成镜头与动作' },
+  { id: 'audio', kind: 'audio', icon: '♫', label: '音频', hint: '音乐、音效与旁白' },
+  { id: 'image-editor', kind: 'image', icon: '✎', label: '图片编辑器', hint: '抠图、换背景与图像改写', presetTitle: '图片编辑器' },
+  { id: 'world', kind: 'world', icon: '◎', label: '3D 世界', hint: '空间、场景与世界观搭建' },
+  { id: 'upload', kind: 'upload', icon: '↑', label: '上传', hint: '导入图片、视频与参考素材' },
 ]
 
 export function CanvasToolDock({
@@ -37,7 +46,7 @@ export function CanvasToolDock({
   onToggleAddMenu,
 }: CanvasToolDockProps) {
   return (
-    <div className="absolute left-5 top-1/2 z-20 -translate-y-1/2">
+    <div className="absolute left-6 top-1/2 z-40 -translate-y-1/2">
       <div className="canvas-toolbar-shell">
         <div className="flex flex-col gap-2">
           {TOOLS.map((tool) => {
@@ -56,7 +65,7 @@ export function CanvasToolDock({
                 className={`canvas-toolbar-button ${active || (tool.id === 'add' && isAddMenuOpen) ? 'is-active' : ''}`}
                 title={tool.label}
               >
-                {tool.icon}
+                {tool.id === 'user' ? <span className="canvas-toolbar-avatar">A</span> : tool.icon}
               </button>
             )
           })}
@@ -66,29 +75,33 @@ export function CanvasToolDock({
       <AnimatePresence>
         {isAddMenuOpen ? (
           <motion.div
-            initial={{ opacity: 0, x: -8, scale: 0.98 }}
+            initial={{ opacity: 0, x: -10, scale: 0.98 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -8, scale: 0.98 }}
+            exit={{ opacity: 0, x: -10, scale: 0.98 }}
             transition={{ duration: 0.18 }}
             className="canvas-add-menu"
           >
-            <div className="mb-2 px-2">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-white/34">Add Node</div>
-              <div className="mt-1 text-sm font-light tracking-[-0.03em] text-white">把一个新阶段插进工作流</div>
+            <div className="canvas-add-menu-header">
+              <div className="canvas-add-menu-label">Add</div>
+              <div className="canvas-add-menu-title">向画布插入一个轻量节点</div>
             </div>
+
             <div className="space-y-2">
               {NODE_OPTIONS.map((option) => (
                 <button
                   key={option.id}
                   type="button"
                   onClick={() => {
-                    onAddNode(option.id)
+                    onAddNode(option.kind, option.presetTitle)
                     onToggleAddMenu()
                   }}
                   className="canvas-add-option"
                 >
-                  <div className="text-sm text-white">{option.label}</div>
-                  <div className="mt-1 text-[11px] text-white/46">{option.hint}</div>
+                  <span className="canvas-add-option-icon">{option.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="canvas-add-option-title">{option.label}</span>
+                    <span className="canvas-add-option-hint">{option.hint}</span>
+                  </span>
                 </button>
               ))}
             </div>

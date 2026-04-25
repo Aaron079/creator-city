@@ -8849,34 +8849,36 @@ export default function CreatePage() {
         ) : null}
 
         <div ref={workspaceScrollRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto">
-          <div
-            className="sticky top-0 z-30 mx-4 mt-4 flex items-center justify-between rounded-[28px] px-5 py-3 create-glass-panel"
-          >
-            <div className="flex-1 flex items-center gap-3">
-              <RoleViewSwitcher
-                resolvedRole={resolvedProjectRole}
-                overrideRole={roleOverride}
-                onChange={setRoleOverride}
-                onClear={clearRoleOverride}
-                compact
-              />
-              <RoleBadge role={resolvedProjectRole} />
+          {(workspaceSurface !== 'canvas' || showStartupPanels || !projectPermissions.canEditCreateWorkspace || !canAccessCreateWorkspace) ? (
+            <div
+              className="sticky top-0 z-30 mx-4 mt-4 flex items-center justify-between rounded-[28px] px-5 py-3 create-glass-panel"
+            >
+              <div className="flex-1 flex items-center gap-3">
+                <RoleViewSwitcher
+                  resolvedRole={resolvedProjectRole}
+                  overrideRole={roleOverride}
+                  onChange={setRoleOverride}
+                  onClear={clearRoleOverride}
+                  compact
+                />
+                <RoleBadge role={resolvedProjectRole} />
+              </div>
+              {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStartupPanels((current) => !current)
+                    if (!showStartupPanels) {
+                      scrollToWorkspace()
+                    }
+                  }}
+                  className="create-glass-pill rounded-full px-3.5 py-2 text-[11px] font-semibold text-white/75 transition hover:border-white/20 hover:text-white"
+                >
+                  {showStartupPanels ? '收起 Setup' : '打开 Setup'}
+                </button>
+              ) : null}
             </div>
-            {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStartupPanels((current) => !current)
-                  if (!showStartupPanels) {
-                    scrollToWorkspace()
-                  }
-                }}
-                className="create-glass-pill rounded-full px-3.5 py-2 text-[11px] font-semibold text-white/75 transition hover:border-white/20 hover:text-white"
-              >
-                {showStartupPanels ? '收起 Setup' : '打开 Setup'}
-              </button>
-            ) : null}
-          </div>
+          ) : null}
 
           {!projectPermissions.canEditCreateWorkspace || isCreateRouteBlocked ? (
             <div className="px-5 pt-3">
@@ -8961,15 +8963,17 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
-            <p className="text-[10px] max-w-[640px] text-right leading-[1.7]" style={{ color: 'rgba(255,255,255,0.36)' }}>
-              {roleContext.source === 'fallback' && !canAccessCreateWorkspace
-                ? '当前没有检测到这个账号在项目中的 active role assignment，因此工作区已自动降级为安全只读交付视图。'
-                : effectiveProjectRole === 'creator' || effectiveProjectRole === 'director' || effectiveProjectRole === 'editor' || effectiveProjectRole === 'cinematographer'
-                  ? '创作者视图保留完整工作区，覆盖分镜、视频、声音、剪辑和交付。'
-                  : effectiveProjectRole === 'producer'
-                    ? '制片视图只保留产出与交付相关面板，不显示完整创作控制台。'
-                    : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
-            </p>
+            {workspaceSurface !== 'canvas' ? (
+              <p className="text-[10px] max-w-[640px] text-right leading-[1.7]" style={{ color: 'rgba(255,255,255,0.36)' }}>
+                {roleContext.source === 'fallback' && !canAccessCreateWorkspace
+                  ? '当前没有检测到这个账号在项目中的 active role assignment，因此工作区已自动降级为安全只读交付视图。'
+                  : effectiveProjectRole === 'creator' || effectiveProjectRole === 'director' || effectiveProjectRole === 'editor' || effectiveProjectRole === 'cinematographer'
+                    ? '创作者视图保留完整工作区，覆盖分镜、视频、声音、剪辑和交付。'
+                    : effectiveProjectRole === 'producer'
+                      ? '制片视图只保留产出与交付相关面板，不显示完整创作控制台。'
+                      : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
+              </p>
+            ) : null}
           </div>
           ) : null}
 
@@ -9119,6 +9123,15 @@ export default function CreatePage() {
               currentStage={currentStage}
             />
           ) : !isCreateRouteBlocked && workspaceView === 'editor' ? (
+            orderedEditorClips.length === 0 && shotDerivativeJobs.length === 0 ? (
+              <div className="mx-5 mt-3 rounded-[30px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur-[28px]">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-white/34">Timeline</div>
+                <div className="mt-2 text-2xl font-light tracking-[-0.03em] text-white">轻量时间线空状态</div>
+                <p className="mt-3 max-w-2xl text-sm leading-[1.8] text-white/56">
+                  生成视频节点后，将在这里形成镜头时间线。现在先保持轻量视图，不把完整剪辑台默认铺开。
+                </p>
+              </div>
+            ) : (
             <EditorDesk
               jobs={shotDerivativeJobs}
               timeline={editorTimeline}
@@ -9151,6 +9164,7 @@ export default function CreatePage() {
               onBackToCanvas={() => setWorkspaceView('canvas')}
               onOpenPrevis={() => setWorkspaceView('previs')}
             />
+            )
           ) : !isCreateRouteBlocked && workspaceView === 'audio' ? (
             <AudioDesk
               roleBibles={roleBibles}
@@ -9194,22 +9208,32 @@ export default function CreatePage() {
               audioCueCount={assetSnapshot.audioCueCount}
             />
           ) : !isCreateRouteBlocked && workspaceView === 'delivery' ? (
-            <DeliveryTab
-              projectTitle={deliveryProjectTitle}
-              currentStage={currentStage}
-              deliveryPackage={activeDeliveryPackage}
-              canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0 && projectPermissions.canManageDelivery)}
-              canManageDelivery={projectPermissions.canManageDelivery}
-              onCreatePackage={handleCreateDeliveryPackage}
-              onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
-              onPreviewAsset={handlePreviewDeliveryAsset}
-              onViewVersion={handleViewDeliveryVersion}
-              onViewApproval={handleViewDeliveryApproval}
-              onExportSummary={handleExportDeliverySummary}
-              onExportManifest={handleExportDeliveryManifest}
-              onExportProjectData={handleExportDeliveryProjectData}
-              onSubmitPackage={handleSubmitDeliveryPackage}
-            />
+            activeDeliveryPackage ? (
+              <DeliveryTab
+                projectTitle={deliveryProjectTitle}
+                currentStage={currentStage}
+                deliveryPackage={activeDeliveryPackage}
+                canSubmit={Boolean(activeDeliveryPackage && deliveryPackageIncludedCount > 0 && projectPermissions.canManageDelivery)}
+                canManageDelivery={projectPermissions.canManageDelivery}
+                onCreatePackage={handleCreateDeliveryPackage}
+                onToggleAssetIncluded={handleToggleDeliveryAssetIncluded}
+                onPreviewAsset={handlePreviewDeliveryAsset}
+                onViewVersion={handleViewDeliveryVersion}
+                onViewApproval={handleViewDeliveryApproval}
+                onExportSummary={handleExportDeliverySummary}
+                onExportManifest={handleExportDeliveryManifest}
+                onExportProjectData={handleExportDeliveryProjectData}
+                onSubmitPackage={handleSubmitDeliveryPackage}
+              />
+            ) : (
+              <div className="mx-5 mt-3 rounded-[30px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur-[28px]">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-white/34">Delivery</div>
+                <div className="mt-2 text-2xl font-light tracking-[-0.03em] text-white">轻量交付空状态</div>
+                <p className="mt-3 max-w-2xl text-sm leading-[1.8] text-white/56">
+                  完成内容后，可在这里准备交付包。现在先保留空状态，不让交付面板抢占主画布注意力。
+                </p>
+              </div>
+            )
           ) : null}
 
           {showStartupPanels && projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && !isCreateRouteBlocked ? (
