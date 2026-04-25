@@ -13,7 +13,7 @@
 
 @keyframes createFlowPulse {
   from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -38; }
+  to { stroke-dashoffset: -32; }
 }
 
 :global(.create-obsidian-bg).scope {
@@ -35,7 +35,7 @@
 .scope :global(.create-glass-panel-soft) {
   background: rgba(255, 255, 255, 0.024);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(26px);
+  backdrop-filter: blur(24px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 18px 44px rgba(0, 0, 0, 0.24);
@@ -55,54 +55,29 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 12px 32px rgba(0, 0, 0, 0.26);
+    0 10px 30px rgba(0, 0, 0, 0.24);
 }
 
 .scope :global(.create-floating-console) {
-  background: rgba(10, 12, 16, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(30px);
+  background: rgba(10, 12, 16, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(28px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 28px 72px rgba(0, 0, 0, 0.4);
+    0 22px 54px rgba(0, 0, 0, 0.42);
 }
 
 .scope :global(.create-quiet-grid) {
-  background-image:
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
+  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
   background-size: 22px 22px;
 }
 
 .scope :global(.create-iridescent-border) {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
-.scope :global(.create-iridescent-border)::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: conic-gradient(from 180deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: createIridescentSpin 10s linear infinite;
-  opacity: 0.82;
-  pointer-events: none;
-}
-
-.scope :global(.create-liquid-border) {
-  position: relative;
-  overflow: hidden;
-}
-
+.scope :global(.create-iridescent-border)::before,
 .scope :global(.create-liquid-border)::before {
   content: '';
   position: absolute;
@@ -118,9 +93,22 @@
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
+  pointer-events: none;
+}
+
+.scope :global(.create-iridescent-border)::before {
+  animation: createIridescentSpin 10s linear infinite;
+  opacity: 0.82;
+}
+
+.scope :global(.create-liquid-border) {
+  position: relative;
+  overflow: hidden;
+}
+
+.scope :global(.create-liquid-border)::before {
   animation: createIridescentSpin 5.5s linear infinite;
   opacity: 0.9;
-  pointer-events: none;
 }
 
 .scope :global(.canvas-root) {
@@ -137,15 +125,15 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 18%, rgba(138, 43, 226, 0.12), transparent 32%),
-    radial-gradient(circle at 78% 82%, rgba(0, 255, 255, 0.06), transparent 36%);
+    radial-gradient(circle at 50% 18%, rgba(138, 43, 226, 0.12), transparent 30%),
+    radial-gradient(circle at 78% 82%, rgba(0, 255, 255, 0.05), transparent 32%);
 }
 
 .scope :global(.canvas-grid) {
   position: absolute;
   inset: 0;
-  opacity: 0.72;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.9px, transparent 0.9px);
+  opacity: 0.68;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
   background-size: 24px 24px;
 }
 
@@ -158,28 +146,49 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-radius: 28px;
-  padding: 12px 20px;
+  border-radius: 26px;
+  padding: 12px 18px;
+}
+
+.scope :global(.canvas-topbar-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-topbar-title) {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: white;
+}
+
+.scope :global(.canvas-topbar-copy) {
+  margin-top: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.48);
 }
 
 .scope :global(.canvas-toolbar-shell) {
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(14, 16, 20, 0.72);
   padding: 8px;
-  backdrop-filter: blur(30px);
+  backdrop-filter: blur(28px);
 }
 
 .scope :global(.canvas-toolbar-button) {
   display: flex;
-  height: 44px;
-  width: 44px;
+  height: 42px;
+  width: 42px;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(255, 255, 255, 0.62);
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
@@ -189,87 +198,357 @@
 
 .scope :global(.canvas-toolbar-button:hover) {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.92);
 }
 
 .scope :global(.canvas-toolbar-button.is-active) {
-  border-color: rgba(138, 43, 226, 0.34);
+  border-color: rgba(138, 43, 226, 0.28);
   background: rgba(138, 43, 226, 0.16);
-  color: #f1e9ff;
+  color: #f3ecff;
+}
+
+.scope :global(.canvas-toolbar-avatar) {
+  display: flex;
+  height: 22px;
+  width: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .scope :global(.canvas-add-menu) {
   position: absolute;
   left: 72px;
   top: 0;
-  width: 256px;
+  width: 300px;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(12, 15, 20, 0.88);
-  padding: 12px;
+  background: rgba(10, 12, 16, 0.9);
+  padding: 14px;
   backdrop-filter: blur(30px);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.scope :global(.canvas-add-menu-header) {
+  margin-bottom: 10px;
+  padding-inline: 4px;
+}
+
+.scope :global(.canvas-add-menu-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-add-menu-title) {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: white;
 }
 
 .scope :global(.canvas-add-option) {
+  display: flex;
   width: 100%;
+  align-items: center;
+  gap: 12px;
   border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.04);
   padding: 12px;
   text-align: left;
   transition:
     transform 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 
 .scope :global(.canvas-add-option:hover) {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.scope :global(.canvas-add-option-icon) {
+  display: flex;
+  height: 34px;
+  width: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.scope :global(.canvas-add-option-title) {
+  display: block;
+  font-size: 14px;
+  color: white;
+}
+
+.scope :global(.canvas-add-option-hint) {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.48);
 }
 
 .scope :global(.canvas-viewport) {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  top: 96px;
-  overflow: auto;
-  padding: 40px 96px;
+  top: 94px;
+  overflow: hidden;
+  padding: 34px 92px 180px;
+  cursor: grab;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .scope :global(.canvas-flow-surface) {
   position: relative;
-  min-height: 720px;
-  min-width: 1800px;
+  min-height: 780px;
+  min-width: 1400px;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.scope :global(.canvas-viewport.is-panning),
+.scope :global(.canvas-viewport.is-space-panning) {
+  cursor: grabbing;
+}
+
+.scope :global(.canvas-empty-state) {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(560px, calc(100vw - 220px));
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.scope :global(.canvas-empty-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.scope :global(.canvas-empty-capabilities) {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.scope :global(.canvas-empty-capability) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 10px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.46);
+  backdrop-filter: blur(18px);
+}
+
+.scope :global(.canvas-empty-title) {
+  margin-top: 12px;
+  font-size: clamp(20px, 2.7vw, 28px);
+  font-weight: 300;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.scope :global(.canvas-empty-copy) {
+  margin: 14px auto 0;
+  max-width: 500px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.scope :global(.canvas-empty-hint) {
+  margin-top: 18px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.scope :global(.canvas-entry-actions) {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.scope :global(.canvas-quick-chips) {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.scope :global(.canvas-intent-popover) {
+  position: fixed;
+  left: 50%;
+  bottom: 196px;
+  z-index: 34;
+  width: min(420px, calc(100vw - 48px));
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.scope :global(.canvas-composer-card) {
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(10, 12, 16, 0.88);
+  padding: 16px;
+  backdrop-filter: blur(30px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 22px 60px rgba(0, 0, 0, 0.42);
+}
+
+.scope :global(.canvas-composer-intent) {
+  width: 100%;
+}
+
+.scope :global(.canvas-composer-prompt) {
+  margin-left: 24px;
+  margin-top: 10px;
+  width: 424px;
+}
+
+.scope :global(.canvas-composer-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.scope :global(.canvas-composer-title) {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.scope :global(.canvas-composer-options) {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.scope :global(.canvas-choice-button) {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.84);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.scope :global(.canvas-choice-button:hover) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.scope :global(.canvas-choice-button.is-active) {
+  border-color: rgba(138, 43, 226, 0.22);
+  background: rgba(138, 43, 226, 0.12);
+}
+
+.scope :global(.canvas-choice-hint) {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .scope :global(.canvas-node-card) {
   --canvas-glow: rgba(255, 255, 255, 0.16);
   position: relative;
-  width: 290px;
   overflow: hidden;
-  border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(30px);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(18, 20, 24, 0.76);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
     box-shadow 0.18s ease;
 }
 
+.scope :global(.canvas-node-header) {
+  display: flex;
+  cursor: grab;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 14px 16px 12px;
+  user-select: none;
+}
+
+.scope :global(.canvas-node-header:active) {
+  cursor: grabbing;
+}
+
+.scope :global(.canvas-node-body) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  padding: 14px 16px;
+}
+
+.scope :global(.canvas-node-footer) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 16px 14px;
+}
+
 .scope :global(.canvas-node-card:hover) {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .scope :global(.canvas-node-card.is-active) {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
   box-shadow:
-    0 22px 48px rgba(0, 0, 0, 0.34),
-    0 0 0 1px var(--canvas-glow);
+    0 18px 42px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--canvas-glow),
+    0 0 28px rgba(124, 255, 234, 0.08);
+}
+
+.scope :global(.canvas-node-card.is-dragging) {
+  cursor: grabbing;
+  border-color: rgba(124, 255, 234, 0.28);
+  box-shadow:
+    0 26px 68px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(124, 255, 234, 0.2),
+    0 0 34px rgba(124, 255, 234, 0.1);
 }
 
 .scope :global(.canvas-node-card.is-generating)::before {
@@ -288,17 +567,17 @@
     linear-gradient(#000 0 0);
   mask-composite: exclude;
   animation: createIridescentSpin 4.8s linear infinite;
-  opacity: 0.82;
+  opacity: 0.78;
   pointer-events: none;
 }
 
-.scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.28); }
-.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 255, 255, 0.28); }
-.scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(138, 43, 226, 0.28); }
-.scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.24); }
-.scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.24); }
-.scope :global(.canvas-node-card.node-world) { --canvas-glow: rgba(0, 255, 255, 0.2); }
-.scope :global(.canvas-node-card.node-upload) { --canvas-glow: rgba(255, 255, 255, 0.18); }
+.scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.26); }
+.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 255, 255, 0.22); }
+.scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(138, 43, 226, 0.24); }
+.scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.22); }
+.scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.18); }
+.scope :global(.canvas-node-card.node-world) { --canvas-glow: rgba(0, 255, 255, 0.18); }
+.scope :global(.canvas-node-card.node-upload) { --canvas-glow: rgba(255, 255, 255, 0.16); }
 
 .scope :global(.canvas-node-topline) {
   position: absolute;
@@ -310,64 +589,364 @@
 
 .scope :global(.canvas-node-icon) {
   display: flex;
-  height: 32px;
-  width: 32px;
+  height: 34px;
+  width: 34px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.78);
+}
+
+.scope :global(.canvas-node-kind) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-node-title) {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: white;
+}
+
+.scope :global(.canvas-node-summary) {
+  margin-top: 8px;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.scope :global(.canvas-node-more) {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+.scope :global(.canvas-node-empty),
+.scope :global(.canvas-node-preview) {
+  display: flex;
+  min-height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.22);
+  padding: 18px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.scope :global(.canvas-node-empty-icon) {
+  font-size: 30px;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-node-preview-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-node-preview-copy) {
+  max-width: 92%;
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.scope :global(.canvas-node-provider) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.scope :global(.canvas-node-actions) {
+  display: flex;
+  flex-shrink: 0;
+  gap: 7px;
+}
+
+.scope :global(.canvas-node-connector) {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  display: flex;
+  height: 30px;
+  width: 30px;
+  transform: translateY(-50%);
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 12, 16, 0.82);
+  color: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(18px);
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.scope :global(.canvas-node-connector:hover) {
+  border-color: rgba(124, 255, 234, 0.45);
+  color: white;
+  transform: translateY(-50%) scale(1.04);
+}
+
+.scope :global(.canvas-node-connector.is-left) {
+  left: -15px;
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  right: -15px;
+  top: 76px;
 }
 
 .scope :global(.canvas-node-status) {
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 9px;
   font-size: 10px;
   font-weight: 500;
 }
 
-.scope :global(.canvas-node-status.status-idle) { color: rgba(255, 255, 255, 0.38); }
+.scope :global(.canvas-node-status.status-idle) { color: rgba(255, 255, 255, 0.4); }
 .scope :global(.canvas-node-status.status-ready) { color: #9ad7ff; }
 .scope :global(.canvas-node-status.status-generating) { color: #d6f8ff; }
 .scope :global(.canvas-node-status.status-done) { color: #baffd9; }
 
-.scope :global(.canvas-prompt-box) { display: grid; gap: 12px; }
+.scope :global(.canvas-node-detail-row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scope :global(.canvas-node-detail-copy) {
+  font-size: 11px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.scope :global(.canvas-prompt-box) {
+  display: grid;
+  gap: 10px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace) {
+  position: relative;
+  min-height: 176px;
+  gap: 10px;
+}
+
+.scope :global(.canvas-prompt-main) {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-main) {
+  min-height: 90px;
+}
+
+.scope :global(.canvas-prompt-select) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-select) {
+  max-width: 180px;
+  align-content: flex-start;
+}
 
 .scope :global(.canvas-prompt-input) {
   width: 100%;
   resize: none;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.3);
-  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 11px 13px;
   font-size: 12px;
   line-height: 1.65;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(255, 255, 255, 0.9);
   outline: none;
+}
+
+.scope :global(.canvas-prompt-input.is-workspace) {
+  min-height: 88px;
+  border-radius: 16px;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.scope :global(.canvas-prompt-input.is-single-line) {
+  height: 88px;
+}
+
+.scope :global(.canvas-prompt-result) {
+  margin-top: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.52);
 }
 
 .scope :global(.canvas-prompt-input::placeholder) {
   color: rgba(255, 255, 255, 0.28);
 }
 
+.scope :global(.canvas-prompt-toolbar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scope :global(.canvas-prompt-footer-panel) {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  z-index: 3;
+  display: grid;
+  gap: 10px;
+  width: min(920px, 100%);
+  max-height: min(360px, calc(100vh - 290px));
+  overflow: auto;
+  transform: translateX(-50%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 12, 16, 0.94);
+  padding: 10px;
+  backdrop-filter: blur(28px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.38);
+}
+
+.scope :global(.canvas-prompt-footer-header) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scope :global(.canvas-prompt-footer-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.scope :global(.canvas-prompt-footer-value) {
+  margin-top: 5px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.scope :global(.canvas-prompt-footer-options) {
+  display: grid;
+  gap: 8px;
+}
+
+.scope :global(.canvas-prompt-footer-nav) {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.scope :global(.canvas-footer-button) {
+  display: flex;
+  min-height: 46px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 10px;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.scope :global(.canvas-footer-button:hover) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.scope :global(.canvas-footer-button.is-active) {
+  border-color: rgba(124, 255, 234, 0.18);
+  background: rgba(124, 255, 234, 0.08);
+}
+
+.scope :global(.canvas-footer-button-label) {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-footer-button-value) {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.scope :global(.canvas-prompt-advanced) {
+  display: grid;
+  gap: 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
 .scope :global(.canvas-pill-row) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .scope :global(.canvas-pill-button) {
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.04);
-  padding: 4px 10px;
+  padding: 5px 10px;
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.56);
+  color: rgba(255, 255, 255, 0.58);
   backdrop-filter: blur(18px);
   transition:
     border-color 0.18s ease,
@@ -376,41 +955,100 @@
 }
 
 .scope :global(.canvas-pill-button.is-model-active) {
-  border-color: rgba(138, 43, 226, 0.35);
-  background: rgba(138, 43, 226, 0.16);
-  color: #f5ecff;
+  border-color: rgba(138, 43, 226, 0.28);
+  background: rgba(138, 43, 226, 0.14);
+  color: #f4ecff;
 }
 
 .scope :global(.canvas-pill-button.is-ratio-active) {
-  border-color: rgba(0, 255, 255, 0.28);
-  background: rgba(0, 255, 255, 0.12);
-  color: #d9ffff;
+  border-color: rgba(0, 255, 255, 0.24);
+  background: rgba(0, 255, 255, 0.1);
+  color: #dcffff;
 }
 
-.scope :global(.canvas-node-dialog),
-.scope :global(.canvas-node-output) {
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.25);
-  padding: 12px 14px;
+.scope :global(.canvas-pill-button.is-passive-pill) {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
 }
 
-.scope :global(.canvas-node-output-card) {
-  margin-top: 8px;
-  border-radius: 20px;
+.scope :global(.canvas-provider-status) {
+  border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 12px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 5px 9px;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.scope :global(.canvas-provider-status.status-available) {
+  border-color: rgba(52, 211, 153, 0.2);
+  background: rgba(52, 211, 153, 0.08);
+  color: #bbf7d0;
+}
+
+.scope :global(.canvas-provider-status.status-mock) {
+  border-color: rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.08);
+  color: #bae6fd;
+}
+
+.scope :global(.canvas-provider-status.status-bridge-only) {
+  border-color: rgba(217, 70, 239, 0.2);
+  background: rgba(217, 70, 239, 0.08);
+  color: #f5d0fe;
+}
+
+.scope :global(.canvas-provider-status.status-coming-soon) {
+  border-color: rgba(251, 191, 36, 0.22);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+}
+
+.scope :global(.canvas-provider-status.status-error) {
+  border-color: rgba(251, 113, 133, 0.22);
+  background: rgba(251, 113, 133, 0.08);
+  color: #fecdd3;
+}
+
+.scope :global(.canvas-provider-notice) {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.scope :global(.canvas-detail-button) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.scope :global(.canvas-generate-button) {
+  display: inline-flex;
+  min-width: 92px;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  padding: 0 18px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .scope :global(.canvas-secondary-button) {
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   padding: 8px 14px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.76);
   backdrop-filter: blur(24px);
@@ -428,16 +1066,182 @@
 
 .scope :global(.canvas-quick-console) {
   position: absolute;
-  bottom: 20px;
   left: 50%;
+  bottom: 92px;
   z-index: 20;
   display: flex;
   transform: translateX(-50%);
   align-items: center;
   gap: 8px;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100% - 180px);
   border-radius: 999px;
-  padding: 12px 16px;
+  padding: 10px 14px;
+}
+
+.scope :global(.canvas-prompt-console) {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 32;
+  width: min(920px, calc(100vw - 180px));
+  transform: translateX(-50%);
+  border-radius: 26px;
+  padding: 14px;
+}
+
+.scope :global(.canvas-zoom-controls) {
+  position: absolute;
+  right: 20px;
+  bottom: 248px;
+  z-index: 36;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 12, 16, 0.76);
+  padding: 8px;
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.canvas-zoom-button),
+.scope :global(.canvas-zoom-reset) {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+}
+
+.scope :global(.canvas-zoom-button) {
+  width: 30px;
+}
+
+.scope :global(.canvas-zoom-reset) {
+  min-width: 42px;
+  padding-inline: 10px;
+}
+
+.scope :global(.canvas-zoom-slider) {
+  width: 96px;
+  accent-color: #6ef7e6;
+}
+
+.scope :global(.canvas-context-menu),
+.scope :global(.canvas-node-add-menu) {
+  position: fixed;
+  z-index: 60;
+  width: 214px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(7, 9, 12, 0.88);
+  padding: 8px;
+  backdrop-filter: blur(26px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 62px rgba(0, 0, 0, 0.46);
+}
+
+.scope :global(.canvas-node-add-menu) {
+  width: 190px;
+}
+
+.scope :global(.canvas-menu-label) {
+  padding: 7px 9px 8px;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.scope :global(.canvas-menu-item) {
+  display: flex;
+  min-height: 34px;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.scope :global(.canvas-menu-item:hover:not(:disabled)) {
+  background: rgba(255, 255, 255, 0.07);
+  color: white;
+}
+
+.scope :global(.canvas-menu-item:disabled) {
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.24);
+}
+
+.scope :global(.canvas-menu-item.is-danger) {
+  color: rgba(255, 180, 190, 0.92);
+}
+
+.scope :global(.canvas-menu-shortcut) {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.scope :global(.canvas-menu-divider) {
+  height: 1px;
+  margin: 7px 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 900px) {
+  .scope :global(.canvas-prompt-console) {
+    bottom: 20px;
+    width: calc(100vw - 32px);
+  }
+
+  .scope :global(.canvas-intent-popover) {
+    bottom: 184px;
+  }
+
+  .scope :global(.canvas-prompt-main) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 86px;
+  }
+
+  .scope :global(.canvas-prompt-select) {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .scope :global(.canvas-prompt-input.is-workspace),
+  .scope :global(.canvas-prompt-input.is-single-line) {
+    height: 68px;
+    min-height: 68px;
+  }
+
+  .scope :global(.canvas-generate-button) {
+    min-width: 86px;
+    min-height: 68px;
+  }
+
+  .scope :global(.canvas-prompt-footer-nav) {
+    grid-template-columns: repeat(5, minmax(58px, 1fr));
+    overflow-x: auto;
+  }
+
+  .scope :global(.canvas-zoom-controls) {
+    right: auto;
+    left: 16px;
+    bottom: 206px;
+  }
 }
 
 .scope :global(.canvas-flow) {
@@ -451,33 +1255,55 @@
 
 .scope :global(.canvas-flow-path) {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.18);
-  stroke-width: 1.2;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
   stroke-linecap: round;
-  stroke-dasharray: 7 12;
+  opacity: 0.56;
 }
 
 .scope :global(.canvas-flow-path.is-active) {
-  stroke: rgba(140, 255, 246, 0.88);
-  stroke-width: 1.8;
-  filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.2));
-  animation: createFlowPulse 2.6s linear infinite;
+  stroke: rgba(134, 255, 236, 0.72);
+  stroke-width: 1.35;
+  stroke-dasharray: 6 10;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 255, 0.14));
+  animation: createFlowPulse 2.4s linear infinite;
 }
 
 .scope :global(.canvas-assets-shell) {
-  border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   padding: 20px;
-  backdrop-filter: blur(30px);
+  backdrop-filter: blur(28px);
 }
 
 .scope :global(.canvas-assets-card) {
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(0, 0, 0, 0.2);
   padding: 16px;
   backdrop-filter: blur(24px);
+}
+
+.scope :global(.canvas-assets-empty) {
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 18px;
+}
+
+.scope :global(.canvas-assets-empty-title) {
+  font-size: 16px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: white;
+}
+
+.scope :global(.canvas-assets-empty-copy) {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.52);
 }
 
 .scope :global(.create-setup-shell) {
