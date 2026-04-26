@@ -8979,7 +8979,7 @@ export default function CreatePage() {
           ) : null}
 
           {!isCreateRouteBlocked && workspaceSurface === 'canvas' ? (
-            <div className="h-screen min-h-0">
+            <div className="overflow-hidden" style={{ height: '100dvh' }}>
               <VisualCanvasWorkspace
                 projectTitle={deliveryProjectTitle}
                 templateName={activeWorkflowTemplate?.name ?? null}
