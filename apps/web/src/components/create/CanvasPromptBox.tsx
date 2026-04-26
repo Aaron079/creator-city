@@ -45,6 +45,7 @@ interface CanvasPromptBoxProps {
   showAllModelsInline?: boolean
   footerItems?: CanvasPromptFooterItem[]
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
+  onClose?: () => void
 }
 
 const MODEL_DURATIONS = ['5 ~ 10s', '10 ~ 20s', '20s', '1min', '2min']
@@ -62,8 +63,8 @@ export function CanvasPromptBox({
   prompt,
   onPromptChange,
   model,
-  models,
-  onModelChange,
+  models: _models,
+  onModelChange: _onModelChange,
   ratio,
   ratios,
   onRatioChange,
@@ -71,17 +72,18 @@ export function CanvasPromptBox({
   onGenerate,
   generateLabel = '生成',
   modelLabel = model,
-  modelOptionLabels = {},
+  modelOptionLabels: _modelOptionLabels = {},
   providerStatus,
   providerNotice,
   resultSummary,
   layout = 'node',
   multiline = layout === 'node',
-  detailsOpen = false,
-  onToggleDetails,
-  extraPills = [],
+  detailsOpen: _detailsOpen = false,
+  onToggleDetails: _onToggleDetails,
+  extraPills: _extraPills = [],
   footerItems = [],
   inputRef,
+  onClose,
 }: CanvasPromptBoxProps) {
   const [openFooterId, setOpenFooterId] = useState<string | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
@@ -100,10 +102,12 @@ export function CanvasPromptBox({
       onSelect: onRatioChange,
     }
     : null
-  const workspaceOpenItem = openFooterId === 'ratio' ? ratioItem : providerItem && openFooterId === providerItem.id ? providerItem : null
+  const openItem = openFooterId === 'ratio'
+    ? ratioItem
+    : footerItems.find((item) => item.id === openFooterId) ?? null
 
   useEffect(() => {
-    if (layout !== 'workspace' || !openFooterId) return
+    if (!openFooterId) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -123,15 +127,15 @@ export function CanvasPromptBox({
       document.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('pointerdown', handlePointerDown)
     }
-  }, [layout, openFooterId])
+  }, [openFooterId])
 
   useEffect(() => {
-    if (layout !== 'workspace' || !openFooterId) return
-    const allowedIds = [providerItem?.id, ratioItem?.id].filter(Boolean)
+    if (!openFooterId) return
+    const allowedIds = [...footerItems.map((item) => item.id), ratioItem?.id].filter(Boolean)
     if (!allowedIds.includes(openFooterId)) {
       setOpenFooterId(null)
     }
-  }, [layout, openFooterId, providerItem?.id, ratioItem?.id])
+  }, [footerItems, openFooterId, ratioItem?.id])
 
   const promptInput = multiline || layout === 'workspace' ? (
     <textarea
@@ -139,7 +143,7 @@ export function CanvasPromptBox({
       value={prompt}
       onChange={(event) => onPromptChange(event.target.value)}
       placeholder={placeholder}
-      rows={layout === 'workspace' ? 2 : 3}
+      rows={layout === 'workspace' ? 1 : 3}
       className={`canvas-prompt-input ${layout === 'workspace' ? 'is-workspace' : ''}`}
     />
   ) : (
@@ -155,30 +159,30 @@ export function CanvasPromptBox({
   if (layout === 'workspace') {
     return (
       <div ref={boxRef} className="canvas-prompt-box is-workspace">
-        {workspaceOpenItem ? (
-          <div className={`canvas-prompt-footer-panel panel-${workspaceOpenItem.id}`}>
+        {openItem ? (
+          <div className={`canvas-prompt-footer-panel panel-${openItem.id}`}>
             <div className="canvas-prompt-footer-options">
-              {workspaceOpenItem.options.map((option, index) => {
-                const active = workspaceOpenItem.id === providerItem?.id
+              {openItem.options.map((option, index) => {
+                const active = openItem.id === providerItem?.id
                   ? option.value === model
                   : option.value === ratio
-                const modelMeta = workspaceOpenItem.id === providerItem?.id
+                const modelMeta = openItem.id === providerItem?.id
                   ? splitModelHint(option.hint)
                   : { status: '', copy: option.hint ?? '' }
                 const badge = option.badge ?? modelMeta.status
-                const duration = option.duration ?? (workspaceOpenItem.id === providerItem?.id ? MODEL_DURATIONS[index % MODEL_DURATIONS.length] : '')
+                const duration = option.duration ?? (openItem.id === providerItem?.id ? MODEL_DURATIONS[index % MODEL_DURATIONS.length] : '')
 
                 return (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => {
-                      workspaceOpenItem.onSelect(option.value)
+                      openItem.onSelect(option.value)
                       setOpenFooterId(null)
                     }}
-                    className={`canvas-choice-button ${workspaceOpenItem.id === providerItem?.id ? 'is-model-row' : ''} ${active ? 'is-active' : ''}`}
+                    className={`canvas-choice-button ${openItem.id === providerItem?.id ? 'is-model-row' : ''} ${active ? 'is-active' : ''}`}
                   >
-                    <span className="canvas-choice-icon">{option.icon ?? workspaceOpenItem.icon ?? '✦'}</span>
+                    <span className="canvas-choice-icon">{option.icon ?? openItem.icon ?? '✦'}</span>
                     <span className="canvas-choice-copy">
                       <span className="canvas-choice-title">{option.label}</span>
                       {modelMeta.copy ? <span className="canvas-choice-hint">{modelMeta.copy}</span> : null}
@@ -260,110 +264,116 @@ export function CanvasPromptBox({
 
   return (
     <div ref={boxRef} className="canvas-prompt-box is-node">
-      <div className="canvas-prompt-main">
-        <div className="canvas-prompt-select">
-          <span className="canvas-pill-button is-model-active">
-            {modelLabel}
-          </span>
-          {providerStatus ? (
-            <span className={`canvas-provider-status status-${providerStatus}`}>
-              {providerStatus}
-            </span>
-          ) : null}
-        </div>
+      {openItem ? (
+        <div className={`canvas-prompt-footer-panel panel-${openItem.id}`}>
+          <div className="canvas-prompt-footer-options">
+            {openItem.options.map((option, index) => {
+              const active = openItem.id === providerItem?.id
+                ? option.value === model
+                : option.value === ratio
+              const modelMeta = openItem.id === providerItem?.id
+                ? splitModelHint(option.hint)
+                : { status: '', copy: option.hint ?? '' }
+              const badge = option.badge ?? modelMeta.status
+              const duration = option.duration ?? (openItem.id === providerItem?.id ? MODEL_DURATIONS[index % MODEL_DURATIONS.length] : '')
 
-        <div className="min-w-0 flex-1">
-          {promptInput}
-        </div>
-
-        {onGenerate ? (
-          <button
-            type="button"
-            onClick={onGenerate}
-            className="create-iridescent-button canvas-generate-button"
-          >
-            {generateLabel}
-          </button>
-        ) : null}
-      </div>
-
-      <div className="canvas-prompt-toolbar">
-        <div className="canvas-pill-row">
-          {ratio ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (!ratios || !onRatioChange) return
-                const currentIndex = ratios.indexOf(ratio)
-                const nextRatio = ratios[(currentIndex + 1) % ratios.length] ?? ratio
-                onRatioChange(nextRatio)
-              }}
-              className="canvas-pill-button is-ratio-active"
-            >
-              {ratio}
-            </button>
-          ) : null}
-          {extraPills.map((item) => (
-            <span key={item} className="canvas-pill-button is-passive-pill">
-              {item}
-            </span>
-          ))}
-        </div>
-
-        {onToggleDetails ? (
-          <button
-            type="button"
-            onClick={onToggleDetails}
-            className="canvas-detail-button"
-          >
-            {detailsOpen ? '收起' : '详情'}
-          </button>
-        ) : null}
-      </div>
-
-      {detailsOpen ? (
-        <div className="canvas-prompt-advanced">
-          <div className="canvas-pill-row">
-            {models.map((item) => {
-              const active = item === model
               return (
                 <button
-                  key={item}
+                  key={option.value}
                   type="button"
-                  onClick={() => onModelChange(item)}
-                  className={`canvas-pill-button ${active ? 'is-model-active' : ''}`}
+                  onClick={() => {
+                    openItem.onSelect(option.value)
+                    setOpenFooterId(null)
+                  }}
+                  className={`canvas-choice-button ${openItem.id === providerItem?.id ? 'is-model-row' : ''} ${active ? 'is-active' : ''}`}
                 >
-                  {active ? modelLabel : (modelOptionLabels[item] ?? item)}
+                  <span className="canvas-choice-icon">{option.icon ?? openItem.icon ?? '✦'}</span>
+                  <span className="canvas-choice-copy">
+                    <span className="canvas-choice-title">{option.label}</span>
+                    {modelMeta.copy ? <span className="canvas-choice-hint">{modelMeta.copy}</span> : null}
+                  </span>
+                  <span className="canvas-choice-meta">
+                    {badge ? <span className={`canvas-provider-status status-${badge}`}>{badge}</span> : null}
+                    {duration ? <span className="canvas-choice-duration">{duration}</span> : null}
+                  </span>
                 </button>
               )
             })}
           </div>
-
-          {providerNotice ? (
-            <div className="canvas-provider-notice">
-              {providerNotice}
-            </div>
-          ) : null}
-
-          {ratios && ratios.length > 0 && ratio && onRatioChange ? (
-            <div className="canvas-pill-row">
-              {ratios.map((item) => {
-                const active = item === ratio
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => onRatioChange(item)}
-                    className={`canvas-pill-button ${active ? 'is-ratio-active' : ''}`}
-                  >
-                    {item}
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
         </div>
       ) : null}
+
+      <div className="canvas-node-dialog-head">
+        <div className="canvas-node-dialog-title">节点对话框</div>
+        {onClose ? (
+          <button type="button" onClick={onClose} className="canvas-composer-close" aria-label="关闭">
+            ×
+          </button>
+        ) : null}
+      </div>
+
+      <div className="canvas-prompt-input-wrap">
+        {promptInput}
+      </div>
+
+      {providerNotice && providerStatus === 'not-configured' ? (
+        <div className="canvas-provider-notice">
+          当前为未配置，仅可模拟
+        </div>
+      ) : null}
+
+      <div className="canvas-prompt-footer-nav">
+        <div className="canvas-prompt-footer-left">
+          {providerItem ? (
+            <button
+              type="button"
+              onClick={() => setOpenFooterId((current) => (current === providerItem.id ? null : providerItem.id))}
+              className={`canvas-footer-button is-primary-pill ${openFooterId === providerItem.id ? 'is-active' : ''}`}
+            >
+              <span className="canvas-footer-button-icon">{providerItem.icon ?? '✦'}</span>
+              <span className="canvas-footer-button-value">{modelLabel}</span>
+            </button>
+          ) : null}
+          {ratioItem ? (
+            <button
+              type="button"
+              onClick={() => setOpenFooterId((current) => (current === 'ratio' ? null : 'ratio'))}
+              className={`canvas-footer-button ${openFooterId === 'ratio' ? 'is-active' : ''}`}
+            >
+              <span className="canvas-footer-button-value">{ratioItem.value}</span>
+            </button>
+          ) : null}
+          <span className="canvas-footer-button is-count-pill">
+            <span className="canvas-footer-button-value">1x</span>
+          </span>
+        </div>
+
+        <div className="canvas-prompt-footer-right">
+          {footerItems.filter((item) => item.id === 'tool' || item.id === 'params').map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setOpenFooterId((current) => (current === item.id ? null : item.id))}
+              className={`canvas-footer-button is-compact-tool ${openFooterId === item.id ? 'is-active' : ''}`}
+            >
+              {item.label}
+            </button>
+          ))}
+          <button type="button" className="canvas-icon-button" aria-label="语音输入">
+            ◌
+          </button>
+          {onGenerate ? (
+            <button
+              type="button"
+              onClick={onGenerate}
+              className="create-iridescent-button canvas-generate-button"
+              aria-label={generateLabel}
+            >
+              ↑
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }

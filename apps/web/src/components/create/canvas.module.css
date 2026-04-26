@@ -1647,3 +1647,1029 @@
   color: white;
   transform: translateY(-1px);
 }
+
+/* TapNow-style full-screen create canvas overrides. */
+.scope :global(.canvas-root) {
+  height: 100vh;
+  min-height: 100vh;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #020202;
+}
+
+.scope :global(.canvas-background-glow) {
+  background: transparent;
+}
+
+.scope :global(.canvas-grid) {
+  opacity: 0.82;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 0.7px, transparent 0.7px);
+  background-size: 18px 18px;
+}
+
+.scope :global(.canvas-topbar) {
+  position: fixed;
+  inset-inline: 18px;
+  top: 14px;
+  z-index: 62;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.scope :global(.canvas-topbar-brand) {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.scope :global(.canvas-topbar-logo) {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 30% 25%, #ffe27a, transparent 35%),
+    radial-gradient(circle at 68% 30%, #72fbff, transparent 36%),
+    radial-gradient(circle at 44% 72%, #8d65ff, transparent 38%),
+    rgba(255, 255, 255, 0.88);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
+}
+
+.scope :global(.canvas-topbar-label),
+.scope :global(.canvas-topbar-copy) {
+  display: none;
+}
+
+.scope :global(.canvas-topbar-title) {
+  margin: 0;
+  max-width: 36vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.scope :global(.canvas-topbar-actions) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.scope :global(.canvas-secondary-button) {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 9px 13px;
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.scope :global(.canvas-secondary-button.is-static) {
+  pointer-events: none;
+}
+
+.scope :global(.canvas-share-button) {
+  display: inline-flex;
+  height: 42px;
+  width: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 18px;
+  backdrop-filter: blur(22px);
+}
+
+.scope :global(.canvas-viewport) {
+  inset: 0;
+  padding: 74px 92px 168px;
+}
+
+.scope :global(.canvas-flow-surface) {
+  min-height: 1000px;
+  min-width: 1600px;
+}
+
+.scope :global(.canvas-empty-state) {
+  top: 42%;
+}
+
+.scope :global(.canvas-empty-title) {
+  margin: 0;
+  border-radius: 999px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(28, 28, 28, 0.66);
+  padding: 9px 13px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(18px);
+}
+
+.scope :global(.canvas-toolbar-shell) {
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.82);
+  padding: 7px;
+}
+
+.scope :global(.canvas-toolbar-button) {
+  height: 36px;
+  width: 36px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.scope :global(.canvas-toolbar-button.is-active) {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #090909;
+}
+
+.scope :global(.canvas-add-menu) {
+  width: 250px;
+  border-radius: 20px;
+  background: rgba(28, 28, 28, 0.94);
+  padding: 10px;
+}
+
+.scope :global(.canvas-add-menu-header) {
+  display: none;
+}
+
+.scope :global(.canvas-add-option) {
+  border-color: transparent;
+  background: transparent;
+  padding: 9px 10px;
+}
+
+.scope :global(.canvas-add-option:hover) {
+  transform: none;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.scope :global(.canvas-node-card) {
+  user-select: none;
+  border-radius: 20px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(24, 24, 24, 0.82);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+}
+
+.scope :global(.canvas-node-card:hover) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.scope :global(.canvas-node-card.is-active) {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(124, 255, 234, 0.16);
+}
+
+.scope :global(.canvas-node-header) {
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+  padding: 13px 15px 11px;
+}
+
+.scope :global(.canvas-node-icon) {
+  height: 28px;
+  width: 28px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.scope :global(.canvas-node-kind) {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.scope :global(.canvas-node-title) {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.scope :global(.canvas-node-body) {
+  padding: 14px 15px;
+}
+
+.scope :global(.canvas-node-empty),
+.scope :global(.canvas-node-preview) {
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.scope :global(.canvas-node-footer) {
+  padding: 11px 15px 13px;
+}
+
+.scope :global(.canvas-node-actions),
+.scope :global(.canvas-node-status) {
+  display: none;
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  top: 50%;
+}
+
+.scope :global(.canvas-prompt-console) {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 60;
+  width: min(820px, calc(100vw - 280px));
+  min-height: 124px;
+  max-height: 136px;
+  transform: translateX(-50%);
+  border-radius: 28px;
+  padding: 10px 12px;
+}
+
+.scope :global(.canvas-prompt-console.create-floating-console) {
+  background: rgba(30, 30, 30, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 22px 60px rgba(0, 0, 0, 0.45);
+}
+
+.scope :global(.canvas-prompt-box.is-workspace) {
+  min-height: 104px;
+  gap: 6px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-input-wrap) {
+  min-height: 56px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-input) {
+  height: 56px;
+  min-height: 56px;
+  overflow: hidden;
+  padding: 15px 12px 6px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-footer-nav) {
+  min-height: 36px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-footer-button) {
+  min-height: 34px;
+  padding: 7px 12px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-generate-button) {
+  min-height: 42px;
+  min-width: 42px;
+  width: 42px;
+}
+
+.scope :global(.canvas-prompt-box.is-workspace .canvas-prompt-footer-panel) {
+  bottom: calc(100% + 12px);
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(500px, calc(100vh - 230px));
+  border-radius: 22px;
+  background: rgba(27, 27, 27, 0.95);
+  padding: 10px;
+}
+
+.scope :global(.canvas-choice-button.is-model-row) {
+  min-height: 68px;
+}
+
+.scope :global(.canvas-zoom-controls) {
+  position: fixed;
+  left: 16px;
+  right: auto;
+  bottom: 16px;
+  z-index: 61;
+  gap: 8px;
+  border-radius: 999px;
+  background: rgba(29, 29, 29, 0.86);
+  padding: 8px 10px;
+}
+
+.scope :global(.canvas-zoom-icon) {
+  display: inline-flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+@media (max-width: 1100px) {
+  .scope :global(.canvas-prompt-console) {
+    width: min(760px, calc(100vw - 160px));
+  }
+
+  .scope :global(.canvas-secondary-button:nth-of-type(n+3)) {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .scope :global(.canvas-prompt-console) {
+    left: calc(50% + 28px);
+    width: min(680px, calc(100vw - 96px));
+  }
+
+  .scope :global(.canvas-topbar-title) {
+    max-width: 44vw;
+  }
+
+  .scope :global(.canvas-prompt-footer-left),
+  .scope :global(.canvas-prompt-footer-right) {
+    gap: 6px;
+  }
+}
+
+/* Node-dialog canvas flow */
+.scope :global(.canvas-node-card) {
+  overflow: visible;
+}
+
+.scope :global(.canvas-node-card > .relative) {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.scope :global(.canvas-node-body) {
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.scope :global(.canvas-node-empty),
+.scope :global(.canvas-node-preview) {
+  min-height: 0;
+  height: 100%;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.scope :global(.canvas-node-title) {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.scope :global(.canvas-node-footer) {
+  align-items: center;
+  padding: 10px 14px 12px;
+}
+
+.scope :global(.canvas-node-footer-actions) {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.scope :global(.canvas-node-footer-button) {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 5px 9px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.scope :global(.canvas-node-footer-button:hover),
+.scope :global(.canvas-node-footer-button.is-confirm) {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.scope :global(.canvas-node-connector) {
+  height: 34px;
+  width: 34px;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+}
+
+.scope :global(.canvas-node-connector.is-left) {
+  left: -17px;
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  right: -17px;
+  top: 50%;
+  font-size: 18px;
+}
+
+.scope :global(.canvas-node-dialog) {
+  position: fixed;
+  z-index: 80;
+  min-height: 154px;
+  max-height: 220px;
+  border-radius: 26px;
+  padding: 10px 12px;
+}
+
+.scope :global(.canvas-node-dialog.create-floating-console) {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(28, 28, 28, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 22px 64px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(24px);
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
+  position: relative;
+  display: flex;
+  min-height: 134px;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.scope :global(.canvas-node-dialog-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.scope :global(.canvas-node-dialog-title) {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  min-height: 60px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  min-height: 60px;
+  height: 60px;
+  padding: 14px 12px;
+  resize: none;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-nav) {
+  min-height: 38px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button) {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-compact-tool) {
+  padding-inline: 9px;
+  font-size: 11px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-icon-button),
+.scope :global(.canvas-node-dialog .canvas-generate-button) {
+  height: 40px;
+  min-height: 40px;
+  width: 40px;
+  min-width: 40px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-panel) {
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: min(420px, 100%);
+  max-height: min(500px, calc(100vh - 230px));
+  border-radius: 22px;
+  background: rgba(24, 24, 24, 0.96);
+  padding: 10px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-choice-button.is-model-row) {
+  min-height: 68px;
+}
+
+/* P0 interaction refinements */
+.scope :global(.canvas-topbar-brand) {
+  border-radius: 18px;
+  background: rgba(22, 22, 22, 0.62);
+  padding: 7px 10px 7px 8px;
+  backdrop-filter: blur(22px);
+}
+
+.scope :global(.canvas-topbar-logo-link),
+.scope :global(.canvas-topbar-title-link) {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  text-decoration: none;
+}
+
+.scope :global(.canvas-topbar-title-link) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.scope :global(.canvas-topbar-title-link:hover .canvas-topbar-title) {
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.scope :global(.canvas-topbar-title) {
+  background: transparent;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.scope :global(.canvas-node-add-menu) {
+  z-index: 92;
+  width: 190px;
+  background: rgba(20, 20, 20, 0.96);
+}
+
+.scope :global(.canvas-node-add-menu .canvas-menu-item) {
+  min-height: 38px;
+}
+
+.scope :global(.canvas-node-dialog) {
+  min-height: 144px;
+  max-height: none;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
+  min-height: 124px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  min-height: 50px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  min-height: 50px;
+  height: 50px;
+  padding: 12px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-nav) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-nav::-webkit-scrollbar) {
+  display: none;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-left),
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-right) {
+  display: inline-flex;
+  min-width: max-content;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button) {
+  display: inline-flex;
+  min-width: max-content;
+  height: 40px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 0 14px;
+  white-space: nowrap;
+  word-break: keep-all;
+  text-align: center;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button-value),
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-compact-tool) {
+  white-space: nowrap;
+  word-break: keep-all;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-primary-pill) {
+  max-width: 220px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-primary-pill .canvas-footer-button-value) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope :global(.canvas-node-dialog .canvas-icon-button),
+.scope :global(.canvas-node-dialog .canvas-generate-button) {
+  flex: 0 0 auto;
+}
+
+.scope :global(.canvas-node-connector) {
+  height: 16px;
+  width: 16px;
+  z-index: 10;
+}
+
+.scope :global(.canvas-node-connector.is-left) {
+  left: -8px;
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  right: -8px;
+}
+
+/* Focused canvas interaction fixes */
+.scope :global(.canvas-node-header) {
+  padding: 10px 13px 8px;
+}
+
+.scope :global(.canvas-node-body) {
+  flex: 1 1 auto;
+  padding: 8px 12px;
+}
+
+.scope :global(.canvas-node-empty),
+.scope :global(.canvas-node-preview) {
+  gap: 7px;
+  border-radius: 14px;
+  border-color: rgba(255, 255, 255, 0.055);
+  background: rgba(0, 0, 0, 0.16);
+  padding: 16px;
+}
+
+.scope :global(.canvas-node-empty-icon),
+.scope :global(.canvas-node-preview-label) {
+  display: none;
+}
+
+.scope :global(.canvas-node-preview-copy) {
+  max-width: 100%;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.scope :global(.canvas-node-footer) {
+  padding: 8px 12px 10px;
+}
+
+.scope :global(.canvas-node-summary) {
+  display: none;
+}
+
+.scope :global(.canvas-node-provider) {
+  padding: 3px 7px;
+  font-size: 9px;
+}
+
+.scope :global(.canvas-node-footer-button) {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.scope :global(.canvas-node-connector) {
+  height: 22px;
+  width: 22px;
+  z-index: 12;
+  cursor: crosshair;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(8, 10, 12, 0.72);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  line-height: 1;
+  touch-action: none;
+}
+
+.scope :global(.canvas-node-connector:hover) {
+  border-color: rgba(124, 255, 234, 0.42);
+  color: rgba(255, 255, 255, 0.94);
+  transform: translateY(-50%) scale(1.06);
+}
+
+.scope :global(.canvas-node-connector.is-left) {
+  left: -11px;
+}
+
+.scope :global(.canvas-node-connector.is-left)::before {
+  content: '';
+  height: 6px;
+  width: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  right: -11px;
+  top: 50%;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.scope :global(.canvas-node-dialog) {
+  min-height: 0;
+  max-height: none;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  min-height: 54px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  height: 54px;
+  min-height: 54px;
+}
+
+.scope :global(.canvas-flow-path) {
+  stroke-width: 1.15;
+}
+
+.scope :global(.canvas-flow-path.is-active) {
+  stroke-width: 1.4;
+}
+
+/* P0 AI canvas workflow polish */
+.scope :global(.canvas-node-card) {
+  overflow: visible;
+  border-radius: 18px;
+  background: rgba(22, 23, 25, 0.82);
+}
+
+.scope :global(.canvas-node-card > .relative) {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.scope :global(.canvas-node-header) {
+  min-height: 64px;
+  padding: 12px 14px 10px;
+}
+
+.scope :global(.canvas-node-icon) {
+  height: 30px;
+  width: 30px;
+  border-radius: 11px;
+}
+
+.scope :global(.canvas-node-kind) {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.scope :global(.canvas-node-title) {
+  margin-top: 3px;
+  font-size: 17px;
+  font-weight: 560;
+}
+
+.scope :global(.canvas-node-status-dot) {
+  display: inline-flex;
+  height: 8px;
+  width: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.035);
+}
+
+.scope :global(.canvas-node-status-dot.status-generating) {
+  background: #8ef7ff;
+  box-shadow: 0 0 18px rgba(142, 247, 255, 0.34);
+}
+
+.scope :global(.canvas-node-status-dot.status-done) {
+  background: #8dffb2;
+  box-shadow: 0 0 18px rgba(141, 255, 178, 0.26);
+}
+
+.scope :global(.canvas-node-more) {
+  height: 28px;
+  width: 28px;
+}
+
+.scope :global(.canvas-node-body) {
+  flex: 1 1 auto;
+  padding: 10px 14px;
+}
+
+.scope :global(.canvas-node-empty),
+.scope :global(.canvas-node-preview) {
+  min-height: 0;
+  height: 100%;
+  border-radius: 16px;
+  border-color: rgba(255, 255, 255, 0.055);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    rgba(0, 0, 0, 0.2);
+  padding: 18px;
+}
+
+.scope :global(.canvas-node-empty) {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.scope :global(.canvas-node-preview.is-image-result)::before,
+.scope :global(.canvas-node-preview.is-video-result)::before,
+.scope :global(.canvas-node-preview.is-audio-result)::before {
+  content: '';
+  display: block;
+  width: min(180px, 70%);
+  height: 58px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(135deg, rgba(124, 255, 234, 0.14), transparent),
+    rgba(255, 255, 255, 0.035);
+}
+
+.scope :global(.canvas-node-preview.is-video-result)::before {
+  border-radius: 18px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 10%, transparent 10% 18%),
+    linear-gradient(135deg, rgba(138, 43, 226, 0.16), rgba(0, 255, 255, 0.06));
+  background-size: 24px 100%, auto;
+}
+
+.scope :global(.canvas-node-preview.is-audio-result)::before {
+  height: 44px;
+  background:
+    repeating-linear-gradient(90deg, rgba(141, 255, 178, 0.42) 0 3px, transparent 3px 12px),
+    rgba(255, 255, 255, 0.025);
+}
+
+.scope :global(.canvas-node-loading-bar) {
+  width: min(190px, 72%);
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.scope :global(.canvas-node-loading-bar)::before {
+  content: '';
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8a2be2, #6ef7e6);
+  animation: createGradientShift 1.4s ease infinite;
+}
+
+.scope :global(.canvas-node-preview-copy) {
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.scope :global(.canvas-node-footer) {
+  min-height: 48px;
+  padding: 8px 14px 12px;
+}
+
+.scope :global(.canvas-node-summary) {
+  display: none;
+}
+
+.scope :global(.canvas-node-provider) {
+  padding: 4px 8px;
+  font-size: 9px;
+}
+
+.scope :global(.canvas-node-footer-actions) {
+  gap: 6px;
+}
+
+.scope :global(.canvas-node-footer-button) {
+  padding: 5px 9px;
+  font-size: 10px;
+}
+
+.scope :global(.canvas-node-connector) {
+  height: 16px;
+  width: 16px;
+  z-index: 18;
+  cursor: crosshair;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(8, 10, 14, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+  line-height: 1;
+  touch-action: none;
+}
+
+.scope :global(.canvas-node-connector:hover) {
+  border-color: rgba(124, 255, 234, 0.55);
+  color: white;
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 0 8px rgba(124, 255, 234, 0.2);
+}
+
+.scope :global(.canvas-node-connector.is-left) {
+  left: -8px;
+  top: 50%;
+}
+
+.scope :global(.canvas-node-connector.is-right) {
+  right: -8px;
+  top: 50%;
+  font-weight: 700;
+}
+
+.scope :global(.canvas-node-dialog) {
+  min-height: 0;
+  max-height: none;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
+  min-height: 144px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  min-height: 58px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  height: 58px;
+  min-height: 58px;
+}
+
+.scope :global(.canvas-node-create-menu) {
+  position: fixed;
+  z-index: 92;
+  width: 214px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(12, 13, 16, 0.96);
+  padding: 8px;
+  backdrop-filter: blur(28px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 64px rgba(0, 0, 0, 0.52);
+}
+
+.scope :global(.canvas-menu-item-row) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.scope :global(.canvas-menu-item-icon) {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.44);
+}
+
+.scope :global(.canvas-menu-badge) {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(124, 255, 234, 0.1);
+  color: rgba(124, 255, 234, 0.7);
+  border: 1px solid rgba(124, 255, 234, 0.18);
+  flex-shrink: 0;
+}

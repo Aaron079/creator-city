@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { CanvasNodeCard, type VisualCanvasNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
@@ -25,7 +24,6 @@ interface VisualCanvasWorkspaceProps {
   onShowStartup: () => void
 }
 
-type EntryKind = 'text' | 'image' | 'video' | 'audio' | 'upload' | 'template'
 type CanvasEdgeStatus = 'idle' | 'active' | 'done'
 
 interface CanvasEdge {
@@ -48,25 +46,16 @@ const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string;
 }
 
 const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }> = {
-  text: { width: 360, height: 260 },
+  text: { width: 360, height: 300 },
   image: { width: 380, height: 320 },
-  video: { width: 420, height: 300 },
-  audio: { width: 360, height: 220 },
-  asset: { width: 360, height: 260 },
-  template: { width: 360, height: 260 },
-  delivery: { width: 360, height: 240 },
-  world: { width: 380, height: 280 },
-  upload: { width: 360, height: 260 },
+  video: { width: 420, height: 320 },
+  audio: { width: 360, height: 260 },
+  asset: { width: 360, height: 280 },
+  template: { width: 360, height: 280 },
+  delivery: { width: 360, height: 280 },
+  world: { width: 380, height: 320 },
+  upload: { width: 360, height: 280 },
 }
-
-const ENTRY_ACTIONS: Array<{ label: string; kind: EntryKind; hint: string }> = [
-  { label: '文本', kind: 'text', hint: '脚本 / 文案' },
-  { label: '图片', kind: 'image', hint: '关键画面' },
-  { label: '视频', kind: 'video', hint: '镜头生成' },
-  { label: '音频', kind: 'audio', hint: '旁白 / 配乐' },
-  { label: '上传', kind: 'upload', hint: '参考素材' },
-  { label: '模板', kind: 'template', hint: 'Setup' },
-]
 
 const WORKSPACE_RATIOS = ['16:9', '9:16', '1:1']
 const MIN_CANVAS_ZOOM = 0.35
@@ -75,9 +64,11 @@ const CANVAS_ZOOM_STEP = 0.1
 const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 190
-const NODE_ADD_MENU_HEIGHT = 228
-const INTENT_MENU_WIDTH = 286
-const INTENT_MENU_HEIGHT = 220
+const NODE_ADD_MENU_HEIGHT = 220
+const NODE_CREATE_MENU_WIDTH = 214
+const NODE_CREATE_MENU_HEIGHT = 310
+const NODE_DIALOG_GAP = 32
+const NODE_DIALOG_HEIGHT = 180
 const STAGE_OPTIONS = [
   { value: 'draft', label: '起稿', hint: '先把方向和内容结构定下来' },
   { value: 'lookdev', label: '视觉开发', hint: '推进风格、关键帧和 look & feel' },
@@ -114,7 +105,7 @@ function getEntryKindLabel(kind: VisualCanvasNodeKind) {
       : kind === 'video'
         ? '视频'
         : kind === 'upload'
-          ? '素材'
+          ? '上传'
           : kind === 'audio'
             ? '音频'
             : kind === 'world'
@@ -140,16 +131,8 @@ function getDefaultPosition(index: number) {
   }
 }
 
-function clampCanvasPoint(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(value, max))
-}
-
 function clampCanvasZoom(value: number) {
   return Math.max(MIN_CANVAS_ZOOM, Math.min(value, MAX_CANVAS_ZOOM))
-}
-
-function getNodeRatio(kind: VisualCanvasNodeKind, ratio: string) {
-  return kind === 'text' || kind === 'audio' || kind === 'upload' ? undefined : ratio
 }
 
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
@@ -174,10 +157,10 @@ function doNodesOverlap(
   right: { x: number; y: number; width: number; height: number },
 ) {
   return !(
-    left.x + left.width + 40 < right.x ||
-    right.x + right.width + 40 < left.x ||
-    left.y + left.height + 40 < right.y ||
-    right.y + right.height + 40 < left.y
+    left.x + left.width + 24 < right.x ||
+    right.x + right.width + 24 < left.x ||
+    left.y + left.height + 24 < right.y ||
+    right.y + right.height + 24 < left.y
   )
 }
 
@@ -188,9 +171,18 @@ function resolveNonOverlappingPosition(
   let next = { ...candidate }
   let guard = 0
 
-  while (nodes.some((node) => doNodesOverlap(next, node)) && guard < 16) {
-    next = { ...next, y: next.y + 280 }
+  while (nodes.some((node) => doNodesOverlap(next, node)) && guard < 8) {
+    next = { ...next, y: next.y + 320 }
     guard += 1
+  }
+
+  if (nodes.some((node) => doNodesOverlap(next, node))) {
+    next = { ...candidate, x: candidate.x + 120, y: candidate.y }
+    guard = 0
+    while (nodes.some((node) => doNodesOverlap(next, node)) && guard < 8) {
+      next = { ...next, y: next.y + 320 }
+      guard += 1
+    }
   }
 
   return { x: next.x, y: next.y }
@@ -204,6 +196,22 @@ function clampMenuPosition(clientX: number, clientY: number, width: number, heig
   }
 }
 
+function getSurfaceOffset(surface: HTMLDivElement | null) {
+  return {
+    left: surface?.offsetLeft ?? 0,
+    top: surface?.offsetTop ?? 0,
+  }
+}
+
+function buildMockResult(node: VisualCanvasNode, prompt: string) {
+  const promptCopy = prompt || '未填写 prompt'
+  if (node.kind === 'image') return `图片结果 · ${promptCopy.slice(0, 72)}${promptCopy.length > 72 ? '...' : ''}`
+  if (node.kind === 'video') return `视频镜头 · ${promptCopy.slice(0, 72)}${promptCopy.length > 72 ? '...' : ''}`
+  if (node.kind === 'audio') return `音频草稿 · ${promptCopy.slice(0, 72)}${promptCopy.length > 72 ? '...' : ''}`
+  if (node.kind === 'upload') return '上传素材已记录，可作为后续节点输入。'
+  return `文本结果 · ${promptCopy.slice(0, 88)}${promptCopy.length > 88 ? '...' : ''}`
+}
+
 export function VisualCanvasWorkspace({
   projectTitle,
   templateName,
@@ -214,7 +222,8 @@ export function VisualCanvasWorkspace({
 }: VisualCanvasWorkspaceProps) {
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
-  const [activeNodeId, setActiveNodeId] = useState<string>('')
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string>('add')
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
@@ -224,17 +233,18 @@ export function VisualCanvasWorkspace({
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
   const [promptAssetMode, setPromptAssetMode] = useState<(typeof ASSET_OPTIONS)[number]['value']>('none')
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
-  const [composer, setComposer] = useState<{ open: boolean; x: number; y: number; worldX: number; worldY: number }>({
-    open: false,
-    x: 420,
-    y: 240,
-    worldX: 420,
-    worldY: 240,
-  })
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
-  const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; x: number; y: number; worldX: number; worldY: number } | null>(null)
+  const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
+  const [connectionDraft, setConnectionDraft] = useState<{
+    nodeId: string
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+  } | null>(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -256,6 +266,11 @@ export function VisualCanvasWorkspace({
     startClientY: number
     startX: number
     startY: number
+  } | null>(null)
+  const connectionDragRef = useRef<{
+    nodeId: string
+    startClientX: number
+    startClientY: number
   } | null>(null)
 
   useEffect(() => {
@@ -297,9 +312,11 @@ export function VisualCanvasWorkspace({
   const deleteNode = useCallback((nodeId: string) => {
     setNodes((current) => current.filter((node) => node.id !== nodeId))
     setEdges((current) => current.filter((edge) => edge.fromNodeId !== nodeId && edge.toNodeId !== nodeId))
-    setActiveNodeId((current) => (current === nodeId ? '' : current))
+    setActiveNodeId((current) => (current === nodeId ? null : current))
+    setEditingNodeId((current) => (current === nodeId ? null : current))
     setContextMenu(null)
     setNodeAddMenu(null)
+    setConnectionDraft(null)
   }, [])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
@@ -320,6 +337,7 @@ export function VisualCanvasWorkspace({
 
     setNodes((current) => [...current, duplicate])
     setActiveNodeId(nodeId)
+    setEditingNodeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
     return duplicate
@@ -347,8 +365,11 @@ export function VisualCanvasWorkspace({
       if (event.key === 'Escape') {
         setContextMenu(null)
         setNodeAddMenu(null)
+        setNodeCreateMenu(null)
+        setConnectionDraft(null)
+        connectionDragRef.current = null
         setIsAddMenuOpen(false)
-        setComposer((current) => ({ ...current, open: false }))
+        setEditingNodeId(null)
         return
       }
 
@@ -384,6 +405,10 @@ export function VisualCanvasWorkspace({
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
+  )
+  const editingNode = useMemo(
+    () => nodes.find((node) => node.id === editingNodeId) ?? null,
+    [editingNodeId, nodes],
   )
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
@@ -432,20 +457,20 @@ export function VisualCanvasWorkspace({
   }, [activeNode])
 
   useEffect(() => {
-    if (!contextMenu && !nodeAddMenu && !isAddMenuOpen && !composer.open) return
+    if (!contextMenu && !nodeAddMenu && !isAddMenuOpen && !nodeCreateMenu) return
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-intent-popover, .canvas-add-menu, .canvas-toolbar-shell')) return
+      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-add-menu, .canvas-toolbar-shell')) return
       setContextMenu(null)
       setNodeAddMenu(null)
+      setNodeCreateMenu(null)
       setIsAddMenuOpen(false)
-      setComposer((current) => ({ ...current, open: false }))
     }
 
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [composer.open, contextMenu, isAddMenuOpen, nodeAddMenu])
+  }, [contextMenu, isAddMenuOpen, nodeAddMenu, nodeCreateMenu])
 
   const createNode = useCallback((
     kind: VisualCanvasNodeKind,
@@ -464,17 +489,18 @@ export function VisualCanvasWorkspace({
     const nodeId = createNodeId(kind)
     const parentNode = options?.parentNodeId
       ? nodes.find((item) => item.id === options.parentNodeId)
-      : activeNode
+      : null
     const viewportRect = viewportRef.current?.getBoundingClientRect()
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const centeredPosition = viewportRect
       ? {
-        x: (viewportRect.width / 2 - canvasPan.x) / canvasZoom - size.width / 2,
-        y: (viewportRect.height / 2 - canvasPan.y) / canvasZoom - size.height / 2,
+        x: (viewportRect.width / 2 - surfaceOffset.left - canvasPan.x) / canvasZoom - size.width / 2,
+        y: (viewportRect.height * 0.42 - surfaceOffset.top - canvasPan.y) / canvasZoom - size.height / 2,
       }
       : getDefaultPosition(nodes.length)
     const basePosition = options?.position
       ?? (parentNode
-        ? { x: parentNode.x + parentNode.width + 220, y: parentNode.y }
+        ? { x: parentNode.x + parentNode.width + 240, y: parentNode.y }
         : centeredPosition)
     const position = resolveNonOverlappingPosition(
       { ...basePosition, ...size },
@@ -518,13 +544,45 @@ export function VisualCanvasWorkspace({
     setCanvasPrompt(node.prompt)
     setPromptModel(providerId)
     setPreferredKind(kind)
-    setComposer((current) => ({ ...current, open: false }))
     return node
-  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom, nodes, promptStage])
+  }, [canvasPan.x, canvasPan.y, canvasZoom, nodes, promptStage])
 
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [])
+
+  const bringNodeIntoView = useCallback((node: VisualCanvasNode) => {
+    const viewportRect = viewportRef.current?.getBoundingClientRect()
+    if (!viewportRect) return
+
+    const margin = 72
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+    const nodeLeft = viewportRect.left + surfaceOffset.left + canvasPan.x + node.x * canvasZoom
+    const nodeTop = viewportRect.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
+    const nodeRight = nodeLeft + node.width * canvasZoom
+    const nodeBottom = nodeTop + node.height * canvasZoom
+    let deltaX = 0
+    let deltaY = 0
+
+    if (nodeRight > viewportRect.right - margin) {
+      deltaX = viewportRect.right - margin - nodeRight
+    } else if (nodeLeft < viewportRect.left + margin) {
+      deltaX = viewportRect.left + margin - nodeLeft
+    }
+
+    if (nodeBottom > viewportRect.bottom - margin) {
+      deltaY = viewportRect.bottom - margin - nodeBottom
+    } else if (nodeTop < viewportRect.top + margin) {
+      deltaY = viewportRect.top + margin - nodeTop
+    }
+
+    if (deltaX || deltaY) {
+      setCanvasPan((current) => ({
+        x: current.x + deltaX,
+        y: current.y + deltaY,
+      }))
+    }
+  }, [canvasPan.x, canvasPan.y, canvasZoom])
 
   const handleNodeDragStart = useCallback((
     nodeId: string,
@@ -572,34 +630,6 @@ export function VisualCanvasWorkspace({
     }
   }, [canvasZoom, handleNodePatch])
 
-  const handleGenerate = useCallback((nodeId: string, outputLabel?: string) => {
-    const node = nodes.find((item) => item.id === nodeId)
-    if (!node) return
-
-    handleNodePatch(nodeId, { status: 'generating' })
-    const timer = window.setTimeout(() => {
-      handleNodePatch(nodeId, {
-        status: 'done',
-        resultPreview: outputLabel ?? `${node.title} 已生成结果占位，可继续细化。`,
-        outputLabel: outputLabel ?? `${node.title} 已生成结果占位，可继续细化。`,
-      })
-      setEdges((current) => current.map((edge) => (
-        edge.toNodeId === nodeId || edge.fromNodeId === nodeId
-          ? { ...edge, status: 'done' }
-          : edge
-      )))
-    }, 950)
-    timersRef.current.push(timer)
-  }, [handleNodePatch, nodes])
-
-  const handleUpload = useCallback((nodeId: string) => {
-    handleNodePatch(nodeId, {
-      status: 'done',
-      resultPreview: '已记录上传素材占位，后续可继续作为参考输入。',
-      outputLabel: '已记录上传素材占位，后续可继续作为参考输入。',
-    })
-  }, [handleNodePatch])
-
   const syncPromptPreset = useCallback((kind: VisualCanvasNodeKind) => {
     const meta = NODE_META[kind]
     const providerKind = getProviderKind(kind)
@@ -617,7 +647,13 @@ export function VisualCanvasWorkspace({
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
     setActiveNodeId(node.id)
+    setEditingNodeId(node.id)
+    setCanvasPrompt(node.prompt)
     syncPromptPreset(node.kind)
+    setPromptModel(node.providerId || node.model)
+    if (node.ratio) {
+      setPromptRatio(node.ratio)
+    }
     window.setTimeout(() => {
       promptInputRef.current?.focus()
       promptInputRef.current?.select()
@@ -630,142 +666,171 @@ export function VisualCanvasWorkspace({
     return `${title} · ${stageLabel} · ${assetCopy} · ${parameterLabel}${providerCopy}。结果已就绪，可继续追加下一个节点。`
   }, [activeProviderNotice, assetLabel, parameterLabel, promptAssetMode, stageLabel])
 
-  const openComposer = useCallback((input?: { kind?: EntryKind; x?: number; y?: number }) => {
-    if (input?.kind === 'template') {
-      onShowStartup()
-      return
-    }
-
-    const rect = viewportRef.current?.getBoundingClientRect()
-    const fallbackWorldX = rect ? (rect.width / 2 - canvasPan.x) / canvasZoom - 150 : 420
-    const fallbackWorldY = rect ? (rect.height / 2 - canvasPan.y) / canvasZoom - 110 : 240
-    const worldX = clampCanvasPoint(input?.x ?? fallbackWorldX, -400, 2400)
-    const worldY = clampCanvasPoint(input?.y ?? fallbackWorldY, -300, 1600)
-    const screenPoint = rect
-      ? {
-        x: rect.left + worldX * canvasZoom + canvasPan.x,
-        y: rect.top + worldY * canvasZoom + canvasPan.y,
-      }
-      : { x: 420, y: 240 }
-    const menuPoint = clampMenuPosition(screenPoint.x, screenPoint.y, INTENT_MENU_WIDTH, INTENT_MENU_HEIGHT)
-
-    if (input?.kind) {
-      syncPromptPreset(input.kind)
-    }
-
-    setComposer({ open: true, x: menuPoint.x, y: menuPoint.y, worldX, worldY })
-    setIsAddMenuOpen(false)
-  }, [canvasPan.x, canvasPan.y, canvasZoom, onShowStartup, syncPromptPreset])
-
-  const closeComposer = useCallback(() => {
-    setComposer((current) => ({ ...current, open: false }))
-  }, [])
-
   const handleAddNode = useCallback((kind: VisualCanvasNodeKind, presetTitle?: string) => {
     syncPromptPreset(kind)
     createNode(kind, {
       title: presetTitle ?? NODE_META[kind].title,
       model: NODE_META[kind].model,
       ratio: NODE_META[kind].ratio,
-      parentNodeId: activeNode?.id,
     })
-  }, [activeNode?.id, createNode, syncPromptPreset])
+    setEditingNodeId(null)
+  }, [createNode, syncPromptPreset])
 
-  const handleComposerGenerate = useCallback(() => {
-    const kind = preferredKind
-    const nextNode = createNode(kind, {
-      prompt: canvasPrompt.trim(),
-      model: promptModel,
-      ratio: getNodeRatio(kind, promptRatio),
-      parentNodeId: activeNode?.id,
-      position: {
-        x: composer.worldX,
-        y: composer.worldY,
-      },
-    })
+  const handleNodeDialogGenerate = useCallback(() => {
+    if (!editingNode) return
 
-    closeComposer()
-
-    if (kind === 'upload') {
-      handleUpload(nextNode.id)
-      return
-    }
-
-    handleGenerate(nextNode.id, buildResultLabel(nextNode.title))
-  }, [activeNode?.id, buildResultLabel, canvasPrompt, closeComposer, composer.worldX, composer.worldY, createNode, handleGenerate, handleUpload, preferredKind, promptModel, promptRatio])
-
-  const handleWorkspaceGenerate = useCallback(() => {
     const trimmedPrompt = canvasPrompt.trim()
-
-    if (activeNode) {
-      handleNodePatch(activeNode.id, {
-        prompt: trimmedPrompt,
-        model: promptModel,
-        providerId: promptModel,
-        stage: promptStage,
-        ratio: activeNode.ratio ? promptRatio : activeNode.ratio,
-      })
-      handleGenerate(activeNode.id, buildResultLabel(activeNode.title))
-      return
-    }
-
-    const nextNode = createNode(preferredKind, {
+    handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
       model: promptModel,
-      parentNodeId: undefined,
-      ratio: getNodeRatio(preferredKind, promptRatio),
+      providerId: promptModel,
+      stage: promptStage,
+      ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
+      status: 'generating',
     })
 
-    if (preferredKind === 'upload') {
-      handleUpload(nextNode.id)
-      return
-    }
+    const timer = window.setTimeout(() => {
+      const preview = trimmedPrompt
+        ? buildMockResult(editingNode, trimmedPrompt)
+        : buildResultLabel(editingNode.title)
 
-    handleGenerate(nextNode.id, buildResultLabel(nextNode.title))
-  }, [activeNode, buildResultLabel, canvasPrompt, createNode, handleGenerate, handleNodePatch, handleUpload, preferredKind, promptModel, promptRatio, promptStage])
+      handleNodePatch(editingNode.id, {
+        status: 'done',
+        resultPreview: preview,
+        outputLabel: preview,
+      })
+      setEdges((current) => current.map((edge) => (
+        edge.toNodeId === editingNode.id || edge.fromNodeId === editingNode.id
+          ? { ...edge, status: 'done' }
+          : edge
+      )))
+      setEditingNodeId(null)
+    }, 850)
+    timersRef.current.push(timer)
+  }, [buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptRatio, promptStage])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
-    if (activeNode) {
-      handleNodePatch(activeNode.id, { prompt: value })
+    if (editingNode) {
+      handleNodePatch(editingNode.id, { prompt: value })
     }
-  }, [activeNode, handleNodePatch])
+  }, [editingNode, handleNodePatch])
 
   const handleProviderChange = useCallback((value: string) => {
     setPromptModel(value)
-    if (activeNode) {
-      handleNodePatch(activeNode.id, {
+    if (editingNode) {
+      handleNodePatch(editingNode.id, {
         model: value,
         providerId: value,
       })
     }
-  }, [activeNode, handleNodePatch])
-
-  const createNodeFromIntent = useCallback((kind: VisualCanvasNodeKind) => {
-    syncPromptPreset(kind)
-    createNode(kind, {
-      model: getCanvasProvider(getProviderKind(kind), NODE_META[kind].model)?.id ?? NODE_META[kind].model,
-      parentNodeId: activeNode?.id,
-      position: activeNode ? undefined : { x: composer.worldX, y: composer.worldY },
-    })
-  }, [activeNode, composer.worldX, composer.worldY, createNode, syncPromptPreset])
+  }, [editingNode, handleNodePatch])
 
   const handleAddSpecificNextNode = useCallback((nodeId: string, kind: VisualCanvasNodeKind) => {
     syncPromptPreset(kind)
-    createNode(kind, {
+    const node = createNode(kind, {
       parentNodeId: nodeId,
       model: NODE_META[kind].model,
       ratio: NODE_META[kind].ratio,
+      position: nodeAddMenu ? { x: nodeAddMenu.worldX, y: nodeAddMenu.worldY } : undefined,
     })
+    setEditingNodeId(node.id)
+    bringNodeIntoView(node)
     setNodeAddMenu(null)
-  }, [createNode, syncPromptPreset])
+    setConnectionDraft(null)
+  }, [bringNodeIntoView, createNode, nodeAddMenu, syncPromptPreset])
 
-  const openNodeAddMenu = useCallback((nodeId: string, clientX: number, clientY: number) => {
-    const position = clampMenuPosition(clientX + 10, clientY - 16, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
-    setNodeAddMenu({ nodeId, ...position })
+  const openNodeAddMenuAt = useCallback((
+    nodeId: string,
+    clientX: number,
+    clientY: number,
+    worldX: number,
+    worldY: number,
+  ) => {
+    const position = clampMenuPosition(clientX, clientY, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
+    setNodeAddMenu({ nodeId, ...position, worldX, worldY })
     setContextMenu(null)
+    setEditingNodeId(null)
     setActiveNodeId(nodeId)
   }, [])
+
+  const openNodeAddMenu = useCallback((nodeId: string) => {
+    const sourceNode = nodes.find((node) => node.id === nodeId)
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!sourceNode || !rect) return
+
+    const size = getNodeSize('image')
+    const resolved = resolveNonOverlappingPosition(
+      {
+        x: sourceNode.x + sourceNode.width + 260,
+        y: sourceNode.y,
+        width: size.width,
+        height: size.height,
+      },
+      nodes,
+    )
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+    const sourceLeft = rect.left + surfaceOffset.left + canvasPan.x + sourceNode.x * canvasZoom
+    const sourceTop = rect.top + surfaceOffset.top + canvasPan.y + sourceNode.y * canvasZoom
+    const sourceRight = sourceLeft + sourceNode.width * canvasZoom
+    const sourceBottom = sourceTop + sourceNode.height * canvasZoom
+    const desiredX = sourceRight + 24
+    const desiredY = sourceTop + sourceNode.height * canvasZoom / 2 - NODE_ADD_MENU_HEIGHT / 2
+    let position = clampMenuPosition(desiredX, desiredY, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
+    const overlapsSource = !(
+      position.x + NODE_ADD_MENU_WIDTH < sourceLeft ||
+      sourceRight < position.x ||
+      position.y + NODE_ADD_MENU_HEIGHT < sourceTop ||
+      sourceBottom < position.y
+    )
+    if (overlapsSource) {
+      position = clampMenuPosition(sourceLeft, sourceBottom + 24, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
+      const stillOverlaps = !(
+        position.x + NODE_ADD_MENU_WIDTH < sourceLeft ||
+        sourceRight < position.x ||
+        position.y + NODE_ADD_MENU_HEIGHT < sourceTop ||
+        sourceBottom < position.y
+      )
+      if (stillOverlaps) {
+        position = clampMenuPosition(sourceLeft, sourceTop - NODE_ADD_MENU_HEIGHT - 24, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
+        const overlapsAbove = !(
+          position.x + NODE_ADD_MENU_WIDTH < sourceLeft ||
+          sourceRight < position.x ||
+          position.y + NODE_ADD_MENU_HEIGHT < sourceTop ||
+          sourceBottom < position.y
+        )
+        if (overlapsAbove) {
+          position = clampMenuPosition(sourceLeft - NODE_ADD_MENU_WIDTH - 24, desiredY, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
+        }
+      }
+    }
+    openNodeAddMenuAt(nodeId, position.x, position.y, resolved.x, resolved.y)
+  }, [canvasPan.x, canvasPan.y, canvasZoom, nodes, openNodeAddMenuAt])
+
+  const startConnectionDrag = useCallback((nodeId: string, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
+    const sourceNode = nodes.find((node) => node.id === nodeId)
+    if (!sourceNode) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    connectionDragRef.current = {
+      nodeId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+    }
+    setActiveNodeId(nodeId)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setEditingNodeId(null)
+    setConnectionDraft({
+      nodeId,
+      x1: sourceNode.x + sourceNode.width,
+      y1: sourceNode.y + sourceNode.height / 2,
+      x2: sourceNode.x + sourceNode.width + 36,
+      y2: sourceNode.y + sourceNode.height / 2,
+    })
+  }, [nodes])
 
   const openNodeContextMenu = useCallback((nodeId: string, clientX: number, clientY: number) => {
     const position = clampMenuPosition(clientX, clientY, NODE_MENU_WIDTH, NODE_MENU_HEIGHT)
@@ -791,16 +856,63 @@ export function VisualCanvasWorkspace({
   const getViewportWorldPoint = useCallback((clientX: number, clientY: number) => {
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return { x: 420, y: 240 }
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
 
     return {
-      x: (clientX - rect.left - canvasPan.x) / canvasZoom,
-      y: (clientY - rect.top - canvasPan.y) / canvasZoom,
+      x: (clientX - rect.left - surfaceOffset.left - canvasPan.x) / canvasZoom,
+      y: (clientY - rect.top - surfaceOffset.top - canvasPan.y) / canvasZoom,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom])
 
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = connectionDragRef.current
+      if (!drag) return
+      const point = getViewportWorldPoint(event.clientX, event.clientY)
+      setConnectionDraft((current) => current && current.nodeId === drag.nodeId
+        ? { ...current, x2: point.x, y2: point.y }
+        : current)
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const drag = connectionDragRef.current
+      if (!drag) return
+      connectionDragRef.current = null
+      setConnectionDraft(null)
+
+      const distance = Math.hypot(
+        event.clientX - drag.startClientX,
+        event.clientY - drag.startClientY,
+      )
+      if (distance < 8) {
+        openNodeAddMenu(drag.nodeId)
+        return
+      }
+
+      const point = getViewportWorldPoint(event.clientX, event.clientY)
+      const size = getNodeSize('image')
+      openNodeAddMenuAt(
+        drag.nodeId,
+        event.clientX + 12,
+        event.clientY - NODE_ADD_MENU_HEIGHT / 2,
+        point.x + 42,
+        point.y - size.height / 2,
+      )
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+    }
+  }, [getViewportWorldPoint, openNodeAddMenu, openNodeAddMenuAt])
+
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-intent-popover')
+    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -815,6 +927,7 @@ export function VisualCanvasWorkspace({
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
 
+    setEditingNodeId(null)
     setIsPanning(true)
     setContextMenu(null)
     setNodeAddMenu(null)
@@ -862,7 +975,7 @@ export function VisualCanvasWorkspace({
           onShowStartup()
           return
         }
-        createNodeFromIntent(value as VisualCanvasNodeKind)
+        syncPromptPreset(value as VisualCanvasNodeKind)
       },
     },
     {
@@ -901,18 +1014,88 @@ export function VisualCanvasWorkspace({
         setPromptRatio(PARAMETER_RATIO_MAP[nextValue])
       },
     },
-  ], [activeProviderLabel, activeProviderStatus, assetLabel, createNodeFromIntent, handleProviderChange, onShowStartup, parameterLabel, preferredKind, stageLabel])
+  ], [activeProviderLabel, activeProviderStatus, assetLabel, handleProviderChange, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
+
+  const handleCreateMenuSelect = useCallback((kind: VisualCanvasNodeKind) => {
+    const size = getNodeSize(kind)
+    const position = nodeCreateMenu
+      ? {
+        x: nodeCreateMenu.worldX - (size.width - NODE_SIZE.text.width) / 2,
+        y: nodeCreateMenu.worldY,
+      }
+      : undefined
+    syncPromptPreset(kind)
+    const node = createNode(kind, {
+      title: NODE_META[kind].title,
+      model: NODE_META[kind].model,
+      ratio: NODE_META[kind].ratio,
+      position,
+    })
+    setEditingNodeId(node.id)
+    setNodeCreateMenu(null)
+  }, [createNode, nodeCreateMenu, syncPromptPreset])
 
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement | null
-    if (target?.closest('button, input, textarea')) return
+    const element = event.target as HTMLElement | null
+    if (element?.closest('button, input, textarea')) return
     if (!canStartCanvasPan(event.target)) return
     const point = getViewportWorldPoint(event.clientX, event.clientY)
-    openComposer({
-      x: point.x - 112,
-      y: point.y - 88,
+    const position = clampMenuPosition(event.clientX, event.clientY, NODE_CREATE_MENU_WIDTH, NODE_CREATE_MENU_HEIGHT)
+    setNodeCreateMenu({
+      x: position.x,
+      y: position.y,
+      worldX: point.x - NODE_SIZE.text.width / 2,
+      worldY: point.y - NODE_SIZE.text.height / 2,
     })
-  }, [canStartCanvasPan, getViewportWorldPoint, openComposer])
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [canStartCanvasPan, getViewportWorldPoint])
+
+  const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!editingNode || typeof window === 'undefined') return undefined
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!rect) return undefined
+
+    const dialogWidth = Math.min(680, Math.max(320, window.innerWidth - 32))
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+    const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
+    const nodeTop = rect.top + surfaceOffset.top + canvasPan.y + editingNode.y * canvasZoom
+    const nodeWidth = editingNode.width * canvasZoom
+    const nodeHeight = editingNode.height * canvasZoom
+    const nodeRight = nodeLeft + nodeWidth
+    const nodeBottom = nodeTop + nodeHeight
+    const viewportMargin = 16
+    const clampLeft = (left: number) => Math.max(viewportMargin, Math.min(left, window.innerWidth - dialogWidth - viewportMargin))
+    const clampTop = (top: number) => Math.max(viewportMargin, Math.min(top, window.innerHeight - NODE_DIALOG_HEIGHT - viewportMargin))
+    const nodeCenterY = nodeTop + nodeHeight / 2
+    const nodeCenterX = nodeLeft + nodeWidth / 2
+
+    const candidates = [
+      nodeRight + NODE_DIALOG_GAP + dialogWidth <= window.innerWidth - viewportMargin
+        ? { left: nodeRight + NODE_DIALOG_GAP, top: clampTop(nodeCenterY - NODE_DIALOG_HEIGHT / 2) }
+        : null,
+      nodeLeft - NODE_DIALOG_GAP - dialogWidth >= viewportMargin
+        ? { left: nodeLeft - NODE_DIALOG_GAP - dialogWidth, top: clampTop(nodeCenterY - NODE_DIALOG_HEIGHT / 2) }
+        : null,
+      nodeBottom + NODE_DIALOG_GAP + NODE_DIALOG_HEIGHT <= window.innerHeight - viewportMargin
+        ? { left: clampLeft(nodeCenterX - dialogWidth / 2), top: nodeBottom + NODE_DIALOG_GAP }
+        : null,
+      nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT >= viewportMargin
+        ? { left: clampLeft(nodeCenterX - dialogWidth / 2), top: nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT }
+        : null,
+    ].filter(Boolean) as Array<{ left: number; top: number }>
+
+    const fallbackTop = nodeBottom + NODE_DIALOG_GAP + NODE_DIALOG_HEIGHT <= window.innerHeight
+      ? nodeBottom + NODE_DIALOG_GAP
+      : nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT
+
+    return {
+      left: candidates[0]?.left ?? clampLeft(nodeCenterX - dialogWidth / 2),
+      top: candidates[0]?.top ?? clampTop(fallbackTop),
+      width: dialogWidth,
+    }
+  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
 
   return (
     <div className="canvas-root">
@@ -920,17 +1103,23 @@ export function VisualCanvasWorkspace({
       <div className="canvas-grid" />
 
       <div className="canvas-topbar create-glass-panel">
-        <div>
-          <div className="canvas-topbar-label">AI Canvas</div>
-          <div className="canvas-topbar-title">{projectTitle}</div>
+        <div className="canvas-topbar-brand">
+          <a href="/" className="canvas-topbar-logo-link" aria-label="回到 Creator City 首页">
+            <span className="canvas-topbar-logo" aria-hidden="true" />
+          </a>
+          <a href="/projects" className="canvas-topbar-title-link">
+            <div className="canvas-topbar-label">Creator City</div>
+            <div className="canvas-topbar-title">{projectTitle}</div>
+          </a>
           <div className="canvas-topbar-copy">
             {templateName ? `模板 · ${templateName}` : '自由创作画布'} · 不预设固定流程，按你的思路推进
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={onShowStartup} className="canvas-secondary-button">
-            模板
+        <div className="canvas-topbar-actions">
+          <span className="canvas-secondary-button is-static">200</span>
+          <button type="button" className="canvas-secondary-button">
+            社区
           </button>
           <button type="button" onClick={onOpenTimeline} className="canvas-secondary-button">
             Timeline
@@ -940,6 +1129,12 @@ export function VisualCanvasWorkspace({
           </button>
           <button type="button" onClick={onOpenDelivery} className="canvas-secondary-button">
             Delivery
+          </button>
+          <button type="button" onClick={onShowStartup} className="canvas-secondary-button">
+            模板
+          </button>
+          <button type="button" className="canvas-share-button" aria-label="分享">
+            ⌯
           </button>
         </div>
       </div>
@@ -969,7 +1164,7 @@ export function VisualCanvasWorkspace({
             transform: `translate3d(${canvasPan.x}px, ${canvasPan.y}px, 0) scale(${canvasZoom})`,
           }}
         >
-          {nodes.length === 0 && !composer.open ? (
+          {nodes.length === 0 ? (
             <div className="canvas-empty-state">
               <div className="canvas-empty-title">双击画布开始创作</div>
             </div>
@@ -997,6 +1192,17 @@ export function VisualCanvasWorkspace({
             </>
           ) : null}
 
+          {connectionDraft ? (
+            <CanvasFlowEdge
+              id={`draft-${connectionDraft.nodeId}`}
+              x1={connectionDraft.x1}
+              y1={connectionDraft.y1}
+              x2={connectionDraft.x2}
+              y2={connectionDraft.y2}
+              active
+            />
+          ) : null}
+
           {nodes.map((node) => (
             <div
               key={node.id}
@@ -1012,15 +1218,9 @@ export function VisualCanvasWorkspace({
                 active={node.id === activeNode?.id}
                 dragging={draggingNodeId === node.id}
                 onSelect={() => {
-                  setActiveNodeId(node.id)
-                  syncPromptPreset(node.kind)
+                  focusPromptForNode(node)
                 }}
-                onPromptChange={(value) => handleNodePatch(node.id, { prompt: value })}
-                onModelChange={(value) => handleNodePatch(node.id, { model: value })}
-                onRatioChange={node.ratio ? (value) => handleNodePatch(node.id, { ratio: value }) : undefined}
-                onGenerate={() => handleGenerate(node.id)}
-                onUpload={() => handleUpload(node.id)}
-                onAddNext={(clientX, clientY) => openNodeAddMenu(node.id, clientX, clientY)}
+                onAddNext={(event) => startConnectionDrag(node.id, event)}
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
@@ -1030,47 +1230,37 @@ export function VisualCanvasWorkspace({
         </div>
       </div>
 
-      {composer.open ? (
+      {editingNode && nodeDialogStyle ? (
         <div
-          className="canvas-intent-popover"
-          style={{ left: composer.x, top: composer.y }}
+          className="canvas-node-dialog create-floating-console"
+          style={nodeDialogStyle}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.16 }}
-            className="canvas-composer-card canvas-composer-intent"
-          >
-            <div className="canvas-composer-head">
-              <div className="canvas-composer-title">选择起点</div>
-              <button type="button" onClick={closeComposer} className="canvas-composer-close" aria-label="关闭">
-                ×
-              </button>
-            </div>
-            <div className="canvas-composer-options">
-              {ENTRY_ACTIONS.map((action) => {
-                const active = action.kind !== 'template' && preferredKind === action.kind
-                return (
-                  <button
-                    key={action.label}
-                    type="button"
-                    onClick={() => {
-                          if (action.kind === 'template') {
-                            onShowStartup()
-                            return
-                          }
-                          createNodeFromIntent(action.kind)
-                        }}
-                    className={`canvas-choice-button ${active ? 'is-active' : ''}`}
-                  >
-                    <span>{action.label}</span>
-                    <span className="canvas-choice-hint">{action.hint}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </motion.div>
+          <CanvasPromptBox
+            layout="node"
+            multiline
+            prompt={canvasPrompt}
+            onPromptChange={handlePromptChange}
+            model={promptModel}
+            modelLabel={activeProviderLabel}
+            modelOptionLabels={providerOptionLabels}
+            providerStatus={activeProviderStatus}
+            providerNotice={activeProviderNotice}
+            resultSummary={editingNode.status === 'done' ? editingNode.resultPreview ?? editingNode.outputLabel : undefined}
+            models={workspaceModels}
+            onModelChange={handleProviderChange}
+            ratio={promptRatio}
+            ratios={WORKSPACE_RATIOS}
+            onRatioChange={setPromptRatio}
+            placeholder="描述这个节点要生成的内容"
+            onGenerate={handleNodeDialogGenerate}
+            generateLabel={editingNode.status === 'generating' ? '生成中…' : '生成'}
+            footerItems={promptFooterItems}
+            inputRef={(element) => {
+              promptInputRef.current = element
+            }}
+            onClose={() => setEditingNodeId(null)}
+          />
         </div>
       ) : null}
 
@@ -1080,18 +1270,65 @@ export function VisualCanvasWorkspace({
           style={{ left: nodeAddMenu.x, top: nodeAddMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className="canvas-menu-label">Add Next</div>
-          {(['text', 'image', 'video', 'audio', 'upload'] as VisualCanvasNodeKind[]).map((kind) => (
+          <div className="canvas-menu-label">引用该节点生成</div>
+          {([
+            { kind: 'text', label: '文本生成' },
+            { kind: 'image', label: '图片生成' },
+            { kind: 'video', label: '视频生成' },
+            { kind: 'audio', label: '音频' },
+            { kind: 'world', label: '3D 世界', badge: 'Beta' },
+          ] as { kind: VisualCanvasNodeKind; label: string; badge?: string }[]).map(({ kind, label, badge }) => (
             <button
               key={kind}
               type="button"
               onClick={() => handleAddSpecificNextNode(connectorNode.id, kind)}
               className="canvas-menu-item"
             >
-              <span>{getEntryKindLabel(kind)}</span>
-              <span className="canvas-menu-shortcut">+</span>
+              <span>{label}</span>
+              {badge ? <span className="canvas-menu-badge">{badge}</span> : <span className="canvas-menu-shortcut">+</span>}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {nodeCreateMenu ? (
+        <div
+          className="canvas-node-create-menu"
+          style={{ left: nodeCreateMenu.x, top: nodeCreateMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="canvas-menu-label">创建节点</div>
+          {([
+            { kind: 'text', label: '文本', icon: '✦' },
+            { kind: 'image', label: '图片', icon: '◫' },
+            { kind: 'video', label: '视频', icon: '▣' },
+            { kind: 'audio', label: '音频', icon: '♫' },
+            { kind: 'world', label: '3D 世界', icon: '◎', badge: 'Beta' },
+          ] as { kind: VisualCanvasNodeKind; label: string; icon: string; badge?: string }[]).map(({ kind, label, icon, badge }) => (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => handleCreateMenuSelect(kind)}
+              className="canvas-menu-item"
+            >
+              <span className="canvas-menu-item-row">
+                <span className="canvas-menu-item-icon">{icon}</span>
+                <span>{label}</span>
+              </span>
+              {badge ? <span className="canvas-menu-badge">{badge}</span> : null}
+            </button>
+          ))}
+          <div className="canvas-menu-divider" />
+          <button
+            type="button"
+            onClick={() => handleCreateMenuSelect('upload')}
+            className="canvas-menu-item"
+          >
+            <span className="canvas-menu-item-row">
+              <span className="canvas-menu-item-icon">↑</span>
+              <span>上传</span>
+            </span>
+          </button>
         </div>
       ) : null}
 
@@ -1141,8 +1378,9 @@ export function VisualCanvasWorkspace({
       ) : null}
 
       <div className="canvas-zoom-controls">
-        <button type="button" onClick={() => setZoomAroundPoint(canvasZoom - CANVAS_ZOOM_STEP)} className="canvas-zoom-button">
-          -
+        <span className="canvas-zoom-icon">⌗</span>
+        <button type="button" onClick={fitCanvasView} className="canvas-zoom-reset">
+          Fit
         </button>
         <input
           aria-label="Canvas zoom"
@@ -1154,43 +1392,11 @@ export function VisualCanvasWorkspace({
           onChange={(event) => setZoomAroundPoint(Number(event.target.value))}
           className="canvas-zoom-slider"
         />
-        <button type="button" onClick={() => setZoomAroundPoint(canvasZoom + CANVAS_ZOOM_STEP)} className="canvas-zoom-button">
-          +
-        </button>
-        <button type="button" onClick={fitCanvasView} className="canvas-zoom-reset">
-          Fit
-        </button>
         <button type="button" onClick={resetCanvasView} className="canvas-zoom-reset">
           {Math.round(canvasZoom * 100)}%
         </button>
       </div>
 
-      <div className="canvas-prompt-console create-floating-console">
-        <CanvasPromptBox
-          layout="workspace"
-          multiline={false}
-          prompt={canvasPrompt}
-          onPromptChange={handlePromptChange}
-          model={promptModel}
-          modelLabel={activeProviderLabel}
-          modelOptionLabels={providerOptionLabels}
-          providerStatus={activeProviderStatus}
-          providerNotice={activeProviderNotice}
-          resultSummary={activeNode?.status === 'done' ? activeNode.resultPreview ?? activeNode.outputLabel : undefined}
-          models={workspaceModels}
-          onModelChange={handleProviderChange}
-          ratio={promptRatio}
-          ratios={WORKSPACE_RATIOS}
-          onRatioChange={setPromptRatio}
-          placeholder="描述你想创作的内容……"
-          onGenerate={composer.open ? handleComposerGenerate : handleWorkspaceGenerate}
-          generateLabel={activeNode?.status === 'generating' ? '生成中…' : preferredKind === 'upload' ? '添加' : '生成'}
-          footerItems={promptFooterItems}
-          inputRef={(element) => {
-            promptInputRef.current = element
-          }}
-        />
-      </div>
     </div>
   )
 }

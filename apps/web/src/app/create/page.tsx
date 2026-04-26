@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, WheelEvent, useMemo } from 'r
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CanvasProvider, DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
+import { DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
 import { ProjectKickoffSummaryCard } from '@/components/create/ProjectKickoffSummaryCard'
 import { ProjectStartChecklistCard } from '@/components/create/ProjectStartChecklistCard'
@@ -8809,7 +8809,7 @@ export default function CreatePage() {
   // ── Render ─────────────────────────────────────────────────────────────────────
 
   return (
-    <CanvasProvider>
+    <>
       <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
 
         {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && workspaceSurface !== 'canvas' ? (
@@ -8848,7 +8848,10 @@ export default function CreatePage() {
         />
         ) : null}
 
-        <div ref={workspaceScrollRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto">
+        <div
+          ref={workspaceScrollRef}
+          className={`relative min-h-0 min-w-0 flex-1 flex-col ${workspaceSurface === 'canvas' && !isCreateRouteBlocked ? 'flex overflow-hidden' : 'flex overflow-y-auto'}`}
+        >
           {(workspaceSurface !== 'canvas' || showStartupPanels || !projectPermissions.canEditCreateWorkspace || !canAccessCreateWorkspace) ? (
             <div
               className="sticky top-0 z-30 mx-4 mt-4 flex items-center justify-between rounded-[28px] px-5 py-3 create-glass-panel"
@@ -8923,7 +8926,7 @@ export default function CreatePage() {
           ) : null}
 
           <div id="workspace" ref={workspaceAnchorRef} />
-          {!isCreateRouteBlocked ? (
+          {!isCreateRouteBlocked && workspaceSurface !== 'canvas' ? (
           <div className="mx-4 mt-3 flex items-center justify-between gap-4 rounded-[26px] px-4 py-3 create-glass-panel-soft">
             <div className="flex gap-2 flex-wrap">
               {([
@@ -8963,7 +8966,6 @@ export default function CreatePage() {
                 </button>
               ))}
             </div>
-            {workspaceSurface !== 'canvas' ? (
               <p className="text-[10px] max-w-[640px] text-right leading-[1.7]" style={{ color: 'rgba(255,255,255,0.36)' }}>
                 {roleContext.source === 'fallback' && !canAccessCreateWorkspace
                   ? '当前没有检测到这个账号在项目中的 active role assignment，因此工作区已自动降级为安全只读交付视图。'
@@ -8973,12 +8975,11 @@ export default function CreatePage() {
                       ? '制片视图只保留产出与交付相关面板，不显示完整创作控制台。'
                       : '客户视图在工作区内只保留交付相关内容，复杂参数与内部创作流程已隐藏。'}
               </p>
-            ) : null}
           </div>
           ) : null}
 
           {!isCreateRouteBlocked && workspaceSurface === 'canvas' ? (
-            <div className="px-4 pb-5 pt-3">
+            <div className="h-screen min-h-0">
               <VisualCanvasWorkspace
                 projectTitle={deliveryProjectTitle}
                 templateName={activeWorkflowTemplate?.name ?? null}
@@ -9325,6 +9326,6 @@ export default function CreatePage() {
           )}
         </AnimatePresence>
       </div>
-    </CanvasProvider>
+    </>
   )
 }

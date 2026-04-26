@@ -35,12 +35,7 @@ interface CanvasNodeCardProps {
   node: VisualCanvasNode
   active: boolean
   onSelect: () => void
-  onPromptChange: (value: string) => void
-  onModelChange: (value: string) => void
-  onRatioChange?: (value: string) => void
-  onGenerate: () => void
-  onUpload: () => void
-  onAddNext: (clientX: number, clientY: number) => void
+  onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
@@ -51,47 +46,47 @@ const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; emp
   text: {
     icon: '✦',
     label: '文本',
-    empty: '脚本、文案或创意方向会显示在这里。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   image: {
     icon: '◫',
     label: '图片',
-    empty: '关键画面、参考帧或图片结果占位。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   video: {
     icon: '▣',
     label: '视频',
-    empty: '镜头、运动和视频生成结果会显示在这里。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   audio: {
     icon: '♫',
     label: '音频',
-    empty: '旁白、音乐或声音结果占位。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   asset: {
     icon: '↑',
     label: '素材',
-    empty: '上传或引用的素材会显示在这里。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   template: {
     icon: '◧',
     label: '模板',
-    empty: '模板流程占位。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   delivery: {
     icon: '✓',
     label: '交付',
-    empty: '交付摘要与客户确认信息。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   world: {
     icon: '◎',
     label: '3D 世界',
-    empty: '空间、场景和世界观结构。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
   upload: {
     icon: '↑',
     label: '上传',
-    empty: '上传素材占位。',
+    empty: '点击编辑，生成内容会显示在这里。',
   },
 }
 
@@ -99,6 +94,13 @@ const STATUS_META: Record<VisualCanvasNodeStatus, { label: string; summary: stri
   idle: { label: 'Idle', summary: '等待生成' },
   generating: { label: 'Generating', summary: '正在模拟生成结果' },
   done: { label: 'Done', summary: '结果已就绪，可继续迭代' },
+}
+
+function getResultPreviewClass(kind: VisualCanvasNodeKind) {
+  if (kind === 'image') return 'is-image-result'
+  if (kind === 'video') return 'is-video-result'
+  if (kind === 'audio') return 'is-audio-result'
+  return ''
 }
 
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
@@ -110,8 +112,6 @@ export function CanvasNodeCard({
   node,
   active,
   onSelect,
-  onGenerate,
-  onUpload,
   onAddNext,
   onDragStart,
   onOpenContextMenu,
@@ -138,7 +138,10 @@ export function CanvasNodeCard({
       layout
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      onClick={onSelect}
+      onClick={() => {
+        onSelect()
+        onEdit()
+      }}
       onDoubleClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
@@ -173,7 +176,7 @@ export function CanvasNodeCard({
         onPointerDown={(event) => {
           event.preventDefault()
           event.stopPropagation()
-          onAddNext(event.clientX, event.clientY)
+          onAddNext(event)
         }}
         onClick={(event) => {
           event.preventDefault()
@@ -199,9 +202,7 @@ export function CanvasNodeCard({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`canvas-node-status status-${node.status}`}>
-              {status.label}
-            </span>
+            <span className={`canvas-node-status-dot status-${node.status}`} aria-hidden="true" />
             <button
               type="button"
               onClick={(event) => {
@@ -218,7 +219,7 @@ export function CanvasNodeCard({
 
         <div className="canvas-node-body">
           {node.status === 'done' ? (
-            <div className={`canvas-node-preview preview-${node.kind}`}>
+            <div className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)}`}>
               <div className="canvas-node-preview-label">Result Preview</div>
               <div className="canvas-node-preview-copy">
                 {node.resultPreview ?? node.outputLabel ?? status.summary}
@@ -227,6 +228,7 @@ export function CanvasNodeCard({
           ) : node.status === 'generating' ? (
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-preview-label">Generating</div>
+              <div className="canvas-node-loading-bar" />
               <div className="canvas-node-preview-copy">{status.summary}</div>
             </div>
           ) : (
@@ -247,42 +249,26 @@ export function CanvasNodeCard({
               {node.prompt || node.resultPreview || node.outputLabel || status.summary}
             </p>
           </div>
-
-          <div className="canvas-node-actions">
+          <div className="canvas-node-footer-actions">
             <button
               type="button"
-              onPointerDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onAddNext(event.clientX, event.clientY)
-              }}
               onClick={(event) => {
-                event.preventDefault()
                 event.stopPropagation()
+                onEdit()
               }}
-              className="canvas-secondary-button"
+              className="canvas-node-footer-button"
             >
-              后续 +
+              编辑
             </button>
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation()
-                onUpload()
+                onSelect()
               }}
-              className="canvas-secondary-button"
+              className="canvas-node-footer-button is-confirm"
             >
-              上传
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onGenerate()
-              }}
-              className="canvas-secondary-button"
-            >
-              {node.status === 'generating' ? '节点生成中' : '节点生成'}
+              确认
             </button>
           </div>
         </div>
