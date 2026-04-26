@@ -1156,6 +1156,44 @@ export function VisualCanvasWorkspace({
         onPointerUp={handleCanvasPointerUp}
         onPointerCancel={handleCanvasPointerUp}
       >
+        {nodes.length === 0 ? (
+          <div className="canvas-empty-overlay">
+            <div className="canvas-empty-hint-row">
+              <span className="canvas-empty-hint-badge">
+                <span className="canvas-empty-cursor-icon" aria-hidden="true">↖</span>
+                <span>双击</span>
+              </span>
+              <span className="canvas-empty-hint-text">画布自由生成，或查看模板</span>
+            </div>
+            <div className="canvas-empty-shortcuts">
+              {([
+                { label: '文字生视频', icon: '⊡', kind: 'video' },
+                { label: '图片换背景', icon: '▦', kind: 'image' },
+                { label: '首帧生成视频', icon: '✦', kind: 'video' },
+                { label: '音频生视频', icon: '♫', kind: 'audio' },
+              ] as { label: string; icon: string; kind: VisualCanvasNodeKind }[]).map(({ label, icon, kind }) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="canvas-empty-shortcut"
+                  onClick={(e) => { e.stopPropagation(); handleAddNode(kind, label) }}
+                >
+                  <span className="canvas-empty-shortcut-icon" aria-hidden="true">{icon}</span>
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="canvas-empty-shortcut"
+                onClick={(e) => { e.stopPropagation(); onShowStartup() }}
+              >
+                <span className="canvas-empty-shortcut-icon" aria-hidden="true">⊞</span>
+                模板
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div
           ref={surfaceRef}
           className="canvas-flow-surface"
@@ -1164,11 +1202,6 @@ export function VisualCanvasWorkspace({
             transform: `translate3d(${canvasPan.x}px, ${canvasPan.y}px, 0) scale(${canvasZoom})`,
           }}
         >
-          {nodes.length === 0 ? (
-            <div className="canvas-empty-state">
-              <div className="canvas-empty-title">双击画布开始创作</div>
-            </div>
-          ) : null}
 
           {edges.length > 0 ? (
             <>

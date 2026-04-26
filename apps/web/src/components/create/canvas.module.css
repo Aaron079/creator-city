@@ -325,66 +325,100 @@
   cursor: grabbing;
 }
 
-.scope :global(.canvas-empty-state) {
+.scope :global(.canvas-empty-overlay) {
   position: absolute;
-  left: 50%;
-  top: 44%;
-  width: auto;
-  transform: translate(-50%, -50%);
-  text-align: center;
-}
-
-.scope :global(.canvas-empty-label) {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.24em;
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.scope :global(.canvas-empty-capabilities) {
-  margin-top: 14px;
+  inset: 0;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.scope :global(.canvas-empty-hint-row) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scope :global(.canvas-empty-hint-badge) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: rgba(30, 34, 42, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 7px 14px 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-empty-cursor-icon) {
+  font-size: 15px;
+  color: #5b9cf6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(91, 156, 246, 0.14);
+}
+
+.scope :global(.canvas-empty-hint-text) {
+  font-size: 14px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.52);
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-empty-shortcuts) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
 }
 
-.scope :global(.canvas-empty-capability) {
+.scope :global(.canvas-empty-shortcut) {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 6px 10px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(20, 22, 28, 0.72);
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(18px);
-}
-
-.scope :global(.canvas-empty-title) {
-  margin-top: 0;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 12, 16, 0.52);
-  padding: 10px 14px;
-  backdrop-filter: blur(18px);
-  font-size: 13px;
-  font-weight: 300;
-  letter-spacing: 0;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 
-.scope :global(.canvas-empty-copy) {
-  margin: 14px auto 0;
-  max-width: 500px;
-  font-size: 12px;
-  line-height: 1.75;
-  color: rgba(255, 255, 255, 0.46);
+.scope :global(.canvas-empty-shortcut:hover) {
+  background: rgba(40, 44, 54, 0.88);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.88);
 }
 
-.scope :global(.canvas-empty-hint) {
-  margin-top: 18px;
-  font-size: 11px;
+.scope :global(.canvas-empty-shortcut-icon) {
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.38);
+}
+
+.scope :global(.canvas-empty-shortcut:hover .canvas-empty-shortcut-icon) {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .scope :global(.canvas-entry-actions) {
@@ -1772,19 +1806,18 @@
   min-width: 1600px;
 }
 
-.scope :global(.canvas-empty-state) {
-  top: 42%;
+.scope :global(.canvas-empty-hint-badge) {
+  font-size: 12px;
+  padding: 6px 12px 6px 9px;
 }
 
-.scope :global(.canvas-empty-title) {
-  margin: 0;
-  border-radius: 999px;
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(28, 28, 28, 0.66);
-  padding: 9px 13px;
+.scope :global(.canvas-empty-hint-text) {
+  font-size: 13px;
+}
+
+.scope :global(.canvas-empty-shortcut) {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(18px);
+  padding: 7px 14px;
 }
 
 .scope :global(.canvas-toolbar-shell) {
