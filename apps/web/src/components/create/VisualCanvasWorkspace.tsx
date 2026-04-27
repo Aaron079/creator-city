@@ -215,8 +215,8 @@ function buildMockResult(node: VisualCanvasNode, prompt: string) {
 export function VisualCanvasWorkspace({
   projectTitle,
   templateName,
-  onOpenTimeline,
-  onOpenAssets,
+  onOpenTimeline: _onOpenTimeline,
+  onOpenAssets: _onOpenAssets,
   onOpenDelivery,
   onShowStartup,
 }: VisualCanvasWorkspaceProps) {
