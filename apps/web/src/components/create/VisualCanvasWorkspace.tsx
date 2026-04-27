@@ -233,6 +233,7 @@ export function VisualCanvasWorkspace({
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
   const [promptAssetMode, setPromptAssetMode] = useState<(typeof ASSET_OPTIONS)[number]['value']>('none')
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
+  const [shareCopied, setShareCopied] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
@@ -1052,6 +1053,36 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
   }, [canStartCanvasPan, getViewportWorldPoint])
 
+  const handleShareCanvasLink = useCallback(async () => {
+    const href = window.location.href
+    const showCopyPrompt = () => {
+      try {
+        window.prompt('复制这个链接', href)
+      } catch {
+        // Some embedded test browsers disable prompt(); keep the copy action non-disruptive.
+      }
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await Promise.race([
+          navigator.clipboard.writeText(href),
+          new Promise<void>((_, reject) => {
+            window.setTimeout(() => reject(new Error('clipboard-timeout')), 600)
+          }),
+        ])
+      } else {
+        showCopyPrompt()
+      }
+    } catch {
+      showCopyPrompt()
+    }
+
+    setShareCopied(true)
+    const timer = window.setTimeout(() => setShareCopied(false), 1600)
+    timersRef.current.push(timer)
+  }, [])
+
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || typeof window === 'undefined') return undefined
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -1117,24 +1148,20 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          <span className="canvas-secondary-button is-static">200</span>
-          <button type="button" className="canvas-secondary-button">
-            社区
+          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群">
+            社群
+          </a>
+          <button type="button" onClick={onOpenDelivery} className="canvas-secondary-button" title="查看交付" aria-label="查看交付">
+            送货
           </button>
-          <button type="button" onClick={onOpenTimeline} className="canvas-secondary-button">
-            Timeline
-          </button>
-          <button type="button" onClick={onOpenAssets} className="canvas-secondary-button">
-            Assets
-          </button>
-          <button type="button" onClick={onOpenDelivery} className="canvas-secondary-button">
-            Delivery
-          </button>
-          <button type="button" onClick={onShowStartup} className="canvas-secondary-button">
-            模板
-          </button>
-          <button type="button" className="canvas-share-button" aria-label="分享">
-            ⌯
+          <button
+            type="button"
+            onClick={() => { void handleShareCanvasLink() }}
+            className="canvas-secondary-button"
+            title="复制画布链接"
+            aria-label="复制画布链接"
+          >
+            {shareCopied ? '已复制' : '链接分享'}
           </button>
         </div>
       </div>
