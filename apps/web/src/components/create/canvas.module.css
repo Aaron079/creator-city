@@ -1784,6 +1784,41 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 
+.scope :global([data-tooltip]) {
+  position: relative;
+}
+
+.scope :global(.canvas-hover-tooltip) {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  z-index: 190;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(8, 8, 10, 0.9);
+  padding: 0 10px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-4px, -50%, 0);
+  transition: opacity 0.12s ease 0.15s, transform 0.12s ease 0.15s;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+}
+
+.scope :global([data-tooltip]:hover .canvas-hover-tooltip),
+.scope :global([data-tooltip]:focus-visible .canvas-hover-tooltip) {
+  opacity: 1;
+  transform: translate3d(0, -50%, 0);
+}
+
 .scope :global(.canvas-secondary-button.is-static) {
   pointer-events: none;
 }
@@ -2054,6 +2089,10 @@
   .scope :global(.canvas-prompt-footer-left),
   .scope :global(.canvas-prompt-footer-right) {
     gap: 6px;
+  }
+
+  .scope :global(.canvas-hover-tooltip) {
+    display: none;
   }
 }
 

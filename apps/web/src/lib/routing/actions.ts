@@ -65,6 +65,10 @@ export function getReviewHref(projectId: string) {
   return `/review/${encodeProjectId(projectId)}`
 }
 
+export function getClientDeliveryHref(projectId?: string) {
+  return `${getReviewHref(projectId || 'order-seed-1')}#delivery-approval`
+}
+
 export function getDashboardHref(anchor?: string) {
   return anchor ? `/dashboard#${anchor}` : '/dashboard'
 }

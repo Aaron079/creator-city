@@ -14,6 +14,7 @@ import {
   getCanvasProviderStatus,
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
+import { getClientDeliveryHref } from '@/lib/routing/actions'
 
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
@@ -217,7 +218,7 @@ export function VisualCanvasWorkspace({
   templateName,
   onOpenTimeline: _onOpenTimeline,
   onOpenAssets: _onOpenAssets,
-  onOpenDelivery,
+  onOpenDelivery: _onOpenDelivery,
   onShowStartup,
 }: VisualCanvasWorkspaceProps) {
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
@@ -1083,6 +1084,11 @@ export function VisualCanvasWorkspace({
     timersRef.current.push(timer)
   }, [])
 
+  const handleOpenClientDelivery = useCallback(() => {
+    const projectId = new URLSearchParams(window.location.search).get('projectId') ?? undefined
+    window.location.assign(getClientDeliveryHref(projectId))
+  }, [])
+
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || typeof window === 'undefined') return undefined
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -1148,11 +1154,20 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群">
-            社群
+          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
+            社区
+            <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
           </a>
-          <button type="button" onClick={onOpenDelivery} className="canvas-secondary-button" title="查看交付" aria-label="查看交付">
-            送货
+          <button
+            type="button"
+            onClick={handleOpenClientDelivery}
+            className="canvas-secondary-button"
+            title="客户交付"
+            aria-label="打开客户交付界面"
+            data-tooltip="客户交付"
+          >
+            客户
+            <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
           </button>
           <button
             type="button"
@@ -1160,8 +1175,10 @@ export function VisualCanvasWorkspace({
             className="canvas-secondary-button"
             title="复制画布链接"
             aria-label="复制画布链接"
+            data-tooltip="复制画布链接"
           >
             {shareCopied ? '已复制' : '链接分享'}
+            <span className="canvas-hover-tooltip" aria-hidden="true">复制画布链接</span>
           </button>
         </div>
       </div>
