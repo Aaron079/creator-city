@@ -8,7 +8,11 @@ export function AgentStatusBadge({
   configured: boolean
   mode: AgentReplyMode
 }) {
-  const label = mode === 'error' ? 'Error' : configured && mode === 'real' ? 'Real AI' : 'Local Help'
+  const label = mode === 'error'
+    ? 'Error'
+    : configured && mode === 'real'
+      ? 'Remote Model'
+      : 'Local Mode'
   const className = mode === 'error'
     ? styles.statusError
     : configured && mode === 'real'

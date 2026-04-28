@@ -1,23 +1,9 @@
 import { NextResponse } from 'next/server'
-import { buildLocalAgentReply } from '@/lib/agent/local-assistant'
+import { runCreatorModel } from '@/lib/creator-model/runtime'
 import type { AgentChatRequest, AgentChatResponse } from '@/lib/agent/types'
-
-const SYSTEM_PROMPT = `你是 Creator City Agent。
-你只能基于 Creator City 平台当前上下文提供帮助。
-不要声称可以真实生成视频/图片，除非 provider 状态是 available。
-对未配置 API 的工具要明确说 not-configured / mock / bridge-only。
-用户问怎么操作时，给具体入口和按钮说明。
-用户在 /create 时，解释节点、对话框、连线、客户交付入口。
-外部 guest / review 页面只解释当前页面和客户交付流程，不暴露内部项目数据。
-回答要简洁、直接、可执行。`
 
 function json(data: AgentChatResponse, status = 200) {
   return NextResponse.json(data, { status })
-}
-
-function isOpenAIConfigured() {
-  const provider = process.env.AI_AGENT_PROVIDER || 'openai'
-  return provider === 'openai' && Boolean(process.env.OPENAI_API_KEY)
 }
 
 export async function POST(request: Request) {
@@ -34,83 +20,45 @@ export async function POST(request: Request) {
     }, 400)
   }
 
-  const configured = isOpenAIConfigured()
-
-  if (!configured) {
-    return json({
-      mode: 'local',
-      configured: false,
-      message: buildLocalAgentReply({
-        messages: body.messages ?? [],
-        context: body.context,
-        apiConfigured: false,
-      }),
-    })
-  }
-
   try {
-    const model = process.env.AI_AGENT_MODEL || 'gpt-4o-mini'
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          {
-            role: 'system',
-            content: `当前页面上下文：${JSON.stringify(body.context)}`,
-          },
-          ...(body.messages ?? [])
-            .filter((message) => message.role === 'user' || message.role === 'assistant')
-            .slice(-12)
-            .map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-        ],
-      }),
+    const result = await runCreatorModel({
+      messages: (body.messages ?? []).map((m) => ({
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+      })),
+      context: body.context
+        ? {
+          pathname: body.context.pathname,
+          routeName: body.context.routeName,
+          pageSummary: body.context.pageSummary,
+          projectId: body.context.projectId,
+          userRole: body.context.role,
+          toolStatusSummary: body.context.toolAvailabilitySummary,
+        }
+        : undefined,
     })
 
-    if (!response.ok) {
-      const detail = await response.text()
-      console.error('[Creator City Agent] OpenAI request failed', response.status, detail)
+    if (result.mode === 'error') {
       return json({
         mode: 'error',
-        configured: true,
-        message: '模型调用失败，请检查 API 配置。',
-        error: `openai-${response.status}`,
-      }, 502)
-    }
-
-    const data = await response.json()
-    const message = data?.choices?.[0]?.message?.content?.trim()
-
-    if (!message) {
-      return json({
-        mode: 'error',
-        configured: true,
-        message: '模型调用失败，请检查 API 配置。',
-        error: 'empty-model-response',
+        configured: result.configured,
+        message: result.content,
+        error: result.error,
       }, 502)
     }
 
     return json({
-      mode: 'real',
-      configured: true,
-      message,
+      mode: result.mode === 'remote' ? 'real' : 'local',
+      configured: result.configured,
+      message: result.content,
     })
   } catch (error) {
-    console.error('[Creator City Agent] model call crashed', error)
+    console.error('[creator-agent] unhandled error', error)
     return json({
       mode: 'error',
-      configured: true,
-      message: '模型调用失败，请检查 API 配置。',
-      error: 'model-call-failed',
-    }, 502)
+      configured: false,
+      message: '模型调用失败，请稍后重试。',
+      error: 'internal-error',
+    }, 500)
   }
 }

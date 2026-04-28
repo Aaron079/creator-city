@@ -56,7 +56,7 @@ export function buildLocalAgentReply(input: {
   const text = latestUserText(input.messages).toLowerCase()
   const prefix = input.apiConfigured
     ? ''
-    : 'Agent 模型 API 未配置。我仍可以帮你导航页面、解释功能和给出下一步建议。\n\n'
+    : 'Creator City Agent 当前为本地帮助模式。\n\n'
 
   if (!text) {
     return `${prefix}${explainCurrentPage(input.context)}`
