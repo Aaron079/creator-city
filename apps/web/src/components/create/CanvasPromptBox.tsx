@@ -48,7 +48,16 @@ interface CanvasPromptBoxProps {
   onClose?: () => void
 }
 
-const MODEL_DURATIONS = ['1.5 min', '2 min', '3 min', '2 min', '2 min', '5~10 min', '2~5 min', '2 min']
+const MODEL_DURATIONS = ['1~3 min', '1.5 min', '2 min', '30~90s', '2 min', '5~10 min', '2~5 min', '1 min']
+
+const PROVIDER_STATUS_LABELS: Record<string, string> = {
+  available: '可用',
+  mock: '模拟',
+  'not-configured': '未配置',
+  'bridge-only': '需桥接',
+  'coming-soon': '即将接入',
+  error: '异常',
+}
 const PARAMETER_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const PARAMETER_QUALITIES = ['480p', '720p', '1080p']
 const PARAMETER_DURATIONS = ['5s', '10s']
@@ -126,18 +135,18 @@ export function CanvasPromptBox({
     const boxRect = boxRef.current?.getBoundingClientRect()
     if (!boxRect) return
 
-    const margin = 12
+    const margin = 16
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
     const isProviderPanel = openItem.id === 'api' || openItem.id === 'provider'
     const isParamsPanel = openItem.id === 'params'
     const anchorRect = footerButtonRefs.current[openItem.id]?.getBoundingClientRect() ?? boxRect
-    const width = Math.min(isProviderPanel ? 400 : isParamsPanel ? 320 : 300, viewportWidth - margin * 2)
+    const width = Math.min(isProviderPanel ? 520 : isParamsPanel ? 320 : 300, viewportWidth - margin * 2)
     const measuredHeight = panelRef.current?.scrollHeight ?? 0
     const estimatedHeight = isParamsPanel
       ? 390
-      : 18 + openItem.options.length * (isProviderPanel ? 76 : 52)
-    const maxHeight = Math.max(160, Math.min(isProviderPanel ? viewportHeight * 0.55 : viewportHeight * 0.64, viewportHeight - margin * 2))
+      : 18 + openItem.options.length * (isProviderPanel ? 58 : 52)
+    const maxHeight = Math.max(160, Math.min(isProviderPanel ? viewportHeight * 0.62 : viewportHeight * 0.64, viewportHeight - margin * 2))
     const panelHeight = Math.min(measuredHeight || estimatedHeight, maxHeight)
     const preferredLeft = isProviderPanel || isParamsPanel
       ? anchorRect.left
@@ -444,7 +453,7 @@ export function CanvasPromptBox({
                   {modelMeta.copy ? <span className="canvas-choice-hint">{modelMeta.copy}</span> : null}
                 </span>
                 <span className="canvas-choice-meta">
-                  {badge ? <span className={`canvas-provider-status status-${badge}`}>{badge}</span> : null}
+                  {badge ? <span className={`canvas-provider-status status-${badge}`}>{PROVIDER_STATUS_LABELS[badge] ?? badge}</span> : null}
                   {duration ? <span className="canvas-choice-duration">{duration}</span> : null}
                 </span>
               </button>
