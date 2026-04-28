@@ -23,6 +23,12 @@ export const PUBLIC_TEMPLATE_CATEGORIES = [
   '分镜脚本',
   '预告片',
   '音乐视觉',
+  '科技发布',
+  '美妆广告',
+  '服装 Lookbook',
+  '运动赛事',
+  '招募宣传',
+  '城市宣传',
 ] as const
 
 export type PublicTemplateCategory = (typeof PUBLIC_TEMPLATE_CATEGORIES)[number]

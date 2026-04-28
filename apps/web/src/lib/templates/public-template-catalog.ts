@@ -3,6 +3,16 @@ import {
   type PublicTemplateCategory,
   type PublicTemplateNodeType,
 } from './public-template-categories'
+import {
+  ORIGINAL_TEMPLATE_LICENSE,
+  REFERENCE_ONLY_TEMPLATE_LICENSE,
+  buildTemplateNodeGraph,
+  type PublicTemplateLicense,
+  type PublicTemplateNodeGraph,
+  type PublicTemplatePreview,
+  type PublicTemplateSourceType,
+  type PublicTemplateThumbnail,
+} from './template-workflow'
 
 export interface PublicTemplate {
   id: string
@@ -12,17 +22,17 @@ export interface PublicTemplate {
   promptStarter: string
   workflowSteps: string[]
   nodeType: PublicTemplateNodeType
-  aspectRatio: string
+  aspectRatio: '16:9' | '9:16' | '1:1' | '4:3' | '21:9'
   styleTags: string[]
   useCases: string[]
-  sourceType: 'curated' | 'public-reference' | 'community'
+  mediaQuery: string
+  sourceType: PublicTemplateSourceType
   sourceUrl?: string
+  license: PublicTemplateLicense
   licenseNote: string
-  thumbnail: {
-    type: 'gradient' | 'placeholder'
-    gradientFrom: string
-    gradientTo: string
-  }
+  thumbnail: PublicTemplateThumbnail
+  preview: PublicTemplatePreview
+  nodeGraph: PublicTemplateNodeGraph
   isUsable: boolean
 }
 
@@ -32,20 +42,23 @@ interface TemplateVariant {
   promptStarter: string
   workflowSteps: string[]
   nodeType?: PublicTemplateNodeType
-  aspectRatio?: string
+  aspectRatio?: PublicTemplate['aspectRatio']
   styleTags?: string[]
   useCases?: string[]
+  mediaQuery?: string
 }
 
 interface CategoryPlan {
   category: PublicTemplateCategory
   sourceUrl?: string
+  sourceType?: PublicTemplateSourceType
   nodeType: PublicTemplateNodeType
-  aspectRatio: string
+  aspectRatio: PublicTemplate['aspectRatio']
   gradientFrom: string
   gradientTo: string
   styleTags: string[]
   useCases: string[]
+  mediaQuery?: string
   variants: TemplateVariant[]
 }
 
@@ -63,14 +76,52 @@ const SOURCE_URLS = {
   flexclipTemplates: 'https://www.flexclip.com/template/',
 } as const
 
+const CATEGORY_MEDIA_QUERY: Record<PublicTemplateCategory, string> = {
+  商业广告: 'premium product commercial studio lighting',
+  品牌短片: 'brand story cinematic people workspace',
+  产品展示: 'product showcase macro studio',
+  社媒短视频: 'vertical social video lifestyle creator',
+  短剧片段: 'cinematic drama dialogue scene',
+  概念短片: 'concept film futuristic atmosphere',
+  MV: 'music video performance stage lights',
+  动画: 'animation character design colorful',
+  '旅游 Vlog': 'travel vlog city street landmark',
+  美食广告: 'food commercial restaurant macro',
+  汽车广告: 'car commercial night road motion',
+  房产展示: 'real estate interior architecture tour',
+  游戏宣传: 'game trailer esports neon',
+  教育课程: 'online course classroom learning',
+  企业宣传: 'corporate brand office team',
+  活动快剪: 'event highlight crowd stage',
+  访谈: 'interview podcast studio portrait',
+  纪录片: 'documentary people real life',
+  电商图: 'ecommerce product photography clean background',
+  角色设定: 'character design portrait concept art',
+  情绪板: 'moodboard texture color lifestyle',
+  分镜脚本: 'storyboard film frames planning',
+  预告片: 'movie trailer cinematic suspense',
+  音乐视觉: 'music visualizer abstract light',
+  科技发布: 'technology launch keynote product',
+  美妆广告: 'beauty skincare cosmetics macro',
+  '服装 Lookbook': 'fashion lookbook model studio',
+  运动赛事: 'sports event action stadium',
+  招募宣传: 'recruitment campaign team volunteers',
+  城市宣传: 'city promotion skyline culture travel',
+}
+
+function buildTemplateMediaQuery(plan: CategoryPlan, variant: TemplateVariant) {
+  return variant.mediaQuery
+    ?? `${plan.mediaQuery ?? CATEGORY_MEDIA_QUERY[plan.category]} ${variant.title} ${variant.styleTags?.join(' ') ?? plan.styleTags.join(' ')}`
+}
+
 const CATEGORY_PLANS: CategoryPlan[] = [
   {
     category: '商业广告',
     sourceUrl: SOURCE_URLS.canvaAds,
     nodeType: 'video',
     aspectRatio: '16:9',
-    gradientFrom: '#0f172a',
-    gradientTo: '#2563eb',
+    gradientFrom: '#111827',
+    gradientTo: '#16a34a',
     styleTags: ['hook', 'cta', 'commercial', 'conversion'],
     useCases: ['新品投放', '品牌曝光', '效果广告'],
     variants: [
@@ -435,18 +486,104 @@ const CATEGORY_PLANS: CategoryPlan[] = [
       { title: '电子音乐封面动效', description: '为单曲封面扩展成动态宣传视觉。', promptStarter: '创建电子音乐封面动效：中心标题、抽象空间、脉冲光和低频震动感，保留封面替换占位。', workflowSteps: ['提炼封面气质', '生成抽象空间', '加入脉冲动效', '安排标题层级', '输出短循环'] },
     ],
   },
+  {
+    category: '科技发布',
+    sourceUrl: SOURCE_URLS.adobeVideo,
+    nodeType: 'video',
+    aspectRatio: '16:9',
+    gradientFrom: '#0b1120',
+    gradientTo: '#38bdf8',
+    styleTags: ['launch', 'technology', 'keynote', 'premium'],
+    useCases: ['新品发布', '发布会开场', '官网首屏'],
+    variants: [
+      { title: 'AI 产品发布会开场', description: '发布会开头的产品使命、场景和功能预告。', promptStarter: '生成AI产品发布会开场：黑色空间、细线光效、产品轮廓、真实使用场景和一句发布主题，节奏克制但有期待感。', workflowSteps: ['提炼发布主题', '生成产品轮廓', '加入使用场景', '组织功能预告', '输出片名落版'] },
+      { title: '硬件新品 Reveal', description: '从局部材质到完整露出的硬件发布结构。', promptStarter: '创建硬件新品Reveal视频：先展示材质、接口、边缘和交互细节，最后完整露出产品并给出核心卖点。', workflowSteps: ['确认硬件卖点', '生成局部特写', '安排完整露出', '加入功能字幕', '完成发布CTA'] },
+      { title: 'SaaS 功能更新短片', description: '适合产品更新日志、官网和社媒发布。', promptStarter: '生成SaaS功能更新短片：用界面占位、用户任务、前后对比和三项新能力说明更新价值。', workflowSteps: ['整理更新点', '写用户任务', '生成界面占位', '加入前后对比', '输出更新摘要'] },
+      { title: '开发者大会预告', description: '技术大会、API 发布和社区活动的预热片。', promptStarter: '创建开发者大会预告：代码片段、舞台灯光、开发者社群、议程模块和报名CTA，整体专业、有能量。', workflowSteps: ['确定大会主题', '生成技术视觉', '加入社群画面', '组织议程字幕', '完成报名CTA'] },
+    ],
+  },
+  {
+    category: '美妆广告',
+    sourceUrl: SOURCE_URLS.canvaAds,
+    nodeType: 'video',
+    aspectRatio: '9:16',
+    gradientFrom: '#831843',
+    gradientTo: '#f9a8d4',
+    styleTags: ['beauty', 'skincare', 'before-after', 'social'],
+    useCases: ['美妆种草', '护肤广告', '新品试色'],
+    variants: [
+      { title: '护肤质地微距', description: '突出肤感、吸收和成分氛围的护肤模板。', promptStarter: '生成护肤质地微距广告：水润质地、手背推开、上脸轻拍、自然光肤感和功效字幕，表达真实、干净。', workflowSteps: ['定义功效重点', '生成质地微距', '安排上脸动作', '加入成分字幕', '输出种草结尾'] },
+      { title: '口红试色短片', description: '多色号、妆容和场景切换的试色结构。', promptStarter: '创建口红试色短片：三个色号依次出现，展示膏体、上唇、妆容和适用场景，背景简洁。', workflowSteps: ['列出色号', '生成膏体特写', '安排上唇镜头', '匹配场景标签', '完成购买提示'] },
+      { title: '底妆遮瑕对比', description: '用真实对比和细节镜头建立信任。', promptStarter: '生成底妆遮瑕对比广告：半脸对比、局部细节、自然光检查和持妆状态，不夸大效果。', workflowSteps: ['设定对比方式', '生成半脸画面', '补充局部细节', '加入持妆测试', '输出可信结尾'] },
+      { title: '香氛情绪广告', description: '用空间、人物和材质表达香调氛围。', promptStarter: '创建香氛情绪广告：玻璃瓶、织物、花材、夜晚空间和人物动作共同表达香调，不使用第三方品牌素材。', workflowSteps: ['定义香调关键词', '生成瓶身占位', '加入材质意象', '安排人物动作', '输出品牌氛围'] },
+    ],
+  },
+  {
+    category: '服装 Lookbook',
+    sourceUrl: SOURCE_URLS.canvaVideos,
+    nodeType: 'video',
+    aspectRatio: '9:16',
+    gradientFrom: '#172554',
+    gradientTo: '#fb923c',
+    styleTags: ['fashion', 'lookbook', 'outfit', 'editorial'],
+    useCases: ['服装上新', '穿搭账号', '品牌系列'],
+    variants: [
+      { title: '春夏系列 Lookbook', description: '用造型、面料和走动镜头展示系列感。', promptStarter: '生成春夏系列Lookbook：三套造型、自然光、面料近景和行走切换，画面干净、有品牌感。', workflowSteps: ['确定系列主题', '规划三套造型', '生成行走镜头', '补充面料细节', '输出上新结尾'] },
+      { title: '街头穿搭快剪', description: '适合社媒穿搭和潮流品牌内容。', promptStarter: '创建街头穿搭快剪：城市街角、全身造型、鞋包配饰、转身动作和节拍切换，突出态度。', workflowSteps: ['定义街头风格', '生成街景动线', '展示全身造型', '加入配饰特写', '输出社媒版本'] },
+      { title: '高级成衣质感片', description: '慢节奏、低饱和、突出剪裁和材质。', promptStarter: '生成高级成衣质感片：模特静态姿态、肩线、褶皱、纽扣和布料运动，镜头克制，适合品牌官网。', workflowSteps: ['提炼高级感关键词', '生成静态姿态', '补充剪裁细节', '安排布料运动', '完成品牌落版'] },
+      { title: '鞋履新品走秀', description: '鞋履细节、步态和搭配场景的模板。', promptStarter: '创建鞋履新品走秀短片：低机位脚步、鞋底细节、搭配造型和路面材质，强调舒适与设计。', workflowSteps: ['定义鞋履卖点', '生成低机位脚步', '加入细节镜头', '展示搭配场景', '输出产品CTA'] },
+    ],
+  },
+  {
+    category: '运动赛事',
+    nodeType: 'video',
+    aspectRatio: '16:9',
+    gradientFrom: '#064e3b',
+    gradientTo: '#facc15',
+    styleTags: ['sports', 'event', 'highlight', 'energy'],
+    useCases: ['赛事预告', '高光剪辑', '球队宣传'],
+    variants: [
+      { title: '赛事高光回顾', description: '用动作、观众和比分节点组成赛事回顾。', promptStarter: '生成赛事高光回顾：运动员动作、观众欢呼、关键比分占位、慢动作瞬间和胜利庆祝，节奏有爆点。', workflowSteps: ['整理高光段落', '生成动作镜头', '加入观众反应', '设计比分字幕', '输出回顾结尾'] },
+      { title: '球队赛前预告', description: '赛前氛围、球员状态和对阵信息。', promptStarter: '创建球队赛前预告：更衣室、热身、球员特写、城市氛围和对阵信息卡，语气坚定有力量。', workflowSteps: ['确认对阵信息', '生成热身镜头', '加入球员特写', '设计信息卡', '完成开赛CTA'] },
+      { title: '健身挑战短片', description: '适合健身房、运动品牌和社媒挑战。', promptStarter: '生成健身挑战短片：训练动作、计时器、汗水细节和挑战结果，竖屏版本适合传播。', workflowSteps: ['定义挑战规则', '生成训练动作', '加入计时字幕', '展示结果反馈', '输出参与提示'], aspectRatio: '9:16' },
+      { title: '马拉松城市宣传', description: '跑者、城市街道和赛事精神的组合。', promptStarter: '创建马拉松城市宣传片：清晨起跑、城市地标、跑者表情、补给点和终点冲刺，表达坚持与城市活力。', workflowSteps: ['规划赛道段落', '生成城市镜头', '加入跑者状态', '安排终点冲刺', '输出赛事落版'] },
+    ],
+  },
+  {
+    category: '招募宣传',
+    nodeType: 'mixed',
+    aspectRatio: '16:9',
+    gradientFrom: '#1f2937',
+    gradientTo: '#60a5fa',
+    styleTags: ['recruiting', 'community', 'team', 'career'],
+    useCases: ['团队招聘', '社群招募', '志愿者招募'],
+    variants: [
+      { title: '创作者招募短片', description: '面向创作者社区的招募工作流。', promptStarter: '生成创作者招募短片：展示创作空间、作品片段占位、成员协作和加入理由，语气真诚、有吸引力。', workflowSteps: ['定义招募对象', '生成创作空间', '展示协作场景', '写加入理由', '输出报名CTA'] },
+      { title: '企业岗位招聘片', description: '说明岗位、团队文化和成长机会。', promptStarter: '创建企业岗位招聘片：岗位挑战、团队协作、办公状态、成长路径和投递入口，避免夸张福利堆叠。', workflowSteps: ['确认岗位画像', '生成团队镜头', '加入工作挑战', '展示成长路径', '完成投递CTA'] },
+      { title: '志愿者招募视频', description: '公益项目、活动现场和参与价值。', promptStarter: '生成志愿者招募视频：项目现场、服务对象、志愿者行动和参与价值，画面真实温暖。', workflowSteps: ['明确公益主题', '生成现场画面', '安排行动镜头', '说明参与价值', '输出报名信息'] },
+      { title: '校园社团招新', description: '社团活动、成员状态和招新信息卡。', promptStarter: '创建校园社团招新短片：活动片段、成员笑脸、成果展示和招新时间地点占位，节奏轻快。', workflowSteps: ['定义社团气质', '生成活动镜头', '展示成果占位', '加入信息卡', '完成招新结尾'] },
+    ],
+  },
+  {
+    category: '城市宣传',
+    nodeType: 'video',
+    aspectRatio: '16:9',
+    gradientFrom: '#0f172a',
+    gradientTo: '#f97316',
+    styleTags: ['city', 'tourism', 'culture', 'campaign'],
+    useCases: ['城市形象', '文旅推广', '招商宣传'],
+    variants: [
+      { title: '城市晨昏形象片', description: '从清晨到夜晚展示城市气质。', promptStarter: '生成城市晨昏形象片：清晨街道、通勤人群、文化地标、夕阳天际线和夜晚灯光，语气开放、现代。', workflowSteps: ['提炼城市关键词', '生成晨间镜头', '加入文化地标', '安排夜景收束', '输出城市标语'] },
+      { title: '文旅目的地推广', description: '自然、人文、美食和路线推荐。', promptStarter: '创建文旅目的地推广片：自然景观、历史街区、本地美食、游客体验和路线标签，不使用第三方素材。', workflowSteps: ['确定目的地卖点', '生成景观镜头', '加入人文细节', '展示美食体验', '完成路线CTA'] },
+      { title: '城市招商宣传', description: '产业、交通、人才和未来愿景的结构。', promptStarter: '生成城市招商宣传片：产业园区、交通枢纽、青年人才、商业空间和未来规划，表达效率和机会。', workflowSteps: ['梳理招商优势', '生成产业画面', '加入交通节点', '展示人才场景', '输出招商落版'] },
+      { title: '街区更新短纪录', description: '适合城市更新、社区和公共空间项目。', promptStarter: '创建街区更新短纪录：旧街区细节、新空间使用、人群互动和居民声音，语气真实克制。', workflowSteps: ['确认街区变化', '生成旧貌细节', '展示新空间', '加入居民视角', '输出项目说明'] },
+    ],
+  },
 ]
-
-function slugify(input: string) {
-  return input
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9\u4e00-\u9fa5-]/g, '')
-}
 
 export const PUBLIC_TEMPLATE_CATALOG: PublicTemplate[] = CATEGORY_PLANS.flatMap((plan, categoryIndex) => (
   plan.variants.map((variant, variantIndex) => ({
-    id: `public-${categoryIndex + 1}-${variantIndex + 1}-${slugify(variant.title)}`,
+    id: `public-${categoryIndex + 1}-${variantIndex + 1}`,
     title: variant.title,
     category: plan.category,
     description: variant.description,
@@ -456,14 +593,31 @@ export const PUBLIC_TEMPLATE_CATALOG: PublicTemplate[] = CATEGORY_PLANS.flatMap(
     aspectRatio: variant.aspectRatio ?? plan.aspectRatio,
     styleTags: [...plan.styleTags, ...(variant.styleTags ?? [])],
     useCases: [...plan.useCases, ...(variant.useCases ?? [])],
-    sourceType: plan.sourceUrl ? 'public-reference' : 'curated',
+    mediaQuery: buildTemplateMediaQuery(plan, variant),
+    sourceType: plan.sourceType ?? (plan.sourceUrl ? 'public-reference' : 'creator-city'),
     sourceUrl: plan.sourceUrl,
+    license: plan.sourceUrl ? REFERENCE_ONLY_TEMPLATE_LICENSE : ORIGINAL_TEMPLATE_LICENSE,
     licenseNote: PUBLIC_TEMPLATE_LICENSE_NOTE,
     thumbnail: {
       type: 'gradient',
       gradientFrom: plan.gradientFrom,
       gradientTo: plan.gradientTo,
+      alt: `${variant.title} 模板封面占位`,
     },
+    preview: {
+      type: 'placeholder-video',
+      licenseType: 'original',
+      attribution: 'Creator City CSS placeholder',
+    },
+    nodeGraph: buildTemplateNodeGraph({
+      title: variant.title,
+      category: plan.category,
+      description: variant.description,
+      promptStarter: variant.promptStarter,
+      workflowSteps: variant.workflowSteps,
+      nodeType: variant.nodeType ?? plan.nodeType,
+      aspectRatio: variant.aspectRatio ?? plan.aspectRatio,
+    }),
     isUsable: true,
   }))
 ))

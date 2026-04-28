@@ -1,10 +1,19 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'generating' | 'done'
+export type VisualCanvasNodePreview = {
+  type: 'none' | 'placeholder-video' | 'remote-video'
+  url?: string
+  poster?: string
+  licenseType?: string
+  attribution?: string
+  gradientFrom?: string
+  gradientTo?: string
+}
 
 export interface VisualCanvasNode {
   id: string
@@ -20,6 +29,7 @@ export interface VisualCanvasNode {
   status: VisualCanvasNodeStatus
   resultPreview?: string
   outputLabel?: string
+  preview?: VisualCanvasNodePreview
   x: number
   y: number
   width: number
@@ -222,9 +232,45 @@ export function CanvasNodeCard({
 
         <div className="canvas-node-body">
           {node.status === 'done' ? (
-            <div className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)}`}>
+            <div
+              className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)} ${node.preview?.type === 'placeholder-video' ? 'has-placeholder-preview' : ''}`}
+              onMouseEnter={(event) => {
+                event.currentTarget.querySelector('video')?.play().catch(() => undefined)
+              }}
+              onMouseLeave={(event) => {
+                const video = event.currentTarget.querySelector('video')
+                if (!video) return
+                video.pause()
+                video.currentTime = 0
+              }}
+              style={node.preview?.gradientFrom && node.preview?.gradientTo
+                ? {
+                  '--node-preview-from': node.preview.gradientFrom,
+                  '--node-preview-to': node.preview.gradientTo,
+                } as CSSProperties
+                : undefined}
+            >
+              {node.preview?.type === 'remote-video' && node.preview.url ? (
+                <video
+                  className="canvas-node-preview-video"
+                  src={node.preview.url}
+                  poster={node.preview.poster}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                />
+              ) : null}
               <div className="canvas-node-preview-copy">
                 {node.resultPreview ?? node.outputLabel ?? '结果已生成。'}
+                {node.preview?.type === 'placeholder-video' ? (
+                  <span className="canvas-node-preview-license">合法占位预览 · 无第三方素材</span>
+                ) : null}
+                {node.preview?.type === 'remote-video' ? (
+                  <span className="canvas-node-preview-license">
+                    {node.preview.licenseType === 'original' ? '生成结果' : '参考预览'} · {node.preview.attribution ?? node.preview.licenseType ?? 'licensed source'}
+                  </span>
+                ) : null}
               </div>
             </div>
           ) : node.status === 'generating' ? (

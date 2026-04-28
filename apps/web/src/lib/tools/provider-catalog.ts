@@ -117,6 +117,15 @@ function catalogItem(
 }
 
 const videoProviders: ToolProvider[] = [
+  // Creator City 自有视频网关 — 配置 CUSTOM_VIDEO_PROVIDER_ENDPOINT 即 available
+  catalogItem('Creator Video Gateway', 'video-generation', {
+    id: 'custom-video-gateway',
+    badge: 'new',
+    estimatedTime: '1~3 min',
+    adapterId: 'custom-video-gateway',
+    envKeys: ['CUSTOM_VIDEO_PROVIDER_ENDPOINT'],
+    description: '自有视频生成网关。配置 CUSTOM_VIDEO_PROVIDER_ENDPOINT 后标记 available，CUSTOM_VIDEO_PROVIDER_API_KEY 可选。',
+  }),
   // Runway: has official API + gateway adapter — status determined at runtime by env var check
   catalogItem('Runway', 'video-generation', { id: 'runway', badge: 'new', estimatedTime: '30~90s', adapterId: 'runway', envKeys: ['RUNWAY_API_KEY'], description: '官方 API 支持 text-to-video 和 image-to-video（Gen-4 Turbo）。配置 RUNWAY_API_KEY 后标记 available。' }),
   catalogItem('Seedance 1.5 Pro', 'video-generation', { id: 'seedance-1-5-pro', status: 'not-configured', estimatedTime: '1.5 min', adapterId: 'seedance', envKeys: ['SEEDANCE_API_KEY', 'SEEDANCE_API_ENDPOINT'] }),

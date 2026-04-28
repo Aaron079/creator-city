@@ -21,7 +21,7 @@ const CANVAS_PROVIDER_NODE_TYPE: Record<CanvasProviderKind, ToolProviderNodeType
 export const CANVAS_PROVIDER_FALLBACKS: Record<CanvasProviderKind, string> = {
   text: 'anthropic-claude',
   image: 'nano-banana',
-  video: 'seedance-1-5-pro',
+  video: 'custom-video-gateway',
   audio: 'elevenlabs',
   delivery: 'anthropic-claude',
   world: 'anthropic-claude',

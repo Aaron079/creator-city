@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { X } from 'lucide-react'
 import { PublicTemplateGallery } from '@/components/templates/PublicTemplateGallery'
+import { TemplatePreviewHero } from '@/components/templates/TemplatePreviewHero'
 import { PUBLIC_TEMPLATE_CATALOG, type PublicTemplate } from '@/lib/templates/public-template-catalog'
 
 interface CanvasTemplatePanelProps {
@@ -17,36 +18,42 @@ export function CanvasTemplatePanel({
   onClose,
 }: CanvasTemplatePanelProps) {
   const [activeTab, setActiveTab] = useState<'public' | 'mine'>('public')
-  const templates = useMemo(() => (
-    activeTab === 'mine'
-      ? PUBLIC_TEMPLATE_CATALOG.filter((template) => [
-        '商业广告',
-        '产品展示',
-        '品牌短片',
-        '社媒短视频',
-        '分镜脚本',
-        '情绪板',
-      ].includes(template.category)).slice(0, 18)
-      : PUBLIC_TEMPLATE_CATALOG
-  ), [activeTab])
+  const [showPreviewTip, setShowPreviewTip] = useState(true)
 
   return (
     <section className="canvas-template-panel" aria-label="模板面板" onPointerDown={(event) => event.stopPropagation()}>
       <div className="canvas-template-browser">
-        <div className="canvas-template-tabs">
-          <button type="button" className={activeTab === 'public' ? 'is-active' : ''} onClick={() => setActiveTab('public')}>公共模板</button>
-          <button type="button" className={activeTab === 'mine' ? 'is-active' : ''} onClick={() => setActiveTab('mine')}>我的模板</button>
+        <div className="canvas-drawer-head canvas-template-drawer-head">
+          <button type="button" className="canvas-drawer-back" onClick={onClose} aria-label="关闭模板库">
+            ‹
+          </button>
+          <h2>模板库</h2>
           <button type="button" className="canvas-template-expand" onClick={onClose} aria-label="关闭模板面板">
             <X size={16} />
           </button>
         </div>
 
-        <PublicTemplateGallery
-          compact
-          templates={templates}
-          selectedTemplateId={selectedTemplateId}
-          onUseTemplate={onSelectTemplate}
-        />
+        {showPreviewTip ? (
+          <TemplatePreviewHero compact onDismiss={() => setShowPreviewTip(false)} />
+        ) : null}
+
+        <div className="canvas-template-tabs">
+          <button type="button" className={activeTab === 'public' ? 'is-active' : ''} onClick={() => setActiveTab('public')}>公共模板</button>
+          <button type="button" className={activeTab === 'mine' ? 'is-active' : ''} onClick={() => setActiveTab('mine')}>我的模板</button>
+        </div>
+
+        {activeTab === 'public' ? (
+          <PublicTemplateGallery
+            compact
+            templates={PUBLIC_TEMPLATE_CATALOG}
+            selectedTemplateId={selectedTemplateId}
+            onUseTemplate={onSelectTemplate}
+          />
+        ) : (
+          <div className="rounded-[18px] border border-white/10 bg-white/[0.04] px-4 py-8 text-center text-sm leading-6 text-white/48">
+            你还没有保存模板。完成一个工作流后，可以保存为我的模板。
+          </div>
+        )}
       </div>
     </section>
   )

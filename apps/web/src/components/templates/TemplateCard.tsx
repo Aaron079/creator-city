@@ -1,13 +1,17 @@
 'use client'
 
+import { useState } from 'react'
 import { ArrowUpRight, CheckCircle2, Play } from 'lucide-react'
+import { TemplateLicenseBadge } from '@/components/templates/TemplateLicenseBadge'
 import type { PublicTemplate } from '@/lib/templates/public-template-catalog'
 import { PUBLIC_TEMPLATE_NODE_TYPE_LABELS } from '@/lib/templates/public-template-categories'
+import { getTemplateFallbackGradient } from '@/lib/templates/template-media'
 
 interface TemplateCardProps {
   template: PublicTemplate
   compact?: boolean
   selected?: boolean
+  useHref?: string
   onUseTemplate: (template: PublicTemplate) => void
 }
 
@@ -15,8 +19,16 @@ export function TemplateCard({
   template,
   compact = false,
   selected = false,
+  useHref,
   onUseTemplate,
 }: TemplateCardProps) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const useClassName = compact
+    ? 'inline-flex h-7 items-center gap-1 rounded-full bg-white px-2.5 text-[10px] font-semibold text-black transition hover:scale-[1.01]'
+    : 'inline-flex h-9 items-center gap-2 rounded-full bg-white px-3.5 text-[12px] font-semibold text-black transition hover:scale-[1.01]'
+  const gradient = getTemplateFallbackGradient(template)
+  const shouldShowRemoteImage = template.thumbnail.type === 'remote' && template.thumbnail.url && !imageFailed
+
   return (
     <article
       className={[
@@ -26,12 +38,24 @@ export function TemplateCard({
       ].join(' ')}
     >
       <div
-        className={compact ? 'h-[96px]' : 'h-[132px] sm:h-[148px]'}
+        className={['relative overflow-hidden', compact ? 'h-[76px]' : 'h-[132px] sm:h-[148px]'].join(' ')}
         style={{
           background:
-            `radial-gradient(circle at 72% 28%, rgba(255,255,255,0.34), transparent 0 18%, transparent 19%), linear-gradient(135deg, ${template.thumbnail.gradientFrom}, ${template.thumbnail.gradientTo})`,
+            `radial-gradient(circle at 72% 28%, rgba(255,255,255,0.34), transparent 0 18%, transparent 19%), linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
         }}
       >
+        {shouldShowRemoteImage ? (
+          <img
+            src={template.thumbnail.url}
+            alt={template.thumbnail.alt}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.18),transparent_22%),linear-gradient(120deg,rgba(255,255,255,0.04),transparent_34%,rgba(0,0,0,0.16))]" />
+        )}
         <div className="flex h-full items-end justify-between bg-gradient-to-t from-black/42 via-transparent to-white/[0.03] p-3">
           <span className="rounded-full border border-white/12 bg-black/30 px-2 py-1 text-[10px] font-semibold text-white/78 backdrop-blur">
             {template.aspectRatio}
@@ -61,6 +85,7 @@ export function TemplateCard({
         </div>
 
         <div className="flex flex-wrap gap-1.5">
+          <TemplateLicenseBadge license={template.license} compact={compact} />
           {template.styleTags.slice(0, compact ? 2 : 3).map((tag) => (
             <span key={tag} className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-medium text-white/48">
               {tag}
@@ -69,16 +94,27 @@ export function TemplateCard({
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => onUseTemplate(template)}
-            className={compact
-              ? 'inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3 text-[11px] font-semibold text-black transition hover:scale-[1.01]'
-              : 'inline-flex h-9 items-center gap-2 rounded-full bg-white px-3.5 text-[12px] font-semibold text-black transition hover:scale-[1.01]'}
-          >
-            <Play size={compact ? 12 : 14} fill="currentColor" />
-            使用模板
-          </button>
+          {useHref ? (
+            <a
+              href={useHref}
+              aria-label="使用模板"
+              onClick={() => onUseTemplate(template)}
+              className={useClassName}
+            >
+              <Play size={compact ? 12 : 14} fill="currentColor" />
+              {compact ? '使用' : '使用模板'}
+            </a>
+          ) : (
+            <button
+              type="button"
+              aria-label="使用模板"
+              onClick={() => onUseTemplate(template)}
+              className={useClassName}
+            >
+              <Play size={compact ? 12 : 14} fill="currentColor" />
+              {compact ? '使用' : '使用模板'}
+            </button>
+          )}
           {template.sourceUrl ? (
             <a
               href={template.sourceUrl}

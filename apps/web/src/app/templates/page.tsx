@@ -19,7 +19,7 @@ export default function TemplatesPage() {
               </p>
             </div>
             <div className="rounded-[18px] border border-white/10 bg-white/[0.035] px-4 py-3 text-xs leading-6 text-white/46">
-              仅聚合模板结构、标题、流程和 prompt starter；封面为本地渐变占位。
+              支持 Pexels / Pixabay 授权素材预览；未配置 API key 时使用 Creator City 本地占位，不假装外部素材可用。
             </div>
           </div>
         </section>
@@ -30,7 +30,7 @@ export default function TemplatesPage() {
 
         <section className="mt-10 rounded-[22px] border border-white/10 bg-white/[0.03] p-5 text-xs leading-6 text-white/42">
           <p>
-            公共模板为 Creator City 内置的可编辑结构模板。外部来源仅作为创作参考，不复制第三方受版权保护素材。使用任何外部素材前，请确认授权。
+            公共模板为 Creator City 内置可编辑结构模板。外部素材仅使用公开授权或作为参考链接展示。使用任何外部素材前，请确认授权。
           </p>
         </section>
       </main>

@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, SlidersHorizontal } from 'lucide-react'
 import { TemplateCard } from '@/components/templates/TemplateCard'
 import {
@@ -17,6 +16,7 @@ import {
   type PublicTemplateCategory,
   type PublicTemplateNodeType,
 } from '@/lib/templates/public-template-categories'
+import type { TemplateMediaAsset } from '@/lib/template-assets/types'
 
 interface PublicTemplateGalleryProps {
   templates?: PublicTemplate[]
@@ -36,11 +36,12 @@ export function PublicTemplateGallery({
   onUseTemplate,
   showLegalNote = true,
 }: PublicTemplateGalleryProps) {
-  const router = useRouter()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [nodeType, setNodeType] = useState<NodeTypeFilter>('all')
   const [usableOnly, setUsableOnly] = useState(true)
+  const [assetSearchConfigured, setAssetSearchConfigured] = useState<boolean | null>(null)
+  const [assetCache, setAssetCache] = useState<Record<string, TemplateMediaAsset | null>>({})
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<PublicTemplateCategory, number>()
@@ -69,12 +70,93 @@ export function PublicTemplateGallery({
     })
   }, [category, nodeType, query, templates, usableOnly])
 
+  const templatesToResolve = useMemo(() => (
+    filteredTemplates
+      .slice(0, compact ? 12 : 24)
+      .filter((template) => !(template.id in assetCache))
+  ), [assetCache, compact, filteredTemplates])
+
+  useEffect(() => {
+    if (assetSearchConfigured === false || templatesToResolve.length === 0) return
+
+    let cancelled = false
+
+    async function resolveAssets() {
+      for (const template of templatesToResolve) {
+        const mediaType = template.nodeType === 'image' || template.nodeType === 'text' ? 'image' : 'video'
+        try {
+          const response = await fetch(`/api/template-assets/search?q=${encodeURIComponent(template.mediaQuery)}&type=${mediaType}&source=all&limit=1`)
+          const data = await response.json() as { configured?: boolean; results?: TemplateMediaAsset[] }
+          if (cancelled) return
+          setAssetSearchConfigured(Boolean(data.configured))
+          setAssetCache((current) => ({
+            ...current,
+            [template.id]: data.results?.[0] ?? null,
+          }))
+          if (!data.configured) return
+        } catch {
+          if (cancelled) return
+          setAssetCache((current) => ({
+            ...current,
+            [template.id]: null,
+          }))
+        }
+      }
+    }
+
+    void resolveAssets()
+
+    return () => {
+      cancelled = true
+    }
+  }, [assetSearchConfigured, templatesToResolve])
+
+  const displayTemplates = useMemo(() => (
+    filteredTemplates.map((template) => {
+      const asset = assetCache[template.id]
+      if (!asset?.thumbnailUrl) return template
+      const license = {
+        type: asset.licenseType,
+        label: asset.sourceName === 'Pexels' ? 'Pexels License' : 'Pixabay Content License',
+        attribution: asset.attribution,
+        usageNote: asset.sourceName === 'Pexels'
+          ? '通过 Pexels API 返回；卡片展示来源链接和授权说明，不下载、不存储第三方素材。'
+          : '通过 Pixabay API 返回；卡片展示来源链接和授权说明，不下载、不存储第三方素材。',
+      } as PublicTemplate['license']
+
+      return {
+        ...template,
+        sourceType: 'open-license' as const,
+        sourceUrl: asset.sourceUrl,
+        license,
+        thumbnail: {
+          ...template.thumbnail,
+          type: 'remote' as const,
+          url: asset.thumbnailUrl,
+          alt: asset.title,
+        },
+        preview: asset.type === 'video' && asset.previewUrl
+          ? {
+            type: 'remote-video' as const,
+            url: asset.previewUrl,
+            poster: asset.thumbnailUrl,
+            licenseType: asset.licenseType,
+            attribution: asset.attribution,
+          }
+          : template.preview,
+      }
+    })
+  ), [assetCache, filteredTemplates])
+
   function handleUseTemplate(template: PublicTemplate) {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('creator-city-template-id', template.id)
+      window.sessionStorage.setItem('creator-city-template-payload', JSON.stringify(template))
+    }
     if (onUseTemplate) {
       onUseTemplate(template)
       return
     }
-    router.push(`/create?template=${encodeURIComponent(template.id)}`)
   }
 
   return (
@@ -91,7 +173,8 @@ export function PublicTemplateGallery({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索 title / description / tags"
+              placeholder={compact ? '搜索模板...' : '搜索 title / description / tags'}
+              aria-label="搜索模板"
               className={[
                 'min-w-0 flex-1 bg-transparent px-3 text-white outline-none placeholder:text-white/28',
                 compact ? 'text-[13px]' : 'text-sm',
@@ -171,15 +254,16 @@ export function PublicTemplateGallery({
 
       <div
         className={compact
-          ? 'grid max-h-[48vh] grid-cols-2 gap-3 overflow-y-auto pr-1 [scrollbar-width:thin]'
+          ? 'grid max-h-[48vh] grid-cols-3 gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]'
           : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}
       >
-        {filteredTemplates.map((template) => (
+        {displayTemplates.map((template) => (
           <TemplateCard
             key={template.id}
             template={template}
             compact={compact}
             selected={selectedTemplateId === template.id}
+            useHref={onUseTemplate ? undefined : `/create?template=${encodeURIComponent(template.id)}`}
             onUseTemplate={handleUseTemplate}
           />
         ))}
@@ -193,7 +277,7 @@ export function PublicTemplateGallery({
 
       {showLegalNote ? (
         <p className={compact ? 'text-[10px] leading-5 text-white/34' : 'max-w-4xl text-xs leading-6 text-white/40'}>
-          公共模板为 Creator City 内置的可编辑结构模板。外部来源仅作为创作参考，不复制第三方受版权保护素材。使用任何外部素材前，请确认授权。{compact ? '' : ` ${PUBLIC_TEMPLATE_LICENSE_NOTE}`}
+          公共模板为 Creator City 内置可编辑结构模板。外部来源仅作创作参考，不复制第三方受版权保护素材。使用任何外部素材前，请确认授权。{compact ? '' : ` ${PUBLIC_TEMPLATE_LICENSE_NOTE}`}
         </p>
       ) : null}
     </section>

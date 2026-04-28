@@ -45,6 +45,13 @@ export const GATEWAY_PROVIDERS: GatewayProviderEntry[] = [
     setupHint: '配置 ELEVENLABS_API_KEY（https://elevenlabs.io → Profile → API Key）',
     canTest: true,
   },
+  {
+    id: 'custom-video-gateway',
+    adapterId: 'custom-video-gateway',
+    envKeys: ['CUSTOM_VIDEO_PROVIDER_ENDPOINT'],
+    setupHint: '配置 CUSTOM_VIDEO_PROVIDER_ENDPOINT（你自己的视频生成网关地址）和 CUSTOM_VIDEO_PROVIDER_API_KEY。',
+    canTest: true,
+  },
 ]
 
 export function getGatewayProvider(id: string): GatewayProviderEntry | null {

@@ -96,6 +96,14 @@ export function WorkspaceAssetsPanel({
         </div>
       </div>
 
+      <div className="canvas-assets-preview-card">
+        <div className="canvas-assets-preview-media" />
+        <div>
+          <h3>素材库加速创作</h3>
+          <p>用本地素材、角色、场景和风格参考，快速构建可继续生成的画布节点。</p>
+        </div>
+      </div>
+
       <div className="canvas-segment-control">
         <button type="button" className={activeScope === 'personal' ? 'is-active' : ''} onClick={() => setActiveScope('personal')}>个人</button>
         <button type="button" className={activeScope === 'team' ? 'is-active' : ''} onClick={() => setActiveScope('team')}>团队</button>

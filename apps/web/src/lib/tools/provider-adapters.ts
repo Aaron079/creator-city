@@ -42,7 +42,7 @@ function buildPreview(response: GenerateResponse, prompt: string): string {
   if (result?.audioUrl) return `[real] ${providerId} · 音频已生成`
   if (result?.text) return result.text.slice(0, 120)
   if (status === 'queued' || status === 'running') return `[${mode}] ${providerId} · 生成中，请稍候…`
-  if (status === 'not-configured') return `[未配置] ${providerId} · 请到 /tools 配置 API key`
+  if (status === 'not-configured') return `[未配置] ${providerId} · 视频生成 API 未配置，请到 /tools 配置 provider`
   if (mode === 'mock') return `[mock] ${providerId} · ${prompt.trim().slice(0, 80) || '未填写 prompt'}`
   return message.slice(0, 120)
 }
