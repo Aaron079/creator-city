@@ -1,10 +1,20 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { CanvasNodeCard, type VisualCanvasNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
+import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
+import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
+import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
+import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
+import { WorkspaceAssetsPanel } from '@/components/create/WorkspaceAssetsPanel'
+import {
+  getPublicTemplateById,
+  type PublicTemplate,
+} from '@/lib/templates/public-template-catalog'
 import {
   CANVAS_PROVIDER_FALLBACKS,
   getCanvasProvider,
@@ -14,7 +24,10 @@ import {
   getCanvasProviderStatus,
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
+import { getProviderStatusLabel } from '@/lib/tools/provider-status'
+import { generateWithProvider } from '@/lib/tools/provider-adapters'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
+import type { ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
@@ -37,7 +50,7 @@ interface CanvasEdge {
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
   text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'anthropic-claude' },
   image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'nano-banana', ratio: '16:9' },
-  video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'runway', ratio: '16:9' },
+  video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'seedance-1-5-pro', ratio: '16:9' },
   audio: { title: '音频', subtitle: '补充音乐、旁白和声音氛围。', model: 'elevenlabs' },
   asset: { title: '素材', subtitle: '导入图片、视频或音频参考素材。', model: 'asset-drop' },
   template: { title: '模板', subtitle: '从模板流程继续创作。', model: 'asset-drop' },
@@ -49,7 +62,7 @@ const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string;
 const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }> = {
   text: { width: 360, height: 300 },
   image: { width: 380, height: 320 },
-  video: { width: 420, height: 320 },
+  video: { width: 288, height: 162 },
   audio: { width: 360, height: 260 },
   asset: { width: 360, height: 280 },
   template: { width: 360, height: 280 },
@@ -58,18 +71,19 @@ const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }>
   upload: { width: 360, height: 280 },
 }
 
-const WORKSPACE_RATIOS = ['16:9', '9:16', '1:1']
+const WORKSPACE_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const MIN_CANVAS_ZOOM = 0.35
 const MAX_CANVAS_ZOOM = 1.8
 const CANVAS_ZOOM_STEP = 0.1
+const CONNECTOR_VISUAL_OFFSET = 32
+const DOWNSTREAM_NODE_X_GAP = 820
+const DOWNSTREAM_NODE_Y_GAP = 220
 const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 190
 const NODE_ADD_MENU_HEIGHT = 220
-const NODE_CREATE_MENU_WIDTH = 214
-const NODE_CREATE_MENU_HEIGHT = 310
-const NODE_DIALOG_GAP = 32
-const NODE_DIALOG_HEIGHT = 180
+const NODE_DIALOG_GAP = 16
+const NODE_DIALOG_HEIGHT = 210
 const STAGE_OPTIONS = [
   { value: 'draft', label: '起稿', hint: '先把方向和内容结构定下来' },
   { value: 'lookdev', label: '视觉开发', hint: '推进风格、关键帧和 look & feel' },
@@ -136,6 +150,10 @@ function clampCanvasZoom(value: number) {
   return Math.max(MIN_CANVAS_ZOOM, Math.min(value, MAX_CANVAS_ZOOM))
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(value, max))
+}
+
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
   const providerKind = getProviderKind(kind)
   const providers = getCanvasProviders(providerKind)
@@ -147,6 +165,20 @@ function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
   if (kind === 'asset' || kind === 'template') return 'upload'
   return kind as CanvasProviderKind
+}
+
+function getProviderNodeType(kind: VisualCanvasNodeKind): ToolProviderNodeType {
+  if (kind === 'image') return 'image'
+  if (kind === 'video') return 'video'
+  if (kind === 'audio') return 'audio'
+  return 'text'
+}
+
+function getNodeKindForPublicTemplate(nodeType: PublicTemplate['nodeType']): VisualCanvasNodeKind {
+  if (nodeType === 'text' || nodeType === 'image' || nodeType === 'video' || nodeType === 'audio') {
+    return nodeType
+  }
+  return 'template'
 }
 
 function getNodeSize(kind: VisualCanvasNodeKind) {
@@ -234,9 +266,17 @@ export function VisualCanvasWorkspace({
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
   const [promptAssetMode, setPromptAssetMode] = useState<(typeof ASSET_OPTIONS)[number]['value']>('none')
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
+  const [hasStarted, setHasStarted] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | null>(null)
+  const [commentsEnabled, setCommentsEnabled] = useState(false)
+  const [comments, setComments] = useState<CanvasComment[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [selectedHistoryId, setSelectedHistoryId] = useState('')
+  const [appliedImageEdit, setAppliedImageEdit] = useState('')
+  const [canvasFeedback, setCanvasFeedback] = useState('')
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
-  const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; x: number; y: number; worldX: number; worldY: number } | null>(null)
+  const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
@@ -252,6 +292,7 @@ export function VisualCanvasWorkspace({
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const timersRef = useRef<number[]>([])
+  const initialTemplateAppliedRef = useRef('')
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -271,6 +312,7 @@ export function VisualCanvasWorkspace({
   } | null>(null)
   const connectionDragRef = useRef<{
     nodeId: string
+    direction: 'in' | 'out'
     startClientX: number
     startClientY: number
   } | null>(null)
@@ -309,6 +351,12 @@ export function VisualCanvasWorkspace({
   const fitCanvasView = useCallback(() => {
     setCanvasZoom(0.82)
     setCanvasPan({ x: 70, y: 20 })
+  }, [])
+
+  const showCanvasFeedback = useCallback((message: string) => {
+    setCanvasFeedback(message)
+    const timer = window.setTimeout(() => setCanvasFeedback(''), 2200)
+    timersRef.current.push(timer)
   }, [])
 
   const deleteNode = useCallback((nodeId: string) => {
@@ -429,10 +477,10 @@ export function VisualCanvasWorkspace({
     [preferredKind, promptModel],
   )
   const providerOptionLabels = useMemo(
-    () => Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.displayName])),
+    () => Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
     [preferredKind],
   )
-  const activeProviderLabel = activeProvider?.displayName ?? getCanvasProviderLabel(getProviderKind(preferredKind), promptModel)
+  const activeProviderLabel = activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), promptModel)
   const activeProviderStatus = activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), promptModel)
   const activeProviderNotice = getCanvasProviderNotice(activeProvider)
   const stageLabel = useMemo(
@@ -447,6 +495,22 @@ export function VisualCanvasWorkspace({
     () => getOptionLabel(PARAMETER_OPTIONS, promptParameter),
     [promptParameter],
   )
+  const canvasHistoryItems = useMemo<CanvasHistoryItem[]>(() => {
+    const nodeItems = nodes.slice(-4).reverse().map((node) => ({
+      id: `node-${node.id}`,
+      title: `创建节点 · ${node.title}`,
+      detail: `${getEntryKindLabel(node.kind)} 节点已加入画布。`,
+      type: node.kind === 'video' ? 'video' as const : node.kind === 'world' ? 'world' as const : 'image' as const,
+    }))
+
+    return [
+      ...nodeItems,
+      { id: 'history-product-keyframe', title: 'Tech Product Ad', detail: '产品广告关键帧 · 已可复用', type: 'image' },
+      { id: 'history-f1-video', title: 'F1 Rapid Tire Swap', detail: '高速运动镜头 · 可继续生成', type: 'video' },
+      { id: 'history-world-stage', title: '日式木屋场景', detail: '3D 世界场景草案 · 可作为上游', type: 'world' },
+      { id: 'mock-params', title: '高级镜头参数', detail: `当前参数为 ${parameterLabel}，可继续套用到新镜头。`, type: 'video' },
+    ]
+  }, [nodes, parameterLabel])
 
   useEffect(() => {
     if (!activeNode) return
@@ -463,7 +527,7 @@ export function VisualCanvasWorkspace({
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-add-menu, .canvas-toolbar-shell')) return
+      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-add-menu, .canvas-toolbar-shell, .canvas-side-panel, .canvas-user-menu')) return
       setContextMenu(null)
       setNodeAddMenu(null)
       setNodeCreateMenu(null)
@@ -553,39 +617,6 @@ export function VisualCanvasWorkspace({
     setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [])
 
-  const bringNodeIntoView = useCallback((node: VisualCanvasNode) => {
-    const viewportRect = viewportRef.current?.getBoundingClientRect()
-    if (!viewportRect) return
-
-    const margin = 72
-    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
-    const nodeLeft = viewportRect.left + surfaceOffset.left + canvasPan.x + node.x * canvasZoom
-    const nodeTop = viewportRect.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
-    const nodeRight = nodeLeft + node.width * canvasZoom
-    const nodeBottom = nodeTop + node.height * canvasZoom
-    let deltaX = 0
-    let deltaY = 0
-
-    if (nodeRight > viewportRect.right - margin) {
-      deltaX = viewportRect.right - margin - nodeRight
-    } else if (nodeLeft < viewportRect.left + margin) {
-      deltaX = viewportRect.left + margin - nodeLeft
-    }
-
-    if (nodeBottom > viewportRect.bottom - margin) {
-      deltaY = viewportRect.bottom - margin - nodeBottom
-    } else if (nodeTop < viewportRect.top + margin) {
-      deltaY = viewportRect.top + margin - nodeTop
-    }
-
-    if (deltaX || deltaY) {
-      setCanvasPan((current) => ({
-        x: current.x + deltaX,
-        y: current.y + deltaY,
-      }))
-    }
-  }, [canvasPan.x, canvasPan.y, canvasZoom])
-
   const handleNodeDragStart = useCallback((
     nodeId: string,
     event: React.PointerEvent<HTMLDivElement>,
@@ -669,6 +700,7 @@ export function VisualCanvasWorkspace({
   }, [activeProviderNotice, assetLabel, parameterLabel, promptAssetMode, stageLabel])
 
   const handleAddNode = useCallback((kind: VisualCanvasNodeKind, presetTitle?: string) => {
+    setHasStarted(true)
     syncPromptPreset(kind)
     createNode(kind, {
       title: presetTitle ?? NODE_META[kind].title,
@@ -678,10 +710,173 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(null)
   }, [createNode, syncPromptPreset])
 
+  const closeCanvasPanel = useCallback(() => {
+    setActivePanel(null)
+  }, [])
+
+  const handleOpenAssetsPanel = useCallback(() => {
+    setActivePanel((current) => (current === 'assets' ? null : 'assets'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [])
+
+  const handleOpenTemplatePanel = useCallback(() => {
+    setActivePanel((current) => (current === 'templates' ? null : 'templates'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [])
+
+  const handleToggleCommentsPanel = useCallback(() => {
+    setCommentsEnabled((current) => {
+      const next = !current
+      if (next) {
+        setActivePanel(null)
+        showCanvasFeedback('评论模式已开启。')
+      } else {
+        showCanvasFeedback('评论模式已关闭。')
+      }
+      return next
+    })
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+  }, [showCanvasFeedback])
+
+  const handleOpenHistoryPanel = useCallback(() => {
+    setActivePanel((current) => (current === 'history' ? null : 'history'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [])
+
+  const handleOpenImageEditor = useCallback(() => {
+    setHasStarted(true)
+    setEditingNodeId(null)
+    setActivePanel((current) => (current === 'image-editor' ? null : 'image-editor'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    showCanvasFeedback(activeNode?.kind === 'image' ? '已打开当前图片节点的编辑器。' : '请选择一个高级编辑功能。')
+  }, [activeNode, showCanvasFeedback])
+
+  const handleAddAsset = useCallback((asset: { title: string; category: string; prompt: string }) => {
+    setHasStarted(true)
+    const node = createNode('asset', {
+      title: asset.title,
+      prompt: asset.prompt,
+      model: NODE_META.asset.model,
+      status: 'done',
+    })
+    handleNodePatch(node.id, {
+      resultPreview: `${asset.category} · ${asset.title} 已加入素材库，可拖入后续生成链路。`,
+      outputLabel: '素材已就绪',
+    })
+    showCanvasFeedback(`${asset.title} 已加入画布素材。`)
+  }, [createNode, handleNodePatch, showCanvasFeedback])
+
+  const handleSelectTemplate = useCallback((template: PublicTemplate) => {
+    const kind = getNodeKindForPublicTemplate(template.nodeType)
+    setSelectedTemplateId(template.id)
+    setHasStarted(true)
+    setActivePanel(null)
+    syncPromptPreset(kind)
+    const node = createNode(kind, {
+      title: template.title,
+      prompt: template.promptStarter,
+      model: NODE_META[kind].model,
+      ratio: template.aspectRatio,
+      status: 'done',
+    })
+    handleNodePatch(node.id, {
+      resultPreview: `${template.description}\n流程：${template.workflowSteps.slice(0, 4).join(' -> ')}`,
+      outputLabel: '模板起点',
+    })
+    showCanvasFeedback('已应用模板，可继续创作。')
+  }, [createNode, handleNodePatch, showCanvasFeedback, syncPromptPreset])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const templateId = new URLSearchParams(window.location.search).get('template')
+    if (!templateId || initialTemplateAppliedRef.current === templateId) return
+    const template = getPublicTemplateById(templateId)
+    if (!template) return
+    initialTemplateAppliedRef.current = templateId
+    handleSelectTemplate(template)
+  }, [handleSelectTemplate])
+
+  const handleAddComment = useCallback((text: string) => {
+    setComments((current) => [
+      {
+        id: `comment-${Date.now()}`,
+        text,
+        createdAt: Date.now(),
+      },
+      ...current,
+    ])
+    showCanvasFeedback('评论已添加到本地列表。')
+  }, [showCanvasFeedback])
+
+  const handleSelectHistoryItem = useCallback((item: CanvasHistoryItem) => {
+    setSelectedHistoryId(item.id)
+    if (item.id.startsWith('history-')) {
+      const kind = item.type === 'video' ? 'video' : item.type === 'world' ? 'world' : 'image'
+      const node = createNode(kind, {
+        title: item.title,
+        prompt: `${item.title} · 从历史记录恢复，可继续作为当前画布节点使用。`,
+        model: NODE_META[kind].model,
+        ratio: NODE_META[kind].ratio,
+        status: 'done',
+      })
+      handleNodePatch(node.id, {
+        resultPreview: item.detail,
+        outputLabel: '历史记录已恢复',
+      })
+    }
+    showCanvasFeedback(`${item.title} · ${item.detail}`)
+  }, [createNode, handleNodePatch, showCanvasFeedback])
+
+  const handleApplyImageEdit = useCallback((action: string) => {
+    setAppliedImageEdit(action)
+    const targetKind: VisualCanvasNodeKind = action === '涂鸦生视频' ? 'video' : 'image'
+    const shouldCreateNode = action !== '图片编辑器节点' || activeNode?.kind !== 'image'
+    const targetNode = shouldCreateNode
+      ? createNode(targetKind, {
+        title: action,
+        prompt: `${action} · 根据当前参考图/草图生成可继续编辑的${targetKind === 'video' ? '视频镜头' : '图片结果'}。`,
+        model: NODE_META[targetKind].model,
+        ratio: NODE_META[targetKind].ratio,
+        status: 'done',
+      })
+      : activeNode
+    if (targetNode) {
+      handleNodePatch(targetNode.id, {
+        resultPreview: `${action} 已创建可用节点，可继续接下游节点生成。`,
+        outputLabel: `${action} 已应用`,
+        status: 'done',
+      })
+    }
+    if (activeNode?.kind === 'image') {
+      handleNodePatch(activeNode.id, {
+        resultPreview: `图片编辑器 · ${action} · 已应用编辑效果。`,
+        outputLabel: `已应用编辑效果。`,
+        status: 'done',
+      })
+    }
+    showCanvasFeedback(`${action} 已执行，节点已加入画布。`)
+  }, [activeNode, createNode, handleNodePatch, showCanvasFeedback])
+
   const handleNodeDialogGenerate = useCallback(() => {
     if (!editingNode) return
 
     const trimmedPrompt = canvasPrompt.trim()
+    const nodeSnapshot = editingNode
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
       model: promptModel,
@@ -692,24 +887,36 @@ export function VisualCanvasWorkspace({
     })
 
     const timer = window.setTimeout(() => {
-      const preview = trimmedPrompt
-        ? buildMockResult(editingNode, trimmedPrompt)
-        : buildResultLabel(editingNode.title)
+      void generateWithProvider({
+        providerId: promptModel,
+        nodeType: getProviderNodeType(nodeSnapshot.kind),
+        prompt: trimmedPrompt,
+        params: {
+          ratio: promptRatio,
+          stage: promptStage,
+          parameter: promptParameter,
+        },
+      }).then((result) => {
+        const fallbackPreview = trimmedPrompt
+          ? buildMockResult(nodeSnapshot, trimmedPrompt)
+          : buildResultLabel(nodeSnapshot.title)
+        const preview = result.resultPreview || fallbackPreview
 
-      handleNodePatch(editingNode.id, {
-        status: 'done',
-        resultPreview: preview,
-        outputLabel: preview,
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'done',
+          resultPreview: preview,
+          outputLabel: preview,
+        })
+        setEdges((current) => current.map((edge) => (
+          edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
+            ? { ...edge, status: 'done' }
+            : edge
+        )))
+        setEditingNodeId(null)
       })
-      setEdges((current) => current.map((edge) => (
-        edge.toNodeId === editingNode.id || edge.fromNodeId === editingNode.id
-          ? { ...edge, status: 'done' }
-          : edge
-      )))
-      setEditingNodeId(null)
     }, 850)
     timersRef.current.push(timer)
-  }, [buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptRatio, promptStage])
+  }, [buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptParameter, promptRatio, promptStage])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -730,42 +937,59 @@ export function VisualCanvasWorkspace({
 
   const handleAddSpecificNextNode = useCallback((nodeId: string, kind: VisualCanvasNodeKind) => {
     syncPromptPreset(kind)
+    const direction = nodeAddMenu?.direction ?? 'out'
     const node = createNode(kind, {
-      parentNodeId: nodeId,
+      parentNodeId: direction === 'out' ? nodeId : undefined,
       model: NODE_META[kind].model,
       ratio: NODE_META[kind].ratio,
       position: nodeAddMenu ? { x: nodeAddMenu.worldX, y: nodeAddMenu.worldY } : undefined,
     })
-    setEditingNodeId(node.id)
-    bringNodeIntoView(node)
+    if (direction === 'in') {
+      const edgeId = `${node.id}-${nodeId}`
+      setEdges((current) => [
+        ...current.filter((edge) => edge.id !== edgeId),
+        {
+          id: edgeId,
+          fromNodeId: node.id,
+          toNodeId: nodeId,
+          status: 'active',
+        },
+      ])
+    }
+    setActiveNodeId(node.id)
+    setEditingNodeId(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [bringNodeIntoView, createNode, nodeAddMenu, syncPromptPreset])
+  }, [createNode, nodeAddMenu, syncPromptPreset])
 
   const openNodeAddMenuAt = useCallback((
     nodeId: string,
+    direction: 'in' | 'out',
     clientX: number,
     clientY: number,
     worldX: number,
     worldY: number,
   ) => {
     const position = clampMenuPosition(clientX, clientY, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
-    setNodeAddMenu({ nodeId, ...position, worldX, worldY })
+    setNodeAddMenu({ nodeId, direction, ...position, worldX, worldY })
     setContextMenu(null)
     setEditingNodeId(null)
     setActiveNodeId(nodeId)
   }, [])
 
-  const openNodeAddMenu = useCallback((nodeId: string) => {
+  const openNodeAddMenu = useCallback((nodeId: string, direction: 'in' | 'out' = 'out') => {
     const sourceNode = nodes.find((node) => node.id === nodeId)
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!sourceNode || !rect) return
 
-    const size = getNodeSize('image')
+    const size = getNodeSize('video')
+    const targetX = direction === 'out'
+      ? sourceNode.x + sourceNode.width + DOWNSTREAM_NODE_X_GAP
+      : sourceNode.x - DOWNSTREAM_NODE_X_GAP - size.width
     const resolved = resolveNonOverlappingPosition(
       {
-        x: sourceNode.x + sourceNode.width + 260,
-        y: sourceNode.y,
+        x: targetX,
+        y: sourceNode.y + DOWNSTREAM_NODE_Y_GAP,
         width: size.width,
         height: size.height,
       },
@@ -776,7 +1000,7 @@ export function VisualCanvasWorkspace({
     const sourceTop = rect.top + surfaceOffset.top + canvasPan.y + sourceNode.y * canvasZoom
     const sourceRight = sourceLeft + sourceNode.width * canvasZoom
     const sourceBottom = sourceTop + sourceNode.height * canvasZoom
-    const desiredX = sourceRight + 24
+    const desiredX = direction === 'out' ? sourceRight + 24 : sourceLeft - NODE_ADD_MENU_WIDTH - 24
     const desiredY = sourceTop + sourceNode.height * canvasZoom / 2 - NODE_ADD_MENU_HEIGHT / 2
     let position = clampMenuPosition(desiredX, desiredY, NODE_ADD_MENU_WIDTH, NODE_ADD_MENU_HEIGHT)
     const overlapsSource = !(
@@ -806,10 +1030,10 @@ export function VisualCanvasWorkspace({
         }
       }
     }
-    openNodeAddMenuAt(nodeId, position.x, position.y, resolved.x, resolved.y)
+    openNodeAddMenuAt(nodeId, direction, position.x, position.y, resolved.x, resolved.y)
   }, [canvasPan.x, canvasPan.y, canvasZoom, nodes, openNodeAddMenuAt])
 
-  const startConnectionDrag = useCallback((nodeId: string, event: React.PointerEvent<HTMLButtonElement>) => {
+  const startConnectionDrag = useCallback((nodeId: string, direction: 'in' | 'out', event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
     const sourceNode = nodes.find((node) => node.id === nodeId)
     if (!sourceNode) return
@@ -818,6 +1042,7 @@ export function VisualCanvasWorkspace({
     event.stopPropagation()
     connectionDragRef.current = {
       nodeId,
+      direction,
       startClientX: event.clientX,
       startClientY: event.clientY,
     }
@@ -827,9 +1052,13 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(null)
     setConnectionDraft({
       nodeId,
-      x1: sourceNode.x + sourceNode.width,
+      x1: direction === 'out'
+        ? sourceNode.x + sourceNode.width + CONNECTOR_VISUAL_OFFSET
+        : sourceNode.x - CONNECTOR_VISUAL_OFFSET,
       y1: sourceNode.y + sourceNode.height / 2,
-      x2: sourceNode.x + sourceNode.width + 36,
+      x2: direction === 'out'
+        ? sourceNode.x + sourceNode.width + CONNECTOR_VISUAL_OFFSET + 36
+        : sourceNode.x - CONNECTOR_VISUAL_OFFSET - 36,
       y2: sourceNode.y + sourceNode.height / 2,
     })
   }, [nodes])
@@ -887,17 +1116,19 @@ export function VisualCanvasWorkspace({
         event.clientY - drag.startClientY,
       )
       if (distance < 8) {
-        openNodeAddMenu(drag.nodeId)
+        openNodeAddMenu(drag.nodeId, drag.direction)
         return
       }
 
       const point = getViewportWorldPoint(event.clientX, event.clientY)
       const size = getNodeSize('image')
+      const nextWorldX = drag.direction === 'out' ? point.x + 42 : point.x - size.width - 42
       openNodeAddMenuAt(
         drag.nodeId,
+        drag.direction,
         event.clientX + 12,
         event.clientY - NODE_ADD_MENU_HEIGHT / 2,
-        point.x + 42,
+        nextWorldX,
         point.y - size.height / 2,
       )
     }
@@ -914,7 +1145,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu')
+    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -986,8 +1217,10 @@ export function VisualCanvasWorkspace({
       value: activeProviderStatus ? `${activeProviderLabel} · ${activeProviderStatus}` : activeProviderLabel,
       options: getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
         value: provider.id,
-        label: provider.displayName,
-        hint: `${provider.status} · ${provider.setupHint}`,
+        label: provider.name,
+        hint: `${getProviderStatusLabel(provider.status)} · ${provider.estimatedTime}`,
+        badge: provider.status,
+        duration: provider.estimatedTime,
       })),
       onSelect: handleProviderChange,
     },
@@ -1041,18 +1274,33 @@ export function VisualCanvasWorkspace({
     const element = event.target as HTMLElement | null
     if (element?.closest('button, input, textarea')) return
     if (!canStartCanvasPan(event.target)) return
-    const point = getViewportWorldPoint(event.clientX, event.clientY)
-    const position = clampMenuPosition(event.clientX, event.clientY, NODE_CREATE_MENU_WIDTH, NODE_CREATE_MENU_HEIGHT)
-    setNodeCreateMenu({
-      x: position.x,
-      y: position.y,
-      worldX: point.x - NODE_SIZE.text.width / 2,
-      worldY: point.y - NODE_SIZE.text.height / 2,
+    event.preventDefault()
+    event.stopPropagation()
+
+    setHasStarted(true)
+    const viewportRect = viewportRef.current?.getBoundingClientRect()
+    const referencePoint = viewportRect
+      ? getViewportWorldPoint(
+        viewportRect.left + viewportRect.width / 2,
+        viewportRect.top + clampNumber(viewportRect.height * 0.24, 150, 230),
+      )
+      : getViewportWorldPoint(event.clientX, event.clientY)
+    syncPromptPreset('video')
+    const node = createNode('video', {
+      title: NODE_META.video.title,
+      model: NODE_META.video.model,
+      ratio: NODE_META.video.ratio,
+      position: {
+        x: referencePoint.x - NODE_SIZE.video.width / 2,
+        y: referencePoint.y - NODE_SIZE.video.height / 2,
+      },
     })
-    setEditingNodeId(null)
+    focusPromptForNode(node)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [canStartCanvasPan, getViewportWorldPoint])
+    setNodeCreateMenu(null)
+    setIsAddMenuOpen(false)
+  }, [canStartCanvasPan, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
 
   const handleShareCanvasLink = useCallback(async () => {
     const href = window.location.href
@@ -1094,63 +1342,53 @@ export function VisualCanvasWorkspace({
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return undefined
 
-    const dialogWidth = Math.min(680, Math.max(320, window.innerWidth - 32))
+    const viewportMargin = 24
+    const dialogWidth = Math.max(320, Math.min(640, window.innerWidth - viewportMargin * 2))
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
     const nodeTop = rect.top + surfaceOffset.top + canvasPan.y + editingNode.y * canvasZoom
     const nodeWidth = editingNode.width * canvasZoom
     const nodeHeight = editingNode.height * canvasZoom
-    const nodeRight = nodeLeft + nodeWidth
     const nodeBottom = nodeTop + nodeHeight
-    const viewportMargin = 16
-    const clampLeft = (left: number) => Math.max(viewportMargin, Math.min(left, window.innerWidth - dialogWidth - viewportMargin))
-    const clampTop = (top: number) => Math.max(viewportMargin, Math.min(top, window.innerHeight - NODE_DIALOG_HEIGHT - viewportMargin))
-    const nodeCenterY = nodeTop + nodeHeight / 2
     const nodeCenterX = nodeLeft + nodeWidth / 2
-
-    const candidates = [
-      nodeRight + NODE_DIALOG_GAP + dialogWidth <= window.innerWidth - viewportMargin
-        ? { left: nodeRight + NODE_DIALOG_GAP, top: clampTop(nodeCenterY - NODE_DIALOG_HEIGHT / 2) }
-        : null,
-      nodeLeft - NODE_DIALOG_GAP - dialogWidth >= viewportMargin
-        ? { left: nodeLeft - NODE_DIALOG_GAP - dialogWidth, top: clampTop(nodeCenterY - NODE_DIALOG_HEIGHT / 2) }
-        : null,
-      nodeBottom + NODE_DIALOG_GAP + NODE_DIALOG_HEIGHT <= window.innerHeight - viewportMargin
-        ? { left: clampLeft(nodeCenterX - dialogWidth / 2), top: nodeBottom + NODE_DIALOG_GAP }
-        : null,
-      nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT >= viewportMargin
-        ? { left: clampLeft(nodeCenterX - dialogWidth / 2), top: nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT }
-        : null,
-    ].filter(Boolean) as Array<{ left: number; top: number }>
-
-    const fallbackTop = nodeBottom + NODE_DIALOG_GAP + NODE_DIALOG_HEIGHT <= window.innerHeight
-      ? nodeBottom + NODE_DIALOG_GAP
-      : nodeTop - NODE_DIALOG_GAP - NODE_DIALOG_HEIGHT
+    const dialogHeight = window.innerWidth <= 900 ? 190 : NODE_DIALOG_HEIGHT
+    const belowTop = nodeBottom + NODE_DIALOG_GAP
+    const aboveTop = nodeTop - NODE_DIALOG_GAP - dialogHeight
+    const hasRoomBelow = belowTop + dialogHeight <= window.innerHeight - viewportMargin
+    const hasRoomAbove = aboveTop >= viewportMargin
+    const top = hasRoomBelow
+      ? belowTop
+      : hasRoomAbove
+        ? aboveTop
+        : clampNumber(belowTop, viewportMargin, Math.max(viewportMargin, window.innerHeight - dialogHeight - viewportMargin))
 
     return {
-      left: candidates[0]?.left ?? clampLeft(nodeCenterX - dialogWidth / 2),
-      top: candidates[0]?.top ?? clampTop(fallbackTop),
+      left: clampNumber(nodeCenterX - dialogWidth / 2, viewportMargin, window.innerWidth - dialogWidth - viewportMargin),
+      height: dialogHeight,
+      top,
       width: dialogWidth,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
 
   return (
-    <div className="canvas-root">
+    <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
       <div className="canvas-grid" />
 
       <div className="canvas-topbar create-glass-panel">
         <div className="canvas-topbar-brand">
-          <a href="/" className="canvas-topbar-logo-link" aria-label="回到 Creator City 首页">
+          <a
+            href="/"
+            className="canvas-topbar-home-link"
+            aria-label="回到首页"
+            title={`回到首页 · ${templateName ? `${projectTitle} · ${templateName}` : projectTitle}`}
+          >
             <span className="canvas-topbar-logo" aria-hidden="true" />
+            <span className="canvas-topbar-home-copy">
+              <span className="canvas-topbar-title">Creator City</span>
+              <span className="canvas-topbar-copy">{projectTitle}</span>
+            </span>
           </a>
-          <a href="/projects" className="canvas-topbar-title-link">
-            <div className="canvas-topbar-label">Creator City</div>
-            <div className="canvas-topbar-title">{projectTitle}</div>
-          </a>
-          <div className="canvas-topbar-copy">
-            {templateName ? `模板 · ${templateName}` : '自由创作画布'} · 不预设固定流程，按你的思路推进
-          </div>
         </div>
 
         <div className="canvas-topbar-actions">
@@ -1189,7 +1427,103 @@ export function VisualCanvasWorkspace({
         onToolSelect={setActiveTool}
         isAddMenuOpen={isAddMenuOpen}
         onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
+        commentsEnabled={commentsEnabled}
+        onOpenAssetsPanel={handleOpenAssetsPanel}
+        onOpenTemplatePanel={handleOpenTemplatePanel}
+        onToggleCommentsPanel={handleToggleCommentsPanel}
+        onOpenHistoryPanel={handleOpenHistoryPanel}
+        onOpenImageEditor={handleOpenImageEditor}
       />
+
+      <AnimatePresence mode="wait">
+        {activePanel === 'assets' ? (
+          <motion.section
+            key="assets"
+            className="canvas-side-panel is-assets-panel"
+            aria-label="素材库面板"
+            onPointerDown={(event) => event.stopPropagation()}
+            initial={{ opacity: 0, x: -18, scale: 0.98, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -18, scale: 0.98, filter: 'blur(8px)' }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <WorkspaceAssetsPanel
+              compact
+              shotCount={nodes.filter((node) => node.kind === 'video').length}
+              storyboardFrameCount={nodes.filter((node) => node.kind === 'image').length}
+              versionCount={nodes.filter((node) => node.status === 'done').length}
+              audioCueCount={nodes.filter((node) => node.kind === 'audio').length}
+              onClose={closeCanvasPanel}
+              onUploadMock={() => handleAddAsset({ title: '上传素材', category: 'Upload', prompt: '上传入口创建的本地素材，可替换为真实文件后继续生成。' })}
+              onAddAsset={handleAddAsset}
+            />
+          </motion.section>
+        ) : activePanel === 'templates' ? (
+          <motion.div
+            key="templates"
+            className="canvas-motion-panel-layer"
+            initial={{ opacity: 0, x: -20, y: 10, scale: 0.985, filter: 'blur(10px)' }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -20, y: 10, scale: 0.985, filter: 'blur(10px)' }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <CanvasTemplatePanel
+              selectedTemplateId={selectedTemplateId}
+              onSelectTemplate={handleSelectTemplate}
+              onClose={closeCanvasPanel}
+            />
+          </motion.div>
+        ) : activePanel === 'history' ? (
+          <motion.div
+            key="history"
+            className="canvas-motion-panel-layer"
+            initial={{ opacity: 0, x: -18, scale: 0.985, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -18, scale: 0.985, filter: 'blur(8px)' }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <CanvasHistoryPanel
+              items={canvasHistoryItems}
+              selectedId={selectedHistoryId}
+              onSelectItem={handleSelectHistoryItem}
+              onClose={closeCanvasPanel}
+            />
+          </motion.div>
+        ) : activePanel === 'image-editor' ? (
+          <motion.div
+            key="image-editor"
+            className="canvas-motion-panel-layer"
+            initial={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <ImageEditorPanel
+              nodeTitle={activeNode?.kind === 'image' ? activeNode.title : '图片编辑器'}
+              appliedAction={appliedImageEdit}
+              onApply={handleApplyImageEdit}
+              onClose={closeCanvasPanel}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {commentsEnabled ? (
+        <CanvasCommentsPanel
+          comments={comments}
+          onAddComment={handleAddComment}
+          onClose={() => {
+            setCommentsEnabled(false)
+            showCanvasFeedback('评论模式已关闭。')
+          }}
+        />
+      ) : null}
+
+      {canvasFeedback ? (
+        <div className="canvas-feedback-toast" role="status">
+          {canvasFeedback}
+        </div>
+      ) : null}
 
       <div
         ref={viewportRef}
@@ -1199,8 +1533,9 @@ export function VisualCanvasWorkspace({
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
         onPointerCancel={handleCanvasPointerUp}
+        onDoubleClick={handleCanvasDoubleClick}
       >
-        {nodes.length === 0 ? (
+        {!hasStarted && nodes.length === 0 ? (
           <div className="canvas-empty-overlay">
             <div className="canvas-empty-hint-row">
               <span className="canvas-empty-hint-badge">
@@ -1220,7 +1555,10 @@ export function VisualCanvasWorkspace({
                   key={label}
                   type="button"
                   className="canvas-empty-shortcut"
-                  onClick={(e) => { e.stopPropagation(); handleAddNode(kind, label) }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleAddNode(kind, label)
+                  }}
                 >
                   <span className="canvas-empty-shortcut-icon" aria-hidden="true">{icon}</span>
                   {label}
@@ -1229,7 +1567,11 @@ export function VisualCanvasWorkspace({
               <button
                 type="button"
                 className="canvas-empty-shortcut"
-                onClick={(e) => { e.stopPropagation(); onShowStartup() }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setHasStarted(true)
+                  onShowStartup()
+                }}
               >
                 <span className="canvas-empty-shortcut-icon" aria-hidden="true">⊞</span>
                 模板
@@ -1241,7 +1583,6 @@ export function VisualCanvasWorkspace({
         <div
           ref={surfaceRef}
           className="canvas-flow-surface"
-          onDoubleClick={handleCanvasDoubleClick}
           style={{
             transform: `translate3d(${canvasPan.x}px, ${canvasPan.y}px, 0) scale(${canvasZoom})`,
           }}
@@ -1258,7 +1599,7 @@ export function VisualCanvasWorkspace({
                   <CanvasFlowEdge
                     key={edge.id}
                     id={edge.id}
-                    x1={fromNode.x + fromNode.width}
+                    x1={fromNode.x + fromNode.width + CONNECTOR_VISUAL_OFFSET}
                     y1={fromNode.y + fromNode.height / 2}
                     x2={toNode.x}
                     y2={toNode.y + toNode.height / 2}
@@ -1297,7 +1638,8 @@ export function VisualCanvasWorkspace({
                 onSelect={() => {
                   focusPromptForNode(node)
                 }}
-                onAddNext={(event) => startConnectionDrag(node.id, event)}
+                onAddPrev={(event) => startConnectionDrag(node.id, 'in', event)}
+                onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
@@ -1331,7 +1673,15 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateLabel={editingNode.status === 'generating' ? '生成中…' : '生成'}
+            generateLabel={
+              editingNode.status === 'generating'
+                ? '生成中…'
+                : activeProviderStatus === 'not-configured'
+                  ? '未配置'
+                  : activeProviderStatus === 'available'
+                    ? '生成'
+                    : '模拟生成'
+            }
             footerItems={promptFooterItems}
             inputRef={(element) => {
               promptInputRef.current = element

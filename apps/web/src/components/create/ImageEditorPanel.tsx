@@ -22,8 +22,23 @@ export function ImageEditorPanel({
   onApply,
   onClose,
 }: ImageEditorPanelProps) {
+  function handlePanelPointerDown(event: React.PointerEvent<HTMLElement>) {
+    const actionEl = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-advanced-action]')
+    if (!actionEl) return
+    const action = actionEl.dataset.advancedAction
+    if (!action) return
+    event.preventDefault()
+    event.stopPropagation()
+    onApply(action)
+  }
+
   return (
-    <section className="canvas-advanced-panel" aria-label="高级编辑面板" onPointerDown={(event) => event.stopPropagation()}>
+    <section
+      className="canvas-advanced-panel"
+      aria-label="高级编辑面板"
+      onPointerDownCapture={handlePanelPointerDown}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       <div className="canvas-panel-kicker">高级编辑</div>
       <button type="button" className="canvas-panel-close" onClick={onClose} aria-label="关闭高级编辑" title="关闭">
         ×
@@ -36,11 +51,10 @@ export function ImageEditorPanel({
             <button
               key={action.name}
               type="button"
+              data-advanced-action={action.name}
               className={`canvas-advanced-action ${appliedAction === action.name ? 'is-active' : ''}`}
-              onPointerDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onApply(action.name)
+              onFocus={() => {
+                if (appliedAction !== action.name) onApply(action.name)
               }}
             >
               <span className="canvas-advanced-icon"><Icon size={27} strokeWidth={2.25} /></span>

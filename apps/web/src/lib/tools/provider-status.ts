@@ -1,39 +1,35 @@
 import {
+  PROVIDER_CATEGORY_LABELS,
+  PROVIDER_CATEGORY_ORDER,
   getAllToolProviders,
   type ToolProvider,
   type ToolProviderCategory,
+  type ToolProviderNodeType,
   type ToolProviderStatus,
 } from '@/lib/tools/provider-catalog'
 
 export type {
   ToolProvider,
+  ToolProviderBadge,
   ToolProviderCategory,
-  ToolProviderStatus,
-  ToolProviderTestMode,
-  ToolProviderInput,
-  ToolProviderOutput,
+  ToolProviderNodeType,
   ToolProviderRecommendation,
-  ToolProviderType,
+  ToolProviderStatus,
 } from '@/lib/tools/provider-catalog'
 
 export interface ToolProviderGroup {
-  id: string
+  id: ToolProviderCategory
   title: string
   description: string
   entries: ToolProvider[]
 }
 
 export const TOOL_PROVIDER_GROUP_DESCRIPTIONS: Record<ToolProviderCategory, string> = {
-  'image-to-video': '图像、首帧或参考图进入视频生成的候选 provider。',
-  'text-to-script': '从文本 brief、创意方向或故事大纲生成剧本与分镜文本。',
-  'text-to-image': '生成关键画面、概念图、海报或图片编辑候选 provider。',
-  voice: '文本转语音、角色声音和旁白能力。',
-  dubbing: '视频翻译、多语言配音和口型同步相关能力。',
-  'audio-cleanup': '音频增强、降噪、人声分离和声音修复。',
-  'music-ost': 'OST、主题曲、配乐和音乐草稿生成。',
-  video: '通用视频处理能力。',
-  agent: '创作流程中的 agent 状态展示；当前不标记真实可用。',
-  skill: '创作 skill 状态展示；不触碰 skills 底层逻辑。',
+  'video-generation': '视频生成模型目录。未配置真实 adapter 和 key 时不会伪装为可用。',
+  'image-generation': '图片生成和图片编辑模型目录。',
+  'text-script': '文本、剧本、分镜和创意写作模型目录。',
+  'voice-dubbing': '声音、配音、翻译和音频处理工具目录。',
+  'music-ost': '音乐、OST、主题曲和配乐生成工具目录。',
 }
 
 export const EMPTY_PROVIDER_STATUS_COUNTS: Record<ToolProviderStatus, number> = {
@@ -42,67 +38,24 @@ export const EMPTY_PROVIDER_STATUS_COUNTS: Record<ToolProviderStatus, number> = 
   'bridge-only': 0,
   'not-configured': 0,
   'coming-soon': 0,
-  error: 0,
 }
 
-const TOOL_PROVIDER_DISPLAY_GROUPS: Array<{
-  id: string
-  title: string
-  description: string
-  categories: ToolProviderCategory[]
-}> = [
-  {
-    id: 'image-to-video',
-    title: '图生视频',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS['image-to-video'],
-    categories: ['image-to-video'],
-  },
-  {
-    id: 'text-to-script',
-    title: '文生剧本',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS['text-to-script'],
-    categories: ['text-to-script'],
-  },
-  {
-    id: 'text-to-image',
-    title: '文生图',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS['text-to-image'],
-    categories: ['text-to-image'],
-  },
-  {
-    id: 'audio-voice',
-    title: '配音 / 声音',
-    description: '配音、视频翻译、声音增强、降噪和语音处理。',
-    categories: ['voice', 'dubbing', 'audio-cleanup'],
-  },
-  {
-    id: 'music-ost',
-    title: 'OST / 音乐',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS['music-ost'],
-    categories: ['music-ost'],
-  },
-  {
-    id: 'agent',
-    title: 'Agents',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS.agent,
-    categories: ['agent'],
-  },
-  {
-    id: 'skill',
-    title: 'Skills',
-    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS.skill,
-    categories: ['skill'],
-  },
-]
+export const NODE_TYPE_LABELS: Record<ToolProviderNodeType, string> = {
+  text: 'Text',
+  image: 'Image',
+  video: 'Video',
+  audio: 'Audio',
+  music: 'Music',
+}
 
 export function getToolProviderGroups(): ToolProviderGroup[] {
   const providers = getAllToolProviders()
 
-  return TOOL_PROVIDER_DISPLAY_GROUPS.map((group) => ({
-    id: group.id,
-    title: group.title,
-    description: group.description,
-    entries: providers.filter((provider) => group.categories.includes(provider.category)),
+  return PROVIDER_CATEGORY_ORDER.map((category) => ({
+    id: category,
+    title: PROVIDER_CATEGORY_LABELS[category],
+    description: TOOL_PROVIDER_GROUP_DESCRIPTIONS[category],
+    entries: providers.filter((provider) => provider.category === category),
   })).filter((group) => group.entries.length > 0)
 }
 
@@ -113,11 +66,18 @@ export function getToolProviderStatusCounts(providers: ToolProvider[] = getAllTo
   }, { ...EMPTY_PROVIDER_STATUS_COUNTS })
 }
 
-export function getProviderTestLabel(provider: Pick<ToolProvider, 'status' | 'testMode'>) {
-  if (provider.status === 'available' && provider.testMode === 'real') return '测试'
-  if (provider.status === 'mock') return '模拟测试'
-  if (provider.status === 'bridge-only') return '查看桥接格式'
+export function getProviderActionLabel(provider: Pick<ToolProvider, 'status'>) {
+  if (provider.status === 'available') return '真实可用'
+  if (provider.status === 'mock') return '模拟生成'
+  if (provider.status === 'bridge-only') return '需桥接'
   if (provider.status === 'not-configured') return '未配置'
-  if (provider.status === 'coming-soon') return '即将支持'
-  return '不可测试'
+  return '即将接入'
+}
+
+export function getProviderStatusLabel(status: ToolProviderStatus) {
+  if (status === 'available') return '可用'
+  if (status === 'mock') return '模拟'
+  if (status === 'bridge-only') return '需桥接'
+  if (status === 'not-configured') return '未配置'
+  return '即将接入'
 }

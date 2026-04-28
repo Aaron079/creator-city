@@ -23,10 +23,6 @@ export const STATUS_META: Record<ToolProviderStatus, { label: string; className:
     label: 'coming-soon',
     className: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
   },
-  error: {
-    label: 'error',
-    className: 'border-rose-400/25 bg-rose-400/10 text-rose-200',
-  },
 }
 
 export function ProviderStatusBadge({ status }: { status: ToolProviderStatus }) {

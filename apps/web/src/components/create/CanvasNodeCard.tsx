@@ -1,11 +1,7 @@
 'use client'
 
+import { useRef } from 'react'
 import { motion } from 'framer-motion'
-import {
-  getCanvasProvider,
-  getCanvasProviderLabel,
-  type CanvasProviderKind,
-} from '@/lib/tools/provider-groups'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'generating' | 'done'
@@ -35,6 +31,7 @@ interface CanvasNodeCardProps {
   node: VisualCanvasNode
   active: boolean
   onSelect: () => void
+  onAddPrev: (event: React.PointerEvent<HTMLButtonElement>) => void
   onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
@@ -45,55 +42,49 @@ interface CanvasNodeCardProps {
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
   text: {
     icon: '✦',
-    label: '文本',
+    label: 'Text',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   image: {
     icon: '◫',
-    label: '图片',
+    label: 'Image',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   video: {
-    icon: '▣',
-    label: '视频',
+    icon: '▻',
+    label: 'Video',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   audio: {
     icon: '♫',
-    label: '音频',
+    label: 'Audio',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   asset: {
     icon: '↑',
-    label: '素材',
+    label: 'Asset',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   template: {
     icon: '◧',
-    label: '模板',
+    label: 'Template',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   delivery: {
     icon: '✓',
-    label: '交付',
+    label: 'Delivery',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   world: {
     icon: '◎',
-    label: '3D 世界',
+    label: 'World',
     empty: '点击编辑，生成内容会显示在这里。',
   },
   upload: {
     icon: '↑',
-    label: '上传',
+    label: 'Upload',
     empty: '点击编辑，生成内容会显示在这里。',
   },
-}
-
-const STATUS_META: Record<VisualCanvasNodeStatus, { label: string; summary: string }> = {
-  idle: { label: 'Idle', summary: '等待生成' },
-  generating: { label: 'Generating', summary: '正在模拟生成结果' },
-  done: { label: 'Done', summary: '结果已就绪，可继续迭代' },
 }
 
 function getResultPreviewClass(kind: VisualCanvasNodeKind) {
@@ -103,15 +94,11 @@ function getResultPreviewClass(kind: VisualCanvasNodeKind) {
   return ''
 }
 
-function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
-  if (kind === 'asset' || kind === 'template') return 'upload'
-  return kind as CanvasProviderKind
-}
-
 export function CanvasNodeCard({
   node,
   active,
   onSelect,
+  onAddPrev,
   onAddNext,
   onDragStart,
   onOpenContextMenu,
@@ -119,10 +106,7 @@ export function CanvasNodeCard({
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
-  const status = STATUS_META[node.status]
-  const providerKind = getProviderKind(node.kind)
-  const provider = getCanvasProvider(providerKind, node.providerId)
-  const providerLabel = provider?.displayName ?? getCanvasProviderLabel(providerKind, node.model)
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const className = [
     'canvas-node-card',
     `node-${node.kind}`,
@@ -138,7 +122,13 @@ export function CanvasNodeCard({
       layout
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      onClick={() => {
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        pointerDownPos.current = { x: event.clientX, y: event.clientY }
+      }}
+      onClick={(event) => {
+        const down = pointerDownPos.current
+        if (down && (Math.abs(event.clientX - down.x) > 6 || Math.abs(event.clientY - down.y) > 6)) return
         onSelect()
         onEdit()
       }}
@@ -164,13 +154,20 @@ export function CanvasNodeCard({
       <div className="canvas-node-topline" />
       <button
         type="button"
-        onClick={(event) => {
+        onPointerDown={(event) => {
+          event.preventDefault()
           event.stopPropagation()
-          onSelect()
+          onAddPrev(event)
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
         }}
         className="canvas-node-connector is-left"
-        aria-label="Select upstream connector"
-      />
+        aria-label="Add previous node"
+      >
+        +
+      </button>
       <button
         type="button"
         onPointerDown={(event) => {
@@ -188,11 +185,17 @@ export function CanvasNodeCard({
         +
       </button>
 
-      <div className="relative z-[1] flex h-full flex-col">
-        <div
-          className="canvas-node-header"
-          onPointerDown={onDragStart}
-        >
+      <div
+        className="relative z-[1] flex h-full flex-col"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return
+          const el = event.target as HTMLElement
+          if (el.closest('button')) return
+          pointerDownPos.current = { x: event.clientX, y: event.clientY }
+          onDragStart(event)
+        }}
+      >
+        <div className="canvas-node-header">
           <div className="min-w-0 flex items-center gap-2">
             <span className="canvas-node-icon">{meta.icon}</span>
             <div className="min-w-0">
@@ -212,7 +215,7 @@ export function CanvasNodeCard({
               className="canvas-node-more"
               aria-label="Node options"
             >
-              ...
+              ···
             </button>
           </div>
         </div>
@@ -220,57 +223,20 @@ export function CanvasNodeCard({
         <div className="canvas-node-body">
           {node.status === 'done' ? (
             <div className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)}`}>
-              <div className="canvas-node-preview-label">Result Preview</div>
               <div className="canvas-node-preview-copy">
-                {node.resultPreview ?? node.outputLabel ?? status.summary}
+                {node.resultPreview ?? node.outputLabel ?? '结果已生成。'}
               </div>
             </div>
           ) : node.status === 'generating' ? (
             <div className="canvas-node-preview is-generating-preview">
-              <div className="canvas-node-preview-label">Generating</div>
               <div className="canvas-node-loading-bar" />
-              <div className="canvas-node-preview-copy">{status.summary}</div>
+              <div className="canvas-node-preview-copy">生成中</div>
             </div>
           ) : (
             <div className={`canvas-node-empty empty-${node.kind}`}>
-              <span className="canvas-node-empty-icon">{meta.icon}</span>
               <span>{meta.empty}</span>
             </div>
           )}
-        </div>
-
-        <div className="canvas-node-footer">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="canvas-node-provider">{providerLabel}</span>
-              {node.ratio ? <span className="canvas-node-provider">{node.ratio}</span> : null}
-            </div>
-            <p className="canvas-node-summary">
-              {node.prompt || node.resultPreview || node.outputLabel || status.summary}
-            </p>
-          </div>
-          <div className="canvas-node-footer-actions">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onEdit()
-              }}
-              className="canvas-node-footer-button"
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onSelect()
-              }}
-              className="canvas-node-footer-button is-confirm"
-            >
-              确认
-            </button>
-          </div>
         </div>
       </div>
     </motion.div>

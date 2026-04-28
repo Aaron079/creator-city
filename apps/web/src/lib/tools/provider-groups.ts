@@ -1,18 +1,19 @@
 import {
-  getToolProvidersForRecommendation,
+  getToolProviderById,
+  getToolProvidersForNodeType,
   type ToolProvider,
-  type ToolProviderRecommendation,
+  type ToolProviderNodeType,
   type ToolProviderStatus,
 } from '@/lib/tools/provider-catalog'
 
 export type CanvasProviderKind = 'text' | 'image' | 'video' | 'audio' | 'delivery' | 'world' | 'upload'
 
-const CANVAS_PROVIDER_RECOMMENDATION: Record<CanvasProviderKind, ToolProviderRecommendation | null> = {
-  text: 'canvas-text',
-  image: 'canvas-image',
-  video: 'canvas-video',
-  audio: 'canvas-audio',
-  delivery: 'delivery',
+const CANVAS_PROVIDER_NODE_TYPE: Record<CanvasProviderKind, ToolProviderNodeType | null> = {
+  text: 'text',
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
+  delivery: 'text',
   world: null,
   upload: null,
 }
@@ -20,26 +21,27 @@ const CANVAS_PROVIDER_RECOMMENDATION: Record<CanvasProviderKind, ToolProviderRec
 export const CANVAS_PROVIDER_FALLBACKS: Record<CanvasProviderKind, string> = {
   text: 'anthropic-claude',
   image: 'nano-banana',
-  video: 'runway',
+  video: 'seedance-1-5-pro',
   audio: 'elevenlabs',
-  delivery: 'delivery-agent',
-  world: 'world-creator-bridge',
-  upload: 'asset-drop',
+  delivery: 'anthropic-claude',
+  world: 'anthropic-claude',
+  upload: 'nano-banana',
 }
 
 export function getCanvasProviders(kind: CanvasProviderKind): ToolProvider[] {
-  const recommendation = CANVAS_PROVIDER_RECOMMENDATION[kind]
-  if (!recommendation) return []
+  const nodeType = CANVAS_PROVIDER_NODE_TYPE[kind]
+  if (!nodeType) return []
 
-  return getToolProvidersForRecommendation(recommendation)
+  return getToolProvidersForNodeType(nodeType)
 }
 
 export function getCanvasProvider(kind: CanvasProviderKind, providerId: string) {
-  return getCanvasProviders(kind).find((provider) => provider.id === providerId) ?? null
+  return getCanvasProviders(kind).find((provider) => provider.id === providerId)
+    ?? getToolProviderById(providerId)
 }
 
 export function getCanvasProviderLabel(kind: CanvasProviderKind, providerId: string) {
-  return getCanvasProvider(kind, providerId)?.displayName ?? providerId
+  return getCanvasProvider(kind, providerId)?.name ?? providerId
 }
 
 export function getCanvasProviderStatus(kind: CanvasProviderKind, providerId: string): ToolProviderStatus | null {
@@ -48,9 +50,10 @@ export function getCanvasProviderStatus(kind: CanvasProviderKind, providerId: st
 
 export function getCanvasProviderNotice(provider: ToolProvider | null) {
   if (!provider) return ''
-  if (provider.status === 'not-configured') return '当前为模拟生成，API 未配置'
-  if (provider.status === 'bridge-only') return '当前仅生成桥接请求，不会真实调用'
-  if (provider.status === 'mock') return '模拟测试'
-  if (provider.status === 'coming-soon') return '即将支持，当前仅模拟'
+  if (provider.status === 'available') return ''
+  if (provider.status === 'mock') return '模拟生成，不会调用第三方 API'
+  if (provider.status === 'bridge-only') return '仅生成桥接请求，不会真实调用'
+  if (provider.status === 'not-configured') return '未配置 API key、endpoint 或 adapter'
+  if (provider.status === 'coming-soon') return '即将接入，当前不可真实调用'
   return ''
 }
