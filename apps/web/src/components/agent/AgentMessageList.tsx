@@ -10,8 +10,10 @@ export function AgentMessageList({
 }) {
   if (messages.length === 0) {
     return (
-      <div className={styles.emptyState}>
-        我可以帮你理解当前页面、找到入口、解释工具状态和建议下一步。
+      <div className={styles.messageList}>
+        <article className={`${styles.message} ${styles.messageAssistant}`}>
+          <div className={styles.messageContent}>可以直接问我。</div>
+        </article>
       </div>
     )
   }
@@ -24,7 +26,7 @@ export function AgentMessageList({
           className={`${styles.message} ${message.role === 'user' ? styles.messageUser : styles.messageAssistant} ${message.mode === 'error' ? styles.messageError : ''}`}
         >
           <div className={styles.messageMeta}>
-            {message.role === 'user' ? '你' : message.mode === 'real' ? 'Creator City Agent · Real AI' : message.mode === 'error' ? 'Creator City Agent · Error' : 'Creator City Agent · Local Help'}
+            {message.role === 'user' ? '你' : 'Creator City'}
           </div>
           <div className={styles.messageContent}>{message.content}</div>
         </article>

@@ -112,6 +112,19 @@ export async function runLocalCreatorModel(
     text.includes('canvas')
   ) {
     content = `${prefix}/create 画布：双击空白创建节点；点击节点打开对话框；节点右侧 + 创建下游节点；参数胶囊可改比例、清晰度、时长；右上角"客户"进入交付审批。`
+  } else if (
+    text.includes('视频') ||
+    text.includes('图片') ||
+    text.includes('音频') ||
+    text.includes('生成') ||
+    text.includes('制作') ||
+    text.includes('帮我做') ||
+    text.includes('做一个') ||
+    text.includes('video') ||
+    text.includes('image') ||
+    text.includes('generate')
+  ) {
+    content = `${prefix}当前 Agent 处于本地帮助模式，还没有连接自有模型 endpoint，无法直接替你生成内容。可以这样开始：\n\n1. 进入 AI 画布（/create）\n2. 双击画布创建节点，选择 Video 或 Image 类型\n3. 在节点对话框里写 prompt，底部选择 provider（如 Runway、Kling、VEO、Sora、Vidu 等）\n4. 未配置 API key 的 provider 显示 not-configured，只能 mock 模拟\n5. 配置自有模型 endpoint 后可走真实生成链路\n\n点击下方"进入 AI 画布"快捷动作直接开始；在"工具/API"可查看每个 provider 的当前状态。`
   } else {
     content = `${prefix}${explainPage(pathname, routeName, pageSummary)}`
   }

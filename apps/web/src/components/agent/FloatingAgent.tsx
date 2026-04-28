@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { AgentPanel } from '@/components/agent/AgentPanel'
-import { copyCurrentLink, getAgentActionHref, getAgentLocalActionReply } from '@/lib/agent/actions'
+import { getAgentActionHref, getAgentLocalActionReply, copyCurrentLink } from '@/lib/agent/actions'
 import { getAgentPageContext } from '@/lib/agent/context'
 import type { AgentChatResponse, AgentMessage, AgentQuickActionId, AgentReplyMode } from '@/lib/agent/types'
 import styles from './agent.module.css'
@@ -22,14 +22,14 @@ function createMessage(role: AgentMessage['role'], content: string, mode?: Agent
 
 export function FloatingAgent() {
   const pathname = usePathname() || '/'
-  const router = useRouter()
   const context = useMemo(() => getAgentPageContext(pathname), [pathname])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [messages, setMessages] = useState<AgentMessage[]>([])
-  const [apiConfigured, setApiConfigured] = useState(false)
-  const [mode, setMode] = useState<AgentReplyMode>('local')
-  const [lastError, setLastError] = useState('')
+  const [lastMode, setLastMode] = useState<AgentReplyMode>('local')
+  const [lastConfigured, setLastConfigured] = useState(false)
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
 
   useEffect(() => {
     try {
@@ -61,18 +61,18 @@ export function FloatingAgent() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  const appendAssistant = useCallback((content: string, replyMode: AgentReplyMode) => {
+  const appendAssistant = useCallback((content: string, replyMode: AgentReplyMode, configured: boolean) => {
+    setLastMode(replyMode)
+    setLastConfigured(configured)
     setMessages((current) => [...current, createMessage('assistant', content, replyMode)].slice(-20))
-    setMode(replyMode)
   }, [])
 
   const sendMessage = useCallback(async (content: string) => {
     const userMessage = createMessage('user', content)
-    const nextMessages = [...messages, userMessage].slice(-20)
+    const nextMessages = [...messagesRef.current, userMessage].slice(-20)
 
     setMessages(nextMessages)
     setIsLoading(true)
-    setLastError('')
 
     try {
       const response = await fetch('/api/agent/chat', {
@@ -85,48 +85,36 @@ export function FloatingAgent() {
       })
       const data = await response.json() as AgentChatResponse
 
-      setApiConfigured(data.configured)
       if (!response.ok || data.mode === 'error') {
         const message = data.message || '模型调用失败，请检查 API 配置。'
-        setLastError(message)
-        appendAssistant(message, 'error')
+        appendAssistant(message, 'error', data.configured ?? false)
         return
       }
 
-      appendAssistant(data.message, data.mode)
+      appendAssistant(data.message, data.mode, data.configured ?? false)
     } catch {
-      const message = '模型调用失败，请检查 API 配置。'
-      setLastError(message)
-      appendAssistant(message, 'error')
+      appendAssistant('模型调用失败，请检查 API 配置。', 'error', false)
     } finally {
       setIsLoading(false)
     }
-  }, [appendAssistant, context, messages])
+  }, [appendAssistant, context])
 
-  const runAction = useCallback(async (actionId: AgentQuickActionId) => {
-    setLastError('')
-    setIsOpen(true)
-
+  const handleAction = useCallback(async (actionId: AgentQuickActionId) => {
     if (actionId === 'copy-current-link') {
-      const copied = await copyCurrentLink()
-      appendAssistant(copied ? '当前链接已复制。' : '复制失败，请手动复制浏览器地址栏链接。', copied ? 'local' : 'error')
-      return
-    }
-
-    if (actionId === 'explain-current-page' || actionId === 'suggest-next-step') {
-      appendAssistant(getAgentLocalActionReply(actionId, context), 'local')
+      await copyCurrentLink()
+      appendAssistant(getAgentLocalActionReply(actionId, context), lastMode, lastConfigured)
       return
     }
 
     const href = getAgentActionHref(actionId, context)
-    if (!href) {
-      appendAssistant('这个快捷动作暂时无法执行。', 'error')
+    if (href) {
+      window.location.href = href
       return
     }
 
-    appendAssistant(getAgentLocalActionReply(actionId, context), 'local')
-    router.push(href)
-  }, [appendAssistant, context, router])
+    const reply = getAgentLocalActionReply(actionId, context)
+    await sendMessage(reply)
+  }, [appendAssistant, context, lastConfigured, lastMode, sendMessage])
 
   const isCreate = pathname.startsWith('/create')
 
@@ -134,15 +122,14 @@ export function FloatingAgent() {
     <div className={`${styles.root} ${isCreate ? styles.rootCreate : ''}`}>
       {isOpen ? (
         <AgentPanel
-          apiConfigured={apiConfigured}
-          context={context}
           isLoading={isLoading}
-          lastError={lastError}
           messages={messages}
-          mode={mode}
-          onAction={runAction}
+          context={context}
+          lastMode={lastMode}
+          lastConfigured={lastConfigured}
           onClose={() => setIsOpen(false)}
           onSend={sendMessage}
+          onAction={handleAction}
         />
       ) : null}
 

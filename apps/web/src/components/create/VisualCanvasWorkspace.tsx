@@ -25,7 +25,7 @@ import {
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
 import { getProviderStatusLabel } from '@/lib/tools/provider-status'
-import { generateWithProvider } from '@/lib/tools/provider-adapters'
+import { generateWithProvider, pollJobStatus } from '@/lib/tools/provider-adapters'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
 import type { ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 
@@ -782,33 +782,109 @@ export function VisualCanvasWorkspace({
   }, [createNode, handleNodePatch, showCanvasFeedback])
 
   const handleSelectTemplate = useCallback((template: PublicTemplate) => {
-    const kind = getNodeKindForPublicTemplate(template.nodeType)
     setSelectedTemplateId(template.id)
     setHasStarted(true)
     setActivePanel(null)
-    syncPromptPreset(kind)
-    const node = createNode(kind, {
-      title: template.title,
-      prompt: template.promptStarter,
-      model: NODE_META[kind].model,
-      ratio: template.aspectRatio,
-      status: 'done',
+
+    const viewportWidth = viewportRef.current?.getBoundingClientRect().width ?? 1200
+    const compactWorkflowLayout = viewportWidth < 760
+    const existingMaxX = nodes.length > 0
+      ? Math.max(...nodes.map((node) => node.x + node.width))
+      : 420
+    const basePosition = {
+      x: nodes.length > 0 ? existingMaxX + 180 : compactWorkflowLayout ? 0 : 420,
+      y: nodes.length > 0 ? 220 + (nodes.length % 3) * 96 : 260,
+    }
+    const idMap = new Map<string, string>()
+    const nextNodes: VisualCanvasNode[] = []
+
+    template.nodeGraph.nodes.forEach((graphNode) => {
+      const kind = getNodeKindForPublicTemplate(graphNode.type)
+      const size = getNodeSize(kind)
+      const nodeId = createNodeId(kind)
+      idMap.set(graphNode.id, nodeId)
+      const graphPosition = compactWorkflowLayout
+        ? { x: 0, y: template.nodeGraph.nodes.indexOf(graphNode) * 240 }
+        : { x: graphNode.x, y: graphNode.y }
+      const position = resolveNonOverlappingPosition(
+        {
+          x: basePosition.x + graphPosition.x,
+          y: basePosition.y + graphPosition.y,
+          ...size,
+        },
+        [...nodes, ...nextNodes],
+      )
+      const providerId = NODE_META[kind].model
+
+      nextNodes.push({
+        id: nodeId,
+        type: kind,
+        kind,
+        title: graphNode.title,
+        subtitle: NODE_META[kind].subtitle,
+        prompt: graphNode.prompt,
+        model: providerId,
+        providerId,
+        stage: promptStage,
+        ratio: template.aspectRatio,
+        status: 'done',
+        resultPreview: graphNode.resultPreview,
+        outputLabel: '模板工作流',
+        preview: {
+          ...template.preview,
+          gradientFrom: template.thumbnail.gradientFrom,
+          gradientTo: template.thumbnail.gradientTo,
+        },
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+        createdAt: Date.now(),
+      })
     })
-    handleNodePatch(node.id, {
-      resultPreview: `${template.description}\n流程：${template.workflowSteps.slice(0, 4).join(' -> ')}`,
-      outputLabel: '模板起点',
+
+    const nextEdges = template.nodeGraph.edges.flatMap((edge) => {
+      const fromNodeId = idMap.get(edge.from)
+      const toNodeId = idMap.get(edge.to)
+      if (!fromNodeId || !toNodeId) return []
+      return [{
+        id: `${fromNodeId}-${toNodeId}`,
+        fromNodeId,
+        toNodeId,
+        status: 'active' as const,
+      }]
     })
+
+    setNodes((current) => [...current, ...nextNodes])
+    setEdges((current) => [...current, ...nextEdges])
+
+    const firstNode = nextNodes[0]
+    if (firstNode) {
+      setActiveNodeId(firstNode.id)
+      setEditingNodeId(null)
+      setCanvasPrompt(firstNode.prompt)
+      setPromptModel(firstNode.providerId || firstNode.model)
+      syncPromptPreset(firstNode.kind)
+    }
+
     showCanvasFeedback('已应用模板，可继续创作。')
-  }, [createNode, handleNodePatch, showCanvasFeedback, syncPromptPreset])
+  }, [nodes, promptStage, showCanvasFeedback, syncPromptPreset])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const templateId = new URLSearchParams(window.location.search).get('template')
+    const queryTemplateId = new URLSearchParams(window.location.search).get('template')
+    const storedTemplateId = window.sessionStorage.getItem('creator-city-template-id')
+    const templateId = queryTemplateId ?? storedTemplateId
     if (!templateId || initialTemplateAppliedRef.current === templateId) return
     const template = getPublicTemplateById(templateId)
     if (!template) return
     initialTemplateAppliedRef.current = templateId
     handleSelectTemplate(template)
+    window.sessionStorage.removeItem('creator-city-template-id')
+    window.history.replaceState({}, '', window.location.pathname)
+    window.setTimeout(() => {
+      window.history.replaceState({}, '', window.location.pathname)
+    }, 0)
   }, [handleSelectTemplate])
 
   const handleAddComment = useCallback((text: string) => {
@@ -886,37 +962,70 @@ export function VisualCanvasWorkspace({
       status: 'generating',
     })
 
-    const timer = window.setTimeout(() => {
-      void generateWithProvider({
-        providerId: promptModel,
-        nodeType: getProviderNodeType(nodeSnapshot.kind),
-        prompt: trimmedPrompt,
-        params: {
-          ratio: promptRatio,
-          stage: promptStage,
-          parameter: promptParameter,
-        },
-      }).then((result) => {
-        const fallbackPreview = trimmedPrompt
-          ? buildMockResult(nodeSnapshot, trimmedPrompt)
-          : buildResultLabel(nodeSnapshot.title)
-        const preview = result.resultPreview || fallbackPreview
-
+    void generateWithProvider({
+      providerId: promptModel,
+      nodeType: getProviderNodeType(nodeSnapshot.kind),
+      prompt: trimmedPrompt,
+      params: {
+        ratio: promptRatio,
+        stage: promptStage,
+        parameter: promptParameter,
+      },
+    }).then(async (result) => {
+      // Async job queued (e.g. Runway): poll until done or failed
+      if ((result.status === 'queued' || result.status === 'running') && result.jobId) {
         handleNodePatch(nodeSnapshot.id, {
-          status: 'done',
-          resultPreview: preview,
-          outputLabel: preview,
+          resultPreview: result.resultPreview,
+          outputLabel: result.message,
         })
-        setEdges((current) => current.map((edge) => (
-          edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
-            ? { ...edge, status: 'done' }
-            : edge
-        )))
-        setEditingNodeId(null)
+        const maxPolls = 60
+        let polls = 0
+        const poll = async () => {
+          if (polls++ >= maxPolls || !result.jobId) return
+          const jobResult = await pollJobStatus(result.jobId)
+          if (jobResult.status === 'queued' || jobResult.status === 'running') {
+            handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.resultPreview })
+            const timer = window.setTimeout(() => { void poll() }, 5000)
+            timersRef.current.push(timer)
+            return
+          }
+          const preview = jobResult.resultPreview || buildResultLabel(nodeSnapshot.title)
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'done',
+            resultPreview: preview,
+            outputLabel: preview,
+          })
+          setEdges((current) => current.map((edge) => (
+            edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
+              ? { ...edge, status: 'done' }
+              : edge
+          )))
+          setEditingNodeId(null)
+        }
+        const timer = window.setTimeout(() => { void poll() }, 5000)
+        timersRef.current.push(timer)
+        return
+      }
+
+      // Immediate result (real or mock)
+      const fallbackPreview = trimmedPrompt
+        ? buildMockResult(nodeSnapshot, trimmedPrompt)
+        : buildResultLabel(nodeSnapshot.title)
+      const preview = result.resultPreview || fallbackPreview
+
+      handleNodePatch(nodeSnapshot.id, {
+        status: 'done',
+        resultPreview: preview,
+        outputLabel: preview,
       })
-    }, 850)
-    timersRef.current.push(timer)
-  }, [buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptParameter, promptRatio, promptStage])
+      setEdges((current) => current.map((edge) => (
+        edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
+          ? { ...edge, status: 'done' }
+          : edge
+      )))
+      setEditingNodeId(null)
+    })
+  }, [buildMockResult, buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptParameter, promptRatio, promptStage])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)

@@ -8,50 +8,36 @@ import styles from './agent.module.css'
 import type { AgentMessage, AgentPageContext, AgentQuickActionId, AgentReplyMode } from '@/lib/agent/types'
 
 export function AgentPanel({
-  apiConfigured,
-  context,
   isLoading,
-  lastError,
   messages,
-  mode,
-  onAction,
+  context,
+  lastMode,
+  lastConfigured,
   onClose,
   onSend,
+  onAction,
 }: {
-  apiConfigured: boolean
-  context: AgentPageContext
   isLoading: boolean
-  lastError: string
   messages: AgentMessage[]
-  mode: AgentReplyMode
-  onAction: (actionId: AgentQuickActionId) => void
+  context: AgentPageContext
+  lastMode: AgentReplyMode
+  lastConfigured: boolean
   onClose: () => void
   onSend: (value: string) => void
+  onAction: (actionId: AgentQuickActionId) => void
 }) {
   return (
     <section className={styles.panel} aria-label="Creator City Agent 对话框">
       <header className={styles.header}>
-        <div>
-          <div className={styles.kicker}>{context.routeName}</div>
-          <h2 className={styles.title}>Creator City Agent</h2>
-        </div>
-        <div className={styles.headerActions}>
-          <AgentStatusBadge configured={apiConfigured} mode={mode} />
-          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="关闭 Creator City Agent">
-            ×
-          </button>
-        </div>
+        <h2 className={styles.title}>Creator City</h2>
+        <AgentStatusBadge configured={lastConfigured} mode={lastMode} />
+        <button type="button" className={styles.closeButton} onClick={onClose} aria-label="关闭 Creator City Agent">
+          ×
+        </button>
       </header>
 
-      <div className={styles.contextCard}>
-        <strong>{context.routeName}</strong>
-        <span>{context.pageSummary}</span>
-      </div>
-
-      {lastError ? <div className={styles.errorCard}>{lastError}</div> : null}
-
-      <AgentQuickActions context={context} disabled={isLoading} onAction={onAction} />
       <AgentMessageList messages={messages} isLoading={isLoading} />
+      <AgentQuickActions context={context} disabled={isLoading} onAction={onAction} />
       <AgentComposer disabled={isLoading} onSend={onSend} />
     </section>
   )
