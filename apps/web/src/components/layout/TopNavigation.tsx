@@ -30,6 +30,8 @@ const LINKS = [
   { href: '/explore', label: '探索' },
   { href: '/community', label: '社群' },
   { href: '/tools', label: '工具 / API' },
+  { href: '/billing', label: '购买积分' },
+  { href: '/account/credits', label: '积分' },
   { href: '/me', label: '我的' },
 ]
 

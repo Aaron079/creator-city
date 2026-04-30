@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { CanvasNodeCard, type VisualCanvasNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -25,8 +26,10 @@ import {
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
 import { generateWithProvider, pollJobStatus } from '@/lib/tools/provider-adapters'
+import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
 import type { ToolProviderNodeType } from '@/lib/tools/provider-catalog'
+import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
@@ -264,6 +267,8 @@ export function VisualCanvasWorkspace({
   onOpenDelivery: _onOpenDelivery,
   onShowStartup,
 }: VisualCanvasWorkspaceProps) {
+  const searchParams = useSearchParams()
+  const searchParamTemplateId = searchParams.get('template')
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -826,6 +831,20 @@ export function VisualCanvasWorkspace({
         [...nodes, ...nextNodes],
       )
       const providerId = NODE_META[kind].model
+      // Image nodes show gradient (placeholder until generated); video nodes show template preview
+      const preview = graphNode.type === 'video'
+        ? {
+          ...template.preview,
+          gradientFrom: template.thumbnail.gradientFrom ?? '#101827',
+          gradientTo: template.thumbnail.gradientTo ?? '#315cff',
+        }
+        : graphNode.type === 'image'
+          ? {
+            type: 'none' as const,
+            gradientFrom: template.thumbnail.gradientFrom ?? '#101827',
+            gradientTo: template.thumbnail.gradientTo ?? '#315cff',
+          }
+          : undefined
 
       nextNodes.push({
         id: nodeId,
@@ -841,11 +860,7 @@ export function VisualCanvasWorkspace({
         status: 'done',
         resultPreview: graphNode.resultPreview,
         outputLabel: '模板工作流',
-        preview: {
-          ...template.preview,
-          gradientFrom: template.thumbnail.gradientFrom ?? '#101827',
-          gradientTo: template.thumbnail.gradientTo ?? '#315cff',
-        },
+        preview,
         x: position.x,
         y: position.y,
         width: size.width,
@@ -869,7 +884,7 @@ export function VisualCanvasWorkspace({
     setNodes((current) => [...current, ...nextNodes])
     setEdges((current) => [...current, ...nextEdges])
 
-    const firstNode = nextNodes[0]
+    const firstNode = nextNodes.find((node) => node.kind === 'video' || node.kind === 'image') ?? nextNodes[0]
     if (firstNode) {
       setActiveNodeId(firstNode.id)
       setEditingNodeId(null)
@@ -883,21 +898,62 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const queryTemplateId = new URLSearchParams(window.location.search).get('template')
+    const queryTemplateId = searchParamTemplateId ?? new URLSearchParams(window.location.search).get('template')
     const storedTemplateId = window.sessionStorage.getItem('creator-city-template-id')
     const templateId = queryTemplateId ?? storedTemplateId
-    if (!templateId || initialTemplateAppliedRef.current === templateId) return
-    const template = getTemplateFromSession(templateId) ?? getPublicTemplateById(templateId)
-    if (!template) return
-    initialTemplateAppliedRef.current = templateId
-    handleSelectTemplate(template)
-    window.sessionStorage.removeItem('creator-city-template-id')
-    window.sessionStorage.removeItem('creator-city-template-payload')
-    window.history.replaceState({}, '', window.location.pathname)
-    window.setTimeout(() => {
+    console.debug(`[template apply] template=${templateId ?? ''} nodes=${nodes.length}`)
+    if (!templateId) return
+    if (initialTemplateAppliedRef.current === templateId && nodes.length > 0) return
+    const resolvedTemplateId = templateId
+    let disposed = false
+    const sessionTemplate = getTemplateFromSession(resolvedTemplateId)
+    const localTemplate = sessionTemplate ?? getPublicTemplateById(resolvedTemplateId)
+    console.debug(`[template apply] local=${localTemplate?.title ?? ''}`)
+
+    const cleanupTemplateIntent = () => {
+      window.sessionStorage.removeItem('creator-city-template-id')
+      window.sessionStorage.removeItem('creator-city-template-payload')
       window.history.replaceState({}, '', window.location.pathname)
-    }, 0)
-  }, [handleSelectTemplate])
+      window.setTimeout(() => {
+        window.history.replaceState({}, '', window.location.pathname)
+      }, 0)
+    }
+
+    if (localTemplate) {
+      initialTemplateAppliedRef.current = resolvedTemplateId
+      console.debug(`[template apply] applying=${localTemplate.title}`)
+      handleSelectTemplate(localTemplate)
+      cleanupTemplateIntent()
+      return
+    }
+
+    async function applyTemplateFromApi() {
+      try {
+        const response = await fetch('/api/templates/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId: resolvedTemplateId }),
+        })
+        const data = await response.json() as { success?: boolean; template?: PublicTemplate }
+        if (disposed) return
+        const template = data.success && data.template ? data.template : undefined
+        if (template) {
+          initialTemplateAppliedRef.current = resolvedTemplateId
+          handleSelectTemplate(template)
+        }
+      } catch {
+        if (disposed) return
+      } finally {
+        if (!disposed) cleanupTemplateIntent()
+      }
+    }
+
+    void applyTemplateFromApi()
+
+    return () => {
+      disposed = true
+    }
+  }, [handleSelectTemplate, nodes.length, searchParamTemplateId])
 
   const handleAddComment = useCallback((text: string) => {
     setComments((current) => [
@@ -965,6 +1021,16 @@ export function VisualCanvasWorkspace({
 
     const trimmedPrompt = canvasPrompt.trim()
     const nodeSnapshot = editingNode
+
+    // Collect image URLs from upstream nodes connected by edges (for image→video workflow)
+    const upstreamImageAssets = edges
+      .filter((edge) => edge.toNodeId === nodeSnapshot.id)
+      .flatMap((edge) => {
+        const upstreamNode = nodes.find((n) => n.id === edge.fromNodeId)
+        if (!upstreamNode?.resultImageUrl) return []
+        return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
+      })
+
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
       model: promptModel,
@@ -978,6 +1044,7 @@ export function VisualCanvasWorkspace({
       providerId: promptModel,
       nodeType: getProviderNodeType(nodeSnapshot.kind),
       prompt: trimmedPrompt,
+      inputAssets: upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
       params: {
         ratio: promptRatio,
         stage: promptStage,
@@ -994,7 +1061,7 @@ export function VisualCanvasWorkspace({
         let polls = 0
         const poll = async () => {
           if (polls++ >= maxPolls || !result.jobId) return
-          const jobResult = await pollJobStatus(result.jobId)
+          const jobResult = await pollJobStatus(result.jobId, result.billingJobId)
           if (jobResult.status === 'queued' || jobResult.status === 'running') {
             handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.resultPreview })
             const timer = window.setTimeout(() => { void poll() }, 5000)
@@ -1044,6 +1111,7 @@ export function VisualCanvasWorkspace({
         status: result.success ? 'done' : 'idle',
         resultPreview: preview,
         outputLabel: preview,
+        resultImageUrl: result.result?.imageUrl ?? nodeSnapshot.resultImageUrl,
         preview: result.result?.videoUrl
           ? {
             type: 'remote-video',
@@ -1067,7 +1135,7 @@ export function VisualCanvasWorkspace({
       )))
       setEditingNodeId(null)
     })
-  }, [buildMockResult, buildResultLabel, canvasPrompt, editingNode, handleNodePatch, promptModel, promptParameter, promptRatio, promptStage, showCanvasFeedback])
+  }, [buildMockResult, buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, promptModel, promptParameter, promptRatio, promptStage, showCanvasFeedback])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -1522,6 +1590,7 @@ export function VisualCanvasWorkspace({
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
 
   return (
+    <div className={`${canvasStyles.scope} h-full min-h-0`}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
       <div className="canvas-grid" />
@@ -1833,6 +1902,7 @@ export function VisualCanvasWorkspace({
                     ? '生成'
                     : '模拟生成'
             }
+            estimatedCredits={estimateCreditCost(promptModel, getProviderNodeType(editingNode.kind))}
             footerItems={promptFooterItems}
             inputRef={(element) => {
               promptInputRef.current = element
@@ -1975,6 +2045,7 @@ export function VisualCanvasWorkspace({
         </button>
       </div>
 
+    </div>
     </div>
   )
 }

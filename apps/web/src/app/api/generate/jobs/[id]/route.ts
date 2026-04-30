@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { getAdapter } from '@/lib/providers/registry'
 import { PROVIDER_ERROR_CODES } from '@/lib/providers/errors'
+import { settleCredits, refundCredits } from '@/lib/credits/billing-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,8 +13,9 @@ function parseJobId(jobId: string): { adapterId: string; rawId: string } | null 
   return { adapterId: jobId.slice(0, colon), rawId: jobId }
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: jobId } = await params
+  const billingJobId = request.nextUrl.searchParams.get('billingJobId')
 
   if (!jobId) {
     return NextResponse.json(
@@ -46,10 +49,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   try {
     const result = await adapter.getJob(parsed.rawId)
-    return NextResponse.json(result)
+
+    if (billingJobId) {
+      if (result.status === 'succeeded') {
+        void settleCredits(billingJobId)
+      } else if (result.status === 'failed') {
+        void refundCredits(billingJobId, result.message)
+      }
+    }
+
+    return NextResponse.json({ ...result, billingJobId: billingJobId ?? undefined })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Job lookup failed'
     console.error(`[generate/jobs/${jobId}]`, error)
+
+    if (billingJobId) {
+      void refundCredits(billingJobId, message)
+    }
+
     return NextResponse.json(
       { success: false, message, errorCode: PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED },
       { status: 500 },

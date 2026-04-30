@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect, WheelEvent, useMemo } from 'react'
+import { Suspense, useState, useCallback, useRef, useEffect, WheelEvent, useMemo } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -8980,17 +8980,19 @@ export default function CreatePage() {
 
           {!isCreateRouteBlocked && workspaceSurface === 'canvas' ? (
             <div className="overflow-hidden" style={{ height: '100dvh' }}>
-              <VisualCanvasWorkspace
-                projectTitle={deliveryProjectTitle}
-                templateName={activeWorkflowTemplate?.name ?? null}
-                onOpenTimeline={() => setWorkspaceView('editor')}
-                onOpenAssets={() => setWorkspaceView('footage')}
-                onOpenDelivery={() => setWorkspaceView('delivery')}
-                onShowStartup={() => {
-                  setShowStartupPanels(true)
-                  scrollToWorkspace()
-                }}
-              />
+              <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
+                <VisualCanvasWorkspace
+                  projectTitle={deliveryProjectTitle}
+                  templateName={activeWorkflowTemplate?.name ?? null}
+                  onOpenTimeline={() => setWorkspaceView('editor')}
+                  onOpenAssets={() => setWorkspaceView('footage')}
+                  onOpenDelivery={() => setWorkspaceView('delivery')}
+                  onShowStartup={() => {
+                    setShowStartupPanels(true)
+                    scrollToWorkspace()
+                  }}
+                />
+              </Suspense>
             </div>
           ) : !isCreateRouteBlocked && workspaceView === 'previs' ? (
             <ShotTimeline

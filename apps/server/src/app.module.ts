@@ -23,6 +23,7 @@ import { AssetModule } from './modules/asset/asset.module'
 import { CommunitiesModule } from './modules/communities/communities.module'
 import { ShowcasesModule } from './modules/showcases/showcases.module'
 import { EconomyModule } from './modules/economy/economy.module'
+import { CreditsModule } from './modules/credits/credits.module'
 import { ProvidersModule } from './modules/providers/providers.module'
 import { RouterModule } from './modules/router/router.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
@@ -63,6 +64,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module'
     CommunitiesModule,
     ShowcasesModule,
     EconomyModule,
+    CreditsModule,
     ProvidersModule,
     RouterModule,
     NotificationsModule,

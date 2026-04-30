@@ -770,3 +770,183 @@ model EconomyTransaction {
   @@index([status])
   @@index([createdAt])
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CREDITS — purchased platform credits for AI generation billing
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum CreditLedgerType {
+  PURCHASE          // +balance from payment
+  BONUS             // +balance from package/admin grant
+  RESERVE           // -balance +frozen (job reserved)
+  FREEZE            // legacy alias for RESERVE
+  SETTLE            // -frozen (job completed, credits consumed)
+  RELEASE           // +balance -frozen (job cancelled before billing)
+  UNFREEZE          // legacy alias for RELEASE
+  REFUND            // payment or job refund
+  ADMIN_ADJUSTMENT  // administrator confirmed manual recharge/adjustment
+  EXPIRE            // credits expired
+}
+
+enum CreditPackageStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  FAILED
+  REFUNDED
+}
+
+enum GenerationJobBillingStatus {
+  PENDING
+  FROZEN
+  SETTLED
+  REFUNDED
+}
+
+model UserCreditWallet {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  balance        Int      @default(0)
+  frozenBalance  Int      @default(0)
+  totalPurchased Int      @default(0)
+  totalConsumed  Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ledger CreditLedger[]
+  orders PaymentOrder[]
+  jobs   GenerationJob[]
+
+  @@index([userId])
+}
+
+model CreditLedger {
+  id        String           @id @default(uuid())
+  walletId  String
+  userId    String?
+  type      CreditLedgerType
+  delta     Int
+  frozen    Int
+  balance   Int
+  amountCredits Int         @default(0)
+  refType   String?
+  refId     String?
+  paymentOrderId String?
+  generationJobId String?
+  note      String?
+  description String?
+  createdAt DateTime         @default(now())
+
+  wallet UserCreditWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([type])
+  @@index([refId])
+  @@index([paymentOrderId])
+  @@index([generationJobId])
+  @@index([createdAt])
+}
+
+model CreditPackage {
+  id           String              @id @default(uuid())
+  name         String
+  credits      Int
+  bonusCredits Int                 @default(0)
+  priceUSD     Int
+  priceCNY     Int                 @default(0)
+  prices       Json                @default("[]")
+  description  String?
+  status       CreditPackageStatus @default(ACTIVE)
+  isActive     Boolean             @default(true)
+  sortOrder    Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  orders PaymentOrder[]
+}
+
+model PaymentOrder {
+  id                    String             @id @default(uuid())
+  userId                String
+  walletId              String
+  packageId             String?
+  stripeSessionId       String?            @unique
+  stripePaymentIntentId String?
+  region                String             @default("CN")
+  provider              String             @default("manual")
+  currency              String             @default("CNY")
+  amount                Int                @default(0)
+  externalOrderId       String?            @unique
+  externalPaymentId     String?            @unique
+  externalCustomerId    String?
+  rawNotifyJson         Json?
+  status                PaymentOrderStatus @default(PENDING)
+  credits               Int
+  priceUSD              Int
+  issuedAt              DateTime?
+  paidAt                DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  wallet  UserCreditWallet @relation(fields: [walletId], references: [id])
+  package CreditPackage?   @relation(fields: [packageId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([stripeSessionId])
+  @@index([externalOrderId])
+  @@index([externalPaymentId])
+  @@index([provider])
+  @@index([createdAt])
+}
+
+model GenerationJob {
+  id            String                     @id @default(uuid())
+  userId        String
+  walletId      String?
+  externalJobId String?
+  providerId    String
+  nodeType      String
+  prompt        String                     @db.Text
+  estimatedCost Int                        @default(0)
+  actualCost    Int?
+  billingStatus GenerationJobBillingStatus @default(PENDING)
+  errorMessage  String?
+  frozenAt      DateTime?
+  settledAt     DateTime?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  wallet UserCreditWallet? @relation(fields: [walletId], references: [id])
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([billingStatus])
+  @@index([providerId])
+  @@index([createdAt])
+}
+
+model ProviderCostLedger {
+  id                 String   @id @default(uuid())
+  userId             String?
+  generationJobId    String?
+  providerId         String
+  model              String?
+  jobType            String
+  providerCostUsd    Decimal  @default(0)
+  providerCostCny    Decimal  @default(0)
+  userChargedCredits Int      @default(0)
+  marginCredits      Int?
+  createdAt          DateTime @default(now())
+
+  @@index([userId])
+  @@index([generationJobId])
+  @@index([providerId])
+  @@index([createdAt])
+}

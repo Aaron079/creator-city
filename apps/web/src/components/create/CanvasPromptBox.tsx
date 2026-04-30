@@ -37,6 +37,7 @@ interface CanvasPromptBoxProps {
   placeholder: string
   onGenerate?: () => void
   generateLabel?: string
+  estimatedCredits?: number
   layout?: 'workspace' | 'node'
   multiline?: boolean
   detailsOpen?: boolean
@@ -83,6 +84,7 @@ export function CanvasPromptBox({
   placeholder,
   onGenerate,
   generateLabel = '生成',
+  estimatedCredits,
   modelLabel = model,
   modelOptionLabels: _modelOptionLabels = {},
   providerStatus,
@@ -517,7 +519,7 @@ export function CanvasPromptBox({
               ◌
             </button>
             <span className="canvas-footer-button is-credit-pill">
-              <span className="canvas-footer-button-value">120 credits</span>
+              <span className="canvas-footer-button-value">{estimatedCredits ?? 120} credits</span>
             </span>
             {onGenerate ? (
               <button
@@ -608,8 +610,10 @@ export function CanvasPromptBox({
             type="button"
             onClick={() => setOpenFooterId((current) => (current === 'params' ? null : 'params'))}
             className={`canvas-footer-button is-reference-pill ${openFooterId === 'params' ? 'is-active' : ''}`}
+            aria-label="参数"
+            title="参数"
           >
-            <span className="canvas-footer-button-value">首尾帧 · {ratio ?? '16:9'} · {paramQuality} · {paramDuration}{paramAudio ? ' · ♫' : ''}</span>
+            <span className="canvas-footer-button-value">参数 · {ratio ?? '16:9'} · {paramQuality} · {paramDuration}{paramAudio ? ' · ♫' : ''}</span>
           </button>
         </div>
 
@@ -621,6 +625,9 @@ export function CanvasPromptBox({
           <button type="button" className="canvas-footer-button is-count-pill">
             <span className="canvas-footer-button-value">1×</span>
           </button>
+          <span className="canvas-footer-button is-credit-pill">
+            <span className="canvas-footer-button-value">{estimatedCredits ?? 112} credits</span>
+          </span>
           {onGenerate ? (
             <button
               type="button"
@@ -628,7 +635,7 @@ export function CanvasPromptBox({
               className="create-iridescent-button canvas-generate-button"
               aria-label={generateLabel}
             >
-              <span className="canvas-credit-pill">{generateLabel === '生成' ? '◉ 112' : generateLabel}</span>
+              <span className="canvas-credit-pill">{generateLabel === '生成' ? `◉ ${estimatedCredits ?? 112}` : generateLabel}</span>
               <span className="canvas-send-icon">↑</span>
             </button>
           ) : null}
