@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "prisma:generate": "prisma generate --schema ../server/prisma/schema.prisma",
+    "prisma:generate": "pnpm exec prisma generate --schema ../server/prisma/schema.prisma",
     "build": "pnpm prisma:generate && next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
@@ -48,7 +48,8 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
-    "@types/bcryptjs": "^2.4.6"
+    "@types/bcryptjs": "^2.4.6",
+    "prisma": "5.22.0"
   },
   "prisma": {
     "schema": "../../apps/server/prisma/schema.prisma"
