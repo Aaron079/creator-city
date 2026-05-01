@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
@@ -21,6 +21,7 @@ import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
 import { getActionTarget } from '@/lib/routing/actions'
+import { clientLogout } from '@/lib/auth/client'
 
 const LINKS = [
   { href: '/', label: '首页' },
@@ -37,7 +38,8 @@ const LINKS = [
 
 export function TopNavigation() {
   const pathname = usePathname()
-  const { user, logout } = useAuthStore()
+  const router = useRouter()
+  const { user, logout, isAuthenticated } = useAuthStore()
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
@@ -108,6 +110,12 @@ export function TopNavigation() {
 
   const notificationHref = getActionTarget({ actionType: 'dashboard-notifications' }).actionHref
 
+  const handleLogout = async () => {
+    await clientLogout()
+    logout()
+    router.push('/')
+  }
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
@@ -171,22 +179,40 @@ export function TopNavigation() {
             ) : null}
           </Link>
 
-          <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
-            <div className="h-7 w-7 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
-              {user?.displayName?.[0]?.toUpperCase() ?? '?'}
+          {isAuthenticated && user ? (
+            <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
+              <div className="h-7 w-7 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white shrink-0">
+                {user.displayName[0]?.toUpperCase() ?? '?'}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-[12px] font-medium text-white">{user.displayName}</div>
+                <div className="truncate text-[10px] text-white/40">{user.email}</div>
+              </div>
+              <Link href="/account" className="text-xs text-white/40 transition hover:text-white/70 px-1" title="账号设置">⚙</Link>
+              <button
+                onClick={() => void handleLogout()}
+                className="text-xs text-white/40 transition hover:text-white/80"
+                title="登出"
+              >
+                ↩
+              </button>
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-[12px] font-medium text-white">{user?.displayName ?? 'Guest'}</div>
-              <div className="truncate text-[10px] text-white/40">{profileId}</div>
+          ) : (
+            <div className="hidden items-center gap-2 md:flex">
+              <Link
+                href="/auth/login"
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/20 hover:text-white"
+              >
+                登录
+              </Link>
+              <Link
+                href="/auth/register"
+                className="rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 px-3 py-1.5 text-[12px] text-white font-medium transition"
+              >
+                注册
+              </Link>
             </div>
-            <button
-              onClick={logout}
-              className="text-xs text-white/40 transition hover:text-white/80"
-              title="Sign out"
-            >
-              ↩
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </header>

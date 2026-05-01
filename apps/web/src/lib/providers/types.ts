@@ -56,6 +56,7 @@ export interface GenerateResponse {
   result?: GenerateResult
   message: string
   errorCode?: string
+  billingJobId?: string
 }
 
 export interface ProviderAdapter {

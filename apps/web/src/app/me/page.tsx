@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
 import { ProfileView } from '@/components/profile/ProfileView'
@@ -31,6 +32,7 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 export default function MePage() {
   const currentUserId = useProfileStore((s) => s.currentUserId)
   const authUser = useAuthStore((s) => s.user)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const inboxProfileId = authUser?.id ?? currentUserId
   const assignments = useProjectRoleStore((s) => s.assignments)
   const approvals = useApprovalStore((s) => s.approvals)
@@ -117,10 +119,37 @@ export default function MePage() {
         actionLabel: '查看邀请',
       })
 
+  if (!isAuthenticated || !authUser) {
+    return (
+      <DashboardShell>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+          <div className="text-center">
+            <h1 className="text-2xl font-semibold text-white">欢迎来到 Creator City</h1>
+            <p className="mt-2 text-sm text-white/50">请登录或注册以访问你的工作台。</p>
+          </div>
+          <div className="flex gap-3">
+            <Link
+              href="/auth/login"
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-6 py-2.5 text-sm text-white/70 transition hover:border-white/20 hover:text-white"
+            >
+              登录
+            </Link>
+            <Link
+              href="/auth/register"
+              className="rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 px-6 py-2.5 text-sm text-white font-medium transition"
+            >
+              注册
+            </Link>
+          </div>
+        </div>
+      </DashboardShell>
+    )
+  }
+
   return (
     <DashboardShell>
       <div className="space-y-6">
-        <ProfileView userId={currentUserId} />
+        <ProfileView userId={authUser.id} />
         <div className="px-4">
           {pendingInvitations.length > 0 ? (
             <div className="mb-6">
@@ -140,13 +169,13 @@ export default function MePage() {
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                 <div className="text-[11px] text-white/45">当前账号</div>
-                <div className="mt-1 text-sm font-semibold text-white">{authUser?.displayName ?? '未登录账号'}</div>
-                <div className="mt-1 text-xs text-white/45">{authUser?.id ?? 'n/a'}</div>
+                <div className="mt-1 text-sm font-semibold text-white">{authUser.displayName}</div>
+                <div className="mt-1 text-xs text-white/45">{authUser.email}</div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-[11px] text-white/45">当前 Profile</div>
-                <div className="mt-1 text-sm font-semibold text-white">{currentUserId}</div>
-                <div className="mt-1 text-xs text-white/45">用于邀请收件箱与项目角色解析</div>
+                <div className="text-[11px] text-white/45">账号 ID</div>
+                <div className="mt-1 text-sm font-semibold text-white font-mono text-xs">{authUser.id.slice(0, 12)}…</div>
+                <div className="mt-1 text-xs text-white/45">Role: {authUser.role}</div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                 <div className="text-[11px] text-white/45">Active Project Roles</div>

@@ -1061,7 +1061,7 @@ export function VisualCanvasWorkspace({
         let polls = 0
         const poll = async () => {
           if (polls++ >= maxPolls || !result.jobId) return
-          const jobResult = await pollJobStatus(result.jobId, result.billingJobId)
+          const jobResult = await pollJobStatus(result.jobId)
           if (jobResult.status === 'queued' || jobResult.status === 'running') {
             handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.resultPreview })
             const timer = window.setTimeout(() => { void poll() }, 5000)

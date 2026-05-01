@@ -4,6 +4,7 @@ import "./globals.css";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { FeedbackProvider } from "@/lib/feedback/useFeedback";
 import { FloatingAgent } from "@/components/agent/FloatingAgent";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,8 +24,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-city-bg text-white`}>
         <FeedbackProvider>
-          <PageTransition>{children}</PageTransition>
-          <FloatingAgent />
+          <AuthProvider>
+            <PageTransition>{children}</PageTransition>
+            <FloatingAgent />
+          </AuthProvider>
         </FeedbackProvider>
       </body>
     </html>

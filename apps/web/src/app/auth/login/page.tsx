@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
-import { apiClient } from '@/lib/api-client'
+import { clientLogin } from '@/lib/auth/client'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { setAuth } = useAuthStore()
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
@@ -17,56 +18,65 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-
     try {
-      const data = await apiClient.post<{ accessToken: string; user: unknown }>(
-        '/auth/login',
-        form,
-      )
-      setAuth(data.accessToken, data.user as Parameters<typeof setAuth>[1])
-      router.push('/dashboard')
+      const user = await clientLogin(form.email, form.password)
+      setAuth(null, {
+        id: user.id,
+        username: user.username ?? '',
+        displayName: user.displayName,
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? undefined,
+        role: user.role,
+        reputation: 0,
+        level: 1,
+        credits: 0,
+      })
+      const next = searchParams.get('next') ?? '/me'
+      router.push(next)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      setError(err instanceof Error ? err.message : '登录失败')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-city-bg px-4">
-      <div className="w-full max-w-md space-y-8 animate-slide-up">
+    <div className="min-h-screen flex items-center justify-center bg-[#080c14] px-4">
+      <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gradient">Creator City</h1>
-          <p className="text-gray-400 mt-2">Sign in to your account</p>
+          <Link href="/" className="text-2xl font-bold tracking-tight text-white">Creator City</Link>
+          <p className="text-white/50 mt-2 text-sm">登录账号</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="city-card space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 space-y-5">
           {error && (
-            <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm rounded-lg px-4 py-3">
+            <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm px-4 py-3">
               {error}
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+            <label className="block text-xs font-medium text-white/60 mb-1.5 uppercase tracking-wider">邮箱</label>
             <input
               type="email"
               required
+              autoComplete="email"
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              className="w-full bg-city-bg border border-city-border rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-city-accent transition-colors"
+              className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 transition-colors text-sm"
               placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+            <label className="block text-xs font-medium text-white/60 mb-1.5 uppercase tracking-wider">密码</label>
             <input
               type="password"
               required
+              autoComplete="current-password"
               value={form.password}
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              className="w-full bg-city-bg border border-city-border rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-city-accent transition-colors"
+              className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 transition-colors text-sm"
               placeholder="••••••••"
             />
           </div>
@@ -74,19 +84,25 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-city-accent hover:bg-city-accent-glow disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-all duration-200 glow"
+            className="w-full rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 text-white font-medium py-2.5 text-sm transition disabled:opacity-50"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? '登录中…' : '登录'}
           </button>
 
-          <p className="text-center text-sm text-gray-400">
-            No account?{' '}
-            <Link href="/auth/register" className="text-city-accent hover:underline">
-              Create one
-            </Link>
+          <p className="text-center text-sm text-white/40">
+            还没有账号？{' '}
+            <Link href="/auth/register" className="text-white/70 hover:text-white transition">注册</Link>
           </p>
         </form>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }
