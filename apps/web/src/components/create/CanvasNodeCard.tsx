@@ -30,6 +30,7 @@ export interface VisualCanvasNode {
   resultPreview?: string
   outputLabel?: string
   preview?: VisualCanvasNodePreview
+  resultImageUrl?: string
   x: number
   y: number
   width: number
