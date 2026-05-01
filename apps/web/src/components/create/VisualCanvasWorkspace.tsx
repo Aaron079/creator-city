@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
-import { CanvasNodeCard, type VisualCanvasNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { CanvasNodeCard, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -38,6 +38,13 @@ interface VisualCanvasWorkspaceProps {
   onOpenAssets: () => void
   onOpenDelivery: () => void
   onShowStartup: () => void
+}
+
+type VisualCanvasNode = CanvasNodeCardNode & {
+  resultImageUrl?: string
+  resultVideoUrl?: string
+  resultAudioUrl?: string
+  resultText?: string
 }
 
 type CanvasEdgeStatus = 'idle' | 'active' | 'done'
