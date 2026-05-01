@@ -75,7 +75,7 @@ export function FloatingAgent() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/agent/chat', {
+      const response = await fetch('/api/creator-agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

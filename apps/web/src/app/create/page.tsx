@@ -8808,10 +8808,29 @@ export default function CreatePage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────────
 
+  const renderLegacyCreateShell = false
+
   return (
     <>
       <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
+        <div className="h-screen min-h-0 w-full overflow-hidden">
+          <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
+            <VisualCanvasWorkspace
+              projectTitle={deliveryProjectTitle}
+              templateName={activeWorkflowTemplate?.name ?? null}
+              onOpenTimeline={() => setWorkspaceView('editor')}
+              onOpenAssets={() => setWorkspaceView('footage')}
+              onOpenDelivery={() => setWorkspaceView('delivery')}
+              onShowStartup={() => {
+                setShowStartupPanels(true)
+                scrollToWorkspace()
+              }}
+            />
+          </Suspense>
+        </div>
 
+        {renderLegacyCreateShell ? (
+        <>
         {projectPermissions.canEditCreateWorkspace && canAccessCreateWorkspace && workspaceSurface !== 'canvas' ? (
         <LeftPanel
           idea={idea}
@@ -9327,6 +9346,8 @@ export default function CreatePage() {
             />
           )}
         </AnimatePresence>
+        </>
+        ) : null}
       </div>
     </>
   )
