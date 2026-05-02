@@ -27,8 +27,8 @@ Thumbs.db
 .vscode
 .idea
 
-# prisma
-apps/server/prisma/migrations/
+# prisma — migrations must be committed; only ignore generated artifacts
+apps/server/prisma/generated/
 
 # test
 coverage
