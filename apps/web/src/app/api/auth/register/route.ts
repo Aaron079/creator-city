@@ -82,7 +82,28 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ user: sanitizeUser(user) }, { status: 201 })
   } catch (err) {
-    console.error('[register]', err)
-    return NextResponse.json({ message: '注册失败，请稍后重试。' }, { status: 500 })
+    const code = (err as { code?: string })?.code ?? 'UNKNOWN'
+    const meta = (err as { meta?: unknown })?.meta
+    // Log full error server-side (visible in Vercel logs), never sent to client
+    console.error('[register] error code:', code, 'meta:', JSON.stringify(meta))
+    console.error('[register] full error:', err)
+
+    // Map Prisma codes to safe client messages
+    if (code === 'P1012') {
+      return NextResponse.json({ message: '数据库配置缺失，请联系管理员。', errorCode: 'DB_CONFIG_MISSING' }, { status: 500 })
+    }
+    if (code === 'P1000') {
+      return NextResponse.json({ message: '数据库认证失败，请联系管理员。', errorCode: 'DB_AUTH_FAILED' }, { status: 500 })
+    }
+    if (code === 'P1001' || code === 'P1002') {
+      return NextResponse.json({ message: '无法连接数据库，请稍后重试。', errorCode: 'DB_UNREACHABLE' }, { status: 500 })
+    }
+    if (code === 'P2021' || code === 'P2022') {
+      return NextResponse.json({ message: '数据库表结构未初始化，请联系管理员。', errorCode: 'DB_SCHEMA_MISSING' }, { status: 500 })
+    }
+    if (code === 'P2002') {
+      return NextResponse.json({ message: '该邮箱已注册。', errorCode: 'EMAIL_EXISTS' }, { status: 409 })
+    }
+    return NextResponse.json({ message: '注册失败，请稍后重试。', errorCode: code }, { status: 500 })
   }
 }

@@ -63,7 +63,23 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ user: safeUser })
   } catch (err) {
-    console.error('[login]', err)
-    return NextResponse.json({ message: '登录失败，请稍后重试。' }, { status: 500 })
+    const code = (err as { code?: string })?.code ?? 'UNKNOWN'
+    const meta = (err as { meta?: unknown })?.meta
+    console.error('[login] error code:', code, 'meta:', JSON.stringify(meta))
+    console.error('[login] full error:', err)
+
+    if (code === 'P1012') {
+      return NextResponse.json({ message: '数据库配置缺失，请联系管理员。', errorCode: 'DB_CONFIG_MISSING' }, { status: 500 })
+    }
+    if (code === 'P1000') {
+      return NextResponse.json({ message: '数据库认证失败，请联系管理员。', errorCode: 'DB_AUTH_FAILED' }, { status: 500 })
+    }
+    if (code === 'P1001' || code === 'P1002') {
+      return NextResponse.json({ message: '无法连接数据库，请稍后重试。', errorCode: 'DB_UNREACHABLE' }, { status: 500 })
+    }
+    if (code === 'P2021' || code === 'P2022') {
+      return NextResponse.json({ message: '数据库表结构未初始化，请联系管理员。', errorCode: 'DB_SCHEMA_MISSING' }, { status: 500 })
+    }
+    return NextResponse.json({ message: '登录失败，请稍后重试。', errorCode: code }, { status: 500 })
   }
 }
