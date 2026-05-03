@@ -47,7 +47,7 @@ export const openaiTextAdapter: ProviderAdapter = {
     const apiKey = getEnv('OPENAI_API_KEY')
     if (!apiKey) throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_NOT_CONFIGURED, 'OPENAI_API_KEY not set')
 
-    const model = getEnv('OPENAI_TEXT_MODEL') || 'gpt-4o'
+    const model = getEnv('OPENAI_TEXT_MODEL') || 'gpt-4.1-mini'
 
     const response = await fetchWithTimeout(
       `${OPENAI_API_BASE}/chat/completions`,
@@ -57,7 +57,7 @@ export const openaiTextAdapter: ProviderAdapter = {
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: request.prompt }],
-          max_tokens: 1024,
+          max_tokens: 2048,
         }),
       },
       getTimeout(),
@@ -82,7 +82,7 @@ export const openaiTextAdapter: ProviderAdapter = {
       mode: 'real',
       status: 'succeeded',
       result: { text },
-      message: `OpenAI text generation succeeded (model: ${model}).`,
+      message: `文本生成成功（${model}）`,
     }
   },
 }
@@ -113,23 +113,25 @@ export const openaiImagesAdapter: ProviderAdapter = {
     const apiKey = getEnv('OPENAI_API_KEY')
     if (!apiKey) throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_NOT_CONFIGURED, 'OPENAI_API_KEY not set')
 
-    const model = getEnv('OPENAI_IMAGE_MODEL') || 'dall-e-3'
-    const size = (request.params?.ratio === '1:1') ? '1024x1024'
-      : (request.params?.ratio === '9:16') ? '1024x1792'
+    const model = getEnv('OPENAI_IMAGE_MODEL') || 'gpt-image-1'
+    // gpt-image-1 returns b64_json by default; DALL-E models support response_format:'url'
+    const isGptImage = model.startsWith('gpt-image')
+
+    const size = request.params?.ratio === '1:1'
+      ? '1024x1024'
+      : request.params?.ratio === '9:16'
+        ? '1024x1792'
         : '1792x1024'
+
+    const payload: Record<string, unknown> = { model, prompt: request.prompt, n: 1, size }
+    if (!isGptImage) payload.response_format = 'url'
 
     const response = await fetchWithTimeout(
       `${OPENAI_API_BASE}/images/generations`,
       {
         method: 'POST',
         headers: makeHeaders(apiKey),
-        body: JSON.stringify({
-          model,
-          prompt: request.prompt,
-          n: 1,
-          size,
-          response_format: 'url',
-        }),
+        body: JSON.stringify(payload),
       },
       getTimeout(),
     )
@@ -142,8 +144,14 @@ export const openaiImagesAdapter: ProviderAdapter = {
       )
     }
 
-    const data = await response.json() as { data: Array<{ url: string; revised_prompt?: string }> }
-    const imageUrl = data.data[0]?.url ?? ''
+    const data = await response.json() as {
+      data: Array<{ url?: string; b64_json?: string; revised_prompt?: string }>
+    }
+    const item = data.data[0]
+    let imageUrl = item?.url ?? ''
+    if (!imageUrl && item?.b64_json) {
+      imageUrl = `data:image/png;base64,${item.b64_json}`
+    }
 
     return {
       success: true,
@@ -151,7 +159,7 @@ export const openaiImagesAdapter: ProviderAdapter = {
       mode: 'real',
       status: 'succeeded',
       result: { imageUrl, previewUrl: imageUrl },
-      message: `OpenAI image generation succeeded (model: ${model}).`,
+      message: `图片生成成功（${model}）`,
     }
   },
 }

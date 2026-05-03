@@ -11,10 +11,10 @@ export interface GatewayProviderEntry {
 
 export const GATEWAY_PROVIDERS: GatewayProviderEntry[] = [
   {
-    id: 'gpt-5',
+    id: 'openai-text',
     adapterId: 'openai-text',
     envKeys: ['OPENAI_API_KEY'],
-    setupHint: '配置 OPENAI_API_KEY；可选配置 OPENAI_TEXT_MODEL（默认 gpt-4o）',
+    setupHint: '配置 OPENAI_API_KEY；可选配置 OPENAI_TEXT_MODEL（默认 gpt-4.1-mini）',
     canTest: true,
   },
   {
@@ -25,10 +25,10 @@ export const GATEWAY_PROVIDERS: GatewayProviderEntry[] = [
     canTest: false,
   },
   {
-    id: 'openai-gpt-images',
+    id: 'openai-image',
     adapterId: 'openai-images',
     envKeys: ['OPENAI_API_KEY'],
-    setupHint: '配置 OPENAI_API_KEY；可选配置 OPENAI_IMAGE_MODEL（默认 dall-e-3）',
+    setupHint: '配置 OPENAI_API_KEY；可选配置 OPENAI_IMAGE_MODEL（默认 gpt-image-1）',
     canTest: true,
   },
   {

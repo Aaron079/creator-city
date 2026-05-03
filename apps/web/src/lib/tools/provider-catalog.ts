@@ -171,8 +171,8 @@ const videoProviders: ToolProvider[] = [
 const imageProviders: ToolProvider[] = [
   // nano banana: mock-only demo provider
   catalogItem('nano banana', 'image-generation', { id: 'nano-banana', status: 'mock', adapterId: 'nano-banana' }),
-  // OpenAI GPT Images: has gateway adapter — status at runtime by OPENAI_API_KEY check
-  catalogItem('OpenAI GPT Images', 'image-generation', { id: 'openai-gpt-images', adapterId: 'openai-images', envKeys: ['OPENAI_API_KEY'], description: '官方 API 支持 DALL-E-3 图片生成。配置 OPENAI_API_KEY 后标记 available。' }),
+  // OpenAI Image: has gateway adapter — status at runtime by OPENAI_API_KEY check
+  catalogItem('OpenAI Image', 'image-generation', { id: 'openai-image', adapterId: 'openai-images', envKeys: ['OPENAI_API_KEY'], description: '官方 API 支持 gpt-image-1 图片生成。配置 OPENAI_API_KEY 后标记 available。' }),
   catalogItem('Flux Pro', 'image-generation', { badge: 'pro', status: 'not-configured', envKeys: ['REPLICATE_API_TOKEN'] }),
   catalogItem('Midjourney V7', 'image-generation', { status: 'bridge-only', adapterId: 'midjourney' }),
   catalogItem('Adobe Firefly', 'image-generation', { status: 'bridge-only', adapterId: 'firefly' }),
@@ -183,8 +183,8 @@ const imageProviders: ToolProvider[] = [
 const textProviders: ToolProvider[] = [
   // Claude: has gateway adapter — status at runtime by ANTHROPIC_API_KEY check
   catalogItem('Claude', 'text-script', { id: 'anthropic-claude', adapterId: 'anthropic', envKeys: ['ANTHROPIC_API_KEY'], description: 'Anthropic Claude。配置 ANTHROPIC_API_KEY 后标记 available。' }),
-  // GPT-5: has gateway adapter — status at runtime by OPENAI_API_KEY check
-  catalogItem('GPT-5', 'text-script', { id: 'gpt-5', adapterId: 'openai-text', envKeys: ['OPENAI_API_KEY'], description: 'OpenAI GPT 文本生成。配置 OPENAI_API_KEY 后标记 available。' }),
+  // OpenAI Text: has gateway adapter — status at runtime by OPENAI_API_KEY check
+  catalogItem('OpenAI Text', 'text-script', { id: 'openai-text', adapterId: 'openai-text', envKeys: ['OPENAI_API_KEY'], description: 'OpenAI gpt-4.1-mini 文本生成。配置 OPENAI_API_KEY 后标记 available。' }),
   catalogItem('DeepSeek', 'text-script', { status: 'not-configured' }),
   catalogItem('豆包', 'text-script', { status: 'not-configured' }),
   catalogItem('Sudowrite', 'text-script', { status: 'bridge-only' }),
