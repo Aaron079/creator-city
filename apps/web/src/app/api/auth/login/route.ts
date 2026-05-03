@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/auth/password'
 import { createSession } from '@/lib/auth/session'
 import { setSessionCookie } from '@/lib/auth/cookies'
+import { extractSafeError, mapPrismaError, logAndRespond } from '@/lib/auth/errors'
 
 export async function POST(req: NextRequest) {
   try {
@@ -63,23 +64,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ user: safeUser })
   } catch (err) {
-    const code = (err as { code?: string })?.code ?? 'UNKNOWN'
-    const meta = (err as { meta?: unknown })?.meta
-    console.error('[login] error code:', code, 'meta:', JSON.stringify(meta))
-    console.error('[login] full error:', err)
-
-    if (code === 'P1012') {
-      return NextResponse.json({ message: '数据库配置缺失，请联系管理员。', errorCode: 'DB_CONFIG_MISSING' }, { status: 500 })
-    }
-    if (code === 'P1000') {
-      return NextResponse.json({ message: '数据库认证失败，请联系管理员。', errorCode: 'DB_AUTH_FAILED' }, { status: 500 })
-    }
-    if (code === 'P1001' || code === 'P1002') {
-      return NextResponse.json({ message: '无法连接数据库，请稍后重试。', errorCode: 'DB_UNREACHABLE' }, { status: 500 })
-    }
-    if (code === 'P2021' || code === 'P2022') {
-      return NextResponse.json({ message: '数据库表结构未初始化，请联系管理员。', errorCode: 'DB_SCHEMA_MISSING' }, { status: 500 })
-    }
-    return NextResponse.json({ message: '登录失败，请稍后重试。', errorCode: code }, { status: 500 })
+    const safe = extractSafeError(err)
+    const mapped = mapPrismaError(safe)
+    const { body, status } = logAndRespond('login', safe, mapped)
+    // login uses a different default message
+    if (!mapped) body.message = '登录失败，请稍后重试。'
+    return NextResponse.json(body, { status })
   }
 }
