@@ -19,9 +19,12 @@ export interface GenerateWithProviderResult {
   resultPreview: string
   message: string
   jobId?: string
+  billingJobId?: string
   status?: string
   result?: GenerateResponse['result']
   errorCode?: string
+  requiredCredits?: number
+  availableCredits?: number
 }
 
 function routeForNodeType(nodeType: ToolProviderNodeType): string {
@@ -57,7 +60,10 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
       body: JSON.stringify(request),
     })
 
-    const data = await response.json() as GenerateResponse
+    const data = await response.json() as GenerateResponse & {
+      requiredCredits?: number
+      availableCredits?: number
+    }
 
     return {
       success: data.success,
@@ -65,9 +71,12 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
       resultPreview: buildPreview(data, request.prompt),
       message: data.message,
       jobId: data.jobId,
+      billingJobId: data.billingJobId,
       status: data.status,
       result: data.result,
       errorCode: data.errorCode,
+      requiredCredits: data.requiredCredits,
+      availableCredits: data.availableCredits,
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'

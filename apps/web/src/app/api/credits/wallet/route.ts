@@ -13,7 +13,7 @@ export async function GET() {
     return NextResponse.json({
       id: wallet.id,
       userId: wallet.userId,
-      balanceCredits: wallet.balance,
+      balanceCredits: wallet.balance + wallet.frozenBalance,
       reservedCredits: wallet.frozenBalance,
       availableCredits: wallet.balance,
       lifetimePurchasedCredits: wallet.totalPurchased,

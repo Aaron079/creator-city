@@ -1091,9 +1091,13 @@ export function VisualCanvasWorkspace({
               : nodeSnapshot.preview,
           })
           if (!jobResult.success) {
-            showCanvasFeedback(jobResult.status === 'not-configured'
-              ? '视频生成 API 未配置，请到 /tools 配置 provider。'
-              : jobResult.message)
+            if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
+              showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
+            } else if (jobResult.status === 'not-configured' || jobResult.errorCode === 'PROVIDER_NOT_CONFIGURED') {
+              showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
+            } else {
+              showCanvasFeedback(jobResult.billingJobId ? '生成失败，积分已退回。' : jobResult.message)
+            }
             return
           }
           setEdges((current) => current.map((edge) => (
@@ -1130,9 +1134,13 @@ export function VisualCanvasWorkspace({
           : nodeSnapshot.preview,
       })
       if (!result.success) {
-        showCanvasFeedback(result.status === 'not-configured'
-          ? '视频生成 API 未配置，请到 /tools 配置 provider。'
-          : result.message)
+        if (result.errorCode === 'INSUFFICIENT_CREDITS') {
+          showCanvasFeedback(`积分不足，需要 ${result.requiredCredits ?? '?'}，可用 ${result.availableCredits ?? 0}。前往 /account/credits 购买。`)
+        } else if (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED') {
+          showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
+        } else {
+          showCanvasFeedback(result.billingJobId ? '生成失败，积分已退回。' : result.message)
+        }
         return
       }
       setEdges((current) => current.map((edge) => (
