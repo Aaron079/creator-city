@@ -72,7 +72,7 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
       body: JSON.stringify(request),
     })
 
-    const data = await readJsonSafely(response) as GenerateResponse & {
+    const data = await readJsonSafely(response) as unknown as GenerateResponse & {
       requiredCredits?: number
       availableCredits?: number
     }
@@ -105,7 +105,7 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
 export async function pollJobStatus(jobId: string): Promise<GenerateWithProviderResult> {
   try {
     const response = await fetch(`/api/generate/jobs/${encodeURIComponent(jobId)}`)
-    const data = await readJsonSafely(response) as GenerateResponse
+    const data = await readJsonSafely(response) as unknown as GenerateResponse
 
     return {
       success: Boolean(data.success),

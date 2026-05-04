@@ -26,7 +26,7 @@ import {
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
 import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
-import { generateWithProvider, pollJobStatus } from '@/lib/tools/provider-adapters'
+import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
 import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
@@ -196,6 +196,71 @@ function getNodeKindForPublicTemplate(nodeType: PublicTemplate['nodeType']): Vis
     return nodeType
   }
   return 'template'
+}
+
+type GenerateApiResult = GenerateResponse & { requiredCredits?: number; availableCredits?: number }
+
+async function callGenerationApi(
+  nodeType: ToolProviderNodeType,
+  providerId: string,
+  prompt: string,
+  params?: Record<string, string | number | boolean | undefined>,
+  nodeId?: string,
+  inputAssets?: Array<{ id: string; type: string; url?: string }>,
+): Promise<GenerateApiResult> {
+  const endpoint =
+    nodeType === 'image' ? '/api/generate/image'
+    : nodeType === 'video' ? '/api/generate/video'
+    : nodeType === 'audio' ? '/api/generate/audio'
+    : '/api/generate/text'
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[canvas-generate] submit', { nodeType, providerId })
+  }
+
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ providerId, nodeType, prompt, params, nodeId, inputAssets }),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '网络请求失败'
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, errorCode: 'PROVIDER_REQUEST_FAILED' }
+  }
+
+  const raw = await response.text().catch(() => '')
+  if (!raw.trim()) {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回空响应（HTTP ${response.status}）`, errorCode: 'EMPTY_RESPONSE' }
+  }
+  try {
+    return JSON.parse(raw) as GenerateApiResult
+  } catch {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回非 JSON 响应（HTTP ${response.status}）`, errorCode: 'NON_JSON_RESPONSE' }
+  }
+}
+
+async function pollGenerationJob(jobId: string): Promise<GenerateApiResult> {
+  let response: Response
+  try {
+    response = await fetch(`/api/generate/jobs/${encodeURIComponent(jobId)}`, {
+      credentials: 'include',
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '网络请求失败'
+    return { success: false, providerId: '', mode: 'unavailable', status: 'failed', message }
+  }
+  const raw = await response.text().catch(() => '')
+  if (!raw.trim()) {
+    return { success: false, providerId: '', mode: 'unavailable', status: 'failed', message: `任务状态接口返回空响应（HTTP ${response.status}）` }
+  }
+  try {
+    return JSON.parse(raw) as GenerateApiResult
+  } catch {
+    return { success: false, providerId: '', mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）` }
+  }
 }
 
 function getTemplateFromSession(templateId: string) {
@@ -1048,6 +1113,12 @@ export function VisualCanvasWorkspace({
     if (!editingNode) return
 
     const trimmedPrompt = canvasPrompt.trim()
+    if (!trimmedPrompt) {
+      const errMsg = '请先输入 prompt 再生成。'
+      setDialogError(errMsg)
+      return
+    }
+
     const nodeSnapshot = editingNode
     const nodeType = getProviderNodeType(nodeSnapshot.kind)
 
@@ -1081,43 +1152,36 @@ export function VisualCanvasWorkspace({
       errorMessage: undefined,
     })
 
-    void generateWithProvider({
-      providerId: normalizedPromptModel,
+    void callGenerationApi(
       nodeType,
-      prompt: trimmedPrompt,
-      inputAssets: upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
-      params: {
-        ratio: promptRatio,
-        stage: promptStage,
-        parameter: promptParameter,
-      },
-    }).then(async (result) => {
+      normalizedPromptModel,
+      trimmedPrompt,
+      { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
+      nodeSnapshot.id,
+      upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
+    ).then(async (result) => {
       // Async job queued (e.g. Runway): poll until done or failed
       if ((result.status === 'queued' || result.status === 'running') && result.jobId) {
+        const queuingPreview = `${result.providerId} · 生成中，请稍候…`
         handleNodePatch(nodeSnapshot.id, {
-          resultPreview: result.resultPreview,
+          resultPreview: queuingPreview,
           outputLabel: result.message,
         })
         const maxPolls = 60
         let polls = 0
         const poll = async () => {
           if (polls++ >= maxPolls || !result.jobId) return
-          const jobResult = await pollJobStatus(result.jobId)
+          const jobResult = await pollGenerationJob(result.jobId)
           if (jobResult.status === 'queued' || jobResult.status === 'running') {
-            handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.resultPreview })
+            handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.result?.text?.slice(0, 200) ?? queuingPreview })
             const timer = window.setTimeout(() => { void poll() }, 5000)
             timersRef.current.push(timer)
             return
           }
-          const preview = jobResult.resultPreview || buildResultLabel(nodeSnapshot.title)
+          const jobFallback = buildResultLabel(nodeSnapshot.title)
           if (!jobResult.success) {
             const errMsg = jobResult.message || jobResult.errorCode || '生成失败'
-            handleNodePatch(nodeSnapshot.id, {
-              status: 'error',
-              errorMessage: errMsg,
-              resultPreview: preview,
-              outputLabel: preview,
-            })
+            handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: jobFallback, outputLabel: jobFallback })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
             } else if (jobResult.status === 'not-configured' || jobResult.errorCode === 'PROVIDER_NOT_CONFIGURED') {
@@ -1132,45 +1196,28 @@ export function VisualCanvasWorkspace({
           handleNodePatch(nodeSnapshot.id, {
             status: 'done',
             resultText: jobResultText,
-            resultPreview: jobResultText?.slice(0, 200) ?? preview,
-            outputLabel: preview,
+            resultPreview: jobResultText?.slice(0, 200) ?? jobFallback,
+            outputLabel: jobFallback,
             errorMessage: undefined,
             preview: jobResult.result?.videoUrl
-              ? {
-                type: 'remote-video',
-                url: jobResult.result.videoUrl,
-                poster: jobResult.result.previewUrl,
-                licenseType: 'original',
-                attribution: 'Generated by configured video provider',
-              }
+              ? { type: 'remote-video', url: jobResult.result.videoUrl, poster: jobResult.result.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
               : nodeSnapshot.preview,
           })
           setEdges((current) => current.map((edge) => (
-            edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
-              ? { ...edge, status: 'done' }
-              : edge
+            edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
           )))
-          // Keep dialog open so user can see the result — they close it manually
         }
         const timer = window.setTimeout(() => { void poll() }, 5000)
         timersRef.current.push(timer)
         return
       }
 
-      // Immediate result (real or mock)
-      const fallbackPreview = trimmedPrompt
-        ? buildMockResult(nodeSnapshot, trimmedPrompt)
-        : buildResultLabel(nodeSnapshot.title)
-      const preview = result.resultPreview || fallbackPreview
+      // Immediate result
+      const fallbackPreview = trimmedPrompt ? buildMockResult(nodeSnapshot, trimmedPrompt) : buildResultLabel(nodeSnapshot.title)
 
       if (!result.success) {
         const errMsg = result.message || result.errorCode || '生成失败'
-        handleNodePatch(nodeSnapshot.id, {
-          status: 'error',
-          errorMessage: errMsg,
-          resultPreview: preview,
-          outputLabel: preview,
-        })
+        handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: fallbackPreview, outputLabel: fallbackPreview })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
           showCanvasFeedback(`积分不足，需要 ${result.requiredCredits ?? '?'}，可用 ${result.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -1183,28 +1230,22 @@ export function VisualCanvasWorkspace({
       }
 
       const resultText = result.result?.text
-      const resultPreview = resultText?.slice(0, 200) ?? preview
+      const resultImageUrl = result.result?.imageUrl
+      const resultVideoUrl = result.result?.videoUrl
+      const resultPreview = resultText?.slice(0, 200) ?? (resultImageUrl ? '图片已生成' : fallbackPreview)
       handleNodePatch(nodeSnapshot.id, {
         status: 'done',
         resultText,
-        resultPreview: resultText ? resultPreview : (result.result?.imageUrl ? preview : (preview || '生成返回为空')),
-        outputLabel: preview,
-        resultImageUrl: result.result?.imageUrl ?? nodeSnapshot.resultImageUrl,
+        resultPreview,
+        outputLabel: resultText?.slice(0, 80) ?? fallbackPreview,
+        resultImageUrl: resultImageUrl ?? nodeSnapshot.resultImageUrl,
         errorMessage: undefined,
-        preview: result.result?.videoUrl
-          ? {
-            type: 'remote-video',
-            url: result.result.videoUrl,
-            poster: result.result.previewUrl,
-            licenseType: 'original',
-            attribution: 'Generated by configured video provider',
-          }
+        preview: resultVideoUrl
+          ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
       })
       setEdges((current) => current.map((edge) => (
-        edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
-          ? { ...edge, status: 'done' }
-          : edge
+        edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
