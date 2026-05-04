@@ -29,7 +29,7 @@ import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import { generateWithProvider, pollJobStatus } from '@/lib/tools/provider-adapters'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
-import type { ToolProviderNodeType } from '@/lib/tools/provider-catalog'
+import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -1049,6 +1049,17 @@ export function VisualCanvasWorkspace({
 
     const trimmedPrompt = canvasPrompt.trim()
     const nodeSnapshot = editingNode
+    const nodeType = getProviderNodeType(nodeSnapshot.kind)
+
+    // Validate provider supports this node type
+    const providerEntry = getToolProviderById(normalizedPromptModel)
+    if (providerEntry && !providerEntry.nodeTypes.includes(nodeType)) {
+      const supportedTypes = providerEntry.nodeTypes.join(' / ')
+      const errMsg = `${providerEntry.name} 仅支持 ${supportedTypes} 节点，当前节点类型为 ${nodeType}。请切换到对应节点后重试。`
+      setDialogError(errMsg)
+      showCanvasFeedback(errMsg)
+      return
+    }
 
     // Collect image URLs from upstream nodes connected by edges (for image→video workflow)
     const upstreamImageAssets = edges
@@ -1059,6 +1070,7 @@ export function VisualCanvasWorkspace({
         return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
       })
 
+    setDialogError(null)
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
       model: normalizedPromptModel,
@@ -1066,11 +1078,12 @@ export function VisualCanvasWorkspace({
       stage: promptStage,
       ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
       status: 'generating',
+      errorMessage: undefined,
     })
 
     void generateWithProvider({
       providerId: normalizedPromptModel,
-      nodeType: getProviderNodeType(nodeSnapshot.kind),
+      nodeType,
       prompt: trimmedPrompt,
       inputAssets: upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
       params: {
@@ -1115,11 +1128,13 @@ export function VisualCanvasWorkspace({
             setDialogError(errMsg)
             return
           }
+          const jobResultText = jobResult.result?.text
           handleNodePatch(nodeSnapshot.id, {
             status: 'done',
-            resultText: jobResult.result?.text,
-            resultPreview: jobResult.result?.text?.slice(0, 200) ?? preview,
+            resultText: jobResultText,
+            resultPreview: jobResultText?.slice(0, 200) ?? preview,
             outputLabel: preview,
+            errorMessage: undefined,
             preview: jobResult.result?.videoUrl
               ? {
                 type: 'remote-video',
@@ -1135,7 +1150,7 @@ export function VisualCanvasWorkspace({
               ? { ...edge, status: 'done' }
               : edge
           )))
-          setEditingNodeId(null)
+          // Keep dialog open so user can see the result — they close it manually
         }
         const timer = window.setTimeout(() => { void poll() }, 5000)
         timersRef.current.push(timer)
@@ -1167,12 +1182,15 @@ export function VisualCanvasWorkspace({
         return
       }
 
+      const resultText = result.result?.text
+      const resultPreview = resultText?.slice(0, 200) ?? preview
       handleNodePatch(nodeSnapshot.id, {
         status: 'done',
-        resultText: result.result?.text,
-        resultPreview: result.result?.text?.slice(0, 200) ?? preview,
+        resultText,
+        resultPreview: resultText ? resultPreview : (result.result?.imageUrl ? preview : (preview || '生成返回为空')),
         outputLabel: preview,
         resultImageUrl: result.result?.imageUrl ?? nodeSnapshot.resultImageUrl,
+        errorMessage: undefined,
         preview: result.result?.videoUrl
           ? {
             type: 'remote-video',
@@ -1188,9 +1206,9 @@ export function VisualCanvasWorkspace({
           ? { ...edge, status: 'done' }
           : edge
       )))
-      setEditingNodeId(null)
+      // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, showCanvasFeedback])
+  }, [buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -1955,13 +1973,15 @@ export function VisualCanvasWorkspace({
                 ? '生成中…'
                 : editingNode.status === 'error'
                   ? '重试'
-                  : activeProviderStatus === 'not-configured'
-                    ? '未配置'
-                    : activeProviderStatus === 'available'
-                      ? '生成'
-                      : activeProviderStatus === 'checking'
-                        ? '检查中'
-                        : '模拟生成'
+                  : editingNode.status === 'done'
+                    ? '重新生成'
+                    : activeProviderStatus === 'not-configured'
+                      ? '未配置'
+                      : activeProviderStatus === 'available'
+                        ? '生成'
+                        : activeProviderStatus === 'checking'
+                          ? '检查中'
+                          : '模拟生成'
             }
             estimatedCredits={estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))}
             footerItems={promptFooterItems}
