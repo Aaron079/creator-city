@@ -324,6 +324,7 @@ export function VisualCanvasWorkspace({
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const timersRef = useRef<number[]>([])
+  const [dialogError, setDialogError] = useState<string | null>(null)
   const initialTemplateAppliedRef = useRef('')
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
@@ -560,6 +561,10 @@ export function VisualCanvasWorkspace({
       setPromptRatio(activeNode.ratio)
     }
   }, [activeNode])
+
+  useEffect(() => {
+    setDialogError(null)
+  }, [editingNodeId])
 
   useEffect(() => {
     if (!contextMenu && !nodeAddMenu && !isAddMenuOpen && !nodeCreateMenu) return
@@ -1092,9 +1097,28 @@ export function VisualCanvasWorkspace({
             return
           }
           const preview = jobResult.resultPreview || buildResultLabel(nodeSnapshot.title)
+          if (!jobResult.success) {
+            const errMsg = jobResult.message || jobResult.errorCode || '生成失败'
+            handleNodePatch(nodeSnapshot.id, {
+              status: 'error',
+              errorMessage: errMsg,
+              resultPreview: preview,
+              outputLabel: preview,
+            })
+            if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
+              showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
+            } else if (jobResult.status === 'not-configured' || jobResult.errorCode === 'PROVIDER_NOT_CONFIGURED') {
+              showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
+            } else {
+              showCanvasFeedback(errMsg)
+            }
+            setDialogError(errMsg)
+            return
+          }
           handleNodePatch(nodeSnapshot.id, {
-            status: jobResult.success ? 'done' : 'idle',
-            resultPreview: preview,
+            status: 'done',
+            resultText: jobResult.result?.text,
+            resultPreview: jobResult.result?.text?.slice(0, 200) ?? preview,
             outputLabel: preview,
             preview: jobResult.result?.videoUrl
               ? {
@@ -1106,16 +1130,6 @@ export function VisualCanvasWorkspace({
               }
               : nodeSnapshot.preview,
           })
-          if (!jobResult.success) {
-            if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
-              showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
-            } else if (jobResult.status === 'not-configured' || jobResult.errorCode === 'PROVIDER_NOT_CONFIGURED') {
-              showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
-            } else {
-              showCanvasFeedback(jobResult.billingJobId ? '生成失败，积分已退回。' : jobResult.message)
-            }
-            return
-          }
           setEdges((current) => current.map((edge) => (
             edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
               ? { ...edge, status: 'done' }
@@ -1134,9 +1148,29 @@ export function VisualCanvasWorkspace({
         : buildResultLabel(nodeSnapshot.title)
       const preview = result.resultPreview || fallbackPreview
 
+      if (!result.success) {
+        const errMsg = result.message || result.errorCode || '生成失败'
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'error',
+          errorMessage: errMsg,
+          resultPreview: preview,
+          outputLabel: preview,
+        })
+        setDialogError(errMsg)
+        if (result.errorCode === 'INSUFFICIENT_CREDITS') {
+          showCanvasFeedback(`积分不足，需要 ${result.requiredCredits ?? '?'}，可用 ${result.availableCredits ?? 0}。前往 /account/credits 购买。`)
+        } else if (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED') {
+          showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
+        } else {
+          showCanvasFeedback(errMsg)
+        }
+        return
+      }
+
       handleNodePatch(nodeSnapshot.id, {
-        status: result.success ? 'done' : 'idle',
-        resultPreview: preview,
+        status: 'done',
+        resultText: result.result?.text,
+        resultPreview: result.result?.text?.slice(0, 200) ?? preview,
         outputLabel: preview,
         resultImageUrl: result.result?.imageUrl ?? nodeSnapshot.resultImageUrl,
         preview: result.result?.videoUrl
@@ -1149,16 +1183,6 @@ export function VisualCanvasWorkspace({
           }
           : nodeSnapshot.preview,
       })
-      if (!result.success) {
-        if (result.errorCode === 'INSUFFICIENT_CREDITS') {
-          showCanvasFeedback(`积分不足，需要 ${result.requiredCredits ?? '?'}，可用 ${result.availableCredits ?? 0}。前往 /account/credits 购买。`)
-        } else if (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED') {
-          showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
-        } else {
-          showCanvasFeedback(result.billingJobId ? '生成失败，积分已退回。' : result.message)
-        }
-        return
-      }
       setEdges((current) => current.map((edge) => (
         edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id
           ? { ...edge, status: 'done' }
@@ -1917,7 +1941,8 @@ export function VisualCanvasWorkspace({
             modelOptionLabels={providerOptionLabels}
             providerStatus={activeProviderStatus}
             providerNotice={activeProviderNotice}
-            resultSummary={editingNode.status === 'done' ? editingNode.resultPreview ?? editingNode.outputLabel : undefined}
+            resultSummary={editingNode.status === 'done' ? (editingNode.resultText ?? editingNode.resultPreview ?? editingNode.outputLabel) : undefined}
+            errorMessage={dialogError ?? undefined}
             models={workspaceModels}
             onModelChange={handleProviderChange}
             ratio={promptRatio}
@@ -1928,13 +1953,15 @@ export function VisualCanvasWorkspace({
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
-                : activeProviderStatus === 'not-configured'
-                  ? '未配置'
-                  : activeProviderStatus === 'available'
-                    ? '生成'
-                    : activeProviderStatus === 'checking'
-                      ? '检查中'
-                      : '模拟生成'
+                : editingNode.status === 'error'
+                  ? '重试'
+                  : activeProviderStatus === 'not-configured'
+                    ? '未配置'
+                    : activeProviderStatus === 'available'
+                      ? '生成'
+                      : activeProviderStatus === 'checking'
+                        ? '检查中'
+                        : '模拟生成'
             }
             estimatedCredits={estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))}
             footerItems={promptFooterItems}

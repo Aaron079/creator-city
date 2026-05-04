@@ -29,6 +29,7 @@ interface CanvasPromptBoxProps {
   providerStatus?: string | null
   providerNotice?: string
   resultSummary?: string
+  errorMessage?: string
   models: string[]
   onModelChange: (value: string) => void
   ratio?: string
@@ -92,6 +93,7 @@ export function CanvasPromptBox({
   providerStatus,
   providerNotice,
   resultSummary,
+  errorMessage,
   layout = 'node',
   multiline = layout === 'node',
   detailsOpen: _detailsOpen = false,
@@ -585,6 +587,12 @@ export function CanvasPromptBox({
 
       <div className="canvas-prompt-input-wrap">
         {promptInput}
+        {resultSummary ? (
+          <div className="canvas-prompt-result">{resultSummary}</div>
+        ) : null}
+        {errorMessage ? (
+          <div className="canvas-prompt-error">{errorMessage}</div>
+        ) : null}
       </div>
 
       {providerNotice && providerStatus !== 'available' ? (

@@ -4,7 +4,7 @@ import { useRef, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
-export type VisualCanvasNodeStatus = 'idle' | 'generating' | 'done'
+export type VisualCanvasNodeStatus = 'idle' | 'generating' | 'done' | 'error'
 export type VisualCanvasNodePreview = {
   type: 'none' | 'placeholder-video' | 'remote-video'
   url?: string
@@ -29,6 +29,7 @@ export interface VisualCanvasNode {
   status: VisualCanvasNodeStatus
   resultPreview?: string
   outputLabel?: string
+  errorMessage?: string
   preview?: VisualCanvasNodePreview
   resultImageUrl?: string
   x: number
@@ -278,6 +279,10 @@ export function CanvasNodeCard({
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
               <div className="canvas-node-preview-copy">生成中</div>
+            </div>
+          ) : node.status === 'error' ? (
+            <div className="canvas-node-preview is-error-preview">
+              <div className="canvas-node-preview-copy">{node.errorMessage || '生成失败，点击重试。'}</div>
             </div>
           ) : (
             <div className={`canvas-node-empty empty-${node.kind}`}>

@@ -65,10 +65,13 @@ export const openaiTextAdapter: ProviderAdapter = {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new ProviderError(
-        PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED,
-        body.error?.message ?? `OpenAI HTTP ${response.status}`,
-      )
+      const msg = body.error?.message ?? `OpenAI HTTP ${response.status}`
+      const code =
+        response.status === 401 || response.status === 403 ? 'OPENAI_AUTH_FAILED'
+        : response.status === 429 ? 'OPENAI_RATE_LIMITED'
+        : response.status === 404 ? 'OPENAI_MODEL_NOT_FOUND'
+        : PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED
+      throw new ProviderError(code, msg)
     }
 
     const data = await response.json() as {
@@ -138,10 +141,13 @@ export const openaiImagesAdapter: ProviderAdapter = {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new ProviderError(
-        PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED,
-        body.error?.message ?? `OpenAI Images HTTP ${response.status}`,
-      )
+      const msg = body.error?.message ?? `OpenAI Images HTTP ${response.status}`
+      const code =
+        response.status === 401 || response.status === 403 ? 'OPENAI_AUTH_FAILED'
+        : response.status === 429 ? 'OPENAI_RATE_LIMITED'
+        : response.status === 404 ? 'OPENAI_MODEL_NOT_FOUND'
+        : PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED
+      throw new ProviderError(code, msg)
     }
 
     const data = await response.json() as {
