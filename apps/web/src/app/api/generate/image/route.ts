@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { runGenerate } from '@/lib/providers/generate'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
+import { gatewayGenerate } from '@/lib/gateway/generate'
+import { getCurrentUser } from '@/lib/auth/current-user'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(billing.errorResponse, { status: billing.status })
     }
 
-    const raw = await runGenerate({
+    const currentUser = await getCurrentUser()
+    const raw = await gatewayGenerate({
       providerId,
       nodeType: 'image',
       prompt,
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
       params: body.params,
       projectId: body.projectId,
       nodeId: body.nodeId,
-    })
+    }, currentUser?.id)
 
     const result = await finalizeBilling(raw, billing.ctx.billingJobId)
     return NextResponse.json(result)

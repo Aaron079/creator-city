@@ -988,3 +988,38 @@ model ProviderCostLedger {
   @@index([providerId])
   @@index([createdAt])
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROVIDER GATEWAY — upstream AI account budget tracking
+// ══════════════════════════════════════════════════════════════════════════════
+
+model ProviderAccount {
+  id                  String   @id @default(uuid())
+  providerId          String   @unique
+  displayName         String
+  monthlyBudgetUsd    Decimal?
+  currentMonthCostUsd Decimal  @default(0)
+  budgetMonth         String?
+  lastCheckedAt       DateTime?
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([providerId])
+}
+
+model ProviderPricingRule {
+  id             String   @id @default(uuid())
+  providerId     String
+  modelId        String   @default("*")
+  nodeType       String
+  creditsPerCall Int      @default(10)
+  costUsdPerCall Decimal  @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([providerId, modelId, nodeType])
+  @@index([providerId])
+  @@index([nodeType])
+}
