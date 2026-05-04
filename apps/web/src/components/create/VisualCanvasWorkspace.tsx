@@ -20,11 +20,12 @@ import {
   CANVAS_PROVIDER_FALLBACKS,
   getCanvasProvider,
   getCanvasProviderLabel,
-  getCanvasProviderNotice,
+  getCanvasProviderNoticeFromStatus,
   getCanvasProviders,
   getCanvasProviderStatus,
   type CanvasProviderKind,
 } from '@/lib/tools/provider-groups'
+import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import { generateWithProvider, pollJobStatus } from '@/lib/tools/provider-adapters'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
@@ -276,6 +277,7 @@ export function VisualCanvasWorkspace({
 }: VisualCanvasWorkspaceProps) {
   const searchParams = useSearchParams()
   const searchParamTemplateId = searchParams.get('template')
+  const liveStatusMap = useProviderLiveStatus()
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -504,8 +506,8 @@ export function VisualCanvasWorkspace({
     [preferredKind],
   )
   const activeProviderLabel = activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), promptModel)
-  const activeProviderStatus = activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), promptModel)
-  const activeProviderNotice = getCanvasProviderNotice(activeProvider)
+  const activeProviderStatus = liveStatusMap.get(promptModel) ?? activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), promptModel)
+  const activeProviderNotice = getCanvasProviderNoticeFromStatus(activeProviderStatus)
   const stageLabel = useMemo(
     () => getOptionLabel(STAGE_OPTIONS, promptStage),
     [promptStage],
@@ -1453,7 +1455,7 @@ export function VisualCanvasWorkspace({
         value: provider.id,
         label: provider.name,
         hint: provider.description.length > 30 ? provider.description.slice(0, 30) + '…' : provider.description,
-        badge: provider.status,
+        badge: liveStatusMap.get(provider.id) ?? provider.status,
         duration: provider.estimatedTime,
       })),
       onSelect: handleProviderChange,
