@@ -74,10 +74,10 @@ export const openaiTextAdapter: ProviderAdapter = {
       throw new ProviderError(code, msg)
     }
 
-    const data = await response.json() as {
-      choices: Array<{ message: { content: string } }>
-    }
-    const text = data.choices[0]?.message?.content ?? ''
+    const raw = await response.text()
+    let data: { choices?: Array<{ message?: { content?: string } }> } = {}
+    try { data = JSON.parse(raw) } catch { throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED, `OpenAI 返回了无效响应`) }
+    const text = data.choices?.[0]?.message?.content ?? ''
 
     return {
       success: true,
@@ -150,10 +150,10 @@ export const openaiImagesAdapter: ProviderAdapter = {
       throw new ProviderError(code, msg)
     }
 
-    const data = await response.json() as {
-      data: Array<{ url?: string; b64_json?: string; revised_prompt?: string }>
-    }
-    const item = data.data[0]
+    const rawImg = await response.text()
+    let data: { data?: Array<{ url?: string; b64_json?: string; revised_prompt?: string }> } = {}
+    try { data = JSON.parse(rawImg) } catch { throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED, `OpenAI Images 返回了无效响应`) }
+    const item = data.data?.[0]
     let imageUrl = item?.url ?? ''
     if (!imageUrl && item?.b64_json) {
       imageUrl = `data:image/png;base64,${item.b64_json}`

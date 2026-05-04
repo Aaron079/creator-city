@@ -7,31 +7,37 @@ import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
-  let body: Partial<GenerateRequest>
   try {
-    body = await request.json() as Partial<GenerateRequest>
-  } catch {
-    return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
+    let body: Partial<GenerateRequest>
+    try {
+      body = await request.json() as Partial<GenerateRequest>
+    } catch {
+      return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
+    }
+
+    const providerId = body.providerId ?? ''
+    const prompt = body.prompt ?? ''
+
+    const billing = await setupBilling(request, providerId, 'image', prompt)
+    if (!billing.ok) {
+      return NextResponse.json(billing.errorResponse, { status: billing.status })
+    }
+
+    const raw = await runGenerate({
+      providerId,
+      nodeType: 'image',
+      prompt,
+      inputAssets: body.inputAssets,
+      params: body.params,
+      projectId: body.projectId,
+      nodeId: body.nodeId,
+    })
+
+    const result = await finalizeBilling(raw, billing.ctx.billingJobId)
+    return NextResponse.json(result)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '生成请求失败'
+    console.error('[api/generate/image]', err)
+    return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 500 })
   }
-
-  const providerId = body.providerId ?? ''
-  const prompt = body.prompt ?? ''
-
-  const billing = await setupBilling(request, providerId, 'image', prompt)
-  if (!billing.ok) {
-    return NextResponse.json(billing.errorResponse, { status: billing.status })
-  }
-
-  const raw = await runGenerate({
-    providerId,
-    nodeType: 'image',
-    prompt,
-    inputAssets: body.inputAssets,
-    params: body.params,
-    projectId: body.projectId,
-    nodeId: body.nodeId,
-  })
-
-  const result = await finalizeBilling(raw, billing.ctx.billingJobId)
-  return NextResponse.json(result)
 }

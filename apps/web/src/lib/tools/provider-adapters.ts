@@ -27,6 +27,18 @@ export interface GenerateWithProviderResult {
   availableCredits?: number
 }
 
+async function readJsonSafely(response: Response): Promise<Record<string, unknown>> {
+  const raw = await response.text()
+  if (!raw.trim()) {
+    return { success: false, errorCode: 'EMPTY_RESPONSE', message: `生成接口返回空响应（HTTP ${response.status}）` }
+  }
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return { success: false, errorCode: 'NON_JSON_RESPONSE', message: `生成接口返回非 JSON 响应（HTTP ${response.status}）`, raw: raw.slice(0, 300) }
+  }
+}
+
 function routeForNodeType(nodeType: ToolProviderNodeType): string {
   switch (nodeType) {
     case 'image': return '/api/generate/image'
@@ -60,16 +72,16 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
       body: JSON.stringify(request),
     })
 
-    const data = await response.json() as GenerateResponse & {
+    const data = await readJsonSafely(response) as GenerateResponse & {
       requiredCredits?: number
       availableCredits?: number
     }
 
     return {
-      success: data.success,
-      mode: data.mode,
+      success: Boolean(data.success),
+      mode: (data.mode as GenerateWithProviderResult['mode']) ?? 'unavailable',
       resultPreview: buildPreview(data, request.prompt),
-      message: data.message,
+      message: String(data.message ?? '生成失败'),
       jobId: data.jobId,
       billingJobId: data.billingJobId,
       status: data.status,
@@ -93,13 +105,13 @@ export async function generateWithProvider(request: GenerateWithProviderRequest)
 export async function pollJobStatus(jobId: string): Promise<GenerateWithProviderResult> {
   try {
     const response = await fetch(`/api/generate/jobs/${encodeURIComponent(jobId)}`)
-    const data = await response.json() as GenerateResponse
+    const data = await readJsonSafely(response) as GenerateResponse
 
     return {
-      success: data.success,
-      mode: data.mode,
+      success: Boolean(data.success),
+      mode: (data.mode as GenerateWithProviderResult['mode']) ?? 'unavailable',
       resultPreview: buildPreview(data, ''),
-      message: data.message,
+      message: String(data.message ?? 'Job status check failed'),
       jobId: data.jobId,
       status: data.status,
       result: data.result,
