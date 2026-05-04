@@ -57,6 +57,8 @@ const PROVIDER_STATUS_LABELS: Record<string, string> = {
   'not-configured': '未配置',
   'bridge-only': '需桥接',
   'coming-soon': '即将接入',
+  checking: '检查中',
+  unknown: '状态未知',
   error: '异常',
 }
 const PARAMETER_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']

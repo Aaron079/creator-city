@@ -58,8 +58,8 @@ interface CanvasEdge {
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
-  text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'anthropic-claude' },
-  image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'nano-banana', ratio: '16:9' },
+  text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'openai-text' },
+  image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'openai-image', ratio: '16:9' },
   video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'custom-video-gateway', ratio: '16:9' },
   audio: { title: '音频', subtitle: '补充音乐、旁白和声音氛围。', model: 'elevenlabs' },
   asset: { title: '素材', subtitle: '导入图片、视频或音频参考素材。', model: 'asset-drop' },
@@ -172,6 +172,13 @@ function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
     : [CANVAS_PROVIDER_FALLBACKS[providerKind]]
 }
 
+function normalizeProviderId(providerId: string) {
+  if (providerId === 'gpt-5') return 'openai-text'
+  if (providerId === 'openai-gpt-images' || providerId === 'openai-images' || providerId === 'openai-image2') return 'openai-image'
+  if (providerId === 'openai-text-script') return 'openai-text'
+  return providerId
+}
+
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
   if (kind === 'asset' || kind === 'template') return 'upload'
   return kind as CanvasProviderKind
@@ -277,7 +284,7 @@ export function VisualCanvasWorkspace({
 }: VisualCanvasWorkspaceProps) {
   const searchParams = useSearchParams()
   const searchParamTemplateId = searchParams.get('template')
-  const liveStatusMap = useProviderLiveStatus()
+  const { statusMap: liveStatusMap, isLoading: liveStatusLoading } = useProviderLiveStatus()
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -497,17 +504,24 @@ export function VisualCanvasWorkspace({
     () => getProviderIdsForKind(preferredKind),
     [preferredKind],
   )
+  const normalizedPromptModel = normalizeProviderId(promptModel)
   const activeProvider = useMemo(
-    () => getCanvasProvider(getProviderKind(preferredKind), promptModel),
-    [preferredKind, promptModel],
+    () => getCanvasProvider(getProviderKind(preferredKind), normalizedPromptModel),
+    [preferredKind, normalizedPromptModel],
   )
   const providerOptionLabels = useMemo(
     () => Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
     [preferredKind],
   )
-  const activeProviderLabel = activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), promptModel)
-  const activeProviderStatus = liveStatusMap.get(promptModel) ?? activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), promptModel)
-  const activeProviderNotice = getCanvasProviderNoticeFromStatus(activeProviderStatus)
+  const activeProviderLabel = activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
+  const activeProviderLiveStatus = liveStatusMap.get(normalizedPromptModel)
+  const activeProviderStatus = activeProviderLiveStatus
+    ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown')
+  const activeProviderNotice = activeProviderStatus === 'checking'
+    ? '正在检查 provider 实时状态'
+    : activeProviderStatus === 'unknown'
+      ? '暂时无法确认 provider 实时状态'
+      : getCanvasProviderNoticeFromStatus(activeProviderStatus)
   const stageLabel = useMemo(
     () => getOptionLabel(STAGE_OPTIONS, promptStage),
     [promptStage],
@@ -540,7 +554,7 @@ export function VisualCanvasWorkspace({
   useEffect(() => {
     if (!activeNode) return
     setCanvasPrompt(activeNode.prompt)
-    setPromptModel(activeNode.providerId || activeNode.model)
+    setPromptModel(normalizeProviderId(activeNode.providerId || activeNode.model))
     setPreferredKind(activeNode.kind)
     if (activeNode.ratio) {
       setPromptRatio(activeNode.ratio)
@@ -597,7 +611,7 @@ export function VisualCanvasWorkspace({
       { ...basePosition, ...size },
       nodes,
     )
-    const providerId = options?.model ?? meta.model
+    const providerId = normalizeProviderId(options?.model ?? meta.model)
     const node: VisualCanvasNode = {
       id: nodeId,
       type: kind,
@@ -708,7 +722,7 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(node.id)
     setCanvasPrompt(node.prompt)
     syncPromptPreset(node.kind)
-    setPromptModel(node.providerId || node.model)
+    setPromptModel(normalizeProviderId(node.providerId || node.model))
     if (node.ratio) {
       setPromptRatio(node.ratio)
     }
@@ -898,7 +912,7 @@ export function VisualCanvasWorkspace({
       setActiveNodeId(firstNode.id)
       setEditingNodeId(null)
       setCanvasPrompt(firstNode.prompt)
-      setPromptModel(firstNode.providerId || firstNode.model)
+      setPromptModel(normalizeProviderId(firstNode.providerId || firstNode.model))
       syncPromptPreset(firstNode.kind)
     }
 
@@ -1042,15 +1056,15 @@ export function VisualCanvasWorkspace({
 
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
-      model: promptModel,
-      providerId: promptModel,
+      model: normalizedPromptModel,
+      providerId: normalizedPromptModel,
       stage: promptStage,
       ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
       status: 'generating',
     })
 
     void generateWithProvider({
-      providerId: promptModel,
+      providerId: normalizedPromptModel,
       nodeType: getProviderNodeType(nodeSnapshot.kind),
       prompt: trimmedPrompt,
       inputAssets: upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
@@ -1152,7 +1166,7 @@ export function VisualCanvasWorkspace({
       )))
       setEditingNodeId(null)
     })
-  }, [buildMockResult, buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, promptModel, promptParameter, promptRatio, promptStage, showCanvasFeedback])
+  }, [buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, showCanvasFeedback])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -1162,11 +1176,12 @@ export function VisualCanvasWorkspace({
   }, [editingNode, handleNodePatch])
 
   const handleProviderChange = useCallback((value: string) => {
-    setPromptModel(value)
+    const providerId = normalizeProviderId(value)
+    setPromptModel(providerId)
     if (editingNode) {
       handleNodePatch(editingNode.id, {
-        model: value,
-        providerId: value,
+        model: providerId,
+        providerId,
       })
     }
   }, [editingNode, handleNodePatch])
@@ -1455,7 +1470,7 @@ export function VisualCanvasWorkspace({
         value: provider.id,
         label: provider.name,
         hint: provider.description.length > 30 ? provider.description.slice(0, 30) + '…' : provider.description,
-        badge: liveStatusMap.get(provider.id) ?? provider.status,
+        badge: liveStatusMap.get(normalizeProviderId(provider.id)) ?? (liveStatusLoading ? 'checking' : provider.status),
         duration: provider.estimatedTime,
       })),
       onSelect: handleProviderChange,
@@ -1485,7 +1500,7 @@ export function VisualCanvasWorkspace({
         setPromptRatio(PARAMETER_RATIO_MAP[nextValue])
       },
     },
-  ], [activeProviderLabel, assetLabel, handleProviderChange, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
+  ], [activeProviderLabel, assetLabel, handleProviderChange, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
 
   const handleCreateMenuSelect = useCallback((kind: VisualCanvasNodeKind) => {
     const size = getNodeSize(kind)
@@ -1917,9 +1932,11 @@ export function VisualCanvasWorkspace({
                   ? '未配置'
                   : activeProviderStatus === 'available'
                     ? '生成'
-                    : '模拟生成'
+                    : activeProviderStatus === 'checking'
+                      ? '检查中'
+                      : '模拟生成'
             }
-            estimatedCredits={estimateCreditCost(promptModel, getProviderNodeType(editingNode.kind))}
+            estimatedCredits={estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))}
             footerItems={promptFooterItems}
             inputRef={(element) => {
               promptInputRef.current = element
