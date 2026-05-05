@@ -40,9 +40,20 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  const payments = getChinaPaymentConfigurations()
   return NextResponse.json({
     success: true,
-    payments: getChinaPaymentConfigurations(),
+    providers: {
+      alipay: {
+        status: payments.alipay.configured ? 'configured' : 'not-configured',
+        missing: payments.alipay.missing,
+      },
+      wechatpay: {
+        status: payments.wechatpay.configured ? 'configured' : 'not-configured',
+        missing: payments.wechatpay.missing,
+      },
+    },
+    payments,
     storage: {
       activeProvider: getConfiguredChinaStorageProvider(),
       providers: getChinaStorageConfigurations(),

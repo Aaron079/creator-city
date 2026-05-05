@@ -13,7 +13,6 @@ const REQUIRED = [
   'ALIPAY_APP_ID',
   'ALIPAY_PRIVATE_KEY',
   'ALIPAY_PUBLIC_KEY',
-  'ALIPAY_NOTIFY_URL',
 ] as const
 
 function normalizePrivateKey(value: string) {
