@@ -51,6 +51,8 @@ interface CanvasLoadResponse {
   workflow?: { id: string; viewportJson?: unknown; updatedAt?: string }
   nodes?: VisualCanvasNode[]
   edges?: CanvasEdge[]
+  viewport?: unknown
+  serverUpdatedAt?: string
 }
 
 interface CanvasDraft {
@@ -63,8 +65,33 @@ interface CanvasDraft {
   syncedAt?: string
 }
 
+interface CanvasCache extends CanvasDraft {
+  serverUpdatedAt?: string
+}
+
 function getDraftKey(projectId: string) {
   return `creator-city:draft:${projectId}`
+}
+
+function getCanvasCacheKey(projectId: string) {
+  return `creator-city:canvas-cache:${projectId}`
+}
+
+function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
+  if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
+  const name = `create:${label}`
+  if (mode === 'start') {
+    console.time(name)
+    performance.mark(`${name}:start`)
+    return
+  }
+  if (mode === 'end') {
+    console.timeEnd(name)
+    performance.mark(`${name}:end`)
+    return
+  }
+  performance.mark(name)
+  console.debug(`[perf] ${name}`)
 }
 
 type VisualCanvasNode = CanvasNodeCardNode & {
@@ -427,6 +454,11 @@ export function VisualCanvasWorkspace({
   const canvasLoadedRef = useRef(false)
   const hasHydratedCanvasRef = useRef(false)
   const isInitializingRef = useRef(true)
+  const initStartedRef = useRef('')
+  const initAbortRef = useRef<AbortController | null>(null)
+  const cacheHydratedRef = useRef('')
+  const skipNextAutosaveRef = useRef(false)
+  const providerStatusPerfStartedRef = useRef(false)
   const saveTimerRef = useRef<number | null>(null)
   const deletedNodeIdsRef = useRef<string[]>([])
   const deletedEdgeIdsRef = useRef<string[]>([])
@@ -465,6 +497,16 @@ export function VisualCanvasWorkspace({
     }
   }, [])
 
+  useEffect(() => {
+    if (liveStatusLoading) {
+      providerStatusPerfStartedRef.current = true
+      devPerf('providerStatus', 'start')
+    } else if (providerStatusPerfStartedRef.current) {
+      providerStatusPerfStartedRef.current = false
+      devPerf('providerStatus', 'end')
+    }
+  }, [liveStatusLoading])
+
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
     setNodes((current) => {
       const resolved = typeof next === 'function' ? next(current) : next
@@ -496,6 +538,78 @@ export function VisualCanvasWorkspace({
       return null
     }
   }, [])
+
+  const readCanvasCache = useCallback((id: string): CanvasCache | null => {
+    if (typeof window === 'undefined') return null
+    try {
+      const raw = window.localStorage.getItem(getCanvasCacheKey(id))
+      return raw ? JSON.parse(raw) as CanvasCache : null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const writeCanvasCache = useCallback((args?: {
+    projectId?: string
+    workflowId?: string
+    syncedAt?: string
+    serverUpdatedAt?: string
+    nodes?: VisualCanvasNode[]
+    edges?: CanvasEdge[]
+    viewport?: { zoom: number; pan: { x: number; y: number } }
+  }) => {
+    const targetProjectId = args?.projectId ?? projectId
+    const targetWorkflowId = args?.workflowId ?? workflowId
+    if (typeof window === 'undefined' || !targetProjectId || !targetWorkflowId) return
+    const snapshot = getCanvasSnapshot()
+    const cache: CanvasCache = {
+      projectId: targetProjectId,
+      workflowId: targetWorkflowId,
+      nodes: args?.nodes ?? snapshot.nodes,
+      edges: args?.edges ?? snapshot.edges,
+      viewport: args?.viewport ?? snapshot.viewport,
+      updatedAt: new Date().toISOString(),
+      serverUpdatedAt: args?.serverUpdatedAt,
+      ...(args?.syncedAt ? { syncedAt: args.syncedAt } : {}),
+    }
+    try {
+      window.localStorage.setItem(getCanvasCacheKey(targetProjectId), JSON.stringify(cache))
+    } catch {
+      // Cache is an acceleration layer only.
+    }
+  }, [getCanvasSnapshot, projectId, workflowId])
+
+  const applyCanvasSnapshot = useCallback((args: {
+    projectId: string
+    workflowId: string
+    title?: string
+    nodes: VisualCanvasNode[]
+    edges: CanvasEdge[]
+    viewport?: unknown
+    status?: SaveStatus
+    message?: string
+  }) => {
+    setProjectId(args.projectId)
+    setWorkflowId(args.workflowId)
+    if (args.title) setLoadedProjectTitle(args.title)
+    skipNextAutosaveRef.current = true
+    latestNodesRef.current = args.nodes
+    latestEdgesRef.current = args.edges
+    commitNodes(args.nodes)
+    commitEdges(args.edges)
+    const viewport = args.viewport as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
+    if (viewport?.zoom) setCanvasZoom(Number(viewport.zoom))
+    if (viewport?.pan) setCanvasPan({ x: Number(viewport.pan.x ?? 0), y: Number(viewport.pan.y ?? 0) })
+    if (viewport) {
+      latestViewportRef.current = {
+        zoom: Number(viewport.zoom ?? 1),
+        pan: { x: Number(viewport.pan?.x ?? 0), y: Number(viewport.pan?.y ?? 0) },
+      }
+    }
+    setHasStarted(args.nodes.length > 0)
+    if (args.status) setSaveStatus(args.status)
+    if (args.message !== undefined) setSaveMessage(args.message)
+  }, [commitEdges, commitNodes])
 
   const writeLocalDraft = useCallback((syncedAt?: string) => {
     if (typeof window === 'undefined' || !projectId || !workflowId) return
@@ -549,6 +663,7 @@ export function VisualCanvasWorkspace({
       deletedNodeIdsRef.current = []
       deletedEdgeIdsRef.current = []
       writeLocalDraft(data.savedAt ?? new Date().toISOString())
+      writeCanvasCache({ syncedAt: data.savedAt ?? new Date().toISOString(), serverUpdatedAt: data.savedAt })
       setSaveStatus('saved')
       setSaveMessage('Saved')
     } catch (error) {
@@ -556,7 +671,7 @@ export function VisualCanvasWorkspace({
       setSaveStatus('local-draft')
       setSaveMessage(error instanceof Error ? error.message : '已保存到本地草稿，网络恢复后会继续同步')
     }
-  }, [getCanvasSnapshot, projectId, router, workflowId, writeLocalDraft])
+  }, [getCanvasSnapshot, projectId, router, workflowId, writeCanvasCache, writeLocalDraft])
 
   const scheduleCanvasSave = useCallback((delay = 800) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current) return
@@ -604,7 +719,15 @@ export function VisualCanvasWorkspace({
     let cancelled = false
 
     async function loadOrCreateProject() {
+      devPerf('init:start')
       const nextProjectId = searchParamProjectId
+      const initKey = nextProjectId ? `project:${nextProjectId}` : 'ensure'
+      if (initStartedRef.current === initKey) return
+      initStartedRef.current = initKey
+      initAbortRef.current?.abort()
+      const abortController = new AbortController()
+      initAbortRef.current = abortController
+
       setSaveStatus('opening')
       setSaveMessage('')
       canvasLoadedRef.current = false
@@ -616,34 +739,107 @@ export function VisualCanvasWorkspace({
 
         if (!resolvedProjectId) {
           setSaveMessage('正在打开项目...')
-          const ensureRes = await fetch('/api/projects/ensure', {
+          try {
+            devPerf('lastProject:read')
+            const lastId = window.localStorage.getItem('creator-city:last-project-id')
+            if (lastId) {
+              router.replace(`/create?projectId=${encodeURIComponent(lastId)}`)
+              return
+            }
+          } catch (_) {
+            // localStorage may be unavailable; fall through to server ensure.
+          }
+          devPerf('ensure', 'start')
+          const ensureRes = await fetch('/api/projects/ensure?includeCanvas=1', {
             method: 'POST',
             credentials: 'include',
+            signal: abortController.signal,
           })
+          devPerf('ensure', 'end')
           const ensureData = await ensureRes.json().catch(() => ({})) as {
             success?: boolean; errorCode?: string; message?: string
-            project?: { id: string; title: string }; workflow?: { id: string }
+            project?: { id: string; title: string }; workflow?: { id: string; viewportJson?: unknown; updatedAt?: string }
+            nodes?: VisualCanvasNode[]; edges?: CanvasEdge[]; viewport?: unknown; serverUpdatedAt?: string
           }
           if (ensureRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
           if (ensureData.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
-          if (!ensureRes.ok || !ensureData.project?.id) throw new Error(ensureData.message ?? '打开项目失败。')
+          if (!ensureRes.ok || !ensureData.project?.id || !ensureData.workflow?.id) throw new Error(ensureData.message ?? '打开项目失败。')
           if (cancelled) return
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
           } catch (_) { /* private mode */ }
+          applyCanvasSnapshot({
+            projectId: ensureData.project.id,
+            workflowId: ensureData.workflow.id,
+            title: ensureData.project.title,
+            nodes: (ensureData.nodes ?? []) as VisualCanvasNode[],
+            edges: (ensureData.edges ?? []) as CanvasEdge[],
+            viewport: ensureData.viewport ?? ensureData.workflow.viewportJson,
+            status: 'saved',
+            message: 'Saved',
+          })
+          writeCanvasCache({
+            projectId: ensureData.project.id,
+            workflowId: ensureData.workflow.id,
+            nodes: (ensureData.nodes ?? []) as VisualCanvasNode[],
+            edges: (ensureData.edges ?? []) as CanvasEdge[],
+            viewport: (ensureData.viewport ?? ensureData.workflow.viewportJson) as CanvasCache['viewport'],
+            serverUpdatedAt: ensureData.serverUpdatedAt ?? ensureData.workflow.updatedAt,
+            syncedAt: ensureData.serverUpdatedAt ?? ensureData.workflow.updatedAt,
+          })
+          canvasLoadedRef.current = true
+          hasHydratedCanvasRef.current = true
+          isInitializingRef.current = false
+          initStartedRef.current = `project:${ensureData.project.id}`
           router.replace(`/create?projectId=${encodeURIComponent(ensureData.project.id)}`)
           return
         }
 
-        // ── Step 2: Load canvas for a known projectId ────────────────────
-        const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, { credentials: 'include' })
+        devPerf('cache:hydrate', 'start')
+        const cache = readCanvasCache(resolvedProjectId)
+        if (cache?.workflowId && cache.nodes.length > 0 && cacheHydratedRef.current !== resolvedProjectId) {
+          cacheHydratedRef.current = resolvedProjectId
+          applyCanvasSnapshot({
+            projectId: resolvedProjectId,
+            workflowId: cache.workflowId,
+            nodes: cache.nodes,
+            edges: cache.edges,
+            viewport: cache.viewport,
+            status: 'saved',
+            message: '正在同步...',
+          })
+          canvasLoadedRef.current = true
+          hasHydratedCanvasRef.current = true
+          isInitializingRef.current = false
+          devPerf('firstRender')
+        }
+        devPerf('cache:hydrate', 'end')
+
+        devPerf('canvas', 'start')
+        const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
+          credentials: 'include',
+          signal: abortController.signal,
+        })
+        devPerf('canvas', 'end')
         const data = await response.json().catch(() => ({})) as CanvasLoadResponse
         if (response.status === 401) {
           router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${resolvedProjectId}`)}`)
           return
         }
         if (data.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
+        if (!response.ok && (data.errorCode === 'PROJECT_NOT_FOUND' || data.errorCode === 'FORBIDDEN')) {
+          try {
+            if (window.localStorage.getItem('creator-city:last-project-id') === resolvedProjectId) {
+              window.localStorage.removeItem('creator-city:last-project-id')
+              window.localStorage.removeItem('creator-city:last-workflow-id')
+            }
+          } catch (_) {
+            // Fall through to server ensure through /create.
+          }
+          router.replace('/create')
+          return
+        }
         if (!response.ok) throw new Error(data.message ?? '加载画布失败。')
         if (cancelled) return
 
@@ -655,51 +851,78 @@ export function VisualCanvasWorkspace({
 
         setProjectId(resolvedProjectId)
         setWorkflowId(data.workflow?.id ?? '')
-        setLoadedProjectTitle(data.project?.title ?? projectTitle)
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
         const draft = readLocalDraft(resolvedProjectId)
-        const serverUpdatedAt = data.workflow?.updatedAt ? new Date(data.workflow.updatedAt).getTime() : 0
+        const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
+        const serverUpdatedAt = serverUpdatedAtText ? new Date(serverUpdatedAtText).getTime() : 0
         const draftUpdatedAt = draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0
         const shouldUseDraft = Boolean(draft && draft.nodes.length > 0 && draftUpdatedAt > serverUpdatedAt)
-        const shouldPreserveLocalNodes = serverNodes.length === 0 && latestNodesRef.current.length > 0
+        const shouldPreserveLocalNodes = serverNodes.length === 0 && (cache?.nodes.length ?? latestNodesRef.current.length) > 0
         const nextNodes = shouldUseDraft
           ? draft!.nodes
           : shouldPreserveLocalNodes
-            ? latestNodesRef.current
+            ? (cache?.nodes ?? latestNodesRef.current)
             : serverNodes
         const nextEdges = shouldUseDraft
           ? draft!.edges
           : shouldPreserveLocalNodes
-            ? latestEdgesRef.current
+            ? (cache?.edges ?? latestEdgesRef.current)
             : serverEdges
         if (shouldPreserveLocalNodes) {
-          setSaveMessage('服务端返回空画布，已保留本地草稿')
-          writeLocalDraft()
+          setSaveMessage('已使用本地缓存，服务器同步中')
         }
         if (shouldUseDraft) {
           setSaveMessage('发现本地未同步草稿，已自动恢复')
           setSaveStatus('restored-draft')
         }
-        latestNodesRef.current = nextNodes
-        latestEdgesRef.current = nextEdges
-        commitNodes(nextNodes)
-        commitEdges(nextEdges)
-        const viewport = data.workflow?.viewportJson as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
-        const nextViewport = shouldUseDraft ? draft!.viewport : viewport
-        if (nextViewport?.zoom) setCanvasZoom(nextViewport.zoom)
-        if (nextViewport?.pan) setCanvasPan({ x: Number(nextViewport.pan.x ?? 0), y: Number(nextViewport.pan.y ?? 0) })
-        if (nextViewport) latestViewportRef.current = {
-          zoom: Number(nextViewport.zoom ?? 1),
-          pan: { x: Number(nextViewport.pan?.x ?? 0), y: Number(nextViewport.pan?.y ?? 0) },
-        }
-        setHasStarted(nextNodes.length > 0)
+        const viewport = data.viewport ?? data.workflow?.viewportJson
+        const nextViewport = shouldUseDraft ? draft!.viewport : shouldPreserveLocalNodes ? cache?.viewport ?? viewport : viewport
+        applyCanvasSnapshot({
+          projectId: resolvedProjectId,
+          workflowId: data.workflow?.id ?? cache?.workflowId ?? '',
+          title: data.project?.title ?? projectTitle,
+          nodes: nextNodes,
+          edges: nextEdges,
+          viewport: nextViewport,
+        })
+        writeCanvasCache({
+          projectId: resolvedProjectId,
+          workflowId: data.workflow?.id ?? cache?.workflowId ?? '',
+          nodes: nextNodes,
+          edges: nextEdges,
+          viewport: nextViewport as CanvasCache['viewport'],
+          serverUpdatedAt: serverUpdatedAtText,
+          syncedAt: serverUpdatedAtText,
+        })
         setSaveStatus(shouldUseDraft ? 'restored-draft' : shouldPreserveLocalNodes ? 'local-draft' : 'saved')
         if (!shouldUseDraft && !shouldPreserveLocalNodes) setSaveMessage('Saved')
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
         isInitializingRef.current = false
+        if (shouldPreserveLocalNodes && nextNodes.length > 0) {
+          const restoredWorkflowId = data.workflow?.id ?? cache?.workflowId
+          if (restoredWorkflowId) {
+            window.setTimeout(() => {
+              void fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  workflowId: restoredWorkflowId,
+                  viewport: nextViewport,
+                  nodes: nextNodes,
+                  edges: nextEdges,
+                  deletedNodeIds: [],
+                  deletedEdgeIds: [],
+                }),
+              }).catch(() => {})
+            }, 0)
+          }
+        }
+        devPerf('firstRender')
       } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return
         if (cancelled) return
         setSaveStatus('failed')
         setSaveMessage(error instanceof Error ? error.message : '加载项目失败。')
@@ -710,11 +933,16 @@ export function VisualCanvasWorkspace({
     void loadOrCreateProject()
     return () => {
       cancelled = true
+      initAbortRef.current?.abort()
     }
-  }, [commitEdges, commitNodes, projectTitle, readLocalDraft, router, searchParamProjectId, writeLocalDraft])
+  }, [applyCanvasSnapshot, projectTitle, readCanvasCache, readLocalDraft, router, searchParamProjectId, writeCanvasCache])
 
   useEffect(() => {
     latestViewportRef.current = { zoom: canvasZoom, pan: canvasPan }
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false
+      return
+    }
     if (hasHydratedCanvasRef.current && !isInitializingRef.current) {
       writeLocalDraft()
     }

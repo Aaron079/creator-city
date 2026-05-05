@@ -52,14 +52,6 @@ export interface ProjectAccess {
   source: 'owner' | 'member' | 'none'
 }
 
-function sortRecentProjects(projects: ProjectWithWorkflow[]) {
-  return projects.sort((left, right) => {
-    const leftTime = (left.lastOpenedAt ?? left.updatedAt ?? left.createdAt).getTime()
-    const rightTime = (right.lastOpenedAt ?? right.updatedAt ?? right.createdAt).getTime()
-    return rightTime - leftTime
-  })
-}
-
 function normalizeMembershipWarning(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return `ProjectMember sync skipped: ${message}`
@@ -162,7 +154,7 @@ export async function createProjectForUser(
 export async function ensureActiveProject(user: CurrentUser): Promise<ActiveProjectResult> {
   let membershipWarning: string | undefined
 
-  const ownedProjects = await db.project.findMany({
+  const ownedProject = await db.project.findFirst({
     where: { ownerId: user.id },
     select: {
       ...projectSelect,
@@ -175,44 +167,42 @@ export async function ensureActiveProject(user: CurrentUser): Promise<ActiveProj
     orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }],
   })
 
-  let memberProjects: ProjectWithWorkflow[] = []
-  try {
-    const memberships = await db.projectMember.findMany({
-      where: { userId: user.id, isActive: true, leftAt: null },
-      select: {
-        project: {
-          select: {
-            ...projectSelect,
-            canvasWorkflows: {
-              take: 1,
-              orderBy: { createdAt: 'asc' },
-              select: workflowSelect,
+  let existing: ProjectWithWorkflow | null = ownedProject
+
+  if (!existing) {
+    try {
+      const membership = await db.projectMember.findFirst({
+        where: { userId: user.id, isActive: true, leftAt: null },
+        select: {
+          project: {
+            select: {
+              ...projectSelect,
+              canvasWorkflows: {
+                take: 1,
+                orderBy: { createdAt: 'asc' },
+                select: workflowSelect,
+              },
             },
           },
         },
-      },
-    })
-    memberProjects = memberships.map((item) => item.project)
-  } catch (error) {
-    membershipWarning = normalizeMembershipWarning(error)
-    console.warn('[projects] active membership lookup failed', { userId: user.id, error })
+        orderBy: { joinedAt: 'desc' },
+      })
+      existing = membership?.project ?? null
+    } catch (error) {
+      membershipWarning = normalizeMembershipWarning(error)
+      console.warn('[projects] active membership lookup failed', { userId: user.id, error })
+    }
   }
-
-  const byId = new Map<string, ProjectWithWorkflow>()
-  for (const project of [...ownedProjects, ...memberProjects]) byId.set(project.id, project)
-  const existing = sortRecentProjects([...byId.values()])[0]
 
   if (!existing) return createProjectForUser(user)
 
   const workflow = existing.canvasWorkflows[0] ?? await ensureWorkflow(existing.id)
-  const [, ownerMembershipWarning] = await Promise.all([
-    db.project.update({
-      where: { id: existing.id },
-      data: { lastOpenedAt: new Date() },
-      select: { id: true },
-    }),
-    existing.ownerId === user.id ? ensureOwnerProjectMember(existing.id, user.id) : Promise.resolve(undefined),
-  ])
+  const openedAt = new Date()
+  await db.project.update({
+    where: { id: existing.id },
+    data: { lastOpenedAt: openedAt },
+    select: { id: true },
+  })
 
   return {
     project: {
@@ -225,10 +215,10 @@ export async function ensureActiveProject(user: CurrentUser): Promise<ActiveProj
       ownerId: existing.ownerId,
       createdAt: existing.createdAt,
       updatedAt: existing.updatedAt,
-      lastOpenedAt: new Date(),
+      lastOpenedAt: openedAt,
     },
     workflow,
-    ...(ownerMembershipWarning || membershipWarning ? { membershipWarning: ownerMembershipWarning ?? membershipWarning } : {}),
+    ...(membershipWarning ? { membershipWarning } : {}),
   }
 }
 

@@ -63,6 +63,8 @@ ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp(3) NOT NULL
 CREATE INDEX IF NOT EXISTS "Project_ownerId_idx" ON "Project"("ownerId");
 CREATE INDEX IF NOT EXISTS "Project_updatedAt_idx" ON "Project"("updatedAt");
 CREATE INDEX IF NOT EXISTS "Project_lastOpenedAt_idx" ON "Project"("lastOpenedAt");
+CREATE INDEX IF NOT EXISTS "Project_ownerId_updatedAt_idx" ON "Project"("ownerId", "updatedAt");
+CREATE INDEX IF NOT EXISTS "Project_ownerId_lastOpenedAt_idx" ON "Project"("ownerId", "lastOpenedAt");
 
 CREATE TABLE IF NOT EXISTS "CanvasWorkflow" (
   "id" text primary key DEFAULT gen_random_uuid()::text,
@@ -135,6 +137,7 @@ ALTER TABLE "CanvasNode" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp(3) NOT N
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CanvasNode_workflowId_nodeId_key" ON "CanvasNode"("workflowId", "nodeId");
 CREATE INDEX IF NOT EXISTS "CanvasNode_workflowId_idx" ON "CanvasNode"("workflowId");
+CREATE INDEX IF NOT EXISTS "CanvasNode_workflowId_nodeId_idx" ON "CanvasNode"("workflowId", "nodeId");
 CREATE INDEX IF NOT EXISTS "CanvasNode_kind_idx" ON "CanvasNode"("kind");
 CREATE INDEX IF NOT EXISTS "CanvasNode_status_idx" ON "CanvasNode"("status");
 
@@ -161,6 +164,7 @@ ALTER TABLE "CanvasEdge" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp(3) NOT N
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CanvasEdge_workflowId_edgeId_key" ON "CanvasEdge"("workflowId", "edgeId");
 CREATE INDEX IF NOT EXISTS "CanvasEdge_workflowId_idx" ON "CanvasEdge"("workflowId");
+CREATE INDEX IF NOT EXISTS "CanvasEdge_workflowId_edgeId_idx" ON "CanvasEdge"("workflowId", "edgeId");
 CREATE INDEX IF NOT EXISTS "CanvasEdge_sourceNodeId_idx" ON "CanvasEdge"("sourceNodeId");
 CREATE INDEX IF NOT EXISTS "CanvasEdge_targetNodeId_idx" ON "CanvasEdge"("targetNodeId");
 

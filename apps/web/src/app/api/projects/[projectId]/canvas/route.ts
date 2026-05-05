@@ -7,7 +7,7 @@ import {
   isProjectCanvasSchemaMissing,
   projectJsonError,
 } from '@/lib/projects/api-errors'
-import { mapCanvasEdge, mapCanvasNode, serializeAsset } from '@/lib/projects/canvas-mappers'
+import { mapCanvasEdge, mapCanvasNode } from '@/lib/projects/canvas-mappers'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
@@ -65,6 +65,7 @@ async function requireProjectAccess(projectId: string, userId: string, write = f
     },
   })
   if (!project) return null
+  if (project.ownerId === userId) return project
   const access = await getProjectAccess(userId, projectId)
   if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
   return project
@@ -95,27 +96,63 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
     const workflow = await ensureWorkflow(params.projectId)
-    const [nodes, edges, assets] = await Promise.all([
-      db.canvasNode.findMany({ where: { workflowId: workflow.id }, orderBy: { createdAt: 'asc' } }),
-      db.canvasEdge.findMany({ where: { workflowId: workflow.id }, orderBy: { createdAt: 'asc' } }),
-      db.asset.findMany({
-        where: { ownerId: user.id, OR: [{ projectId: project.id }, { workflowId: workflow.id }] },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
+    const [nodes, edges] = await Promise.all([
+      db.canvasNode.findMany({
+        where: { workflowId: workflow.id },
+        orderBy: [{ createdAt: 'asc' }, { nodeId: 'asc' }],
+        select: {
+          id: true,
+          nodeId: true,
+          kind: true,
+          title: true,
+          providerId: true,
+          status: true,
+          x: true,
+          y: true,
+          width: true,
+          height: true,
+          prompt: true,
+          resultText: true,
+          resultImageUrl: true,
+          resultVideoUrl: true,
+          resultAudioUrl: true,
+          resultPreview: true,
+          errorMessage: true,
+          paramsJson: true,
+          metadataJson: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      db.canvasEdge.findMany({
+        where: { workflowId: workflow.id },
+        orderBy: [{ createdAt: 'asc' }, { edgeId: 'asc' }],
+        select: {
+          id: true,
+          edgeId: true,
+          sourceNodeId: true,
+          targetNodeId: true,
+          type: true,
+          metadataJson: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
     ])
 
-    await db.project.update({
+    void db.project.update({
       where: { id: project.id },
       data: { lastOpenedAt: new Date() },
-    })
+    }).catch((error) => console.warn('[projects] failed to touch lastOpenedAt', { projectId: project.id, error }))
 
     return NextResponse.json({
       project,
       workflow,
       nodes: nodes.map(mapCanvasNode),
       edges: edges.map(mapCanvasEdge),
-      assets: assets.map(serializeAsset),
+      assets: [],
+      viewport: workflow.viewportJson,
+      serverUpdatedAt: workflow.updatedAt,
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
