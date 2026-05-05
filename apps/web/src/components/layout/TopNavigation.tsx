@@ -27,6 +27,7 @@ import { clientLogout } from '@/lib/auth/client'
 const LINKS = [
   { href: '/', label: '首页' },
   { href: '/create', label: 'AI 画布' },
+  { href: '/projects?new=1', label: '新建项目' },
   { href: '/templates', label: '模板库' },
   { href: '/projects', label: '工作空间' },
   { href: '/explore', label: '探索' },

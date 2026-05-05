@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
 import { DashboardShell } from '@/components/layout/DashboardShell'
@@ -31,6 +32,7 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildLicenseRecords } from '@/lib/licensing/aggregate'
 import { ProducerDashboard } from '@/components/dashboard/ProducerDashboard'
+import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import { RoleViewSwitcher } from '@/components/roles/RoleViewSwitcher'
 import { canEnterDashboard, getProjectAccessState } from '@/lib/roles/access'
 import { getActionTarget, getMeHref } from '@/lib/routing/actions'
@@ -100,6 +102,7 @@ export default function DashboardPage() {
     currentProjectId: null as string | null,
     currentProjectTitle: null as string | null,
   })
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
@@ -452,13 +455,28 @@ export default function DashboardPage() {
                 Owned Projects {projectSummary.ownedProjectsCount} · Active Memberships {projectSummary.activeMembershipsCount} · Current {projectSummary.currentProjectTitle ?? projectSummary.currentProjectId ?? 'none'}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => { void openActiveProject() }}
-              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
-            >
-              Open Project
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { void openActiveProject() }}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+              >
+                打开最近项目
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewProjectOpen(true)}
+                className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1]"
+              >
+                新建项目
+              </button>
+              <Link
+                href="/projects"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white/70 transition hover:border-white/20 hover:text-white"
+              >
+                我的项目
+              </Link>
+            </div>
           </div>
         </div>
         <RoleViewSwitcher
@@ -490,7 +508,7 @@ export default function DashboardPage() {
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}
           actionHref={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
-            ? '/create'
+            ? '/projects?new=1'
             : dashboardFallbackAction.actionHref}
           actionLabel={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
             ? '创建项目'
@@ -544,6 +562,11 @@ export default function DashboardPage() {
           role={dashboardRole}
         />
       )}
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        source="dashboard"
+      />
     </DashboardShell>
   )
 }

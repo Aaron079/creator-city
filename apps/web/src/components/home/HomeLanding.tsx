@@ -38,6 +38,18 @@ export function HomeLanding() {
     router.push(href)
   }, [router])
 
+  const handleOpenProject = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+    let href = '/projects'
+    try {
+      const lastId = window.localStorage.getItem('creator-city:last-project-id')
+      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
+    } catch {
+      // Fall back to the project list when localStorage is unavailable.
+    }
+    router.push(href)
+  }, [router])
+
   return (
     <main className="mx-auto max-w-7xl px-6 pb-16 pt-24">
       <section className="relative overflow-hidden rounded-[36px] border border-white/10 bg-white/[0.03] p-7 backdrop-blur-[28px] md:p-9">
@@ -64,9 +76,16 @@ export function HomeLanding() {
               </Link>
               <Link
                 href="/projects"
+                onClick={handleOpenProject}
                 className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
               >
-                查看项目
+                打开项目
+              </Link>
+              <Link
+                href="/projects?new=1"
+                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
+              >
+                新建项目
               </Link>
               <Link
                 href="/explore"

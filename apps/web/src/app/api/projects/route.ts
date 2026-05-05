@@ -121,15 +121,33 @@ export async function GET() {
   }
 }
 
+type ProjectCreateBody = {
+  title?: string
+  description?: string
+  templateId?: string
+  projectType?: 'blank' | 'video' | 'image' | 'text' | 'template'
+  source?: 'projects' | 'home' | 'dashboard' | 'create'
+}
+
+const PROJECT_TYPES = new Set(['blank', 'video', 'image', 'text', 'template'])
+const PROJECT_SOURCES = new Set(['projects', 'home', 'dashboard', 'create'])
+
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
-  let body: { title?: string; description?: string } = {}
+  let body: ProjectCreateBody = {}
   try {
     body = await request.json() as typeof body
   } catch {
     body = {}
+  }
+
+  if (body.projectType && !PROJECT_TYPES.has(body.projectType)) {
+    return projectJsonError('VALIDATION_FAILED', '项目类型无效。', 400)
+  }
+  if (body.source && !PROJECT_SOURCES.has(body.source)) {
+    return projectJsonError('VALIDATION_FAILED', '项目来源无效。', 400)
   }
 
   const title = body.title?.trim() || 'Untitled Project'
@@ -138,14 +156,21 @@ export async function POST(request: NextRequest) {
     const result = await createProjectForUser(user, {
       title,
       description: body.description,
+      projectType: body.projectType,
+      templateId: body.templateId,
+      source: body.source,
     })
 
-    return NextResponse.json({ success: true, ...result }, { status: 201 })
+    return NextResponse.json({
+      success: true,
+      ...result,
+      redirectTo: `/create?projectId=${encodeURIComponent(result.project.id)}`,
+    }, { status: 201 })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     console.error('[projects] failed to create project', error)
-    return NextResponse.json({ message: '创建项目失败。' }, { status: 500 })
+    return projectJsonError('CREATE_PROJECT_FAILED', '创建项目失败。', 500)
   }
 }

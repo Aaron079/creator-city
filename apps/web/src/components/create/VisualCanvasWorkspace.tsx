@@ -12,6 +12,7 @@ import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { WorkspaceAssetsPanel } from '@/components/create/WorkspaceAssetsPanel'
+import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
   getPublicTemplateById,
   type PublicTemplate,
@@ -425,6 +426,7 @@ export function VisualCanvasWorkspace({
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
   const [hasStarted, setHasStarted] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
@@ -2313,6 +2315,17 @@ export function VisualCanvasWorkspace({
     timersRef.current.push(timer)
   }, [])
 
+  const handleBeforeNewProject = useCallback(async () => {
+    const confirmed = window.confirm('当前画布会先保存，然后创建新项目。')
+    if (!confirmed) return false
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    await saveCanvas()
+    return true
+  }, [saveCanvas])
+
   const handleOpenClientDelivery = useCallback(() => {
     const projectId = new URLSearchParams(window.location.search).get('projectId') ?? undefined
     window.location.assign(getClientDeliveryHref(projectId))
@@ -2394,6 +2407,21 @@ export function VisualCanvasWorkspace({
                         ? 'Save failed'
                         : 'Saved'}
           </button>
+          <button
+            type="button"
+            onClick={() => setNewProjectOpen(true)}
+            className="canvas-secondary-button"
+            title="新建项目"
+            aria-label="新建项目"
+            data-tooltip="新建项目"
+          >
+            新建项目
+            <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
+          </button>
+          <a href="/projects" className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表">
+            项目
+            <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
+          </a>
           <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
             社区
             <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
@@ -2422,6 +2450,13 @@ export function VisualCanvasWorkspace({
           </button>
         </div>
       </div>
+
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        source="create"
+        beforeCreate={handleBeforeNewProject}
+      />
 
       {saveStatus === 'opening' ? (
         <div className="canvas-empty-overlay">

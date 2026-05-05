@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import { useAuthStore } from '@/store/auth.store'
 
 interface ProjectListItem {
@@ -27,7 +28,7 @@ export default function ProjectsPage() {
   const user = useAuthStore((s) => s.user)
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -62,33 +63,12 @@ export default function ProjectsPage() {
     }
   }, [router, user])
 
-  async function handleCreateProject() {
-    setCreating(true)
-    setMessage('')
-    try {
-      const response = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled Project' }),
-      })
-      const data = await response.json().catch(() => ({})) as { project?: { id: string }; message?: string }
-      if (response.status === 401) {
-        router.replace('/auth/login?next=/projects')
-        return
-      }
-      if (!response.ok || !data.project?.id) throw new Error(data.message ?? '创建项目失败。')
-      try {
-        window.localStorage.setItem('creator-city:last-project-id', data.project.id)
-      } catch {
-        // /create will still open the active project.
-      }
-      router.push(`/create?projectId=${encodeURIComponent(data.project.id)}`)
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '创建项目失败。')
-      setCreating(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      setNewProjectOpen(true)
     }
-  }
+  }, [])
 
   return (
     <DashboardShell>
@@ -100,11 +80,10 @@ export default function ProjectsPage() {
           </div>
           <button
             type="button"
-            onClick={() => { void handleCreateProject() }}
-            disabled={creating}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => setNewProjectOpen(true)}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
           >
-            {creating ? '创建中...' : '新建项目'}
+            新建项目
           </button>
         </div>
 
@@ -122,6 +101,13 @@ export default function ProjectsPage() {
           <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-12 text-center">
             <div className="text-base font-semibold text-white">还没有项目</div>
             <p className="mt-2 text-sm text-white/45">创建第一个项目后，画布节点、连线和生成结果会随项目保存。</p>
+            <button
+              type="button"
+              onClick={() => setNewProjectOpen(true)}
+              className="mt-5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+            >
+              新建项目
+            </button>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -154,6 +140,11 @@ export default function ProjectsPage() {
             ))}
           </div>
         )}
+        <NewProjectDialog
+          open={newProjectOpen}
+          onOpenChange={setNewProjectOpen}
+          source="projects"
+        />
       </div>
     </DashboardShell>
   )

@@ -7,6 +7,7 @@ export type ProjectApiErrorCode =
   | 'DB_SCHEMA_MISSING'
   | 'VALIDATION_FAILED'
   | 'PROJECT_ACCESS_FAILED'
+  | 'CREATE_PROJECT_FAILED'
 
 export const PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE = 'Project / Canvas 数据表未同步，请在 Supabase 执行 project-canvas-setup.sql'
 

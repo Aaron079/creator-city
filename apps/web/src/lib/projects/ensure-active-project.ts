@@ -115,7 +115,13 @@ async function ensureWorkflow(projectId: string) {
 
 export async function createProjectForUser(
   user: CurrentUser,
-  input: { title?: string; description?: string } = {},
+  input: {
+    title?: string
+    description?: string
+    projectType?: 'blank' | 'video' | 'image' | 'text' | 'template'
+    templateId?: string
+    source?: 'projects' | 'home' | 'dashboard' | 'create'
+  } = {},
 ): Promise<ActiveProjectResult> {
   const now = new Date()
   const title = input.title?.trim() || 'Untitled Project'
