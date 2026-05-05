@@ -146,6 +146,25 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     return projectJsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
   }
 
+  // Refuse to overwrite existing nodes with an empty list unless the client
+  // explicitly passes deletedNodeIds (meaning it intentionally deleted them).
+  const isEmptyWrite = body.nodes.length === 0 && (!body.deletedNodeIds || body.deletedNodeIds.length === 0)
+  if (isEmptyWrite) {
+    // Peek at the existing node count; if nodes already exist, skip this save
+    let existingCount = 0
+    try {
+      const wf = body.workflowId
+        ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: { id: true } })
+        : await db.canvasWorkflow.findFirst({ where: { projectId: params.projectId }, select: { id: true } })
+      if (wf) {
+        existingCount = await db.canvasNode.count({ where: { workflowId: wf.id } })
+      }
+    } catch { /* non-fatal */ }
+    if (existingCount > 0) {
+      return NextResponse.json({ ok: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
+    }
+  }
+
   try {
     const project = await requireOwnedProject(params.projectId, user.id)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)

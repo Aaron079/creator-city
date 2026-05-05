@@ -1,7 +1,8 @@
 'use client'
 
+import React from 'react'
 import Link from 'next/link'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
@@ -116,6 +117,17 @@ export function TopNavigation() {
     router.push('/')
   }
 
+  // Navigate to last-opened canvas project, or fall back to /create (which auto-resolves)
+  const handleCreateClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    let href = '/create'
+    try {
+      const lastId = window.localStorage.getItem('creator-city:last-project-id')
+      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
+    } catch (_) { /* private mode — fall back to /create */ }
+    router.push(href)
+  }, [router])
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
@@ -126,16 +138,19 @@ export function TopNavigation() {
           <nav className="hidden items-center gap-0.5 md:flex">
             {LINKS.map((link) => {
               const active = pathname === link.href || pathname.startsWith(`${link.href}/`)
+              const navClass = `rounded-xl px-2.5 py-1.5 text-[12px] transition ${
+                active ? 'bg-white/[0.08] text-white' : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
+              }`
+              // The canvas link reads localStorage to reopen the last project directly
+              if (link.href === '/create') {
+                return (
+                  <a key={link.href} href="/create" onClick={handleCreateClick} className={navClass}>
+                    {link.label}
+                  </a>
+                )
+              }
               return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`rounded-xl px-2.5 py-1.5 text-[12px] transition ${
-                    active
-                      ? 'bg-white/[0.08] text-white'
-                      : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
-                  }`}
-                >
+                <Link key={link.href} href={link.href} className={navClass}>
                   {link.label}
                 </Link>
               )
