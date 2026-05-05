@@ -20,6 +20,24 @@ export async function fulfillChinaPaymentOrder(input: {
 
   const wallet = await getOrCreateWallet(order.userId)
   const result = await db.$transaction(async (tx) => {
+    const claimed = await tx.paymentOrder.updateMany({
+      where: { id: order.id, status: PaymentOrderStatus.PENDING },
+      data: {
+        status: PaymentOrderStatus.PAID,
+        paidAt: new Date(),
+        issuedAt: new Date(),
+        externalPaymentId: input.transactionId ?? order.externalPaymentId,
+        rawNotifyJson: input.rawNotifyJson === undefined
+          ? undefined
+          : input.rawNotifyJson as Prisma.InputJsonValue,
+      },
+    })
+    if (claimed.count === 0) {
+      const latest = await tx.paymentOrder.findUnique({ where: { id: order.id } })
+      if (latest?.status === PaymentOrderStatus.PAID) return { order: latest, alreadyPaid: true }
+      throw new Error(`支付订单状态不可入账：${latest?.status ?? 'UNKNOWN'}`)
+    }
+
     const updatedWallet = await tx.userCreditWallet.update({
       where: { id: wallet.id },
       data: {
@@ -44,18 +62,7 @@ export async function fulfillChinaPaymentOrder(input: {
       },
     })
 
-    const paidOrder = await tx.paymentOrder.update({
-      where: { id: order.id },
-      data: {
-        status: PaymentOrderStatus.PAID,
-        paidAt: new Date(),
-        issuedAt: new Date(),
-        externalPaymentId: input.transactionId ?? order.externalPaymentId,
-        rawNotifyJson: input.rawNotifyJson === undefined
-          ? undefined
-          : input.rawNotifyJson as Prisma.InputJsonValue,
-      },
-    })
+    const paidOrder = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } })
 
     return { order: paidOrder, alreadyPaid: false }
   })

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
-import type { UserWallet, CreditLedgerEntry } from '@/lib/billing/types'
+import type { UserWallet, CreditLedgerEntry, CreditPackage } from '@/lib/billing/types'
 
 interface ManualOrder {
   id: string
@@ -17,6 +17,7 @@ interface ManualOrder {
 export default function AccountCreditsPage() {
   const [wallet, setWallet] = useState<UserWallet | null>(null)
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
+  const [packages, setPackages] = useState<CreditPackage[]>([])
   const [pendingOrders, setPendingOrders] = useState<ManualOrder[]>([])
   const [authError, setAuthError] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -25,6 +26,7 @@ export default function AccountCreditsPage() {
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [payingPackageId, setPayingPackageId] = useState<string | null>(null)
   const [submitMsg, setSubmitMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   async function load() {
@@ -38,6 +40,11 @@ export default function AccountCreditsPage() {
       const d = await ledgerRes.json() as { items: CreditLedgerEntry[] }
       setLedger(d.items)
     }
+    const packagesRes = await fetch('/api/credits/packages', { credentials: 'include' })
+    if (packagesRes.ok) {
+      const d = await packagesRes.json() as { packages: CreditPackage[] }
+      setPackages(d.packages.filter((pkg) => pkg.isActive))
+    }
     // fetch user's own pending orders — 403 is fine (non-admin path)
     const ordersRes = await fetch('/api/credits/my-orders?status=PENDING', { credentials: 'include' })
     if (ordersRes.ok) {
@@ -47,7 +54,81 @@ export default function AccountCreditsPage() {
     setLoading(false)
   }
 
+  async function handleAlipayRecharge(packageId: string) {
+    if (payingPackageId) return
+    setPayingPackageId(packageId)
+    setSubmitMsg(null)
+    try {
+      const res = await fetch('/api/payment/china/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ provider: 'alipay', packageId, clientType: 'pc' }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        formHtml?: string
+        paymentUrl?: string
+        message?: string
+      }
+      if (!res.ok) throw new Error(data.message ?? '创建支付宝订单失败')
+      if (data.formHtml) {
+        const holder = document.createElement('div')
+        holder.style.display = 'none'
+        holder.innerHTML = data.formHtml
+        const form = holder.querySelector('form')
+        if (!form) throw new Error('支付宝支付表单无效')
+        document.body.appendChild(holder)
+        form.submit()
+        return
+      }
+      if (data.paymentUrl) {
+        window.location.assign(data.paymentUrl)
+        return
+      }
+      throw new Error('支付宝未返回可用支付表单')
+    } catch (error) {
+      setSubmitMsg({ ok: false, text: error instanceof Error ? error.message : '支付宝充值失败' })
+      setPayingPackageId(null)
+    }
+  }
+
   useEffect(() => { void load() }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const outTradeNo = new URLSearchParams(window.location.search).get('outTradeNo')
+    if (!outTradeNo) return
+    const tradeNo = outTradeNo
+
+    let cancelled = false
+    let attempts = 0
+    async function pollPaymentStatus() {
+      attempts += 1
+      try {
+        const res = await fetch(`/api/payment/china/status?outTradeNo=${encodeURIComponent(tradeNo)}`, { credentials: 'include' })
+        const data = await res.json().catch(() => ({})) as { status?: string; message?: string }
+        if (cancelled) return
+        if (data.status === 'PAID') {
+          setSubmitMsg({ ok: true, text: '支付宝支付已确认，积分已到账。' })
+          void load()
+          return
+        }
+        if (data.status === 'FAILED' || data.status === 'CANCELLED') {
+          setSubmitMsg({ ok: false, text: data.message ?? '支付宝支付未完成。' })
+          return
+        }
+      } catch {
+        // Keep polling briefly; the webhook may arrive after the return redirect.
+      }
+      if (!cancelled && attempts < 20) {
+        window.setTimeout(() => { void pollPaymentStatus() }, 3000)
+      }
+    }
+
+    setSubmitMsg({ ok: true, text: '正在确认支付宝支付结果...' })
+    void pollPaymentStatus()
+    return () => { cancelled = true }
+  }, [])
 
   async function handleRecharge(e: React.FormEvent) {
     e.preventDefault()
@@ -94,6 +175,46 @@ export default function AccountCreditsPage() {
         </div>
 
         <WalletBalanceCard wallet={wallet} />
+
+        {/* Alipay recharge */}
+        <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-white">支付宝充值</h2>
+              <p className="mt-1 text-sm text-white/45">电脑网站支付成功后，系统会通过支付宝回调自动发放积分。</p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {packages.map((pkg) => {
+              const price = pkg.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')
+              if (!price) return null
+              const credits = pkg.credits + pkg.bonusCredits
+              return (
+                <button
+                  key={pkg.id}
+                  type="button"
+                  onClick={() => { void handleAlipayRecharge(pkg.id) }}
+                  disabled={Boolean(payingPackageId)}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{pkg.name}</div>
+                      <div className="mt-1 text-xs text-white/45">{credits.toLocaleString()} 积分</div>
+                    </div>
+                    <div className="text-sm font-semibold text-emerald-200">
+                      ¥{(price.amount / 100).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-white/38">
+                    {payingPackageId === pkg.id ? '正在打开支付宝...' : '支付宝支付'}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          {packages.length === 0 ? <p className="text-sm text-white/40">暂无可用积分套餐。</p> : null}
+        </section>
 
         {/* Pending recharge orders */}
         {pendingOrders.length > 0 && (

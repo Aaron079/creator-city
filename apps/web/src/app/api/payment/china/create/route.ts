@@ -29,8 +29,8 @@ function getNotifyUrl(provider: ChinaPaymentProvider, appUrl: string) {
   return process.env.WECHAT_PAY_NOTIFY_URL || `${appUrl}/api/payment/china/webhook/wechatpay`
 }
 
-function getReturnUrl(provider: ChinaPaymentProvider, appUrl: string) {
-  if (provider === 'alipay') return process.env.ALIPAY_RETURN_URL || `${appUrl}/billing/success`
+function getReturnUrl(provider: ChinaPaymentProvider, appUrl: string, outTradeNo: string) {
+  if (provider === 'alipay') return process.env.ALIPAY_RETURN_URL || `${appUrl}/account/credits?outTradeNo=${encodeURIComponent(outTradeNo)}`
   return `${appUrl}/billing/success`
 }
 
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       amountCnyFen: price.amount,
       userId: user.id,
       notifyUrl: getNotifyUrl(body.provider, appUrl),
-      returnUrl: getReturnUrl(body.provider, appUrl),
+      returnUrl: getReturnUrl(body.provider, appUrl, outTradeNo),
       clientType: body.clientType ?? (body.provider === 'wechatpay' ? 'pc' : 'pc'),
     })
 
