@@ -1,136 +1,142 @@
 'use client'
 
-import { useMemo } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
-import { QuickActionsCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
-import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
-import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
-import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
-import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
-import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
-import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
-import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
-import { useDeliveryPackageStore } from '@/store/delivery-package.store'
-import { useNotificationsStore } from '@/store/notifications.store'
-import { useProfileStore } from '@/store/profile.store'
-import { useProjectRoleStore } from '@/store/project-role.store'
-import { useTaskStore } from '@/store/task.store'
-import { useTeamStore } from '@/store/team.store'
-import { useDirectorNotesStore } from '@/store/director-notes.store'
-import { useJobsStore } from '@/store/jobs.store'
-import { useOrderStore } from '@/store/order.store'
-import { useVersionHistoryStore } from '@/store/version-history.store'
+
+interface ProjectListItem {
+  id: string
+  title: string
+  description: string
+  status: string
+  visibility: string
+  thumbnailUrl: string | null
+  createdAt: string
+  updatedAt: string
+  lastOpenedAt: string | null
+}
 
 export default function ProjectsPage() {
-  const authUser = useAuthStore((s) => s.user)
-  const currentProfileId = useProfileStore((s) => s.currentUserId)
-  const approvals = useApprovalStore((s) => s.approvals)
-  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
-  const notifications = useNotificationsStore((s) => s.items)
-  const assignments = useProjectRoleStore((s) => s.assignments)
-  const tasks = useTaskStore((s) => s.tasks)
-  const teams = useTeamStore((s) => s.teams)
-  const invitations = useTeamStore((s) => s.invitations)
-  const notes = useDirectorNotesStore((s) => s.notes)
-  const jobs = useJobsStore((s) => s.jobs)
-  const orders = useOrderStore((s) => s.orders)
-  const versions = useVersionHistoryStore((s) => s.versions)
-  const approvalGates = useApprovalStore((s) => s.gates)
+  const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const [projects, setProjects] = useState<ProjectListItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [message, setMessage] = useState('')
 
-  const currentUserId = authUser?.id ?? currentProfileId ?? 'user-me'
-  const profileId = currentProfileId ?? currentUserId
+  useEffect(() => {
+    if (!user) {
+      router.replace('/auth/login?next=/projects')
+      return
+    }
 
-  const dashboard = useMemo(
-    () => aggregateProducerDashboard({
-      teams,
-      approvals,
-      approvalGates,
-      notes,
-      tasks,
-      orders,
-      jobs,
-      deliveryPackages,
-      versions,
-    }),
-    [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions],
-  )
+    let cancelled = false
+    async function loadProjects() {
+      setLoading(true)
+      setMessage('')
+      try {
+        const response = await fetch('/api/projects', { credentials: 'include' })
+        const data = await response.json().catch(() => ({})) as { projects?: ProjectListItem[]; message?: string; errorCode?: string }
+        if (response.status === 401) {
+          router.replace('/auth/login?next=/projects')
+          return
+        }
+        if (!response.ok) throw new Error(data.message ?? '加载项目失败。')
+        if (!cancelled) setProjects(data.projects ?? [])
+      } catch (error) {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : '加载项目失败。')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
 
-  const workQueue = useMemo(
-    () => buildPersonalWorkQueue({
-      userId: currentUserId,
-      profileId,
-      invitations,
-      assignments,
-      tasks,
-      teams,
-      approvals,
-      deliveryPackages,
-      notifications,
-    }),
-    [approvals, assignments, currentUserId, deliveryPackages, invitations, notifications, profileId, tasks, teams],
-  )
+    void loadProjects()
+    return () => {
+      cancelled = true
+    }
+  }, [router, user])
 
-  const portfolio = useMemo(
-    () => buildWorkspacePortfolio({
-      userId: currentUserId,
-      profileId,
-      assignments,
-      teams,
-      invitations,
-      dashboard,
-      workQueue,
-      notifications,
-      deliveryPackages,
-      approvals,
-    }),
-    [approvals, assignments, currentUserId, dashboard, deliveryPackages, invitations, notifications, profileId, teams, workQueue],
-  )
-  const entryData = useMemo(
-    () => buildCrossProjectEntryData({
-      portfolio,
-      queue: workQueue,
-      invitationCount: workQueue.summary.invitationCount,
-    }),
-    [portfolio, workQueue],
-  )
+  async function handleCreateProject() {
+    setCreating(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: 'Untitled Project' }),
+      })
+      const data = await response.json().catch(() => ({})) as { project?: { id: string }; message?: string }
+      if (response.status === 401) {
+        router.replace('/auth/login?next=/projects')
+        return
+      }
+      if (!response.ok || !data.project?.id) throw new Error(data.message ?? '创建项目失败。')
+      router.push(`/create?projectId=${encodeURIComponent(data.project.id)}`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '创建项目失败。')
+      setCreating(false)
+    }
+  }
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Projects</h1>
-            <p className="mt-1 text-gray-400">Your productions and collaborations.</p>
+            <h1 className="text-2xl font-bold text-white">Projects</h1>
+            <p className="mt-1 text-sm text-white/45">真实保存的 Creator City 项目和画布工作流。</p>
           </div>
+          <button
+            type="button"
+            onClick={() => { void handleCreateProject() }}
+            disabled={creating}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {creating ? '创建中...' : '新建项目'}
+          </button>
         </div>
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <StatusSummaryCard
-            title="Status Summary"
-            subtitle="Projects / Me / Project Home 统一用这套入口指标。"
-            metrics={entryData.statusMetrics}
-          />
-          <QuickActionsCard
-            title="Quick Actions"
-            subtitle="跨项目也用同一套动作卡表达常用入口。"
-            actions={entryData.quickActions}
-          />
-        </div>
-        <RiskOrWaitingCard
-          title="Risk / Waiting"
-          subtitle="先看当前最值得切换去处理的项目。"
-          items={entryData.waitingItems}
-        />
-        <WorkspaceSwitcher
-          recentProjects={portfolio.recentProjects}
-          highPriorityProjects={portfolio.highPriorityProjects}
-          waitingProjects={portfolio.waitingProjects}
-        />
-        <UserProjectPortfolio
-          data={portfolio}
-          title="My Projects / My Portfolio"
-          subtitle="这里按你在每个项目中的角色给出不同摘要，并把最常用的跨项目入口统一收口。"
-        />
+
+        {message ? (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+            {message}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-10 text-center text-sm text-white/45">
+            加载项目中...
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-12 text-center">
+            <div className="text-base font-semibold text-white">还没有项目</div>
+            <p className="mt-2 text-sm text-white/45">创建第一个项目后，画布节点、连线和生成结果会随项目保存。</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {projects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/create?projectId=${encodeURIComponent(project.id)}`}
+                className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-4 transition hover:border-white/20 hover:bg-white/[0.06]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-semibold text-white">{project.title || 'Untitled Project'}</div>
+                    <div className="mt-1 text-xs text-white/40">
+                      {project.description || 'Main Canvas'} · {project.visibility} · {project.status}
+                    </div>
+                  </div>
+                  <div className="text-xs text-white/40">
+                    {new Date(project.lastOpenedAt ?? project.updatedAt).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </DashboardShell>
   )

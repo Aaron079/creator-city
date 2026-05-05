@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { CanvasNodeCard, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -39,6 +39,17 @@ interface VisualCanvasWorkspaceProps {
   onOpenAssets: () => void
   onOpenDelivery: () => void
   onShowStartup: () => void
+}
+
+type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'failed'
+
+interface CanvasLoadResponse {
+  errorCode?: string
+  message?: string
+  project?: { id: string; title: string }
+  workflow?: { id: string; viewportJson?: unknown }
+  nodes?: VisualCanvasNode[]
+  edges?: CanvasEdge[]
 }
 
 type VisualCanvasNode = CanvasNodeCardNode & {
@@ -347,9 +358,16 @@ export function VisualCanvasWorkspace({
   onOpenDelivery: _onOpenDelivery,
   onShowStartup,
 }: VisualCanvasWorkspaceProps) {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const searchParamTemplateId = searchParams.get('template')
+  const searchParamProjectId = searchParams.get('projectId')
   const { statusMap: liveStatusMap, isLoading: liveStatusLoading } = useProviderLiveStatus()
+  const [projectId, setProjectId] = useState(searchParamProjectId ?? '')
+  const [workflowId, setWorkflowId] = useState('')
+  const [loadedProjectTitle, setLoadedProjectTitle] = useState(projectTitle)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading')
+  const [saveMessage, setSaveMessage] = useState('')
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -391,6 +409,10 @@ export function VisualCanvasWorkspace({
   const timersRef = useRef<number[]>([])
   const [dialogError, setDialogError] = useState<string | null>(null)
   const initialTemplateAppliedRef = useRef('')
+  const canvasLoadedRef = useRef(false)
+  const saveTimerRef = useRef<number | null>(null)
+  const deletedNodeIdsRef = useRef<string[]>([])
+  const deletedEdgeIdsRef = useRef<string[]>([])
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -419,8 +441,166 @@ export function VisualCanvasWorkspace({
     const timers = timersRef.current
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer))
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     }
   }, [])
+
+  const saveCanvas = useCallback(async (
+    nextNodes = nodes,
+    nextEdges = edges,
+    nextViewport = { zoom: canvasZoom, pan: canvasPan },
+  ) => {
+    if (!projectId || !workflowId || !canvasLoadedRef.current) return
+    setSaveStatus('saving')
+    setSaveMessage('')
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          workflowId,
+          viewport: nextViewport,
+          nodes: nextNodes,
+          edges: nextEdges,
+          deletedNodeIds: deletedNodeIdsRef.current,
+          deletedEdgeIds: deletedEdgeIdsRef.current,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as { errorCode?: string; message?: string }
+      if (response.status === 401) {
+        router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${projectId}`)}`)
+        return
+      }
+      if (!response.ok) throw new Error(data.message ?? '保存画布失败。')
+      deletedNodeIdsRef.current = []
+      deletedEdgeIdsRef.current = []
+      setSaveStatus('saved')
+      setSaveMessage('Saved')
+    } catch (error) {
+      setSaveStatus('failed')
+      setSaveMessage(error instanceof Error ? error.message : 'Save failed')
+    }
+  }, [canvasPan, canvasZoom, edges, nodes, projectId, router, workflowId])
+
+  const scheduleCanvasSave = useCallback((delay = 800) => {
+    if (!projectId || !workflowId || !canvasLoadedRef.current) return
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    setSaveStatus('saving')
+    saveTimerRef.current = window.setTimeout(() => {
+      void saveCanvas()
+    }, delay)
+  }, [projectId, saveCanvas, workflowId])
+
+  const createGeneratedAsset = useCallback(async (args: {
+    nodeId: string
+    type: 'text' | 'image' | 'video' | 'audio'
+    title: string
+    url?: string
+    dataUrl?: string
+    providerId?: string
+    generationJobId?: string
+    metadataJson?: unknown
+  }) => {
+    if (!projectId || !workflowId) return
+    try {
+      await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          workflowId,
+          nodeId: args.nodeId,
+          type: args.type,
+          title: args.title,
+          url: args.url,
+          dataUrl: args.dataUrl,
+          providerId: args.providerId,
+          generationJobId: args.generationJobId,
+          metadataJson: args.metadataJson ?? {},
+        }),
+      })
+    } catch (error) {
+      console.warn('[canvas] failed to record generated asset', error)
+    }
+  }, [projectId, workflowId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadOrCreateProject() {
+      const nextProjectId = searchParamProjectId
+      setSaveStatus('loading')
+      setSaveMessage('')
+      canvasLoadedRef.current = false
+
+      try {
+        if (!nextProjectId) {
+          const response = await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ title: 'Untitled Project' }),
+          })
+          const data = await response.json().catch(() => ({})) as {
+            errorCode?: string
+            message?: string
+            project?: { id: string; title: string }
+            workflow?: { id: string }
+          }
+          if (response.status === 401) {
+            router.replace(`/auth/login?next=${encodeURIComponent('/create')}`)
+            return
+          }
+          if (!response.ok || !data.project?.id) throw new Error(data.message ?? '创建项目失败。')
+          if (cancelled) return
+          setProjectId(data.project.id)
+          setWorkflowId(data.workflow?.id ?? '')
+          setLoadedProjectTitle(data.project.title)
+          setSaveStatus('saved')
+          setSaveMessage('Saved')
+          canvasLoadedRef.current = true
+          router.replace(`/create?projectId=${encodeURIComponent(data.project.id)}`)
+          return
+        }
+
+        const response = await fetch(`/api/projects/${encodeURIComponent(nextProjectId)}/canvas`, { credentials: 'include' })
+        const data = await response.json().catch(() => ({})) as CanvasLoadResponse
+        if (response.status === 401) {
+          router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${nextProjectId}`)}`)
+          return
+        }
+        if (!response.ok) throw new Error(data.message ?? '加载画布失败。')
+        if (cancelled) return
+
+        setProjectId(nextProjectId)
+        setWorkflowId(data.workflow?.id ?? '')
+        setLoadedProjectTitle(data.project?.title ?? projectTitle)
+        setNodes((data.nodes ?? []) as VisualCanvasNode[])
+        setEdges((data.edges ?? []) as CanvasEdge[])
+        const viewport = data.workflow?.viewportJson as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
+        if (viewport?.zoom) setCanvasZoom(viewport.zoom)
+        if (viewport?.pan) setCanvasPan({ x: Number(viewport.pan.x ?? 0), y: Number(viewport.pan.y ?? 0) })
+        setHasStarted(Boolean(data.nodes?.length))
+        setSaveStatus('saved')
+        setSaveMessage('Saved')
+        canvasLoadedRef.current = true
+      } catch (error) {
+        if (cancelled) return
+        setSaveStatus('failed')
+        setSaveMessage(error instanceof Error ? error.message : '加载项目失败。')
+      }
+    }
+
+    void loadOrCreateProject()
+    return () => {
+      cancelled = true
+    }
+  }, [projectTitle, router, searchParamProjectId])
+
+  useEffect(() => {
+    scheduleCanvasSave()
+  }, [canvasPan, canvasZoom, edges, nodes, scheduleCanvasSave])
 
   const setZoomAroundPoint = useCallback((nextZoomInput: number, clientPoint?: { x: number; y: number }) => {
     const nextZoom = clampCanvasZoom(nextZoomInput)
@@ -458,6 +638,11 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const deleteNode = useCallback((nodeId: string) => {
+    deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
+    const removedEdges = edges
+      .filter((edge) => edge.fromNodeId === nodeId || edge.toNodeId === nodeId)
+      .map((edge) => edge.id)
+    deletedEdgeIdsRef.current = [...new Set([...deletedEdgeIdsRef.current, ...removedEdges])]
     setNodes((current) => current.filter((node) => node.id !== nodeId))
     setEdges((current) => current.filter((edge) => edge.fromNodeId !== nodeId && edge.toNodeId !== nodeId))
     setActiveNodeId((current) => (current === nodeId ? null : current))
@@ -465,7 +650,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [])
+  }, [edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -1198,11 +1383,32 @@ export function VisualCanvasWorkspace({
             resultText: jobResultText,
             resultPreview: jobResultText?.slice(0, 200) ?? jobFallback,
             outputLabel: jobFallback,
+            resultVideoUrl: jobResult.result?.videoUrl ?? nodeSnapshot.resultVideoUrl,
             errorMessage: undefined,
             preview: jobResult.result?.videoUrl
               ? { type: 'remote-video', url: jobResult.result.videoUrl, poster: jobResult.result.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
               : nodeSnapshot.preview,
           })
+          if (jobResultText) {
+            void createGeneratedAsset({
+              nodeId: nodeSnapshot.id,
+              type: 'text',
+              title: `${nodeSnapshot.title} 文本结果`,
+              providerId: normalizedPromptModel,
+              generationJobId: result.jobId,
+              metadataJson: { resultText: jobResultText.slice(0, 500) },
+            })
+          }
+          if (jobResult.result?.videoUrl) {
+            void createGeneratedAsset({
+              nodeId: nodeSnapshot.id,
+              type: 'video',
+              title: `${nodeSnapshot.title} 视频结果`,
+              url: jobResult.result.videoUrl,
+              providerId: normalizedPromptModel,
+              generationJobId: result.jobId,
+            })
+          }
           setEdges((current) => current.map((edge) => (
             edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
           )))
@@ -1239,17 +1445,48 @@ export function VisualCanvasWorkspace({
         resultPreview,
         outputLabel: resultText?.slice(0, 80) ?? fallbackPreview,
         resultImageUrl: resultImageUrl ?? nodeSnapshot.resultImageUrl,
+        resultVideoUrl: resultVideoUrl ?? nodeSnapshot.resultVideoUrl,
         errorMessage: undefined,
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
       })
+      if (resultText) {
+        void createGeneratedAsset({
+          nodeId: nodeSnapshot.id,
+          type: 'text',
+          title: `${nodeSnapshot.title} 文本结果`,
+          providerId: normalizedPromptModel,
+          generationJobId: result.jobId,
+          metadataJson: { resultText: resultText.slice(0, 500) },
+        })
+      }
+      if (resultImageUrl) {
+        void createGeneratedAsset({
+          nodeId: nodeSnapshot.id,
+          type: 'image',
+          title: `${nodeSnapshot.title} 图片结果`,
+          url: resultImageUrl,
+          providerId: normalizedPromptModel,
+          generationJobId: result.jobId,
+        })
+      }
+      if (resultVideoUrl) {
+        void createGeneratedAsset({
+          nodeId: nodeSnapshot.id,
+          type: 'video',
+          title: `${nodeSnapshot.title} 视频结果`,
+          url: resultVideoUrl,
+          providerId: normalizedPromptModel,
+          generationJobId: result.jobId,
+        })
+      }
       setEdges((current) => current.map((edge) => (
         edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback])
+  }, [buildResultLabel, canvasPrompt, createGeneratedAsset, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -1716,17 +1953,26 @@ export function VisualCanvasWorkspace({
             href="/"
             className="canvas-topbar-home-link"
             aria-label="回到首页"
-            title={`回到首页 · ${templateName ? `${projectTitle} · ${templateName}` : projectTitle}`}
+            title={`回到首页 · ${templateName ? `${loadedProjectTitle} · ${templateName}` : loadedProjectTitle}`}
           >
             <span className="canvas-topbar-logo" aria-hidden="true" />
             <span className="canvas-topbar-home-copy">
               <span className="canvas-topbar-title">Creator City</span>
-              <span className="canvas-topbar-copy">{projectTitle}</span>
+              <span className="canvas-topbar-copy">{loadedProjectTitle}</span>
             </span>
           </a>
         </div>
 
         <div className="canvas-topbar-actions">
+          <span className="canvas-secondary-button" title={saveMessage || saveStatus}>
+            {saveStatus === 'loading'
+              ? 'Loading'
+              : saveStatus === 'saving'
+                ? 'Saving...'
+                : saveStatus === 'failed'
+                  ? 'Save failed'
+                  : 'Saved'}
+          </span>
           <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
             社区
             <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>

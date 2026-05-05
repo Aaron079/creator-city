@@ -447,14 +447,18 @@ model Project {
   likes       Int               @default(0)
   rating      Float             @default(0)
   ratingCount Int               @default(0)
+  thumbnailUrl String?
   publishedAt DateTime?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  lastOpenedAt DateTime?
 
   owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
   members     ProjectMember[]
   tasks       ProjectTask[]
   assets      ProjectAsset[]
+  generatedAssets Asset[]     @relation("ProjectGeneratedAssets")
+  canvasWorkflows CanvasWorkflow[]
   reviews     ProjectReview[]
   invitations Invitation[]
   showcases   Showcase[]
@@ -554,25 +558,107 @@ model ProjectReview {
 model Asset {
   id           String      @id @default(uuid())
   name         String
+  title        String?
   type         AssetType
   status       AssetStatus @default(UPLOADING)
   ownerId      String
+  projectId    String?
+  workflowId   String?
+  nodeId       String?
   url          String
+  dataUrl      String?
   thumbnailUrl String?
   mimeType     String
   sizeBytes    BigInt      @default(0)
   metadata     Json        @default("{}")
+  metadataJson Json?
+  providerId   String?
+  generationJobId String?
   tags         String[]
   isPublic     Boolean     @default(false)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
   owner         User           @relation(fields: [ownerId], references: [id])
+  project       Project?       @relation("ProjectGeneratedAssets", fields: [projectId], references: [id], onDelete: SetNull)
+  workflow      CanvasWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   projectAssets ProjectAsset[]
 
   @@index([ownerId])
+  @@index([projectId])
+  @@index([workflowId])
+  @@index([nodeId])
   @@index([type])
   @@index([status])
+}
+
+model CanvasWorkflow {
+  id           String   @id @default(uuid())
+  projectId    String
+  name         String   @default("Main Canvas")
+  version      Int      @default(1)
+  viewportJson Json?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes   CanvasNode[]
+  edges   CanvasEdge[]
+  assets  Asset[]
+
+  @@index([projectId])
+}
+
+model CanvasNode {
+  id             String   @id @default(uuid())
+  workflowId     String
+  nodeId         String
+  kind           String
+  title          String?
+  providerId     String?
+  status         String   @default("idle")
+  x              Float    @default(0)
+  y              Float    @default(0)
+  width          Float    @default(320)
+  height         Float    @default(220)
+  prompt         String?  @db.Text
+  resultText     String?  @db.Text
+  resultImageUrl String?
+  resultVideoUrl String?
+  resultAudioUrl String?
+  resultPreview  String?  @db.Text
+  errorMessage   String?  @db.Text
+  paramsJson     Json?
+  metadataJson   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workflow CanvasWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, nodeId])
+  @@index([workflowId])
+  @@index([kind])
+  @@index([status])
+}
+
+model CanvasEdge {
+  id           String   @id @default(uuid())
+  workflowId   String
+  edgeId       String
+  sourceNodeId String
+  targetNodeId String
+  type         String?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workflow CanvasWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, edgeId])
+  @@index([workflowId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
