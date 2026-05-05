@@ -15,9 +15,12 @@ interface ManualOrder {
 }
 
 interface ChinaPaymentProviderStatus {
-  status: 'configured' | 'not-configured'
+  status: 'checking' | 'configured' | 'not-configured'
   missing?: string[]
 }
+
+const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking' }
+const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
 
 export default function AccountCreditsPage() {
   const [wallet, setWallet] = useState<UserWallet | null>(null)
@@ -28,8 +31,8 @@ export default function AccountCreditsPage() {
     alipay: ChinaPaymentProviderStatus
     wechatpay: ChinaPaymentProviderStatus
   }>({
-    alipay: { status: 'not-configured' },
-    wechatpay: { status: 'not-configured' },
+    alipay: CHECKING_PROVIDER_STATUS,
+    wechatpay: CHECKING_PROVIDER_STATUS,
   })
   const [authError, setAuthError] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -57,8 +60,13 @@ export default function AccountCreditsPage() {
       const d = await packagesRes.json() as { packages: CreditPackage[] }
       setPackages(d.packages.filter((pkg) => pkg.isActive))
     }
-    const chinaStatusRes = await fetch('/api/payment/china/status', { credentials: 'include' })
-    if (chinaStatusRes.ok) {
+    const chinaStatusRes = await fetch('/api/payment/china/status', { credentials: 'include', cache: 'no-store' })
+    if (!chinaStatusRes.ok) {
+      setChinaProviders({
+        alipay: NOT_CONFIGURED_PROVIDER_STATUS,
+        wechatpay: NOT_CONFIGURED_PROVIDER_STATUS,
+      })
+    } else {
       const d = await chinaStatusRes.json() as {
         providers?: {
           alipay?: ChinaPaymentProviderStatus
@@ -66,8 +74,8 @@ export default function AccountCreditsPage() {
         }
       }
       setChinaProviders({
-        alipay: d.providers?.alipay ?? { status: 'not-configured' },
-        wechatpay: d.providers?.wechatpay ?? { status: 'not-configured' },
+        alipay: d.providers?.alipay ?? NOT_CONFIGURED_PROVIDER_STATUS,
+        wechatpay: d.providers?.wechatpay ?? NOT_CONFIGURED_PROVIDER_STATUS,
       })
     }
     // fetch user's own pending orders — 403 is fine (non-admin path)
@@ -187,6 +195,13 @@ export default function AccountCreditsPage() {
     }
   }
 
+  const alipayStatus = chinaProviders.alipay.status
+  const wechatpayStatus = chinaProviders.wechatpay.status
+  const alipayConfigured = alipayStatus === 'configured'
+  const alipayChecking = alipayStatus === 'checking'
+  const alipayStatusText = alipayConfigured ? 'available / 可用' : alipayChecking ? 'checking...' : 'not-configured'
+  const wechatpayStatusText = wechatpayStatus === 'configured' ? 'available / 可用' : wechatpayStatus === 'checking' ? 'checking...' : 'not-configured'
+
   if (loading) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
   if (authError) return (
     <DashboardShell>
@@ -213,15 +228,15 @@ export default function AccountCreditsPage() {
               <p className="mt-1 text-sm text-white/45">电脑网站支付成功后，系统会通过支付宝回调自动发放积分。</p>
             </div>
             <div className="text-right text-xs">
-              <span className={`rounded-full px-2.5 py-1 ${chinaProviders.alipay.status === 'configured' ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-white/45'}`}>
-                {chinaProviders.alipay.status === 'configured' ? 'available / 可用' : 'not-configured'}
+              <span className={`rounded-full px-2.5 py-1 ${alipayConfigured ? 'bg-emerald-400/15 text-emerald-200' : alipayChecking ? 'bg-sky-400/15 text-sky-200' : 'bg-white/10 text-white/45'}`}>
+                {alipayStatusText}
               </span>
               <div className="mt-2 text-white/35">
-                微信支付：{chinaProviders.wechatpay.status === 'configured' ? 'available / 可用' : 'not-configured'}
+                微信支付：{wechatpayStatusText}
               </div>
             </div>
           </div>
-          {chinaProviders.alipay.status !== 'configured' && (
+          {alipayStatus === 'not-configured' && (
             <div className="mb-4 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
               缺少环境变量：{chinaProviders.alipay.missing?.length ? chinaProviders.alipay.missing.join(', ') : 'ALIPAY_*'}
             </div>
@@ -236,7 +251,7 @@ export default function AccountCreditsPage() {
                   key={pkg.id}
                   type="button"
                   onClick={() => { void handleAlipayRecharge(pkg.id) }}
-                  disabled={Boolean(payingPackageId) || chinaProviders.alipay.status !== 'configured'}
+                  disabled={Boolean(payingPackageId) || !alipayConfigured}
                   className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -249,8 +264,8 @@ export default function AccountCreditsPage() {
                     </div>
                   </div>
                   <div className="mt-3 text-xs text-white/38">
-                    {chinaProviders.alipay.status !== 'configured'
-                      ? '支付宝 not-configured'
+                    {!alipayConfigured
+                      ? `支付宝 ${alipayStatusText}`
                       : payingPackageId === pkg.id
                         ? '正在打开支付宝...'
                         : '支付宝支付'}
