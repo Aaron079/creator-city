@@ -35,7 +35,13 @@ function getReturnUrl(provider: ChinaPaymentProvider, appUrl: string, outTradeNo
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser()
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (error) {
+    console.error('[payment/china/create/auth]', error)
+    return NextResponse.json({ success: false, errorCode: 'AUTH_LOOKUP_FAILED', message: '读取登录状态失败' }, { status: 500 })
+  }
   if (!user) return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录' }, { status: 401 })
 
   let body: CreateBody
@@ -62,10 +68,10 @@ export async function POST(request: NextRequest) {
   }
 
   const credits = pkg.credits + pkg.bonusCredits
-  const wallet = await getOrCreateWallet(user.id)
-  const outTradeNo = `cc_cn_${body.provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
   try {
+    const wallet = await getOrCreateWallet(user.id)
+    const outTradeNo = `cc_cn_${body.provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const dbPackage = await db.creditPackage.findUnique({ where: { id: pkg.id }, select: { id: true } }).catch(() => null)
     const order = await db.paymentOrder.create({
       data: {

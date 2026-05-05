@@ -8,7 +8,8 @@ import { PaymentMethodSelector } from '@/components/billing/PaymentMethodSelecto
 import { PaymentStatusNotice } from '@/components/billing/PaymentStatusNotice'
 import type { BillingRegion, CreditPackage, PaymentProvider } from '@/lib/billing/types'
 import type { PaymentConfiguration } from '@/lib/payments/types'
-import type { AuthUserPublic } from '@/lib/auth/client'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
+import { useChinaPaymentCheckout } from '@/lib/payment/china/use-china-payment-checkout'
 
 const EMPTY_STATUS: PaymentConfiguration = { enabled: false, configured: false, missing: [] }
 
@@ -28,6 +29,8 @@ function toPaymentConfiguration(provider?: { status?: 'configured' | 'not-config
 }
 
 export default function BillingPage() {
+  const { status: authStatus } = useCurrentUser()
+  const { payingPackageId, createPayment } = useChinaPaymentCheckout()
   const [packages, setPackages] = useState<CreditPackage[]>([])
   const [statuses, setStatuses] = useState<Record<PaymentProvider, PaymentConfiguration>>({
     alipay: EMPTY_STATUS,
@@ -37,23 +40,17 @@ export default function BillingPage() {
     manual: { enabled: true, configured: true, missing: [] },
   })
   const [region, setRegion] = useState<BillingRegion>('CN')
-  const [provider, setProvider] = useState<PaymentProvider>('manual')
+  const [provider, setProvider] = useState<PaymentProvider>('alipay')
   const [buyingId, setBuyingId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null)
+  const [notice, setNotice] = useState<{ type: 'info' | 'success' | 'error'; message: string; errorCode?: string } | null>(null)
   const [manualOrderId, setManualOrderId] = useState<string | undefined>()
-  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
-  const [authUser, setAuthUser] = useState<AuthUserPublic | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const [authRes, billingRes, chinaRes] = await Promise.all([
-        fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' }),
+      const [billingRes, chinaRes] = await Promise.all([
         fetch('/api/billing/packages'),
         fetch('/api/payment/china/status', { credentials: 'include', cache: 'no-store' }),
       ])
-      const authData = authRes.ok
-        ? await authRes.json() as { authenticated?: boolean; user?: AuthUserPublic | null }
-        : { authenticated: false, user: null }
       const data = await billingRes.json() as {
         packages: CreditPackage[]
         providerStatuses: Record<PaymentProvider, PaymentConfiguration>
@@ -68,14 +65,12 @@ export default function BillingPage() {
         wechat: toPaymentConfiguration(chinaStatus?.providers?.wechatpay),
         manual: data.providerStatuses.manual ?? { enabled: true, configured: true, missing: [] },
       })
-      setAuthStatus(authData.authenticated && authData.user ? 'authenticated' : 'unauthenticated')
-      setAuthUser(authData.user ?? null)
     })()
   }, [])
 
   const changeRegion = (next: BillingRegion) => {
     setRegion(next)
-    setProvider(next === 'CN' ? 'manual' : 'stripe')
+    setProvider(next === 'CN' ? 'alipay' : 'stripe')
     setNotice(null)
   }
 
@@ -84,7 +79,7 @@ export default function BillingPage() {
       setNotice({ type: 'info', message: '正在确认登录状态...' })
       return
     }
-    if (authStatus !== 'authenticated' || !authUser) {
+    if (authStatus !== 'authenticated') {
       setNotice({ type: 'error', message: '请先登录后购买积分。' })
       return
     }
@@ -115,8 +110,7 @@ export default function BillingPage() {
         })
         const data = await res.json().catch(() => ({})) as { orderId?: string; message?: string }
         if (res.status === 401) {
-          setAuthStatus('unauthenticated')
-          setNotice({ type: 'error', message: '登录已过期，请重新登录。' })
+          setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
           return
         }
         if (!res.ok) {
@@ -129,16 +123,33 @@ export default function BillingPage() {
       }
 
       const useChinaPayment = provider === 'alipay' || provider === 'wechat'
-      const res = await fetch(useChinaPayment ? '/api/payment/china/create' : '/api/billing/checkout', {
+      if (useChinaPayment) {
+        const result = await createPayment({
+          provider: provider === 'wechat' ? 'wechatpay' : 'alipay',
+          packageId,
+        })
+        if (!result.success) {
+          setNotice({
+            type: 'error',
+            message: result.message ?? '创建订单失败',
+            errorCode: result.errorCode,
+          })
+          return
+        }
+        if (!result.checkoutStarted) {
+          setNotice({ type: result.qrCodeUrl ? 'info' : 'success', message: result.message ?? '支付订单已创建。' })
+        }
+        return
+      }
+
+      const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify(useChinaPayment
-          ? { provider: provider === 'wechat' ? 'wechatpay' : 'alipay', packageId }
-          : { packageId, region, paymentMethod: provider }),
+        body: JSON.stringify({ packageId, region, paymentMethod: provider }),
       })
       const data = await res.json().catch(() => ({})) as {
         success?: boolean
@@ -152,8 +163,7 @@ export default function BillingPage() {
         qrCodeUrl?: string
       }
       if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
-        setAuthStatus('unauthenticated')
-        setNotice({ type: 'error', message: '登录已过期，请重新登录。' })
+        setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
         return
       }
       if (data.status === 'not-configured') {
@@ -185,7 +195,7 @@ export default function BillingPage() {
       if (data.checkoutUrl) window.location.href = data.checkoutUrl
       else setNotice({ type: 'info', message: data.message ?? '支付订单已创建，请使用返回的 provider payload 完成支付。' })
     } catch {
-      setNotice({ type: 'error', message: '网络错误，未创建支付订单。' })
+        setNotice({ type: 'error', message: '网络错误，未创建支付订单。' })
     } finally {
       setBuyingId(null)
     }
@@ -222,7 +232,16 @@ export default function BillingPage() {
           <PaymentMethodSelector region={region} value={provider} statuses={statuses} onChange={setProvider} />
         </div>
 
-        {notice ? <div className="mb-5"><PaymentStatusNotice type={notice.type} message={notice.message} /></div> : null}
+        {notice ? (
+          <div className="mb-5">
+            <PaymentStatusNotice type={notice.type} message={notice.message} />
+            {notice.errorCode === 'UNAUTHORIZED' ? (
+              <a href="/auth/login?next=/billing" className="mt-2 inline-flex text-sm font-semibold text-amber-100 underline">
+                去登录
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         {authStatus === 'loading' ? (
           <div className="mb-5 rounded-lg border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
             正在确认登录状态...
@@ -236,7 +255,7 @@ export default function BillingPage() {
         ) : null}
         {provider === 'manual' ? <div className="mb-5"><ManualRechargePanel orderId={manualOrderId} /></div> : null}
 
-        <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId} onBuy={buy} />
+        <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
       </main>
     </DashboardShell>
   )

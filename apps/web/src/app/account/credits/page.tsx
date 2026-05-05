@@ -5,6 +5,8 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
 import type { UserWallet, CreditLedgerEntry, CreditPackage } from '@/lib/billing/types'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
+import { useChinaPaymentCheckout } from '@/lib/payment/china/use-china-payment-checkout'
 
 interface ManualOrder {
   id: string
@@ -23,6 +25,8 @@ const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking
 const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
 
 export default function AccountCreditsPage() {
+  const { status: authStatus } = useCurrentUser()
+  const { payingPackageId, createPayment } = useChinaPaymentCheckout()
   const [wallet, setWallet] = useState<UserWallet | null>(null)
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
   const [packages, setPackages] = useState<CreditPackage[]>([])
@@ -34,14 +38,12 @@ export default function AccountCreditsPage() {
     alipay: CHECKING_PROVIDER_STATUS,
     wechatpay: CHECKING_PROVIDER_STATUS,
   })
-  const [authError, setAuthError] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // recharge form
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [payingPackageId, setPayingPackageId] = useState<string | null>(null)
   const [submitMsg, setSubmitMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   async function load() {
@@ -49,7 +51,7 @@ export default function AccountCreditsPage() {
       fetch('/api/credits/wallet', { credentials: 'include' }),
       fetch('/api/credits/ledger?limit=50', { credentials: 'include' }),
     ])
-    if (walletRes.status === 401) { setAuthError(true); setLoading(false); return }
+    if (walletRes.status === 401) { setLoading(false); return }
     if (walletRes.ok) setWallet(await walletRes.json() as UserWallet)
     if (ledgerRes.ok) {
       const d = await ledgerRes.json() as { items: CreditLedgerEntry[] }
@@ -89,55 +91,41 @@ export default function AccountCreditsPage() {
 
   async function handleAlipayRecharge(packageId: string) {
     if (payingPackageId) return
+    if (authStatus === 'loading') {
+      setSubmitMsg({ ok: true, text: '正在确认登录状态...' })
+      return
+    }
+    if (authStatus !== 'authenticated') {
+      setSubmitMsg({ ok: false, text: '请先登录后购买积分。' })
+      return
+    }
     if (chinaProviders.alipay.status !== 'configured') {
       setSubmitMsg({ ok: false, text: '支付宝未配置，暂不能在线充值。' })
       return
     }
-    setPayingPackageId(packageId)
     setSubmitMsg(null)
     try {
-      const res = await fetch('/api/payment/china/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ provider: 'alipay', packageId, clientType: 'pc' }),
+      const result = await createPayment({
+        provider: 'alipay',
+        packageId,
+        clientType: 'pc',
       })
-      const data = await res.json().catch(() => ({})) as {
-        formHtml?: string
-        paymentUrl?: string
-        errorCode?: string
-        message?: string
-      }
-      if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
-        setSubmitMsg({ ok: false, text: '登录已过期，请重新登录。' })
-        window.setTimeout(() => {
-          window.location.href = '/auth/login?next=/account/credits'
-        }, 800)
+      if (!result.success) {
+        setSubmitMsg({ ok: false, text: result.message ?? '创建支付宝订单失败' })
         return
       }
-      if (!res.ok) throw new Error(data.message ?? '创建支付宝订单失败')
-      if (data.formHtml) {
-        const holder = document.createElement('div')
-        holder.style.display = 'none'
-        holder.innerHTML = data.formHtml
-        const form = holder.querySelector('form')
-        if (!form) throw new Error('支付宝支付表单无效')
-        document.body.appendChild(holder)
-        form.submit()
-        return
+      if (!result.checkoutStarted) {
+        setSubmitMsg({ ok: true, text: result.message ?? '支付宝订单已创建。' })
       }
-      if (data.paymentUrl) {
-        window.location.assign(data.paymentUrl)
-        return
-      }
-      throw new Error('支付宝未返回可用支付表单')
     } catch (error) {
       setSubmitMsg({ ok: false, text: error instanceof Error ? error.message : '支付宝充值失败' })
-      setPayingPackageId(null)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return
+    void load()
+  }, [authStatus])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -210,12 +198,12 @@ export default function AccountCreditsPage() {
   const alipayStatusText = alipayConfigured ? 'available / 可用' : alipayChecking ? 'checking...' : 'not-configured'
   const wechatpayStatusText = wechatpayStatus === 'configured' ? 'available / 可用' : wechatpayStatus === 'checking' ? 'checking...' : 'not-configured'
 
-  if (loading) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
-  if (authError) return (
+  if (authStatus === 'unauthenticated') return (
     <DashboardShell>
-      <div className="p-8 text-sm text-red-400">请先 <a href="/auth/login" className="underline">登录</a> 后查看积分钱包。</div>
+      <div className="p-8 text-sm text-red-400">请先 <a href="/auth/login?next=/account/credits" className="underline">登录</a> 后查看积分钱包。</div>
     </DashboardShell>
   )
+  if (authStatus === 'loading' || loading) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
 
   return (
     <DashboardShell>
