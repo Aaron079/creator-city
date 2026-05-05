@@ -6,10 +6,11 @@ import { CreditPackageGrid } from '@/components/billing/CreditPackageGrid'
 import { ManualRechargePanel } from '@/components/billing/ManualRechargePanel'
 import { PaymentMethodSelector } from '@/components/billing/PaymentMethodSelector'
 import { PaymentStatusNotice } from '@/components/billing/PaymentStatusNotice'
+import { AlipayQrPaymentModal, type AlipayQrPayment } from '@/components/billing/AlipayQrPaymentModal'
 import type { BillingRegion, CreditPackage, PaymentProvider } from '@/lib/billing/types'
 import type { PaymentConfiguration } from '@/lib/payments/types'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
-import { useChinaPaymentCheckout } from '@/lib/payment/china/use-china-payment-checkout'
+import { useChinaPaymentCheckout, type ChinaCheckoutResult } from '@/lib/payment/china/use-china-payment-checkout'
 
 const EMPTY_STATUS: PaymentConfiguration = { enabled: false, configured: false, missing: [] }
 
@@ -25,6 +26,19 @@ function toPaymentConfiguration(provider?: { status?: 'configured' | 'not-config
     enabled: true,
     configured: provider?.status === 'configured',
     missing: provider?.missing ?? [],
+  }
+}
+
+function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?: CreditPackage): AlipayQrPayment | null {
+  if (result.provider !== 'alipay' || result.mode !== 'qr' || !result.outTradeNo || !result.qrCode) return null
+  return {
+    packageId,
+    packageName: result.packageName ?? pkg?.name ?? 'Creator City Credits',
+    amountCnyFen: result.amountCnyFen ?? pkg?.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')?.amount ?? 0,
+    credits: result.credits ?? (pkg ? pkg.credits + pkg.bonusCredits : 0),
+    outTradeNo: result.outTradeNo,
+    qrCode: result.qrCode,
+    expiresAt: result.expiresAt,
   }
 }
 
@@ -44,6 +58,7 @@ export default function BillingPage() {
   const [buyingId, setBuyingId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ type: 'info' | 'success' | 'error'; message: string; errorCode?: string } | null>(null)
   const [manualOrderId, setManualOrderId] = useState<string | undefined>()
+  const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -72,6 +87,23 @@ export default function BillingPage() {
     setRegion(next)
     setProvider(next === 'CN' ? 'alipay' : 'stripe')
     setNotice(null)
+  }
+
+  const createAlipayQr = async (packageId: string) => {
+    const pkg = packages.find((item) => item.id === packageId)
+    const result = await createPayment({ provider: 'alipay', packageId })
+    if (!result.success) {
+      setNotice({ type: 'error', message: result.message ?? '创建支付宝订单失败', errorCode: result.errorCode })
+      return null
+    }
+    const qr = toAlipayQrPayment(result, packageId, pkg)
+    if (!qr) {
+      setNotice({ type: 'error', message: '支付宝未返回可用二维码订单。' })
+      return null
+    }
+    setNotice(null)
+    setQrPayment(qr)
+    return qr
   }
 
   const buy = async (packageId: string) => {
@@ -122,23 +154,13 @@ export default function BillingPage() {
         return
       }
 
-      const useChinaPayment = provider === 'alipay' || provider === 'wechat'
-      if (useChinaPayment) {
-        const result = await createPayment({
-          provider: provider === 'wechat' ? 'wechatpay' : 'alipay',
-          packageId,
-        })
-        if (!result.success) {
-          setNotice({
-            type: 'error',
-            message: result.message ?? '创建订单失败',
-            errorCode: result.errorCode,
-          })
-          return
-        }
-        if (!result.checkoutStarted) {
-          setNotice({ type: result.qrCodeUrl ? 'info' : 'success', message: result.message ?? '支付订单已创建。' })
-        }
+      if (provider === 'alipay') {
+        await createAlipayQr(packageId)
+        return
+      }
+
+      if (provider === 'wechat') {
+        setNotice({ type: 'error', message: '微信支付暂未接入真实支付。' })
         return
       }
 
@@ -152,15 +174,11 @@ export default function BillingPage() {
         body: JSON.stringify({ packageId, region, paymentMethod: provider }),
       })
       const data = await res.json().catch(() => ({})) as {
-        success?: boolean
         status?: string
         errorCode?: string
         message?: string
         checkoutUrl?: string
-        orderId?: string
-        formHtml?: string
         paymentUrl?: string
-        qrCodeUrl?: string
       }
       if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
         setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
@@ -174,28 +192,14 @@ export default function BillingPage() {
         setNotice({ type: 'error', message: data.message ?? '创建订单失败' })
         return
       }
-      if (data.formHtml) {
-        const holder = document.createElement('div')
-        holder.style.display = 'none'
-        holder.innerHTML = data.formHtml
-        const form = holder.querySelector('form')
-        if (!form) throw new Error('支付表单无效')
-        document.body.appendChild(holder)
-        form.submit()
-        return
-      }
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl
         return
       }
-      if (data.qrCodeUrl) {
-        setNotice({ type: 'info', message: `请打开支付链接完成付款：${data.qrCodeUrl}` })
-        return
-      }
       if (data.checkoutUrl) window.location.href = data.checkoutUrl
-      else setNotice({ type: 'info', message: data.message ?? '支付订单已创建，请使用返回的 provider payload 完成支付。' })
+      else setNotice({ type: 'info', message: data.message ?? '支付订单已创建。' })
     } catch {
-        setNotice({ type: 'error', message: '网络错误，未创建支付订单。' })
+      setNotice({ type: 'error', message: '网络错误，未创建支付订单。' })
     } finally {
       setBuyingId(null)
     }
@@ -257,6 +261,15 @@ export default function BillingPage() {
 
         <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
       </main>
+      <AlipayQrPaymentModal
+        payment={qrPayment}
+        onClose={() => setQrPayment(null)}
+        onRefresh={createAlipayQr}
+        onPaid={async () => {
+          await fetch('/api/credits/wallet', { credentials: 'include', cache: 'no-store' }).catch(() => null)
+          setNotice({ type: 'success', message: '支付成功，积分已到账。' })
+        }}
+      />
     </DashboardShell>
   )
 }

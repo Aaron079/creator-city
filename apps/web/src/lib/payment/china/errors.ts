@@ -4,6 +4,8 @@ export type ChinaPaymentErrorCode =
   | 'PAYMENT_PROVIDER_UNSUPPORTED'
   | 'PAYMENT_WEBHOOK_INVALID'
   | 'PAYMENT_REQUEST_FAILED'
+  | 'ALIPAY_SIGN_FAILED'
+  | 'ALIPAY_PRECREATE_FAILED'
 
 export class ChinaPaymentError extends Error {
   code: ChinaPaymentErrorCode

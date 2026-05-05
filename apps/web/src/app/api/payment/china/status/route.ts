@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const outTradeNo = request.nextUrl.searchParams.get('outTradeNo')
   if (outTradeNo) {
     const user = await getCurrentUser()
-    if (!user) return jsonNoStore({ message: '请先登录' }, { status: 401 })
+    if (!user) return jsonNoStore({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录' }, { status: 401 })
 
     const order = await db.paymentOrder.findUnique({
       where: { externalOrderId: outTradeNo },
@@ -36,12 +36,13 @@ export async function GET(request: NextRequest) {
         credits: true,
       },
     })
-    if (!order) return jsonNoStore({ status: 'FAILED', message: '订单不存在' }, { status: 404 })
+    if (!order) return jsonNoStore({ success: false, status: 'FAILED', message: '订单不存在' }, { status: 404 })
     if (order.userId !== user.id && user.role !== 'ADMIN') {
-      return jsonNoStore({ message: '无权查看该订单' }, { status: 403 })
+      return jsonNoStore({ success: false, errorCode: 'FORBIDDEN', message: '无权查看该订单' }, { status: 403 })
     }
 
     return jsonNoStore({
+      success: true,
       status: order.status,
       orderId: order.id,
       provider: order.provider,

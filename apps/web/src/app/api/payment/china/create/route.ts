@@ -16,6 +16,13 @@ type CreateBody = {
   clientType?: 'pc' | 'h5' | 'wechat-jsapi'
 }
 
+type ChinaPaymentErrorDetails = {
+  rawCode?: string
+  rawSubCode?: string
+  rawMessage?: string
+  rawSubMessage?: string
+}
+
 function getAppUrl(request: NextRequest) {
   return process.env.APP_URL
     ?? process.env.NEXT_PUBLIC_APP_URL
@@ -29,9 +36,15 @@ function getNotifyUrl(provider: ChinaPaymentProvider, appUrl: string) {
   return process.env.WECHAT_PAY_NOTIFY_URL || `${appUrl}/api/payment/china/webhook/wechatpay`
 }
 
-function getReturnUrl(provider: ChinaPaymentProvider, appUrl: string, outTradeNo: string) {
-  if (provider === 'alipay') return process.env.ALIPAY_RETURN_URL || `${appUrl}/account/credits?outTradeNo=${encodeURIComponent(outTradeNo)}`
-  return `${appUrl}/billing/success`
+function getErrorDetails(details: unknown): ChinaPaymentErrorDetails {
+  if (!details || typeof details !== 'object') return {}
+  const record = details as Record<string, unknown>
+  return {
+    rawCode: typeof record.rawCode === 'string' ? record.rawCode : undefined,
+    rawSubCode: typeof record.rawSubCode === 'string' ? record.rawSubCode : undefined,
+    rawMessage: typeof record.rawMessage === 'string' ? record.rawMessage : undefined,
+    rawSubMessage: typeof record.rawSubMessage === 'string' ? record.rawSubMessage : undefined,
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -68,6 +81,7 @@ export async function POST(request: NextRequest) {
   }
 
   const credits = pkg.credits + pkg.bonusCredits
+  let orderId: string | null = null
 
   try {
     const wallet = await getOrCreateWallet(user.id)
@@ -90,9 +104,11 @@ export async function POST(request: NextRequest) {
           source: 'china-payment-gateway',
           packageId: pkg.id,
           packageName: pkg.name,
+          checkoutMode: body.provider === 'alipay' ? 'qr' : 'native',
         },
       },
     })
+    orderId = order.id
 
     const appUrl = getAppUrl(request)
     const payment = await createChinaPayment({
@@ -103,32 +119,52 @@ export async function POST(request: NextRequest) {
       amountCnyFen: price.amount,
       userId: user.id,
       notifyUrl: getNotifyUrl(body.provider, appUrl),
-      returnUrl: getReturnUrl(body.provider, appUrl, outTradeNo),
-      clientType: body.clientType ?? (body.provider === 'wechatpay' ? 'pc' : 'pc'),
+      clientType: body.clientType ?? 'pc',
     })
 
     return NextResponse.json({
       success: true,
       orderId: order.id,
       provider: body.provider,
+      mode: payment.mode ?? (payment.qrCode ? 'qr' : undefined),
       outTradeNo,
-      amountCnyFen: price.amount,
-      credits,
-      paymentUrl: payment.paymentUrl,
+      qrCode: payment.qrCode,
       qrCodeUrl: payment.qrCodeUrl,
-      formHtml: payment.formHtml,
+      amountCnyFen: price.amount,
+      packageName: pkg.name,
+      credits,
+      expiresAt: payment.expiresAt,
+      paymentUrl: body.provider === 'wechatpay' ? payment.paymentUrl : undefined,
       prepayId: payment.prepayId,
-      raw: payment.raw,
     })
   } catch (error) {
+    if (orderId) {
+      await db.paymentOrder.update({
+        where: { id: orderId },
+        data: {
+          status: PaymentOrderStatus.FAILED,
+          rawNotifyJson: {
+            source: 'china-payment-gateway',
+            packageId: pkg.id,
+            packageName: pkg.name,
+            createError: isChinaPaymentError(error) ? error.code : 'CREATE_PAYMENT_FAILED',
+          },
+        },
+      }).catch(() => null)
+    }
+
     if (isChinaPaymentError(error)) {
+      const details = getErrorDetails(error.details)
       return NextResponse.json({
         success: false,
         errorCode: error.code,
         message: error.code === 'PAYMENT_PROVIDER_NOT_CONFIGURED' && body.provider === 'alipay'
           ? '支付宝未配置'
           : error.message,
-        details: error.details,
+        rawCode: details.rawCode,
+        rawSubCode: details.rawSubCode,
+        rawMessage: details.rawMessage,
+        rawSubMessage: details.rawSubMessage,
       }, { status: error.status })
     }
     console.error('[payment/china/create]', error)

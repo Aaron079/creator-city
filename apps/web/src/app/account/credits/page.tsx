@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
+import { AlipayQrPaymentModal, type AlipayQrPayment } from '@/components/billing/AlipayQrPaymentModal'
 import type { UserWallet, CreditLedgerEntry, CreditPackage } from '@/lib/billing/types'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
-import { useChinaPaymentCheckout } from '@/lib/payment/china/use-china-payment-checkout'
+import { useChinaPaymentCheckout, type ChinaCheckoutResult } from '@/lib/payment/china/use-china-payment-checkout'
 
 interface ManualOrder {
   id: string
@@ -24,6 +25,19 @@ interface ChinaPaymentProviderStatus {
 const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking' }
 const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
 
+function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?: CreditPackage): AlipayQrPayment | null {
+  if (result.provider !== 'alipay' || result.mode !== 'qr' || !result.outTradeNo || !result.qrCode) return null
+  return {
+    packageId,
+    packageName: result.packageName ?? pkg?.name ?? 'Creator City Credits',
+    amountCnyFen: result.amountCnyFen ?? pkg?.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')?.amount ?? 0,
+    credits: result.credits ?? (pkg ? pkg.credits + pkg.bonusCredits : 0),
+    outTradeNo: result.outTradeNo,
+    qrCode: result.qrCode,
+    expiresAt: result.expiresAt,
+  }
+}
+
 export default function AccountCreditsPage() {
   const { status: authStatus } = useCurrentUser()
   const { payingPackageId, createPayment } = useChinaPaymentCheckout()
@@ -40,11 +54,11 @@ export default function AccountCreditsPage() {
   })
   const [loading, setLoading] = useState(true)
 
-  // recharge form
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitMsg, setSubmitMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
 
   async function load() {
     const [walletRes, ledgerRes] = await Promise.all([
@@ -80,13 +94,29 @@ export default function AccountCreditsPage() {
         wechatpay: d.providers?.wechatpay ?? NOT_CONFIGURED_PROVIDER_STATUS,
       })
     }
-    // fetch user's own pending orders — 403 is fine (non-admin path)
     const ordersRes = await fetch('/api/credits/my-orders?status=PENDING', { credentials: 'include' })
     if (ordersRes.ok) {
       const d = await ordersRes.json() as { orders: ManualOrder[] }
       setPendingOrders(d.orders)
     }
     setLoading(false)
+  }
+
+  async function createAlipayQr(packageId: string) {
+    const pkg = packages.find((item) => item.id === packageId)
+    const result = await createPayment({ provider: 'alipay', packageId, clientType: 'pc' })
+    if (!result.success) {
+      setSubmitMsg({ ok: false, text: result.message ?? '创建支付宝订单失败' })
+      return null
+    }
+    const qr = toAlipayQrPayment(result, packageId, pkg)
+    if (!qr) {
+      setSubmitMsg({ ok: false, text: '支付宝未返回可用二维码订单。' })
+      return null
+    }
+    setSubmitMsg(null)
+    setQrPayment(qr)
+    return qr
   }
 
   async function handleAlipayRecharge(packageId: string) {
@@ -103,65 +133,13 @@ export default function AccountCreditsPage() {
       setSubmitMsg({ ok: false, text: '支付宝未配置，暂不能在线充值。' })
       return
     }
-    setSubmitMsg(null)
-    try {
-      const result = await createPayment({
-        provider: 'alipay',
-        packageId,
-        clientType: 'pc',
-      })
-      if (!result.success) {
-        setSubmitMsg({ ok: false, text: result.message ?? '创建支付宝订单失败' })
-        return
-      }
-      if (!result.checkoutStarted) {
-        setSubmitMsg({ ok: true, text: result.message ?? '支付宝订单已创建。' })
-      }
-    } catch (error) {
-      setSubmitMsg({ ok: false, text: error instanceof Error ? error.message : '支付宝充值失败' })
-    }
+    await createAlipayQr(packageId)
   }
 
   useEffect(() => {
     if (authStatus !== 'authenticated') return
     void load()
   }, [authStatus])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const outTradeNo = new URLSearchParams(window.location.search).get('outTradeNo')
-    if (!outTradeNo) return
-    const tradeNo = outTradeNo
-
-    let cancelled = false
-    let attempts = 0
-    async function pollPaymentStatus() {
-      attempts += 1
-      try {
-        const res = await fetch(`/api/payment/china/status?outTradeNo=${encodeURIComponent(tradeNo)}`, { credentials: 'include' })
-        const data = await res.json().catch(() => ({})) as { status?: string; message?: string }
-        if (cancelled) return
-        if (data.status === 'PAID') {
-          setSubmitMsg({ ok: true, text: '支付宝支付已确认，积分已到账。' })
-          void load()
-          return
-        }
-        if (data.status === 'FAILED' || data.status === 'CANCELLED') {
-          setSubmitMsg({ ok: false, text: data.message ?? '支付宝支付未完成。' })
-          return
-        }
-      } catch {
-        // Keep polling briefly; the webhook may arrive after the return redirect.
-      }
-      if (!cancelled && attempts < 20) {
-        window.setTimeout(() => { void pollPaymentStatus() }, 3000)
-      }
-    }
-
-    setSubmitMsg({ ok: true, text: '正在确认支付宝支付结果...' })
-    void pollPaymentStatus()
-    return () => { cancelled = true }
-  }, [])
 
   async function handleRecharge(e: React.FormEvent) {
     e.preventDefault()
@@ -208,7 +186,6 @@ export default function AccountCreditsPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-4xl space-y-8 px-4 py-8">
-
         <div>
           <h1 className="text-2xl font-semibold text-white">我的积分</h1>
           <p className="mt-1 text-sm text-white/50">余额、充值申请、消耗流水。</p>
@@ -216,12 +193,11 @@ export default function AccountCreditsPage() {
 
         <WalletBalanceCard wallet={wallet} />
 
-        {/* Alipay recharge */}
         <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-white">支付宝充值</h2>
-              <p className="mt-1 text-sm text-white/45">电脑网站支付成功后，系统会通过支付宝回调自动发放积分。</p>
+              <p className="mt-1 text-sm text-white/45">扫码支付成功后，系统会通过支付宝回调自动发放积分。</p>
             </div>
             <div className="text-right text-xs">
               <span className={`rounded-full px-2.5 py-1 ${alipayConfigured ? 'bg-emerald-400/15 text-emerald-200' : alipayChecking ? 'bg-sky-400/15 text-sky-200' : 'bg-white/10 text-white/45'}`}>
@@ -263,8 +239,8 @@ export default function AccountCreditsPage() {
                     {!alipayConfigured
                       ? `支付宝 ${alipayStatusText}`
                       : payingPackageId === pkg.id
-                        ? '正在打开支付宝...'
-                        : '支付宝支付'}
+                        ? '正在生成二维码...'
+                        : '支付宝扫码支付'}
                   </div>
                 </button>
               )
@@ -273,7 +249,6 @@ export default function AccountCreditsPage() {
           {packages.length === 0 ? <p className="text-sm text-white/40">暂无可用积分套餐。</p> : null}
         </section>
 
-        {/* Pending recharge orders */}
         {pendingOrders.length > 0 && (
           <section className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-5">
             <h2 className="mb-3 text-sm font-semibold text-amber-300">待审核申请 ({pendingOrders.length})</h2>
@@ -289,7 +264,6 @@ export default function AccountCreditsPage() {
           </section>
         )}
 
-        {/* Recharge form */}
         <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
           <h2 className="mb-4 text-base font-semibold text-white">申请人工充值</h2>
           <form onSubmit={(e) => void handleRecharge(e)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -322,13 +296,20 @@ export default function AccountCreditsPage() {
           )}
         </section>
 
-        {/* Ledger */}
         <section>
           <h2 className="mb-3 text-lg font-semibold text-white">积分流水</h2>
           <CreditLedgerTable items={ledger} />
         </section>
-
       </main>
+      <AlipayQrPaymentModal
+        payment={qrPayment}
+        onClose={() => setQrPayment(null)}
+        onRefresh={createAlipayQr}
+        onPaid={async () => {
+          setSubmitMsg({ ok: true, text: '支付成功，积分已到账。' })
+          await load()
+        }}
+      />
     </DashboardShell>
   )
 }

@@ -15,6 +15,21 @@ const REQUIRED = [
   'ALIPAY_PUBLIC_KEY',
 ] as const
 
+type AlipayPrecreatePayload = {
+  code?: string
+  msg?: string
+  sub_code?: string
+  sub_msg?: string
+  out_trade_no?: string
+  qr_code?: string
+}
+
+type AlipayPrecreateResponse = {
+  alipay_trade_precreate_response?: AlipayPrecreatePayload
+  error_response?: AlipayPrecreatePayload
+  sign?: string
+}
+
 function normalizePrivateKey(value: string) {
   const key = value.replace(/\\n/g, '\n').trim()
   if (key.includes('BEGIN')) return key
@@ -41,9 +56,9 @@ function formatAlipayTimestamp(date = new Date()) {
   ].join(':')
 }
 
-function buildSignContent(params: Record<string, string>) {
+function buildSignContent(params: Record<string, string>, options?: { excludeSignType?: boolean }) {
   return Object.entries(params)
-    .filter(([key, value]) => key !== 'sign' && key !== 'sign_type' && value !== '')
+    .filter(([key, value]) => key !== 'sign' && (!options?.excludeSignType || key !== 'sign_type') && value !== '')
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('&')
@@ -57,10 +72,19 @@ function signAlipayParams(params: Record<string, string>) {
       missing: ['ALIPAY_PRIVATE_KEY'],
     })
   }
-  const signer = createSign('RSA-SHA256')
-  signer.update(buildSignContent(params), 'utf8')
-  signer.end()
-  return signer.sign(normalizePrivateKey(privateKey), 'base64')
+  try {
+    const signer = createSign('RSA-SHA256')
+    signer.update(buildSignContent(params), 'utf8')
+    signer.end()
+    return signer.sign(normalizePrivateKey(privateKey), 'base64')
+  } catch {
+    throw new ChinaPaymentError(
+      'ALIPAY_SIGN_FAILED',
+      '支付宝签名失败，请检查应用私钥、支付宝公钥和 charset 配置。',
+      500,
+      { provider: 'alipay' },
+    )
+  }
 }
 
 function verifyAlipaySignature(params: Record<string, string>) {
@@ -68,7 +92,7 @@ function verifyAlipaySignature(params: Record<string, string>) {
   if (!publicKey || !params.sign) return false
   try {
     const verifier = createVerify('RSA-SHA256')
-    verifier.update(buildSignContent(params), 'utf8')
+    verifier.update(buildSignContent(params, { excludeSignType: true }), 'utf8')
     verifier.end()
     return verifier.verify(normalizePublicKey(publicKey), params.sign, 'base64')
   } catch {
@@ -76,20 +100,22 @@ function verifyAlipaySignature(params: Record<string, string>) {
   }
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+function getGateway() {
+  return process.env.ALIPAY_GATEWAY ?? 'https://openapi.alipay.com/gateway.do'
 }
 
-function buildAutoSubmitForm(action: string, params: Record<string, string>) {
-  const inputs = Object.entries(params)
-    .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}" />`)
-    .join('')
-  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><form id="alipay-submit-form" method="post" action="${escapeHtml(action)}">${inputs}</form><script>document.getElementById('alipay-submit-form').submit();</script></body></html>`
+function buildCommonParams(method: string, notifyUrl?: string): Record<string, string> {
+  const params: Record<string, string> = {
+    app_id: process.env.ALIPAY_APP_ID ?? '',
+    method,
+    format: 'json',
+    charset: 'utf-8',
+    sign_type: 'RSA2',
+    timestamp: formatAlipayTimestamp(),
+    version: '1.0',
+  }
+  if (notifyUrl) params.notify_url = notifyUrl
+  return params
 }
 
 export function getAlipayChinaConfiguration(): ChinaPaymentConfiguration {
@@ -102,7 +128,7 @@ export function getAlipayChinaConfiguration(): ChinaPaymentConfiguration {
   }
 }
 
-export function createAlipayPagePay(input: CreateChinaPaymentInput): ChinaPaymentCreateResult {
+function assertConfigured() {
   const config = getAlipayChinaConfiguration()
   if (!config.configured) {
     throw new ChinaPaymentError('PAYMENT_PROVIDER_NOT_CONFIGURED', '支付宝商户参数未配置。', 503, {
@@ -110,41 +136,75 @@ export function createAlipayPagePay(input: CreateChinaPaymentInput): ChinaPaymen
       missing: config.missing,
     })
   }
+}
 
-  const gateway = process.env.ALIPAY_GATEWAY ?? 'https://openapi.alipay.com/gateway.do'
-  const params: Record<string, string> = {
-    app_id: process.env.ALIPAY_APP_ID ?? '',
-    method: 'alipay.trade.page.pay',
-    charset: 'utf-8',
-    sign_type: 'RSA2',
-    timestamp: formatAlipayTimestamp(),
-    version: '1.0',
-    notify_url: input.notifyUrl,
-    biz_content: JSON.stringify({
-      out_trade_no: input.outTradeNo,
-      total_amount: (input.amountCnyFen / 100).toFixed(2),
-      subject: input.subject,
-      product_code: 'FAST_INSTANT_TRADE_PAY',
-    }),
-  }
-  if (input.returnUrl) params.return_url = input.returnUrl
+async function postAlipayAop(params: Record<string, string>) {
   params.sign = signAlipayParams(params)
-
-  return {
-    provider: 'alipay',
-    outTradeNo: input.outTradeNo,
-    formHtml: buildAutoSubmitForm(gateway, params),
-    raw: {
-      method: params.method,
-      outTradeNo: input.outTradeNo,
-      totalAmount: (input.amountCnyFen / 100).toFixed(2),
-      clientType: input.clientType,
+  const res = await fetch(getGateway(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+      Accept: 'application/json',
     },
+    body: new URLSearchParams(params).toString(),
+    cache: 'no-store',
+  })
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as AlipayPrecreateResponse
+  } catch {
+    throw new ChinaPaymentError('PAYMENT_REQUEST_FAILED', '支付宝返回了非 JSON 响应。', 502, {
+      provider: 'alipay',
+      status: res.status,
+    })
   }
 }
 
+export async function createAlipayQrPayment(input: CreateChinaPaymentInput): Promise<ChinaPaymentCreateResult> {
+  assertConfigured()
+
+  const params = buildCommonParams('alipay.trade.precreate', input.notifyUrl)
+  params.biz_content = JSON.stringify({
+    out_trade_no: input.outTradeNo,
+    total_amount: (input.amountCnyFen / 100).toFixed(2),
+    subject: input.subject,
+    product_code: 'FACE_TO_FACE_PAYMENT',
+  })
+
+  const raw = await postAlipayAop(params)
+  const response = raw.alipay_trade_precreate_response ?? raw.error_response
+  if (response?.code === '10000' && response.qr_code) {
+    return {
+      success: true,
+      provider: 'alipay',
+      mode: 'qr',
+      outTradeNo: input.outTradeNo,
+      qrCode: response.qr_code,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      raw: {
+        code: response.code,
+        msg: response.msg,
+        outTradeNo: response.out_trade_no,
+      },
+    } as ChinaPaymentCreateResult & { success: true }
+  }
+
+  throw new ChinaPaymentError(
+    'ALIPAY_PRECREATE_FAILED',
+    response?.sub_msg || response?.msg || '支付宝预下单失败。',
+    400,
+    {
+      provider: 'alipay',
+      rawCode: response?.code,
+      rawSubCode: response?.sub_code,
+      rawMessage: response?.msg,
+      rawSubMessage: response?.sub_msg,
+    },
+  )
+}
+
 export async function createAlipayChinaPayment(input: CreateChinaPaymentInput): Promise<ChinaPaymentCreateResult> {
-  return createAlipayPagePay(input)
+  return createAlipayQrPayment(input)
 }
 
 export async function verifyAlipayChinaWebhook(request: Request): Promise<ChinaPaymentWebhookResult> {
@@ -178,34 +238,16 @@ export async function verifyAlipayChinaWebhook(request: Request): Promise<ChinaP
 }
 
 export async function queryAlipayChinaPayment(outTradeNo: string): Promise<ChinaPaymentQueryResult> {
-  const config = getAlipayChinaConfiguration()
-  if (!config.configured) {
-    throw new ChinaPaymentError('PAYMENT_PROVIDER_NOT_CONFIGURED', '支付宝商户参数未配置。', 503, {
-      provider: 'alipay',
-      missing: config.missing,
-    })
-  }
-  return { provider: 'alipay', outTradeNo, status: 'unknown', raw: { mode: 'stub' } }
+  assertConfigured()
+  return { provider: 'alipay', outTradeNo, status: 'unknown', raw: { mode: 'webhook-only' } }
 }
 
 export async function closeAlipayChinaPayment(outTradeNo: string): Promise<ChinaPaymentOperationResult> {
-  const config = getAlipayChinaConfiguration()
-  if (!config.configured) {
-    throw new ChinaPaymentError('PAYMENT_PROVIDER_NOT_CONFIGURED', '支付宝商户参数未配置。', 503, {
-      provider: 'alipay',
-      missing: config.missing,
-    })
-  }
-  return { provider: 'alipay', outTradeNo, success: false, raw: { mode: 'stub' } }
+  assertConfigured()
+  return { provider: 'alipay', outTradeNo, success: false, raw: { mode: 'not-implemented' } }
 }
 
 export async function refundAlipayChinaPayment(outTradeNo: string, refundAmountFen: number): Promise<ChinaPaymentOperationResult> {
-  const config = getAlipayChinaConfiguration()
-  if (!config.configured) {
-    throw new ChinaPaymentError('PAYMENT_PROVIDER_NOT_CONFIGURED', '支付宝商户参数未配置。', 503, {
-      provider: 'alipay',
-      missing: config.missing,
-    })
-  }
-  return { provider: 'alipay', outTradeNo, success: false, raw: { mode: 'stub', refundAmountFen } }
+  assertConfigured()
+  return { provider: 'alipay', outTradeNo, success: false, raw: { mode: 'not-implemented', refundAmountFen } }
 }

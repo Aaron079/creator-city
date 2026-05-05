@@ -8,11 +8,21 @@ export type ChinaCheckoutResult = {
   errorCode?: string
   message?: string
   provider?: ChinaPaymentProvider
+  mode?: 'qr' | 'redirect' | 'form'
+  orderId?: string
   outTradeNo?: string
-  formHtml?: string
-  paymentUrl?: string
+  qrCode?: string
   qrCodeUrl?: string
-  checkoutStarted?: boolean
+  paymentUrl?: string
+  checkoutUrl?: string
+  amountCnyFen?: number
+  packageName?: string
+  credits?: number
+  expiresAt?: string
+  rawCode?: string
+  rawSubCode?: string
+  rawMessage?: string
+  rawSubMessage?: string
 }
 
 type CreateChinaCheckoutInput = {
@@ -21,24 +31,12 @@ type CreateChinaCheckoutInput = {
   clientType?: ChinaPaymentClientType
 }
 
-type CreateChinaCheckoutResponse = ChinaCheckoutResult & {
-  checkoutUrl?: string
-}
-
-function submitPaymentForm(formHtml: string) {
-  const holder = document.createElement('div')
-  holder.style.display = 'none'
-  holder.innerHTML = formHtml
-  const form = holder.querySelector('form')
-  if (!form) throw new Error('支付表单无效')
-  document.body.appendChild(holder)
-  form.submit()
-}
-
-function messageForError(errorCode?: string, fallback?: string) {
+function messageForError(errorCode?: string, fallback?: string, rawSubMessage?: string) {
   if (errorCode === 'UNAUTHORIZED') return '登录已过期，请重新登录'
   if (errorCode === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return fallback ?? '支付方式尚未配置'
   if (errorCode === 'PACKAGE_NOT_FOUND') return '套餐不存在'
+  if (errorCode === 'ALIPAY_SIGN_FAILED') return '支付宝签名失败，请检查应用私钥、支付宝公钥和 charset 配置。'
+  if (errorCode === 'ALIPAY_PRECREATE_FAILED') return rawSubMessage ?? fallback ?? '支付宝预下单失败'
   return fallback ?? '创建订单失败'
 }
 
@@ -66,7 +64,7 @@ export function useChinaPaymentCheckout() {
         },
         body: JSON.stringify({ provider, packageId, clientType }),
       })
-      const data = await res.json().catch(() => ({})) as CreateChinaCheckoutResponse
+      const data = await res.json().catch(() => ({})) as ChinaCheckoutResult
 
       if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
         return {
@@ -78,40 +76,13 @@ export function useChinaPaymentCheckout() {
 
       if (!res.ok || data.success === false) {
         return {
-          success: false,
-          errorCode: data.errorCode,
-          message: messageForError(data.errorCode, data.message),
-        }
-      }
-
-      if (data.formHtml) {
-        submitPaymentForm(data.formHtml)
-        return { ...data, success: true, checkoutStarted: true }
-      }
-
-      if (data.paymentUrl) {
-        window.location.href = data.paymentUrl
-        return { ...data, success: true, checkoutStarted: true }
-      }
-
-      if (data.qrCodeUrl) {
-        return {
           ...data,
-          success: true,
-          message: `请打开支付链接完成付款：${data.qrCodeUrl}`,
+          success: false,
+          message: messageForError(data.errorCode, data.message, data.rawSubMessage),
         }
       }
 
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl
-        return { ...data, success: true, checkoutStarted: true }
-      }
-
-      return {
-        ...data,
-        success: true,
-        message: data.message ?? '支付订单已创建，请使用返回的 provider payload 完成支付。',
-      }
+      return { ...data, success: true }
     } catch (error) {
       return {
         success: false,

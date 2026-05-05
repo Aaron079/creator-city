@@ -5,11 +5,11 @@ import { fulfillChinaPaymentOrder } from '@/lib/payment/china/settlement'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
-  const result = await verifyChinaPaymentWebhook('alipay', request)
-  if (!result.valid) return new NextResponse('fail', { status: 400 })
-  if (!result.paid || !result.outTradeNo) return new NextResponse('success')
-
   try {
+    const result = await verifyChinaPaymentWebhook('alipay', request)
+    if (!result.valid) return new NextResponse('fail', { status: 400 })
+    if (!result.paid || !result.outTradeNo) return new NextResponse('success')
+
     await fulfillChinaPaymentOrder({
       outTradeNo: result.outTradeNo,
       transactionId: result.transactionId,

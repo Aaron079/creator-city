@@ -2,6 +2,8 @@ export type ChinaPaymentProvider = 'alipay' | 'wechatpay'
 
 export type ChinaPaymentClientType = 'pc' | 'h5' | 'wechat-jsapi'
 
+export type ChinaPaymentMode = 'qr' | 'redirect' | 'form'
+
 export type CreateChinaPaymentInput = {
   provider: ChinaPaymentProvider
   orderId: string
@@ -15,12 +17,16 @@ export type CreateChinaPaymentInput = {
 }
 
 export type ChinaPaymentCreateResult = {
+  success?: boolean
   provider: ChinaPaymentProvider
   outTradeNo: string
-  paymentUrl?: string
+  mode?: ChinaPaymentMode
+  qrCode?: string
   qrCodeUrl?: string
+  paymentUrl?: string
   formHtml?: string
   prepayId?: string
+  expiresAt?: string
   raw?: unknown
 }
 
