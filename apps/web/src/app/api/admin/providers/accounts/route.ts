@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { getGatewayAccountStatuses } from '@/lib/gateway/accounts'
+import {
+  PROVIDER_GATEWAY_SCHEMA_MISSING_CODE,
+  PROVIDER_GATEWAY_SCHEMA_MISSING_MESSAGE,
+  isProviderGatewaySchemaMissing,
+} from '@/lib/gateway/schema-errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,10 +29,15 @@ export async function GET() {
     updatedAt: Date
   }> = []
 
+  let schemaMissing = false
   try {
     dbAccounts = await db.providerAccount.findMany({ orderBy: { providerId: 'asc' } })
-  } catch {
-    // DB not seeded yet — return env-only data
+  } catch (error) {
+    if (!isProviderGatewaySchemaMissing(error)) {
+      console.error('[provider-gateway] failed to load provider accounts', error)
+      return NextResponse.json({ message: '加载 Provider Gateway 账户失败。' }, { status: 500 })
+    }
+    schemaMissing = true
   }
 
   const dbMap = new Map(dbAccounts.map((a) => [a.providerId, a]))
@@ -47,7 +57,13 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json({ accounts })
+  return NextResponse.json({
+    accounts,
+    ...(schemaMissing ? {
+      errorCode: PROVIDER_GATEWAY_SCHEMA_MISSING_CODE,
+      message: PROVIDER_GATEWAY_SCHEMA_MISSING_MESSAGE,
+    } : {}),
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -65,19 +81,31 @@ export async function POST(request: NextRequest) {
   const { providerId, monthlyBudgetUsd, isActive } = body
   if (!providerId) return NextResponse.json({ message: 'providerId is required' }, { status: 400 })
 
-  const account = await db.providerAccount.upsert({
-    where: { providerId },
-    create: {
-      providerId,
-      displayName: providerId,
-      monthlyBudgetUsd: monthlyBudgetUsd ?? null,
-      isActive: isActive ?? true,
-    },
-    update: {
-      ...(monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: monthlyBudgetUsd ?? null } : {}),
-      ...(isActive !== undefined ? { isActive } : {}),
-    },
-  })
+  let account
+  try {
+    account = await db.providerAccount.upsert({
+      where: { providerId },
+      create: {
+        providerId,
+        displayName: providerId,
+        monthlyBudgetUsd: monthlyBudgetUsd ?? null,
+        isActive: isActive ?? true,
+      },
+      update: {
+        ...(monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: monthlyBudgetUsd ?? null } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
+    })
+  } catch (error) {
+    if (isProviderGatewaySchemaMissing(error)) {
+      return NextResponse.json({
+        errorCode: PROVIDER_GATEWAY_SCHEMA_MISSING_CODE,
+        message: PROVIDER_GATEWAY_SCHEMA_MISSING_MESSAGE,
+      }, { status: 503 })
+    }
+    console.error('[provider-gateway] failed to update provider account', error)
+    return NextResponse.json({ message: '更新 Provider Gateway 账户失败。' }, { status: 500 })
+  }
 
   return NextResponse.json({ account })
 }

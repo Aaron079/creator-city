@@ -26,27 +26,54 @@ interface CostRow {
   userId: string | null
 }
 
+interface ProviderGatewayApiResult {
+  errorCode?: string
+  message?: string
+  accounts?: ProviderAccount[]
+  costs?: CostRow[]
+  totalUsd?: number
+}
+
+const SCHEMA_MISSING_MESSAGE = 'Provider Gateway 数据表未同步，请在 Supabase 执行 provider-gateway-setup.sql'
+
 export default function AdminProvidersPage() {
   const { user } = useAuthStore()
   const [accounts, setAccounts] = useState<ProviderAccount[]>([])
   const [costs, setCosts] = useState<CostRow[]>([])
   const [totalUsd, setTotalUsd] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
+  const [schemaMissing, setSchemaMissing] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) { setMessage('请先登录管理员账户。'); setLoading(false); return }
     if (user.role !== 'ADMIN') { setMessage('无权限：仅管理员可查看。'); setLoading(false); return }
+    setSchemaMissing(false)
+    setMessage(null)
+
+    async function loadGatewayJson(url: string): Promise<ProviderGatewayApiResult> {
+      const response = await fetch(url, { credentials: 'include' })
+      const data = await response.json() as ProviderGatewayApiResult
+      if (!response.ok && data.errorCode !== 'DB_SCHEMA_MISSING') {
+        throw new Error(data.message ?? 'Provider Gateway 请求失败。')
+      }
+      return data
+    }
 
     void Promise.all([
-      fetch('/api/admin/providers/accounts', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ accounts: ProviderAccount[] }>)
-        .then((d) => setAccounts(d.accounts ?? [])),
-      fetch('/api/admin/providers/costs?limit=50', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ costs: CostRow[]; totalUsd: number }>)
-        .then((d) => { setCosts(d.costs ?? []); setTotalUsd(d.totalUsd ?? 0) }),
+      loadGatewayJson('/api/admin/providers/accounts')
+        .then((d) => {
+          setAccounts(d.accounts ?? [])
+          if (d.errorCode === 'DB_SCHEMA_MISSING') setSchemaMissing(true)
+        }),
+      loadGatewayJson('/api/admin/providers/costs?limit=50')
+        .then((d) => {
+          setCosts(d.costs ?? [])
+          setTotalUsd(d.totalUsd ?? 0)
+          if (d.errorCode === 'DB_SCHEMA_MISSING') setSchemaMissing(true)
+        }),
     ])
-      .catch(() => setMessage('加载 provider 数据失败，请刷新重试。'))
+      .catch((error) => setMessage(error instanceof Error ? error.message : '加载 provider 数据失败，请刷新重试。'))
       .finally(() => setLoading(false))
   }, [user])
 
@@ -62,6 +89,12 @@ export default function AdminProvidersPage() {
           </div>
         )}
 
+        {schemaMissing && (
+          <div className="mt-4 rounded-md border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+            {SCHEMA_MISSING_MESSAGE}
+          </div>
+        )}
+
         {loading && <p className="mt-6 text-sm text-white/40">加载中…</p>}
 
         {!loading && (
@@ -74,18 +107,18 @@ export default function AdminProvidersPage() {
                   <thead>
                     <tr className="border-b border-white/10 bg-white/[0.04] text-left text-xs text-white/40">
                       <th className="px-4 py-2">Provider</th>
+                      <th className="px-4 py-2">Status</th>
+                      <th className="px-4 py-2">Current Month Cost</th>
+                      <th className="px-4 py-2">Monthly Budget</th>
+                      <th className="px-4 py-2">Active</th>
+                      <th className="px-4 py-2">Last Checked</th>
                       <th className="px-4 py-2">节点类型</th>
-                      <th className="px-4 py-2">API 状态</th>
-                      <th className="px-4 py-2">当月成本 (USD)</th>
-                      <th className="px-4 py-2">月度预算 (USD)</th>
-                      <th className="px-4 py-2">账单月份</th>
                     </tr>
                   </thead>
                   <tbody>
                     {accounts.map((a) => (
                       <tr key={a.providerId} className="border-b border-white/5 hover:bg-white/[0.02]">
                         <td className="px-4 py-2 font-medium text-white">{a.displayName}</td>
-                        <td className="px-4 py-2 text-white/50">{a.nodeTypes.join(', ')}</td>
                         <td className="px-4 py-2">
                           <span
                             className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -99,12 +132,20 @@ export default function AdminProvidersPage() {
                         </td>
                         <td className="px-4 py-2">${a.currentMonthCostUsd.toFixed(4)}</td>
                         <td className="px-4 py-2">{a.monthlyBudgetUsd != null ? `$${a.monthlyBudgetUsd.toFixed(2)}` : '—'}</td>
-                        <td className="px-4 py-2 text-white/40">{a.budgetMonth ?? '—'}</td>
+                        <td className="px-4 py-2">
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${a.isActive ? 'bg-green-500/15 text-green-300' : 'bg-red-500/15 text-red-300'}`}>
+                            {a.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-white/40">
+                          {a.lastCheckedAt ? new Date(a.lastCheckedAt).toLocaleString('zh-CN') : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-white/50">{a.nodeTypes.join(', ')}</td>
                       </tr>
                     ))}
                     {accounts.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-6 text-center text-white/30">暂无数据</td>
+                        <td colSpan={7} className="px-4 py-6 text-center text-white/30">暂无数据</td>
                       </tr>
                     )}
                   </tbody>
@@ -115,7 +156,7 @@ export default function AdminProvidersPage() {
             {/* Cost ledger */}
             <section className="mt-8">
               <div className="mb-3 flex items-baseline gap-3">
-                <h2 className="text-base font-medium text-white/80">最近成本记录</h2>
+                <h2 className="text-base font-medium text-white/80">最近成本流水</h2>
                 <span className="text-xs text-white/40">最近 50 条 · 合计 ${totalUsd.toFixed(4)} USD</span>
               </div>
               <div className="overflow-x-auto rounded-lg border border-white/10">
