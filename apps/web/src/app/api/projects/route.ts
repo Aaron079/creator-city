@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { createProjectForUser } from '@/lib/projects/ensure-active-project'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
   isProjectCanvasSchemaMissing,
@@ -17,9 +18,18 @@ function projectSelect() {
     status: true,
     visibility: true,
     thumbnailUrl: true,
+    ownerId: true,
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
+    canvasWorkflows: {
+      take: 1,
+      orderBy: { createdAt: 'asc' as const },
+      select: {
+        id: true,
+        _count: { select: { nodes: true } },
+      },
+    },
   } as const
 }
 
@@ -28,12 +38,80 @@ export async function GET() {
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
-    const projects = await db.project.findMany({
+    const ownedProjects = await db.project.findMany({
       where: { ownerId: user.id },
       select: projectSelect(),
       orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
     })
-    return NextResponse.json({ projects })
+    let memberProjects: Awaited<typeof ownedProjects> = []
+    const membershipByProjectId = new Map<string, string | null>()
+    let membershipWarning: string | undefined
+    try {
+      const activeMemberships = await db.projectMember.findMany({
+        where: { userId: user.id, isActive: true, leftAt: null },
+        select: {
+          projectId: true,
+          roleId: true,
+          role: { select: { name: true } },
+        },
+      })
+      for (const membership of activeMemberships) {
+        membershipByProjectId.set(membership.projectId, membership.role?.name ?? membership.roleId ?? null)
+      }
+      memberProjects = await db.project.findMany({
+        where: {
+          members: {
+            some: { userId: user.id, isActive: true, leftAt: null },
+          },
+        },
+        select: projectSelect(),
+        orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
+      })
+    } catch (error) {
+      membershipWarning = error instanceof Error ? error.message : String(error)
+      console.warn('[projects] member project lookup failed', { userId: user.id, error })
+    }
+
+    const byId = new Map<string, (typeof ownedProjects)[number]>()
+    for (const project of [...ownedProjects, ...memberProjects]) byId.set(project.id, project)
+
+    const projects = [...byId.values()]
+      .sort((left, right) => {
+        const leftTime = new Date(left.lastOpenedAt ?? left.updatedAt).getTime()
+        const rightTime = new Date(right.lastOpenedAt ?? right.updatedAt).getTime()
+        return rightTime - leftTime
+      })
+      .map((project) => {
+        const workflow = project.canvasWorkflows[0]
+        const isOwner = project.ownerId === user.id
+        return {
+          id: project.id,
+          title: project.title,
+          description: project.description,
+          status: project.status,
+          visibility: project.visibility,
+          thumbnailUrl: project.thumbnailUrl,
+          ownerId: project.ownerId,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+          lastOpenedAt: project.lastOpenedAt,
+          workflowId: workflow?.id ?? null,
+          nodeCount: workflow?._count.nodes ?? 0,
+          ownerRole: isOwner ? 'OWNER' : null,
+          membershipRole: membershipByProjectId.get(project.id) ?? null,
+        }
+      })
+
+    return NextResponse.json({
+      projects,
+      summary: {
+        ownedProjectsCount: ownedProjects.length,
+        activeMembershipsCount: membershipByProjectId.size,
+        currentProjectId: projects[0]?.id ?? null,
+        recentProject: projects[0] ?? null,
+      },
+      ...(membershipWarning ? { membershipWarning } : {}),
+    })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
@@ -54,48 +132,15 @@ export async function POST(request: NextRequest) {
     body = {}
   }
 
-  const now = new Date()
   const title = body.title?.trim() || 'Untitled Project'
 
   try {
-    const result = await db.$transaction(async (tx) => {
-      const project = await tx.project.create({
-        data: {
-          ownerId: user.id,
-          title,
-          description: body.description ?? '',
-          type: 'SHORT_FILM',
-          status: 'DRAFT',
-          visibility: 'PRIVATE',
-          tags: [],
-          genre: [],
-          lastOpenedAt: now,
-        },
-        select: projectSelect(),
-      })
-      const workflow = await tx.canvasWorkflow.create({
-        data: {
-          projectId: project.id,
-          name: 'Main Canvas',
-          viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
-        },
-      })
-      // Create ProjectMember so store-based permission checks also recognise the owner
-      try {
-        await tx.projectMember.create({
-          data: {
-            projectId: project.id,
-            userId: user.id,
-            isActive: true,
-          },
-        })
-      } catch {
-        // ProjectMember table may not be migrated yet; ownerId check is the fallback
-      }
-      return { project, workflow }
+    const result = await createProjectForUser(user, {
+      title,
+      description: body.description,
     })
 
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json({ success: true, ...result }, { status: 201 })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)

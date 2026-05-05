@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
   isProjectCanvasSchemaMissing,
@@ -26,13 +27,14 @@ const selectProject = {
   ownerId: true,
 } as const
 
-async function getOwnedProject(projectId: string, userId: string) {
+async function getAccessibleProject(projectId: string, userId: string, write = false) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: selectProject,
   })
   if (!project) return null
-  if (project.ownerId !== userId) return 'FORBIDDEN' as const
+  const access = await getProjectAccess(userId, projectId)
+  if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
   return project
 }
 
@@ -41,7 +43,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
-    const project = await getOwnedProject(params.projectId, user.id)
+    const project = await getAccessibleProject(params.projectId, user.id)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
     return NextResponse.json({ project })
@@ -66,7 +68,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   }
 
   try {
-    const project = await getOwnedProject(params.projectId, user.id)
+    const project = await getAccessibleProject(params.projectId, user.id, true)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 

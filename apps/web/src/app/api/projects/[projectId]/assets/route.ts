@@ -7,6 +7,7 @@ import {
   projectJsonError,
 } from '@/lib/projects/api-errors'
 import { serializeAsset, toAssetType } from '@/lib/projects/canvas-mappers'
+import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       select: { id: true, ownerId: true },
     })
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
-    if (project.ownerId !== user.id) return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
+    const access = await getProjectAccess(user.id, project.id)
+    if (!access.canWrite) return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
     const title = body.title?.trim() || `${body.type ?? 'asset'} asset`
     const asset = await db.asset.create({

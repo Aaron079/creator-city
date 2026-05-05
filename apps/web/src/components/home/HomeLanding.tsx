@@ -1,4 +1,8 @@
+'use client'
+
 import Link from 'next/link'
+import { useCallback, type MouseEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { ContentCard } from '@/components/home/ContentCard'
 import { ContentRails } from '@/components/home/ContentRail'
 import { FeaturedCarousel } from '@/components/home/FeaturedCarousel'
@@ -21,6 +25,19 @@ const PORTAL_LINKS = [
 ]
 
 export function HomeLanding() {
+  const router = useRouter()
+  const handleCanvasEntry = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+    let href = '/create'
+    try {
+      const lastId = window.localStorage.getItem('creator-city:last-project-id')
+      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
+    } catch {
+      // localStorage may be unavailable; /create will ensure the active project.
+    }
+    router.push(href)
+  }, [router])
+
   return (
     <main className="mx-auto max-w-7xl px-6 pb-16 pt-24">
       <section className="relative overflow-hidden rounded-[36px] border border-white/10 bg-white/[0.03] p-7 backdrop-blur-[28px] md:p-9">
@@ -40,6 +57,7 @@ export function HomeLanding() {
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
                 href="/create"
+                onClick={handleCanvasEntry}
                 className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:scale-[1.01]"
               >
                 进入 AI 画布
@@ -99,6 +117,7 @@ export function HomeLanding() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={item.href === '/create' ? handleCanvasEntry : undefined}
               className="rounded-[24px] border border-white/8 bg-white/[0.035] p-5 transition hover:border-white/18 hover:bg-white/[0.055]"
             >
               <div className="text-sm font-medium text-white">{item.label}</div>

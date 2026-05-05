@@ -16,6 +16,10 @@ interface ProjectListItem {
   createdAt: string
   updatedAt: string
   lastOpenedAt: string | null
+  workflowId?: string | null
+  nodeCount?: number
+  ownerRole?: string | null
+  membershipRole?: string | null
 }
 
 export default function ProjectsPage() {
@@ -74,6 +78,11 @@ export default function ProjectsPage() {
         return
       }
       if (!response.ok || !data.project?.id) throw new Error(data.message ?? '创建项目失败。')
+      try {
+        window.localStorage.setItem('creator-city:last-project-id', data.project.id)
+      } catch {
+        // /create will still open the active project.
+      }
       router.push(`/create?projectId=${encodeURIComponent(data.project.id)}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
@@ -120,13 +129,21 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/create?projectId=${encodeURIComponent(project.id)}`}
+                onClick={() => {
+                  try {
+                    window.localStorage.setItem('creator-city:last-project-id', project.id)
+                    if (project.workflowId) window.localStorage.setItem('creator-city:last-workflow-id', project.workflowId)
+                  } catch {
+                    // localStorage unavailable; explicit projectId still opens this project.
+                  }
+                }}
                 className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-4 transition hover:border-white/20 hover:bg-white/[0.06]"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-base font-semibold text-white">{project.title || 'Untitled Project'}</div>
                     <div className="mt-1 text-xs text-white/40">
-                      {project.description || 'Main Canvas'} · {project.visibility} · {project.status}
+                      {project.description || 'Main Canvas'} · {project.visibility} · {project.status} · {project.nodeCount ?? 0} nodes · {project.ownerRole ?? project.membershipRole ?? 'MEMBER'}
                     </div>
                   </div>
                   <div className="text-xs text-white/40">

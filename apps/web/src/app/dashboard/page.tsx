@@ -94,6 +94,12 @@ export default function DashboardPage() {
   const router = useRouter()
   const feedback = useFeedback()
   const [dbProjectIds, setDbProjectIds] = useState<string[]>([])
+  const [projectSummary, setProjectSummary] = useState({
+    ownedProjectsCount: 0,
+    activeMembershipsCount: 0,
+    currentProjectId: null as string | null,
+    currentProjectTitle: null as string | null,
+  })
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
@@ -103,10 +109,47 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isAuthenticated) return
     fetch('/api/projects', { credentials: 'include' })
-      .then((r) => r.json() as Promise<{ projects?: Array<{ id: string }> }>)
-      .then((d) => setDbProjectIds((d.projects ?? []).map((p) => p.id)))
+      .then((r) => r.json() as Promise<{
+        projects?: Array<{ id: string; title?: string; ownerRole?: string | null; membershipRole?: string | null }>
+        summary?: { ownedProjectsCount?: number; activeMembershipsCount?: number; currentProjectId?: string | null; recentProject?: { id: string; title?: string } | null }
+      }>)
+      .then((d) => {
+        const projects = d.projects ?? []
+        setDbProjectIds(projects.map((p) => p.id))
+        setProjectSummary({
+          ownedProjectsCount: d.summary?.ownedProjectsCount ?? projects.filter((p) => p.ownerRole === 'OWNER').length,
+          activeMembershipsCount: d.summary?.activeMembershipsCount ?? projects.filter((p) => p.membershipRole).length,
+          currentProjectId: d.summary?.currentProjectId ?? projects[0]?.id ?? null,
+          currentProjectTitle: d.summary?.recentProject?.title ?? projects[0]?.title ?? null,
+        })
+      })
       .catch(() => {})
   }, [isAuthenticated])
+
+  const openActiveProject = useCallback(async () => {
+    try {
+      const lastId = window.localStorage.getItem('creator-city:last-project-id')
+      if (lastId) {
+        router.push(`/create?projectId=${encodeURIComponent(lastId)}`)
+        return
+      }
+    } catch {
+      // Fall through to server ensure.
+    }
+    const response = await fetch('/api/projects/ensure', { method: 'POST', credentials: 'include' })
+    const data = await response.json().catch(() => ({})) as { project?: { id: string }; workflow?: { id: string }; message?: string }
+    if (!response.ok || !data.project?.id) {
+      feedback.error(data.message ?? '打开项目失败')
+      return
+    }
+    try {
+      window.localStorage.setItem('creator-city:last-project-id', data.project.id)
+      if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
+    } catch {
+      // Explicit URL still opens the project.
+    }
+    router.push(`/create?projectId=${encodeURIComponent(data.project.id)}`)
+  }, [feedback, router])
 
   useEffect(() => {
     unsnoozeExpired()
@@ -401,6 +444,23 @@ export default function DashboardPage() {
   return (
     <DashboardShell>
       <div className="mb-6">
+        <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-white/35">Current Identity</div>
+              <div className="mt-2 text-sm text-white/70">
+                Owned Projects {projectSummary.ownedProjectsCount} · Active Memberships {projectSummary.activeMembershipsCount} · Current {projectSummary.currentProjectTitle ?? projectSummary.currentProjectId ?? 'none'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { void openActiveProject() }}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+            >
+              Open Project
+            </button>
+          </div>
+        </div>
         <RoleViewSwitcher
           resolvedRole={roleContext.role}
           overrideRole={roleOverride}
@@ -423,17 +483,17 @@ export default function DashboardPage() {
               ? 'Client 角色不会进入完整 Producer Dashboard。你可以继续通过 Review Portal 查看待确认内容和交付快照。'
               : dbProjectIds.length === 0
                 ? '创建第一个项目后即可进入 Dashboard，画布节点、AI 生成结果和工作流都会自动保存。'
-                : '当前账号没有 active project membership，因此暂时不能进入项目 Dashboard。你可以先查看我的身份概览，或联系 Producer 完成项目成员绑定。'}
+                : '当前账号拥有项目 Owner 权限，但 Dashboard 暂无可展示的本地生产数据。你仍可直接进入项目画布。'}
           details={[
             `当前账号：${user.displayName ?? user.id}`,
             `当前 Profile：${currentProfileId ?? '未解析'}`,
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}
           actionHref={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
-            ? '/projects'
+            ? '/create'
             : dashboardFallbackAction.actionHref}
           actionLabel={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
-            ? '前往 Projects 创建项目'
+            ? '创建项目'
             : dashboardFallbackAction.actionLabel}
           secondaryHref={clientOnlyProjectIds.length > 0 ? getMeHref() : undefined}
           secondaryLabel={clientOnlyProjectIds.length > 0 ? '查看我的项目身份' : undefined}

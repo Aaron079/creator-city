@@ -8,6 +8,7 @@ import {
   projectJsonError,
 } from '@/lib/projects/api-errors'
 import { mapCanvasEdge, mapCanvasNode, serializeAsset } from '@/lib/projects/canvas-mappers'
+import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ type CanvasSaveEdge = {
   type?: string
 }
 
-async function requireOwnedProject(projectId: string, userId: string) {
+async function requireProjectAccess(projectId: string, userId: string, write = false) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: {
@@ -64,7 +65,8 @@ async function requireOwnedProject(projectId: string, userId: string) {
     },
   })
   if (!project) return null
-  if (project.ownerId !== userId) return 'FORBIDDEN' as const
+  const access = await getProjectAccess(userId, projectId)
+  if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
   return project
 }
 
@@ -88,7 +90,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
-    const project = await requireOwnedProject(params.projectId, user.id)
+    const project = await requireProjectAccess(params.projectId, user.id)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
@@ -135,6 +137,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     edges?: CanvasSaveEdge[]
     deletedNodeIds?: string[]
     deletedEdgeIds?: string[]
+    clearCanvas?: boolean
   }
   try {
     body = await request.json() as typeof body
@@ -145,10 +148,14 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   if (!Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
     return projectJsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
   }
+  const invalidNode = body.nodes.find((node) => typeof node.id !== 'string' || !node.id || typeof node.kind !== 'string' || !node.kind)
+  if (invalidNode) {
+    return projectJsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
+  }
 
   // Refuse to overwrite existing nodes with an empty list unless the client
   // explicitly passes deletedNodeIds (meaning it intentionally deleted them).
-  const isEmptyWrite = body.nodes.length === 0 && (!body.deletedNodeIds || body.deletedNodeIds.length === 0)
+  const isEmptyWrite = body.nodes.length === 0 && !body.clearCanvas
   if (isEmptyWrite) {
     // Peek at the existing node count; if nodes already exist, skip this save
     let existingCount = 0
@@ -161,12 +168,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       }
     } catch { /* non-fatal */ }
     if (existingCount > 0) {
-      return NextResponse.json({ ok: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
+      return NextResponse.json({ success: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
     }
   }
 
   try {
-    const project = await requireOwnedProject(params.projectId, user.id)
+    const project = await requireProjectAccess(params.projectId, user.id, true)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
@@ -256,6 +263,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
         })
       }
 
+      if (body.clearCanvas && (body.nodes ?? []).length === 0) {
+        await tx.canvasEdge.deleteMany({ where: { workflowId: workflow.id } })
+        await tx.canvasNode.deleteMany({ where: { workflowId: workflow.id } })
+      }
+
       if (body.deletedNodeIds?.length) {
         await tx.canvasNode.deleteMany({
           where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
@@ -273,12 +285,18 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       })
     })
 
-    return NextResponse.json({ ok: true, workflowId: workflow.id, savedAt: now.toISOString() })
+    return NextResponse.json({
+      success: true,
+      workflowId: workflow.id,
+      savedAt: now.toISOString(),
+      nodeCount: body.nodes.length,
+      edgeCount: body.edges.length,
+    })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     console.error('[projects] failed to save canvas', error)
-    return NextResponse.json({ message: '保存画布失败。' }, { status: 500 })
+    return NextResponse.json({ success: false, errorCode: 'PROJECT_ACCESS_FAILED', message: '保存画布失败。' }, { status: 500 })
   }
 }

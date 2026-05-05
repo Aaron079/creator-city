@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
 import { ProfileView } from '@/components/profile/ProfileView'
@@ -30,6 +31,7 @@ import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
 
 export default function MePage() {
+  const router = useRouter()
   const currentUserId = useProfileStore((s) => s.currentUserId)
   const authUser = useAuthStore((s) => s.user)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -117,7 +119,66 @@ export default function MePage() {
     : getActionTarget({
         actionType: 'me',
         actionLabel: '查看邀请',
+    })
+  const [projectSummary, setProjectSummary] = useState({
+    ownedProjectsCount: 0,
+    activeMembershipsCount: 0,
+    currentProjectId: null as string | null,
+    recentProjectTitle: null as string | null,
+    loading: true,
+    message: '',
+  })
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser) return
+    let cancelled = false
+    fetch('/api/projects', { credentials: 'include' })
+      .then((response) => response.json() as Promise<{
+        projects?: Array<{ id: string; title?: string; ownerRole?: string | null; membershipRole?: string | null }>
+        summary?: { ownedProjectsCount?: number; activeMembershipsCount?: number; currentProjectId?: string | null; recentProject?: { title?: string } | null }
+        message?: string
+      }>)
+      .then((data) => {
+        if (cancelled) return
+        const projects = data.projects ?? []
+        setProjectSummary({
+          ownedProjectsCount: data.summary?.ownedProjectsCount ?? projects.filter((project) => project.ownerRole === 'OWNER').length,
+          activeMembershipsCount: data.summary?.activeMembershipsCount ?? projects.filter((project) => project.membershipRole).length,
+          currentProjectId: data.summary?.currentProjectId ?? projects[0]?.id ?? null,
+          recentProjectTitle: data.summary?.recentProject?.title ?? projects[0]?.title ?? null,
+          loading: false,
+          message: data.message ?? '',
+        })
       })
+      .catch((error) => {
+        if (!cancelled) {
+          setProjectSummary((current) => ({
+            ...current,
+            loading: false,
+            message: error instanceof Error ? error.message : '加载项目身份失败。',
+          }))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authUser, isAuthenticated])
+
+  async function handleEnsureProject() {
+    const response = await fetch('/api/projects/ensure', { method: 'POST', credentials: 'include' })
+    const data = await response.json().catch(() => ({})) as { project?: { id: string }; workflow?: { id: string }; message?: string }
+    if (!response.ok || !data.project?.id) {
+      setProjectSummary((current) => ({ ...current, message: data.message ?? '创建项目失败。' }))
+      return
+    }
+    try {
+      window.localStorage.setItem('creator-city:last-project-id', data.project.id)
+      if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
+    } catch {
+      // Explicit URL still opens the project.
+    }
+    router.push(`/create?projectId=${encodeURIComponent(data.project.id)}`)
+  }
 
   if (!isAuthenticated || !authUser) {
     return (
@@ -178,16 +239,31 @@ export default function MePage() {
                 <div className="mt-1 text-xs text-white/45">Role: {authUser.role}</div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-[11px] text-white/45">Active Project Roles</div>
-                <div className="mt-1 text-sm font-semibold text-white">{activeAssignments.length} 项</div>
+                <div className="text-[11px] text-white/45">Project Identity</div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  Owned {projectSummary.ownedProjectsCount} · Memberships {projectSummary.activeMembershipsCount}
+                </div>
+                <div className="mt-1 text-xs text-white/45">
+                  当前项目：{projectSummary.recentProjectTitle ?? projectSummary.currentProjectId ?? (projectSummary.loading ? '加载中...' : '无')}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {activeAssignments.length > 0 ? activeAssignments.map((assignment) => (
+                  {projectSummary.ownedProjectsCount > 0 && projectSummary.activeMembershipsCount === 0 ? (
+                    <span className="text-xs text-emerald-200/80">你是项目 Owner，可直接进入项目。</span>
+                  ) : activeAssignments.length > 0 ? activeAssignments.map((assignment) => (
                     <div key={assignment.id} className="flex items-center gap-2 rounded-xl border border-white/8 px-2 py-1">
                       <RoleBadge role={assignment.role} />
                       <span className="text-[11px] text-white/55">{assignment.projectId}</span>
                     </div>
-                  )) : (
-                    <span className="text-xs text-white/45">当前没有 active project role assignment。</span>
+                  )) : projectSummary.ownedProjectsCount === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => { void handleEnsureProject() }}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/85"
+                    >
+                      创建项目
+                    </button>
+                  ) : (
+                    <span className="text-xs text-white/45">{projectSummary.message || '真实项目身份已加载。'}</span>
                   )}
                 </div>
               </div>

@@ -41,9 +41,10 @@ interface VisualCanvasWorkspaceProps {
   onShowStartup: () => void
 }
 
-type SaveStatus = 'idle' | 'loading' | 'dirty' | 'saving' | 'saved' | 'failed' | 'local-draft'
+type SaveStatus = 'idle' | 'opening' | 'dirty' | 'saving' | 'saved' | 'failed' | 'local-draft' | 'restored-draft'
 
 interface CanvasLoadResponse {
+  success?: boolean
   errorCode?: string
   message?: string
   project?: { id: string; title: string }
@@ -380,7 +381,7 @@ export function VisualCanvasWorkspace({
   const [projectId, setProjectId] = useState(searchParamProjectId ?? '')
   const [workflowId, setWorkflowId] = useState('')
   const [loadedProjectTitle, setLoadedProjectTitle] = useState(projectTitle)
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('opening')
   const [saveMessage, setSaveMessage] = useState('')
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
@@ -511,6 +512,8 @@ export function VisualCanvasWorkspace({
     }
     try {
       window.localStorage.setItem(getDraftKey(projectId), JSON.stringify(draft))
+      window.localStorage.setItem('creator-city:last-project-id', projectId)
+      window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
       // draft written
     } catch {
       // localStorage can fail in private mode; do not disrupt the canvas.
@@ -602,70 +605,34 @@ export function VisualCanvasWorkspace({
 
     async function loadOrCreateProject() {
       const nextProjectId = searchParamProjectId
-      setSaveStatus('loading')
+      setSaveStatus('opening')
       setSaveMessage('')
       canvasLoadedRef.current = false
       hasHydratedCanvasRef.current = false
       isInitializingRef.current = true
 
       try {
-        // ── Step 1: Resolve which project to open ────────────────────────
         const resolvedProjectId = nextProjectId
 
         if (!resolvedProjectId) {
-          setSaveMessage('正在打开最近项目...')
-
-          // 1a. Check localStorage for the last opened project
-          let lastSavedId: string | null = null
-          try { lastSavedId = window.localStorage.getItem('creator-city:last-project-id') } catch (_) { /* private mode */ }
-
-          if (lastSavedId) {
-            const tryRes = await fetch(`/api/projects/${encodeURIComponent(lastSavedId)}/canvas`, { credentials: 'include' })
-            if (tryRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
-            if (tryRes.ok) {
-              if (cancelled) return
-              router.replace(`/create?projectId=${encodeURIComponent(lastSavedId)}`)
-              return
-            }
-          }
-
-          // 1b. Ask the server for the most recently opened project
-          const listRes = await fetch('/api/projects', { credentials: 'include' })
-          if (listRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
-          if (listRes.ok) {
-            const listData = await listRes.json().catch(() => ({})) as { projects?: Array<{ id: string }> }
-            const recent = listData.projects?.[0]
-            if (recent?.id) {
-              if (cancelled) return
-              router.replace(`/create?projectId=${encodeURIComponent(recent.id)}`)
-              return
-            }
-          }
-
-          // 1c. No existing project — create a fresh one
-          const createRes = await fetch('/api/projects', {
+          setSaveMessage('正在打开项目...')
+          const ensureRes = await fetch('/api/projects/ensure', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ title: 'Untitled Project' }),
           })
-          const createData = await createRes.json().catch(() => ({})) as {
-            errorCode?: string; message?: string
+          const ensureData = await ensureRes.json().catch(() => ({})) as {
+            success?: boolean; errorCode?: string; message?: string
             project?: { id: string; title: string }; workflow?: { id: string }
           }
-          if (createRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
-          if (!createRes.ok || !createData.project?.id) throw new Error(createData.message ?? '创建项目失败。')
+          if (ensureRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
+          if (ensureData.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
+          if (!ensureRes.ok || !ensureData.project?.id) throw new Error(ensureData.message ?? '打开项目失败。')
           if (cancelled) return
-          try { window.localStorage.setItem('creator-city:last-project-id', createData.project.id) } catch (_) { /* private mode */ }
-          setProjectId(createData.project.id)
-          setWorkflowId(createData.workflow?.id ?? '')
-          setLoadedProjectTitle(createData.project.title)
-          setSaveStatus('saved')
-          setSaveMessage('Saved')
-          canvasLoadedRef.current = true
-          hasHydratedCanvasRef.current = true
-          isInitializingRef.current = false
-          router.replace(`/create?projectId=${encodeURIComponent(createData.project.id)}`)
+          try {
+            window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
+            if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
+          } catch (_) { /* private mode */ }
+          router.replace(`/create?projectId=${encodeURIComponent(ensureData.project.id)}`)
           return
         }
 
@@ -676,11 +643,15 @@ export function VisualCanvasWorkspace({
           router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${resolvedProjectId}`)}`)
           return
         }
+        if (data.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
         if (!response.ok) throw new Error(data.message ?? '加载画布失败。')
         if (cancelled) return
 
         // Persist so next visit to /create (without ?projectId) reopens this project
-        try { window.localStorage.setItem('creator-city:last-project-id', resolvedProjectId) } catch (_) { /* private mode */ }
+        try {
+          window.localStorage.setItem('creator-city:last-project-id', resolvedProjectId)
+          if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
+        } catch (_) { /* private mode */ }
 
         setProjectId(resolvedProjectId)
         setWorkflowId(data.workflow?.id ?? '')
@@ -708,7 +679,7 @@ export function VisualCanvasWorkspace({
         }
         if (shouldUseDraft) {
           setSaveMessage('发现本地未同步草稿，已自动恢复')
-          setSaveStatus('local-draft')
+          setSaveStatus('restored-draft')
         }
         latestNodesRef.current = nextNodes
         latestEdgesRef.current = nextEdges
@@ -723,7 +694,7 @@ export function VisualCanvasWorkspace({
           pan: { x: Number(nextViewport.pan?.x ?? 0), y: Number(nextViewport.pan?.y ?? 0) },
         }
         setHasStarted(nextNodes.length > 0)
-        setSaveStatus(shouldUseDraft || shouldPreserveLocalNodes ? 'local-draft' : 'saved')
+        setSaveStatus(shouldUseDraft ? 'restored-draft' : shouldPreserveLocalNodes ? 'local-draft' : 'saved')
         if (!shouldUseDraft && !shouldPreserveLocalNodes) setSaveMessage('Saved')
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
@@ -2179,19 +2150,21 @@ export function VisualCanvasWorkspace({
             type="button"
             className="canvas-secondary-button"
             title={saveMessage || saveStatus}
-            onClick={() => { if (saveStatus === 'failed' || saveStatus === 'local-draft') void saveCanvas() }}
+            onClick={() => { if (saveStatus === 'failed' || saveStatus === 'local-draft' || saveStatus === 'restored-draft') void saveCanvas() }}
           >
-            {saveStatus === 'loading'
-              ? '正在加载项目...'
+            {saveStatus === 'opening'
+              ? '正在打开项目...'
               : saveStatus === 'saving'
                 ? 'Saving...'
                 : saveStatus === 'dirty'
                   ? 'Saving...'
                   : saveStatus === 'local-draft'
                     ? 'Offline draft saved'
-                : saveStatus === 'failed'
-                  ? 'Save failed'
-                  : 'Saved'}
+                    : saveStatus === 'restored-draft'
+                      ? 'Restored draft'
+                      : saveStatus === 'failed'
+                        ? 'Save failed'
+                        : 'Saved'}
           </button>
           <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
             社区
@@ -2222,19 +2195,29 @@ export function VisualCanvasWorkspace({
         </div>
       </div>
 
-      <CanvasToolDock
-        onAddNode={handleAddNode}
-        activeTool={activeTool}
-        onToolSelect={setActiveTool}
-        isAddMenuOpen={isAddMenuOpen}
-        onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
-        commentsEnabled={commentsEnabled}
-        onOpenAssetsPanel={handleOpenAssetsPanel}
-        onOpenTemplatePanel={handleOpenTemplatePanel}
-        onToggleCommentsPanel={handleToggleCommentsPanel}
-        onOpenHistoryPanel={handleOpenHistoryPanel}
-        onOpenImageEditor={handleOpenImageEditor}
-      />
+      {saveStatus === 'opening' ? (
+        <div className="canvas-empty-overlay">
+          <div className="canvas-empty-hint-row">
+            <span className="canvas-empty-hint-text">正在打开项目...</span>
+          </div>
+        </div>
+      ) : null}
+
+      {saveStatus !== 'opening' ? (
+        <CanvasToolDock
+          onAddNode={handleAddNode}
+          activeTool={activeTool}
+          onToolSelect={setActiveTool}
+          isAddMenuOpen={isAddMenuOpen}
+          onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
+          commentsEnabled={commentsEnabled}
+          onOpenAssetsPanel={handleOpenAssetsPanel}
+          onOpenTemplatePanel={handleOpenTemplatePanel}
+          onToggleCommentsPanel={handleToggleCommentsPanel}
+          onOpenHistoryPanel={handleOpenHistoryPanel}
+          onOpenImageEditor={handleOpenImageEditor}
+        />
+      ) : null}
 
       <AnimatePresence mode="wait">
         {activePanel === 'assets' ? (
@@ -2336,7 +2319,7 @@ export function VisualCanvasWorkspace({
         onPointerCancel={handleCanvasPointerUp}
         onDoubleClick={handleCanvasDoubleClick}
       >
-        {!hasStarted && nodes.length === 0 ? (
+        {saveStatus !== 'opening' && !hasStarted && nodes.length === 0 ? (
           <div className="canvas-empty-overlay">
             <div className="canvas-empty-hint-row">
               <span className="canvas-empty-hint-badge">
