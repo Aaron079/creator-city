@@ -12,6 +12,21 @@ import type { PaymentConfiguration } from '@/lib/payments/types'
 
 const EMPTY_STATUS: PaymentConfiguration = { enabled: false, configured: false, missing: [] }
 
+interface ChinaPaymentStatusResponse {
+  providers?: {
+    alipay?: { status?: 'configured' | 'not-configured'; missing?: string[] }
+    wechatpay?: { status?: 'configured' | 'not-configured'; missing?: string[] }
+  }
+}
+
+function toPaymentConfiguration(provider?: { status?: 'configured' | 'not-configured'; missing?: string[] }): PaymentConfiguration {
+  return {
+    enabled: true,
+    configured: provider?.status === 'configured',
+    missing: provider?.missing ?? [],
+  }
+}
+
 export default function BillingPage() {
   const { token, isAuthenticated } = useAuthStore()
   const [packages, setPackages] = useState<CreditPackage[]>([])
@@ -30,13 +45,24 @@ export default function BillingPage() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch('/api/billing/packages')
-      const data = await res.json() as {
+      const [billingRes, chinaRes] = await Promise.all([
+        fetch('/api/billing/packages'),
+        fetch('/api/payment/china/status', { credentials: 'include', cache: 'no-store' }),
+      ])
+      const data = await billingRes.json() as {
         packages: CreditPackage[]
         providerStatuses: Record<PaymentProvider, PaymentConfiguration>
       }
+      const chinaStatus = chinaRes.ok
+        ? await chinaRes.json() as ChinaPaymentStatusResponse
+        : null
       setPackages(data.packages)
-      setStatuses(data.providerStatuses)
+      setStatuses({
+        ...data.providerStatuses,
+        alipay: toPaymentConfiguration(chinaStatus?.providers?.alipay),
+        wechat: toPaymentConfiguration(chinaStatus?.providers?.wechatpay),
+        manual: data.providerStatuses.manual ?? { enabled: true, configured: true, missing: [] },
+      })
     })()
   }, [])
 
