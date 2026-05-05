@@ -119,7 +119,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         errorCode: error.code,
-        message: error.message,
+        message: error.code === 'PAYMENT_PROVIDER_NOT_CONFIGURED' && body.provider === 'alipay'
+          ? '支付宝未配置'
+          : error.message,
         details: error.details,
       }, { status: error.status })
     }

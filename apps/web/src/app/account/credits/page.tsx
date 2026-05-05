@@ -105,7 +105,15 @@ export default function AccountCreditsPage() {
       const data = await res.json().catch(() => ({})) as {
         formHtml?: string
         paymentUrl?: string
+        errorCode?: string
         message?: string
+      }
+      if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
+        setSubmitMsg({ ok: false, text: '登录已过期，请重新登录。' })
+        window.setTimeout(() => {
+          window.location.href = '/auth/login?next=/account/credits'
+        }, 800)
+        return
       }
       if (!res.ok) throw new Error(data.message ?? '创建支付宝订单失败')
       if (data.formHtml) {
