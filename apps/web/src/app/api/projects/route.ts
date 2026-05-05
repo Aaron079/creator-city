@@ -80,6 +80,18 @@ export async function POST(request: NextRequest) {
           viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
         },
       })
+      // Create ProjectMember so store-based permission checks also recognise the owner
+      try {
+        await tx.projectMember.create({
+          data: {
+            projectId: project.id,
+            userId: user.id,
+            isActive: true,
+          },
+        })
+      } catch {
+        // ProjectMember table may not be migrated yet; ownerId check is the fallback
+      }
       return { project, workflow }
     })
 

@@ -199,8 +199,11 @@ export function canEnterDashboard(
     assignments?: ProjectRoleAssignment[]
     teams?: Team[]
     invitations?: TeamInvitation[]
+    /** Project IDs owned by the current user in the DB (ownerId match). Owners always get access. */
+    ownedProjectIds?: string[]
   },
 ) {
+  if (options?.ownedProjectIds?.includes(projectId)) return true
   const access = getProjectAccessState(projectId, options)
   return access.state === 'producer-only' || access.state === 'creator-only'
 }

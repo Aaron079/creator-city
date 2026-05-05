@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
 import { DashboardShell } from '@/components/layout/DashboardShell'
@@ -93,10 +93,20 @@ export default function DashboardPage() {
   const upsertNotificationRule = useNotificationsStore((s) => s.upsertRule)
   const router = useRouter()
   const feedback = useFeedback()
+  const [dbProjectIds, setDbProjectIds] = useState<string[]>([])
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/auth/login')
   }, [isAuthenticated, router])
+
+  // Fetch real DB projects so owners can enter the dashboard without a Zustand store assignment
+  useEffect(() => {
+    if (!isAuthenticated) return
+    fetch('/api/projects', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ projects?: Array<{ id: string }> }>)
+      .then((d) => setDbProjectIds((d.projects ?? []).map((p) => p.id)))
+      .catch(() => {})
+  }, [isAuthenticated])
 
   useEffect(() => {
     unsnoozeExpired()
@@ -133,13 +143,14 @@ export default function DashboardPage() {
 
   const allProjectIds = useMemo(
     () => Array.from(new Set([
+      ...dbProjectIds,
       ...teams.map((team) => team.projectId),
       ...orders.map((order) => order.id),
       ...deliveryPackages.map((pkg) => pkg.projectId),
       ...projectRoleAssignments.map((assignment) => assignment.projectId),
       ...invitations.map((invitation) => invitation.projectId),
     ].filter(Boolean))),
-    [deliveryPackages, invitations, orders, projectRoleAssignments, teams],
+    [dbProjectIds, deliveryPackages, invitations, orders, projectRoleAssignments, teams],
   )
   const accessByProject = useMemo(
     () => allProjectIds.map((projectId) => getProjectAccessState(projectId, {
@@ -159,9 +170,10 @@ export default function DashboardPage() {
         assignments: projectRoleAssignments,
         teams,
         invitations,
+        ownedProjectIds: dbProjectIds,
       }))
       .map((item) => item.projectId),
-    [accessByProject, invitations, projectRoleAssignments, teams],
+    [accessByProject, dbProjectIds, invitations, projectRoleAssignments, teams],
   )
   const invitedProjectIds = useMemo(
     () => accessByProject.filter((item) => item.state === 'invited').map((item) => item.projectId),
@@ -402,19 +414,27 @@ export default function DashboardPage() {
             ? '你已收到项目邀请，接受后可进入 Dashboard'
             : clientOnlyProjectIds.length > 0
               ? '当前账号以 Client 角色绑定到项目'
-              : '当前账号还不能进入项目 Dashboard'}
+              : dbProjectIds.length === 0
+                ? '你还没有项目'
+                : '当前账号还不能进入项目 Dashboard'}
           message={invitedProjectIds.length > 0
             ? '这些项目已经邀请你加入，但在你接受邀请之前，Dashboard 不会开放完整的项目总控视图。先去我的邀请页确认加入，之后项目级视图和动作权限会自动生效。'
             : clientOnlyProjectIds.length > 0
               ? 'Client 角色不会进入完整 Producer Dashboard。你可以继续通过 Review Portal 查看待确认内容和交付快照。'
-              : '当前账号没有 active project membership，因此暂时不能进入项目 Dashboard。你可以先查看我的身份概览，或联系 Producer 完成项目成员绑定。'}
+              : dbProjectIds.length === 0
+                ? '创建第一个项目后即可进入 Dashboard，画布节点、AI 生成结果和工作流都会自动保存。'
+                : '当前账号没有 active project membership，因此暂时不能进入项目 Dashboard。你可以先查看我的身份概览，或联系 Producer 完成项目成员绑定。'}
           details={[
             `当前账号：${user.displayName ?? user.id}`,
             `当前 Profile：${currentProfileId ?? '未解析'}`,
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}
-          actionHref={dashboardFallbackAction.actionHref}
-          actionLabel={dashboardFallbackAction.actionLabel}
+          actionHref={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
+            ? '/projects'
+            : dashboardFallbackAction.actionHref}
+          actionLabel={dbProjectIds.length === 0 && invitedProjectIds.length === 0 && clientOnlyProjectIds.length === 0
+            ? '前往 Projects 创建项目'
+            : dashboardFallbackAction.actionLabel}
           secondaryHref={clientOnlyProjectIds.length > 0 ? getMeHref() : undefined}
           secondaryLabel={clientOnlyProjectIds.length > 0 ? '查看我的项目身份' : undefined}
         />
