@@ -44,6 +44,8 @@ export function NewProjectDialog({
     setMessage('')
 
     let navigating = false
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
 
     try {
       if (beforeCreate) {
@@ -51,18 +53,29 @@ export function NewProjectDialog({
         if (!shouldContinue) return
       }
 
-      const response = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        credentials: 'include',
-        cache: 'no-store',
-        body: JSON.stringify({
-          title: title.trim() || undefined,
-          description: description.trim() || undefined,
-          projectType,
-          source,
-        }),
-      })
+      let response: Response
+      try {
+        response = await fetch('/api/projects', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          credentials: 'include',
+          cache: 'no-store',
+          body: JSON.stringify({
+            title: title.trim() || undefined,
+            description: description.trim() || undefined,
+            projectType,
+            source,
+          }),
+        })
+      } catch (fetchErr) {
+        if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
+          throw new Error('创建项目超时（15s），请检查网络后重试。')
+        }
+        throw new Error(`网络异常：${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
+      }
+
+      clearTimeout(timeout)
 
       const raw = await response.text()
       let data: {
@@ -73,7 +86,12 @@ export function NewProjectDialog({
         message?: string
         errorCode?: string
       } = {}
-      try { data = raw ? JSON.parse(raw) as typeof data : {} } catch { /* non-json body */ }
+      try {
+        data = raw ? JSON.parse(raw) as typeof data : {}
+      } catch {
+        // Non-JSON body — surface the raw response for debugging
+        throw new Error(`服务器返回非 JSON（HTTP ${response.status}）：${raw.slice(0, 200)}`)
+      }
 
       if (response.status === 401) {
         router.push(`/auth/login?next=${encodeURIComponent('/projects?new=1')}`)
@@ -82,7 +100,7 @@ export function NewProjectDialog({
 
       if (!response.ok || !data.project?.id) {
         const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
-        throw new Error(`${errCode}${data.message ?? '创建项目失败。'}`)
+        throw new Error(`${errCode}${data.message ?? `创建项目失败（HTTP ${response.status}）`}`)
       }
 
       try {
@@ -92,14 +110,24 @@ export function NewProjectDialog({
         }
       } catch { /* storage might be blocked in incognito */ }
 
+      const dest = data.redirectTo ?? `/create?projectId=${encodeURIComponent(data.project.id)}`
       navigating = true
       onOpenChange(false)
-      router.push(data.redirectTo ?? `/create?projectId=${encodeURIComponent(data.project.id)}`)
+      router.push(dest)
+
+      // Fallback: if router.push doesn't navigate within 1.5 s, hard redirect
+      setTimeout(() => {
+        try {
+          if (!window.location.pathname.startsWith('/create')) {
+            window.location.href = dest
+          }
+        } catch { /* ignore */ }
+      }, 1500)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
     } finally {
+      clearTimeout(timeout)
       creatingRef.current = false
-      // Keep creating=true only if we successfully started navigation (dialog already closed)
       if (!navigating) setCreating(false)
     }
   }

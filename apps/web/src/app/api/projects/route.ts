@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
-import { createProjectForUser } from '@/lib/projects/ensure-active-project'
+import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
   isProjectCanvasSchemaMissing,
@@ -9,6 +9,8 @@ import {
 } from '@/lib/projects/api-errors'
 
 export const dynamic = 'force-dynamic'
+
+const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
 
 function projectSelect() {
   return {
@@ -126,11 +128,10 @@ type ProjectCreateBody = {
   description?: string
   templateId?: string
   projectType?: 'blank' | 'video' | 'image' | 'text' | 'template'
-  source?: 'projects' | 'home' | 'dashboard' | 'create'
+  source?: string
 }
 
 const PROJECT_TYPES = new Set(['blank', 'video', 'image', 'text', 'template'])
-const PROJECT_SOURCES = new Set(['projects', 'home', 'dashboard', 'create'])
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser()
@@ -146,31 +147,75 @@ export async function POST(request: NextRequest) {
   if (body.projectType && !PROJECT_TYPES.has(body.projectType)) {
     return projectJsonError('VALIDATION_FAILED', '项目类型无效。', 400)
   }
-  if (body.source && !PROJECT_SOURCES.has(body.source)) {
-    return projectJsonError('VALIDATION_FAILED', '项目来源无效。', 400)
-  }
 
   const title = body.title?.trim() || 'Untitled Project'
+  const description = body.description?.trim() ?? ''
+  const now = new Date()
 
   try {
-    const result = await createProjectForUser(user, {
-      title,
-      description: body.description,
-      projectType: body.projectType,
-      templateId: body.templateId,
-      source: body.source,
+    // Step 1: create Project — no $transaction to stay compatible with pgBouncer
+    const project = await db.project.create({
+      data: {
+        ownerId: user.id,
+        title,
+        description,
+        type: 'SHORT_FILM',
+        status: 'DRAFT',
+        visibility: 'PRIVATE',
+        tags: [],
+        genre: [],
+        lastOpenedAt: now,
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        visibility: true,
+        thumbnailUrl: true,
+        ownerId: true,
+        createdAt: true,
+        updatedAt: true,
+        lastOpenedAt: true,
+      },
+    })
+
+    // Step 2: create CanvasWorkflow
+    const workflow = await db.canvasWorkflow.create({
+      data: {
+        projectId: project.id,
+        name: 'Main Canvas',
+        viewportJson: MAIN_CANVAS_VIEWPORT,
+      },
+      select: {
+        id: true,
+        projectId: true,
+        name: true,
+        viewportJson: true,
+        metadataJson: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+
+    // Step 3: best-effort ProjectMember — fire and forget, never blocks the response
+    void ensureOwnerProjectMember(project.id, user.id).catch((e: unknown) => {
+      console.warn('[projects] membership create failed (non-blocking)',
+        e instanceof Error ? e.message : String(e))
     })
 
     return NextResponse.json({
       success: true,
-      ...result,
-      redirectTo: `/create?projectId=${encodeURIComponent(result.project.id)}`,
+      project,
+      workflow,
+      redirectTo: `/create?projectId=${encodeURIComponent(project.id)}`,
     }, { status: 201 })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
+    const safeMessage = error instanceof Error ? error.message : '创建项目失败。'
     console.error('[projects] failed to create project', error)
-    return projectJsonError('CREATE_PROJECT_FAILED', '创建项目失败。', 500)
+    return projectJsonError('CREATE_PROJECT_FAILED', safeMessage, 500)
   }
 }

@@ -57,7 +57,7 @@ function normalizeMembershipWarning(error: unknown) {
   return `ProjectMember sync skipped: ${message}`
 }
 
-async function ensureOwnerProjectMember(projectId: string, userId: string) {
+export async function ensureOwnerProjectMember(projectId: string, userId: string) {
   try {
     const role = await db.projectRole.upsert({
       where: { name: OWNER_ROLE_NAME },
@@ -127,34 +127,36 @@ export async function createProjectForUser(
   const title = input.title?.trim() || 'Untitled Project'
   const description = input.description ?? ''
 
-  const result = await db.$transaction(async (tx) => {
-    const project = await tx.project.create({
-      data: {
-        ownerId: user.id,
-        title,
-        description,
-        type: 'SHORT_FILM',
-        status: 'DRAFT' as ProjectStatus,
-        visibility: 'PRIVATE' as ProjectVisibility,
-        tags: [],
-        genre: [],
-        lastOpenedAt: now,
-      },
-      select: projectSelect,
-    })
-    const workflow = await tx.canvasWorkflow.create({
-      data: {
-        projectId: project.id,
-        name: 'Main Canvas',
-        viewportJson: MAIN_CANVAS_VIEWPORT,
-      },
-      select: workflowSelect,
-    })
-    return { project, workflow }
+  // Sequential creates — avoids pgBouncer interactive-transaction incompatibility.
+  const project = await db.project.create({
+    data: {
+      ownerId: user.id,
+      title,
+      description,
+      type: 'SHORT_FILM',
+      status: 'DRAFT' as ProjectStatus,
+      visibility: 'PRIVATE' as ProjectVisibility,
+      tags: [],
+      genre: [],
+      lastOpenedAt: now,
+    },
+    select: projectSelect,
+  })
+  const workflow = await db.canvasWorkflow.create({
+    data: {
+      projectId: project.id,
+      name: 'Main Canvas',
+      viewportJson: MAIN_CANVAS_VIEWPORT,
+    },
+    select: workflowSelect,
   })
 
-  const membershipWarning = await ensureOwnerProjectMember(result.project.id, user.id)
-  return { ...result, ...(membershipWarning ? { membershipWarning } : {}) }
+  // Fire-and-forget: never block the caller waiting for ProjectMember/Role creation.
+  void ensureOwnerProjectMember(project.id, user.id).catch((e: unknown) => {
+    console.warn('[projects] membership create failed', e instanceof Error ? e.message : String(e))
+  })
+
+  return { project, workflow }
 }
 
 export async function ensureActiveProject(user: CurrentUser): Promise<ActiveProjectResult> {
