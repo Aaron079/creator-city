@@ -33,6 +33,7 @@ async function getAccessibleProject(projectId: string, userId: string, write = f
     select: selectProject,
   })
   if (!project) return null
+  if (project.ownerId === userId) return project
   const access = await getProjectAccess(userId, projectId)
   if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
   return project

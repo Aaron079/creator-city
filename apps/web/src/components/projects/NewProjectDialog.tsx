@@ -38,16 +38,18 @@ export function NewProjectDialog({
 
   if (!open) return null
 
-  function navigateToProject(projectId: string, workflowId?: string | null, redirectTo?: string) {
+  function navigateToProject(projectId: string, workflowId?: string | null, redirectTo?: string, createdTitle?: string) {
     try {
       const oldProjectId = window.localStorage.getItem('creator-city:last-project-id')
+      const now = new Date().toISOString()
+      const displayTitle = createdTitle?.trim() || title.trim() || 'Untitled Project'
       window.localStorage.setItem('creator-city:last-project-id', projectId)
       if (workflowId) {
-        const now = new Date().toISOString()
         window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
         window.localStorage.setItem(`creator-city:canvas-cache:${projectId}`, JSON.stringify({
           projectId,
           workflowId,
+          title: displayTitle,
           nodes: [],
           edges: [],
           viewport: { zoom: 1, pan: { x: 0, y: 0 } },
@@ -60,6 +62,28 @@ export function NewProjectDialog({
       if (oldProjectId && oldProjectId !== projectId) {
         window.localStorage.removeItem(`creator-city:draft:${oldProjectId}`)
       }
+      const rawProjects = window.localStorage.getItem('creator-city:projects-cache')
+      const cached = rawProjects ? JSON.parse(rawProjects) as { projects?: Array<Record<string, unknown>> } : {}
+      const projects = Array.isArray(cached.projects) ? cached.projects : []
+      const nextProject = {
+        id: projectId,
+        title: displayTitle,
+        description: description.trim(),
+        status: 'DRAFT',
+        visibility: 'PRIVATE',
+        thumbnailUrl: null,
+        createdAt: now,
+        updatedAt: now,
+        lastOpenedAt: now,
+        workflowId: workflowId ?? null,
+        nodeCount: 0,
+        ownerRole: 'OWNER',
+      }
+      window.localStorage.setItem('creator-city:projects-cache', JSON.stringify({
+        ...cached,
+        projects: [nextProject, ...projects.filter((project) => project.id !== projectId)],
+        updatedAt: now,
+      }))
     } catch {
       // storage might be blocked in incognito; explicit URL still opens the project.
     }
@@ -129,7 +153,7 @@ export function NewProjectDialog({
       const raw = await response.text()
       let data: {
         success?: boolean
-        project?: { id: string }
+        project?: { id: string; title?: string }
         workflow?: { id: string }
         redirectTo?: string
         message?: string
@@ -153,7 +177,7 @@ export function NewProjectDialog({
       }
 
       navigating = true
-      navigateToProject(data.project.id, data.workflow?.id, data.redirectTo)
+      navigateToProject(data.project.id, data.workflow?.id, data.redirectTo, data.project.title)
     } catch (error) {
       window.dispatchEvent(new CustomEvent('creator-city:switching-project-cancelled'))
       setMessage(error instanceof Error ? error.message : '创建项目失败。')

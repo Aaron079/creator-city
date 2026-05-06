@@ -7,6 +7,8 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 
+const PROJECTS_CACHE_KEY = 'creator-city:projects-cache'
+
 interface ProjectListItem {
   id: string
   title: string
@@ -21,6 +23,30 @@ interface ProjectListItem {
   nodeCount?: number
   ownerRole?: string | null
   membershipRole?: string | null
+}
+
+function readProjectsCache() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(PROJECTS_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { projects?: ProjectListItem[] }
+    return Array.isArray(parsed.projects) ? parsed.projects : null
+  } catch {
+    return null
+  }
+}
+
+function writeProjectsCache(projects: ProjectListItem[]) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify({
+      projects,
+      updatedAt: new Date().toISOString(),
+    }))
+  } catch {
+    // Project list cache is only used to keep navigation responsive.
+  }
 }
 
 export default function ProjectsPage() {
@@ -40,10 +66,16 @@ export default function ProjectsPage() {
 
     let cancelled = false
     async function loadProjects() {
-      setLoading(true)
+      const cachedProjects = readProjectsCache()
+      if (cachedProjects) {
+        setProjects(cachedProjects)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setMessage('')
       try {
-        const response = await fetch('/api/projects', {
+        const response = await fetch('/api/projects?scope=owned', {
           credentials: 'include',
           cache: 'no-store',
           headers: { Accept: 'application/json' },
@@ -54,7 +86,11 @@ export default function ProjectsPage() {
           return
         }
         if (!response.ok) throw new Error(data.message ?? '加载项目失败。')
-        if (!cancelled) setProjects(data.projects ?? [])
+        if (!cancelled) {
+          const nextProjects = data.projects ?? []
+          setProjects(nextProjects)
+          writeProjectsCache(nextProjects)
+        }
       } catch (error) {
         if (!cancelled) setMessage(error instanceof Error ? error.message : '加载项目失败。')
       } finally {
@@ -98,7 +134,13 @@ export default function ProjectsPage() {
           </div>
         ) : null}
 
-        {loading ? (
+        {loading && projects.length > 0 ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/45">
+            正在同步项目列表...
+          </div>
+        ) : null}
+
+        {loading && projects.length === 0 ? (
           <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-10 text-center text-sm text-white/45">
             加载项目中...
           </div>

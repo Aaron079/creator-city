@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
@@ -59,6 +59,7 @@ interface CanvasLoadResponse {
 interface CanvasDraft {
   projectId: string
   workflowId: string
+  title?: string
   nodes: VisualCanvasNode[]
   edges: CanvasEdge[]
   viewport: { zoom: number; pan: { x: number; y: number } }
@@ -413,6 +414,10 @@ export function VisualCanvasWorkspace({
   const [projectId, setProjectId] = useState(searchParamProjectId ?? '')
   const [workflowId, setWorkflowId] = useState('')
   const [loadedProjectTitle, setLoadedProjectTitle] = useState(projectTitle)
+  const [projectTitleDraft, setProjectTitleDraft] = useState(projectTitle)
+  const [projectTitleEditing, setProjectTitleEditing] = useState(false)
+  const [projectTitleSaving, setProjectTitleSaving] = useState(false)
+  const [projectTitleError, setProjectTitleError] = useState('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('opening')
   const [saveMessage, setSaveMessage] = useState('')
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
@@ -619,6 +624,7 @@ export function VisualCanvasWorkspace({
     const cache: CanvasCache = {
       projectId: targetProjectId,
       workflowId: targetWorkflowId,
+      title: loadedProjectTitle,
       nodes: args?.nodes ?? snapshot.nodes,
       edges: args?.edges ?? snapshot.edges,
       viewport: args?.viewport ?? snapshot.viewport,
@@ -631,7 +637,7 @@ export function VisualCanvasWorkspace({
     } catch {
       // Cache is an acceleration layer only.
     }
-  }, [getCanvasSnapshot, projectId, workflowId])
+  }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
 
   const applyCanvasSnapshot = useCallback((args: {
     projectId: string
@@ -645,7 +651,10 @@ export function VisualCanvasWorkspace({
   }) => {
     setProjectId(args.projectId)
     setWorkflowId(args.workflowId)
-    if (args.title) setLoadedProjectTitle(args.title)
+    if (args.title) {
+      setLoadedProjectTitle(args.title)
+      if (!projectTitleEditing) setProjectTitleDraft(args.title)
+    }
     skipNextAutosaveRef.current = true
     latestNodesRef.current = args.nodes
     latestEdgesRef.current = args.edges
@@ -663,7 +672,7 @@ export function VisualCanvasWorkspace({
     setHasStarted(args.nodes.length > 0)
     if (args.status) setSaveStatus(args.status)
     if (args.message !== undefined) setSaveMessage(args.message)
-  }, [commitEdges, commitNodes])
+  }, [commitEdges, commitNodes, projectTitleEditing])
 
   const writeLocalDraft = useCallback((syncedAt?: string) => {
     if (typeof window === 'undefined' || !projectId || !workflowId) return
@@ -687,6 +696,10 @@ export function VisualCanvasWorkspace({
       // localStorage can fail in private mode; do not disrupt the canvas.
     }
   }, [getCanvasSnapshot, projectId, readLocalDraft, workflowId])
+
+  useEffect(() => {
+    if (!projectTitleEditing) setProjectTitleDraft(loadedProjectTitle)
+  }, [loadedProjectTitle, projectTitleEditing])
 
   const saveCanvas = useCallback(async () => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
@@ -866,6 +879,7 @@ export function VisualCanvasWorkspace({
           applyCanvasSnapshot({
             projectId: resolvedProjectId,
             workflowId: cache.workflowId,
+            title: cache.title,
             nodes: cache.nodes,
             edges: cache.edges,
             viewport: cache.viewport,
@@ -1120,6 +1134,75 @@ export function VisualCanvasWorkspace({
     const timer = window.setTimeout(() => setCanvasFeedback(''), 2200)
     timersRef.current.push(timer)
   }, [])
+
+  const saveProjectTitle = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
+    if (!projectId || projectTitleSaving) return
+
+    const nextTitle = projectTitleDraft.trim() || 'Untitled Project'
+    if (nextTitle === loadedProjectTitle) {
+      setProjectTitleEditing(false)
+      setProjectTitleError('')
+      return
+    }
+
+    setProjectTitleSaving(true)
+    setProjectTitleError('')
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ title: nextTitle }),
+      })
+      const raw = await response.text()
+      const data = raw ? JSON.parse(raw) as { project?: { title?: string }; message?: string; errorCode?: string } : {}
+      if (!response.ok) throw new Error(data.message ?? data.errorCode ?? '项目名称保存失败。')
+
+      const savedTitle = data.project?.title || nextTitle
+      setLoadedProjectTitle(savedTitle)
+      setProjectTitleDraft(savedTitle)
+      setProjectTitleEditing(false)
+      showCanvasFeedback('项目名称已保存。')
+
+      try {
+        const rawCanvasCache = window.localStorage.getItem(`creator-city:canvas-cache:${projectId}`)
+        if (rawCanvasCache) {
+          const cachedCanvas = JSON.parse(rawCanvasCache) as Record<string, unknown>
+          window.localStorage.setItem(`creator-city:canvas-cache:${projectId}`, JSON.stringify({
+            ...cachedCanvas,
+            title: savedTitle,
+            updatedAt: new Date().toISOString(),
+          }))
+        }
+        const rawProjects = window.localStorage.getItem('creator-city:projects-cache')
+        if (rawProjects) {
+          const cached = JSON.parse(rawProjects) as { projects?: Array<{ id?: string; title?: string }> }
+          if (Array.isArray(cached.projects)) {
+            window.localStorage.setItem('creator-city:projects-cache', JSON.stringify({
+              ...cached,
+              projects: cached.projects.map((project) => (
+                project.id === projectId ? { ...project, title: savedTitle, updatedAt: new Date().toISOString() } : project
+              )),
+              updatedAt: new Date().toISOString(),
+            }))
+          }
+        }
+      } catch {
+        // Cache refresh is best-effort.
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '项目名称保存失败。'
+      setProjectTitleError(message)
+      showCanvasFeedback(message)
+    } finally {
+      setProjectTitleSaving(false)
+    }
+  }, [loadedProjectTitle, projectId, projectTitleDraft, projectTitleSaving, showCanvasFeedback])
 
   const deleteNode = useCallback((nodeId: string) => {
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
@@ -2523,18 +2606,65 @@ export function VisualCanvasWorkspace({
 
       <div className="canvas-topbar create-glass-panel">
         <div className="canvas-topbar-brand">
-          <a
-            href="/"
+          <div
             className="canvas-topbar-home-link"
-            aria-label="回到首页"
-            title={`回到首页 · ${templateName ? `${loadedProjectTitle} · ${templateName}` : loadedProjectTitle}`}
+            title={templateName ? `${loadedProjectTitle} · ${templateName}` : loadedProjectTitle}
           >
-            <span className="canvas-topbar-logo" aria-hidden="true" />
-            <span className="canvas-topbar-home-copy">
+            <a href="/" className="canvas-topbar-logo-link" aria-label="回到首页">
+              <span className="canvas-topbar-logo" aria-hidden="true" />
               <span className="canvas-topbar-title">Creator City</span>
-              <span className="canvas-topbar-copy">{loadedProjectTitle}</span>
+            </a>
+            <span className="canvas-topbar-home-copy">
+              {projectTitleEditing ? (
+                <form className="canvas-title-edit-form" onSubmit={saveProjectTitle}>
+                  <input
+                    value={projectTitleDraft}
+                    onChange={(event) => {
+                      setProjectTitleDraft(event.target.value)
+                      setProjectTitleError('')
+                    }}
+                    className="canvas-title-edit-input"
+                    aria-label="项目名称"
+                    autoFocus
+                    maxLength={80}
+                  />
+                  <button
+                    type="submit"
+                    className="canvas-title-edit-action"
+                    disabled={projectTitleSaving}
+                  >
+                    {projectTitleSaving ? '保存中' : '保存'}
+                  </button>
+                  <button
+                    type="button"
+                    className="canvas-title-edit-action is-muted"
+                    disabled={projectTitleSaving}
+                    onClick={() => {
+                      setProjectTitleDraft(loadedProjectTitle)
+                      setProjectTitleError('')
+                      setProjectTitleEditing(false)
+                    }}
+                  >
+                    取消
+                  </button>
+                  {projectTitleError ? <span className="canvas-title-edit-error">{projectTitleError}</span> : null}
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="canvas-project-title-button"
+                  onClick={() => {
+                    setProjectTitleDraft(loadedProjectTitle)
+                    setProjectTitleError('')
+                    setProjectTitleEditing(true)
+                  }}
+                  title="编辑项目名称"
+                >
+                  {loadedProjectTitle || 'Untitled Project'}
+                </button>
+              )}
             </span>
-          </a>
+          </div>
         </div>
 
         <div className="canvas-topbar-actions">

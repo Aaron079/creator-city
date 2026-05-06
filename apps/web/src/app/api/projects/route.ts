@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const limitParam = request.nextUrl.searchParams.get('limit')
     const limit = limitParam ? Math.max(1, Math.min(50, Number.parseInt(limitParam, 10) || 0)) : null
     const sort = request.nextUrl.searchParams.get('sort')
+    const scope = request.nextUrl.searchParams.get('scope')
 
     if (limit === 1 && sort === 'lastOpenedAt') {
       const project = await db.project.findFirst({
@@ -87,6 +88,41 @@ export async function GET(request: NextRequest) {
       select: projectSelect(),
       orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
     })
+    if (scope === 'owned') {
+      const projects = ownedProjects
+        .map((project) => {
+          const workflow = project.canvasWorkflows[0]
+          return {
+            id: project.id,
+            title: project.title,
+            description: project.description,
+            status: project.status,
+            visibility: project.visibility,
+            thumbnailUrl: project.thumbnailUrl,
+            ownerId: project.ownerId,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            lastOpenedAt: project.lastOpenedAt,
+            workflowId: workflow?.id ?? null,
+            nodeCount: workflow?._count.nodes ?? 0,
+            ownerRole: 'OWNER',
+            membershipRole: null,
+          }
+        })
+        .slice(0, limit ?? undefined)
+
+      return NextResponse.json({
+        success: true,
+        projects,
+        summary: {
+          ownedProjectsCount: ownedProjects.length,
+          activeMembershipsCount: 0,
+          currentProjectId: projects[0]?.id ?? null,
+          recentProject: projects[0] ?? null,
+        },
+      })
+    }
+
     let memberProjects: Awaited<typeof ownedProjects> = []
     const membershipByProjectId = new Map<string, string | null>()
     let membershipWarning: string | undefined
