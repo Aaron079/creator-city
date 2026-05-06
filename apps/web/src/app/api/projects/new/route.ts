@@ -23,8 +23,16 @@ function jsonError(errorCode: string, message: string, status: number) {
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = Math.random().toString(36).slice(2, 8)
+  const timingLabel = `[projects/new] create ${requestId}`
+  console.time(timingLabel)
+  console.info('[projects/new] create start', { requestId })
+
   const user = await getCurrentUser()
-  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+  if (!user) {
+    console.timeEnd(timingLabel)
+    return jsonError('UNAUTHORIZED', '请先登录。', 401)
+  }
 
   let body: NewProjectBody = {}
   try {
@@ -56,6 +64,7 @@ export async function POST(request: NextRequest) {
         ownerId: true,
       },
     })
+    console.info('[projects/new] project created', { requestId, projectId: project.id })
 
     const workflow = await db.canvasWorkflow.create({
       data: {
@@ -70,11 +79,14 @@ export async function POST(request: NextRequest) {
         projectId: true,
       },
     })
+    console.info('[projects/new] workflow created', { requestId, projectId: project.id, workflowId: workflow.id })
 
     void ensureOwnerProjectMember(project.id, user.id).catch((error: unknown) => {
       console.warn('[projects/new] membership create failed (non-blocking)', error instanceof Error ? error.message : String(error))
     })
 
+    console.info('[projects/new] response', { requestId, projectId: project.id, workflowId: workflow.id })
+    console.timeEnd(timingLabel)
     return NextResponse.json({
       success: true,
       project,
@@ -89,6 +101,7 @@ export async function POST(request: NextRequest) {
       ? PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE
       : error instanceof Error ? error.message : '创建项目失败。'
     console.error('[projects/new] create failed', { error })
+    console.timeEnd(timingLabel)
     return jsonError('CREATE_PROJECT_FAILED', message, 500)
   }
 }

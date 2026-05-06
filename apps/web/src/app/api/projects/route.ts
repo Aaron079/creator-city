@@ -35,11 +35,13 @@ function projectSelect() {
   } as const
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
+    const limitParam = request.nextUrl.searchParams.get('limit')
+    const limit = limitParam ? Math.max(1, Math.min(50, Number.parseInt(limitParam, 10) || 0)) : null
     const ownedProjects = await db.project.findMany({
       where: { ownerId: user.id },
       select: projectSelect(),
@@ -103,8 +105,10 @@ export async function GET() {
           membershipRole: membershipByProjectId.get(project.id) ?? null,
         }
       })
+      .slice(0, limit ?? undefined)
 
     return NextResponse.json({
+      success: true,
       projects,
       summary: {
         ownedProjectsCount: ownedProjects.length,

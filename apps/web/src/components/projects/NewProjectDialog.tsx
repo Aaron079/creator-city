@@ -29,13 +29,79 @@ export function NewProjectDialog({
 }: NewProjectDialogProps) {
   const router = useRouter()
   const creatingRef = useRef(false)
+  const createAbortRef = useRef<AbortController | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectType, setProjectType] = useState<ProjectType>('blank')
   const [creating, setCreating] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   const [message, setMessage] = useState('')
 
   if (!open) return null
+
+  function navigateToProject(projectId: string, workflowId?: string | null, redirectTo?: string) {
+    try {
+      const oldProjectId = window.localStorage.getItem('creator-city:last-project-id')
+      window.localStorage.setItem('creator-city:last-project-id', projectId)
+      if (workflowId) window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
+      if (oldProjectId && oldProjectId !== projectId) {
+        window.localStorage.removeItem(`creator-city:draft:${oldProjectId}`)
+      }
+    } catch {
+      // storage might be blocked in incognito; explicit URL still opens the project.
+    }
+
+    const dest = redirectTo ?? `/create?projectId=${encodeURIComponent(projectId)}`
+    onOpenChange(false)
+    router.push(dest)
+
+    // Fallback: if router.push doesn't navigate within 1 s, hard redirect.
+    window.setTimeout(() => {
+      try {
+        if (`${window.location.pathname}${window.location.search}` !== dest) {
+          window.location.href = dest
+        }
+      } catch {
+        // ignore
+      }
+    }, 1000)
+  }
+
+  async function recoverLatestProject() {
+    if (recovering) return
+    setRecovering(true)
+    setMessage('正在检查最近创建的项目...')
+    try {
+      const response = await fetch('/api/projects?limit=1&sort=lastOpenedAt', {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      })
+      const data = await response.json().catch(() => ({})) as {
+        projects?: Array<{ id: string; workflowId?: string | null }>
+        message?: string
+        errorCode?: string
+      }
+      if (response.status === 401) {
+        router.push(`/auth/login?next=${encodeURIComponent('/projects?new=1')}`)
+        return
+      }
+      if (!response.ok) {
+        const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
+        throw new Error(`${errCode}${data.message ?? `检查项目失败（HTTP ${response.status}）`}`)
+      }
+      const recentProject = data.projects?.[0]
+      if (!recentProject?.id) {
+        setMessage('未找到已创建项目，请重试。')
+        return
+      }
+      navigateToProject(recentProject.id, recentProject.workflowId)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '检查已创建项目失败。')
+    } finally {
+      setRecovering(false)
+    }
+  }
 
   async function createProject() {
     if (creatingRef.current) return
@@ -45,7 +111,14 @@ export function NewProjectDialog({
 
     let navigating = false
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 5_000)
+    createAbortRef.current = controller
+    const slowTimer = window.setTimeout(() => {
+      setMessage('项目仍在创建中，请稍候...')
+    }, 8_000)
+    const verySlowTimer = window.setTimeout(() => {
+      setMessage('创建较慢，正在检查是否已创建项目...')
+      void recoverLatestProject()
+    }, 20_000)
 
     try {
       window.dispatchEvent(new CustomEvent('creator-city:switching-project'))
@@ -75,12 +148,10 @@ export function NewProjectDialog({
         })
       } catch (fetchErr) {
         if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
-          throw new Error('创建项目超时，请稍后重试。项目可能已经创建，请到项目列表查看。')
+          throw new Error('创建已取消。')
         }
         throw new Error(`网络异常：${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
       }
-
-      clearTimeout(timeout)
 
       const raw = await response.text()
       let data: {
@@ -108,38 +179,26 @@ export function NewProjectDialog({
         throw new Error(`${errCode}${data.message ?? `创建项目失败（HTTP ${response.status}）`}`)
       }
 
-      try {
-        const oldProjectId = window.localStorage.getItem('creator-city:last-project-id')
-        window.localStorage.setItem('creator-city:last-project-id', data.project.id)
-        if (data.workflow?.id) {
-          window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
-        }
-        if (oldProjectId && oldProjectId !== data.project.id) {
-          window.localStorage.removeItem(`creator-city:draft:${oldProjectId}`)
-        }
-      } catch { /* storage might be blocked in incognito */ }
-
-      const dest = data.redirectTo ?? `/create?projectId=${encodeURIComponent(data.project.id)}`
       navigating = true
-      onOpenChange(false)
-      router.push(dest)
-
-      // Fallback: if router.push doesn't navigate within 1 s, hard redirect
-      setTimeout(() => {
-        try {
-          if (`${window.location.pathname}${window.location.search}` !== dest) {
-            window.location.href = dest
-          }
-        } catch { /* ignore */ }
-      }, 1000)
+      navigateToProject(data.project.id, data.workflow?.id, data.redirectTo)
     } catch (error) {
       window.dispatchEvent(new CustomEvent('creator-city:switching-project-cancelled'))
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
     } finally {
-      clearTimeout(timeout)
+      window.clearTimeout(slowTimer)
+      window.clearTimeout(verySlowTimer)
+      if (createAbortRef.current === controller) createAbortRef.current = null
       creatingRef.current = false
       if (!navigating) setCreating(false)
     }
+  }
+
+  function cancelCreateProject() {
+    if (creating) {
+      createAbortRef.current?.abort()
+      return
+    }
+    onOpenChange(false)
   }
 
   return (
@@ -152,8 +211,7 @@ export function NewProjectDialog({
           </div>
           <button
             type="button"
-            onClick={() => onOpenChange(false)}
-            disabled={creating}
+            onClick={cancelCreateProject}
             className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white disabled:opacity-50"
           >
             取消
@@ -212,12 +270,21 @@ export function NewProjectDialog({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => onOpenChange(false)}
-              disabled={creating}
+              onClick={cancelCreateProject}
               className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/60 transition hover:border-white/20 hover:text-white disabled:opacity-50"
             >
               取消
             </button>
+            {creating ? (
+              <button
+                type="button"
+                onClick={() => { void recoverLatestProject() }}
+                disabled={recovering}
+                className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {recovering ? '检查中...' : '检查已创建项目'}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => { void createProject() }}
