@@ -20,7 +20,9 @@ export function getTencentCosConfiguration(): ChinaStorageConfiguration {
     provider: 'tencent-cos',
     configured: missing.length === 0,
     missing,
-    mode: missing.length === 0 ? 'stub' : 'not-configured',
+    mode: missing.length === 0 ? 'not-implemented' : 'not-configured',
+    bucket: process.env.TENCENT_COS_BUCKET,
+    region: process.env.TENCENT_COS_REGION,
   }
 }
 
@@ -34,14 +36,11 @@ function requireTencentCos() {
   }
 }
 
-export async function putTencentCosObject(input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
+export async function putTencentCosObject(_input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
   requireTencentCos()
-  return {
+  throw new ChinaStorageError('STORAGE_PROVIDER_NOT_IMPLEMENTED', '腾讯云 COS adapter 已预留，暂未接入真实上传。', 501, {
     provider: 'tencent-cos',
-    bucket: process.env.TENCENT_COS_BUCKET ?? '',
-    key: input.key,
-    raw: { mode: 'stub', contentType: input.contentType, metadata: input.metadata },
-  }
+  })
 }
 
 export async function getTencentCosSignedUploadUrl(input: SignedChinaObjectInput): Promise<ChinaStorageSignedUrlResult> {

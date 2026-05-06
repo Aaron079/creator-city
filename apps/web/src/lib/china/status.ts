@@ -96,7 +96,7 @@ function getDatabaseStatus(): ChinaDatabaseStatus {
 function getStorageStatus(): ChinaStorageStatus {
   const provider = process.env.CHINA_STORAGE_PROVIDER
   if (provider === 'aliyun-oss') {
-    const required = ['ALIYUN_OSS_BUCKET', 'ALIYUN_OSS_REGION', 'ALIYUN_ACCESS_KEY_ID']
+    const required = ['ALIYUN_ACCESS_KEY_ID', 'ALIYUN_ACCESS_KEY_SECRET', 'ALIYUN_OSS_BUCKET', 'ALIYUN_OSS_REGION', 'ALIYUN_OSS_ENDPOINT']
     const miss = missing(required)
     return {
       provider,
@@ -104,12 +104,12 @@ function getStorageStatus(): ChinaStorageStatus {
       configured: miss.length === 0,
       missing: miss,
       nextStep: miss.length === 0
-        ? '接入签名上传和生成资产落盘前，先验证 bucket 权限和 CDN 域名。'
-        : '补齐阿里云 OSS bucket、region 和 access key id。密钥只放在服务端环境变量。',
+        ? '配置 OSS 后，/assets 上传素材会写入 OSS。继续验证 bucket 权限和公开访问域名。'
+        : '补齐阿里云 OSS bucket、region、endpoint 和 access key。密钥只放在服务端环境变量。',
     }
   }
   if (provider === 'tencent-cos') {
-    const required = ['TENCENT_COS_BUCKET', 'TENCENT_COS_REGION', 'TENCENT_SECRET_ID']
+    const required = ['TENCENT_SECRET_ID', 'TENCENT_SECRET_KEY', 'TENCENT_COS_BUCKET', 'TENCENT_COS_REGION']
     const miss = missing(required)
     return {
       provider,
@@ -117,7 +117,7 @@ function getStorageStatus(): ChinaStorageStatus {
       configured: miss.length === 0,
       missing: miss,
       nextStep: miss.length === 0
-        ? '接入签名上传和生成资产落盘前，先验证 bucket 权限和 CDN 域名。'
+        ? '腾讯云 COS 配置已识别；当前 adapter 为占位，后续接入 cos-nodejs-sdk-v5。'
         : '补齐腾讯云 COS bucket、region 和 secret id。密钥只放在服务端环境变量。',
     }
   }

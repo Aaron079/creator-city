@@ -1,4 +1,5 @@
 import { ChinaStorageError } from './errors'
+import OSS from 'ali-oss'
 import type {
   ChinaStorageConfiguration,
   ChinaStorageObjectResult,
@@ -21,7 +22,9 @@ export function getAliyunOssConfiguration(): ChinaStorageConfiguration {
     provider: 'aliyun-oss',
     configured: missing.length === 0,
     missing,
-    mode: missing.length === 0 ? 'stub' : 'not-configured',
+    mode: missing.length === 0 ? 'ready' : 'not-configured',
+    bucket: process.env.ALIYUN_OSS_BUCKET,
+    region: process.env.ALIYUN_OSS_REGION,
   }
 }
 
@@ -35,13 +38,67 @@ function requireAliyunOss() {
   }
 }
 
-export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
+function getAliyunClient() {
   requireAliyunOss()
-  return {
-    provider: 'aliyun-oss',
-    bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
-    key: input.key,
-    raw: { mode: 'stub', contentType: input.contentType, metadata: input.metadata },
+  return new OSS({
+    accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID!,
+    accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET!,
+    bucket: process.env.ALIYUN_OSS_BUCKET!,
+    region: process.env.ALIYUN_OSS_REGION!,
+    endpoint: process.env.ALIYUN_OSS_ENDPOINT,
+  })
+}
+
+function getSizeBytes(body: PutChinaObjectInput['body']) {
+  if (typeof body === 'string') return Buffer.byteLength(body)
+  if (body instanceof ArrayBuffer) return body.byteLength
+  return body.byteLength
+}
+
+function normalizeBody(body: PutChinaObjectInput['body']) {
+  if (body instanceof ArrayBuffer) return Buffer.from(body)
+  return body
+}
+
+function buildPublicUrl(key: string, fallback?: string) {
+  const baseUrl = process.env.ALIYUN_OSS_PUBLIC_BASE_URL?.trim()
+  if (!baseUrl) return fallback
+  return `${baseUrl.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
+export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
+  const client = getAliyunClient()
+  try {
+    const result = await client.put(input.key, normalizeBody(input.body), {
+      headers: {
+        ...(input.contentType ? { 'Content-Type': input.contentType } : {}),
+        ...(input.metadata
+          ? Object.fromEntries(Object.entries(input.metadata).map(([key, value]) => [`x-oss-meta-${key}`, value]))
+          : {}),
+      },
+    })
+    const url = typeof result.url === 'string' ? result.url : undefined
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key: input.key,
+      url,
+      publicUrl: buildPublicUrl(input.key, url),
+      sizeBytes: getSizeBytes(input.body),
+      contentType: input.contentType,
+      raw: {
+        requestId: result.res?.headers && typeof result.res.headers === 'object'
+          ? (result.res.headers as Record<string, unknown>)['x-oss-request-id']
+          : undefined,
+      },
+    }
+  } catch (error) {
+    throw new ChinaStorageError(
+      'STORAGE_OPERATION_FAILED',
+      error instanceof Error ? error.message : '阿里云 OSS 上传失败。',
+      502,
+      { provider: 'aliyun-oss' },
+    )
   }
 }
 

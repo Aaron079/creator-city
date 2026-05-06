@@ -19,6 +19,9 @@ export type ChinaStorageObjectResult = {
   bucket: string
   key: string
   url?: string
+  publicUrl?: string
+  sizeBytes?: number
+  contentType?: string
   raw?: unknown
 }
 
@@ -31,5 +34,7 @@ export type ChinaStorageConfiguration = {
   provider: ChinaStorageProvider
   configured: boolean
   missing: string[]
-  mode: 'not-configured' | 'stub' | 'ready'
+  mode: 'not-configured' | 'stub' | 'ready' | 'not-implemented'
+  bucket?: string
+  region?: string
 }

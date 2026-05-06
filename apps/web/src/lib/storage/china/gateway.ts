@@ -35,6 +35,14 @@ export function getChinaStorageConfigurations(): Record<ChinaStorageProvider, Ch
   }
 }
 
+export function getChinaStorageStatus(provider = getConfiguredChinaStorageProvider()) {
+  return getChinaStorageConfigurations()[resolveProvider(provider)]
+}
+
+export function isChinaStorageConfigured(provider = getConfiguredChinaStorageProvider()) {
+  return getChinaStorageStatus(provider).configured
+}
+
 function resolveProvider(provider = getConfiguredChinaStorageProvider()): ChinaStorageProvider {
   if (provider === 'aliyun-oss' || provider === 'tencent-cos') return provider
   throw new ChinaStorageError('STORAGE_PROVIDER_UNSUPPORTED', '不支持的中国对象存储服务商。', 400)
@@ -45,6 +53,8 @@ export async function putObject(input: PutChinaObjectInput & { provider?: ChinaS
     ? putAliyunOssObject(input)
     : putTencentCosObject(input)
 }
+
+export const putChinaObject = putObject
 
 export async function getSignedUploadUrl(
   input: SignedChinaObjectInput & { provider?: ChinaStorageProvider },

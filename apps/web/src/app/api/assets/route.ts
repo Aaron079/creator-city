@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
         ownerId: user.id,
         ...(projectId ? { projectId } : {}),
       },
+      include: { project: { select: { id: true, title: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     })

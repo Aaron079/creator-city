@@ -22,6 +22,7 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "@react-three/drei": "^9.105.4",
     "@react-three/fiber": "^8.16.8",
+    "ali-oss": "^6.23.0",
     "axios": "^1.7.2",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.0",
@@ -39,6 +40,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.12.7",
     "@types/react": "^18.3.3",
