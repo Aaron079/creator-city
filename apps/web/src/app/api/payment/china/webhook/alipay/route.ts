@@ -10,11 +10,14 @@ export async function POST(request: Request) {
     if (!result.valid) return new NextResponse('fail', { status: 400 })
     if (!result.paid || !result.outTradeNo) return new NextResponse('success')
 
-    await fulfillChinaPaymentOrder({
+    const settlement = await fulfillChinaPaymentOrder({
       outTradeNo: result.outTradeNo,
+      provider: 'alipay',
       transactionId: result.transactionId,
-      rawNotifyJson: result.raw,
+      rawPayload: result.raw,
+      source: 'alipay_webhook',
     })
+    if (!settlement.success) throw new Error(settlement.message)
     return new NextResponse('success')
   } catch (error) {
     console.error('[payment/china/webhook/alipay]', error)

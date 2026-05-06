@@ -174,6 +174,12 @@ export function AlipayQrPaymentModal({ payment, onClose, onRefresh, onPaid }: Pr
               : `二维码有效期 ${formatSeconds(secondsLeft)}`}
         </div>
 
+        {status !== 'PAID' ? (
+          <div className="mb-4 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-white/45">
+            沙箱 iOS 暂无法扫码时，可由管理员在 /admin/payments/china 模拟支付成功，用于验证到账链路。
+          </div>
+        ) : null}
+
         {error ? (
           <div className="mb-4 rounded-md border border-red-400/25 bg-red-400/10 px-3 py-2 text-sm text-red-100">
             {error}
