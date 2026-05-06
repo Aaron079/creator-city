@@ -28,9 +28,13 @@ import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 export default function ProjectHomePage() {
   const { isAuthenticated, user } = useAuthStore()
+  const { status: sessionStatus, user: sessionUser } = useCurrentUser()
+  const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
@@ -55,8 +59,9 @@ export default function ProjectHomePage() {
   const projectId = params?.id as string
 
   useEffect(() => {
-    if (!isAuthenticated) router.push('/auth/login')
-  }, [isAuthenticated, router])
+    if (sessionStatus === 'loading') return
+    if (!effectiveIsAuthenticated) router.push('/auth/login')
+  }, [effectiveIsAuthenticated, router, sessionStatus])
 
   const dashboard = useMemo(
     () => aggregateProducerDashboard({
@@ -78,7 +83,7 @@ export default function ProjectHomePage() {
     [dashboard],
   )
 
-  const currentUserId = user?.id ?? currentProfileId ?? 'user-me'
+  const currentUserId = effectiveUser?.id ?? currentProfileId ?? 'user-me'
   const currentProfile = currentProfileId ?? currentUserId
 
   const workQueue = useMemo(
@@ -269,7 +274,7 @@ export default function ProjectHomePage() {
     ],
   )
 
-  if (!isAuthenticated) return null
+  if (!effectiveUser) return null
 
   return (
     <DashboardShell>

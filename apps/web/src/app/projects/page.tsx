@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
-import { useAuthStore } from '@/store/auth.store'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 interface ProjectListItem {
   id: string
@@ -25,14 +25,15 @@ interface ProjectListItem {
 
 export default function ProjectsPage() {
   const router = useRouter()
-  const user = useAuthStore((s) => s.user)
+  const { status: authStatus } = useCurrentUser()
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (!user) {
+    if (authStatus === 'loading') return
+    if (authStatus === 'unauthenticated') {
       router.replace('/auth/login?next=/projects')
       return
     }
@@ -42,7 +43,11 @@ export default function ProjectsPage() {
       setLoading(true)
       setMessage('')
       try {
-        const response = await fetch('/api/projects', { credentials: 'include' })
+        const response = await fetch('/api/projects', {
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        })
         const data = await response.json().catch(() => ({})) as { projects?: ProjectListItem[]; message?: string; errorCode?: string }
         if (response.status === 401) {
           router.replace('/auth/login?next=/projects')
@@ -61,7 +66,7 @@ export default function ProjectsPage() {
     return () => {
       cancelled = true
     }
-  }, [router, user])
+  }, [authStatus, router])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

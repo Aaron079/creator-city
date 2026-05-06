@@ -23,6 +23,7 @@ import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
 import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 const LINKS = [
   { href: '/', label: '首页' },
@@ -42,6 +43,9 @@ export function TopNavigation() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout, isAuthenticated } = useAuthStore()
+  const { status: sessionStatus, user: sessionUser } = useCurrentUser()
+  const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
@@ -56,7 +60,7 @@ export function TopNavigation() {
   const invitations = useTeamStore((s) => s.invitations)
   const versions = useVersionHistoryStore((s) => s.versions)
 
-  const currentUserId = user?.id ?? currentProfileId ?? 'user-me'
+  const currentUserId = effectiveUser?.id ?? currentProfileId ?? 'user-me'
   const profileId = currentProfileId ?? currentUserId
 
   const dashboard = useMemo(
@@ -195,14 +199,14 @@ export function TopNavigation() {
             ) : null}
           </Link>
 
-          {isAuthenticated && user ? (
+          {effectiveIsAuthenticated && effectiveUser ? (
             <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
               <div className="h-7 w-7 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white shrink-0">
-                {user.displayName[0]?.toUpperCase() ?? '?'}
+                {effectiveUser.displayName[0]?.toUpperCase() ?? '?'}
               </div>
               <div className="min-w-0">
-                <div className="truncate text-[12px] font-medium text-white">{user.displayName}</div>
-                <div className="truncate text-[10px] text-white/40">{user.email}</div>
+                <div className="truncate text-[12px] font-medium text-white">{effectiveUser.displayName}</div>
+                <div className="truncate text-[10px] text-white/40">{effectiveUser.email}</div>
               </div>
               <Link href="/account" className="text-xs text-white/40 transition hover:text-white/70 px-1" title="账号设置">⚙</Link>
               <button

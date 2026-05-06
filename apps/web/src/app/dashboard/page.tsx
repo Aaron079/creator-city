@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useApprovalStore } from '@/store/approval.store'
 import { useAudioDeskStore } from '@/store/audio-desk.store'
@@ -43,6 +44,9 @@ import { useFeedback } from '@/lib/feedback/useFeedback'
 export default function DashboardPage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('producer')
   const { user, isAuthenticated } = useAuthStore()
+  const { status: sessionStatus, user: sessionUser } = useCurrentUser()
+  const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const projectRoleAssignments = useProjectRoleStore((s) => s.assignments)
   const approvals = useApprovalStore((s) => s.approvals)
@@ -105,13 +109,14 @@ export default function DashboardPage() {
   const [newProjectOpen, setNewProjectOpen] = useState(false)
 
   useEffect(() => {
-    if (!isAuthenticated) router.push('/auth/login')
-  }, [isAuthenticated, router])
+    if (sessionStatus === 'loading') return
+    if (!effectiveIsAuthenticated) router.push('/auth/login')
+  }, [effectiveIsAuthenticated, router, sessionStatus])
 
   // Fetch real DB projects so owners can enter the dashboard without a Zustand store assignment
   useEffect(() => {
-    if (!isAuthenticated) return
-    fetch('/api/projects', { credentials: 'include' })
+    if (!effectiveIsAuthenticated) return
+    fetch('/api/projects', { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } })
       .then((r) => r.json() as Promise<{
         projects?: Array<{ id: string; title?: string; ownerRole?: string | null; membershipRole?: string | null }>
         summary?: { ownedProjectsCount?: number; activeMembershipsCount?: number; currentProjectId?: string | null; recentProject?: { id: string; title?: string } | null }
@@ -127,7 +132,7 @@ export default function DashboardPage() {
         })
       })
       .catch(() => {})
-  }, [isAuthenticated])
+  }, [effectiveIsAuthenticated])
 
   const openActiveProject = useCallback(async () => {
     try {
@@ -200,13 +205,13 @@ export default function DashboardPage() {
   )
   const accessByProject = useMemo(
     () => allProjectIds.map((projectId) => getProjectAccessState(projectId, {
-      userId: user?.id ?? null,
+      userId: effectiveUser?.id ?? null,
       profileId: currentProfileId ?? null,
       assignments: projectRoleAssignments,
       teams,
       invitations,
     })),
-    [allProjectIds, currentProfileId, invitations, projectRoleAssignments, teams, user?.id],
+    [allProjectIds, currentProfileId, effectiveUser?.id, invitations, projectRoleAssignments, teams],
   )
   const accessibleProjectIds = useMemo(
     () => accessByProject
@@ -332,26 +337,26 @@ export default function DashboardPage() {
     const project = matching.projects.find((item) => item.projectId === projectId)
     createTeam(
       projectId,
-      user?.id ?? 'user-me',
-      user?.displayName ?? '我 (发布方)',
+      effectiveUser?.id ?? 'user-me',
+      effectiveUser?.displayName ?? '我 (发布方)',
     )
 
     inviteMember(
       projectId,
       candidate.profileId,
       role,
-      user?.id ?? 'user-me',
+      effectiveUser?.id ?? 'user-me',
       {
         projectTitle: project?.title ?? projectId,
         displayName: candidate.displayName,
-        invitedByName: user?.displayName ?? '我 (发布方)',
+        invitedByName: effectiveUser?.displayName ?? '我 (发布方)',
         city: candidate.city,
         ratingSummary: candidate.ratingSummary,
         matchedCaseIds: candidate.matchedCaseIds,
       },
     )
     feedback.success(`已向 ${candidate.displayName} 发出 ${role} 邀请`)
-  }, [createTeam, feedback, inviteMember, matching.projects, user?.displayName, user?.id])
+  }, [createTeam, effectiveUser?.displayName, effectiveUser?.id, feedback, inviteMember, matching.projects])
 
   const licensingSummary = useMemo(() => getSummary(), [getSummary])
   const licensingIssues = useMemo(() => getIssues(), [getIssues])
@@ -399,14 +404,14 @@ export default function DashboardPage() {
     () => resolveDashboardRoleContext(
       dashboard.overview.map((item) => item.projectId),
       {
-        userId: user?.id ?? null,
+        userId: effectiveUser?.id ?? null,
         profileId: currentProfileId ?? null,
         assignments: projectRoleAssignments,
         fallbackRole: 'producer',
         overrideRole: roleOverride,
       },
     ),
-    [currentProfileId, dashboard.overview, projectRoleAssignments, roleOverride, user?.id],
+    [currentProfileId, dashboard.overview, effectiveUser?.id, projectRoleAssignments, roleOverride],
   )
   const dashboardRole = roleContext.source === 'fallback' ? 'client' : roleContext.role
   const dashboardPermissions = useMemo(
@@ -436,7 +441,7 @@ export default function DashboardPage() {
           actionLabel: '查看当前身份',
         })
 
-  if (!user) {
+  if (!effectiveUser) {
     return (
       <DashboardShell>
         <LoadingState title="正在加载 Dashboard" message="正在验证当前账号与项目权限。" count={3} />
@@ -503,7 +508,7 @@ export default function DashboardPage() {
                 ? '创建第一个项目后即可进入 Dashboard，画布节点、AI 生成结果和工作流都会自动保存。'
                 : '当前账号拥有项目 Owner 权限，但 Dashboard 暂无可展示的本地生产数据。你仍可直接进入项目画布。'}
           details={[
-            `当前账号：${user.displayName ?? user.id}`,
+            `当前账号：${effectiveUser.displayName ?? effectiveUser.id}`,
             `当前 Profile：${currentProfileId ?? '未解析'}`,
             invitedProjectIds.length > 0 ? `待接受邀请：${invitedProjectIds.length} 个项目` : `Client-only 项目：${clientOnlyProjectIds.length} 个`,
           ]}

@@ -18,7 +18,7 @@ interface NewProjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   source: ProjectSource
-  beforeCreate?: () => Promise<boolean> | boolean
+  beforeCreate?: () => boolean
 }
 
 export function NewProjectDialog({
@@ -51,7 +51,7 @@ export function NewProjectDialog({
       window.dispatchEvent(new CustomEvent('creator-city:switching-project'))
 
       if (beforeCreate) {
-        const shouldContinue = await beforeCreate()
+        const shouldContinue = beforeCreate()
         if (!shouldContinue) {
           window.dispatchEvent(new CustomEvent('creator-city:switching-project-cancelled'))
           return

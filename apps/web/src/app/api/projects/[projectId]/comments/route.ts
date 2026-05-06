@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { isProjectCanvasSchemaMissing } from '@/lib/projects/api-errors'
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
     const message = error instanceof Error ? error.message : String(error)
     console.error('[canvas-comments-api] list failed', { projectId: params.projectId, error })
-    return jsonError('CANVAS_COMMENTS_LOAD_FAILED', '加载画布评论失败。', 500, message)
+    return jsonError('COMMENTS_LOAD_FAILED', '加载画布评论失败。', 500, message)
   }
 }
 
@@ -155,7 +155,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         status: 'open',
         x: typeof body.x === 'number' ? body.x : null,
         y: typeof body.y === 'number' ? body.y : null,
-        metadataJson: (body.metadata ?? null) as Prisma.InputJsonValue,
+        metadataJson: body.metadata === undefined || body.metadata === null
+          ? Prisma.JsonNull
+          : body.metadata as Prisma.InputJsonValue,
       },
       select: COMMENT_SELECT,
     })
@@ -170,6 +172,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
     const message = error instanceof Error ? error.message : String(error)
     console.error('[canvas-comments-api] create failed', { projectId: params.projectId, error })
-    return jsonError('CANVAS_COMMENT_CREATE_FAILED', '保存画布评论失败。', 500, message)
+    return jsonError('COMMENT_CREATE_FAILED', '保存画布评论失败。', 500, message)
   }
 }
