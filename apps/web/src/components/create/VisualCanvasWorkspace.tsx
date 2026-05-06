@@ -78,6 +78,10 @@ function getCanvasCacheKey(projectId: string) {
   return `creator-city:canvas-cache:${projectId}`
 }
 
+function getCommentsCacheKey(projectId: string) {
+  return `creator-city:canvas-comments-cache:${projectId}`
+}
+
 function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
   if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
   const name = `create:${label}`
@@ -504,6 +508,27 @@ export function VisualCanvasWorkspace({
   }, [])
 
   useEffect(() => {
+    const stopAutosave = () => {
+      isSwitchingProjectRef.current = true
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      saveAbortRef.current?.abort()
+    }
+    const resumeAutosave = () => {
+      isSwitchingProjectRef.current = false
+    }
+
+    window.addEventListener('creator-city:switching-project', stopAutosave)
+    window.addEventListener('creator-city:switching-project-cancelled', resumeAutosave)
+    return () => {
+      window.removeEventListener('creator-city:switching-project', stopAutosave)
+      window.removeEventListener('creator-city:switching-project-cancelled', resumeAutosave)
+    }
+  }, [])
+
+  useEffect(() => {
     if (liveStatusLoading) {
       providerStatusPerfStartedRef.current = true
       devPerf('providers', 'start')
@@ -552,6 +577,29 @@ export function VisualCanvasWorkspace({
       return raw ? JSON.parse(raw) as CanvasCache : null
     } catch {
       return null
+    }
+  }, [])
+
+  const readCommentsCache = useCallback((id: string): CanvasComment[] | null => {
+    if (typeof window === 'undefined') return null
+    try {
+      const raw = window.localStorage.getItem(getCommentsCacheKey(id))
+      const parsed = raw ? JSON.parse(raw) as { comments?: CanvasComment[] } : null
+      return Array.isArray(parsed?.comments) ? parsed.comments : null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const writeCommentsCache = useCallback((id: string, nextComments: CanvasComment[]) => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(getCommentsCacheKey(id), JSON.stringify({
+        comments: nextComments,
+        updatedAt: new Date().toISOString(),
+      }))
+    } catch {
+      // Comments are persisted in the database; this cache only speeds panel open.
     }
   }, [])
 
@@ -1675,6 +1723,8 @@ export function VisualCanvasWorkspace({
 
   const loadCanvasComments = useCallback(async () => {
     if (!projectId || !workflowId) return
+    const cachedComments = readCommentsCache(projectId)
+    if (cachedComments) setComments(cachedComments)
     setCommentsLoading(true)
     setCommentsError('')
     try {
@@ -1692,12 +1742,14 @@ export function VisualCanvasWorkspace({
       if (!response.ok || data.success === false) {
         throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '加载评论失败'}` : data.message ?? '加载评论失败')
       }
-      setComments((data.comments ?? []).map((comment) => ({
+      const nextComments = (data.comments ?? []).map((comment) => ({
         id: comment.id,
         text: comment.body,
         status: comment.status,
         createdAt: new Date(comment.createdAt).getTime(),
-      })))
+      }))
+      setComments(nextComments)
+      writeCommentsCache(projectId, nextComments)
     } catch (error) {
       const message = error instanceof Error ? error.message : '加载评论失败'
       setCommentsError(message)
@@ -1705,7 +1757,7 @@ export function VisualCanvasWorkspace({
     } finally {
       setCommentsLoading(false)
     }
-  }, [projectId, showCanvasFeedback, workflowId])
+  }, [projectId, readCommentsCache, showCanvasFeedback, workflowId, writeCommentsCache])
 
   const handleAddComment = useCallback(async (text: string) => {
     if (!projectId || !workflowId) {
@@ -1735,7 +1787,11 @@ export function VisualCanvasWorkspace({
         status: data.comment.status,
         createdAt: new Date(data.comment.createdAt).getTime(),
       }
-      setComments((current) => [savedComment, ...current.filter((comment) => comment.id !== savedComment.id)])
+      setComments((current) => {
+        const nextComments = [savedComment, ...current.filter((comment) => comment.id !== savedComment.id)]
+        writeCommentsCache(projectId, nextComments)
+        return nextComments
+      })
       showCanvasFeedback('评论已保存。')
       return true
     } catch (error) {
@@ -1744,7 +1800,7 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback(message)
       return false
     }
-  }, [projectId, showCanvasFeedback, workflowId])
+  }, [projectId, showCanvasFeedback, workflowId, writeCommentsCache])
 
   useEffect(() => {
     if (!commentsEnabled) return

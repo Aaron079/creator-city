@@ -45,17 +45,22 @@ export function NewProjectDialog({
 
     let navigating = false
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15_000)
+    const timeout = setTimeout(() => controller.abort(), 5_000)
 
     try {
+      window.dispatchEvent(new CustomEvent('creator-city:switching-project'))
+
       if (beforeCreate) {
         const shouldContinue = await beforeCreate()
-        if (!shouldContinue) return
+        if (!shouldContinue) {
+          window.dispatchEvent(new CustomEvent('creator-city:switching-project-cancelled'))
+          return
+        }
       }
 
       let response: Response
       try {
-        response = await fetch('/api/projects', {
+        response = await fetch('/api/projects/new', {
           method: 'POST',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -70,7 +75,7 @@ export function NewProjectDialog({
         })
       } catch (fetchErr) {
         if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
-          throw new Error('创建项目超时（15s），请检查网络后重试。')
+          throw new Error('创建项目超时，请稍后重试。项目可能已经创建，请到项目列表查看。')
         }
         throw new Error(`网络异常：${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
       }
@@ -104,9 +109,13 @@ export function NewProjectDialog({
       }
 
       try {
+        const oldProjectId = window.localStorage.getItem('creator-city:last-project-id')
         window.localStorage.setItem('creator-city:last-project-id', data.project.id)
         if (data.workflow?.id) {
           window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
+        }
+        if (oldProjectId && oldProjectId !== data.project.id) {
+          window.localStorage.removeItem(`creator-city:draft:${oldProjectId}`)
         }
       } catch { /* storage might be blocked in incognito */ }
 
@@ -115,15 +124,16 @@ export function NewProjectDialog({
       onOpenChange(false)
       router.push(dest)
 
-      // Fallback: if router.push doesn't navigate within 1.5 s, hard redirect
+      // Fallback: if router.push doesn't navigate within 1 s, hard redirect
       setTimeout(() => {
         try {
           if (`${window.location.pathname}${window.location.search}` !== dest) {
             window.location.href = dest
           }
         } catch { /* ignore */ }
-      }, 1500)
+      }, 1000)
     } catch (error) {
+      window.dispatchEvent(new CustomEvent('creator-city:switching-project-cancelled'))
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
     } finally {
       clearTimeout(timeout)
