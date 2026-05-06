@@ -29,7 +29,6 @@ export function NewProjectDialog({
 }: NewProjectDialogProps) {
   const router = useRouter()
   const creatingRef = useRef(false)
-  const requestIdRef = useRef(0)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectType, setProjectType] = useState<ProjectType>('blank')
@@ -41,25 +40,22 @@ export function NewProjectDialog({
   async function createProject() {
     if (creatingRef.current) return
     creatingRef.current = true
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
     setCreating(true)
     setMessage('')
+
+    let navigating = false
 
     try {
       if (beforeCreate) {
         const shouldContinue = await beforeCreate()
-        if (!shouldContinue) {
-          creatingRef.current = false
-          setCreating(false)
-          return
-        }
+        if (!shouldContinue) return
       }
 
       const response = await fetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         credentials: 'include',
+        cache: 'no-store',
         body: JSON.stringify({
           title: title.trim() || undefined,
           description: description.trim() || undefined,
@@ -67,33 +63,44 @@ export function NewProjectDialog({
           source,
         }),
       })
-      const data = await response.json().catch(() => ({})) as {
+
+      const raw = await response.text()
+      let data: {
         success?: boolean
         project?: { id: string }
         workflow?: { id: string }
         redirectTo?: string
         message?: string
-      }
-      if (requestId !== requestIdRef.current) return
+        errorCode?: string
+      } = {}
+      try { data = raw ? JSON.parse(raw) as typeof data : {} } catch { /* non-json body */ }
+
       if (response.status === 401) {
         router.push(`/auth/login?next=${encodeURIComponent('/projects?new=1')}`)
         return
       }
-      if (!response.ok || !data.project?.id) throw new Error(data.message ?? '创建项目失败。')
+
+      if (!response.ok || !data.project?.id) {
+        const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
+        throw new Error(`${errCode}${data.message ?? '创建项目失败。'}`)
+      }
 
       try {
         window.localStorage.setItem('creator-city:last-project-id', data.project.id)
-        if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
-      } catch {
-        // Explicit URL still opens the project.
-      }
+        if (data.workflow?.id) {
+          window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
+        }
+      } catch { /* storage might be blocked in incognito */ }
 
+      navigating = true
       onOpenChange(false)
       router.push(data.redirectTo ?? `/create?projectId=${encodeURIComponent(data.project.id)}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
+    } finally {
       creatingRef.current = false
-      setCreating(false)
+      // Keep creating=true only if we successfully started navigation (dialog already closed)
+      if (!navigating) setCreating(false)
     }
   }
 
