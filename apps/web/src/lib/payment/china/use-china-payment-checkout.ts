@@ -37,6 +37,7 @@ function messageForError(errorCode?: string, fallback?: string, rawSubMessage?: 
   if (errorCode === 'PACKAGE_NOT_FOUND') return '套餐不存在'
   if (errorCode === 'ALIPAY_SIGN_FAILED') return '支付宝签名失败，请检查应用私钥、支付宝公钥和 charset 配置。'
   if (errorCode === 'ALIPAY_PRECREATE_FAILED') return rawSubMessage ?? fallback ?? '支付宝预下单失败'
+  if (errorCode === 'ALIPAY_NON_JSON_RESPONSE') return fallback ?? '支付宝网关返回非 JSON 响应'
   return fallback ?? '创建订单失败'
 }
 
@@ -64,13 +65,31 @@ export function useChinaPaymentCheckout() {
         },
         body: JSON.stringify({ provider, packageId, clientType }),
       })
-      const data = await res.json().catch(() => ({})) as ChinaCheckoutResult
+      const raw = await res.text()
+      let data: ChinaCheckoutResult | null
+      try {
+        data = raw ? JSON.parse(raw) as ChinaCheckoutResult : null
+      } catch {
+        return {
+          success: false,
+          errorCode: 'NON_JSON_RESPONSE',
+          message: `支付接口返回非 JSON 响应，HTTP ${res.status}：${raw.slice(0, 300)}`,
+        }
+      }
 
-      if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
+      if (res.status === 401 || data?.errorCode === 'UNAUTHORIZED') {
         return {
           success: false,
           errorCode: 'UNAUTHORIZED',
-          message: messageForError('UNAUTHORIZED', data.message),
+          message: messageForError('UNAUTHORIZED', data?.message),
+        }
+      }
+
+      if (!data) {
+        return {
+          success: false,
+          errorCode: 'EMPTY_RESPONSE',
+          message: `支付接口返回空响应，HTTP ${res.status}`,
         }
       }
 
@@ -78,7 +97,11 @@ export function useChinaPaymentCheckout() {
         return {
           ...data,
           success: false,
-          message: messageForError(data.errorCode, data.message, data.rawSubMessage),
+          message: messageForError(
+            data.errorCode,
+            data.rawMessage ? `${data.message ?? '创建订单失败'}：${data.rawMessage}` : data.message,
+            data.rawSubMessage,
+          ),
         }
       }
 

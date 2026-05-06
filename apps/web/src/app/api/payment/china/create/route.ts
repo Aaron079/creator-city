@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   }
 
   const pkg = getCreditPackage(body.packageId)
-  if (!pkg) return NextResponse.json({ success: false, errorCode: 'PACKAGE_NOT_FOUND', message: '积分套餐不存在' }, { status: 404 })
+  if (!pkg) return NextResponse.json({ success: false, errorCode: 'PACKAGE_NOT_FOUND', message: '套餐不存在' }, { status: 404 })
 
   const billingProvider = body.provider === 'wechatpay' ? 'wechat' : 'alipay'
   const price = pkg.prices.find((item) => item.region === 'CN' && item.provider === billingProvider)
@@ -155,6 +155,11 @@ export async function POST(request: NextRequest) {
 
     if (isChinaPaymentError(error)) {
       const details = getErrorDetails(error.details)
+      const status = error.code === 'PAYMENT_PROVIDER_NOT_CONFIGURED'
+        ? 400
+        : error.code === 'ALIPAY_PRECREATE_FAILED' || error.code === 'ALIPAY_NON_JSON_RESPONSE'
+          ? 502
+          : error.status
       return NextResponse.json({
         success: false,
         errorCode: error.code,
@@ -165,9 +170,9 @@ export async function POST(request: NextRequest) {
         rawSubCode: details.rawSubCode,
         rawMessage: details.rawMessage,
         rawSubMessage: details.rawSubMessage,
-      }, { status: error.status })
+      }, { status })
     }
     console.error('[payment/china/create]', error)
-    return NextResponse.json({ success: false, errorCode: 'CREATE_PAYMENT_FAILED', message: '创建中国支付订单失败' }, { status: 500 })
+    return NextResponse.json({ success: false, errorCode: 'PAYMENT_CREATE_FAILED', message: '创建中国支付订单失败' }, { status: 500 })
   }
 }

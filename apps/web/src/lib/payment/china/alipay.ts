@@ -153,9 +153,10 @@ async function postAlipayAop(params: Record<string, string>) {
   try {
     return JSON.parse(text) as AlipayPrecreateResponse
   } catch {
-    throw new ChinaPaymentError('PAYMENT_REQUEST_FAILED', '支付宝返回了非 JSON 响应。', 502, {
+    throw new ChinaPaymentError('ALIPAY_NON_JSON_RESPONSE', '支付宝网关返回非 JSON 响应', 502, {
       provider: 'alipay',
       status: res.status,
+      rawMessage: text.slice(0, 300),
     })
   }
 }

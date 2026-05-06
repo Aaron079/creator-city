@@ -6,6 +6,7 @@ export type ChinaPaymentErrorCode =
   | 'PAYMENT_REQUEST_FAILED'
   | 'ALIPAY_SIGN_FAILED'
   | 'ALIPAY_PRECREATE_FAILED'
+  | 'ALIPAY_NON_JSON_RESPONSE'
 
 export class ChinaPaymentError extends Error {
   code: ChinaPaymentErrorCode
