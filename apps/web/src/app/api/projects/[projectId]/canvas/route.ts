@@ -48,6 +48,17 @@ type CanvasSaveEdge = {
   type?: string
 }
 
+const WORKFLOW_SELECT = {
+  id: true,
+  projectId: true,
+  name: true,
+  version: true,
+  viewportJson: true,
+  metadataJson: true,
+  createdAt: true,
+  updatedAt: true,
+} as const
+
 async function requireProjectAccess(projectId: string, userId: string, write = false) {
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -65,6 +76,7 @@ async function requireProjectAccess(projectId: string, userId: string, write = f
     },
   })
   if (!project) return null
+  // Owner always has full access — skip potentially-broken ProjectMember lookup.
   if (project.ownerId === userId) return project
   const access = await getProjectAccess(userId, projectId)
   if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
@@ -72,27 +84,20 @@ async function requireProjectAccess(projectId: string, userId: string, write = f
 }
 
 async function ensureWorkflow(projectId: string) {
-  const workflow = await db.canvasWorkflow.findFirst({
+  const existing = await db.canvasWorkflow.findFirst({
     where: { projectId },
     orderBy: { createdAt: 'asc' },
-    select: {
-      id: true,
-      projectId: true,
-      name: true,
-      version: true,
-      viewportJson: true,
-      metadataJson: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    select: WORKFLOW_SELECT,
   })
-  if (workflow) return workflow
+  if (existing) return existing
+  // Auto-create if project exists but has no workflow yet.
   return db.canvasWorkflow.create({
     data: {
       projectId,
       name: 'Main Canvas',
       viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
     },
+    select: WORKFLOW_SELECT,
   })
 }
 
@@ -150,12 +155,16 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       }),
     ])
 
+    // Best-effort timestamp update — never block the response.
     void db.project.update({
       where: { id: project.id },
       data: { lastOpenedAt: new Date() },
-    }).catch((error) => console.warn('[projects] failed to touch lastOpenedAt', { projectId: project.id, error }))
+    }).catch((e: unknown) =>
+      console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
+    )
 
     return NextResponse.json({
+      success: true,
       project,
       workflow,
       nodes: nodes.map(mapCanvasNode),
@@ -168,8 +177,12 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    console.error('[projects] failed to load canvas', error)
-    return projectJsonError('PROJECT_ACCESS_FAILED', '加载画布失败。', 500)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[canvas] GET failed', { projectId: params.projectId, error })
+    return NextResponse.json(
+      { success: false, errorCode: 'CANVAS_LOAD_FAILED', message: `加载画布失败：${msg}` },
+      { status: 500 },
+    )
   }
 }
 
@@ -195,28 +208,27 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   if (!Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
     return projectJsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
   }
-  const invalidNode = body.nodes.find((node) => typeof node.id !== 'string' || !node.id || typeof node.kind !== 'string' || !node.kind)
+  const invalidNode = body.nodes.find(
+    (node) => typeof node.id !== 'string' || !node.id || typeof node.kind !== 'string' || !node.kind,
+  )
   if (invalidNode) {
     return projectJsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
   }
 
-  // Refuse to overwrite existing nodes with an empty list unless the client
-  // explicitly passes deletedNodeIds (meaning it intentionally deleted them).
+  // Skip empty writes when canvas already has nodes (prevents accidental wipe on cold mount).
   const isEmptyWrite = body.nodes.length === 0 && !body.clearCanvas
   if (isEmptyWrite) {
-    // Peek at the existing node count; if nodes already exist, skip this save
-    let existingCount = 0
     try {
       const wf = body.workflowId
         ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: { id: true } })
         : await db.canvasWorkflow.findFirst({ where: { projectId: params.projectId }, select: { id: true } })
       if (wf) {
-        existingCount = await db.canvasNode.count({ where: { workflowId: wf.id } })
+        const existingCount = await db.canvasNode.count({ where: { workflowId: wf.id } })
+        if (existingCount > 0) {
+          return NextResponse.json({ success: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
+        }
       }
     } catch { /* non-fatal */ }
-    if (existingCount > 0) {
-      return NextResponse.json({ success: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
-    }
   }
 
   try {
@@ -225,112 +237,115 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
     const existingWorkflow = body.workflowId
-      ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId } })
+      ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: WORKFLOW_SELECT })
       : null
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
     const now = new Date()
 
-    await db.$transaction(async (tx) => {
-      await tx.canvasWorkflow.update({
-        where: { id: workflow.id },
-        data: {
-          ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
+    // Sequential individual writes — avoids pgBouncer interactive-transaction incompatibility.
+    // Atomicity is sacrificed for reliability; the next save will correct any partial state.
+    await db.canvasWorkflow.update({
+      where: { id: workflow.id },
+      data: {
+        ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
+        updatedAt: now,
+      },
+    })
+
+    for (const node of body.nodes ?? []) {
+      if (!node.id || !node.kind) continue
+      const providerId = node.providerId ?? node.model ?? null
+      await db.canvasNode.upsert({
+        where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
+        create: {
+          workflowId: workflow.id,
+          nodeId: node.id,
+          kind: node.kind,
+          title: node.title ?? null,
+          providerId,
+          status: node.status ?? 'idle',
+          x: Number(node.x ?? 0),
+          y: Number(node.y ?? 0),
+          width: Number(node.width ?? 320),
+          height: Number(node.height ?? 220),
+          prompt: node.prompt ?? null,
+          resultText: node.resultText ?? null,
+          resultImageUrl: node.resultImageUrl ?? null,
+          resultVideoUrl: node.resultVideoUrl ?? null,
+          resultAudioUrl: node.resultAudioUrl ?? null,
+          resultPreview: node.resultPreview ?? null,
+          errorMessage: node.errorMessage ?? null,
+          paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+          metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
+        },
+        update: {
+          kind: node.kind,
+          title: node.title ?? null,
+          providerId,
+          status: node.status ?? 'idle',
+          x: Number(node.x ?? 0),
+          y: Number(node.y ?? 0),
+          width: Number(node.width ?? 320),
+          height: Number(node.height ?? 220),
+          prompt: node.prompt ?? null,
+          resultText: node.resultText ?? null,
+          resultImageUrl: node.resultImageUrl ?? null,
+          resultVideoUrl: node.resultVideoUrl ?? null,
+          resultAudioUrl: node.resultAudioUrl ?? null,
+          resultPreview: node.resultPreview ?? null,
+          errorMessage: node.errorMessage ?? null,
+          paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+          metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
           updatedAt: now,
         },
       })
+    }
 
-      for (const node of body.nodes ?? []) {
-        if (!node.id || !node.kind) continue
-        const providerId = node.providerId ?? node.model ?? null
-        await tx.canvasNode.upsert({
-          where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
-          create: {
-            workflowId: workflow.id,
-            nodeId: node.id,
-            kind: node.kind,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-            metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
-          },
-          update: {
-            kind: node.kind,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-            metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
-            updatedAt: now,
-          },
-        })
-      }
-
-      for (const edge of body.edges ?? []) {
-        if (!edge.id || !edge.fromNodeId || !edge.toNodeId) continue
-        await tx.canvasEdge.upsert({
-          where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
-          create: {
-            workflowId: workflow.id,
-            edgeId: edge.id,
-            sourceNodeId: edge.fromNodeId,
-            targetNodeId: edge.toNodeId,
-            type: edge.type ?? null,
-            metadataJson: { status: edge.status ?? 'active' },
-          },
-          update: {
-            sourceNodeId: edge.fromNodeId,
-            targetNodeId: edge.toNodeId,
-            type: edge.type ?? null,
-            metadataJson: { status: edge.status ?? 'active' },
-            updatedAt: now,
-          },
-        })
-      }
-
-      if (body.clearCanvas && (body.nodes ?? []).length === 0) {
-        await tx.canvasEdge.deleteMany({ where: { workflowId: workflow.id } })
-        await tx.canvasNode.deleteMany({ where: { workflowId: workflow.id } })
-      }
-
-      if (body.deletedNodeIds?.length) {
-        await tx.canvasNode.deleteMany({
-          where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
-        })
-      }
-      if (body.deletedEdgeIds?.length) {
-        await tx.canvasEdge.deleteMany({
-          where: { workflowId: workflow.id, edgeId: { in: body.deletedEdgeIds } },
-        })
-      }
-
-      await tx.project.update({
-        where: { id: project.id },
-        data: { lastOpenedAt: now },
+    for (const edge of body.edges ?? []) {
+      if (!edge.id || !edge.fromNodeId || !edge.toNodeId) continue
+      await db.canvasEdge.upsert({
+        where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
+        create: {
+          workflowId: workflow.id,
+          edgeId: edge.id,
+          sourceNodeId: edge.fromNodeId,
+          targetNodeId: edge.toNodeId,
+          type: edge.type ?? null,
+          metadataJson: { status: edge.status ?? 'active' },
+        },
+        update: {
+          sourceNodeId: edge.fromNodeId,
+          targetNodeId: edge.toNodeId,
+          type: edge.type ?? null,
+          metadataJson: { status: edge.status ?? 'active' },
+          updatedAt: now,
+        },
       })
-    })
+    }
+
+    if (body.clearCanvas && (body.nodes ?? []).length === 0) {
+      await db.canvasEdge.deleteMany({ where: { workflowId: workflow.id } })
+      await db.canvasNode.deleteMany({ where: { workflowId: workflow.id } })
+    }
+
+    if (body.deletedNodeIds?.length) {
+      await db.canvasNode.deleteMany({
+        where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
+      })
+    }
+    if (body.deletedEdgeIds?.length) {
+      await db.canvasEdge.deleteMany({
+        where: { workflowId: workflow.id, edgeId: { in: body.deletedEdgeIds } },
+      })
+    }
+
+    // Best-effort lastOpenedAt update — never block the save response.
+    void db.project.update({
+      where: { id: project.id },
+      data: { lastOpenedAt: now },
+    }).catch((e: unknown) =>
+      console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
+    )
 
     return NextResponse.json({
       success: true,
@@ -343,7 +358,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    console.error('[projects] failed to save canvas', error)
-    return NextResponse.json({ success: false, errorCode: 'PROJECT_ACCESS_FAILED', message: '保存画布失败。' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[canvas] PUT failed', { projectId: params.projectId, error })
+    return NextResponse.json(
+      { success: false, errorCode: 'CANVAS_SAVE_FAILED', message: `保存画布失败：${msg}` },
+      { status: 500 },
+    )
   }
 }
