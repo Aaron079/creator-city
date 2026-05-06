@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { CreditPackageGrid } from '@/components/billing/CreditPackageGrid'
 import { ManualRechargePanel } from '@/components/billing/ManualRechargePanel'
@@ -39,6 +39,11 @@ interface BillingBootstrapResponse {
   providerStatuses?: Record<PaymentProvider, PaymentConfiguration>
   chinaPaymentStatus?: ChinaPaymentStatusResponse
   walletSummary?: UserWallet | null
+}
+
+interface AuthMeResponse {
+  authenticated?: boolean
+  user?: AuthUserPublic | null
 }
 
 function perfLog(label: string, startedAt: number) {
@@ -87,6 +92,22 @@ export default function BillingPage() {
   const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
   const [, setWalletSummary] = useState<UserWallet | null>(null)
 
+  const refreshAuthStatus = useCallback(async (): Promise<'authenticated' | 'unauthenticated' | 'unknown'> => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      })
+      const data = await response.json().catch(() => null) as AuthMeResponse | null
+      const nextStatus = response.ok && data?.authenticated ? 'authenticated' : 'unauthenticated'
+      setAuthStatus(nextStatus)
+      return nextStatus
+    } catch {
+      return 'unknown'
+    }
+  }, [])
+
   useEffect(() => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     perfLog('init', startedAt)
@@ -112,6 +133,10 @@ export default function BillingPage() {
       perfLog('wallet', startedAt)
     }
 
+    void refreshAuthStatus().then((status) => {
+      if (status !== 'unknown') perfLog('auth', startedAt)
+    })
+
     void (async () => {
       try {
         const bootstrapRes = await fetch('/api/billing/bootstrap', {
@@ -121,8 +146,10 @@ export default function BillingPage() {
         })
         const data = await bootstrapRes.json().catch(() => null) as BillingBootstrapResponse | null
         const auth = data?.auth
-        setAuthStatus(auth?.authenticated ? 'authenticated' : 'unauthenticated')
-        perfLog('auth', startedAt)
+        if (typeof auth?.authenticated === 'boolean') {
+          setAuthStatus(auth.authenticated ? 'authenticated' : 'unauthenticated')
+          perfLog('auth', startedAt)
+        }
         if (data?.packages?.length) {
           setPackages(data.packages)
           writePackagesCache(data.packages)
@@ -145,7 +172,6 @@ export default function BillingPage() {
         }
         perfLog('wallet', startedAt)
       } catch {
-        setAuthStatus('unauthenticated')
         if (!cachedPackages?.value.length) {
           setNotice({ type: 'error', message: '充值页数据加载失败，请稍后重试。' })
         }
@@ -153,7 +179,7 @@ export default function BillingPage() {
         perfLog('first-render', startedAt)
       }
     })()
-  }, [])
+  }, [refreshAuthStatus])
 
   const changeRegion = (next: BillingRegion) => {
     setRegion(next)
@@ -179,11 +205,12 @@ export default function BillingPage() {
   }
 
   const buy = async (packageId: string) => {
-    if (authStatus === 'loading') {
+    let currentAuthStatus: typeof authStatus | 'unknown' = authStatus
+    if (currentAuthStatus === 'loading') {
       setNotice({ type: 'info', message: '正在确认登录状态...' })
-      return
+      currentAuthStatus = await refreshAuthStatus()
     }
-    if (authStatus !== 'authenticated') {
+    if (currentAuthStatus === 'unauthenticated') {
       setNotice({ type: 'error', message: '请先登录后购买积分。' })
       return
     }
@@ -227,6 +254,7 @@ export default function BillingPage() {
       }
 
       if (provider === 'alipay') {
+        setNotice({ type: 'info', message: '正在创建支付宝二维码订单...' })
         await createAlipayQr(packageId)
         return
       }
