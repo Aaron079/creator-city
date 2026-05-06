@@ -71,6 +71,9 @@ export default async function AssetsPage() {
                     <p className="mt-2 text-xs text-white/40">
                       {asset.project ? `项目：${asset.project.title}` : '未关联项目'}
                     </p>
+                    {asset.providerId && (
+                      <p className="mt-1 text-xs text-white/25">Provider: {asset.providerId}</p>
+                    )}
                   </div>
                 </article>
               )

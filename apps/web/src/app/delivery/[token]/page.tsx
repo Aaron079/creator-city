@@ -1,4 +1,4 @@
-import { DeliveryFeedbackForm } from './DeliveryFeedbackForm'
+import { DeliveryFeedbackForm, type DeliveryCommentForDisplay } from './DeliveryFeedbackForm'
 import { getPublicDelivery } from '@/lib/delivery/service'
 
 export const dynamic = 'force-dynamic'
@@ -72,7 +72,20 @@ export default async function PublicDeliveryPage({ params }: Props) {
           <h2 className="text-base font-semibold">提交反馈</h2>
           <p className="mt-1 text-sm text-white/45">可以评论、标记通过或要求修改。</p>
           <div className="mt-4">
-            <DeliveryFeedbackForm token={params.token} items={share.items.map((item) => ({ id: item.id, title: item.title }))} />
+            <DeliveryFeedbackForm
+            token={params.token}
+            items={share.items.map((item) => ({ id: item.id, title: item.title }))}
+            initialComments={share.comments.map((c): DeliveryCommentForDisplay => ({
+              id: c.id,
+              itemId: c.itemId ?? null,
+              authorName: c.authorName ?? null,
+              authorEmail: c.authorEmail ?? null,
+              body: c.body,
+              status: c.status,
+              createdAt: c.createdAt.toISOString(),
+              item: c.item ?? null,
+            }))}
+          />
           </div>
         </aside>
       </div>
