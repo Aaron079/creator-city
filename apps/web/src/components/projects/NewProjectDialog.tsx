@@ -67,8 +67,8 @@ export function NewProjectDialog({
     }, 1000)
   }
 
-  async function recoverLatestProject() {
-    if (recovering) return
+  async function recoverLatestProject(): Promise<boolean> {
+    if (recovering) return false
     setRecovering(true)
     setMessage('正在检查最近创建的项目...')
     try {
@@ -84,7 +84,7 @@ export function NewProjectDialog({
       }
       if (response.status === 401) {
         router.push(`/auth/login?next=${encodeURIComponent('/projects?new=1')}`)
-        return
+        return true
       }
       if (!response.ok) {
         const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
@@ -93,11 +93,13 @@ export function NewProjectDialog({
       const recentProject = data.projects?.[0]
       if (!recentProject?.id) {
         setMessage('未找到已创建项目，请重试。')
-        return
+        return false
       }
       navigateToProject(recentProject.id, recentProject.workflowId)
+      return true
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '检查已创建项目失败。')
+      return false
     } finally {
       setRecovering(false)
     }
@@ -113,12 +115,20 @@ export function NewProjectDialog({
     const controller = new AbortController()
     createAbortRef.current = controller
     const slowTimer = window.setTimeout(() => {
-      setMessage('项目仍在创建中，请稍候...')
-    }, 8_000)
+      setMessage('正在创建，服务器较慢...')
+    }, 5_000)
     const verySlowTimer = window.setTimeout(() => {
-      setMessage('创建较慢，正在检查是否已创建项目...')
-      void recoverLatestProject()
-    }, 20_000)
+      setMessage('如果已创建，将自动跳转最近项目...')
+    }, 10_000)
+    const recoverTimer = window.setTimeout(() => {
+      void (async () => {
+        const recovered = await recoverLatestProject()
+        if (!recovered && creatingRef.current) {
+          creatingRef.current = false
+          setCreating(false)
+        }
+      })()
+    }, 12_000)
 
     try {
       window.dispatchEvent(new CustomEvent('creator-city:switching-project'))
@@ -150,6 +160,11 @@ export function NewProjectDialog({
         if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
           throw new Error('创建已取消。')
         }
+        const recovered = await recoverLatestProject()
+        if (recovered) {
+          navigating = true
+          return
+        }
         throw new Error(`网络异常：${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
       }
 
@@ -175,6 +190,13 @@ export function NewProjectDialog({
       }
 
       if (!response.ok || !data.project?.id) {
+        if (data.errorCode === 'PROJECT_CREATE_TIMEOUT') {
+          const recovered = await recoverLatestProject()
+          if (recovered) {
+            navigating = true
+            return
+          }
+        }
         const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
         throw new Error(`${errCode}${data.message ?? `创建项目失败（HTTP ${response.status}）`}`)
       }
@@ -187,6 +209,7 @@ export function NewProjectDialog({
     } finally {
       window.clearTimeout(slowTimer)
       window.clearTimeout(verySlowTimer)
+      window.clearTimeout(recoverTimer)
       if (createAbortRef.current === controller) createAbortRef.current = null
       creatingRef.current = false
       if (!navigating) setCreating(false)

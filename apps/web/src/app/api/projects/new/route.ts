@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
@@ -22,16 +21,49 @@ function jsonError(errorCode: string, message: string, status: number) {
   return NextResponse.json({ success: false, errorCode, message }, { status })
 }
 
+function safeMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    }),
+  ])
+}
+
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && /timed out after \d+ms/.test(error.message)
+}
+
 export async function POST(request: NextRequest) {
   const requestId = Math.random().toString(36).slice(2, 8)
-  const timingLabel = `[projects/new] create ${requestId}`
-  console.time(timingLabel)
+  console.time('[projects/new] total')
   console.info('[projects/new] create start', { requestId })
 
-  const user = await getCurrentUser()
-  if (!user) {
-    console.timeEnd(timingLabel)
-    return jsonError('UNAUTHORIZED', '请先登录。', 401)
+  let user: Awaited<ReturnType<typeof getCurrentUser>>
+  console.time('[projects/new] auth')
+  try {
+    user = await withTimeout(getCurrentUser(), 3_000, 'auth')
+    if (!user) {
+      console.timeEnd('[projects/new] total')
+      return jsonError('UNAUTHORIZED', '请先登录。', 401)
+    }
+  } catch (error) {
+    const message = isTimeoutError(error)
+      ? '项目创建超时，请稍后在项目列表检查是否已创建'
+      : safeMessage(error)
+    console.error('[projects/new] auth failed', { requestId, message })
+    console.timeEnd('[projects/new] total')
+    return jsonError(
+      isTimeoutError(error) ? 'PROJECT_CREATE_TIMEOUT' : 'CREATE_PROJECT_FAILED',
+      message,
+      isTimeoutError(error) ? 504 : 500,
+    )
+  } finally {
+    console.timeEnd('[projects/new] auth')
   }
 
   let body: NewProjectBody = {}
@@ -42,66 +74,143 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date()
+  const projectId = crypto.randomUUID()
+  const workflowId = crypto.randomUUID()
   const title = body.title?.trim() || 'Untitled Project'
   const description = body.description?.trim() ?? ''
 
   try {
-    const project = await db.project.create({
-      data: {
-        ownerId: user.id,
-        title,
-        description,
-        type: 'SHORT_FILM',
-        status: 'DRAFT',
-        visibility: 'PRIVATE',
-        tags: [],
-        genre: [],
-        lastOpenedAt: now,
-      },
-      select: {
-        id: true,
-        title: true,
-        ownerId: true,
-      },
-    })
-    console.info('[projects/new] project created', { requestId, projectId: project.id })
+    console.time('[projects/new] insert project')
+    try {
+      await withTimeout(db.$executeRaw`
+        insert into "Project" (
+          "id",
+          "ownerId",
+          "title",
+          "description",
+          "type",
+          "status",
+          "visibility",
+          "tags",
+          "genre",
+          "createdAt",
+          "updatedAt",
+          "lastOpenedAt"
+        )
+        values (
+          ${projectId},
+          ${user.id},
+          ${title},
+          ${description},
+          'SHORT_FILM'::"ProjectType",
+          'DRAFT'::"ProjectStatus",
+          'PRIVATE'::"ProjectVisibility",
+          ARRAY[]::text[],
+          ARRAY[]::text[],
+          ${now},
+          ${now},
+          ${now}
+        )
+      `, 3_000, 'insert project')
+    } finally {
+      console.timeEnd('[projects/new] insert project')
+    }
+    console.info('[projects/new] project created', { requestId, projectId })
 
-    const workflow = await db.canvasWorkflow.create({
-      data: {
-        projectId: project.id,
-        name: 'Main Canvas',
-        version: 1,
-        viewportJson: Prisma.JsonNull,
-        metadataJson: Prisma.JsonNull,
-      },
-      select: {
-        id: true,
-        projectId: true,
-      },
-    })
-    console.info('[projects/new] workflow created', { requestId, projectId: project.id, workflowId: workflow.id })
+    try {
+      console.time('[projects/new] insert workflow')
+      await withTimeout(db.$executeRaw`
+        insert into "CanvasWorkflow" (
+          "id",
+          "projectId",
+          "name",
+          "version",
+          "viewportJson",
+          "metadataJson",
+          "createdAt",
+          "updatedAt"
+        )
+        values (
+          ${workflowId},
+          ${projectId},
+          'Main Canvas',
+          1,
+          NULL,
+          NULL,
+          ${now},
+          ${now}
+        )
+      `, 3_000, 'insert workflow')
+      console.timeEnd('[projects/new] insert workflow')
+    } catch (workflowError) {
+      console.timeEnd('[projects/new] insert workflow')
+      if (isTimeoutError(workflowError)) throw workflowError
+      console.warn('[projects/new] workflow insert failed, retrying once', { requestId, projectId, message: safeMessage(workflowError) })
+      await withTimeout(db.$executeRaw`
+        insert into "CanvasWorkflow" (
+          "id",
+          "projectId",
+          "name",
+          "version",
+          "viewportJson",
+          "metadataJson",
+          "createdAt",
+          "updatedAt"
+        )
+        values (
+          ${workflowId},
+          ${projectId},
+          'Main Canvas',
+          1,
+          NULL,
+          NULL,
+          ${now},
+          ${now}
+        )
+        on conflict ("id") do nothing
+      `, 3_000, 'retry insert workflow')
+    }
+    console.info('[projects/new] workflow created', { requestId, projectId, workflowId })
 
-    void ensureOwnerProjectMember(project.id, user.id).catch((error: unknown) => {
-      console.warn('[projects/new] membership create failed (non-blocking)', error instanceof Error ? error.message : String(error))
+    void ensureOwnerProjectMember(projectId, user.id).catch((error: unknown) => {
+      console.warn('[projects/new] membership skipped', safeMessage(error))
     })
 
-    console.info('[projects/new] response', { requestId, projectId: project.id, workflowId: workflow.id })
-    console.timeEnd(timingLabel)
-    return NextResponse.json({
+    console.time('[projects/new] response')
+    const response = NextResponse.json({
       success: true,
-      project,
-      workflow,
-      redirectTo: `/create?projectId=${encodeURIComponent(project.id)}`,
+      project: {
+        id: projectId,
+        title,
+        ownerId: user.id,
+      },
+      workflow: {
+        id: workflowId,
+        projectId,
+      },
+      redirectTo: `/create?projectId=${encodeURIComponent(projectId)}`,
     }, {
       status: 201,
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     })
+    console.info('[projects/new] response', { requestId, projectId, workflowId })
+    console.timeEnd('[projects/new] response')
+    return response
   } catch (error) {
-    const message = isProjectCanvasSchemaMissing(error)
-      ? PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE
-      : error instanceof Error ? error.message : '创建项目失败。'
-    console.error('[projects/new] create failed', { error })
-    console.timeEnd(timingLabel)
-    return jsonError('CREATE_PROJECT_FAILED', message, 500)
+    const timedOut = isTimeoutError(error)
+    const schemaMissing = isProjectCanvasSchemaMissing(error)
+    const message = timedOut
+      ? '项目创建超时，请稍后在项目列表检查是否已创建'
+      : schemaMissing
+        ? PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE
+        : safeMessage(error) || '创建项目失败。'
+    console.error('[projects/new] create failed', { requestId, error })
+    return jsonError(
+      timedOut ? 'PROJECT_CREATE_TIMEOUT' : schemaMissing ? 'DB_SCHEMA_MISSING' : 'CREATE_PROJECT_FAILED',
+      message,
+      timedOut ? 504 : schemaMissing ? 503 : 500,
+    )
+  } finally {
+    console.timeEnd('[projects/new] total')
   }
 }
