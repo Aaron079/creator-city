@@ -1,4 +1,5 @@
 import { DeliveryFeedbackForm, type DeliveryCommentForDisplay } from './DeliveryFeedbackForm'
+import { DeliveryItemImage } from './DeliveryItemImage'
 import { getPublicDelivery } from '@/lib/delivery/service'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +12,15 @@ function typeLabel(type: string) {
   if (type === 'image') return '图片'
   if (type === 'video') return '视频'
   if (type === 'audio') return '音频'
+  if (type === 'file') return '文件'
   return '文本'
+}
+
+function getItemUrl(item: {
+  url: string | null
+  asset?: { url: string | null; dataUrl: string | null } | null
+}) {
+  return item.url || item.asset?.url || item.asset?.dataUrl || ''
 }
 
 export default async function PublicDeliveryPage({ params }: Props) {
@@ -45,26 +54,32 @@ export default async function PublicDeliveryPage({ params }: Props) {
               当前交付还没有添加内容。
             </div>
           ) : (
-            share.items.map((item) => (
-              <article key={item.id} className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
-                <div className="border-b border-white/10 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold">{item.title || '未命名交付项'}</h2>
-                    <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-xs text-sky-200">{typeLabel(item.type)}</span>
+            share.items.map((item) => {
+              const itemUrl = getItemUrl(item)
+              return (
+                <article key={item.id} className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+                  <div className="border-b border-white/10 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-base font-semibold">{item.title || '未命名交付项'}</h2>
+                      <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-xs text-sky-200">{typeLabel(item.type)}</span>
+                    </div>
                   </div>
-                </div>
-                {item.type === 'image' && item.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.url} alt={item.title ?? 'Delivery image'} className="max-h-[680px] w-full object-contain bg-black/40" />
-                ) : item.url ? (
-                  <a href={item.url} className="block p-5 text-sm font-semibold text-cyan-200 underline">打开交付文件</a>
-                ) : (
-                  <div className="p-5">
-                    <p className="whitespace-pre-wrap text-sm leading-7 text-white/75">{item.contentText || '暂无文本内容。'}</p>
-                  </div>
-                )}
-              </article>
-            ))
+                  {item.type === 'image' ? (
+                    itemUrl ? <DeliveryItemImage src={itemUrl} alt={item.title ?? 'Delivery image'} /> : (
+                      <div className="flex min-h-56 items-center justify-center bg-black/40 p-6 text-sm text-white/45">图片无法加载</div>
+                    )
+                  ) : item.type === 'text' ? (
+                    <div className="p-5">
+                      <p className="whitespace-pre-wrap text-sm leading-7 text-white/75">{item.contentText || '暂无文本内容。'}</p>
+                    </div>
+                  ) : itemUrl ? (
+                    <a href={itemUrl} className="block p-5 text-sm font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">打开交付文件</a>
+                  ) : (
+                    <div className="p-5 text-sm text-white/45">暂无可预览内容。</div>
+                  )}
+                </article>
+              )
+            })
           )}
         </section>
 

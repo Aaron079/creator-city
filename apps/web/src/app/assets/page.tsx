@@ -7,6 +7,7 @@ type AssetItem = {
   id: string
   name: string
   title?: string | null
+  projectId?: string | null
   type: string
   url: string
   dataUrl?: string | null
@@ -17,6 +18,11 @@ type AssetItem = {
   metadataJson?: unknown
   createdAt: string
   project?: { id: string; title: string } | null
+}
+
+type ProjectItem = {
+  id: string
+  title: string
 }
 
 function assetTypeLabel(type: string) {
@@ -46,8 +52,11 @@ function formatBytes(size?: number | null) {
 export default function AssetsPage() {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [assets, setAssets] = useState<AssetItem[]>([])
+  const [projects, setProjects] = useState<ProjectItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [bindingAssetId, setBindingAssetId] = useState<string | null>(null)
+  const [openPickerAssetId, setOpenPickerAssetId] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null)
 
   async function loadAssets() {
@@ -73,9 +82,54 @@ export default function AssetsPage() {
     }
   }
 
+  async function loadProjects() {
+    try {
+      const response = await fetch('/api/projects?scope=owned&limit=20', {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      })
+      const data = await response.json().catch(() => ({})) as { projects?: ProjectItem[] }
+      if (response.ok) setProjects(data.projects ?? [])
+    } catch (error) {
+      console.warn('[assets] failed to load projects', error)
+    }
+  }
+
   useEffect(() => {
     void loadAssets()
+    void loadProjects()
   }, [])
+
+  async function bindAsset(assetId: string, projectId: string | null) {
+    setBindingAssetId(assetId)
+    setMessage(null)
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ projectId }),
+      })
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean
+        asset?: AssetItem
+        errorCode?: string
+        message?: string
+      }
+      if (!response.ok || !data.success || !data.asset) {
+        throw new Error(`${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '绑定项目失败'}`)
+      }
+      setAssets((current) => current.map((asset) => asset.id === assetId ? data.asset! : asset))
+      setOpenPickerAssetId(null)
+      setMessage({ type: 'success', text: projectId ? '素材已绑定项目。' : '素材已取消项目关联。' })
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : '绑定项目失败' })
+    } finally {
+      setBindingAssetId(null)
+    }
+  }
 
   async function uploadFile(file: File) {
     setUploading(true)
@@ -192,6 +246,41 @@ export default function AssetsPage() {
                       {formatBytes(asset.sizeBytes) ? ` · ${formatBytes(asset.sizeBytes)}` : ''}
                     </p>
                     {asset.providerId ? <p className="mt-1 text-xs text-white/25">Provider: {asset.providerId}</p> : null}
+                    <div className="mt-3">
+                      {openPickerAssetId === asset.id ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={asset.project?.id ?? ''}
+                            disabled={bindingAssetId === asset.id}
+                            onChange={(event) => void bindAsset(asset.id, event.target.value || null)}
+                            className="min-w-0 flex-1 rounded-md border border-white/10 bg-slate-950 px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                          >
+                            <option value="">未关联项目</option>
+                            {projects.map((project) => (
+                              <option key={project.id} value={project.id}>{project.title}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setOpenPickerAssetId(null)}
+                            className="rounded-md border border-white/10 px-2 py-1.5 text-xs text-white/65 hover:border-white/25 hover:text-white"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setOpenPickerAssetId(asset.id)}
+                          className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75 hover:border-white/25 hover:text-white"
+                        >
+                          绑定项目
+                        </button>
+                      )}
+                      {openPickerAssetId === asset.id && projects.length === 0 ? (
+                        <p className="mt-2 text-xs text-white/35">暂无可绑定项目。</p>
+                      ) : null}
+                    </div>
                     {previewUrl && asset.type !== 'IMAGE' ? (
                       <a href={previewUrl} className="mt-3 inline-flex text-xs font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">
                         打开文件
