@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AuthUserPublic } from '@/lib/auth/client'
 
-export type CurrentUserStatus = 'loading' | 'authenticated' | 'unauthenticated'
+export type CurrentUserStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'unknown'
 
 type CurrentUserState = {
   status: CurrentUserStatus
@@ -25,10 +25,13 @@ export function useCurrentUser() {
 
   const refresh = useCallback(async () => {
     setState((current) => ({ ...current, status: 'loading', error: null }))
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 5_000)
     try {
       const res = await fetch('/api/auth/me', {
         credentials: 'include',
         cache: 'no-store',
+        signal: controller.signal,
         headers: { Accept: 'application/json' },
       })
       if (!res.ok) {
@@ -43,10 +46,12 @@ export function useCurrentUser() {
       setState({ status: 'unauthenticated', user: null, error: null })
     } catch (error) {
       setState({
-        status: 'unauthenticated',
+        status: 'unknown',
         user: null,
         error: error instanceof Error ? error.message : 'Failed to load current user',
       })
+    } finally {
+      window.clearTimeout(timer)
     }
   }, [])
 

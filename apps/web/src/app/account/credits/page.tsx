@@ -168,6 +168,7 @@ export default function AccountCreditsPage() {
     const pkg = packages.find((item) => item.id === packageId)
     const result = await createPayment({ provider: 'alipay', packageId, clientType: 'pc' })
     if (!result.success) {
+      if (result.errorCode === 'UNAUTHORIZED') setAuthStatus('unauthenticated')
       setSubmitMsg({ ok: false, text: result.message ?? '创建支付宝订单失败' })
       return null
     }
@@ -183,14 +184,6 @@ export default function AccountCreditsPage() {
 
   async function handleAlipayRecharge(packageId: string) {
     if (payingPackageId) return
-    if (authStatus === 'loading') {
-      setSubmitMsg({ ok: true, text: '正在确认登录状态...' })
-      return
-    }
-    if (authStatus !== 'authenticated') {
-      setSubmitMsg({ ok: false, text: '请先登录后购买积分。' })
-      return
-    }
     if (chinaProviders.alipay.status !== 'configured') {
       setSubmitMsg({ ok: false, text: '支付宝未配置，暂不能在线充值。' })
       return

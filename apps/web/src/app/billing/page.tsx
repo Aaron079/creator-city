@@ -74,7 +74,7 @@ function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?:
 
 export default function BillingPage() {
   const { payingPackageId, createPayment } = useChinaPaymentCheckout()
-  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated' | 'unknown'>('loading')
   const [packages, setPackages] = useState<CreditPackage[]>([])
   const [packagesHydratedFromCache, setPackagesHydratedFromCache] = useState(false)
   const [statuses, setStatuses] = useState<Record<PaymentProvider, PaymentConfiguration>>({
@@ -93,10 +93,13 @@ export default function BillingPage() {
   const [, setWalletSummary] = useState<UserWallet | null>(null)
 
   const refreshAuthStatus = useCallback(async (): Promise<'authenticated' | 'unauthenticated' | 'unknown'> => {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 5_000)
     try {
       const response = await fetch('/api/auth/me', {
         credentials: 'include',
         cache: 'no-store',
+        signal: controller.signal,
         headers: { Accept: 'application/json' },
       })
       const data = await response.json().catch(() => null) as AuthMeResponse | null
@@ -104,7 +107,10 @@ export default function BillingPage() {
       setAuthStatus(nextStatus)
       return nextStatus
     } catch {
+      setAuthStatus('unknown')
       return 'unknown'
+    } finally {
+      window.clearTimeout(timer)
     }
   }, [])
 
@@ -191,6 +197,7 @@ export default function BillingPage() {
     const pkg = packages.find((item) => item.id === packageId)
     const result = await createPayment({ provider: 'alipay', packageId })
     if (!result.success) {
+      if (result.errorCode === 'UNAUTHORIZED') setAuthStatus('unauthenticated')
       setNotice({ type: 'error', message: result.message ?? '创建支付宝订单失败', errorCode: result.errorCode })
       return null
     }
@@ -205,15 +212,6 @@ export default function BillingPage() {
   }
 
   const buy = async (packageId: string) => {
-    let currentAuthStatus: typeof authStatus | 'unknown' = authStatus
-    if (currentAuthStatus === 'loading') {
-      setNotice({ type: 'info', message: '正在确认登录状态...' })
-      currentAuthStatus = await refreshAuthStatus()
-    }
-    if (currentAuthStatus === 'unauthenticated') {
-      setNotice({ type: 'error', message: '请先登录后购买积分。' })
-      return
-    }
     if (provider !== 'manual' && !statuses[provider]?.configured) {
       setNotice({ type: 'error', message: 'not-configured：该支付方式尚未配置环境变量。' })
       return
@@ -241,6 +239,7 @@ export default function BillingPage() {
         })
         const data = await res.json().catch(() => ({})) as { orderId?: string; message?: string }
         if (res.status === 401) {
+          setAuthStatus('unauthenticated')
           setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
           return
         }
@@ -348,12 +347,17 @@ export default function BillingPage() {
         ) : null}
         {authStatus === 'loading' ? (
           <div className="mb-5 rounded-lg border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
-            正在确认登录状态...
+            正在确认登录状态... 购买时将由服务器再次校验。
+          </div>
+        ) : null}
+        {authStatus === 'unknown' ? (
+          <div className="mb-5 rounded-lg border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+            登录状态确认较慢，购买时将由服务器校验。
           </div>
         ) : null}
         {authStatus === 'unauthenticated' ? (
           <div className="mb-5 rounded-lg border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-            请先登录后购买积分。
+            当前未确认登录，购买时会要求登录。
             <a href="/auth/login?next=/billing" className="ml-3 font-semibold underline">去登录</a>
           </div>
         ) : null}
