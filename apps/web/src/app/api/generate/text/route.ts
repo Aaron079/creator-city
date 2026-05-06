@@ -4,6 +4,7 @@ import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +36,14 @@ export async function POST(request: NextRequest) {
       nodeId: body.nodeId,
     }, currentUser?.id)
 
-    const result = await finalizeBilling(raw, billing.ctx.billingJobId)
+    const result = await attachGeneratedAsset(await finalizeBilling(raw, billing.ctx.billingJobId), {
+      userId: currentUser?.id ?? billing.ctx.userId,
+      providerId,
+      nodeType: 'text',
+      prompt,
+      projectId: body.projectId,
+      nodeId: body.nodeId,
+    })
     return NextResponse.json(result, { status: result.success ? 200 : result.errorCode === 'PROVIDER_NOT_FOUND' ? 404 : 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'

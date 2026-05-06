@@ -237,6 +237,7 @@ model User {
   apiCallLogs         ApiCallLog[]
   ownedCommunities    Community[]        @relation("CommunityOwner")
   assets              Asset[]
+  deliveryShares      DeliveryShare[]
   sessions            Session[]
   auditLogs           AuditLog[]
 
@@ -459,6 +460,7 @@ model Project {
   assets      ProjectAsset[]
   generatedAssets Asset[]     @relation("ProjectGeneratedAssets")
   canvasWorkflows CanvasWorkflow[]
+  deliveryShares DeliveryShare[]
   reviews     ProjectReview[]
   invitations Invitation[]
   showcases   Showcase[]
@@ -583,6 +585,7 @@ model Asset {
   project       Project?       @relation("ProjectGeneratedAssets", fields: [projectId], references: [id], onDelete: SetNull)
   workflow      CanvasWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   projectAssets ProjectAsset[]
+  deliveryItems DeliveryItem[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -590,6 +593,69 @@ model Asset {
   @@index([nodeId])
   @@index([type])
   @@index([status])
+}
+
+model DeliveryShare {
+  id        String    @id @default(uuid())
+  projectId String
+  ownerId   String
+  token     String    @unique
+  title     String
+  status    String    @default("active")
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items    DeliveryItem[]
+  comments DeliveryComment[]
+
+  @@index([projectId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DeliveryItem {
+  id          String   @id @default(uuid())
+  shareId     String
+  assetId     String?
+  canvasNodeId String?
+  type        String
+  title       String?
+  url         String?
+  contentText String?  @db.Text
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  share    DeliveryShare     @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  asset    Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  comments DeliveryComment[]
+
+  @@index([shareId])
+  @@index([assetId])
+  @@index([canvasNodeId])
+  @@index([sortOrder])
+}
+
+model DeliveryComment {
+  id          String   @id @default(uuid())
+  shareId     String
+  itemId      String?
+  authorName  String?
+  authorEmail String?
+  body        String   @db.Text
+  status      String   @default("comment")
+  createdAt   DateTime @default(now())
+
+  share DeliveryShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  item  DeliveryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([shareId])
+  @@index([itemId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model CanvasWorkflow {
