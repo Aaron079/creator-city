@@ -430,6 +430,8 @@ export function VisualCanvasWorkspace({
   const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentsError, setCommentsError] = useState('')
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
@@ -458,6 +460,8 @@ export function VisualCanvasWorkspace({
   const isInitializingRef = useRef(true)
   const initStartedRef = useRef('')
   const initAbortRef = useRef<AbortController | null>(null)
+  const saveAbortRef = useRef<AbortController | null>(null)
+  const isSwitchingProjectRef = useRef(false)
   const cacheHydratedRef = useRef('')
   const skipNextAutosaveRef = useRef(false)
   const providerStatusPerfStartedRef = useRef(false)
@@ -637,16 +641,20 @@ export function VisualCanvasWorkspace({
   }, [getCanvasSnapshot, projectId, readLocalDraft, workflowId])
 
   const saveCanvas = useCallback(async () => {
-    if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current) return
+    if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
     const snapshot = getCanvasSnapshot()
     writeLocalDraft()
     setSaveStatus('saving')
     setSaveMessage('')
+    saveAbortRef.current?.abort()
+    const controller = new AbortController()
+    saveAbortRef.current = controller
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        signal: controller.signal,
         body: JSON.stringify({
           workflowId,
           viewport: snapshot.viewport,
@@ -669,14 +677,17 @@ export function VisualCanvasWorkspace({
       setSaveStatus('saved')
       setSaveMessage('Saved')
     } catch (error) {
+      if ((error as { name?: string }).name === 'AbortError') return
       writeLocalDraft()
       setSaveStatus('local-draft')
       setSaveMessage(error instanceof Error ? error.message : '已保存到本地草稿，网络恢复后会继续同步')
+    } finally {
+      if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
   }, [getCanvasSnapshot, projectId, router, workflowId, writeCanvasCache, writeLocalDraft])
 
   const scheduleCanvasSave = useCallback((delay = 800) => {
-    if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current) return
+    if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     setSaveStatus('dirty')
     saveTimerRef.current = window.setTimeout(() => {
@@ -722,6 +733,7 @@ export function VisualCanvasWorkspace({
 
     async function loadOrCreateProject() {
       devPerf('init')
+      isSwitchingProjectRef.current = false
       const nextProjectId = searchParamProjectId
       const initKey = nextProjectId ? `project:${nextProjectId}` : 'ensure'
       if (initStartedRef.current === initKey) return
@@ -972,7 +984,7 @@ export function VisualCanvasWorkspace({
     if (!projectId || !workflowId) return
 
     function flushSave() {
-      if (!hasHydratedCanvasRef.current || isInitializingRef.current) return
+      if (!hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
       const snapshot = {
         nodes: latestNodesRef.current,
         edges: latestEdgesRef.current,
@@ -1661,17 +1673,83 @@ export function VisualCanvasWorkspace({
     }
   }, [handleSelectTemplate, nodes.length, searchParamTemplateId])
 
-  const handleAddComment = useCallback((text: string) => {
-    setComments((current) => [
-      {
-        id: `comment-${Date.now()}`,
-        text,
-        createdAt: Date.now(),
-      },
-      ...current,
-    ])
-    showCanvasFeedback('评论已添加到本地列表。')
-  }, [showCanvasFeedback])
+  const loadCanvasComments = useCallback(async () => {
+    if (!projectId || !workflowId) return
+    setCommentsLoading(true)
+    setCommentsError('')
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments?workflowId=${encodeURIComponent(workflowId)}`, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      })
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean
+        errorCode?: string
+        message?: string
+        comments?: Array<{ id: string; body: string; status?: string; createdAt: string }>
+      }
+      if (!response.ok || data.success === false) {
+        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '加载评论失败'}` : data.message ?? '加载评论失败')
+      }
+      setComments((data.comments ?? []).map((comment) => ({
+        id: comment.id,
+        text: comment.body,
+        status: comment.status,
+        createdAt: new Date(comment.createdAt).getTime(),
+      })))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '加载评论失败'
+      setCommentsError(message)
+      showCanvasFeedback(message)
+    } finally {
+      setCommentsLoading(false)
+    }
+  }, [projectId, showCanvasFeedback, workflowId])
+
+  const handleAddComment = useCallback(async (text: string) => {
+    if (!projectId || !workflowId) {
+      setCommentsError('项目仍在加载，请稍后再评论。')
+      return false
+    }
+    setCommentsError('')
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ workflowId, body: text }),
+      })
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean
+        errorCode?: string
+        message?: string
+        comment?: { id: string; body: string; status?: string; createdAt: string }
+      }
+      if (!response.ok || data.success === false || !data.comment) {
+        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '保存评论失败'}` : data.message ?? '保存评论失败')
+      }
+      const savedComment: CanvasComment = {
+        id: data.comment.id,
+        text: data.comment.body,
+        status: data.comment.status,
+        createdAt: new Date(data.comment.createdAt).getTime(),
+      }
+      setComments((current) => [savedComment, ...current.filter((comment) => comment.id !== savedComment.id)])
+      showCanvasFeedback('评论已保存。')
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存评论失败'
+      setCommentsError(message)
+      showCanvasFeedback(message)
+      return false
+    }
+  }, [projectId, showCanvasFeedback, workflowId])
+
+  useEffect(() => {
+    if (!commentsEnabled) return
+    void loadCanvasComments()
+  }, [commentsEnabled, loadCanvasComments])
 
   const handleSelectHistoryItem = useCallback((item: CanvasHistoryItem) => {
     setSelectedHistoryId(item.id)
@@ -2331,16 +2409,17 @@ export function VisualCanvasWorkspace({
     timersRef.current.push(timer)
   }, [])
 
-  const handleBeforeNewProject = useCallback(async () => {
-    const confirmed = window.confirm('当前画布会先保存，然后创建新项目。')
+  const handleBeforeNewProject = useCallback(() => {
+    const confirmed = window.confirm('将立即创建并进入新项目。旧画布会保留本地草稿，后台保存失败不会阻塞新项目。')
     if (!confirmed) return false
+    isSwitchingProjectRef.current = true
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    await saveCanvas()
+    saveAbortRef.current?.abort()
     return true
-  }, [saveCanvas])
+  }, [])
 
   const handleOpenClientDelivery = useCallback(() => {
     const projectId = new URLSearchParams(window.location.search).get('projectId') ?? undefined
@@ -2574,6 +2653,8 @@ export function VisualCanvasWorkspace({
       {commentsEnabled ? (
         <CanvasCommentsPanel
           comments={comments}
+          loading={commentsLoading}
+          error={commentsError}
           onAddComment={handleAddComment}
           onClose={() => {
             setCommentsEnabled(false)

@@ -178,7 +178,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     const msg = error instanceof Error ? error.message : String(error)
-    console.error('[canvas] GET failed', { projectId: params.projectId, error })
+    console.error('[canvas-api] load failed', { projectId: params.projectId, error })
     return NextResponse.json(
       { success: false, errorCode: 'CANVAS_LOAD_FAILED', message: `加载画布失败：${msg}` },
       { status: 500 },
@@ -359,7 +359,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     const msg = error instanceof Error ? error.message : String(error)
-    console.error('[canvas] PUT failed', { projectId: params.projectId, error })
+    console.error('[canvas-api] save failed', { projectId: params.projectId, error })
     return NextResponse.json(
       { success: false, errorCode: 'CANVAS_SAVE_FAILED', message: `保存画布失败：${msg}` },
       { status: 500 },

@@ -118,7 +118,7 @@ export function NewProjectDialog({
       // Fallback: if router.push doesn't navigate within 1.5 s, hard redirect
       setTimeout(() => {
         try {
-          if (!window.location.pathname.startsWith('/create')) {
+          if (`${window.location.pathname}${window.location.search}` !== dest) {
             window.location.href = dest
           }
         } catch { /* ignore */ }

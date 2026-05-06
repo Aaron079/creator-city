@@ -6,20 +6,26 @@ export interface CanvasComment {
   id: string
   text: string
   createdAt: number
+  status?: string
 }
 
 interface CanvasCommentsPanelProps {
   comments: CanvasComment[]
-  onAddComment: (text: string) => void
+  loading?: boolean
+  error?: string
+  onAddComment: (text: string) => Promise<boolean> | boolean
   onClose: () => void
 }
 
 export function CanvasCommentsPanel({
   comments,
+  loading = false,
+  error,
   onAddComment,
   onClose,
 }: CanvasCommentsPanelProps) {
   const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
 
   return (
     <section className="canvas-side-panel is-comment-panel" aria-label="评论面板" onPointerDown={(event) => event.stopPropagation()}>
@@ -43,25 +49,33 @@ export function CanvasCommentsPanel({
         <button
           type="button"
           className="canvas-panel-primary"
-          onClick={() => {
+          disabled={saving}
+          onClick={async () => {
             const text = draft.trim()
             if (!text) return
-            onAddComment(text)
-            setDraft('')
+            setSaving(true)
+            try {
+              const saved = await onAddComment(text)
+              if (saved) setDraft('')
+            } finally {
+              setSaving(false)
+            }
           }}
         >
-          添加评论
+          {saving ? '保存中...' : '添加评论'}
         </button>
       </div>
 
       <div className="canvas-panel-list">
+        {loading ? <div className="canvas-panel-empty">正在加载评论...</div> : null}
+        {error ? <div className="canvas-panel-empty">{error}</div> : null}
         {comments.length > 0 ? comments.map((comment) => (
           <div key={comment.id} className="canvas-comment-item">
-            <div className="canvas-comment-meta">本地评论 · {new Date(comment.createdAt).toLocaleTimeString()}</div>
+            <div className="canvas-comment-meta">{comment.status === 'open' ? '已保存' : comment.status ?? '评论'} · {new Date(comment.createdAt).toLocaleTimeString()}</div>
             <div className="canvas-comment-copy">{comment.text}</div>
           </div>
         )) : (
-          <div className="canvas-panel-empty">还没有评论，添加后会显示在这里。</div>
+          !loading ? <div className="canvas-panel-empty">还没有评论，添加后会显示在这里。</div> : null
         )}
       </div>
     </section>

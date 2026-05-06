@@ -118,8 +118,13 @@ export async function GET() {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
+    const safeMessage = error instanceof Error ? error.message : '加载项目列表失败。'
     console.error('[projects] failed to list projects', error)
-    return NextResponse.json({ message: '加载项目列表失败。' }, { status: 500 })
+    return NextResponse.json({
+      success: false,
+      errorCode: 'PROJECT_ACCESS_FAILED',
+      message: safeMessage,
+    }, { status: 500 })
   }
 }
 

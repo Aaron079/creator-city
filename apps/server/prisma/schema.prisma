@@ -460,6 +460,7 @@ model Project {
   assets      ProjectAsset[]
   generatedAssets Asset[]     @relation("ProjectGeneratedAssets")
   canvasWorkflows CanvasWorkflow[]
+  canvasComments CanvasComment[]
   deliveryShares DeliveryShare[]
   reviews     ProjectReview[]
   invitations Invitation[]
@@ -672,6 +673,7 @@ model CanvasWorkflow {
   nodes   CanvasNode[]
   edges   CanvasEdge[]
   assets  Asset[]
+  comments CanvasComment[]
 
   @@index([projectId])
 }
@@ -725,6 +727,30 @@ model CanvasEdge {
   @@index([workflowId])
   @@index([sourceNodeId])
   @@index([targetNodeId])
+}
+
+model CanvasComment {
+  id           String   @id @default(uuid())
+  projectId    String
+  workflowId   String
+  nodeId       String?
+  authorId     String?
+  body         String   @db.Text
+  status       String   @default("open")
+  x            Float?
+  y            Float?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflow CanvasWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([workflowId])
+  @@index([nodeId])
+  @@index([authorId])
+  @@index([createdAt])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
