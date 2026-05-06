@@ -34,10 +34,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   ])
 }
 
-function isTimeoutError(error: unknown) {
-  return error instanceof Error && /timed out after \d+ms/.test(error.message)
-}
-
 export async function POST(request: NextRequest) {
   const requestId = Math.random().toString(36).slice(2, 8)
   console.time('[projects/new] total')
@@ -46,21 +42,19 @@ export async function POST(request: NextRequest) {
   let user: Awaited<ReturnType<typeof getCurrentUser>>
   console.time('[projects/new] auth')
   try {
-    user = await withTimeout(getCurrentUser(), 3_000, 'auth')
+    user = await withTimeout(getCurrentUser(), 10_000, 'auth')
     if (!user) {
       console.timeEnd('[projects/new] total')
       return jsonError('UNAUTHORIZED', '请先登录。', 401)
     }
   } catch (error) {
-    const message = isTimeoutError(error)
-      ? '项目创建超时，请稍后在项目列表检查是否已创建'
-      : safeMessage(error)
+    const message = safeMessage(error)
     console.error('[projects/new] auth failed', { requestId, message })
     console.timeEnd('[projects/new] total')
     return jsonError(
-      isTimeoutError(error) ? 'PROJECT_CREATE_TIMEOUT' : 'CREATE_PROJECT_FAILED',
+      'CREATE_PROJECT_FAILED',
       message,
-      isTimeoutError(error) ? 504 : 500,
+      500,
     )
   } finally {
     console.timeEnd('[projects/new] auth')
@@ -111,7 +105,7 @@ export async function POST(request: NextRequest) {
           ${now},
           ${now}
         )
-      `, 3_000, 'insert project')
+      `, 15_000, 'insert project')
     } finally {
       console.timeEnd('[projects/new] insert project')
     }
@@ -140,11 +134,10 @@ export async function POST(request: NextRequest) {
           ${now},
           ${now}
         )
-      `, 3_000, 'insert workflow')
+      `, 15_000, 'insert workflow')
       console.timeEnd('[projects/new] insert workflow')
     } catch (workflowError) {
       console.timeEnd('[projects/new] insert workflow')
-      if (isTimeoutError(workflowError)) throw workflowError
       console.warn('[projects/new] workflow insert failed, retrying once', { requestId, projectId, message: safeMessage(workflowError) })
       await withTimeout(db.$executeRaw`
         insert into "CanvasWorkflow" (
@@ -168,7 +161,7 @@ export async function POST(request: NextRequest) {
           ${now}
         )
         on conflict ("id") do nothing
-      `, 3_000, 'retry insert workflow')
+      `, 15_000, 'retry insert workflow')
     }
     console.info('[projects/new] workflow created', { requestId, projectId, workflowId })
 
@@ -197,18 +190,15 @@ export async function POST(request: NextRequest) {
     console.timeEnd('[projects/new] response')
     return response
   } catch (error) {
-    const timedOut = isTimeoutError(error)
     const schemaMissing = isProjectCanvasSchemaMissing(error)
-    const message = timedOut
-      ? '项目创建超时，请稍后在项目列表检查是否已创建'
-      : schemaMissing
-        ? PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE
-        : safeMessage(error) || '创建项目失败。'
+    const message = schemaMissing
+      ? PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE
+      : safeMessage(error) || '创建项目失败。'
     console.error('[projects/new] create failed', { requestId, error })
     return jsonError(
-      timedOut ? 'PROJECT_CREATE_TIMEOUT' : schemaMissing ? 'DB_SCHEMA_MISSING' : 'CREATE_PROJECT_FAILED',
+      schemaMissing ? 'DB_SCHEMA_MISSING' : 'CREATE_PROJECT_FAILED',
       message,
-      timedOut ? 504 : schemaMissing ? 503 : 500,
+      schemaMissing ? 503 : 500,
     )
   } finally {
     console.timeEnd('[projects/new] total')

@@ -24,7 +24,7 @@ interface NewProjectDialogProps {
 export function NewProjectDialog({
   open,
   onOpenChange,
-  source,
+  source: _source,
   beforeCreate,
 }: NewProjectDialogProps) {
   const router = useRouter()
@@ -34,7 +34,6 @@ export function NewProjectDialog({
   const [description, setDescription] = useState('')
   const [projectType, setProjectType] = useState<ProjectType>('blank')
   const [creating, setCreating] = useState(false)
-  const [recovering, setRecovering] = useState(false)
   const [message, setMessage] = useState('')
 
   if (!open) return null
@@ -67,44 +66,6 @@ export function NewProjectDialog({
     }, 1000)
   }
 
-  async function recoverLatestProject(): Promise<boolean> {
-    if (recovering) return false
-    setRecovering(true)
-    setMessage('正在检查最近创建的项目...')
-    try {
-      const response = await fetch('/api/projects?limit=1&sort=lastOpenedAt', {
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
-      })
-      const data = await response.json().catch(() => ({})) as {
-        projects?: Array<{ id: string; workflowId?: string | null }>
-        message?: string
-        errorCode?: string
-      }
-      if (response.status === 401) {
-        router.push(`/auth/login?next=${encodeURIComponent('/projects?new=1')}`)
-        return true
-      }
-      if (!response.ok) {
-        const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
-        throw new Error(`${errCode}${data.message ?? `检查项目失败（HTTP ${response.status}）`}`)
-      }
-      const recentProject = data.projects?.[0]
-      if (!recentProject?.id) {
-        setMessage('未找到已创建项目，请重试。')
-        return false
-      }
-      navigateToProject(recentProject.id, recentProject.workflowId)
-      return true
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '检查已创建项目失败。')
-      return false
-    } finally {
-      setRecovering(false)
-    }
-  }
-
   async function createProject() {
     if (creatingRef.current) return
     creatingRef.current = true
@@ -116,19 +77,7 @@ export function NewProjectDialog({
     createAbortRef.current = controller
     const slowTimer = window.setTimeout(() => {
       setMessage('正在创建，服务器较慢...')
-    }, 5_000)
-    const verySlowTimer = window.setTimeout(() => {
-      setMessage('如果已创建，将自动跳转最近项目...')
-    }, 10_000)
-    const recoverTimer = window.setTimeout(() => {
-      void (async () => {
-        const recovered = await recoverLatestProject()
-        if (!recovered && creatingRef.current) {
-          creatingRef.current = false
-          setCreating(false)
-        }
-      })()
-    }, 12_000)
+    }, 15_000)
 
     try {
       window.dispatchEvent(new CustomEvent('creator-city:switching-project'))
@@ -153,17 +102,12 @@ export function NewProjectDialog({
             title: title.trim() || undefined,
             description: description.trim() || undefined,
             projectType,
-            source,
+            source: 'new-project-dialog',
           }),
         })
       } catch (fetchErr) {
         if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
           throw new Error('创建已取消。')
-        }
-        const recovered = await recoverLatestProject()
-        if (recovered) {
-          navigating = true
-          return
         }
         throw new Error(`网络异常：${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
       }
@@ -190,13 +134,6 @@ export function NewProjectDialog({
       }
 
       if (!response.ok || !data.project?.id) {
-        if (data.errorCode === 'PROJECT_CREATE_TIMEOUT') {
-          const recovered = await recoverLatestProject()
-          if (recovered) {
-            navigating = true
-            return
-          }
-        }
         const errCode = data.errorCode ? `[${data.errorCode}] ` : ''
         throw new Error(`${errCode}${data.message ?? `创建项目失败（HTTP ${response.status}）`}`)
       }
@@ -208,8 +145,6 @@ export function NewProjectDialog({
       setMessage(error instanceof Error ? error.message : '创建项目失败。')
     } finally {
       window.clearTimeout(slowTimer)
-      window.clearTimeout(verySlowTimer)
-      window.clearTimeout(recoverTimer)
       if (createAbortRef.current === controller) createAbortRef.current = null
       creatingRef.current = false
       if (!navigating) setCreating(false)
@@ -298,16 +233,6 @@ export function NewProjectDialog({
             >
               取消
             </button>
-            {creating ? (
-              <button
-                type="button"
-                onClick={() => { void recoverLatestProject() }}
-                disabled={recovering}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {recovering ? '检查中...' : '检查已创建项目'}
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={() => { void createProject() }}

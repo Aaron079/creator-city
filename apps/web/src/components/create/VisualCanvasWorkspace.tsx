@@ -936,16 +936,16 @@ export function VisualCanvasWorkspace({
         const serverUpdatedAt = serverUpdatedAtText ? new Date(serverUpdatedAtText).getTime() : 0
         const draftUpdatedAt = draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0
         const shouldUseDraft = Boolean(draft && draft.nodes.length > 0 && draftUpdatedAt > serverUpdatedAt)
-        const shouldPreserveLocalNodes = serverNodes.length === 0 && (cache?.nodes.length ?? latestNodesRef.current.length) > 0
+        const shouldPreserveLocalNodes = serverNodes.length === 0 && Boolean(cache?.nodes.length)
         const nextNodes = shouldUseDraft
           ? draft!.nodes
           : shouldPreserveLocalNodes
-            ? (cache?.nodes ?? latestNodesRef.current)
+            ? cache!.nodes
             : serverNodes
         const nextEdges = shouldUseDraft
           ? draft!.edges
           : shouldPreserveLocalNodes
-            ? (cache?.edges ?? latestEdgesRef.current)
+            ? cache!.edges
             : serverEdges
         if (shouldPreserveLocalNodes) {
           setSaveMessage('同步失败，使用本地草稿')
@@ -955,7 +955,7 @@ export function VisualCanvasWorkspace({
           setSaveStatus('restored-draft')
         }
         const viewport = data.viewport ?? data.workflow?.viewportJson
-        const nextViewport = shouldUseDraft ? draft!.viewport : shouldPreserveLocalNodes ? cache?.viewport ?? viewport : viewport
+        const nextViewport = shouldUseDraft ? draft!.viewport : shouldPreserveLocalNodes ? cache!.viewport : viewport
         applyCanvasSnapshot({
           projectId: resolvedProjectId,
           workflowId: data.workflow?.id ?? cache?.workflowId ?? '',
