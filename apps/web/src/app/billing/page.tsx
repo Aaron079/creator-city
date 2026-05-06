@@ -7,10 +7,19 @@ import { ManualRechargePanel } from '@/components/billing/ManualRechargePanel'
 import { PaymentMethodSelector } from '@/components/billing/PaymentMethodSelector'
 import { PaymentStatusNotice } from '@/components/billing/PaymentStatusNotice'
 import { AlipayQrPaymentModal, type AlipayQrPayment } from '@/components/billing/AlipayQrPaymentModal'
-import type { BillingRegion, CreditPackage, PaymentProvider } from '@/lib/billing/types'
+import type { BillingRegion, CreditPackage, PaymentProvider, UserWallet } from '@/lib/billing/types'
 import type { PaymentConfiguration } from '@/lib/payments/types'
-import { useCurrentUser } from '@/lib/auth/use-current-user'
+import type { AuthUserPublic } from '@/lib/auth/client'
 import { useChinaPaymentCheckout, type ChinaCheckoutResult } from '@/lib/payment/china/use-china-payment-checkout'
+import {
+  readChinaPaymentStatusCache,
+  readPackagesCache,
+  readWalletCache,
+  writeChinaPaymentStatusCache,
+  writePackagesCache,
+  writeWalletCache,
+  type ChinaPaymentStatusCache,
+} from '@/lib/billing/client-cache'
 
 const EMPTY_STATUS: PaymentConfiguration = { enabled: false, configured: false, missing: [] }
 
@@ -21,7 +30,23 @@ interface ChinaPaymentStatusResponse {
   }
 }
 
-function toPaymentConfiguration(provider?: { status?: 'configured' | 'not-configured'; missing?: string[] }): PaymentConfiguration {
+interface BillingBootstrapResponse {
+  auth?: {
+    authenticated?: boolean
+    user?: AuthUserPublic | null
+  }
+  packages?: CreditPackage[]
+  providerStatuses?: Record<PaymentProvider, PaymentConfiguration>
+  chinaPaymentStatus?: ChinaPaymentStatusResponse
+  walletSummary?: UserWallet | null
+}
+
+function perfLog(label: string, startedAt: number) {
+  if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
+  console.debug(`[perf] billing:${label}`, Math.round(performance.now() - startedAt))
+}
+
+function toPaymentConfiguration(provider?: { status?: 'checking' | 'configured' | 'not-configured'; missing?: string[] }): PaymentConfiguration {
   return {
     enabled: true,
     configured: provider?.status === 'configured',
@@ -43,9 +68,10 @@ function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?:
 }
 
 export default function BillingPage() {
-  const { status: authStatus } = useCurrentUser()
   const { payingPackageId, createPayment } = useChinaPaymentCheckout()
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
   const [packages, setPackages] = useState<CreditPackage[]>([])
+  const [packagesHydratedFromCache, setPackagesHydratedFromCache] = useState(false)
   const [statuses, setStatuses] = useState<Record<PaymentProvider, PaymentConfiguration>>({
     alipay: EMPTY_STATUS,
     wechat: EMPTY_STATUS,
@@ -59,27 +85,73 @@ export default function BillingPage() {
   const [notice, setNotice] = useState<{ type: 'info' | 'success' | 'error'; message: string; errorCode?: string } | null>(null)
   const [manualOrderId, setManualOrderId] = useState<string | undefined>()
   const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
+  const [, setWalletSummary] = useState<UserWallet | null>(null)
 
   useEffect(() => {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    perfLog('init', startedAt)
+
+    const cachedPackages = readPackagesCache()
+    if (cachedPackages?.value.length) {
+      setPackages(cachedPackages.value)
+      setPackagesHydratedFromCache(true)
+      perfLog('packages', startedAt)
+    }
+    const cachedChinaStatus = readChinaPaymentStatusCache()
+    if (cachedChinaStatus?.value.providers) {
+      setStatuses((current) => ({
+        ...current,
+        alipay: toPaymentConfiguration(cachedChinaStatus.value.providers?.alipay),
+        wechat: toPaymentConfiguration(cachedChinaStatus.value.providers?.wechatpay),
+      }))
+      perfLog('payment-status', startedAt)
+    }
+    const cachedWallet = readWalletCache()
+    if (cachedWallet?.value) {
+      setWalletSummary(cachedWallet.value)
+      perfLog('wallet', startedAt)
+    }
+
     void (async () => {
-      const [billingRes, chinaRes] = await Promise.all([
-        fetch('/api/billing/packages'),
-        fetch('/api/payment/china/status', { credentials: 'include', cache: 'no-store' }),
-      ])
-      const data = await billingRes.json() as {
-        packages: CreditPackage[]
-        providerStatuses: Record<PaymentProvider, PaymentConfiguration>
+      try {
+        const bootstrapRes = await fetch('/api/billing/bootstrap', {
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        })
+        const data = await bootstrapRes.json().catch(() => null) as BillingBootstrapResponse | null
+        const auth = data?.auth
+        setAuthStatus(auth?.authenticated ? 'authenticated' : 'unauthenticated')
+        perfLog('auth', startedAt)
+        if (data?.packages?.length) {
+          setPackages(data.packages)
+          writePackagesCache(data.packages)
+        }
+        perfLog('packages', startedAt)
+        const chinaStatus = data?.chinaPaymentStatus
+        if (chinaStatus?.providers) {
+          writeChinaPaymentStatusCache(chinaStatus as ChinaPaymentStatusCache)
+        }
+        setStatuses({
+          ...data?.providerStatuses,
+          alipay: toPaymentConfiguration(chinaStatus?.providers?.alipay),
+          wechat: toPaymentConfiguration(chinaStatus?.providers?.wechatpay),
+          manual: data?.providerStatuses?.manual ?? { enabled: true, configured: true, missing: [] },
+        } as Record<PaymentProvider, PaymentConfiguration>)
+        perfLog('payment-status', startedAt)
+        if (data?.walletSummary) {
+          setWalletSummary(data.walletSummary)
+          writeWalletCache(data.walletSummary)
+        }
+        perfLog('wallet', startedAt)
+      } catch {
+        setAuthStatus('unauthenticated')
+        if (!cachedPackages?.value.length) {
+          setNotice({ type: 'error', message: '充值页数据加载失败，请稍后重试。' })
+        }
+      } finally {
+        perfLog('first-render', startedAt)
       }
-      const chinaStatus = chinaRes.ok
-        ? await chinaRes.json() as ChinaPaymentStatusResponse
-        : null
-      setPackages(data.packages)
-      setStatuses({
-        ...data.providerStatuses,
-        alipay: toPaymentConfiguration(chinaStatus?.providers?.alipay),
-        wechat: toPaymentConfiguration(chinaStatus?.providers?.wechatpay),
-        manual: data.providerStatuses.manual ?? { enabled: true, configured: true, missing: [] },
-      })
     })()
   }, [])
 
@@ -259,14 +331,39 @@ export default function BillingPage() {
         ) : null}
         {provider === 'manual' ? <div className="mb-5"><ManualRechargePanel orderId={manualOrderId} /></div> : null}
 
-        <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
+        {packages.length > 0 ? (
+          <>
+            {packagesHydratedFromCache ? (
+              <p className="mb-3 text-xs text-white/35">已先显示本地缓存套餐，正在后台同步最新状态。</p>
+            ) : null}
+            <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
+          </>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="min-h-[190px] animate-pulse rounded-lg border border-white/10 bg-white/[0.04] p-4">
+                <div className="h-4 w-28 rounded bg-white/10" />
+                <div className="mt-5 h-8 w-24 rounded bg-white/10" />
+                <div className="mt-3 h-3 w-36 rounded bg-white/10" />
+                <div className="mt-8 h-9 rounded-lg bg-white/10" />
+              </div>
+            ))}
+          </div>
+        )}
       </main>
       <AlipayQrPaymentModal
         payment={qrPayment}
         onClose={() => setQrPayment(null)}
         onRefresh={createAlipayQr}
         onPaid={async () => {
-          await fetch('/api/credits/wallet', { credentials: 'include', cache: 'no-store' }).catch(() => null)
+          const walletRes = await fetch('/api/credits/wallet', { credentials: 'include', cache: 'no-store' }).catch(() => null)
+          if (walletRes?.ok) {
+            const wallet = await walletRes.json().catch(() => null) as UserWallet | null
+            if (wallet) {
+              setWalletSummary(wallet)
+              writeWalletCache(wallet)
+            }
+          }
           setNotice({ type: 'success', message: '支付成功，积分已到账。' })
         }}
       />

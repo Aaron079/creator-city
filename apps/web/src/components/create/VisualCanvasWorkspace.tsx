@@ -502,10 +502,10 @@ export function VisualCanvasWorkspace({
   useEffect(() => {
     if (liveStatusLoading) {
       providerStatusPerfStartedRef.current = true
-      devPerf('providerStatus', 'start')
+      devPerf('providers', 'start')
     } else if (providerStatusPerfStartedRef.current) {
       providerStatusPerfStartedRef.current = false
-      devPerf('providerStatus', 'end')
+      devPerf('providers', 'end')
     }
   }, [liveStatusLoading])
 
@@ -721,7 +721,7 @@ export function VisualCanvasWorkspace({
     let cancelled = false
 
     async function loadOrCreateProject() {
-      devPerf('init:start')
+      devPerf('init')
       const nextProjectId = searchParamProjectId
       const initKey = nextProjectId ? `project:${nextProjectId}` : 'ensure'
       if (initStartedRef.current === initKey) return
@@ -742,7 +742,7 @@ export function VisualCanvasWorkspace({
         if (!resolvedProjectId) {
           setSaveMessage('正在打开项目...')
           try {
-            devPerf('lastProject:read')
+            devPerf('read-last-project')
             const lastId = window.localStorage.getItem('creator-city:last-project-id')
             if (lastId) {
               router.replace(`/create?projectId=${encodeURIComponent(lastId)}`)
@@ -751,13 +751,13 @@ export function VisualCanvasWorkspace({
           } catch (_) {
             // localStorage may be unavailable; fall through to server ensure.
           }
-          devPerf('ensure', 'start')
+          devPerf('canvas-fetch', 'start')
           const ensureRes = await fetch('/api/projects/ensure?includeCanvas=1', {
             method: 'POST',
             credentials: 'include',
             signal: abortController.signal,
           })
-          devPerf('ensure', 'end')
+          devPerf('canvas-fetch', 'end')
           const ensureData = await ensureRes.json().catch(() => ({})) as {
             success?: boolean; errorCode?: string; message?: string
             project?: { id: string; title: string }; workflow?: { id: string; viewportJson?: unknown; updatedAt?: string }
@@ -798,8 +798,9 @@ export function VisualCanvasWorkspace({
           return
         }
 
-        devPerf('cache:hydrate', 'start')
+        devPerf('cache-hydrate', 'start')
         const cache = readCanvasCache(resolvedProjectId)
+        const draftBeforeFetch = readLocalDraft(resolvedProjectId)
         if (cache?.workflowId && cache.nodes.length > 0 && cacheHydratedRef.current !== resolvedProjectId) {
           cacheHydratedRef.current = resolvedProjectId
           applyCanvasSnapshot({
@@ -809,21 +810,36 @@ export function VisualCanvasWorkspace({
             edges: cache.edges,
             viewport: cache.viewport,
             status: 'saved',
-            message: '正在同步...',
+            message: '本地缓存已加载，正在同步...',
           })
           canvasLoadedRef.current = true
           hasHydratedCanvasRef.current = true
           isInitializingRef.current = false
-          devPerf('firstRender')
+          devPerf('first-render')
+        } else if (draftBeforeFetch?.workflowId && draftBeforeFetch.nodes.length > 0 && cacheHydratedRef.current !== resolvedProjectId) {
+          cacheHydratedRef.current = resolvedProjectId
+          applyCanvasSnapshot({
+            projectId: resolvedProjectId,
+            workflowId: draftBeforeFetch.workflowId,
+            nodes: draftBeforeFetch.nodes,
+            edges: draftBeforeFetch.edges,
+            viewport: draftBeforeFetch.viewport,
+            status: 'restored-draft',
+            message: '本地草稿已加载，正在同步...',
+          })
+          canvasLoadedRef.current = true
+          hasHydratedCanvasRef.current = true
+          isInitializingRef.current = false
+          devPerf('first-render')
         }
-        devPerf('cache:hydrate', 'end')
+        devPerf('cache-hydrate', 'end')
 
-        devPerf('canvas', 'start')
+        devPerf('canvas-fetch', 'start')
         const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
           credentials: 'include',
           signal: abortController.signal,
         })
-        devPerf('canvas', 'end')
+        devPerf('canvas-fetch', 'end')
         const data = await response.json().catch(() => ({})) as CanvasLoadResponse
         if (response.status === 401) {
           router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${resolvedProjectId}`)}`)
@@ -855,7 +871,7 @@ export function VisualCanvasWorkspace({
         setWorkflowId(data.workflow?.id ?? '')
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
-        const draft = readLocalDraft(resolvedProjectId)
+        const draft = draftBeforeFetch ?? readLocalDraft(resolvedProjectId)
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
         const serverUpdatedAt = serverUpdatedAtText ? new Date(serverUpdatedAtText).getTime() : 0
         const draftUpdatedAt = draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0
@@ -872,7 +888,7 @@ export function VisualCanvasWorkspace({
             ? (cache?.edges ?? latestEdgesRef.current)
             : serverEdges
         if (shouldPreserveLocalNodes) {
-          setSaveMessage('已使用本地缓存，服务器同步中')
+          setSaveMessage('同步失败，使用本地草稿')
         }
         if (shouldUseDraft) {
           setSaveMessage('发现本地未同步草稿，已自动恢复')
@@ -898,7 +914,7 @@ export function VisualCanvasWorkspace({
           syncedAt: serverUpdatedAtText,
         })
         setSaveStatus(shouldUseDraft ? 'restored-draft' : shouldPreserveLocalNodes ? 'local-draft' : 'saved')
-        if (!shouldUseDraft && !shouldPreserveLocalNodes) setSaveMessage('Saved')
+        if (!shouldUseDraft && !shouldPreserveLocalNodes) setSaveMessage('已同步')
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
         isInitializingRef.current = false
@@ -922,7 +938,7 @@ export function VisualCanvasWorkspace({
             }, 0)
           }
         }
-        devPerf('firstRender')
+        devPerf('first-render')
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return
         if (cancelled) return

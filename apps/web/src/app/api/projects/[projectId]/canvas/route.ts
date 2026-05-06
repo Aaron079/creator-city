@@ -75,6 +75,16 @@ async function ensureWorkflow(projectId: string) {
   const workflow = await db.canvasWorkflow.findFirst({
     where: { projectId },
     orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      projectId: true,
+      name: true,
+      version: true,
+      viewportJson: true,
+      metadataJson: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   })
   if (workflow) return workflow
   return db.canvasWorkflow.create({
@@ -159,7 +169,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     console.error('[projects] failed to load canvas', error)
-    return NextResponse.json({ message: '加载画布失败。' }, { status: 500 })
+    return projectJsonError('PROJECT_ACCESS_FAILED', '加载画布失败。', 500)
   }
 }
 

@@ -6,8 +6,16 @@ import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
 import { AlipayQrPaymentModal, type AlipayQrPayment } from '@/components/billing/AlipayQrPaymentModal'
 import type { UserWallet, CreditLedgerEntry, CreditPackage } from '@/lib/billing/types'
-import { useCurrentUser } from '@/lib/auth/use-current-user'
 import { useChinaPaymentCheckout, type ChinaCheckoutResult } from '@/lib/payment/china/use-china-payment-checkout'
+import {
+  readChinaPaymentStatusCache,
+  readPackagesCache,
+  readWalletCache,
+  writeChinaPaymentStatusCache,
+  writePackagesCache,
+  writeWalletCache,
+  type ChinaPaymentStatusCache,
+} from '@/lib/billing/client-cache'
 
 interface ManualOrder {
   id: string
@@ -25,6 +33,30 @@ interface ChinaPaymentProviderStatus {
 const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking' }
 const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
 
+interface CreditsBootstrapResponse {
+  auth?: { authenticated?: boolean }
+  packages?: CreditPackage[]
+  chinaPaymentStatus?: {
+    providers?: {
+      alipay?: ChinaPaymentProviderStatus
+      wechatpay?: ChinaPaymentProviderStatus
+    }
+  }
+  walletSummary?: UserWallet | null
+}
+
+function perfLog(label: string, startedAt: number) {
+  if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
+  console.debug(`[perf] billing:${label}`, Math.round(performance.now() - startedAt))
+}
+
+function normalizeChinaProviderStatus(provider?: NonNullable<ChinaPaymentStatusCache['providers']>['alipay']): ChinaPaymentProviderStatus {
+  if (provider?.status === 'configured' || provider?.status === 'not-configured' || provider?.status === 'checking') {
+    return { status: provider.status, missing: provider.missing }
+  }
+  return CHECKING_PROVIDER_STATUS
+}
+
 function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?: CreditPackage): AlipayQrPayment | null {
   if (result.provider !== 'alipay' || result.mode !== 'qr' || !result.outTradeNo || !result.qrCode) return null
   return {
@@ -39,8 +71,8 @@ function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?:
 }
 
 export default function AccountCreditsPage() {
-  const { status: authStatus } = useCurrentUser()
   const { payingPackageId, createPayment } = useChinaPaymentCheckout()
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
   const [wallet, setWallet] = useState<UserWallet | null>(null)
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
   const [packages, setPackages] = useState<CreditPackage[]>([])
@@ -61,45 +93,75 @@ export default function AccountCreditsPage() {
   const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
 
   async function load() {
-    const [walletRes, ledgerRes] = await Promise.all([
-      fetch('/api/credits/wallet', { credentials: 'include' }),
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    perfLog('init', startedAt)
+    setLoading(true)
+
+    const cachedWallet = readWalletCache()
+    if (cachedWallet?.value) {
+      setWallet(cachedWallet.value)
+      perfLog('wallet', startedAt)
+    }
+    const cachedPackages = readPackagesCache()
+    if (cachedPackages?.value.length) {
+      setPackages(cachedPackages.value.filter((pkg) => pkg.isActive))
+      perfLog('packages', startedAt)
+    }
+    const cachedChinaStatus = readChinaPaymentStatusCache()
+    if (cachedChinaStatus?.value.providers) {
+      setChinaProviders({
+        alipay: normalizeChinaProviderStatus(cachedChinaStatus.value.providers.alipay),
+        wechatpay: normalizeChinaProviderStatus(cachedChinaStatus.value.providers.wechatpay),
+      })
+      perfLog('payment-status', startedAt)
+    }
+    setLoading(false)
+
+    const [bootstrapRes, ledgerRes, ordersRes] = await Promise.all([
+      fetch('/api/billing/bootstrap', { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } }),
       fetch('/api/credits/ledger?limit=50', { credentials: 'include' }),
+      fetch('/api/credits/my-orders?status=PENDING', { credentials: 'include' }),
     ])
-    if (walletRes.status === 401) { setLoading(false); return }
-    if (walletRes.ok) setWallet(await walletRes.json() as UserWallet)
+    if (bootstrapRes.status === 401) {
+      setAuthStatus('unauthenticated')
+      setLoading(false)
+      return
+    }
+    if (bootstrapRes.ok) {
+      const d = await bootstrapRes.json() as CreditsBootstrapResponse
+      setAuthStatus(d.auth?.authenticated ? 'authenticated' : 'unauthenticated')
+      perfLog('auth', startedAt)
+      if (d.walletSummary) {
+        setWallet(d.walletSummary)
+        writeWalletCache(d.walletSummary)
+      }
+      perfLog('wallet', startedAt)
+      if (d.packages?.length) {
+        setPackages(d.packages.filter((pkg) => pkg.isActive))
+        writePackagesCache(d.packages)
+      }
+      perfLog('packages', startedAt)
+      if (d.chinaPaymentStatus?.providers) {
+        setChinaProviders({
+          alipay: d.chinaPaymentStatus.providers.alipay ?? NOT_CONFIGURED_PROVIDER_STATUS,
+          wechatpay: d.chinaPaymentStatus.providers.wechatpay ?? NOT_CONFIGURED_PROVIDER_STATUS,
+        })
+        writeChinaPaymentStatusCache(d.chinaPaymentStatus as ChinaPaymentStatusCache)
+      }
+      perfLog('payment-status', startedAt)
+    } else {
+      setAuthStatus('unauthenticated')
+    }
     if (ledgerRes.ok) {
       const d = await ledgerRes.json() as { items: CreditLedgerEntry[] }
       setLedger(d.items)
     }
-    const packagesRes = await fetch('/api/credits/packages', { credentials: 'include' })
-    if (packagesRes.ok) {
-      const d = await packagesRes.json() as { packages: CreditPackage[] }
-      setPackages(d.packages.filter((pkg) => pkg.isActive))
-    }
-    const chinaStatusRes = await fetch('/api/payment/china/status', { credentials: 'include', cache: 'no-store' })
-    if (!chinaStatusRes.ok) {
-      setChinaProviders({
-        alipay: NOT_CONFIGURED_PROVIDER_STATUS,
-        wechatpay: NOT_CONFIGURED_PROVIDER_STATUS,
-      })
-    } else {
-      const d = await chinaStatusRes.json() as {
-        providers?: {
-          alipay?: ChinaPaymentProviderStatus
-          wechatpay?: ChinaPaymentProviderStatus
-        }
-      }
-      setChinaProviders({
-        alipay: d.providers?.alipay ?? NOT_CONFIGURED_PROVIDER_STATUS,
-        wechatpay: d.providers?.wechatpay ?? NOT_CONFIGURED_PROVIDER_STATUS,
-      })
-    }
-    const ordersRes = await fetch('/api/credits/my-orders?status=PENDING', { credentials: 'include' })
     if (ordersRes.ok) {
       const d = await ordersRes.json() as { orders: ManualOrder[] }
       setPendingOrders(d.orders)
     }
     setLoading(false)
+    perfLog('first-render', startedAt)
   }
 
   async function createAlipayQr(packageId: string) {
@@ -137,9 +199,8 @@ export default function AccountCreditsPage() {
   }
 
   useEffect(() => {
-    if (authStatus !== 'authenticated') return
     void load()
-  }, [authStatus])
+  }, [])
 
   async function handleRecharge(e: React.FormEvent) {
     e.preventDefault()
@@ -181,7 +242,8 @@ export default function AccountCreditsPage() {
       <div className="p-8 text-sm text-red-400">请先 <a href="/auth/login?next=/account/credits" className="underline">登录</a> 后查看积分钱包。</div>
     </DashboardShell>
   )
-  if (authStatus === 'loading' || loading) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
+  const hasCachedContent = Boolean(wallet || packages.length > 0 || ledger.length > 0)
+  if ((authStatus === 'loading' || loading) && !hasCachedContent) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
 
   return (
     <DashboardShell>
@@ -189,6 +251,9 @@ export default function AccountCreditsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-white">我的积分</h1>
           <p className="mt-1 text-sm text-white/50">余额、充值申请、消耗流水。</p>
+          {authStatus === 'loading' || loading ? (
+            <p className="mt-2 text-xs text-white/35">已显示本地缓存，正在后台同步钱包和订单状态。</p>
+          ) : null}
         </div>
 
         <WalletBalanceCard wallet={wallet} />
