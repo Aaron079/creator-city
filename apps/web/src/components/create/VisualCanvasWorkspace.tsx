@@ -861,7 +861,7 @@ export function VisualCanvasWorkspace({
         devPerf('cache-hydrate', 'start')
         const cache = readCanvasCache(resolvedProjectId)
         const draftBeforeFetch = readLocalDraft(resolvedProjectId)
-        if (cache?.workflowId && cache.nodes.length > 0 && cacheHydratedRef.current !== resolvedProjectId) {
+        if (cache?.workflowId && cache.projectId === resolvedProjectId && cacheHydratedRef.current !== resolvedProjectId) {
           cacheHydratedRef.current = resolvedProjectId
           applyCanvasSnapshot({
             projectId: resolvedProjectId,

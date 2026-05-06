@@ -42,7 +42,21 @@ export function NewProjectDialog({
     try {
       const oldProjectId = window.localStorage.getItem('creator-city:last-project-id')
       window.localStorage.setItem('creator-city:last-project-id', projectId)
-      if (workflowId) window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
+      if (workflowId) {
+        const now = new Date().toISOString()
+        window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
+        window.localStorage.setItem(`creator-city:canvas-cache:${projectId}`, JSON.stringify({
+          projectId,
+          workflowId,
+          nodes: [],
+          edges: [],
+          viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+          updatedAt: now,
+          syncedAt: now,
+          serverUpdatedAt: now,
+        }))
+        window.localStorage.removeItem(`creator-city:draft:${projectId}`)
+      }
       if (oldProjectId && oldProjectId !== projectId) {
         window.localStorage.removeItem(`creator-city:draft:${oldProjectId}`)
       }
