@@ -35,6 +35,28 @@ function projectSelect() {
   } as const
 }
 
+function fastOwnedProjectSelect() {
+  return {
+    id: true,
+    title: true,
+    description: true,
+    status: true,
+    visibility: true,
+    thumbnailUrl: true,
+    ownerId: true,
+    createdAt: true,
+    updatedAt: true,
+    lastOpenedAt: true,
+    canvasWorkflows: {
+      take: 1,
+      orderBy: { createdAt: 'asc' as const },
+      select: {
+        id: true,
+      },
+    },
+  } as const
+}
+
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
@@ -83,12 +105,13 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const ownedProjects = await db.project.findMany({
-      where: { ownerId: user.id },
-      select: projectSelect(),
-      orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
-    })
     if (scope === 'owned') {
+      const ownedProjects = await db.project.findMany({
+        where: { ownerId: user.id },
+        select: fastOwnedProjectSelect(),
+        orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
+        take: limit ?? 50,
+      })
       const projects = ownedProjects
         .map((project) => {
           const workflow = project.canvasWorkflows[0]
@@ -104,12 +127,11 @@ export async function GET(request: NextRequest) {
             updatedAt: project.updatedAt,
             lastOpenedAt: project.lastOpenedAt,
             workflowId: workflow?.id ?? null,
-            nodeCount: workflow?._count.nodes ?? 0,
+            nodeCount: 0,
             ownerRole: 'OWNER',
             membershipRole: null,
           }
         })
-        .slice(0, limit ?? undefined)
 
       return NextResponse.json({
         success: true,
@@ -123,6 +145,11 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    const ownedProjects = await db.project.findMany({
+      where: { ownerId: user.id },
+      select: projectSelect(),
+      orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
+    })
     let memberProjects: Awaited<typeof ownedProjects> = []
     const membershipByProjectId = new Map<string, string | null>()
     let membershipWarning: string | undefined

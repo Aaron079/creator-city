@@ -133,6 +133,11 @@ export function TopNavigation() {
     router.push(href)
   }, [router])
 
+  const handleProjectsClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    router.push('/projects')
+  }, [router])
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
@@ -150,6 +155,13 @@ export function TopNavigation() {
               if (link.href === '/create') {
                 return (
                   <a key={link.href} href="/create" onClick={handleCreateClick} className={navClass}>
+                    {link.label}
+                  </a>
+                )
+              }
+              if (link.href === '/projects') {
+                return (
+                  <a key={link.href} href="/projects" onClick={handleProjectsClick} className={navClass}>
                     {link.label}
                   </a>
                 )

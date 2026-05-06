@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
@@ -56,6 +56,22 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [message, setMessage] = useState('')
+  const hasVisibleProjectsRef = useRef(false)
+
+  useEffect(() => {
+    const cachedProjects = readProjectsCache()
+    if (cachedProjects?.length) {
+      hasVisibleProjectsRef.current = true
+      setProjects(cachedProjects)
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    for (const project of projects.slice(0, 6)) {
+      router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+    }
+  }, [projects, router])
 
   useEffect(() => {
     if (authStatus === 'loading') return
@@ -66,13 +82,7 @@ export default function ProjectsPage() {
 
     let cancelled = false
     async function loadProjects() {
-      const cachedProjects = readProjectsCache()
-      if (cachedProjects) {
-        setProjects(cachedProjects)
-        setLoading(false)
-      } else {
-        setLoading(true)
-      }
+      if (!hasVisibleProjectsRef.current) setLoading(true)
       setMessage('')
       try {
         const response = await fetch('/api/projects?scope=owned', {
@@ -88,6 +98,7 @@ export default function ProjectsPage() {
         if (!response.ok) throw new Error(data.message ?? '加载项目失败。')
         if (!cancelled) {
           const nextProjects = data.projects ?? []
+          hasVisibleProjectsRef.current = nextProjects.length > 0
           setProjects(nextProjects)
           writeProjectsCache(nextProjects)
         }
@@ -162,6 +173,12 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/create?projectId=${encodeURIComponent(project.id)}`}
+                onPointerEnter={() => {
+                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+                }}
+                onFocus={() => {
+                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+                }}
                 onClick={() => {
                   try {
                     window.localStorage.setItem('creator-city:last-project-id', project.id)

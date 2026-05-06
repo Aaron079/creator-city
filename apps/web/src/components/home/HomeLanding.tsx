@@ -40,14 +40,7 @@ export function HomeLanding() {
 
   const handleOpenProject = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
-    let href = '/projects'
-    try {
-      const lastId = window.localStorage.getItem('creator-city:last-project-id')
-      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
-    } catch {
-      // Fall back to the project list when localStorage is unavailable.
-    }
-    router.push(href)
+    router.push('/projects')
   }, [router])
 
   return (
@@ -136,7 +129,7 @@ export function HomeLanding() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={item.href === '/create' ? handleCanvasEntry : undefined}
+              onClick={item.href === '/create' ? handleCanvasEntry : item.href === '/projects' ? handleOpenProject : undefined}
               className="rounded-[24px] border border-white/8 bg-white/[0.035] p-5 transition hover:border-white/18 hover:bg-white/[0.055]"
             >
               <div className="text-sm font-medium text-white">{item.label}</div>

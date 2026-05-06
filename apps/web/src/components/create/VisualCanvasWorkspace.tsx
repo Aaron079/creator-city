@@ -2565,6 +2565,16 @@ export function VisualCanvasWorkspace({
     window.location.assign(getClientDeliveryHref(projectId))
   }, [])
 
+  const handleOpenProjects = useCallback(() => {
+    try {
+      if (projectId) window.localStorage.setItem('creator-city:last-project-id', projectId)
+      if (workflowId) window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
+    } catch {
+      // Explicit /projects navigation still works without localStorage.
+    }
+    router.push('/projects')
+  }, [projectId, router, workflowId])
+
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || typeof window === 'undefined') return undefined
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -2699,10 +2709,10 @@ export function VisualCanvasWorkspace({
             新建项目
             <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
           </button>
-          <a href="/projects" className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表">
+          <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表">
             项目
             <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
-          </a>
+          </button>
           <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
             社区
             <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
