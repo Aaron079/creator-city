@@ -63,7 +63,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         where: {
           id: body.assetId,
           ownerId: user.id,
-          OR: [{ projectId: params.projectId }, { projectId: null }],
+          OR: [
+            { projectId: params.projectId },
+            { projectId: null },
+            { projectAssets: { some: { projectId: params.projectId } } },
+          ],
         },
       })
     : null

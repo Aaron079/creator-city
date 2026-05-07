@@ -950,6 +950,27 @@ export function VisualCanvasWorkspace({
 
         const cache = readCanvasCache(resolvedProjectId)
         const draftBeforeFetch = readLocalDraft(resolvedProjectId)
+        const localPreview = draftBeforeFetch?.nodes.length
+          ? { source: 'draft' as const, value: draftBeforeFetch }
+          : cache?.nodes.length
+            ? { source: 'cache' as const, value: cache }
+            : null
+        if (localPreview?.value.workflowId) {
+          applyCanvasSnapshot({
+            projectId: resolvedProjectId,
+            workflowId: localPreview.value.workflowId,
+            title: localPreview.value.title,
+            nodes: localPreview.value.nodes,
+            edges: localPreview.value.edges,
+            viewport: localPreview.value.viewport,
+            status: 'local-draft',
+            message: '本地预览已加载，正在同步服务器...',
+          })
+          canvasLoadedRef.current = true
+          hasHydratedCanvasRef.current = false
+          isInitializingRef.current = true
+          devPerf('first-render')
+        }
 
         devPerf('canvas-fetch', 'start')
         const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {

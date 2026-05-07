@@ -61,7 +61,8 @@ export async function loadProjectDelivery(projectId: string) {
       },
     }),
     db.asset.findMany({
-      where: { projectId },
+      where: { OR: [{ projectId }, { projectAssets: { some: { projectId } } }] },
+      include: { project: { select: { id: true, title: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     }),

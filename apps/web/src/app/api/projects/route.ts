@@ -25,7 +25,7 @@ function projectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
-    _count: { select: { generatedAssets: true } },
+    _count: { select: { generatedAssets: true, assets: true } },
     canvasWorkflows: {
       orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
@@ -49,7 +49,7 @@ function fastOwnedProjectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
-    _count: { select: { generatedAssets: true } },
+    _count: { select: { generatedAssets: true, assets: true } },
     canvasWorkflows: {
       orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
@@ -73,6 +73,10 @@ function pickProjectWorkflow<T extends { id: string; updatedAt: Date; _count: { 
 
 function countProjectNodes<T extends { _count: { nodes: number } }>(workflows: T[]) {
   return workflows.reduce((sum, workflow) => sum + workflow._count.nodes, 0)
+}
+
+function countProjectAssets(project: { _count: { generatedAssets: number; assets: number } }) {
+  return project._count.generatedAssets + project._count.assets
 }
 
 export async function GET(request: NextRequest) {
@@ -107,7 +111,7 @@ export async function GET(request: NextRequest) {
             lastOpenedAt: project.lastOpenedAt,
             workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
             nodeCount: countProjectNodes(project.canvasWorkflows),
-            assetCount: project._count.generatedAssets,
+            assetCount: countProjectAssets(project),
             ownerRole: 'OWNER',
             membershipRole: null,
           }
@@ -148,7 +152,7 @@ export async function GET(request: NextRequest) {
             lastOpenedAt: project.lastOpenedAt,
             workflowId: workflow?.id ?? null,
             nodeCount: countProjectNodes(project.canvasWorkflows),
-            assetCount: project._count.generatedAssets,
+            assetCount: countProjectAssets(project),
             ownerRole: 'OWNER',
             membershipRole: null,
           }
@@ -226,7 +230,7 @@ export async function GET(request: NextRequest) {
           lastOpenedAt: project.lastOpenedAt,
           workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
           nodeCount: countProjectNodes(project.canvasWorkflows),
-          assetCount: project._count.generatedAssets,
+          assetCount: countProjectAssets(project),
           ownerRole: isOwner ? 'OWNER' : null,
           membershipRole: membershipByProjectId.get(project.id) ?? null,
         }

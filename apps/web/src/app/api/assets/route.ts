@@ -27,6 +27,24 @@ function normalizeLimit(value: string | null) {
   return Math.max(1, Math.min(parsed, 200))
 }
 
+type AssetWithProjectLinks = Prisma.AssetGetPayload<{
+  include: {
+    project: { select: { id: true; title: true } }
+    projectAssets: { select: { project: { select: { id: true; title: true } } } }
+  }
+}>
+
+function serializeAssetForList(asset: AssetWithProjectLinks) {
+  const linkedProject = asset.project ?? asset.projectAssets[0]?.project ?? null
+  const { projectAssets, ...rest } = asset
+  void projectAssets
+  return serializeAsset({
+    ...rest,
+    project: linkedProject,
+    projectId: rest.projectId ?? linkedProject?.id ?? null,
+  })
+}
+
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
@@ -40,17 +58,23 @@ export async function GET(request: NextRequest) {
     const where: Prisma.AssetWhereInput = {
       ownerId: user.id,
       ...(type ? { type } : {}),
-      ...(projectId ? { OR: [{ projectId }, { projectId: null }] } : {}),
+      ...(projectId ? { OR: [{ projectId }, { projectId: null }, { projectAssets: { some: { projectId } } }] } : {}),
     }
 
     const assets = await db.asset.findMany({
       where,
-      include: { project: { select: { id: true, title: true } } },
+      include: {
+        project: { select: { id: true, title: true } },
+        projectAssets: {
+          ...(projectId ? { where: { projectId } } : { take: 1 }),
+          select: { project: { select: { id: true, title: true } } },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     })
 
-    return NextResponse.json({ success: true, assets: assets.map(serializeAsset) })
+    return NextResponse.json({ success: true, assets: assets.map(serializeAssetForList) })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)

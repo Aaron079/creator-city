@@ -53,6 +53,13 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       },
       include: { project: { select: { id: true, title: true } } },
     })
+    if (nextProjectId) {
+      await db.projectAsset.upsert({
+        where: { projectId_assetId: { projectId: nextProjectId, assetId: params.assetId } },
+        create: { projectId: nextProjectId, assetId: params.assetId, addedBy: user.id },
+        update: { addedBy: user.id },
+      })
+    }
 
     return NextResponse.json({ success: true, asset: serializeAsset(updated) })
   } catch (error) {
