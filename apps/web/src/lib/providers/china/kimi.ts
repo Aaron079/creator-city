@@ -1,4 +1,10 @@
-import { getChinaProviderStatus, normalizeChinaProviderError, type ChinaProviderConfig } from './types'
+import {
+  getChinaProviderStatus,
+  normalizeChinaProviderError,
+  postOpenAICompatibleChat,
+  type ChinaProviderConfig,
+  type ChinaTextGenerationInput,
+} from './types'
 
 export const kimiProviderConfigs: ChinaProviderConfig[] = [
   {
@@ -28,6 +34,31 @@ export function getKimiStatus(providerId: 'kimi-text' | 'kimi-multimodal') {
 
 export function testKimiConnection(providerId: 'kimi-text' | 'kimi-multimodal') {
   return getKimiStatus(providerId)
+}
+
+export async function generateKimiText(input: ChinaTextGenerationInput) {
+  const apiKey = process.env.MOONSHOT_API_KEY
+  const model = process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
+  if (!apiKey) {
+    return {
+      success: false as const,
+      providerId: 'kimi-text' as const,
+      model,
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
+      message: 'MOONSHOT_API_KEY 未配置',
+    }
+  }
+
+  return postOpenAICompatibleChat({
+    providerId: 'kimi-text',
+    apiKey,
+    baseUrl: process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1',
+    model,
+    prompt: input.prompt,
+    system: input.system,
+    maxTokens: input.maxTokens,
+    errorCode: 'KIMI_TEXT_FAILED',
+  })
 }
 
 export const normalizeKimiError = normalizeChinaProviderError

@@ -71,6 +71,7 @@ interface TestResponse {
   missingEnvKeys?: string[]
   model?: string
   baseUrl?: string | null
+  sample?: string
   checkedAt?: string
   mode?: string
   testMode?: string
@@ -133,6 +134,10 @@ function buildClientSummary(providers: ProviderRow[]): ProviderSummary {
     if (!provider.configured) acc.unavailable += 1
     return acc
   }, { total: 0, configured: 0, notConfigured: 0, error: 0, enabled: 0, disabled: 0, available: 0, unavailable: 0 })
+}
+
+function canRunTextPing(provider: ProviderRow) {
+  return provider.configured && (provider.providerId === 'kimi-text' || provider.providerId === 'deepseek-text')
 }
 
 export default function AdminProvidersPage() {
@@ -242,15 +247,16 @@ export default function AdminProvidersPage() {
     }
   }
 
-  async function handleTest(provider: ProviderRow) {
-    setTestingId(provider.providerId)
+  async function handleTest(provider: ProviderRow, mode: 'env-only' | 'text-ping' = 'env-only') {
+    const testKey = `${provider.providerId}:${mode}`
+    setTestingId(testKey)
     setMessage(null)
     try {
       const response = await fetch('/api/admin/providers/test', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ providerId: provider.providerId }),
+        body: JSON.stringify({ providerId: provider.providerId, mode }),
       })
       const data = await readJsonResponse<TestResponse>(response)
       if (!response.ok || data.success === false) {
@@ -268,7 +274,7 @@ export default function AdminProvidersPage() {
             }
           : item
       )))
-      setMessage(`${provider.displayName}: ${data.message ?? (data.ok ? '测试通过。' : '测试失败。')}`)
+      setMessage(`${provider.displayName}: ${data.message ?? (data.ok ? '测试通过。' : '测试失败。')}${data.sample ? ` sample: ${data.sample}` : ''}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '测试连接失败。')
     } finally {
@@ -298,7 +304,7 @@ export default function AdminProvidersPage() {
           <div>
             <h1 className="text-2xl font-semibold text-white">API Provider 管理中心</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/50">
-              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、价格和积分成本。测试连接不会触发真实生成、支付、扣费或上传。
+              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、价格和积分成本。默认测试不触发真实生成、支付、扣费或上传；轻量文本测试会调用一次极小文本 API，不扣平台积分，但可能产生供应商极低费用。
             </p>
           </div>
           <button
@@ -426,6 +432,9 @@ export default function AdminProvidersPage() {
                         {testResult?.model ? (
                           <div className="mt-1 max-w-[220px] break-words text-xs text-white/34">model: {testResult.model}</div>
                         ) : null}
+                        {testResult?.sample ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-emerald-200/70">sample: {testResult.sample}</div>
+                        ) : null}
                         {testResult?.mode || testResult?.testMode ? (
                           <div className="mt-1 text-xs text-white/30">{testResult.mode ?? testResult.testMode}</div>
                         ) : null}
@@ -435,11 +444,22 @@ export default function AdminProvidersPage() {
                           <button
                             type="button"
                             onClick={() => void handleTest(provider)}
-                            disabled={testingId === provider.providerId}
+                            disabled={testingId === `${provider.providerId}:env-only`}
                             className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-white/68 transition hover:border-white/25 hover:text-white disabled:opacity-50"
                           >
-                            {testingId === provider.providerId ? '测试中...' : '测试连接'}
+                            {testingId === `${provider.providerId}:env-only` ? '测试中...' : '测试连接'}
                           </button>
+                          {canRunTextPing(provider) ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleTest(provider, 'text-ping')}
+                              disabled={testingId === `${provider.providerId}:text-ping`}
+                              title="会调用一次极小文本 API，不扣平台积分，但可能产生供应商极低费用。"
+                              className="rounded-md border border-emerald-300/20 px-3 py-1.5 text-xs text-emerald-100/80 transition hover:border-emerald-300/40 hover:text-emerald-50 disabled:opacity-50"
+                            >
+                              {testingId === `${provider.providerId}:text-ping` ? '测试中...' : '轻量文本测试'}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => void handleCopyMissing(provider)}

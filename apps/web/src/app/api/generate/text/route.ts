@@ -5,6 +5,9 @@ import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
+import { generateDeepSeekText } from '@/lib/providers/china/deepseek'
+import { generateKimiText } from '@/lib/providers/china/kimi'
+import type { GenerateResponse } from '@/lib/providers/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,15 +29,42 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = await getCurrentUser()
-    const raw = await gatewayGenerate({
-      providerId,
-      nodeType: 'text',
-      prompt,
-      inputAssets: body.inputAssets,
-      params: body.params,
-      projectId: body.projectId,
-      nodeId: body.nodeId,
-    }, currentUser?.id)
+    let raw: GenerateResponse
+    if (providerId === 'kimi-text' || providerId === 'deepseek-text') {
+      const maxTokens = typeof body.params?.maxTokens === 'number' ? body.params.maxTokens : undefined
+      const system = typeof body.params?.system === 'string' ? body.params.system : undefined
+      const chinaResult = providerId === 'kimi-text'
+        ? await generateKimiText({ prompt, system, maxTokens })
+        : await generateDeepSeekText({ prompt, system, maxTokens })
+
+      raw = chinaResult.success
+        ? {
+            success: true,
+            providerId,
+            mode: 'real',
+            status: 'succeeded',
+            result: { text: chinaResult.text, metadata: { model: chinaResult.model } },
+            message: `文本生成成功（${chinaResult.model}）`,
+          }
+        : {
+            success: false,
+            providerId,
+            mode: 'unavailable',
+            status: chinaResult.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
+            message: chinaResult.message,
+            errorCode: chinaResult.errorCode,
+          }
+    } else {
+      raw = await gatewayGenerate({
+        providerId,
+        nodeType: 'text',
+        prompt,
+        inputAssets: body.inputAssets,
+        params: body.params,
+        projectId: body.projectId,
+        nodeId: body.nodeId,
+      }, currentUser?.id)
+    }
 
     const result = await attachGeneratedAsset(await finalizeBilling(raw, billing.ctx.billingJobId), {
       userId: currentUser?.id ?? billing.ctx.userId,
@@ -44,7 +74,11 @@ export async function POST(request: NextRequest) {
       projectId: body.projectId,
       nodeId: body.nodeId,
     })
-    return NextResponse.json(result, { status: result.success ? 200 : result.errorCode === 'PROVIDER_NOT_FOUND' ? 404 : 200 })
+    return NextResponse.json({
+      ...result,
+      text: result.result?.text,
+      model: result.result?.metadata?.model,
+    }, { status: result.success ? 200 : result.errorCode === 'PROVIDER_NOT_FOUND' ? 404 : 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/text]', err)

@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 type ProviderTestBody = {
   providerId?: string
+  mode?: 'env-only' | 'text-ping'
 }
 
 export async function POST(request: Request) {
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await testProviderConnection(body.providerId)
+    const result = await testProviderConnection(body.providerId, body.mode ?? 'env-only')
     return NextResponse.json({
       success: true,
       providerId: body.providerId,
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       missingEnvKeys: result.missingEnvKeys,
       model: result.model,
       baseUrl: result.baseUrl,
+      sample: result.sample,
       checkedAt: result.checkedAt,
       mode: result.mode,
       testMode: result.testMode,

@@ -1,5 +1,7 @@
 import { db } from '@/lib/db'
 import { getGatewayPricing } from '@/lib/gateway/pricing'
+import { generateDeepSeekText } from '@/lib/providers/china/deepseek'
+import { generateKimiText } from '@/lib/providers/china/kimi'
 import { testChinaProviderConnection } from '@/lib/providers/china'
 import { checkEnvKeys } from '@/lib/providers/env'
 import {
@@ -545,7 +547,7 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
   }
 }
 
-export async function testProviderConnection(providerId: string) {
+export async function testProviderConnection(providerId: string, mode: 'env-only' | 'text-ping' = 'env-only') {
   const definition = getAdminProviderDefinition(providerId)
   if (!definition) {
     return {
@@ -557,6 +559,7 @@ export async function testProviderConnection(providerId: string) {
       missingEnvKeys: [],
       model: '',
       baseUrl: null,
+      sample: '',
       checkedAt: new Date().toISOString(),
       mode: 'env-only' as const,
       testMode: 'env-only' as const,
@@ -579,9 +582,48 @@ export async function testProviderConnection(providerId: string) {
       missingEnvKeys: envCheck.missing,
       model,
       baseUrl,
+      sample: '',
       checkedAt: new Date().toISOString(),
       mode: 'env-only',
       testMode: 'env-only',
+    }
+  }
+
+  if (mode === 'text-ping') {
+    if (providerId !== 'kimi-text' && providerId !== 'deepseek-text') {
+      return {
+        ok: false,
+        status: 'error' as const,
+        message: '该 Provider 暂不支持轻量文本测试。',
+        configured: envCheck.configured,
+        missingEnv: [],
+        missingEnvKeys: [],
+        model,
+        baseUrl,
+        sample: '',
+        checkedAt: new Date().toISOString(),
+        mode: 'text-ping' as const,
+        testMode: 'text-ping' as const,
+      }
+    }
+
+    const pingResult = providerId === 'kimi-text'
+      ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 16 })
+      : await generateDeepSeekText({ prompt: '请只回复 OK', maxTokens: 16 })
+
+    return {
+      ok: pingResult.success,
+      status: pingResult.success ? 'configured' as const : 'error' as const,
+      message: pingResult.success ? '轻量文本测试通过。' : pingResult.message,
+      configured: true,
+      missingEnv: [],
+      missingEnvKeys: [],
+      model: pingResult.model ?? model,
+      baseUrl,
+      sample: pingResult.success ? pingResult.text : '',
+      checkedAt: new Date().toISOString(),
+      mode: 'text-ping' as const,
+      testMode: 'text-ping' as const,
     }
   }
 
@@ -594,6 +636,7 @@ export async function testProviderConnection(providerId: string) {
     missingEnvKeys: [],
     model,
     baseUrl,
+    sample: '',
     checkedAt: new Date().toISOString(),
     mode: 'env-only',
     testMode: 'env-only',
