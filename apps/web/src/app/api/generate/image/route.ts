@@ -8,6 +8,7 @@ import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
 import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
+import { buildProviderManagementStatus } from '@/lib/provider-management'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,64 @@ type ImageGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
   aspectRatio?: string
   size?: string
+}
+
+const IMAGE_PROVIDER_ORDER = ['volcengine-seedream-image', 'jimeng-image', 'openai-image'] as const
+
+async function getImageProviderRows() {
+  const status = await buildProviderManagementStatus()
+  const rowById = new Map(status.providers.map((provider) => [provider.providerId, provider]))
+  return IMAGE_PROVIDER_ORDER.map((providerId) => rowById.get(providerId)).filter((row): row is NonNullable<typeof row> => Boolean(row))
+}
+
+function defaultImageProviderId(rows: Awaited<ReturnType<typeof getImageProviderRows>>) {
+  return rows.find((row) => row.providerId === 'volcengine-seedream-image' && row.available)?.providerId
+    ?? rows.find((row) => row.providerId === 'jimeng-image' && row.available)?.providerId
+    ?? rows.find((row) => row.providerId === 'openai-image' && row.available)?.providerId
+    ?? null
+}
+
+function providerNotConfiguredResponse(providerId: string, missingEnv: string[] = []) {
+  return NextResponse.json({
+    success: false,
+    errorCode: 'PROVIDER_NOT_CONFIGURED',
+    message: '图片 Provider 未配置，请先在 /admin/providers 配置环境变量。',
+    providerId,
+    missingEnv,
+    missingEnvKeys: missingEnv,
+    mode: 'unavailable',
+    status: 'not-configured',
+  }, { status: 200 })
+}
+
+export async function GET() {
+  try {
+    const providers = await getImageProviderRows()
+    return NextResponse.json({
+      success: true,
+      providers: providers.map((provider) => ({
+        providerId: provider.providerId,
+        label: provider.displayName,
+        configured: provider.configured,
+        available: provider.available,
+        status: provider.available ? 'available' : provider.availabilityStatus,
+        missingEnv: provider.missingEnv,
+        missingEnvKeys: provider.missingEnvKeys,
+        reason: provider.reason,
+        model: provider.model,
+      })),
+      defaultProviderId: defaultImageProviderId(providers),
+    })
+  } catch (error) {
+    console.error('[api/generate/image][status]', error)
+    return NextResponse.json({
+      success: false,
+      errorCode: 'IMAGE_PROVIDER_STATUS_FAILED',
+      message: error instanceof Error ? error.message : '加载图片 Provider 状态失败。',
+      providers: [],
+      defaultProviderId: null,
+    }, { status: 200 })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -26,7 +85,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
     }
 
-    const providerId = body.providerId || 'openai-image'
+    const providers = await getImageProviderRows()
+    const defaultProviderId = defaultImageProviderId(providers)
+    const providerId = body.providerId || defaultProviderId || 'volcengine-seedream-image'
+    const providerRow = providers.find((provider) => provider.providerId === providerId)
+    if (!providerRow?.available) {
+      if (providerId === 'openai-image' && providerRow && !providerRow.available) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'OPENAI_IMAGE_UNAVAILABLE',
+          message: 'OpenAI Image 暂不可用。当前环境建议使用 Volcengine Seedream 或 Jimeng 图片模型。',
+          providerId,
+          missingEnv: providerRow.missingEnv,
+          missingEnvKeys: providerRow.missingEnvKeys,
+          mode: 'unavailable',
+          status: 'not-configured',
+        }, { status: 200 })
+      }
+      return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [])
+    }
     const prompt = body.prompt?.trim() ?? ''
     if (!prompt) {
       return NextResponse.json({
@@ -41,6 +118,16 @@ export async function POST(request: NextRequest) {
 
     const billing = await setupBilling(request, providerId, 'image', prompt)
     if (!billing.ok) {
+      if (providerId === 'openai-image' && billing.errorResponse.errorCode === 'BILLING_ERROR') {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'OPENAI_IMAGE_UNAVAILABLE',
+          message: 'OpenAI Image 暂不可用。当前环境建议使用 Volcengine Seedream 或 Jimeng 图片模型。',
+          providerId,
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 200 })
+      }
       return NextResponse.json(billing.errorResponse, { status: billing.status })
     }
 

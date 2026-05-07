@@ -39,6 +39,7 @@ interface CanvasPromptBoxProps {
   placeholder: string
   onGenerate?: () => void
   generateLabel?: string
+  generateDisabled?: boolean
   estimatedCredits?: number
   layout?: 'workspace' | 'node'
   multiline?: boolean
@@ -88,6 +89,7 @@ export function CanvasPromptBox({
   placeholder,
   onGenerate,
   generateLabel = '生成',
+  generateDisabled = false,
   estimatedCredits,
   modelLabel = model,
   modelOptionLabels: _modelOptionLabels = {},
@@ -532,6 +534,7 @@ export function CanvasPromptBox({
               <button
                 type="button"
                 onClick={onGenerate}
+                disabled={generateDisabled}
                 className="create-iridescent-button canvas-generate-button"
                 aria-label={generateLabel}
               >
@@ -641,13 +644,14 @@ export function CanvasPromptBox({
           <span className="canvas-footer-button is-credit-pill">
             <span className="canvas-footer-button-value">{estimatedCredits ?? 112} credits</span>
           </span>
-          {onGenerate ? (
-            <button
-              type="button"
-              onClick={onGenerate}
-              className="create-iridescent-button canvas-generate-button"
-              aria-label={generateLabel}
-            >
+            {onGenerate ? (
+              <button
+                type="button"
+                onClick={onGenerate}
+                disabled={generateDisabled}
+                className="create-iridescent-button canvas-generate-button"
+                aria-label={generateLabel}
+              >
               <span className="canvas-credit-pill">{generateLabel === '生成' ? `◉ ${estimatedCredits ?? 112}` : generateLabel}</span>
               <span className="canvas-send-icon">↑</span>
             </button>

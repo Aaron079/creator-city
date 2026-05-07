@@ -5413,6 +5413,12 @@
   opacity: 0.48;
 }
 
+.scope :global(.canvas-generate-button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
+  filter: grayscale(0.4);
+}
+
 .scope :global(.canvas-image-preview-backdrop) {
   position: fixed;
   inset: 0;

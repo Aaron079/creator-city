@@ -254,9 +254,9 @@ const TEXT_NODE_PROVIDER_OPTIONS = [
 ] as const
 
 const IMAGE_NODE_PROVIDER_OPTIONS = [
-  { value: 'openai-image', label: 'OpenAI Image', hint: '默认图片生成', duration: '30~90s' },
   { value: 'volcengine-seedream-image', label: 'Volcengine Seedream Image', hint: '中国图片 · Seedream', duration: '30~90s' },
   { value: 'jimeng-image', label: 'Jimeng Image', hint: '中国图片 · 即梦', duration: '30~90s' },
+  { value: 'openai-image', label: 'OpenAI Image', hint: '海外图片 · OpenAI', duration: '30~90s' },
 ] as const
 
 const PARAMETER_RATIO_MAP: Record<(typeof PARAMETER_OPTIONS)[number]['value'], string> = {
@@ -336,6 +336,27 @@ function getImageNodeProviderOption(providerId: string) {
   return IMAGE_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
 }
 
+function getDefaultImageProviderId(statusMap: Map<string, ImageProviderStatusInfo>) {
+  return IMAGE_NODE_PROVIDER_OPTIONS.find((provider) => statusMap.get(provider.value)?.available)?.value ?? null
+}
+
+function getImageProviderStatus(
+  statusMap: Map<string, ImageProviderStatusInfo>,
+  providerId: string,
+  liveStatusMap: Map<string, ToolProviderStatus>,
+  liveStatusLoading: boolean,
+) {
+  const known = statusMap.get(providerId)
+  if (known) return known.available ? 'available' : known.status
+  return liveStatusMap.get(normalizeProviderId(providerId)) ?? (liveStatusLoading ? 'checking' : 'unknown')
+}
+
+function imageProviderUnavailableMessage(providerId: string, info?: ImageProviderStatusInfo) {
+  if (providerId === 'openai-image') return 'OPENAI_IMAGE_UNAVAILABLE: OpenAI Image 暂不可用，请配置中国图片 Provider。'
+  const missing = info?.missingEnv?.length ? `缺少 ${info.missingEnv.join(', ')}` : '缺少必要环境变量'
+  return `PROVIDER_NOT_CONFIGURED: 图片 Provider 未配置，请先在 /admin/providers 配置环境变量。${missing ? `（${missing}）` : ''}`
+}
+
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
   if (kind === 'asset' || kind === 'template') return 'upload'
   return kind as CanvasProviderKind
@@ -376,6 +397,20 @@ type GenerateApiResult = GenerateResponse & {
   upstreamMessage?: string
   rawCode?: string
   requestId?: string
+  missingEnv?: string[]
+  missingEnvKeys?: string[]
+}
+
+type ImageProviderStatusInfo = {
+  providerId: string
+  label: string
+  configured: boolean
+  available: boolean
+  status: ToolProviderStatus | 'disabled' | 'unknown'
+  missingEnv: string[]
+  missingEnvKeys?: string[]
+  reason?: string
+  model?: string
 }
 
 function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message'>) {
@@ -724,7 +759,7 @@ export function VisualCanvasWorkspace({
   const [textEditorNodeId, setTextEditorNodeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
-  const [adminProviderStatusMap, setAdminProviderStatusMap] = useState<Map<string, ToolProviderStatus>>(new Map())
+  const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -827,16 +862,19 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     let disposed = false
-    fetch('/api/admin/providers/status', { credentials: 'include', cache: 'no-store' })
+    fetch('/api/generate/image', { credentials: 'include', cache: 'no-store' })
       .then((response) => response.ok ? response.json() : null)
-      .then((data: { success?: boolean; providers?: Array<{ providerId?: string; configured?: boolean; available?: boolean; status?: string }> } | null) => {
+      .then((data: { success?: boolean; providers?: ImageProviderStatusInfo[] } | null) => {
         if (disposed || !data?.success || !Array.isArray(data.providers)) return
-        const next = new Map<string, ToolProviderStatus>()
+        const next = new Map<string, ImageProviderStatusInfo>()
         for (const provider of data.providers) {
           if (!provider.providerId) continue
-          next.set(provider.providerId, provider.available || provider.configured ? 'available' : 'not-configured')
+          next.set(provider.providerId, {
+            ...provider,
+            missingEnv: provider.missingEnv ?? provider.missingEnvKeys ?? [],
+          })
         }
-        setAdminProviderStatusMap(next)
+        setImageProviderStatusMap(next)
       })
       .catch(() => undefined)
     return () => {
@@ -1954,15 +1992,22 @@ export function VisualCanvasWorkspace({
   )
   const activeProviderLabel = activeTextProvider?.label ?? activeImageProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
   const activeProviderLiveStatus = liveStatusMap.get(normalizedPromptModel)
-  const activeProviderAdminStatus = adminProviderStatusMap.get(normalizedPromptModel)
+  const activeProviderImageStatus = preferredKind === 'image' ? imageProviderStatusMap.get(normalizedPromptModel) : undefined
   const activeProviderStatus = activeProviderLiveStatus
-    ?? activeProviderAdminStatus
+    ?? (activeProviderImageStatus ? (activeProviderImageStatus.available ? 'available' : activeProviderImageStatus.status) : undefined)
     ?? (activeTextProvider?.badge ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown'))
+  const defaultImageProviderId = getDefaultImageProviderId(imageProviderStatusMap)
   const activeProviderNotice = activeProviderStatus === 'checking'
     ? '正在检查 provider 实时状态'
     : activeProviderStatus === 'unknown'
-      ? '暂时无法确认 provider 实时状态'
-      : getCanvasProviderNoticeFromStatus(activeProviderStatus)
+      ? (preferredKind === 'image' ? '请先在 /admin/providers 配置图片 Provider' : '暂时无法确认 provider 实时状态')
+      : preferredKind === 'image' && activeProviderImageStatus && !activeProviderImageStatus.available
+        ? activeProviderImageStatus.reason || `未配置：缺少 ${activeProviderImageStatus.missingEnv.join(', ')}`
+        : preferredKind === 'image' && normalizedPromptModel === 'openai-image' && defaultImageProviderId && defaultImageProviderId !== 'openai-image'
+          ? '建议切换到已配置的中国图片 Provider。'
+          : activeProviderStatus === 'disabled'
+            ? '该 Provider 已停用'
+            : getCanvasProviderNoticeFromStatus(activeProviderStatus)
   const stageLabel = useMemo(
     () => getOptionLabel(STAGE_OPTIONS, promptStage),
     [promptStage],
@@ -2155,7 +2200,9 @@ export function VisualCanvasWorkspace({
   const syncPromptPreset = useCallback((kind: VisualCanvasNodeKind) => {
     const meta = NODE_META[kind]
     const providerKind = getProviderKind(kind)
-    const defaultModel = getCanvasProvider(providerKind, meta.model)?.id ?? CANVAS_PROVIDER_FALLBACKS[providerKind]
+    const defaultModel = kind === 'image'
+      ? getDefaultImageProviderId(imageProviderStatusMap) ?? meta.model
+      : getCanvasProvider(providerKind, meta.model)?.id ?? CANVAS_PROVIDER_FALLBACKS[providerKind]
     setPreferredKind(kind)
     setPromptModel(defaultModel)
     if (meta.ratio) {
@@ -2165,7 +2212,7 @@ export function VisualCanvasWorkspace({
         setPromptParameter(preset as keyof typeof PARAMETER_RATIO_MAP)
       }
     }
-  }, [])
+  }, [imageProviderStatusMap])
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
     setActiveNodeId(node.id)
@@ -2236,13 +2283,16 @@ export function VisualCanvasWorkspace({
   const handleAddNode = useCallback((kind: VisualCanvasNodeKind, presetTitle?: string) => {
     setHasStarted(true)
     syncPromptPreset(kind)
+    const model = kind === 'image'
+      ? getDefaultImageProviderId(imageProviderStatusMap) ?? NODE_META[kind].model
+      : NODE_META[kind].model
     createNode(kind, {
       title: presetTitle ?? NODE_META[kind].title,
-      model: NODE_META[kind].model,
+      model,
       ratio: NODE_META[kind].ratio,
     })
     setEditingNodeId(null)
-  }, [createNode, syncPromptPreset])
+  }, [createNode, imageProviderStatusMap, syncPromptPreset])
 
   const closeCanvasPanel = useCallback(() => {
     setActivePanel(null)
@@ -2763,6 +2813,22 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback(errMsg)
       return
     }
+    if (nodeSnapshot.kind === 'image') {
+      const selectedProviderInfo = imageProviderStatusMap.get(normalizedPromptModel)
+      const selectedProviderStatus = getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      if (selectedProviderStatus !== 'available') {
+        const errMsg = imageProviderUnavailableMessage(normalizedPromptModel, selectedProviderInfo)
+        setDialogError(errMsg)
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'error',
+          errorMessage: errMsg,
+          resultPreview: '请先选择并配置可用图片 Provider。',
+          outputLabel: '图片 Provider 未配置',
+        })
+        showCanvasFeedback(errMsg)
+        return
+      }
+    }
 
     // Collect image URLs from upstream nodes connected by edges (for image→video workflow)
     const upstreamImageAssets = edges
@@ -2950,7 +3016,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, workflowId])
+  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -3311,16 +3377,16 @@ export function VisualCanvasWorkspace({
           }))
         : preferredKind === 'image'
           ? IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => {
-              const status = liveStatusMap.get(normalizeProviderId(provider.value))
-                ?? adminProviderStatusMap.get(provider.value)
-                ?? (liveStatusLoading ? 'checking' : 'unknown')
+              const info = imageProviderStatusMap.get(provider.value)
+              const status = getImageProviderStatus(imageProviderStatusMap, provider.value, liveStatusMap, liveStatusLoading)
+              const missing = info?.missingEnv?.length ? `未配置：缺少 ${info.missingEnv.join(', ')}` : provider.hint
               return {
                 value: provider.value,
                 label: provider.label,
-                hint: provider.hint,
+                hint: info?.available ? provider.hint : missing,
                 badge: status,
                 duration: provider.duration,
-                disabled: status === 'not-configured',
+                disabled: status === 'not-configured' || status === 'disabled',
               }
             })
         : getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
@@ -3357,7 +3423,7 @@ export function VisualCanvasWorkspace({
         setPromptRatio(PARAMETER_RATIO_MAP[nextValue])
       },
     },
-  ], [activeProviderLabel, adminProviderStatusMap, assetLabel, handleProviderChange, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
+  ], [activeProviderLabel, assetLabel, handleProviderChange, imageProviderStatusMap, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
 
   const handleCreateMenuSelect = useCallback((kind: VisualCanvasNodeKind) => {
     const size = getNodeSize(kind)
@@ -3368,15 +3434,18 @@ export function VisualCanvasWorkspace({
       }
       : undefined
     syncPromptPreset(kind)
+    const model = kind === 'image'
+      ? getDefaultImageProviderId(imageProviderStatusMap) ?? NODE_META[kind].model
+      : NODE_META[kind].model
     const node = createNode(kind, {
       title: NODE_META[kind].title,
-      model: NODE_META[kind].model,
+      model,
       ratio: NODE_META[kind].ratio,
       position,
     })
     setEditingNodeId(node.id)
     setNodeCreateMenu(null)
-  }, [createNode, nodeCreateMenu, syncPromptPreset])
+  }, [createNode, imageProviderStatusMap, nodeCreateMenu, syncPromptPreset])
 
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const element = event.target as HTMLElement | null
@@ -3515,6 +3584,10 @@ export function VisualCanvasWorkspace({
       width: dialogWidth,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
+  const selectedImageProviderStatus = editingNode?.kind === 'image'
+    ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+    : null
+  const imageGenerateDisabled = editingNode?.kind === 'image' && selectedImageProviderStatus !== 'available'
 
   return (
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
@@ -3978,9 +4051,14 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
+            generateDisabled={imageGenerateDisabled || editingNode.status === 'generating'}
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
+                : editingNode.kind === 'image' && !defaultImageProviderId
+                  ? '请先配置图片 Provider'
+                : editingNode.kind === 'image' && imageGenerateDisabled
+                  ? '未配置'
                 : editingNode.status === 'error'
                   ? '重试'
                   : editingNode.status === 'done'
