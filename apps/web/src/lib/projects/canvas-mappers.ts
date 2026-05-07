@@ -73,14 +73,17 @@ export function mapCanvasNode(row: DbCanvasNode) {
 }
 
 export function mapCanvasEdge(row: DbCanvasEdge) {
+  const metadata = typeof row.metadataJson === 'object' && row.metadataJson
+    ? row.metadataJson as Record<string, unknown>
+    : {}
   return {
     id: row.edgeId,
     fromNodeId: row.sourceNodeId,
     toNodeId: row.targetNodeId,
-    status: typeof row.metadataJson === 'object'
-      && row.metadataJson
-      && 'status' in row.metadataJson
-      ? String((row.metadataJson as { status?: unknown }).status)
+    type: row.type ?? undefined,
+    metadataJson: metadata,
+    status: 'status' in metadata
+      ? String(metadata.status)
       : 'active',
   }
 }

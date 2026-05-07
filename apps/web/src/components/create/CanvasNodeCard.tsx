@@ -181,6 +181,9 @@ export function CanvasNodeCard({
         }}
         className="canvas-node-connector is-left"
         aria-label="Add previous node"
+        data-canvas-connector="true"
+        data-node-id={node.id}
+        data-handle="left"
       >
         +
       </button>
@@ -197,6 +200,9 @@ export function CanvasNodeCard({
         }}
         className="canvas-node-connector is-right"
         aria-label="Add next node"
+        data-canvas-connector="true"
+        data-node-id={node.id}
+        data-handle="right"
       >
         +
       </button>

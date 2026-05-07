@@ -48,6 +48,7 @@ type CanvasSaveEdge = {
   toNodeId?: string
   status?: string
   type?: string
+  metadataJson?: unknown
 }
 
 const WORKFLOW_SELECT = {
@@ -367,6 +368,10 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
 
     for (const edge of body.edges ?? []) {
       if (!edge.id || !edge.fromNodeId || !edge.toNodeId) continue
+      const edgeMetadata = edge.metadataJson && typeof edge.metadataJson === 'object'
+        ? edge.metadataJson as Record<string, unknown>
+        : {}
+      const metadataJson = { ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' }
       await db.canvasEdge.upsert({
         where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
         create: {
@@ -374,14 +379,14 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
           edgeId: edge.id,
           sourceNodeId: edge.fromNodeId,
           targetNodeId: edge.toNodeId,
-          type: edge.type ?? null,
-          metadataJson: { status: edge.status ?? 'active' },
+          type: edge.type ?? 'flow',
+          metadataJson,
         },
         update: {
           sourceNodeId: edge.fromNodeId,
           targetNodeId: edge.toNodeId,
-          type: edge.type ?? null,
-          metadataJson: { status: edge.status ?? 'active' },
+          type: edge.type ?? 'flow',
+          metadataJson,
           updatedAt: now,
         },
       })

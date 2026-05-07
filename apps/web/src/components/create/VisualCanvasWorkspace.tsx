@@ -141,6 +141,8 @@ interface CanvasEdge {
   fromNodeId: string
   toNodeId: string
   status: CanvasEdgeStatus
+  type?: string
+  metadataJson?: unknown
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
@@ -531,6 +533,7 @@ export function VisualCanvasWorkspace({
   const connectionDragRef = useRef<{
     nodeId: string
     direction: 'in' | 'out'
+    sourceHandle: 'left' | 'right'
     startClientX: number
     startClientY: number
   } | null>(null)
@@ -2496,6 +2499,7 @@ export function VisualCanvasWorkspace({
     connectionDragRef.current = {
       nodeId,
       direction,
+      sourceHandle: direction === 'out' ? 'right' : 'left',
       startClientX: event.clientX,
       startClientY: event.clientY,
     }
@@ -2548,6 +2552,59 @@ export function VisualCanvasWorkspace({
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom])
 
+  const findConnectorTarget = useCallback((clientX: number, clientY: number): { nodeId: string; handle: 'left' | 'right' } | null => {
+    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    const connector = element?.closest('[data-canvas-connector="true"]') as HTMLElement | null
+    const nodeId = connector?.dataset.nodeId
+    const handle = connector?.dataset.handle
+    if (!nodeId || (handle !== 'left' && handle !== 'right')) return null
+    return { nodeId, handle }
+  }, [])
+
+  const createEdgeFromConnectorDrag = useCallback((
+    drag: NonNullable<typeof connectionDragRef.current>,
+    target: { nodeId: string; handle: 'left' | 'right' },
+  ) => {
+    const sourceNodeId = drag.direction === 'out' ? drag.nodeId : target.nodeId
+    const targetNodeId = drag.direction === 'out' ? target.nodeId : drag.nodeId
+    const sourceHandle = drag.direction === 'out' ? drag.sourceHandle : target.handle
+    const targetHandle = drag.direction === 'out' ? target.handle : drag.sourceHandle
+
+    if (sourceNodeId === targetNodeId) {
+      showCanvasFeedback('不能连接到自身')
+      return false
+    }
+
+    const exists = latestEdgesRef.current.some((edge) => (
+      edge.fromNodeId === sourceNodeId && edge.toNodeId === targetNodeId
+    ))
+    if (exists) {
+      showCanvasFeedback('连接已存在')
+      return false
+    }
+
+    const edgeId = `edge-${sourceNodeId}-${targetNodeId}-${Date.now()}`
+    commitEdges((current) => [
+      ...current,
+      {
+        id: edgeId,
+        fromNodeId: sourceNodeId,
+        toNodeId: targetNodeId,
+        status: 'active',
+        type: 'flow',
+        metadataJson: {
+          sourceHandle,
+          targetHandle,
+          createdFrom: 'plus-handle',
+        },
+      },
+    ])
+    setActiveNodeId(targetNodeId)
+    showCanvasFeedback('已连接')
+    scheduleCanvasSave(0)
+    return true
+  }, [commitEdges, scheduleCanvasSave, showCanvasFeedback])
+
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const drag = connectionDragRef.current
@@ -2573,17 +2630,10 @@ export function VisualCanvasWorkspace({
         return
       }
 
-      const point = getViewportWorldPoint(event.clientX, event.clientY)
-      const size = getNodeSize('image')
-      const nextWorldX = drag.direction === 'out' ? point.x + 42 : point.x - size.width - 42
-      openNodeAddMenuAt(
-        drag.nodeId,
-        drag.direction,
-        event.clientX + 12,
-        event.clientY - NODE_ADD_MENU_HEIGHT / 2,
-        nextWorldX,
-        point.y - size.height / 2,
-      )
+      const target = findConnectorTarget(event.clientX, event.clientY)
+      if (target) {
+        createEdgeFromConnectorDrag(drag, target)
+      }
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -2594,7 +2644,7 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [getViewportWorldPoint, openNodeAddMenu, openNodeAddMenuAt])
+  }, [createEdgeFromConnectorDrag, findConnectorTarget, getViewportWorldPoint, openNodeAddMenu])
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
