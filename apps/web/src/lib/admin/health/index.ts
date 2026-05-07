@@ -2,7 +2,7 @@ import { ADMIN_PROVIDER_REGISTRY } from '@/lib/admin/provider-management'
 import { db } from '@/lib/db'
 import type { CurrentUser } from '@/lib/auth/current-user'
 
-export type HealthSectionStatus = 'ok' | 'warning' | 'error'
+export type HealthSectionStatus = 'ok' | 'warning' | 'error' | 'skipped'
 
 export interface HealthSection {
   status: HealthSectionStatus
@@ -85,12 +85,13 @@ async function safeSection<T extends HealthSection>(name: SectionName, check: ()
     const timeout = new Promise<HealthSection>((resolve) => {
       timer = setTimeout(() => {
         resolve({
-          status: 'warning',
-          message: '检查超时，可能是数据库连接池繁忙',
+          status: 'skipped',
+          message: '健康检查为保护连接池已跳过深度统计；业务页面不受影响。',
           details: {
             section: name,
             timeoutMs: SECTION_TIMEOUT_MS,
             degraded: true,
+            skipped: true,
             note: '数据库连接池繁忙，健康检查已降级为轻量检查。',
           },
         })
@@ -99,16 +100,25 @@ async function safeSection<T extends HealthSection>(name: SectionName, check: ()
     return await Promise.race([check(), timeout])
   } catch (error) {
     const message = safeMessage(error)
+    const poolBusy = isPoolBusyMessage(message)
     return {
-      status: isPoolBusyMessage(message) ? 'warning' : 'error',
-      message: isPoolBusyMessage(message)
-        ? '数据库连接池繁忙，健康检查已降级为轻量检查。'
+      status: poolBusy ? 'skipped' : 'error',
+      message: poolBusy
+        ? '健康检查为保护连接池已跳过深度统计；业务页面不受影响。'
         : `${name} 检查失败：${message}`,
-      details: { error: message, degraded: isPoolBusyMessage(message) },
+      details: { error: message, degraded: poolBusy, skipped: poolBusy },
     }
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+async function checkTablePresence(names: readonly string[]) {
+  return db.$queryRaw<Array<{ name: string; exists: boolean }>>`
+    select required.table_name as name,
+      to_regclass(format('%I.%I', 'public', required.table_name)) is not null as exists
+    from unnest(${names}::text[]) as required(table_name)
+  `
 }
 
 async function checkAuth(user: CurrentUser): Promise<HealthSection> {
@@ -130,28 +140,23 @@ async function checkAuth(user: CurrentUser): Promise<HealthSection> {
 }
 
 async function checkDatabase(): Promise<HealthSection> {
-  const tables = await db.$queryRaw<Array<{ name: string; exists: boolean }>>`
-    select required.table_name as name,
-      to_regclass(format('%I.%I', 'public', required.table_name)) is not null as exists
-    from (
-      values
-        ('Project'),
-        ('CanvasWorkflow'),
-        ('CanvasNode'),
-        ('CanvasEdge'),
-        ('CanvasComment'),
-        ('Asset'),
-        ('DeliveryShare'),
-        ('DeliveryItem'),
-        ('DeliveryComment'),
-        ('UserCreditWallet'),
-        ('CreditLedger'),
-        ('PaymentOrder'),
-        ('ProviderAccount'),
-        ('ProviderCostLedger'),
-        ('ProviderPricingRule')
-    ) as required(table_name)
-  `
+  const tables = await checkTablePresence([
+    'Project',
+    'CanvasWorkflow',
+    'CanvasNode',
+    'CanvasEdge',
+    'CanvasComment',
+    'Asset',
+    'DeliveryShare',
+    'DeliveryItem',
+    'DeliveryComment',
+    'UserCreditWallet',
+    'CreditLedger',
+    'PaymentOrder',
+    'ProviderAccount',
+    'ProviderCostLedger',
+    'ProviderPricingRule',
+  ])
   const missing = tables.filter((table) => !table.exists)
   return {
     status: missing.length ? 'warning' : 'ok',
@@ -179,47 +184,29 @@ async function checkProjects(user: CurrentUser): Promise<HealthSection> {
   }
 }
 
-async function checkCanvas(user: CurrentUser): Promise<HealthSection> {
-  const project = await db.project.findFirst({
-    where: { ownerId: user.id },
-    orderBy: { updatedAt: 'desc' },
-    select: { id: true, title: true },
-  })
-  if (!project) {
-    return {
-      status: 'warning',
-      message: '当前用户暂无项目，无法检查最近项目画布。',
-      details: { project: null, workflow: null, sampledNodeCount: 0, sampledEdgeCount: 0 },
-    }
+async function checkCanvas(): Promise<HealthSection> {
+  const tables = await checkTablePresence(['CanvasWorkflow', 'CanvasNode', 'CanvasEdge'])
+  const missing = tables.filter((table) => !table.exists)
+  let recentWorkflow: { id: string; projectId: string; updatedAt: Date } | null = null
+  if (!missing.length) {
+    recentWorkflow = await db.canvasWorkflow.findFirst({
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, projectId: true, updatedAt: true },
+    })
   }
-  const workflow = await db.canvasWorkflow.findFirst({
-    where: { projectId: project.id },
-    orderBy: { updatedAt: 'desc' },
-    select: { id: true, updatedAt: true },
-  })
-  if (!workflow) {
-    return {
-      status: 'warning',
-      message: '最近项目暂无 CanvasWorkflow。',
-      details: { project, workflow: null, sampledNodeCount: 0, sampledEdgeCount: 0 },
-    }
-  }
-  const nodes = await db.canvasNode.findMany({
-    where: { workflowId: workflow.id },
-    orderBy: { updatedAt: 'desc' },
-    take: 5,
-    select: { id: true, nodeId: true, kind: true, status: true, updatedAt: true },
-  })
-  const edges = await db.canvasEdge.findMany({
-    where: { workflowId: workflow.id },
-    orderBy: { updatedAt: 'desc' },
-    take: 5,
-    select: { id: true, edgeId: true, sourceNodeId: true, targetNodeId: true, updatedAt: true },
-  })
   return {
-    status: 'ok',
-    message: `最近项目画布可读：抽样 ${nodes.length} nodes / ${edges.length} edges。`,
-    details: { project, workflow, sampledNodeCount: nodes.length, sampledEdgeCount: edges.length, nodes, edges, countQueriesPerformed: false },
+    status: missing.length ? 'warning' : 'ok',
+    message: missing.length
+      ? '仅健康检查跳过，不代表画布业务失败。'
+      : '画布核心表存在，已跳过节点/连线深度统计。',
+    details: {
+      tables,
+      missingCount: missing.length,
+      recentWorkflow,
+      nodeEdgeReadSkipped: true,
+      countQueriesPerformed: false,
+      lightweight: true,
+    },
   }
 }
 
@@ -269,35 +256,24 @@ async function checkStorage(): Promise<HealthSection> {
 }
 
 async function checkPayments(): Promise<HealthSection> {
-  const recentPaymentOrders = await db.paymentOrder.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, provider: true, region: true, status: true, credits: true, amount: true, currency: true, createdAt: true, paidAt: true },
-  })
-  const recentCreditLedger = await db.creditLedger.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, type: true, delta: true, balance: true, refType: true, createdAt: true },
-  })
   const alipayMissing = missingKeys(ALIPAY_KEYS)
   const wechatMissing = missingKeys(WECHAT_PAY_KEYS)
   const simulationConfigured = process.env.PAYMENT_SANDBOX_SIMULATION_ENABLED !== undefined
   const status: HealthSectionStatus = alipayMissing.length === 0 || wechatMissing.length === 0 || simulationConfigured ? 'ok' : 'warning'
   return {
     status,
-    message: '支付环境和最近流水只读检查完成。',
+    message: '支付环境变量只读检查完成；已跳过订单/积分流水深度统计。',
     details: {
       alipay: { env: envStatus(ALIPAY_KEYS), missing: alipayMissing },
       wechatpay: { env: envStatus(WECHAT_PAY_KEYS), missing: wechatMissing },
       simulation: { key: 'PAYMENT_SANDBOX_SIMULATION_ENABLED', configured: simulationConfigured },
-      recentPaymentOrderCount: recentPaymentOrders.length,
-      recentCreditLedgerCount: recentCreditLedger.length,
-      recentPaymentOrders,
-      recentCreditLedger,
+      recentPaymentOrderRead: 'skipped',
+      recentCreditLedgerRead: 'skipped',
       countQueriesPerformed: false,
       createdOrder: false,
       calledPaymentProvider: false,
       simulatedPayment: false,
+      lightweight: true,
     },
   }
 }
@@ -330,59 +306,43 @@ async function checkProviders(): Promise<HealthSection> {
 }
 
 async function checkDelivery(): Promise<HealthSection> {
-  const recentShares = await db.deliveryShare.findMany({
-    orderBy: { updatedAt: 'desc' },
-    take: 3,
-    select: { id: true, projectId: true, status: true, token: true, title: true, updatedAt: true },
-  })
-  const recentItems = await db.deliveryItem.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, shareId: true, type: true, title: true, createdAt: true },
-  })
-  const recentComments = await db.deliveryComment.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, shareId: true, itemId: true, status: true, createdAt: true },
-  })
+  const tables = await checkTablePresence(['DeliveryShare', 'DeliveryItem', 'DeliveryComment'])
+  const missing = tables.filter((table) => !table.exists)
   return {
-    status: 'ok',
-    message: `交付数据可读：最近 ${recentShares.length} shares / ${recentItems.length} items / ${recentComments.length} comments。`,
+    status: missing.length ? 'warning' : 'ok',
+    message: missing.length
+      ? '仅健康检查跳过，不代表交付业务失败。'
+      : '交付核心表存在，已跳过分享/条目/评论深度统计。',
     details: {
-      recentShareCount: recentShares.length,
-      recentItemCount: recentItems.length,
-      recentCommentCount: recentComments.length,
-      recentShares: recentShares.map((share) => ({ ...share, hasToken: Boolean(share.token) })),
-      recentItems,
-      recentComments,
+      tables,
+      missingCount: missing.length,
+      recentShareRead: 'skipped',
+      deliveryItemRead: 'skipped',
+      deliveryCommentRead: 'skipped',
       countQueriesPerformed: false,
       openedPublicLink: false,
       createdShare: false,
+      lightweight: true,
     },
   }
 }
 
 async function checkComments(): Promise<HealthSection> {
-  const canvasComments = await db.canvasComment.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, projectId: true, workflowId: true, status: true, createdAt: true },
-  })
-  const deliveryComments = await db.deliveryComment.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 3,
-    select: { id: true, shareId: true, itemId: true, status: true, createdAt: true },
-  })
+  const tables = await checkTablePresence(['CanvasComment', 'DeliveryComment'])
+  const missing = tables.filter((table) => !table.exists)
   return {
-    status: 'ok',
-    message: `评论数据可读：最近 Canvas ${canvasComments.length} / Delivery ${deliveryComments.length}。`,
+    status: missing.length ? 'warning' : 'ok',
+    message: missing.length
+      ? '仅健康检查跳过，不代表评论业务失败。'
+      : '评论核心表存在，已跳过评论深度统计。',
     details: {
-      recentCanvasCommentCount: canvasComments.length,
-      recentDeliveryCommentCount: deliveryComments.length,
-      canvasComments,
-      deliveryComments,
+      tables,
+      missingCount: missing.length,
+      recentCanvasCommentRead: 'skipped',
+      recentDeliveryCommentRead: 'skipped',
       countQueriesPerformed: false,
       createdComment: false,
+      lightweight: true,
     },
   }
 }
@@ -394,7 +354,7 @@ export async function buildAdminHealth(user: CurrentUser): Promise<AdminHealthRe
   sections.auth = await safeSection('auth', () => checkAuth(user))
   sections.database = await safeSection('database', checkDatabase)
   sections.projects = await safeSection('projects', () => checkProjects(user))
-  sections.canvas = await safeSection('canvas', () => checkCanvas(user))
+  sections.canvas = await safeSection('canvas', checkCanvas)
   sections.assets = await safeSection('assets', () => checkAssets(user))
   sections.storage = await safeSection('storage', checkStorage)
   sections.payments = await safeSection('payments', checkPayments)

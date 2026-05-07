@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 
-type HealthStatus = 'ok' | 'warning' | 'error'
+type HealthStatus = 'ok' | 'warning' | 'error' | 'skipped'
 
 interface HealthSection {
   status: HealthStatus
@@ -63,12 +63,14 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 function statusClass(status: HealthStatus) {
   if (status === 'ok') return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
   if (status === 'warning') return 'border-amber-400/20 bg-amber-400/10 text-amber-200'
+  if (status === 'skipped') return 'border-white/15 bg-white/[0.06] text-white/60'
   return 'border-red-400/20 bg-red-400/10 text-red-200'
 }
 
 function statusLabel(status: HealthStatus) {
   if (status === 'ok') return 'ok'
   if (status === 'warning') return 'warning'
+  if (status === 'skipped') return 'skipped'
   return 'error'
 }
 
@@ -76,6 +78,7 @@ function getOverallStatus(sections?: Record<string, HealthSection>): HealthStatu
   const values = Object.values(sections ?? {})
   if (values.some((section) => section.status === 'error')) return 'error'
   if (values.some((section) => section.status === 'warning')) return 'warning'
+  if (values.some((section) => section.status === 'skipped')) return 'skipped'
   return 'ok'
 }
 
@@ -100,7 +103,7 @@ function countText(details: Record<string, unknown>) {
 
 function SectionCard({ name, section }: { name: string; section: HealthSection }) {
   const counts = countText(section.details)
-  const degraded = Boolean(section.details.degraded)
+  const degraded = Boolean(section.details.degraded || section.details.skipped || section.status === 'skipped')
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.035] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -113,8 +116,8 @@ function SectionCard({ name, section }: { name: string; section: HealthSection }
         </span>
       </div>
       {degraded ? (
-        <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-          数据库连接池繁忙，健康检查已降级为轻量检查。
+        <div className="mt-4 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-2 text-xs text-white/58">
+          健康检查为保护连接池已跳过深度统计；业务页面不受影响。
         </div>
       ) : null}
       {counts ? (
