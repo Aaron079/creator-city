@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { getGatewayPricing } from '@/lib/gateway/pricing'
+import { testChinaProviderConnection } from '@/lib/providers/china'
 import { checkEnvKeys } from '@/lib/providers/env'
 import {
   PROVIDER_GATEWAY_SCHEMA_MISSING_CODE,
@@ -16,7 +17,9 @@ export type AdminProviderCapability =
   | 'Image'
   | 'Video'
   | 'LLM'
+  | 'Reasoning'
   | 'Image-to-Video'
+  | 'Image Understanding'
   | 'Storage'
   | 'Payment'
 
@@ -29,6 +32,14 @@ type AdminProviderDefinition = {
   optionalEnvKeys?: string[]
   nodeType: string
   pricingProviderId?: string
+  defaultModel?: string
+  modelEnvKey?: string
+  defaultBaseUrl?: string
+  baseUrlEnvKey?: string
+  creditsPerCall?: number
+  estimatedCostUsd?: number
+  testMode?: 'env-only'
+  providerFamily?: 'china-ai'
   setupHint: string
 }
 
@@ -50,6 +61,11 @@ export type AdminProviderStatusRow = {
   envKey: string
   envKeys: string[]
   optionalEnvKeys: string[]
+  model: string
+  defaultModel: string | null
+  baseUrl: string | null
+  defaultBaseUrl: string | null
+  testMode: 'env-only'
   status: AdminProviderStatus
   configured: boolean
   enabled: boolean
@@ -206,6 +222,197 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     nodeType: 'payment',
     setupHint: '配置微信支付应用 ID、商户号和 API v3 key。',
   },
+  {
+    providerId: 'deepseek-text',
+    displayName: 'DeepSeek V4 Flash',
+    capability: ['Text', 'LLM'],
+    category: 'China',
+    envKeys: ['DEEPSEEK_API_KEY'],
+    optionalEnvKeys: ['DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL_TEXT'],
+    nodeType: 'text',
+    defaultModel: 'deepseek-v4-flash',
+    modelEnvKey: 'DEEPSEEK_MODEL_TEXT',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    baseUrlEnvKey: 'DEEPSEEK_BASE_URL',
+    creditsPerCall: 10,
+    estimatedCostUsd: 0.002,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 DEEPSEEK_API_KEY；可选 DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL_TEXT。',
+  },
+  {
+    providerId: 'deepseek-reasoner',
+    displayName: 'DeepSeek V4 Pro',
+    capability: ['Text', 'LLM', 'Reasoning'],
+    category: 'China',
+    envKeys: ['DEEPSEEK_API_KEY'],
+    optionalEnvKeys: ['DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL_REASONER'],
+    nodeType: 'text',
+    defaultModel: 'deepseek-v4-pro',
+    modelEnvKey: 'DEEPSEEK_MODEL_REASONER',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    baseUrlEnvKey: 'DEEPSEEK_BASE_URL',
+    creditsPerCall: 30,
+    estimatedCostUsd: 0.006,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 DEEPSEEK_API_KEY；可选 DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL_REASONER。',
+  },
+  {
+    providerId: 'kimi-text',
+    displayName: 'Kimi K2.6',
+    capability: ['Text', 'LLM'],
+    category: 'China',
+    envKeys: ['MOONSHOT_API_KEY'],
+    optionalEnvKeys: ['MOONSHOT_BASE_URL', 'KIMI_MODEL_TEXT'],
+    nodeType: 'text',
+    defaultModel: 'kimi-k2.6',
+    modelEnvKey: 'KIMI_MODEL_TEXT',
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
+    baseUrlEnvKey: 'MOONSHOT_BASE_URL',
+    creditsPerCall: 15,
+    estimatedCostUsd: 0.003,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 MOONSHOT_API_KEY；可选 MOONSHOT_BASE_URL 和 KIMI_MODEL_TEXT。',
+  },
+  {
+    providerId: 'kimi-multimodal',
+    displayName: 'Kimi K2.6 Multimodal',
+    capability: ['Text', 'LLM', 'Image Understanding'],
+    category: 'China',
+    envKeys: ['MOONSHOT_API_KEY'],
+    optionalEnvKeys: ['MOONSHOT_BASE_URL', 'KIMI_MODEL_MULTIMODAL'],
+    nodeType: 'text',
+    defaultModel: 'kimi-k2.6',
+    modelEnvKey: 'KIMI_MODEL_MULTIMODAL',
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
+    baseUrlEnvKey: 'MOONSHOT_BASE_URL',
+    creditsPerCall: 25,
+    estimatedCostUsd: 0.005,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 MOONSHOT_API_KEY；可选 MOONSHOT_BASE_URL 和 KIMI_MODEL_MULTIMODAL。',
+  },
+  {
+    providerId: 'kling-video',
+    displayName: 'Kling 3.0 Video',
+    capability: ['Video'],
+    category: 'China',
+    envKeys: ['KLING_ACCESS_KEY', 'KLING_SECRET_KEY'],
+    optionalEnvKeys: ['KLING_BASE_URL', 'KLING_MODEL_VIDEO'],
+    nodeType: 'video',
+    defaultModel: 'kling-v3',
+    modelEnvKey: 'KLING_MODEL_VIDEO',
+    baseUrlEnvKey: 'KLING_BASE_URL',
+    creditsPerCall: 200,
+    estimatedCostUsd: 0.05,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 KLING_ACCESS_KEY 和 KLING_SECRET_KEY；可选 KLING_BASE_URL 和 KLING_MODEL_VIDEO。',
+  },
+  {
+    providerId: 'kling-image',
+    displayName: 'Kling 3.0 Image',
+    capability: ['Image'],
+    category: 'China',
+    envKeys: ['KLING_ACCESS_KEY', 'KLING_SECRET_KEY'],
+    optionalEnvKeys: ['KLING_BASE_URL', 'KLING_MODEL_IMAGE'],
+    nodeType: 'image',
+    defaultModel: 'kling-image-v3',
+    modelEnvKey: 'KLING_MODEL_IMAGE',
+    baseUrlEnvKey: 'KLING_BASE_URL',
+    creditsPerCall: 40,
+    estimatedCostUsd: 0.005,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 KLING_ACCESS_KEY 和 KLING_SECRET_KEY；可选 KLING_BASE_URL 和 KLING_MODEL_IMAGE。',
+  },
+  {
+    providerId: 'kling-image-to-video',
+    displayName: 'Kling 3.0 Image-to-Video',
+    capability: ['Image-to-Video', 'Video'],
+    category: 'China',
+    envKeys: ['KLING_ACCESS_KEY', 'KLING_SECRET_KEY'],
+    optionalEnvKeys: ['KLING_BASE_URL', 'KLING_MODEL_I2V'],
+    nodeType: 'video',
+    defaultModel: 'kling-i2v-v3',
+    modelEnvKey: 'KLING_MODEL_I2V',
+    baseUrlEnvKey: 'KLING_BASE_URL',
+    creditsPerCall: 220,
+    estimatedCostUsd: 0.055,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 KLING_ACCESS_KEY 和 KLING_SECRET_KEY；可选 KLING_BASE_URL 和 KLING_MODEL_I2V。',
+  },
+  {
+    providerId: 'volcengine-seedance-video',
+    displayName: 'Volcengine Seedance 2.0 Video',
+    capability: ['Video'],
+    category: 'China',
+    envKeys: ['VOLCENGINE_ACCESS_KEY_ID', 'VOLCENGINE_SECRET_ACCESS_KEY'],
+    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDANCE_MODEL'],
+    nodeType: 'video',
+    defaultModel: 'seedance-2-0',
+    modelEnvKey: 'VOLCENGINE_SEEDANCE_MODEL',
+    baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
+    creditsPerCall: 200,
+    estimatedCostUsd: 0.05,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 VOLCENGINE_ACCESS_KEY_ID 和 VOLCENGINE_SECRET_ACCESS_KEY；可选 VOLCENGINE_REGION、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_SEEDANCE_MODEL。',
+  },
+  {
+    providerId: 'volcengine-seedream-image',
+    displayName: 'Volcengine Seedream 5.0 Image',
+    capability: ['Image'],
+    category: 'China',
+    envKeys: ['VOLCENGINE_ACCESS_KEY_ID', 'VOLCENGINE_SECRET_ACCESS_KEY'],
+    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDREAM_MODEL'],
+    nodeType: 'image',
+    defaultModel: 'seedream-5-0-lite',
+    modelEnvKey: 'VOLCENGINE_SEEDREAM_MODEL',
+    baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
+    creditsPerCall: 40,
+    estimatedCostUsd: 0.005,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 VOLCENGINE_ACCESS_KEY_ID 和 VOLCENGINE_SECRET_ACCESS_KEY；可选 VOLCENGINE_REGION、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_SEEDREAM_MODEL。',
+  },
+  {
+    providerId: 'jimeng-image',
+    displayName: 'Jimeng Image 4.0',
+    capability: ['Image'],
+    category: 'China',
+    envKeys: ['JIMENG_ACCESS_KEY_ID', 'JIMENG_SECRET_ACCESS_KEY'],
+    optionalEnvKeys: ['JIMENG_BASE_URL', 'JIMENG_MODEL_IMAGE'],
+    nodeType: 'image',
+    defaultModel: 'jimeng-image-4-0',
+    modelEnvKey: 'JIMENG_MODEL_IMAGE',
+    baseUrlEnvKey: 'JIMENG_BASE_URL',
+    creditsPerCall: 40,
+    estimatedCostUsd: 0.005,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 JIMENG_ACCESS_KEY_ID 和 JIMENG_SECRET_ACCESS_KEY；可选 JIMENG_BASE_URL 和 JIMENG_MODEL_IMAGE。',
+  },
+  {
+    providerId: 'jimeng-video',
+    displayName: 'Jimeng Video 3.0 Pro',
+    capability: ['Video', 'Image-to-Video'],
+    category: 'China',
+    envKeys: ['JIMENG_ACCESS_KEY_ID', 'JIMENG_SECRET_ACCESS_KEY'],
+    optionalEnvKeys: ['JIMENG_BASE_URL', 'JIMENG_MODEL_VIDEO'],
+    nodeType: 'video',
+    defaultModel: 'jimeng-video-3-0-pro',
+    modelEnvKey: 'JIMENG_MODEL_VIDEO',
+    baseUrlEnvKey: 'JIMENG_BASE_URL',
+    creditsPerCall: 220,
+    estimatedCostUsd: 0.055,
+    testMode: 'env-only',
+    providerFamily: 'china-ai',
+    setupHint: '配置 JIMENG_ACCESS_KEY_ID 和 JIMENG_SECRET_ACCESS_KEY；可选 JIMENG_BASE_URL 和 JIMENG_MODEL_VIDEO。',
+  },
 ]
 
 export function getAdminProviderDefinition(providerId: string) {
@@ -341,18 +548,40 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
 export async function testProviderConnection(providerId: string) {
   const definition = getAdminProviderDefinition(providerId)
   if (!definition) {
-    return { ok: false, status: 'error' as const, message: `Unknown providerId: ${providerId}`, missingEnvKeys: [] }
+    return {
+      ok: false,
+      status: 'error' as const,
+      message: `Unknown providerId: ${providerId}`,
+      configured: false,
+      missingEnv: [],
+      missingEnvKeys: [],
+      model: '',
+      baseUrl: null,
+      checkedAt: new Date().toISOString(),
+      mode: 'env-only' as const,
+      testMode: 'env-only' as const,
+    }
   }
 
-  const envCheck = checkEnvKeys(definition.envKeys)
+  const chinaResult = definition.providerFamily === 'china-ai' ? testChinaProviderConnection(providerId) : null
+  const envCheck = chinaResult
+    ? { configured: chinaResult.configured, missing: chinaResult.missingEnv }
+    : checkEnvKeys(definition.envKeys)
+  const model = chinaResult?.model ?? getDefinitionModel(definition)
+  const baseUrl = chinaResult?.baseUrl ?? getDefinitionBaseUrl(definition)
   if (!envCheck.configured) {
     return {
       ok: false,
       status: 'not-configured' as const,
       message: `Missing environment variables: ${envCheck.missing.join(', ')}`,
+      configured: false,
+      missingEnv: envCheck.missing,
       missingEnvKeys: envCheck.missing,
+      model,
+      baseUrl,
       checkedAt: new Date().toISOString(),
       mode: 'env-only',
+      testMode: 'env-only',
     }
   }
 
@@ -360,15 +589,22 @@ export async function testProviderConnection(providerId: string) {
     ok: true,
     status: 'configured' as const,
     message: 'Lightweight environment check passed. No generation, payment, credit, or upload call was made.',
+    configured: true,
+    missingEnv: [],
     missingEnvKeys: [],
+    model,
+    baseUrl,
     checkedAt: new Date().toISOString(),
     mode: 'env-only',
+    testMode: 'env-only',
   }
 }
 
 function toProviderStatusRow(definition: AdminProviderDefinition, account?: AdminProviderAccountRow): AdminProviderStatusRow {
   const envCheck = checkEnvKeys(definition.envKeys)
   const pricing = getGatewayPricing(definition.pricingProviderId ?? definition.providerId, definition.nodeType)
+  const model = getDefinitionModel(definition)
+  const baseUrl = getDefinitionBaseUrl(definition)
   const configured = envCheck.configured
   const enabled = configured ? account?.isActive ?? true : false
   const available = configured && enabled
@@ -383,13 +619,18 @@ function toProviderStatusRow(definition: AdminProviderDefinition, account?: Admi
     envKey: definition.envKeys.join(', '),
     envKeys: definition.envKeys,
     optionalEnvKeys: definition.optionalEnvKeys ?? [],
+    model,
+    defaultModel: definition.defaultModel ?? null,
+    baseUrl,
+    defaultBaseUrl: definition.defaultBaseUrl ?? null,
+    testMode: definition.testMode ?? 'env-only',
     status,
     configured,
     enabled,
     available,
     availabilityStatus,
-    estimatedCost: pricing.estimatedCostUsd,
-    creditsPerCall: pricing.creditsPerCall,
+    estimatedCost: definition.estimatedCostUsd ?? pricing.estimatedCostUsd,
+    creditsPerCall: definition.creditsPerCall ?? pricing.creditsPerCall,
     monthlyBudgetUsd: account?.monthlyBudgetUsd != null ? Number(account.monthlyBudgetUsd) : null,
     currentMonthCostUsd: account?.currentMonthCostUsd != null ? Number(account.currentMonthCostUsd) : 0,
     budgetMonth: account?.budgetMonth ?? null,
@@ -402,4 +643,15 @@ function toProviderStatusRow(definition: AdminProviderDefinition, account?: Admi
     reason,
     setupHint: definition.setupHint,
   }
+}
+
+function getDefinitionModel(definition: AdminProviderDefinition) {
+  if (!definition.defaultModel) return ''
+  return definition.modelEnvKey ? process.env[definition.modelEnvKey] || definition.defaultModel : definition.defaultModel
+}
+
+function getDefinitionBaseUrl(definition: AdminProviderDefinition) {
+  if (!definition.baseUrlEnvKey && !definition.defaultBaseUrl) return null
+  const value = definition.baseUrlEnvKey ? process.env[definition.baseUrlEnvKey] : undefined
+  return value || definition.defaultBaseUrl || null
 }

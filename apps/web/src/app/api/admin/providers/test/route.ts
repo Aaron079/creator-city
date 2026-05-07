@@ -32,9 +32,14 @@ export async function POST(request: Request) {
       ok: result.ok,
       status: result.status,
       message: result.message,
+      configured: result.configured,
+      missingEnv: result.missingEnv,
       missingEnvKeys: result.missingEnvKeys,
+      model: result.model,
+      baseUrl: result.baseUrl,
       checkedAt: result.checkedAt,
       mode: result.mode,
+      testMode: result.testMode,
     })
   } catch (error) {
     console.error('[admin/providers/test]', error)

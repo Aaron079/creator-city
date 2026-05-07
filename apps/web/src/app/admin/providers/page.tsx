@@ -16,6 +16,11 @@ interface ProviderRow {
   envKey: string
   envKeys: string[]
   optionalEnvKeys: string[]
+  model: string
+  defaultModel: string | null
+  baseUrl: string | null
+  defaultBaseUrl: string | null
+  testMode: 'env-only'
   status: ProviderStatus
   configured: boolean
   enabled: boolean
@@ -61,9 +66,14 @@ interface TestResponse {
   ok?: boolean
   status?: ProviderStatus
   message?: string
+  configured?: boolean
+  missingEnv?: string[]
   missingEnvKeys?: string[]
+  model?: string
+  baseUrl?: string | null
   checkedAt?: string
   mode?: string
+  testMode?: string
   errorCode?: string
 }
 
@@ -254,7 +264,7 @@ export default function AdminProvidersPage() {
               status: data.status ?? item.status,
               lastTestStatus: data.ok ? 'passed' : 'failed',
               lastCheckedAt: data.checkedAt ?? new Date().toISOString(),
-              missingEnvKeys: data.missingEnvKeys ?? item.missingEnvKeys,
+              missingEnvKeys: data.missingEnvKeys ?? data.missingEnv ?? item.missingEnvKeys,
             }
           : item
       )))
@@ -278,7 +288,7 @@ export default function AdminProvidersPage() {
     }
   }
 
-  const categoryTabs = [ALL_CATEGORIES, ...categories, 'LLM', 'Image-to-Video']
+  const categoryTabs = [ALL_CATEGORIES, 'China', 'Text', 'Image', 'Video', 'LLM', 'Image-to-Video', 'Storage', 'Payment', ...categories]
     .filter((value, index, array) => array.indexOf(value) === index)
 
   return (
@@ -345,11 +355,12 @@ export default function AdminProvidersPage() {
           <p className="mt-8 text-sm text-white/40">加载中...</p>
         ) : (
           <section className="mt-6 overflow-x-auto rounded-lg border border-white/10">
-            <table className="w-full min-w-[1180px] text-left text-sm text-white/70">
+            <table className="w-full min-w-[1360px] text-left text-sm text-white/70">
               <thead>
                 <tr className="border-b border-white/10 bg-white/[0.04] text-xs text-white/42">
                   <th className="px-4 py-3">Provider</th>
                   <th className="px-4 py-3">Capability</th>
+                  <th className="px-4 py-3">Model</th>
                   <th className="px-4 py-3">Env</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Enabled</th>
@@ -376,6 +387,10 @@ export default function AdminProvidersPage() {
                             <span key={item} className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs text-white/62">{item}</span>
                           ))}
                         </div>
+                      </td>
+                      <td className="max-w-[190px] px-4 py-3">
+                        <code className="block break-words text-xs text-white/56">{provider.model || 'none'}</code>
+                        <div className="mt-1 text-xs text-white/30">{provider.testMode}</div>
                       </td>
                       <td className="max-w-[260px] px-4 py-3">
                         <code className="block whitespace-pre-wrap break-words text-xs text-white/46">{provider.envKey || 'none'}</code>
@@ -408,8 +423,11 @@ export default function AdminProvidersPage() {
                         <div className="mt-1 max-w-[220px] text-xs text-white/34">
                           {testResult?.message ?? (provider.lastCheckedAt ? new Date(provider.lastCheckedAt).toLocaleString('zh-CN') : 'never')}
                         </div>
-                        {testResult?.mode ? (
-                          <div className="mt-1 text-xs text-white/30">{testResult.mode}</div>
+                        {testResult?.model ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-white/34">model: {testResult.model}</div>
+                        ) : null}
+                        {testResult?.mode || testResult?.testMode ? (
+                          <div className="mt-1 text-xs text-white/30">{testResult.mode ?? testResult.testMode}</div>
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
@@ -436,7 +454,7 @@ export default function AdminProvidersPage() {
                 })}
                 {visibleProviders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-white/36">没有匹配的 Provider。</td>
+                    <td colSpan={10} className="px-4 py-8 text-center text-white/36">没有匹配的 Provider。</td>
                   </tr>
                 ) : null}
               </tbody>
