@@ -93,6 +93,21 @@ function getCommentsCacheKey(projectId: string) {
   return `creator-city:canvas-comments-cache:${projectId}`
 }
 
+function getPendingCommentsKey(projectId: string) {
+  return `creator-city:canvas-comments-pending:${projectId}`
+}
+
+function createLocalCommentId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `local-${crypto.randomUUID()}`
+  }
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isPendingCanvasComment(comment: CanvasComment) {
+  return comment.id.startsWith('local-') || comment.status === 'pending' || comment.status === 'syncing'
+}
+
 function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
   if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
   const name = `create:${label}`
@@ -455,6 +470,7 @@ export function VisualCanvasWorkspace({
   const [comments, setComments] = useState<CanvasComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentsError, setCommentsError] = useState('')
+  const [commentsSyncing, setCommentsSyncing] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
@@ -609,6 +625,29 @@ export function VisualCanvasWorkspace({
     }
   }, [])
 
+  const readPendingComments = useCallback((id: string): CanvasComment[] => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = window.localStorage.getItem(getPendingCommentsKey(id))
+      const parsed = raw ? JSON.parse(raw) as { comments?: CanvasComment[] } : null
+      return Array.isArray(parsed?.comments) ? parsed.comments : []
+    } catch {
+      return []
+    }
+  }, [])
+
+  const writePendingComments = useCallback((id: string, nextComments: CanvasComment[]) => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(getPendingCommentsKey(id), JSON.stringify({
+        comments: nextComments,
+        updatedAt: new Date().toISOString(),
+      }))
+    } catch {
+      // Pending comments stay visible in memory if localStorage is unavailable.
+    }
+  }, [])
+
   const writeCommentsCache = useCallback((id: string, nextComments: CanvasComment[]) => {
     if (typeof window === 'undefined') return
     try {
@@ -619,6 +658,17 @@ export function VisualCanvasWorkspace({
     } catch {
       // Comments are persisted in the database; this cache only speeds panel open.
     }
+  }, [])
+
+  const mergeComments = useCallback((serverComments: CanvasComment[], pendingComments: CanvasComment[]) => {
+    const seen = new Set<string>()
+    return [...pendingComments, ...serverComments]
+      .filter((comment) => {
+        if (seen.has(comment.id)) return false
+        seen.add(comment.id)
+        return true
+      })
+      .sort((left, right) => right.createdAt - left.createdAt)
   }, [])
 
   const writeCanvasCache = useCallback((args?: {
@@ -726,7 +776,8 @@ export function VisualCanvasWorkspace({
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         credentials: 'include',
         signal: controller.signal,
         body: JSON.stringify({
@@ -738,7 +789,8 @@ export function VisualCanvasWorkspace({
           deletedEdgeIds: deletedEdgeIdsRef.current,
         }),
       })
-      const data = await response.json().catch(() => ({})) as {
+      const raw = await response.text()
+      let data: {
         errorCode?: string
         message?: string
         success?: boolean
@@ -746,11 +798,14 @@ export function VisualCanvasWorkspace({
         skipped?: boolean
         reason?: string
       }
+      try { data = JSON.parse(raw) as typeof data } catch { data = {} }
       if (response.status === 401) {
         router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${projectId}`)}`)
         return
       }
-      if (!response.ok) throw new Error(data.message ?? '保存画布失败。')
+      if (!response.ok || data.success === false) {
+        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '保存画布失败。'}` : data.message ?? '保存画布失败。')
+      }
       if (data.skipped) {
         setSaveStatus('saved')
         setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : 'Saved')
@@ -765,8 +820,9 @@ export function VisualCanvasWorkspace({
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') return
       writeLocalDraft()
-      setSaveStatus('local-draft')
-      setSaveMessage(error instanceof Error ? error.message : '已保存到本地草稿，网络恢复后会继续同步')
+      setSaveStatus('failed')
+      const detail = error instanceof Error ? error.message : '保存失败'
+      setSaveMessage(`${detail}；已保留离线草稿`)
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
@@ -835,6 +891,14 @@ export function VisualCanvasWorkspace({
       void saveCanvas()
     }, delay)
   }, [projectId, saveCanvas, workflowId])
+
+  const handleManualSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    void saveCanvas()
+  }, [saveCanvas])
 
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
@@ -1546,6 +1610,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
   }, [nodes])
+  const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -1893,23 +1958,29 @@ export function VisualCanvasWorkspace({
   }, [handleSelectTemplate, nodes.length, searchParamTemplateId])
 
   const loadCanvasComments = useCallback(async () => {
-    if (!projectId || !workflowId) return
+    if (!projectId) return
     const cachedComments = readCommentsCache(projectId)
-    if (cachedComments) setComments(cachedComments)
+    const pendingComments = readPendingComments(projectId)
+    if (cachedComments || pendingComments.length) {
+      setComments(mergeComments(cachedComments ?? [], pendingComments))
+    }
     setCommentsLoading(true)
     setCommentsError('')
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments?workflowId=${encodeURIComponent(workflowId)}`, {
+      const workflowQuery = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : ''
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments${workflowQuery}`, {
         credentials: 'include',
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data = await response.json().catch(() => ({})) as {
+      const raw = await response.text()
+      let data: {
         success?: boolean
         errorCode?: string
         message?: string
         comments?: Array<{ id: string; body: string; status?: string; createdAt: string }>
       }
+      try { data = JSON.parse(raw) as typeof data } catch { data = {} }
       if (!response.ok || data.success === false) {
         throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '加载评论失败'}` : data.message ?? '加载评论失败')
       }
@@ -1917,61 +1988,131 @@ export function VisualCanvasWorkspace({
         id: comment.id,
         text: comment.body,
         status: comment.status,
+        authorName: '我',
         createdAt: new Date(comment.createdAt).getTime(),
       }))
-      setComments(nextComments)
+      const stillPending = readPendingComments(projectId)
+      setComments(mergeComments(nextComments, stillPending))
       writeCommentsCache(projectId, nextComments)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '加载评论失败'
+      const message = error instanceof Error ? error.message : '加载评论失败，本地评论已保留。'
       setCommentsError(message)
       showCanvasFeedback(message)
     } finally {
       setCommentsLoading(false)
     }
-  }, [projectId, readCommentsCache, showCanvasFeedback, workflowId, writeCommentsCache])
+  }, [mergeComments, projectId, readCommentsCache, readPendingComments, showCanvasFeedback, workflowId, writeCommentsCache])
+
+  const postCanvasComment = useCallback(async (comment: CanvasComment) => {
+    if (!projectId) throw new Error('项目仍在加载，请稍后再评论。')
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ workflowId: workflowId || undefined, body: comment.text }),
+    })
+    const raw = await response.text()
+    let data: {
+      success?: boolean
+      errorCode?: string
+      message?: string
+      comment?: { id: string; body: string; status?: string; createdAt: string }
+    }
+    try { data = JSON.parse(raw) as typeof data } catch { data = {} }
+    if (!response.ok || data.success === false || !data.comment) {
+      throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '保存评论失败'}` : data.message ?? '保存评论失败')
+    }
+    return {
+      id: data.comment.id,
+      text: data.comment.body,
+      status: data.comment.status ?? 'open',
+      authorName: '我',
+      createdAt: new Date(data.comment.createdAt).getTime(),
+    } satisfies CanvasComment
+  }, [projectId, workflowId])
 
   const handleAddComment = useCallback(async (text: string) => {
-    if (!projectId || !workflowId) {
+    if (!projectId) {
       setCommentsError('项目仍在加载，请稍后再评论。')
       return false
     }
     setCommentsError('')
+    const localComment: CanvasComment = {
+      id: createLocalCommentId(),
+      text,
+      status: 'syncing',
+      authorName: '我',
+      createdAt: Date.now(),
+    }
+    const pendingComments = [localComment, ...readPendingComments(projectId)]
+    writePendingComments(projectId, pendingComments)
+    setComments((current) => mergeComments(current, [localComment]))
+
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ workflowId, body: text }),
-      })
-      const data = await response.json().catch(() => ({})) as {
-        success?: boolean
-        errorCode?: string
-        message?: string
-        comment?: { id: string; body: string; status?: string; createdAt: string }
-      }
-      if (!response.ok || data.success === false || !data.comment) {
-        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '保存评论失败'}` : data.message ?? '保存评论失败')
-      }
-      const savedComment: CanvasComment = {
-        id: data.comment.id,
-        text: data.comment.body,
-        status: data.comment.status,
-        createdAt: new Date(data.comment.createdAt).getTime(),
-      }
+      const savedComment = await postCanvasComment(localComment)
+      const nextPending = readPendingComments(projectId).filter((comment) => comment.id !== localComment.id)
+      writePendingComments(projectId, nextPending)
       setComments((current) => {
-        const nextComments = [savedComment, ...current.filter((comment) => comment.id !== savedComment.id)]
-        writeCommentsCache(projectId, nextComments)
+        const nextComments = [savedComment, ...current.filter((comment) => comment.id !== localComment.id && comment.id !== savedComment.id)]
+          .sort((left, right) => right.createdAt - left.createdAt)
+        writeCommentsCache(projectId, nextComments.filter((comment) => !isPendingCanvasComment(comment)))
         return nextComments
       })
       showCanvasFeedback('评论已保存。')
       return true
     } catch (error) {
-      const message = error instanceof Error ? error.message : '保存评论失败'
+      const pendingComment = { ...localComment, status: 'pending' }
+      writePendingComments(projectId, readPendingComments(projectId).map((comment) => (
+        comment.id === localComment.id ? pendingComment : comment
+      )))
+      setComments((current) => current.map((comment) => (
+        comment.id === localComment.id ? pendingComment : comment
+      )))
+      const detail = error instanceof Error ? error.message : '网络请求失败'
+      const message = `评论已保存到本地，网络恢复后可重试同步。${detail ? `（${detail}）` : ''}`
       setCommentsError(message)
       showCanvasFeedback(message)
-      return false
+      return true
     }
-  }, [projectId, showCanvasFeedback, workflowId, writeCommentsCache])
+  }, [mergeComments, postCanvasComment, projectId, readPendingComments, showCanvasFeedback, writeCommentsCache, writePendingComments])
+
+  const retryPendingComments = useCallback(async () => {
+    if (!projectId) return
+    const pendingComments = readPendingComments(projectId)
+    if (!pendingComments.length) return
+    setCommentsSyncing(true)
+    setCommentsError('')
+    setComments((current) => current.map((comment) => (
+      isPendingCanvasComment(comment) ? { ...comment, status: 'syncing' } : comment
+    )))
+    const remaining: CanvasComment[] = []
+    const saved: CanvasComment[] = []
+    for (const comment of pendingComments) {
+      try {
+        saved.push(await postCanvasComment({ ...comment, status: 'syncing' }))
+      } catch {
+        remaining.push({ ...comment, status: 'pending' })
+      }
+    }
+    writePendingComments(projectId, remaining)
+    setComments((current) => {
+      const savedSourceIds = new Set(pendingComments.map((comment) => comment.id))
+      const savedIds = new Set(saved.map((comment) => comment.id))
+      const nextComments = [...saved, ...remaining, ...current.filter((comment) => !savedSourceIds.has(comment.id) && !savedIds.has(comment.id))]
+        .sort((left, right) => right.createdAt - left.createdAt)
+      writeCommentsCache(projectId, nextComments.filter((comment) => !isPendingCanvasComment(comment)))
+      return nextComments
+    })
+    if (remaining.length) {
+      setCommentsError('部分评论仍未同步，已继续保存在本地。')
+      showCanvasFeedback('部分评论仍未同步，已继续保存在本地。')
+    } else {
+      setCommentsError('')
+      showCanvasFeedback('待同步评论已保存。')
+    }
+    setCommentsSyncing(false)
+  }, [postCanvasComment, projectId, readPendingComments, showCanvasFeedback, writeCommentsCache, writePendingComments])
 
   useEffect(() => {
     if (!commentsEnabled) return
@@ -2788,6 +2929,21 @@ export function VisualCanvasWorkspace({
           </button>
           <button
             type="button"
+            className="canvas-secondary-button"
+            title={saveMessage || '立即保存画布'}
+            disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
+            onClick={handleManualSave}
+          >
+            {saveStatus === 'saving'
+              ? '保存中...'
+              : saveStatus === 'saved'
+                ? '已保存'
+                : saveStatus === 'failed'
+                  ? '保存失败，重试'
+                  : '保存'}
+          </button>
+          <button
+            type="button"
             onClick={() => setNewProjectOpen(true)}
             className="canvas-secondary-button"
             title="新建项目"
@@ -2959,7 +3115,10 @@ export function VisualCanvasWorkspace({
           comments={comments}
           loading={commentsLoading}
           error={commentsError}
+          pendingCount={pendingCommentCount}
+          syncingPending={commentsSyncing}
           onAddComment={handleAddComment}
+          onRetrySync={retryPendingComments}
           onClose={() => {
             setCommentsEnabled(false)
             showCanvasFeedback('评论模式已关闭。')

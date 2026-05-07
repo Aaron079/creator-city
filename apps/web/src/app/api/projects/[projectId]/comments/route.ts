@@ -6,6 +6,7 @@ import { isProjectCanvasSchemaMissing } from '@/lib/projects/api-errors'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 interface RouteContext {
   params: { projectId: string }
@@ -82,10 +83,10 @@ function mapComment(comment: Prisma.CanvasCommentGetPayload<{ select: typeof COM
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
-  const user = await getCurrentUser()
-  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
-
   try {
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+
     const project = await requireProjectAccess(params.projectId, user.id)
     if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return jsonError('FORBIDDEN', '无权访问该项目。', 403)
@@ -113,33 +114,33 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
     const message = error instanceof Error ? error.message : String(error)
     console.error('[canvas-comments-api] list failed', { projectId: params.projectId, error })
-    return jsonError('COMMENTS_LOAD_FAILED', '加载画布评论失败。', 500, message)
+    return jsonError('COMMENTS_LOAD_FAILED', `加载画布评论失败：${message}`, 500)
   }
 }
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
-  const user = await getCurrentUser()
-  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
-
-  let body: {
-    workflowId?: string
-    nodeId?: string | null
-    body?: string
-    x?: number | null
-    y?: number | null
-    metadata?: unknown
-  }
   try {
-    body = await request.json() as typeof body
-  } catch {
-    return jsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
-  }
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
-  const text = body.body?.trim()
-  if (!text) return jsonError('VALIDATION_FAILED', '评论内容不能为空。', 400)
-  if (text.length > 2000) return jsonError('VALIDATION_FAILED', '评论内容不能超过 2000 字。', 400)
+    let body: {
+      workflowId?: string
+      nodeId?: string | null
+      body?: string
+      x?: number | null
+      y?: number | null
+      metadata?: unknown
+    }
+    try {
+      body = await request.json() as typeof body
+    } catch {
+      return jsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
+    }
 
-  try {
+    const text = body.body?.trim()
+    if (!text) return jsonError('VALIDATION_FAILED', '评论内容不能为空。', 400)
+    if (text.length > 2000) return jsonError('VALIDATION_FAILED', '评论内容不能超过 2000 字。', 400)
+
     const project = await requireProjectAccess(params.projectId, user.id, true)
     if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return jsonError('FORBIDDEN', '无权评论该项目。', 403)
@@ -172,6 +173,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
     const message = error instanceof Error ? error.message : String(error)
     console.error('[canvas-comments-api] create failed', { projectId: params.projectId, error })
-    return jsonError('COMMENT_CREATE_FAILED', '保存画布评论失败。', 500, message)
+    return jsonError('COMMENT_CREATE_FAILED', `保存画布评论失败：${message}`, 500)
   }
 }

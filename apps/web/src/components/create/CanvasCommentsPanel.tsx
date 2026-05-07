@@ -7,13 +7,17 @@ export interface CanvasComment {
   text: string
   createdAt: number
   status?: string
+  authorName?: string
 }
 
 interface CanvasCommentsPanelProps {
   comments: CanvasComment[]
   loading?: boolean
   error?: string
+  pendingCount?: number
+  syncingPending?: boolean
   onAddComment: (text: string) => Promise<boolean> | boolean
+  onRetrySync?: () => void
   onClose: () => void
 }
 
@@ -21,7 +25,10 @@ export function CanvasCommentsPanel({
   comments,
   loading = false,
   error,
+  pendingCount = 0,
+  syncingPending = false,
   onAddComment,
+  onRetrySync,
   onClose,
 }: CanvasCommentsPanelProps) {
   const [draft, setDraft] = useState('')
@@ -66,12 +73,34 @@ export function CanvasCommentsPanel({
         </button>
       </div>
 
+      {pendingCount > 0 ? (
+        <div className="canvas-comment-compose">
+          <div className="canvas-panel-empty">有 {pendingCount} 条评论待同步。</div>
+          <button
+            type="button"
+            className="canvas-panel-primary"
+            disabled={syncingPending}
+            onClick={onRetrySync}
+          >
+            {syncingPending ? '同步中...' : '重试同步'}
+          </button>
+        </div>
+      ) : null}
+
       <div className="canvas-panel-list">
         {loading ? <div className="canvas-panel-empty">正在加载评论...</div> : null}
         {error ? <div className="canvas-panel-empty">{error}</div> : null}
         {comments.length > 0 ? comments.map((comment) => (
           <div key={comment.id} className="canvas-comment-item">
-            <div className="canvas-comment-meta">{comment.status === 'open' ? '已保存' : comment.status ?? '评论'} · {new Date(comment.createdAt).toLocaleTimeString()}</div>
+            <div className="canvas-comment-meta">
+              {comment.authorName ?? '我'} · {comment.status === 'open'
+                ? '已保存'
+                : comment.status === 'syncing'
+                  ? '同步中'
+                  : comment.status === 'pending'
+                    ? '待同步'
+                    : comment.status ?? '评论'} · {new Date(comment.createdAt).toLocaleTimeString()}
+            </div>
             <div className="canvas-comment-copy">{comment.text}</div>
           </div>
         )) : (

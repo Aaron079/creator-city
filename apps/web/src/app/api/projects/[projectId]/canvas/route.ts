@@ -11,6 +11,7 @@ import { mapCanvasEdge, mapCanvasNode } from '@/lib/projects/canvas-mappers'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 interface RouteContext {
   params: { projectId: string }
@@ -243,7 +244,17 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteContext) {
-  const user = await getCurrentUser()
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[canvas-api] auth failed before save', { projectId: params.projectId, error })
+    return NextResponse.json(
+      { success: false, errorCode: 'CANVAS_SAVE_FAILED', message: `保存画布失败：${msg}` },
+      { status: 500 },
+    )
+  }
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 
   let body: {
@@ -281,11 +292,15 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       : null
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
     if (body.nodes.length === 0 && !body.clearCanvas) {
+      const savedAt = new Date().toISOString()
       return NextResponse.json({
         success: true,
         skipped: true,
         reason: 'EMPTY_NODES_IGNORED',
         workflowId: workflow.id,
+        savedAt,
+        nodeCount: 0,
+        edgeCount: body.edges.length,
       })
     }
 
