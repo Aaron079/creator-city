@@ -80,7 +80,18 @@ function getOverallStatus(sections?: Record<string, HealthSection>): HealthStatu
 }
 
 function countText(details: Record<string, unknown>) {
-  const countKeys = ['count', 'nodeCount', 'edgeCount', 'shareCount', 'itemCount', 'commentCount', 'canvasCommentCount', 'deliveryCommentCount', 'paymentOrderCount', 'creditLedgerCount']
+  const countKeys = [
+    'recentCount',
+    'sampledNodeCount',
+    'sampledEdgeCount',
+    'recentPaymentOrderCount',
+    'recentCreditLedgerCount',
+    'recentShareCount',
+    'recentItemCount',
+    'recentCommentCount',
+    'recentCanvasCommentCount',
+    'recentDeliveryCommentCount',
+  ]
   return countKeys
     .filter((key) => typeof details[key] === 'number')
     .map((key) => `${key}: ${details[key]}`)
@@ -89,6 +100,7 @@ function countText(details: Record<string, unknown>) {
 
 function SectionCard({ name, section }: { name: string; section: HealthSection }) {
   const counts = countText(section.details)
+  const degraded = Boolean(section.details.degraded)
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.035] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -100,6 +112,11 @@ function SectionCard({ name, section }: { name: string; section: HealthSection }
           {statusLabel(section.status)}
         </span>
       </div>
+      {degraded ? (
+        <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+          数据库连接池繁忙，健康检查已降级为轻量检查。
+        </div>
+      ) : null}
       {counts ? (
         <div className="mt-4 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-xs text-white/55">
           {counts}
@@ -157,7 +174,7 @@ export default function AdminHealthPage() {
             <div className="text-[11px] uppercase tracking-[0.22em] text-white/35">Regression Center</div>
             <h1 className="mt-2 text-2xl font-semibold text-white">System Health / 系统健康检查</h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-white/50">
-              本页面只读，不会触发生成、支付、扣费或写入数据。
+              健康检查为只读轻量诊断，不触发生成、支付、上传或写入。
             </p>
           </div>
           <button

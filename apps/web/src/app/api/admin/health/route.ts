@@ -12,7 +12,7 @@ export async function GET() {
       return NextResponse.json({
         success: false,
         errorCode: 'UNAUTHORIZED',
-        message: '请先登录。',
+        message: '请先登录',
       }, { status: 401 })
     }
     if (user.role !== 'ADMIN') {
@@ -29,7 +29,7 @@ export async function GET() {
     console.error('[admin/health]', error)
     return NextResponse.json({
       success: false,
-      errorCode: 'ADMIN_HEALTH_FAILED',
+      errorCode: 'HEALTH_CHECK_FAILED',
       message: error instanceof Error ? error.message : '系统健康检查失败。',
     }, { status: 500 })
   }

@@ -1,4 +1,4 @@
-import { buildProviderManagementStatus } from '@/lib/admin/provider-management'
+import { ADMIN_PROVIDER_REGISTRY } from '@/lib/admin/provider-management'
 import { db } from '@/lib/db'
 import type { CurrentUser } from '@/lib/auth/current-user'
 
@@ -27,6 +27,8 @@ export interface AdminHealthResponse {
 }
 
 type SectionName = keyof AdminHealthResponse['sections']
+
+const SECTION_TIMEOUT_MS = 2500
 
 const STORAGE_KEYS = [
   'CHINA_STORAGE_PROVIDER',
@@ -64,6 +66,11 @@ function safeMessage(error: unknown) {
   return error instanceof Error ? error.message : typeof error === 'string' && error ? error : '检查失败'
 }
 
+function isPoolBusyMessage(message: string) {
+  const lower = message.toLowerCase()
+  return lower.includes('connection pool') || lower.includes('timed out fetching a new connection')
+}
+
 function envStatus(keys: readonly string[]) {
   return keys.map((key) => ({ key, configured: Boolean(process.env[key]) }))
 }
@@ -72,24 +79,35 @@ function missingKeys(keys: readonly string[]) {
   return keys.filter((key) => !process.env[key])
 }
 
-async function section<T extends HealthSection>(fallbackName: SectionName, check: () => Promise<T>): Promise<T | HealthSection> {
+async function safeSection<T extends HealthSection>(name: SectionName, check: () => Promise<T>): Promise<T | HealthSection> {
+  let timer: ReturnType<typeof setTimeout> | null = null
   try {
-    return await check()
+    const timeout = new Promise<HealthSection>((resolve) => {
+      timer = setTimeout(() => {
+        resolve({
+          status: 'warning',
+          message: '检查超时，可能是数据库连接池繁忙',
+          details: {
+            section: name,
+            timeoutMs: SECTION_TIMEOUT_MS,
+            degraded: true,
+            note: '数据库连接池繁忙，健康检查已降级为轻量检查。',
+          },
+        })
+      }, SECTION_TIMEOUT_MS)
+    })
+    return await Promise.race([check(), timeout])
   } catch (error) {
+    const message = safeMessage(error)
     return {
-      status: 'error',
-      message: `${fallbackName} 检查失败：${safeMessage(error)}`,
-      details: {},
+      status: isPoolBusyMessage(message) ? 'warning' : 'error',
+      message: isPoolBusyMessage(message)
+        ? '数据库连接池繁忙，健康检查已降级为轻量检查。'
+        : `${name} 检查失败：${message}`,
+      details: { error: message, degraded: isPoolBusyMessage(message) },
     }
-  }
-}
-
-async function checkDatabaseTable(name: string, count: () => Promise<number>) {
-  try {
-    const rowCount = await count()
-    return { name, exists: true, count: rowCount }
-  } catch (error) {
-    return { name, exists: false, error: safeMessage(error) }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -112,45 +130,52 @@ async function checkAuth(user: CurrentUser): Promise<HealthSection> {
 }
 
 async function checkDatabase(): Promise<HealthSection> {
-  const tables = await Promise.all([
-    checkDatabaseTable('Project', () => db.project.count()),
-    checkDatabaseTable('CanvasWorkflow', () => db.canvasWorkflow.count()),
-    checkDatabaseTable('CanvasNode', () => db.canvasNode.count()),
-    checkDatabaseTable('CanvasEdge', () => db.canvasEdge.count()),
-    checkDatabaseTable('CanvasComment', () => db.canvasComment.count()),
-    checkDatabaseTable('Asset', () => db.asset.count()),
-    checkDatabaseTable('DeliveryShare', () => db.deliveryShare.count()),
-    checkDatabaseTable('DeliveryItem', () => db.deliveryItem.count()),
-    checkDatabaseTable('DeliveryComment', () => db.deliveryComment.count()),
-    checkDatabaseTable('UserCreditWallet', () => db.userCreditWallet.count()),
-    checkDatabaseTable('CreditLedger', () => db.creditLedger.count()),
-    checkDatabaseTable('PaymentOrder', () => db.paymentOrder.count()),
-    checkDatabaseTable('ProviderAccount', () => db.providerAccount.count()),
-    checkDatabaseTable('ProviderCostLedger', () => db.providerCostLedger.count()),
-    checkDatabaseTable('ProviderPricingRule', () => db.providerPricingRule.count()),
-  ])
+  const tables = await db.$queryRaw<Array<{ name: string; exists: boolean }>>`
+    select required.table_name as name,
+      to_regclass(format('%I.%I', 'public', required.table_name)) is not null as exists
+    from (
+      values
+        ('Project'),
+        ('CanvasWorkflow'),
+        ('CanvasNode'),
+        ('CanvasEdge'),
+        ('CanvasComment'),
+        ('Asset'),
+        ('DeliveryShare'),
+        ('DeliveryItem'),
+        ('DeliveryComment'),
+        ('UserCreditWallet'),
+        ('CreditLedger'),
+        ('PaymentOrder'),
+        ('ProviderAccount'),
+        ('ProviderCostLedger'),
+        ('ProviderPricingRule')
+    ) as required(table_name)
+  `
   const missing = tables.filter((table) => !table.exists)
   return {
-    status: missing.length ? 'error' : 'ok',
-    message: missing.length ? `${missing.length} 张关键表不可读。` : '关键数据表只读检查通过。',
-    details: { tables, missingCount: missing.length },
+    status: missing.length ? 'warning' : 'ok',
+    message: missing.length ? `${missing.length} 张关键表未确认存在。` : '关键数据表存在性检查通过。',
+    details: {
+      tables,
+      missingCount: missing.length,
+      countQueriesPerformed: false,
+      lightweight: true,
+    },
   }
 }
 
 async function checkProjects(user: CurrentUser): Promise<HealthSection> {
-  const [count, recent] = await Promise.all([
-    db.project.count({ where: { ownerId: user.id } }),
-    db.project.findMany({
-      where: { ownerId: user.id },
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
-      select: { id: true, title: true, status: true, createdAt: true, updatedAt: true, lastOpenedAt: true },
-    }),
-  ])
+  const recent = await db.project.findMany({
+    where: { ownerId: user.id },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: { id: true, title: true, status: true, createdAt: true, updatedAt: true, lastOpenedAt: true },
+  })
   return {
     status: 'ok',
-    message: `当前用户可只读查询 ${count} 个项目。`,
-    details: { count, recent },
+    message: `当前用户最近项目可读：${recent.length} 条。`,
+    details: { recentCount: recent.length, recent, countQueriesPerformed: false },
   }
 }
 
@@ -164,7 +189,7 @@ async function checkCanvas(user: CurrentUser): Promise<HealthSection> {
     return {
       status: 'warning',
       message: '当前用户暂无项目，无法检查最近项目画布。',
-      details: { project: null, workflow: null, nodeCount: 0, edgeCount: 0 },
+      details: { project: null, workflow: null, sampledNodeCount: 0, sampledEdgeCount: 0 },
     }
   }
   const workflow = await db.canvasWorkflow.findFirst({
@@ -176,30 +201,35 @@ async function checkCanvas(user: CurrentUser): Promise<HealthSection> {
     return {
       status: 'warning',
       message: '最近项目暂无 CanvasWorkflow。',
-      details: { project, workflow: null, nodeCount: 0, edgeCount: 0 },
+      details: { project, workflow: null, sampledNodeCount: 0, sampledEdgeCount: 0 },
     }
   }
-  const [nodeCount, edgeCount] = await Promise.all([
-    db.canvasNode.count({ where: { workflowId: workflow.id } }),
-    db.canvasEdge.count({ where: { workflowId: workflow.id } }),
-  ])
+  const nodes = await db.canvasNode.findMany({
+    where: { workflowId: workflow.id },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: { id: true, nodeId: true, kind: true, status: true, updatedAt: true },
+  })
+  const edges = await db.canvasEdge.findMany({
+    where: { workflowId: workflow.id },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: { id: true, edgeId: true, sourceNodeId: true, targetNodeId: true, updatedAt: true },
+  })
   return {
     status: 'ok',
-    message: `最近项目画布可读：${nodeCount} nodes / ${edgeCount} edges。`,
-    details: { project, workflow, nodeCount, edgeCount },
+    message: `最近项目画布可读：抽样 ${nodes.length} nodes / ${edges.length} edges。`,
+    details: { project, workflow, sampledNodeCount: nodes.length, sampledEdgeCount: edges.length, nodes, edges, countQueriesPerformed: false },
   }
 }
 
 async function checkAssets(user: CurrentUser): Promise<HealthSection> {
-  const [count, recent] = await Promise.all([
-    db.asset.count({ where: { ownerId: user.id } }),
-    db.asset.findMany({
-      where: { ownerId: user.id },
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
-      select: { id: true, name: true, title: true, type: true, status: true, url: true, dataUrl: true, projectId: true, createdAt: true, updatedAt: true },
-    }),
-  ])
+  const recent = await db.asset.findMany({
+    where: { ownerId: user.id },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: { id: true, name: true, title: true, type: true, status: true, url: true, dataUrl: true, projectId: true, createdAt: true, updatedAt: true },
+  })
   const mapped = recent.map((asset) => ({
     id: asset.id,
     name: asset.name,
@@ -215,8 +245,8 @@ async function checkAssets(user: CurrentUser): Promise<HealthSection> {
   }))
   return {
     status: 'ok',
-    message: `当前用户素材可读：${count} 条。`,
-    details: { count, recent: mapped },
+    message: `当前用户素材可读：最近 ${mapped.length} 条。`,
+    details: { recentCount: mapped.length, recent: mapped, countQueriesPerformed: false },
   }
 }
 
@@ -239,23 +269,32 @@ async function checkStorage(): Promise<HealthSection> {
 }
 
 async function checkPayments(): Promise<HealthSection> {
-  const [paymentOrderCount, creditLedgerCount] = await Promise.all([
-    db.paymentOrder.count(),
-    db.creditLedger.count(),
-  ])
+  const recentPaymentOrders = await db.paymentOrder.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, provider: true, region: true, status: true, credits: true, amount: true, currency: true, createdAt: true, paidAt: true },
+  })
+  const recentCreditLedger = await db.creditLedger.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, type: true, delta: true, balance: true, refType: true, createdAt: true },
+  })
   const alipayMissing = missingKeys(ALIPAY_KEYS)
   const wechatMissing = missingKeys(WECHAT_PAY_KEYS)
   const simulationConfigured = process.env.PAYMENT_SANDBOX_SIMULATION_ENABLED !== undefined
   const status: HealthSectionStatus = alipayMissing.length === 0 || wechatMissing.length === 0 || simulationConfigured ? 'ok' : 'warning'
   return {
     status,
-    message: '支付环境和流水表只读检查完成。',
+    message: '支付环境和最近流水只读检查完成。',
     details: {
       alipay: { env: envStatus(ALIPAY_KEYS), missing: alipayMissing },
       wechatpay: { env: envStatus(WECHAT_PAY_KEYS), missing: wechatMissing },
       simulation: { key: 'PAYMENT_SANDBOX_SIMULATION_ENABLED', configured: simulationConfigured },
-      paymentOrderCount,
-      creditLedgerCount,
+      recentPaymentOrderCount: recentPaymentOrders.length,
+      recentCreditLedgerCount: recentCreditLedger.length,
+      recentPaymentOrders,
+      recentCreditLedger,
+      countQueriesPerformed: false,
       createdOrder: false,
       calledPaymentProvider: false,
       simulatedPayment: false,
@@ -264,26 +303,26 @@ async function checkPayments(): Promise<HealthSection> {
 }
 
 async function checkProviders(): Promise<HealthSection> {
-  const status = await buildProviderManagementStatus()
-  const providers = status.providers
+  const providers = ADMIN_PROVIDER_REGISTRY
     .filter((provider) => (PROVIDER_IDS as readonly string[]).includes(provider.providerId))
-    .map((provider) => ({
-      providerId: provider.providerId,
-      displayName: provider.displayName,
-      status: provider.status,
-      configured: provider.configured,
-      enabled: provider.enabled,
-      envKeys: provider.envKeys.map((key) => ({ key, configured: Boolean(process.env[key]) })),
-      missingEnvKeys: provider.missingEnvKeys,
-    }))
-  const notConfigured = providers.filter((provider) => !provider.configured)
+    .map((provider) => {
+      const missing = missingKeys(provider.envKeys)
+      return {
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        configured: missing.length === 0,
+        envKeys: envStatus(provider.envKeys),
+        optionalEnvKeys: envStatus(provider.optionalEnvKeys ?? []),
+        missingEnvKeys: missing,
+      }
+    })
+  const configuredCount = providers.filter((provider) => provider.configured).length
   return {
-    status: status.errorCode ? 'warning' : notConfigured.length === providers.length ? 'warning' : 'ok',
-    message: status.errorCode ?? `Provider 配置只读检查完成：${providers.length - notConfigured.length}/${providers.length} configured。`,
+    status: configuredCount > 0 ? 'ok' : 'warning',
+    message: `Provider 环境变量只读检查完成：${configuredCount}/${providers.length} configured。`,
     details: {
       providers,
-      summary: status.summary,
-      providerGatewayWarning: status.message ?? null,
+      providerAccountDbQueryPerformed: false,
       generationCallPerformed: false,
       creditsConsumed: false,
     },
@@ -291,23 +330,32 @@ async function checkProviders(): Promise<HealthSection> {
 }
 
 async function checkDelivery(): Promise<HealthSection> {
-  const [shareCount, itemCount, commentCount, recentShare] = await Promise.all([
-    db.deliveryShare.count(),
-    db.deliveryItem.count(),
-    db.deliveryComment.count(),
-    db.deliveryShare.findFirst({
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, projectId: true, status: true, token: true, title: true, updatedAt: true },
-    }),
-  ])
+  const recentShares = await db.deliveryShare.findMany({
+    orderBy: { updatedAt: 'desc' },
+    take: 3,
+    select: { id: true, projectId: true, status: true, token: true, title: true, updatedAt: true },
+  })
+  const recentItems = await db.deliveryItem.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, shareId: true, type: true, title: true, createdAt: true },
+  })
+  const recentComments = await db.deliveryComment.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, shareId: true, itemId: true, status: true, createdAt: true },
+  })
   return {
     status: 'ok',
-    message: `交付数据可读：${shareCount} shares / ${itemCount} items / ${commentCount} comments。`,
+    message: `交付数据可读：最近 ${recentShares.length} shares / ${recentItems.length} items / ${recentComments.length} comments。`,
     details: {
-      shareCount,
-      itemCount,
-      commentCount,
-      recentShare: recentShare ? { ...recentShare, hasToken: Boolean(recentShare.token) } : null,
+      recentShareCount: recentShares.length,
+      recentItemCount: recentItems.length,
+      recentCommentCount: recentComments.length,
+      recentShares: recentShares.map((share) => ({ ...share, hasToken: Boolean(share.token) })),
+      recentItems,
+      recentComments,
+      countQueriesPerformed: false,
       openedPublicLink: false,
       createdShare: false,
     },
@@ -315,16 +363,25 @@ async function checkDelivery(): Promise<HealthSection> {
 }
 
 async function checkComments(): Promise<HealthSection> {
-  const [canvasCommentCount, deliveryCommentCount] = await Promise.all([
-    db.canvasComment.count(),
-    db.deliveryComment.count(),
-  ])
+  const canvasComments = await db.canvasComment.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, projectId: true, workflowId: true, status: true, createdAt: true },
+  })
+  const deliveryComments = await db.deliveryComment.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, shareId: true, itemId: true, status: true, createdAt: true },
+  })
   return {
     status: 'ok',
-    message: `评论数据可读：Canvas ${canvasCommentCount} / Delivery ${deliveryCommentCount}。`,
+    message: `评论数据可读：最近 Canvas ${canvasComments.length} / Delivery ${deliveryComments.length}。`,
     details: {
-      canvasCommentCount,
-      deliveryCommentCount,
+      recentCanvasCommentCount: canvasComments.length,
+      recentDeliveryCommentCount: deliveryComments.length,
+      canvasComments,
+      deliveryComments,
+      countQueriesPerformed: false,
       createdComment: false,
     },
   }
@@ -332,43 +389,18 @@ async function checkComments(): Promise<HealthSection> {
 
 export async function buildAdminHealth(user: CurrentUser): Promise<AdminHealthResponse> {
   const checkedAt = new Date().toISOString()
-  const [
-    auth,
-    database,
-    projects,
-    canvas,
-    assets,
-    storage,
-    payments,
-    providers,
-    delivery,
-    comments,
-  ] = await Promise.all([
-    section('auth', () => checkAuth(user)),
-    section('database', checkDatabase),
-    section('projects', () => checkProjects(user)),
-    section('canvas', () => checkCanvas(user)),
-    section('assets', () => checkAssets(user)),
-    section('storage', checkStorage),
-    section('payments', checkPayments),
-    section('providers', checkProviders),
-    section('delivery', checkDelivery),
-    section('comments', checkComments),
-  ])
+  const sections = {} as AdminHealthResponse['sections']
 
-  return {
-    checkedAt,
-    sections: {
-      auth,
-      database,
-      projects,
-      canvas,
-      assets,
-      storage,
-      payments,
-      providers,
-      delivery,
-      comments,
-    },
-  }
+  sections.auth = await safeSection('auth', () => checkAuth(user))
+  sections.database = await safeSection('database', checkDatabase)
+  sections.projects = await safeSection('projects', () => checkProjects(user))
+  sections.canvas = await safeSection('canvas', () => checkCanvas(user))
+  sections.assets = await safeSection('assets', () => checkAssets(user))
+  sections.storage = await safeSection('storage', checkStorage)
+  sections.payments = await safeSection('payments', checkPayments)
+  sections.providers = await safeSection('providers', checkProviders)
+  sections.delivery = await safeSection('delivery', checkDelivery)
+  sections.comments = await safeSection('comments', checkComments)
+
+  return { checkedAt, sections }
 }
