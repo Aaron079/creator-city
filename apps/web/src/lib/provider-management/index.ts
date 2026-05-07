@@ -374,7 +374,6 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     envKeys: ['VOLCENGINE_ARK_API_KEY'],
     optionalEnvKeys: ['VOLCENGINE_SEEDREAM_MODEL', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_REGION'],
     nodeType: 'image',
-    defaultModel: 'seedream-5-0-lite',
     modelEnvKey: 'VOLCENGINE_SEEDREAM_MODEL',
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
@@ -382,7 +381,7 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     estimatedCostUsd: 0.005,
     testMode: 'env-only',
     providerFamily: 'china-ai',
-    setupHint: '配置 VOLCENGINE_ARK_API_KEY；可选 VOLCENGINE_SEEDREAM_MODEL、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_REGION。',
+    setupHint: '配置 VOLCENGINE_ARK_API_KEY；VOLCENGINE_SEEDREAM_MODEL 需要填写火山方舟控制台中的真实 Model ID 或 Endpoint ID，不要手写 seedream-5-0-lite。',
   },
   {
     providerId: 'jimeng-image',

@@ -115,6 +115,17 @@ export async function POST(request: NextRequest) {
         status: 'failed',
       }, { status: 200 })
     }
+    if (providerId === 'volcengine-seedream-image' && !process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'VOLCENGINE_MODEL_REQUIRED',
+        message: '请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
+        providerId,
+        model: '',
+        mode: 'unavailable',
+        status: 'not-configured',
+      }, { status: 200 })
+    }
 
     const billing = await setupBilling(request, providerId, 'image', prompt)
     if (!billing.ok) {

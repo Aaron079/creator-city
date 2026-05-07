@@ -26,7 +26,7 @@ export const volcengineProviderConfigs: ChinaProviderConfig[] = [
     optionalEnvKeys: ['VOLCENGINE_SEEDREAM_MODEL', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_REGION'],
     defaultBaseUrl: VOLCENGINE_ARK_DEFAULT_BASE_URL,
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
-    defaultModel: 'seedream-5-0-lite',
+    defaultModel: '',
     modelEnvKey: 'VOLCENGINE_SEEDREAM_MODEL',
   },
 ]
@@ -170,6 +170,11 @@ function getRawError(data: unknown, fallback: string) {
       ? record.request_id
       : undefined
   return { message, code, requestId }
+}
+
+function isModelNotFoundError(status: number, message: string) {
+  const normalized = message.toLowerCase()
+  return status === 404 && normalized.includes('model or endpoint') && normalized.includes('does not exist')
 }
 
 function normalizeTaskStatus(value: unknown): 'running' | 'done' | 'error' | null {
@@ -552,7 +557,7 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
 
 export async function generateSeedreamImage(input: ChinaImageGenerationInput): Promise<ChinaImageGenerationResult> {
   const providerId = 'volcengine-seedream-image'
-  const model = process.env.VOLCENGINE_SEEDREAM_MODEL || 'seedream-5-0-lite'
+  const model = process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() || ''
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY
   const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL
 
@@ -563,6 +568,15 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       model,
       errorCode: 'PROVIDER_NOT_CONFIGURED',
       message: 'VOLCENGINE_ARK_API_KEY 未配置',
+    }
+  }
+  if (!model) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'VOLCENGINE_MODEL_REQUIRED',
+      message: '请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
     }
   }
 
@@ -609,8 +623,22 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
     }
 
     if (!response.ok) {
-      const error = data && typeof data === 'object' ? data as { error?: { message?: string; code?: string }; message?: string; code?: string } : {}
-      const upstreamMessage = error.error?.message || error.message || `Volcengine Seedream HTTP ${response.status}`
+      const rawError = getRawError(data, `Volcengine Seedream HTTP ${response.status}`)
+      const upstreamMessage = rawError.message
+      const requestId = rawError.requestId ?? response.headers.get('x-request-id') ?? undefined
+      if (isModelNotFoundError(response.status, upstreamMessage)) {
+        return {
+          success: false,
+          providerId,
+          model,
+          errorCode: 'VOLCENGINE_MODEL_NOT_FOUND',
+          message: 'Seedream 模型或接入点不存在/未开通。请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
+          upstreamStatus: response.status,
+          upstreamMessage,
+          rawCode: rawError.code,
+          requestId,
+        }
+      }
       return {
         success: false,
         providerId,
@@ -619,7 +647,8 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
         message: upstreamMessage,
         upstreamStatus: response.status,
         upstreamMessage,
-        rawCode: error.error?.code || error.code,
+        rawCode: rawError.code,
+        requestId,
       }
     }
 
