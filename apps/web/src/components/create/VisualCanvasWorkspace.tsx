@@ -37,6 +37,7 @@ import canvasStyles from '@/components/create/canvas.module.css'
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
   templateName?: string | null
+  canOpenClientDelivery?: boolean
   onOpenTimeline: () => void
   onOpenAssets: () => void
   onOpenDelivery: () => void
@@ -429,6 +430,7 @@ function buildMockResult(node: VisualCanvasNode, prompt: string) {
 export function VisualCanvasWorkspace({
   projectTitle,
   templateName,
+  canOpenClientDelivery = true,
   onOpenTimeline: _onOpenTimeline,
   onOpenAssets: _onOpenAssets,
   onOpenDelivery: _onOpenDelivery,
@@ -2952,17 +2954,19 @@ export function VisualCanvasWorkspace({
             社区
             <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
           </a>
-          <button
-            type="button"
-            onClick={handleOpenClientDelivery}
-            className="canvas-secondary-button"
-            title="客户交付"
-            aria-label="打开客户交付界面"
-            data-tooltip="客户交付"
-          >
-            客户
-            <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
-          </button>
+          {canOpenClientDelivery ? (
+            <button
+              type="button"
+              onClick={handleOpenClientDelivery}
+              className="canvas-secondary-button"
+              title="客户交付"
+              aria-label="打开客户交付界面"
+              data-tooltip="客户交付"
+            >
+              客户
+              <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => { void handleShareCanvasLink() }}

@@ -6138,6 +6138,11 @@ export default function CreatePage() {
     ),
     [canAccessCreateWorkspace, effectiveProjectRole, isCreateRouteBlocked, projectPermissions.canEditCreateWorkspace],
   )
+  const canOpenClientDeliveryFromCanvas = projectPermissions.canEditCreateWorkspace
+    && projectPermissions.canManageDelivery
+    && canAccessCreateWorkspace
+    && !isCreateRouteBlocked
+    && effectiveProjectRole !== 'client'
   const workspaceSurface = useMemo<WorkspaceSurface>(() => {
     if (workspaceView === 'delivery') return 'delivery'
     if (workspaceView === 'footage') return 'assets'
@@ -8818,6 +8823,7 @@ export default function CreatePage() {
             <VisualCanvasWorkspace
               projectTitle={deliveryProjectTitle}
               templateName={activeWorkflowTemplate?.name ?? null}
+              canOpenClientDelivery={canOpenClientDeliveryFromCanvas}
               onOpenTimeline={() => setWorkspaceView('editor')}
               onOpenAssets={() => setWorkspaceView('footage')}
               onOpenDelivery={() => setWorkspaceView('delivery')}
@@ -9003,6 +9009,7 @@ export default function CreatePage() {
                 <VisualCanvasWorkspace
                   projectTitle={deliveryProjectTitle}
                   templateName={activeWorkflowTemplate?.name ?? null}
+                  canOpenClientDelivery={canOpenClientDeliveryFromCanvas}
                   onOpenTimeline={() => setWorkspaceView('editor')}
                   onOpenAssets={() => setWorkspaceView('footage')}
                   onOpenDelivery={() => setWorkspaceView('delivery')}

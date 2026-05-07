@@ -75,6 +75,8 @@ type Props = {
   canvasNodes: DeliveryCanvasNodeForClient[]
 }
 
+const CUSTOMER_DELIVERY_ORIGIN = 'https://creator-city-vert.vercel.app'
+
 function getTextFromAsset(asset: DeliveryAssetForClient) {
   const metadata = asset.metadataJson && typeof asset.metadataJson === 'object'
     ? asset.metadataJson as Record<string, unknown>
@@ -103,9 +105,7 @@ function getDeliveryHref(token: string) {
 }
 
 function getFullDeliveryUrl(token: string) {
-  const path = getDeliveryHref(token)
-  if (typeof window === 'undefined') return path
-  return `${window.location.origin}${path}`
+  return `${CUSTOMER_DELIVERY_ORIGIN}${getDeliveryHref(token)}`
 }
 
 function selectedSummary(assetCount: number, nodeCount: number) {
@@ -263,9 +263,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
     }
     setShare(data.share)
     setShares((current) => [data.share!, ...current.filter((item) => item.id !== data.share!.id)])
-    const publicUrl = data.publicUrl?.startsWith('/delivery/')
-      ? `${window.location.origin}${data.publicUrl}`
-      : getFullDeliveryUrl(data.share.token)
+    const publicUrl = getFullDeliveryUrl(data.share.token)
     const messageText = `您好，这是本次项目交付链接：\n${publicUrl}\n您可以查看作品并提交修改意见。`
     setSubmitResult({ publicUrl, messageText })
     setSelectedAssetIds([])
@@ -441,7 +439,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
                 <div className="break-all font-mono text-xs text-emerald-50">{submitResult.publicUrl}</div>
                 <textarea readOnly value={submitResult.messageText} className="mt-3 w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 outline-none" rows={4} />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => void copyText(submitResult.publicUrl)} className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">复制链接</button>
+                  <button type="button" onClick={() => void copyText(submitResult.publicUrl)} className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">复制客户链接</button>
                   <button type="button" onClick={() => void copyText(submitResult.messageText)} className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">复制消息</button>
                   <a href={submitResult.publicUrl} target="_blank" className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">打开链接</a>
                 </div>
