@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
     }
 
-    const providerId = body.providerId ?? ''
+    const providerId = body.providerId || 'openai-text'
     const prompt = body.prompt ?? ''
 
     const billing = await setupBilling(request, providerId, 'text', prompt)
