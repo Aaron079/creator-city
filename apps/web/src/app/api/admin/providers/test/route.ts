@@ -27,6 +27,25 @@ export async function POST(request: Request) {
 
   try {
     const result = await testProviderConnection(body.providerId, body.mode ?? 'env-only')
+    if (!result.ok) {
+      return NextResponse.json({
+        success: false,
+        providerId: body.providerId,
+        ok: false,
+        status: result.status,
+        errorCode: result.errorCode ?? 'PROVIDER_TEST_FAILED',
+        message: result.message,
+        configured: result.configured,
+        missingEnv: result.missingEnv,
+        missingEnvKeys: result.missingEnvKeys,
+        model: result.model,
+        baseUrl: result.baseUrl,
+        sample: result.sample,
+        checkedAt: result.checkedAt,
+        mode: result.mode,
+        testMode: result.testMode,
+      }, { status: result.status === 'not-configured' ? 200 : 400 })
+    }
     return NextResponse.json({
       success: true,
       providerId: body.providerId,

@@ -553,6 +553,7 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
     return {
       ok: false,
       status: 'error' as const,
+      errorCode: 'PROVIDER_NOT_FOUND',
       message: `Unknown providerId: ${providerId}`,
       configured: false,
       missingEnv: [],
@@ -576,6 +577,7 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
     return {
       ok: false,
       status: 'not-configured' as const,
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
       message: `Missing environment variables: ${envCheck.missing.join(', ')}`,
       configured: false,
       missingEnv: envCheck.missing,
@@ -590,10 +592,11 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
   }
 
   if (mode === 'text-ping') {
-    if (providerId !== 'kimi-text' && providerId !== 'deepseek-text') {
+    if (providerId !== 'kimi-text' && providerId !== 'deepseek-text' && providerId !== 'deepseek-reasoner') {
       return {
         ok: false,
         status: 'error' as const,
+        errorCode: 'PROVIDER_TEXT_PING_UNSUPPORTED',
         message: '该 Provider 暂不支持轻量文本测试。',
         configured: envCheck.configured,
         missingEnv: [],
@@ -609,11 +612,12 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
 
     const pingResult = providerId === 'kimi-text'
       ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 16 })
-      : await generateDeepSeekText({ prompt: '请只回复 OK', maxTokens: 16 })
+      : await generateDeepSeekText({ prompt: '请只回复 OK', maxTokens: 16, providerId })
 
     return {
       ok: pingResult.success,
       status: pingResult.success ? 'configured' as const : 'error' as const,
+      errorCode: pingResult.success ? undefined : pingResult.errorCode,
       message: pingResult.success ? '轻量文本测试通过。' : pingResult.message,
       configured: true,
       missingEnv: [],

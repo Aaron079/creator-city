@@ -36,8 +36,8 @@ export function testDeepSeekConnection(providerId: 'deepseek-text' | 'deepseek-r
   return getDeepSeekStatus(providerId)
 }
 
-export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner' }) {
-  const providerId = input.providerId ?? 'deepseek-text'
+export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner'; reasoner?: boolean }) {
+  const providerId = input.reasoner ? 'deepseek-reasoner' : input.providerId ?? 'deepseek-text'
   const apiKey = process.env.DEEPSEEK_API_KEY
   const model = providerId === 'deepseek-reasoner'
     ? process.env.DEEPSEEK_MODEL_REASONER || 'deepseek-v4-pro'

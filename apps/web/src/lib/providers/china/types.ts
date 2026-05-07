@@ -102,8 +102,8 @@ export async function postOpenAICompatibleChat(options: {
           { role: 'system', content: options.system || '你是 Creator City 的创作助手。' },
           { role: 'user', content: options.prompt },
         ],
-        temperature: 0.7,
-        max_tokens: options.maxTokens || 512,
+        temperature: 0.2,
+        max_tokens: options.maxTokens || 32,
       }),
     })
 

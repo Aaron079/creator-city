@@ -30,12 +30,12 @@ export async function POST(request: NextRequest) {
 
     const currentUser = await getCurrentUser()
     let raw: GenerateResponse
-    if (providerId === 'kimi-text' || providerId === 'deepseek-text') {
+    if (providerId === 'kimi-text' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
       const maxTokens = typeof body.params?.maxTokens === 'number' ? body.params.maxTokens : undefined
       const system = typeof body.params?.system === 'string' ? body.params.system : undefined
       const chinaResult = providerId === 'kimi-text'
         ? await generateKimiText({ prompt, system, maxTokens })
-        : await generateDeepSeekText({ prompt, system, maxTokens })
+        : await generateDeepSeekText({ prompt, system, maxTokens, providerId })
 
       raw = chinaResult.success
         ? {

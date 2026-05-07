@@ -137,7 +137,11 @@ function buildClientSummary(providers: ProviderRow[]): ProviderSummary {
 }
 
 function canRunTextPing(provider: ProviderRow) {
-  return provider.configured && (provider.providerId === 'kimi-text' || provider.providerId === 'deepseek-text')
+  return provider.configured && (
+    provider.providerId === 'kimi-text' ||
+    provider.providerId === 'deepseek-text' ||
+    provider.providerId === 'deepseek-reasoner'
+  )
 }
 
 export default function AdminProvidersPage() {
