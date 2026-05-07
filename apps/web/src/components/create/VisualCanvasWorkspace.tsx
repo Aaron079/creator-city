@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
@@ -79,14 +79,30 @@ interface CanvasCache extends CanvasDraft {
   serverUpdatedAt?: string
 }
 
+interface CanvasLocalSnapshot extends CanvasCache {
+  version: 1
+  source: 'local'
+  commentsPreview?: CanvasComment[]
+}
+
 interface DraftRestorePrompt {
   projectId: string
   workflowId: string
   nodes: VisualCanvasNode[]
   edges: CanvasEdge[]
   viewport: { zoom: number; pan: { x: number; y: number } }
-  source: 'cache' | 'draft'
+  source: 'snapshot' | 'cache' | 'draft'
 }
+
+interface ServerVersionPrompt {
+  workflowId: string
+  nodes: VisualCanvasNode[]
+  edges: CanvasEdge[]
+  viewport?: unknown
+  serverUpdatedAt?: string
+}
+
+type LocalCanvasSource = 'snapshot' | 'cache' | 'draft'
 
 function getDraftKey(projectId: string) {
   return `creator-city:draft:${projectId}`
@@ -94,6 +110,10 @@ function getDraftKey(projectId: string) {
 
 function getCanvasCacheKey(projectId: string) {
   return `creator-city:canvas-cache:${projectId}`
+}
+
+function getCanvasSnapshotKey(projectId: string) {
+  return `creator-city:canvas-snapshot:${projectId}`
 }
 
 function timeValue(input?: string) {
@@ -559,6 +579,7 @@ export function VisualCanvasWorkspace({
   const [workflowRunStatus, setWorkflowRunStatus] = useState<WorkflowRunStatus>('idle')
   const [workflowRunMessage, setWorkflowRunMessage] = useState('')
   const [draftRestorePrompt, setDraftRestorePrompt] = useState<DraftRestorePrompt | null>(null)
+  const [serverVersionPrompt, setServerVersionPrompt] = useState<ServerVersionPrompt | null>(null)
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -619,6 +640,7 @@ export function VisualCanvasWorkspace({
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
   const latestEdgesRef = useRef<CanvasEdge[]>([])
   const latestViewportRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } })
+  const latestCommentsRef = useRef<CanvasComment[]>([])
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -653,6 +675,10 @@ export function VisualCanvasWorkspace({
   }, [])
 
   useEffect(() => {
+    latestCommentsRef.current = comments
+  }, [comments])
+
+  useEffect(() => {
     const stopAutosave = () => {
       isSwitchingProjectRef.current = true
       if (saveTimerRef.current) {
@@ -684,19 +710,15 @@ export function VisualCanvasWorkspace({
   }, [liveStatusLoading])
 
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
-    setNodes((current) => {
-      const resolved = typeof next === 'function' ? next(current) : next
-      latestNodesRef.current = resolved
-      return resolved
-    })
+    const resolved = typeof next === 'function' ? next(latestNodesRef.current) : next
+    latestNodesRef.current = resolved
+    setNodes(resolved)
   }, [])
 
   const commitEdges = useCallback((next: CanvasEdge[] | ((current: CanvasEdge[]) => CanvasEdge[])) => {
-    setEdges((current) => {
-      const resolved = typeof next === 'function' ? next(current) : next
-      latestEdgesRef.current = resolved
-      return resolved
-    })
+    const resolved = typeof next === 'function' ? next(latestEdgesRef.current) : next
+    latestEdgesRef.current = resolved
+    setEdges(resolved)
   }, [])
 
   const getCanvasSnapshot = useCallback(() => ({
@@ -705,25 +727,58 @@ export function VisualCanvasWorkspace({
     viewport: latestViewportRef.current,
   }), [])
 
-  const readLocalDraft = useCallback((id: string): CanvasDraft | null => {
-    if (typeof window === 'undefined') return null
+  const normalizeLocalCanvasSnapshot = useCallback((
+    id: string,
+    raw: string | null,
+  ): CanvasLocalSnapshot | null => {
+    if (!raw) return null
     try {
-      const raw = window.localStorage.getItem(getDraftKey(id))
-      return raw ? JSON.parse(raw) as CanvasDraft : null
+      const parsed = JSON.parse(raw) as Partial<CanvasLocalSnapshot>
+      if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null
+      const workflow = typeof parsed.workflowId === 'string' ? parsed.workflowId : ''
+      if (!workflow) return null
+      const viewport = parsed.viewport && typeof parsed.viewport === 'object'
+        ? parsed.viewport as CanvasLocalSnapshot['viewport']
+        : { zoom: 1, pan: { x: 0, y: 0 } }
+      return {
+        version: 1,
+        source: 'local',
+        projectId: typeof parsed.projectId === 'string' ? parsed.projectId : id,
+        workflowId: workflow,
+        title: typeof parsed.title === 'string' ? parsed.title : undefined,
+        nodes: parsed.nodes as VisualCanvasNode[],
+        edges: parsed.edges as CanvasEdge[],
+        viewport,
+        commentsPreview: Array.isArray(parsed.commentsPreview) ? parsed.commentsPreview as CanvasComment[] : undefined,
+        updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString(),
+        syncedAt: typeof parsed.syncedAt === 'string' ? parsed.syncedAt : undefined,
+        serverUpdatedAt: typeof parsed.serverUpdatedAt === 'string' ? parsed.serverUpdatedAt : undefined,
+      }
     } catch {
       return null
     }
   }, [])
 
-  const readCanvasCache = useCallback((id: string): CanvasCache | null => {
+  const readBestLocalCanvasSnapshot = useCallback((id: string): { source: LocalCanvasSource; value: CanvasLocalSnapshot } | null => {
     if (typeof window === 'undefined') return null
+    const candidates: Array<{ source: LocalCanvasSource; value: CanvasLocalSnapshot }> = []
     try {
-      const raw = window.localStorage.getItem(getCanvasCacheKey(id))
-      return raw ? JSON.parse(raw) as CanvasCache : null
+      const snapshot = normalizeLocalCanvasSnapshot(id, window.localStorage.getItem(getCanvasSnapshotKey(id)))
+      if (snapshot?.nodes.length) candidates.push({ source: 'snapshot', value: snapshot })
+      const cache = normalizeLocalCanvasSnapshot(id, window.localStorage.getItem(getCanvasCacheKey(id)))
+      if (cache?.nodes.length) candidates.push({ source: 'cache', value: cache })
+      const draft = normalizeLocalCanvasSnapshot(id, window.localStorage.getItem(getDraftKey(id)))
+      if (draft?.nodes.length) candidates.push({ source: 'draft', value: draft })
     } catch {
       return null
     }
-  }, [])
+    return candidates.sort((left, right) => {
+      const delta = timeValue(right.value.updatedAt) - timeValue(left.value.updatedAt)
+      if (delta !== 0) return delta
+      const sourceRank: Record<LocalCanvasSource, number> = { snapshot: 3, cache: 2, draft: 1 }
+      return sourceRank[right.source] - sourceRank[left.source]
+    })[0] ?? null
+  }, [normalizeLocalCanvasSnapshot])
 
   const readCommentsCache = useCallback((id: string): CanvasComment[] | null => {
     if (typeof window === 'undefined') return null
@@ -787,6 +842,7 @@ export function VisualCanvasWorkspace({
     workflowId?: string
     syncedAt?: string
     serverUpdatedAt?: string
+    updatedAt?: string
     nodes?: VisualCanvasNode[]
     edges?: CanvasEdge[]
     viewport?: { zoom: number; pan: { x: number; y: number } }
@@ -802,7 +858,7 @@ export function VisualCanvasWorkspace({
       nodes: args?.nodes ?? snapshot.nodes,
       edges: args?.edges ?? snapshot.edges,
       viewport: args?.viewport ?? snapshot.viewport,
-      updatedAt: new Date().toISOString(),
+      updatedAt: args?.updatedAt ?? args?.syncedAt ?? new Date().toISOString(),
       serverUpdatedAt: args?.serverUpdatedAt,
       ...(args?.syncedAt ? { syncedAt: args.syncedAt } : {}),
     }
@@ -810,6 +866,63 @@ export function VisualCanvasWorkspace({
       window.localStorage.setItem(getCanvasCacheKey(targetProjectId), JSON.stringify(cache))
     } catch {
       // Cache is an acceleration layer only.
+    }
+  }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
+
+  const writeUnifiedLocalSnapshot = useCallback((args?: {
+    projectId?: string
+    workflowId?: string
+    syncedAt?: string
+    serverUpdatedAt?: string
+    updatedAt?: string
+    nodes?: VisualCanvasNode[]
+    edges?: CanvasEdge[]
+    viewport?: { zoom: number; pan: { x: number; y: number } }
+  }) => {
+    const targetProjectId = args?.projectId ?? projectId
+    const targetWorkflowId = args?.workflowId ?? workflowId
+    if (typeof window === 'undefined' || !targetProjectId || !targetWorkflowId) return
+    const snapshot = getCanvasSnapshot()
+    const updatedAt = args?.updatedAt ?? args?.syncedAt ?? new Date().toISOString()
+    const nodesForSnapshot = args?.nodes ?? snapshot.nodes
+    const edgesForSnapshot = args?.edges ?? snapshot.edges
+    const viewportForSnapshot = args?.viewport ?? snapshot.viewport
+    const localSnapshot: CanvasLocalSnapshot = {
+      version: 1,
+      projectId: targetProjectId,
+      workflowId: targetWorkflowId,
+      title: loadedProjectTitle,
+      nodes: nodesForSnapshot,
+      edges: edgesForSnapshot,
+      viewport: viewportForSnapshot,
+      commentsPreview: latestCommentsRef.current.slice(0, 20),
+      updatedAt,
+      source: 'local',
+      ...(args?.syncedAt ? { syncedAt: args.syncedAt } : {}),
+      ...(args?.serverUpdatedAt ? { serverUpdatedAt: args.serverUpdatedAt } : {}),
+    }
+    const draft: CanvasDraft = {
+      projectId: targetProjectId,
+      workflowId: targetWorkflowId,
+      title: loadedProjectTitle,
+      nodes: nodesForSnapshot,
+      edges: edgesForSnapshot,
+      viewport: viewportForSnapshot,
+      updatedAt,
+      ...(args?.syncedAt ? { syncedAt: args.syncedAt } : {}),
+    }
+    const cache: CanvasCache = {
+      ...draft,
+      ...(args?.serverUpdatedAt ? { serverUpdatedAt: args.serverUpdatedAt } : {}),
+    }
+    try {
+      window.localStorage.setItem(getCanvasSnapshotKey(targetProjectId), JSON.stringify(localSnapshot))
+      window.localStorage.setItem(getCanvasCacheKey(targetProjectId), JSON.stringify(cache))
+      window.localStorage.setItem(getDraftKey(targetProjectId), JSON.stringify(draft))
+      window.localStorage.setItem('creator-city:last-project-id', targetProjectId)
+      window.localStorage.setItem('creator-city:last-workflow-id', targetWorkflowId)
+    } catch {
+      // localStorage can fail in private mode; do not disrupt the canvas.
     }
   }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
 
@@ -848,33 +961,9 @@ export function VisualCanvasWorkspace({
     if (args.message !== undefined) setSaveMessage(args.message)
   }, [commitEdges, commitNodes, projectTitleEditing])
 
-  const writeLocalDraft = useCallback((syncedAt?: string) => {
-    if (typeof window === 'undefined' || !projectId || !workflowId) return
-    const snapshot = getCanvasSnapshot()
-    const existing = readLocalDraft(projectId)
-    const draft: CanvasDraft = {
-      projectId,
-      workflowId,
-      nodes: snapshot.nodes,
-      edges: snapshot.edges,
-      viewport: snapshot.viewport,
-      updatedAt: syncedAt ? existing?.updatedAt ?? new Date().toISOString() : new Date().toISOString(),
-      ...(syncedAt ? { syncedAt } : {}),
-    }
-    try {
-      window.localStorage.setItem(getDraftKey(projectId), JSON.stringify(draft))
-      window.localStorage.setItem('creator-city:last-project-id', projectId)
-      window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
-      // draft written
-    } catch {
-      // localStorage can fail in private mode; do not disrupt the canvas.
-    }
-  }, [getCanvasSnapshot, projectId, readLocalDraft, workflowId])
-
-  const writeLocalCanvasSafetySnapshot = useCallback((syncedAt?: string) => {
-    writeLocalDraft(syncedAt)
-    writeCanvasCache({ syncedAt, serverUpdatedAt: syncedAt })
-  }, [writeCanvasCache, writeLocalDraft])
+  const flushLocalSnapshot = useCallback((syncedAt?: string) => {
+    writeUnifiedLocalSnapshot(syncedAt ? { syncedAt, serverUpdatedAt: syncedAt } : undefined)
+  }, [writeUnifiedLocalSnapshot])
 
   useEffect(() => {
     if (!projectTitleEditing) setProjectTitleDraft(loadedProjectTitle)
@@ -883,7 +972,7 @@ export function VisualCanvasWorkspace({
   const saveCanvas = useCallback(async () => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
     const snapshot = getCanvasSnapshot()
-    writeLocalCanvasSafetySnapshot()
+    flushLocalSnapshot()
     setSaveStatus('saving')
     setSaveMessage('')
     saveAbortRef.current?.abort()
@@ -911,6 +1000,7 @@ export function VisualCanvasWorkspace({
         message?: string
         success?: boolean
         savedAt?: string
+        serverUpdatedAt?: string
         skipped?: boolean
         reason?: string
       }
@@ -924,24 +1014,24 @@ export function VisualCanvasWorkspace({
       }
       if (data.skipped) {
         setSaveStatus('saved')
-        setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : 'Saved')
+        setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : '已保存')
         return
       }
       deletedNodeIdsRef.current = []
       deletedEdgeIdsRef.current = []
-      writeLocalCanvasSafetySnapshot(data.savedAt ?? new Date().toISOString())
+      flushLocalSnapshot(data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString())
       setSaveStatus('saved')
-      setSaveMessage('Saved')
+      setSaveMessage('已保存')
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') return
-      writeLocalCanvasSafetySnapshot()
+      flushLocalSnapshot()
       setSaveStatus('failed')
       const detail = error instanceof Error ? error.message : '保存失败'
       setSaveMessage(`${detail}；已保留本地草稿`)
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
-  }, [getCanvasSnapshot, projectId, router, workflowId, writeLocalCanvasSafetySnapshot])
+  }, [getCanvasSnapshot, projectId, router, workflowId, flushLocalSnapshot])
 
   const restoreDraftToServer = useCallback(async () => {
     if (!draftRestorePrompt?.workflowId) return
@@ -972,10 +1062,10 @@ export function VisualCanvasWorkspace({
           deletedEdgeIds: [],
         }),
       })
-      const data = await response.json().catch(() => ({})) as { savedAt?: string; message?: string }
+      const data = await response.json().catch(() => ({})) as { savedAt?: string; serverUpdatedAt?: string; message?: string }
       if (!response.ok) throw new Error(data.message ?? '同步草稿失败。')
-      const savedAt = data.savedAt ?? new Date().toISOString()
-      writeCanvasCache({
+      const savedAt = data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString()
+      writeUnifiedLocalSnapshot({
         projectId: draft.projectId,
         workflowId: draft.workflowId,
         nodes: draft.nodes,
@@ -990,12 +1080,42 @@ export function VisualCanvasWorkspace({
       setSaveStatus('local-draft')
       setSaveMessage(error instanceof Error ? error.message : '草稿已恢复到本地，稍后可再次保存')
     }
-  }, [applyCanvasSnapshot, draftRestorePrompt, writeCanvasCache])
+  }, [applyCanvasSnapshot, draftRestorePrompt, writeUnifiedLocalSnapshot])
 
   const keepServerEmptyCanvas = useCallback(() => {
     setDraftRestorePrompt(null)
     setSaveStatus('saved')
     setSaveMessage('使用服务器空画布')
+  }, [])
+
+  const switchToServerVersion = useCallback(() => {
+    if (!projectId || !serverVersionPrompt) return
+    applyCanvasSnapshot({
+      projectId,
+      workflowId: serverVersionPrompt.workflowId,
+      title: loadedProjectTitle,
+      nodes: serverVersionPrompt.nodes,
+      edges: serverVersionPrompt.edges,
+      viewport: serverVersionPrompt.viewport,
+      status: 'saved',
+      message: '已切换到服务器版本',
+    })
+    writeCanvasCache({
+      projectId,
+      workflowId: serverVersionPrompt.workflowId,
+      nodes: serverVersionPrompt.nodes,
+      edges: serverVersionPrompt.edges,
+      viewport: serverVersionPrompt.viewport as CanvasCache['viewport'],
+      syncedAt: serverVersionPrompt.serverUpdatedAt,
+      serverUpdatedAt: serverVersionPrompt.serverUpdatedAt,
+    })
+    setServerVersionPrompt(null)
+  }, [applyCanvasSnapshot, loadedProjectTitle, projectId, serverVersionPrompt, writeCanvasCache])
+
+  const keepLocalVersion = useCallback(() => {
+    setServerVersionPrompt(null)
+    setSaveStatus('restored-draft')
+    setSaveMessage('继续使用本地草稿，点击保存可覆盖服务器版本')
   }, [])
 
   const scheduleCanvasSave = useCallback((delay = 800) => {
@@ -1065,6 +1185,7 @@ export function VisualCanvasWorkspace({
       setSaveStatus('opening')
       setSaveMessage('')
       setDraftRestorePrompt(null)
+      setServerVersionPrompt(null)
       canvasLoadedRef.current = false
       hasHydratedCanvasRef.current = false
       isInitializingRef.current = true
@@ -1118,7 +1239,7 @@ export function VisualCanvasWorkspace({
             edges: (ensureData.edges ?? []) as CanvasEdge[],
             viewport: ensureData.viewport ?? ensureData.workflow.viewportJson,
             status: 'saved',
-            message: 'Saved',
+            message: '已同步',
           })
           writeCanvasCache({
             projectId: ensureData.project.id,
@@ -1137,13 +1258,7 @@ export function VisualCanvasWorkspace({
           return
         }
 
-        const cache = readCanvasCache(resolvedProjectId)
-        const draftBeforeFetch = readLocalDraft(resolvedProjectId)
-        const localPreview = draftBeforeFetch?.nodes.length
-          ? { source: 'draft' as const, value: draftBeforeFetch }
-          : cache?.nodes.length
-            ? { source: 'cache' as const, value: cache }
-            : null
+        const localPreview = readBestLocalCanvasSnapshot(resolvedProjectId)
         if (localPreview?.value.workflowId) {
           applyCanvasSnapshot({
             projectId: resolvedProjectId,
@@ -1152,12 +1267,12 @@ export function VisualCanvasWorkspace({
             nodes: localPreview.value.nodes,
             edges: localPreview.value.edges,
             viewport: localPreview.value.viewport,
-            status: 'local-draft',
-            message: '本地预览已加载，正在同步服务器...',
+            status: 'restored-draft',
+            message: '已恢复本地草稿，正在同步服务器...',
           })
           canvasLoadedRef.current = true
-          hasHydratedCanvasRef.current = false
-          isInitializingRef.current = true
+          hasHydratedCanvasRef.current = true
+          isInitializingRef.current = false
           devPerf('first-render')
         }
 
@@ -1199,16 +1314,13 @@ export function VisualCanvasWorkspace({
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
-        const draft = draftBeforeFetch ?? readLocalDraft(resolvedProjectId)
-        const localCandidate = draft?.nodes.length
-          ? { source: 'draft' as const, value: draft }
-          : cache?.nodes.length
-            ? { source: 'cache' as const, value: cache }
-            : null
-        const shouldRestoreLocalCanvas = Boolean(
-          localCandidate?.value.nodes.length
-          && (serverNodes.length === 0 || isLocalCanvasNewer(localCandidate.value, serverUpdatedAtText)),
-        )
+        const localCandidate = readBestLocalCanvasSnapshot(resolvedProjectId) ?? localPreview
+        const hasLocalCanvas = Boolean(localCandidate?.value.nodes.length)
+        const localIsNewer = Boolean(localCandidate && isLocalCanvasNewer(localCandidate.value, serverUpdatedAtText))
+        const serverTime = timeValue(serverUpdatedAtText)
+        const localTime = timeValue(localCandidate?.value.updatedAt)
+        const serverIsNewer = Boolean(serverNodes.length > 0 && hasLocalCanvas && serverTime > localTime + 500)
+        const shouldRestoreLocalCanvas = hasLocalCanvas
         const viewport = data.viewport ?? data.workflow?.viewportJson
         const effectiveWorkflowId = data.workflow?.id ?? localCandidate?.value.workflowId ?? ''
         const effectiveNodes = shouldRestoreLocalCanvas && localCandidate ? localCandidate.value.nodes : serverNodes
@@ -1224,51 +1336,68 @@ export function VisualCanvasWorkspace({
         })
         if (shouldRestoreLocalCanvas && localCandidate) {
           setDraftRestorePrompt(null)
-          writeCanvasCache({
+          if (serverIsNewer) {
+            setServerVersionPrompt({
+              workflowId: data.workflow?.id ?? effectiveWorkflowId,
+              nodes: serverNodes,
+              edges: serverEdges,
+              viewport,
+              serverUpdatedAt: serverUpdatedAtText,
+            })
+          } else {
+            setServerVersionPrompt(null)
+          }
+          writeUnifiedLocalSnapshot({
             projectId: resolvedProjectId,
             workflowId: effectiveWorkflowId,
             nodes: localCandidate.value.nodes,
             edges: localCandidate.value.edges,
             viewport: localCandidate.value.viewport,
+            updatedAt: localCandidate.value.updatedAt,
+            syncedAt: localCandidate.value.syncedAt,
+            serverUpdatedAt: localCandidate.value.serverUpdatedAt,
           })
           setSaveStatus('restored-draft')
-          setSaveMessage(localCandidate.source === 'draft' ? '已恢复本地草稿，正在同步...' : '已恢复本地缓存，正在同步...')
-          void fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              workflowId: effectiveWorkflowId,
-              viewport: localCandidate.value.viewport,
-              nodes: localCandidate.value.nodes,
-              edges: localCandidate.value.edges,
-              deletedNodeIds: [],
-              deletedEdgeIds: [],
-            }),
-          }).then(async (syncResponse) => {
-            const raw = await syncResponse.text().catch(() => '')
-            const syncData = raw ? JSON.parse(raw) as { savedAt?: string; message?: string; errorCode?: string } : {}
-            if (!syncResponse.ok) throw new Error(syncData.message ?? syncData.errorCode ?? '同步本地草稿失败。')
-            if (cancelled) return
-            const savedAt = syncData.savedAt ?? new Date().toISOString()
-            writeCanvasCache({
-              projectId: resolvedProjectId,
-              workflowId: effectiveWorkflowId,
-              nodes: localCandidate.value.nodes,
-              edges: localCandidate.value.edges,
-              viewport: localCandidate.value.viewport,
-              syncedAt: savedAt,
-              serverUpdatedAt: savedAt,
+          setSaveMessage(serverIsNewer ? '服务器版本更新，是否切换到服务器版本？' : '已恢复本地草稿，正在同步服务器...')
+          if (!serverIsNewer && (serverNodes.length === 0 || localIsNewer)) {
+            void fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                workflowId: effectiveWorkflowId,
+                viewport: localCandidate.value.viewport,
+                nodes: localCandidate.value.nodes,
+                edges: localCandidate.value.edges,
+                deletedNodeIds: [],
+                deletedEdgeIds: [],
+              }),
+            }).then(async (syncResponse) => {
+              const raw = await syncResponse.text().catch(() => '')
+              const syncData = raw ? JSON.parse(raw) as { savedAt?: string; serverUpdatedAt?: string; message?: string; errorCode?: string } : {}
+              if (!syncResponse.ok) throw new Error(syncData.message ?? syncData.errorCode ?? '同步本地草稿失败。')
+              if (cancelled) return
+              const savedAt = syncData.serverUpdatedAt ?? syncData.savedAt ?? new Date().toISOString()
+              writeUnifiedLocalSnapshot({
+                projectId: resolvedProjectId,
+                workflowId: effectiveWorkflowId,
+                nodes: localCandidate.value.nodes,
+                edges: localCandidate.value.edges,
+                viewport: localCandidate.value.viewport,
+                syncedAt: savedAt,
+                serverUpdatedAt: savedAt,
+              })
+              setSaveStatus('saved')
+              setSaveMessage('本地草稿已同步')
+            }).catch((error: unknown) => {
+              if (cancelled) return
+              setSaveStatus('local-draft')
+              setSaveMessage(error instanceof Error ? `${error.message}；已保留本地草稿` : '已保留本地草稿')
             })
-            setSaveStatus('saved')
-            setSaveMessage('本地草稿已同步')
-          }).catch((error: unknown) => {
-            if (cancelled) return
-            setSaveStatus('local-draft')
-            setSaveMessage(error instanceof Error ? `${error.message}；已保留本地草稿` : '已保留本地草稿')
-          })
+          }
         } else {
           setDraftRestorePrompt(null)
+          setServerVersionPrompt(null)
           writeCanvasCache({
             projectId: resolvedProjectId,
             workflowId: effectiveWorkflowId,
@@ -1299,7 +1428,7 @@ export function VisualCanvasWorkspace({
       cancelled = true
       initAbortRef.current?.abort()
     }
-  }, [applyCanvasSnapshot, projectTitle, readCanvasCache, readLocalDraft, router, searchParamProjectId, writeCanvasCache])
+  }, [applyCanvasSnapshot, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache, writeUnifiedLocalSnapshot])
 
   useEffect(() => {
     latestViewportRef.current = { zoom: canvasZoom, pan: canvasPan }
@@ -1308,79 +1437,38 @@ export function VisualCanvasWorkspace({
       return
     }
     if (hasHydratedCanvasRef.current && !isInitializingRef.current) {
-      writeLocalCanvasSafetySnapshot()
+      flushLocalSnapshot()
     }
     scheduleCanvasSave()
-  }, [canvasPan, canvasZoom, edges, nodes, scheduleCanvasSave, writeLocalCanvasSafetySnapshot])
+  }, [canvasPan, canvasZoom, edges, nodes, scheduleCanvasSave, flushLocalSnapshot])
 
   // Flush pending save on page leave / tab hide / component unmount
   useEffect(() => {
     if (!projectId || !workflowId) return
 
-    function flushSave() {
-      if (!hasHydratedCanvasRef.current || isInitializingRef.current) return
-      const snapshot = {
-        nodes: latestNodesRef.current,
-        edges: latestEdgesRef.current,
-        viewport: latestViewportRef.current,
-      }
-      // Always write local draft/cache first (synchronous), even when navigation aborts server save.
-      try {
-        window.localStorage.setItem(`creator-city:draft:${projectId}`, JSON.stringify({
-          projectId,
-          workflowId,
-          ...snapshot,
-          updatedAt: new Date().toISOString(),
-        }))
-        window.localStorage.setItem(`creator-city:canvas-cache:${projectId}`, JSON.stringify({
-          projectId,
-          workflowId,
-          title: loadedProjectTitle,
-          ...snapshot,
-          updatedAt: new Date().toISOString(),
-        }))
-        window.localStorage.setItem('creator-city:last-project-id', projectId)
-        window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
-      } catch (_) { /* localStorage unavailable */ }
-      if (isSwitchingProjectRef.current) return
-      // Best-effort keepalive fetch so the server also gets the update
+    function flushBeforeLeave() {
+      flushLocalSnapshot()
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      try {
-        fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          keepalive: true,
-          body: JSON.stringify({
-            workflowId,
-            viewport: snapshot.viewport,
-            nodes: snapshot.nodes,
-            edges: snapshot.edges,
-            deletedNodeIds: deletedNodeIdsRef.current,
-            deletedEdgeIds: deletedEdgeIdsRef.current,
-          }),
-        }).catch(() => {})
-      } catch (_) { /* keepalive fetch not supported */ }
     }
 
-    const onPageHide = () => flushSave()
-    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flushSave() }
-    const onBeforeUnload = () => flushSave()
+    const onPageHide = () => flushBeforeLeave()
+    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flushBeforeLeave() }
+    const onBeforeUnload = () => flushBeforeLeave()
 
     window.addEventListener('pagehide', onPageHide)
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('beforeunload', onBeforeUnload)
 
     return () => {
-      flushSave()  // also flush on React component unmount (e.g. in-app navigation)
+      flushBeforeLeave()
       window.removeEventListener('pagehide', onPageHide)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
-  }, [loadedProjectTitle, projectId, workflowId])
+  }, [flushLocalSnapshot, projectId, workflowId])
 
   const setZoomAroundPoint = useCallback((nextZoomInput: number, clientPoint?: { x: number; y: number }) => {
     const nextZoom = clampCanvasZoom(nextZoomInput)
@@ -1951,24 +2039,27 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const handleOpenAssetsPanel = useCallback(() => {
+    flushLocalSnapshot()
     setActivePanel((current) => (current === 'assets' ? null : 'assets'))
     setCommentsEnabled(false)
     setIsAddMenuOpen(false)
     setEditingNodeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [])
+  }, [flushLocalSnapshot])
 
   const handleOpenTemplatePanel = useCallback(() => {
+    flushLocalSnapshot()
     setActivePanel((current) => (current === 'templates' ? null : 'templates'))
     setCommentsEnabled(false)
     setIsAddMenuOpen(false)
     setEditingNodeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [])
+  }, [flushLocalSnapshot])
 
   const handleToggleCommentsPanel = useCallback(() => {
+    flushLocalSnapshot()
     setCommentsEnabled((current) => {
       const next = !current
       if (next) {
@@ -1981,18 +2072,20 @@ export function VisualCanvasWorkspace({
     })
     setIsAddMenuOpen(false)
     setEditingNodeId(null)
-  }, [showCanvasFeedback])
+  }, [flushLocalSnapshot, showCanvasFeedback])
 
   const handleOpenHistoryPanel = useCallback(() => {
+    flushLocalSnapshot()
     setActivePanel((current) => (current === 'history' ? null : 'history'))
     setCommentsEnabled(false)
     setIsAddMenuOpen(false)
     setEditingNodeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [])
+  }, [flushLocalSnapshot])
 
   const handleOpenImageEditor = useCallback(() => {
+    flushLocalSnapshot()
     setHasStarted(true)
     setEditingNodeId(null)
     setActivePanel((current) => (current === 'image-editor' ? null : 'image-editor'))
@@ -2000,7 +2093,7 @@ export function VisualCanvasWorkspace({
     setIsAddMenuOpen(false)
     setEditingNodeId(null)
     showCanvasFeedback(activeNode?.kind === 'image' ? '已打开当前图片节点的编辑器。' : '请选择一个高级编辑功能。')
-  }, [activeNode, showCanvasFeedback])
+  }, [activeNode, flushLocalSnapshot, showCanvasFeedback])
 
   const handleAddProjectAssetToCanvas = useCallback((asset: ProjectAssetItem) => {
     setHasStarted(true)
@@ -3059,6 +3152,7 @@ export function VisualCanvasWorkspace({
   }, [canStartCanvasPan, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
 
   const handleShareCanvasLink = useCallback(async () => {
+    flushLocalSnapshot()
     const href = window.location.href
     const showCopyPrompt = () => {
       try {
@@ -3086,12 +3180,12 @@ export function VisualCanvasWorkspace({
     setShareCopied(true)
     const timer = window.setTimeout(() => setShareCopied(false), 1600)
     timersRef.current.push(timer)
-  }, [])
+  }, [flushLocalSnapshot])
 
   const handleBeforeNewProject = useCallback(() => {
     const confirmed = window.confirm('将立即创建并进入新项目。旧画布会保留本地草稿，后台保存失败不会阻塞新项目。')
     if (!confirmed) return false
-    writeLocalCanvasSafetySnapshot()
+    flushLocalSnapshot()
     isSwitchingProjectRef.current = true
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current)
@@ -3099,10 +3193,10 @@ export function VisualCanvasWorkspace({
     }
     saveAbortRef.current?.abort()
     return true
-  }, [writeLocalCanvasSafetySnapshot])
+  }, [flushLocalSnapshot])
 
   const handleOpenClientDelivery = useCallback(() => {
-    writeLocalCanvasSafetySnapshot()
+    flushLocalSnapshot()
     const currentProjectId = projectId || new URLSearchParams(window.location.search).get('projectId') || ''
     if (!currentProjectId || isPlaceholderProjectId(currentProjectId)) {
       window.alert('请先打开一个项目，再创建客户交付。')
@@ -3110,10 +3204,10 @@ export function VisualCanvasWorkspace({
       return
     }
     router.push(`/projects/${encodeURIComponent(currentProjectId)}/delivery`)
-  }, [projectId, router, writeLocalCanvasSafetySnapshot])
+  }, [projectId, router, flushLocalSnapshot])
 
   const handleOpenProjects = useCallback(() => {
-    writeLocalCanvasSafetySnapshot()
+    flushLocalSnapshot()
     try {
       if (projectId) window.localStorage.setItem('creator-city:last-project-id', projectId)
       if (workflowId) window.localStorage.setItem('creator-city:last-workflow-id', workflowId)
@@ -3121,7 +3215,14 @@ export function VisualCanvasWorkspace({
       // Explicit /projects navigation still works without localStorage.
     }
     router.push('/projects')
-  }, [projectId, router, workflowId, writeLocalCanvasSafetySnapshot])
+  }, [projectId, router, workflowId, flushLocalSnapshot])
+
+  const handleCanvasRootClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    const navigatesFromCanvas = target?.closest('a[href], button[data-flush-canvas-before-nav="true"]')
+    if (!navigatesFromCanvas) return
+    flushLocalSnapshot()
+  }, [flushLocalSnapshot])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || typeof window === 'undefined') return undefined
@@ -3157,7 +3258,7 @@ export function VisualCanvasWorkspace({
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
 
   return (
-    <div className={`${canvasStyles.scope} h-full min-h-0`}>
+    <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
       <div className="canvas-grid" />
@@ -3263,11 +3364,12 @@ export function VisualCanvasWorkspace({
             title="新建项目"
             aria-label="新建项目"
             data-tooltip="新建项目"
+            data-flush-canvas-before-nav="true"
           >
             新建项目
             <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
           </button>
-          <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表">
+          <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表" data-flush-canvas-before-nav="true">
             项目
             <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
           </button>
@@ -3283,6 +3385,7 @@ export function VisualCanvasWorkspace({
               title="客户交付"
               aria-label="打开客户交付界面"
               data-tooltip="客户交付"
+              data-flush-canvas-before-nav="true"
             >
               客户
               <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
@@ -3295,6 +3398,7 @@ export function VisualCanvasWorkspace({
             title="复制画布链接"
             aria-label="复制画布链接"
             data-tooltip="复制画布链接"
+            data-flush-canvas-before-nav="true"
           >
             {shareCopied ? '已复制' : '链接分享'}
             <span className="canvas-hover-tooltip" aria-hidden="true">复制画布链接</span>
@@ -3313,7 +3417,7 @@ export function VisualCanvasWorkspace({
         <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
           <div className="text-sm font-semibold text-white">发现本地画布草稿，是否恢复？</div>
           <div className="mt-1 text-xs text-white/50">
-            {draftRestorePrompt.source === 'draft' ? '本地草稿' : '本地缓存'}包含 {draftRestorePrompt.nodes.length} 个节点。
+            {draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -3329,6 +3433,23 @@ export function VisualCanvasWorkspace({
               className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
             >
               使用服务器空画布
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {serverVersionPrompt ? (
+        <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-sky-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
+          <div className="text-sm font-semibold text-white">服务器版本更新，是否切换到服务器版本？</div>
+          <div className="mt-1 text-xs text-white/50">
+            当前已保留本地草稿。服务器版本包含 {serverVersionPrompt.nodes.length} 个节点。
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className="canvas-secondary-button" onClick={keepLocalVersion}>
+              继续本地草稿
+            </button>
+            <button type="button" className="canvas-panel-primary" onClick={switchToServerVersion}>
+              切换到服务器版本
             </button>
           </div>
         </div>

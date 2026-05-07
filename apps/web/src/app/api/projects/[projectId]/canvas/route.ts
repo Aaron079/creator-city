@@ -287,12 +287,14 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
     if (body.nodes.length === 0 && !body.clearCanvas) {
       const savedAt = new Date().toISOString()
+      const existingNodeCount = await db.canvasNode.count({ where: { workflowId: workflow.id } })
       return jsonOk({
         skipped: true,
         reason: 'EMPTY_NODES_IGNORED',
         workflowId: workflow.id,
         savedAt,
-        nodeCount: 0,
+        serverUpdatedAt: workflow.updatedAt instanceof Date ? workflow.updatedAt.toISOString() : savedAt,
+        nodeCount: existingNodeCount,
         edgeCount: body.edges.length,
       })
     }
@@ -419,6 +421,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     return jsonOk({
       workflowId: workflow.id,
       savedAt: now.toISOString(),
+      serverUpdatedAt: now.toISOString(),
       nodeCount: body.nodes.length,
       edgeCount: body.edges.length,
     })
