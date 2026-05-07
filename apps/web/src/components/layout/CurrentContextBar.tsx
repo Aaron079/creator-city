@@ -10,6 +10,7 @@ import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
 import { getProjectRoleLabel } from '@/lib/roles/projectRoles'
 import { resolveDashboardRoleContext, resolveProjectRoleContext } from '@/lib/roles/currentRole'
 import { getActionTarget } from '@/lib/routing/actions'
+import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
 import { useDeliveryPackageStore } from '@/store/delivery-package.store'
@@ -58,7 +59,8 @@ export function CurrentContextBar() {
   const currentUserId = user?.id ?? currentProfileId ?? 'user-me'
   const profileId = currentProfileId ?? currentUserId
   const section = sectionFromPath(pathname)
-  const projectId = projectIdFromPath(pathname)
+  const rawProjectId = projectIdFromPath(pathname)
+  const projectId = isPlaceholderProjectId(rawProjectId) ? null : rawProjectId
 
   const dashboard = useMemo(
     () => aggregateProducerDashboard({

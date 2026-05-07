@@ -69,7 +69,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     for (const project of projects.slice(0, 6)) {
-      router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+      router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
     }
   }, [projects, router])
 
@@ -172,12 +172,12 @@ export default function ProjectsPage() {
             {projects.map((project) => (
               <Link
                 key={project.id}
-                href={`/create?projectId=${encodeURIComponent(project.id)}`}
+                href={`/projects/${encodeURIComponent(project.id)}`}
                 onPointerEnter={() => {
-                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+                  router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
                 }}
                 onFocus={() => {
-                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
+                  router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
                 }}
                 onClick={() => {
                   try {

@@ -1,6 +1,7 @@
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { loadProjectDelivery, requireProjectWriteAccess, serializeDeliveryShare } from '@/lib/delivery/service'
+import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 import {
   ProjectDeliveryClient,
   type DeliveryAssetForClient,
@@ -19,6 +20,22 @@ function asClientJson<T>(value: T) {
 
 export default async function ProjectDeliveryPage({ params }: Props) {
   const projectId = params.id
+  if (isPlaceholderProjectId(projectId)) {
+    return (
+      <DashboardShell>
+        <main className="mx-auto max-w-2xl px-4 py-16">
+          <section className="rounded-lg border border-white/10 bg-white/[0.03] p-8 text-center">
+            <h1 className="text-xl font-semibold text-white">这是示例地址，不是真实项目。</h1>
+            <p className="mt-3 text-sm leading-6 text-white/55">请从项目列表选择一个项目。</p>
+            <a href="/projects" className="mt-6 inline-flex rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-100">
+              返回项目列表
+            </a>
+          </section>
+        </main>
+      </DashboardShell>
+    )
+  }
+
   const user = await getCurrentUser()
   if (!user) {
     return (

@@ -1,6 +1,7 @@
 import { DeliveryFeedbackForm, type DeliveryCommentForDisplay } from './DeliveryFeedbackForm'
 import { DeliveryItemImage } from './DeliveryItemImage'
 import { getPublicDelivery } from '@/lib/delivery/service'
+import { isPlaceholderDeliveryToken } from '@/lib/routing/placeholders'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,20 @@ function getItemUrl(item: {
 }
 
 export default async function PublicDeliveryPage({ params }: Props) {
+  if (isPlaceholderDeliveryToken(params.token)) {
+    return (
+      <main className="min-h-screen bg-slate-950 px-4 py-16 text-white">
+        <div className="mx-auto max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-8 text-center">
+          <h1 className="text-xl font-semibold">这是示例地址，不是真实交付链接。</h1>
+          <p className="mt-3 text-sm text-white/55">请打开项目交付页，创建交付链接后使用真实 token。</p>
+          <a href="/projects" className="mt-6 inline-flex rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-100">
+            返回项目列表
+          </a>
+        </div>
+      </main>
+    )
+  }
+
   const share = await getPublicDelivery(params.token)
   if (!share || share === 'DISABLED' || share === 'EXPIRED') {
     const message = !share ? '交付链接不存在。' : share === 'DISABLED' ? '交付链接已停用。' : '交付链接已过期。'

@@ -123,7 +123,7 @@ export function getDeliveryHref(projectId?: string) {
     return `${getReviewHref(projectId)}#delivery-snapshot`
   }
 
-  return '/create#delivery'
+  return `/projects/${encodeProjectId(projectId)}/delivery`
 }
 
 export function getPlanningHref(projectId?: string) {
