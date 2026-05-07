@@ -615,14 +615,18 @@ export async function testProviderConnection(providerId: string, mode: AdminProv
     }
 
     const pingResult = providerId === 'kimi-text' || providerId === 'kimi-multimodal'
-      ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 16, providerId })
-      : await generateDeepSeekText({ prompt: '请只回复 OK', maxTokens: 16, providerId })
+      ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 32, providerId })
+      : await generateDeepSeekText({
+          prompt: providerId === 'deepseek-text' ? '只回复 OK' : '请只回复 OK',
+          maxTokens: providerId === 'deepseek-text' ? 64 : 16,
+          providerId,
+        })
 
     return {
       ok: pingResult.success,
       status: pingResult.success ? 'configured' as const : 'error' as const,
-      errorCode: pingResult.success ? undefined : 'PROVIDER_TEXT_PING_FAILED',
-      message: pingResult.success ? '轻量文本测试通过。' : '轻量文本测试失败',
+      errorCode: pingResult.success ? undefined : pingResult.errorCode,
+      message: pingResult.success ? '轻量文本测试通过。' : pingResult.message,
       configured: true,
       missingEnv: [],
       missingEnvKeys: [],

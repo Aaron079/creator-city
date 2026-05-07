@@ -153,10 +153,14 @@ function formatTestMessage(data: TestResponse) {
   const parts = [
     data.errorCode,
     data.message,
-    data.upstreamMessage ? `upstream: ${data.upstreamMessage}` : '',
+    data.upstreamMessage ? `upstream: ${truncateText(data.upstreamMessage, 300)}` : '',
     data.sample ? `sample: ${data.sample}` : '',
   ].filter(Boolean)
   return parts.join(' · ')
+}
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
 
 export default function AdminProvidersPage() {
@@ -461,7 +465,7 @@ export default function AdminProvidersPage() {
                           <div className="mt-1 max-w-[220px] break-words text-xs text-red-200/70">upstreamStatus: {testResult.upstreamStatus}</div>
                         ) : null}
                         {testResult?.upstreamMessage ? (
-                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-100/70">upstream: {testResult.upstreamMessage}</div>
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-100/70">upstream: {truncateText(testResult.upstreamMessage, 300)}</div>
                         ) : null}
                         {testResult?.rawCode ? (
                           <div className="mt-1 max-w-[220px] break-words text-xs text-red-100/55">rawCode: {testResult.rawCode}</div>
