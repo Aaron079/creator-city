@@ -246,6 +246,13 @@ const PARAMETER_OPTIONS = [
   { value: '16:9-detail', label: '16:9 高细节', hint: '更强调质感与细节占位' },
 ] as const
 
+const TEXT_NODE_PROVIDER_OPTIONS = [
+  { value: 'openai-text', label: 'OpenAI Text', hint: '默认文本生成', badge: 'available', duration: '10~20s' },
+  { value: 'deepseek-text', label: 'DeepSeek V4 Flash', hint: '中文文本 · 快速', badge: 'available', duration: '10~20s' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek V4 Pro', hint: '中文文本 · 推理增强', badge: 'available', duration: '15~30s' },
+  { value: 'kimi-text', label: 'Kimi K2.6', hint: '中文文本 · Kimi', badge: 'available', duration: '10~20s' },
+] as const
+
 const PARAMETER_RATIO_MAP: Record<(typeof PARAMETER_OPTIONS)[number]['value'], string> = {
   '16:9-balanced': '16:9',
   '9:16-vertical': '9:16',
@@ -298,6 +305,8 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
+  if (kind === 'text') return TEXT_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
+
   const providerKind = getProviderKind(kind)
   const providers = getCanvasProviders(providerKind)
   return providers.length > 0
@@ -310,6 +319,10 @@ function normalizeProviderId(providerId: string) {
   if (providerId === 'openai-gpt-images' || providerId === 'openai-images' || providerId === 'openai-image2') return 'openai-image'
   if (providerId === 'openai-text-script') return 'openai-text'
   return providerId
+}
+
+function getTextNodeProviderOption(providerId: string) {
+  return TEXT_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
 }
 
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
@@ -331,7 +344,23 @@ function getNodeKindForPublicTemplate(nodeType: PublicTemplate['nodeType']): Vis
   return 'template'
 }
 
-type GenerateApiResult = GenerateResponse & { requiredCredits?: number; availableCredits?: number }
+type GenerateApiResult = GenerateResponse & {
+  requiredCredits?: number
+  availableCredits?: number
+  model?: string
+  upstreamStatus?: number
+  upstreamMessage?: string
+}
+
+function formatGenerateError(result: GenerateApiResult) {
+  return [
+    result.errorCode,
+    result.message,
+    result.model ? `model: ${result.model}` : '',
+    typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
+    result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 240)}` : '',
+  ].filter(Boolean).join(' · ') || '生成失败'
+}
 
 async function callGenerationApi(
   nodeType: ToolProviderNodeType,
@@ -1781,18 +1810,23 @@ export function VisualCanvasWorkspace({
     [preferredKind],
   )
   const normalizedPromptModel = normalizeProviderId(promptModel)
+  const activeTextProvider = preferredKind === 'text'
+    ? getTextNodeProviderOption(normalizedPromptModel)
+    : null
   const activeProvider = useMemo(
     () => getCanvasProvider(getProviderKind(preferredKind), normalizedPromptModel),
     [preferredKind, normalizedPromptModel],
   )
   const providerOptionLabels = useMemo(
-    () => Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
+    () => preferredKind === 'text'
+      ? Object.fromEntries(TEXT_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
+      : Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
     [preferredKind],
   )
-  const activeProviderLabel = activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
+  const activeProviderLabel = activeTextProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
   const activeProviderLiveStatus = liveStatusMap.get(normalizedPromptModel)
   const activeProviderStatus = activeProviderLiveStatus
-    ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown')
+    ?? (activeTextProvider?.badge ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown'))
   const activeProviderNotice = activeProviderStatus === 'checking'
     ? '正在检查 provider 实时状态'
     : activeProviderStatus === 'unknown'
@@ -2592,7 +2626,7 @@ export function VisualCanvasWorkspace({
           }
           const jobFallback = buildResultLabel(nodeSnapshot.title)
           if (!jobResult.success) {
-            const errMsg = jobResult.message || jobResult.errorCode || '生成失败'
+            const errMsg = formatGenerateError(jobResult)
             handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: jobFallback, outputLabel: jobFallback })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -2649,7 +2683,7 @@ export function VisualCanvasWorkspace({
       const fallbackPreview = trimmedPrompt ? buildMockResult(nodeSnapshot, trimmedPrompt) : buildResultLabel(nodeSnapshot.title)
 
       if (!result.success) {
-        const errMsg = result.message || result.errorCode || '生成失败'
+        const errMsg = formatGenerateError(result)
         handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: fallbackPreview, outputLabel: fallbackPreview })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
@@ -3064,13 +3098,21 @@ export function VisualCanvasWorkspace({
       id: 'api',
       label: 'API / 模型',
       value: activeProviderLabel,
-      options: getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
-        value: provider.id,
-        label: provider.name,
-        hint: provider.description.length > 30 ? provider.description.slice(0, 30) + '…' : provider.description,
-        badge: liveStatusMap.get(normalizeProviderId(provider.id)) ?? (liveStatusLoading ? 'checking' : provider.status),
-        duration: provider.estimatedTime,
-      })),
+      options: preferredKind === 'text'
+        ? TEXT_NODE_PROVIDER_OPTIONS.map((provider) => ({
+            value: provider.value,
+            label: provider.label,
+            hint: provider.hint,
+            badge: liveStatusMap.get(normalizeProviderId(provider.value)) ?? provider.badge,
+            duration: provider.duration,
+          }))
+        : getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
+            value: provider.id,
+            label: provider.name,
+            hint: provider.description.length > 30 ? provider.description.slice(0, 30) + '…' : provider.description,
+            badge: liveStatusMap.get(normalizeProviderId(provider.id)) ?? (liveStatusLoading ? 'checking' : provider.status),
+            duration: provider.estimatedTime,
+          })),
       onSelect: handleProviderChange,
     },
     {
