@@ -2,6 +2,7 @@ import {
   getChinaProviderStatus,
   normalizeChinaProviderError,
   type ChinaProviderConfig,
+  type ChinaTextGenerationResult,
   type ChinaTextGenerationInput,
 } from './types'
 
@@ -58,8 +59,9 @@ function isKimiK2Model(model: string) {
   return /^kimi-k2\.(5|6)(?:\b|[-_])/i.test(model)
 }
 
-export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal' }) {
+export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal'; purpose?: 'ping' | 'generate' }): Promise<ChinaTextGenerationResult> {
   const providerId = input.providerId ?? 'kimi-text'
+  const purpose = input.purpose ?? 'ping'
   const apiKey = process.env.MOONSHOT_API_KEY
   const model = providerId === 'kimi-multimodal'
     ? process.env.KIMI_MODEL_MULTIMODAL || process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
@@ -81,10 +83,15 @@ export async function generateKimiText(input: ChinaTextGenerationInput & { provi
     const body: Record<string, unknown> = {
       model,
       messages: [
-        { role: 'system', content: input.system || '你是 Creator City 的 API 连通性测试助手。只输出 OK，不要解释。' },
-        { role: 'user', content: input.prompt },
+        {
+          role: 'system',
+          content: input.system || (purpose === 'ping'
+            ? '你是 Creator City 的 API 连通性测试助手。只输出 OK，不要解释。'
+            : '你是 Creator City 的创作助手。请直接输出创作内容，不要解释调用过程。'),
+        },
+        { role: 'user', content: purpose === 'ping' ? '请只回复 OK' : input.prompt },
       ],
-      max_tokens: input.maxTokens || 32,
+      max_tokens: purpose === 'ping' ? 16 : input.maxTokens || 1024,
     }
     if (isKimiK2Model(model)) {
       body.thinking = { type: 'disabled' }
@@ -149,15 +156,15 @@ export async function generateKimiText(input: ChinaTextGenerationInput & { provi
       success: false as const,
       providerId,
       model,
-      errorCode: reasoningContent ? 'KIMI_EMPTY_FINAL_CONTENT' : 'KIMI_TEXT_FAILED',
+      errorCode: 'KIMI_EMPTY_FINAL_CONTENT',
       message: reasoningContent
         ? '模型只返回了 reasoning_content，未返回最终 content。'
-        : 'Kimi 未返回文本内容。',
+        : 'Kimi 未返回最终文本内容',
       upstreamStatus: response.status,
       upstreamMessage: reasoningContent
         ? JSON.stringify({ finish_reason: choice?.finish_reason, reasoning_content: reasoningContent.slice(0, 200) })
         : raw.slice(0, 500),
-      rawCode: reasoningContent ? 'KIMI_EMPTY_FINAL_CONTENT' : 'KIMI_TEXT_FAILED',
+      rawCode: 'KIMI_EMPTY_FINAL_CONTENT',
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Kimi 调用失败。'

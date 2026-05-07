@@ -291,7 +291,7 @@ export function CanvasNodeCard({
                 />
               ) : null}
               <div className="canvas-node-preview-copy">
-                {node.resultText ?? node.resultPreview ?? node.outputLabel ?? '结果已生成。'}
+                {node.resultText || node.resultPreview || node.outputLabel || (node.kind === 'text' ? '生成结果会显示在这里' : '结果已生成。')}
                 {node.preview?.type === 'placeholder-video' ? (
                   <span className="canvas-node-preview-license">合法占位预览 · 无第三方素材</span>
                 ) : null}

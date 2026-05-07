@@ -376,6 +376,7 @@ async function callGenerationApi(
     : nodeType === 'video' ? '/api/generate/video'
     : nodeType === 'audio' ? '/api/generate/audio'
     : '/api/generate/text'
+  const maxTokens = nodeType === 'text' ? 1024 : undefined
 
   if (process.env.NODE_ENV !== 'production') {
     console.info('[canvas-generate] submit', { nodeType, providerId })
@@ -387,7 +388,7 @@ async function callGenerationApi(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ providerId, nodeType, prompt, params, nodeId, inputAssets, projectId }),
+      body: JSON.stringify({ providerId, nodeType, prompt, params, maxTokens, nodeId, inputAssets, projectId }),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '网络请求失败'

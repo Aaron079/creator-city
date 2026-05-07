@@ -19,17 +19,32 @@ type TextGenerateResponse = GenerateResponse & {
   requestId?: string
 }
 
+type TextGenerateBody = Partial<GenerateRequest> & {
+  maxTokens?: number
+  system?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
-    let body: Partial<GenerateRequest>
+    let body: TextGenerateBody
     try {
-      body = await request.json() as Partial<GenerateRequest>
+      body = await request.json() as TextGenerateBody
     } catch {
       return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
     }
 
     const providerId = body.providerId || 'openai-text'
-    const prompt = body.prompt ?? ''
+    const prompt = body.prompt?.trim() ?? ''
+    if (!prompt) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'PROMPT_REQUIRED',
+        message: '请输入文本提示词',
+        providerId,
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 200 })
+    }
 
     const billing = await setupBilling(request, providerId, 'text', prompt)
     if (!billing.ok) {
@@ -39,16 +54,28 @@ export async function POST(request: NextRequest) {
     const currentUser = await getCurrentUser()
     let raw: TextGenerateResponse
     if (providerId === 'kimi-text' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
-      const maxTokens = typeof body.params?.maxTokens === 'number' ? body.params.maxTokens : undefined
-      const system = typeof body.params?.system === 'string' ? body.params.system : undefined
+      const requestedMaxTokens = typeof body.maxTokens === 'number'
+        ? body.maxTokens
+        : typeof body.params?.maxTokens === 'number'
+          ? body.params.maxTokens
+          : undefined
+      const maxTokens = providerId === 'deepseek-reasoner'
+        ? Math.max(requestedMaxTokens ?? 2048, 2048)
+        : requestedMaxTokens ?? 1024
+      const system = typeof body.system === 'string'
+        ? body.system
+        : typeof body.params?.system === 'string'
+          ? body.params.system
+          : undefined
       const chinaResult = providerId === 'kimi-text'
-        ? await generateKimiText({ prompt, system, maxTokens })
+        ? await generateKimiText({ prompt, system, maxTokens, purpose: 'generate' })
         : await generateDeepSeekText({
             prompt,
             system,
             maxTokens,
             providerId,
             reasoner: providerId === 'deepseek-reasoner',
+            purpose: 'generate',
           })
 
       raw = chinaResult.success
@@ -97,6 +124,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ...result,
       text: result.result?.text,
+      resultText: result.result?.text,
       model: result.result?.metadata?.model ?? result.model,
       upstreamStatus: result.upstreamStatus,
       upstreamMessage: result.upstreamMessage,

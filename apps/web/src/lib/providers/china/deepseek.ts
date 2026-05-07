@@ -2,6 +2,7 @@ import {
   getChinaProviderStatus,
   normalizeChinaProviderError,
   type ChinaProviderConfig,
+  type ChinaTextGenerationResult,
   type ChinaTextGenerationInput,
 } from './types'
 
@@ -54,8 +55,14 @@ type DeepSeekChatResponse = {
   request_id?: string
 }
 
-export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner'; reasoner?: boolean }) {
+type DeepSeekEmptyResult = Extract<ChinaTextGenerationResult, { success: false }> & {
+  finishReason?: string
+  reasoningContent?: string
+}
+
+export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner'; reasoner?: boolean; purpose?: 'ping' | 'generate' }): Promise<ChinaTextGenerationResult> {
   const providerId = input.reasoner ? 'deepseek-reasoner' : input.providerId ?? 'deepseek-text'
+  const purpose = input.purpose ?? 'ping'
   const apiKey = process.env.DEEPSEEK_API_KEY
   const model = providerId === 'deepseek-reasoner'
     ? process.env.DEEPSEEK_MODEL_REASONER || 'deepseek-v4-pro'
@@ -71,10 +78,30 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
     }
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20000)
-  try {
+  async function postChat(maxTokens: number, disableThinking: boolean) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 30000)
     const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '')
+    const body: Record<string, unknown> = {
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: input.system || (purpose === 'ping'
+            ? (providerId === 'deepseek-text'
+                ? '你是 API 连通性测试助手。不要推理，不要解释，只输出 OK。'
+                : '你是 Creator City 的 API 连通性测试助手。')
+            : '你是 Creator City 的创作助手。请直接输出创作内容，不要解释调用过程。'),
+        },
+        { role: 'user', content: purpose === 'ping' ? (providerId === 'deepseek-text' ? '只回复 OK' : '请只回复 OK') : input.prompt },
+      ],
+      temperature: 0,
+      max_tokens: maxTokens,
+    }
+    if (disableThinking) {
+      body.thinking = { type: 'disabled' }
+    }
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -82,23 +109,15 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
         'Content-Type': 'application/json',
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: input.system || (providerId === 'deepseek-text'
-              ? '你是 API 连通性测试助手。不要推理，不要解释，只输出 OK。'
-              : '你是 Creator City 的 API 连通性测试助手。'),
-          },
-          { role: 'user', content: input.prompt },
-        ],
-        temperature: 0,
-        max_tokens: input.maxTokens || (providerId === 'deepseek-text' ? 64 : 32),
-      }),
+      body: JSON.stringify(body),
     })
 
     const raw = await response.text()
+    clearTimeout(timer)
+    return { response, raw }
+  }
+
+  async function normalizeResponse(response: Response, raw: string): Promise<ChinaTextGenerationResult | DeepSeekEmptyResult> {
     let data: DeepSeekChatResponse = {}
     if (raw.trim()) {
       try {
@@ -143,7 +162,7 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
     }
 
     const reasoningContent = choice?.message?.reasoning_content
-    return {
+    const emptyResult: DeepSeekEmptyResult = {
       success: false as const,
       providerId,
       model,
@@ -157,6 +176,33 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
         : raw.slice(0, 500),
       rawCode: reasoningContent ? 'DEEPSEEK_EMPTY_FINAL_CONTENT' : 'DEEPSEEK_TEXT_FAILED',
     }
+
+    emptyResult.finishReason = choice?.finish_reason
+    emptyResult.reasoningContent = reasoningContent
+    return emptyResult
+  }
+
+  try {
+    const maxTokens = purpose === 'ping'
+      ? (providerId === 'deepseek-text' ? 64 : 16)
+      : input.maxTokens || (providerId === 'deepseek-reasoner' ? 2048 : 1024)
+    const disableThinking = providerId === 'deepseek-text'
+    const first = await postChat(maxTokens, disableThinking)
+    const firstResult = await normalizeResponse(first.response, first.raw)
+    if (
+      purpose === 'generate' &&
+      providerId === 'deepseek-reasoner' &&
+      !firstResult.success &&
+      'reasoningContent' in firstResult &&
+      firstResult.reasoningContent &&
+      firstResult.finishReason === 'length'
+    ) {
+      const retry = await postChat(4096, true)
+      const retryResult = await normalizeResponse(retry.response, retry.raw)
+      return retryResult
+    }
+
+    return firstResult
   } catch (error) {
     const message = error instanceof Error ? error.message : 'DeepSeek 调用失败。'
     return {
@@ -167,8 +213,6 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
       message,
       upstreamMessage: message,
     }
-  } finally {
-    clearTimeout(timer)
   }
 }
 
