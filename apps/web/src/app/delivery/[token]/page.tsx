@@ -41,12 +41,11 @@ export default async function PublicDeliveryPage({ params }: Props) {
 
   const share = await getPublicDelivery(params.token)
   if (!share || share === 'DISABLED' || share === 'EXPIRED') {
-    const message = !share ? '交付链接不存在。' : share === 'DISABLED' ? '交付链接已停用。' : '交付链接已过期。'
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-16 text-white">
         <div className="mx-auto max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-8 text-center">
           <h1 className="text-xl font-semibold">无法查看交付</h1>
-          <p className="mt-3 text-sm text-white/55">{message}</p>
+          <p className="mt-3 text-sm text-white/55">交付链接不存在或已失效。</p>
         </div>
       </main>
     )
@@ -86,6 +85,16 @@ export default async function PublicDeliveryPage({ params }: Props) {
                   ) : item.type === 'text' ? (
                     <div className="p-5">
                       <p className="whitespace-pre-wrap text-sm leading-7 text-white/75">{item.contentText || '暂无文本内容。'}</p>
+                    </div>
+                  ) : item.type === 'video' ? (
+                    <div className="p-5">
+                      <div className="rounded-md border border-white/10 bg-black/30 p-4 text-sm text-white/60">视频交付占位</div>
+                      {itemUrl ? <a href={itemUrl} className="mt-3 inline-flex text-sm font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">打开视频链接</a> : null}
+                    </div>
+                  ) : item.type === 'audio' ? (
+                    <div className="p-5">
+                      <div className="rounded-md border border-white/10 bg-black/30 p-4 text-sm text-white/60">音频交付占位</div>
+                      {itemUrl ? <a href={itemUrl} className="mt-3 inline-flex text-sm font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">打开音频链接</a> : null}
                     </div>
                   ) : itemUrl ? (
                     <a href={itemUrl} className="block p-5 text-sm font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">打开交付文件</a>

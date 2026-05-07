@@ -5,6 +5,7 @@ import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 import {
   ProjectDeliveryClient,
   type DeliveryAssetForClient,
+  type DeliveryCanvasNodeForClient,
   type DeliveryShareForClient,
 } from './ProjectDeliveryClient'
 
@@ -74,6 +75,7 @@ export default async function ProjectDeliveryPage({ params }: Props) {
           projectTitle={project.title}
           initialShare={delivery.share ? asClientJson(serializeDeliveryShare(delivery.share)) as unknown as DeliveryShareForClient : null}
           assets={asClientJson(delivery.assets) as unknown as DeliveryAssetForClient[]}
+          canvasNodes={asClientJson(delivery.canvasNodes) as unknown as DeliveryCanvasNodeForClient[]}
         />
       </main>
     </DashboardShell>

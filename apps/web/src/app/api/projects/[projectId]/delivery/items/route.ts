@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { normalizeAssetType } from '@/lib/assets/normalize'
 import {
   assetToDeliveryType,
   getAssetContentText,
@@ -20,17 +21,31 @@ type AddDeliveryItemBody = {
   assetId?: string
   canvasNodeId?: string
   title?: string
-  type?: 'text' | 'image' | 'video' | 'audio'
+  type?: 'text' | 'image' | 'video' | 'audio' | 'file'
   url?: string
   contentText?: string
   sortOrder?: number
 }
 
-function contentTextFromAsset(asset: NonNullable<Awaited<ReturnType<typeof db.asset.findFirst>>>) {
+type DeliveryAsset = NonNullable<Awaited<ReturnType<typeof db.asset.findFirst>>>
+type DeliveryCanvasNode = NonNullable<Awaited<ReturnType<typeof db.canvasNode.findFirst>>>
+
+function contentTextFromAsset(asset: DeliveryAsset) {
   const metadataText = getAssetContentText(asset)
   if (metadataText) return metadataText
-  if (asset.type === 'SCRIPT') return asset.dataUrl || null
+  const type = normalizeAssetType(asset.type)
+  if (type === 'script' || type === 'text') return asset.dataUrl || null
   return null
+}
+
+function nodeToDeliveryType(node: DeliveryCanvasNode) {
+  const kind = normalizeAssetType(node.kind)
+  if (kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'text') return kind
+  return 'file'
+}
+
+function nodeDeliveryUrl(node: DeliveryCanvasNode) {
+  return node.resultImageUrl || node.resultVideoUrl || node.resultAudioUrl || null
 }
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
@@ -46,6 +61,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     body = await request.json() as AddDeliveryItemBody
   } catch {
     return projectJsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
+  }
+  if (!body.assetId && !body.canvasNodeId) {
+    return projectJsonError('VALIDATION_FAILED', 'assetId or canvasNodeId is required.', 400)
   }
 
   const share = body.shareId
@@ -66,12 +84,37 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           OR: [
             { projectId: params.projectId },
             { projectId: null },
-            { projectAssets: { some: { projectId: params.projectId } } },
           ],
         },
       })
     : null
   if (body.assetId && !asset) return NextResponse.json({ success: false, errorCode: 'ASSET_NOT_FOUND', message: '素材不存在或不属于该项目。' }, { status: 404 })
+  if (asset && !asset.projectId) {
+    await db.asset.update({
+      where: { id: asset.id },
+      data: { projectId: params.projectId },
+    })
+    asset.projectId = params.projectId
+  }
+
+  const workflows = body.canvasNodeId
+    ? await db.canvasWorkflow.findMany({
+        where: { projectId: params.projectId },
+        select: { id: true },
+      })
+    : []
+  const workflowIds = workflows.map((workflow) => workflow.id)
+  const canvasNode = body.canvasNodeId && workflowIds.length
+    ? await db.canvasNode.findFirst({
+        where: {
+          workflowId: { in: workflowIds },
+          OR: [{ nodeId: body.canvasNodeId }, { id: body.canvasNodeId }],
+        },
+      })
+    : null
+  if (body.canvasNodeId && !canvasNode) {
+    return NextResponse.json({ success: false, errorCode: 'CANVAS_NODE_NOT_FOUND', message: '画布节点不存在或不属于该项目。' }, { status: 404 })
+  }
 
   const maxSort = await db.deliveryItem.aggregate({
     where: { shareId: share.id },
@@ -80,16 +123,20 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
   let item
   try {
-    const type = body.type ?? (asset ? assetToDeliveryType(asset.type) : 'text')
+    const type = body.type ?? (asset ? assetToDeliveryType(asset.type) : canvasNode ? nodeToDeliveryType(canvasNode) : 'text')
+    const url = body.url ?? (asset?.url || asset?.dataUrl || null) ?? (canvasNode ? nodeDeliveryUrl(canvasNode) : null)
+    const contentText = body.contentText
+      ?? (asset && type === 'text' ? contentTextFromAsset(asset) : null)
+      ?? (canvasNode ? canvasNode.resultText || canvasNode.prompt || null : null)
     item = await db.deliveryItem.create({
       data: {
         shareId: share.id,
         assetId: asset?.id ?? null,
-        canvasNodeId: body.canvasNodeId ?? asset?.nodeId ?? null,
+        canvasNodeId: canvasNode?.nodeId ?? asset?.nodeId ?? null,
         type,
-        title: body.title?.trim() || asset?.title || asset?.name || null,
-        url: body.url ?? (asset?.url || asset?.dataUrl || null),
-        contentText: body.contentText ?? (asset && type === 'text' ? contentTextFromAsset(asset) : null),
+        title: body.title?.trim() || asset?.title || asset?.name || canvasNode?.title || canvasNode?.prompt || null,
+        url,
+        contentText,
         sortOrder: Number.isFinite(body.sortOrder) ? Number(body.sortOrder) : (maxSort._max.sortOrder ?? -1) + 1,
       },
     })
@@ -105,7 +152,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         include: { asset: true },
       },
-      comments: { orderBy: { createdAt: 'desc' } },
+      comments: {
+        orderBy: { createdAt: 'desc' },
+        include: { item: { select: { id: true, title: true } } },
+      },
     },
   })
 

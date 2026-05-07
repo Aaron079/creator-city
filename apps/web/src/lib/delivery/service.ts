@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 import { serializeAsset } from '@/lib/projects/canvas-mappers'
 
@@ -20,9 +21,11 @@ export async function requireProjectWriteAccess(projectId: string, userId: strin
 }
 
 export function assetToDeliveryType(assetType: string) {
-  if (assetType === 'IMAGE') return 'image'
-  if (assetType === 'VIDEO') return 'video'
-  if (assetType === 'AUDIO') return 'audio'
+  const type = normalizeAssetType(assetType)
+  if (type === 'image') return 'image'
+  if (type === 'video') return 'video'
+  if (type === 'audio') return 'audio'
+  if (type === 'file' || type === 'document' || type === 'model_3d' || type === 'preset' || type === 'template') return 'file'
   return 'text'
 }
 
@@ -44,8 +47,35 @@ function serializeDeliveryAsset<T extends { createdAt?: Date; updatedAt?: Date; 
   }
 }
 
+function serializeDeliveryCanvasNode(node: {
+  id: string
+  nodeId: string
+  kind: string
+  title: string | null
+  prompt: string | null
+  resultText: string | null
+  resultImageUrl: string | null
+  resultVideoUrl: string | null
+  resultAudioUrl: string | null
+  resultPreview: string | null
+  createdAt: Date
+}) {
+  return {
+    ...node,
+    createdAt: node.createdAt.toISOString(),
+  }
+}
+
 export async function loadProjectDelivery(projectId: string) {
-  const [share, assets] = await Promise.all([
+  const workflows = await db.canvasWorkflow.findMany({
+    where: { projectId },
+    select: { id: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 8,
+  })
+  const workflowIds = workflows.map((workflow) => workflow.id)
+
+  const [share, assets, canvasNodes] = await Promise.all([
     db.deliveryShare.findFirst({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
@@ -61,16 +91,36 @@ export async function loadProjectDelivery(projectId: string) {
       },
     }),
     db.asset.findMany({
-      where: { OR: [{ projectId }, { projectAssets: { some: { projectId } } }] },
-      include: { project: { select: { id: true, title: true } } },
+      where: { projectId },
       orderBy: { createdAt: 'desc' },
       take: 200,
     }),
+    workflowIds.length
+      ? db.canvasNode.findMany({
+          where: { workflowId: { in: workflowIds } },
+          orderBy: [{ createdAt: 'desc' }, { nodeId: 'asc' }],
+          select: {
+            id: true,
+            nodeId: true,
+            kind: true,
+            title: true,
+            prompt: true,
+            resultText: true,
+            resultImageUrl: true,
+            resultVideoUrl: true,
+            resultAudioUrl: true,
+            resultPreview: true,
+            createdAt: true,
+          },
+          take: 200,
+        })
+      : Promise.resolve([]),
   ])
 
   return {
     share,
     assets: assets.map(serializeDeliveryAsset),
+    canvasNodes: canvasNodes.map(serializeDeliveryCanvasNode),
   }
 }
 

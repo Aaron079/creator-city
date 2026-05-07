@@ -24,10 +24,15 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
   const delivery = await loadProjectDelivery(params.projectId)
+  const serializedShare = delivery.share ? serializeDeliveryShare(delivery.share) : null
   return NextResponse.json({
+    success: true,
     project,
-    share: delivery.share ? serializeDeliveryShare(delivery.share) : null,
+    share: serializedShare,
+    items: serializedShare?.items ?? [],
+    comments: serializedShare?.comments ?? [],
     assets: delivery.assets,
+    canvasNodes: delivery.canvasNodes,
   })
 }
 

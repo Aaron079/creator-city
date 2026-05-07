@@ -14,11 +14,27 @@ export type DeliveryAssetForClient = {
   project?: { id: string; title: string } | null
   metadataJson?: unknown
   metadata?: unknown
+  normalizedType?: string | null
+}
+
+export type DeliveryCanvasNodeForClient = {
+  id: string
+  nodeId: string
+  kind: string
+  title?: string | null
+  prompt?: string | null
+  resultText?: string | null
+  resultImageUrl?: string | null
+  resultVideoUrl?: string | null
+  resultAudioUrl?: string | null
+  resultPreview?: string | null
+  createdAt: string
 }
 
 export type DeliveryItemForClient = {
   id: string
   assetId?: string | null
+  canvasNodeId?: string | null
   type: string
   title?: string | null
   url?: string | null
@@ -50,6 +66,7 @@ type Props = {
   projectTitle: string
   initialShare: DeliveryShareForClient | null
   assets: DeliveryAssetForClient[]
+  canvasNodes: DeliveryCanvasNodeForClient[]
 }
 
 function getTextFromAsset(asset: DeliveryAssetForClient) {
@@ -67,17 +84,28 @@ function statusLabel(status: string) {
   return '评论'
 }
 
-export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, assets }: Props) {
+function nodeTypeLabel(kind: string) {
+  if (kind === 'image') return '图片节点'
+  if (kind === 'video') return '视频节点'
+  if (kind === 'audio') return '音频节点'
+  if (kind === 'text') return '文本节点'
+  return '画布节点'
+}
+
+export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, assets, canvasNodes }: Props) {
   const router = useRouter()
   const [share, setShare] = useState(initialShare)
   const [availableAssets, setAvailableAssets] = useState(assets)
+  const [nodePickerOpen, setNodePickerOpen] = useState(false)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const [loadingAssets, setLoadingAssets] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [pendingAssetId, setPendingAssetId] = useState<string | null>(null)
+  const [pendingNodeId, setPendingNodeId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const shareUrl = share ? `/delivery/${share.token}` : ''
   const includedAssetIds = useMemo(() => new Set(share?.items?.map((item) => item.assetId).filter(Boolean)), [share?.items])
+  const includedCanvasNodeIds = useMemo(() => new Set(share?.items?.map((item) => item.canvasNodeId).filter(Boolean)), [share?.items])
 
   useEffect(() => {
     setShare(initialShare)
@@ -92,7 +120,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, a
     setLoadingAssets(true)
     setMessage(null)
     try {
-      const res = await fetch(`/api/assets?projectId=${encodeURIComponent(projectId)}&limit=200`, {
+      const res = await fetch(`/api/assets?projectId=${encodeURIComponent(projectId)}&includeUnbound=1&limit=200`, {
         credentials: 'include',
         cache: 'no-store',
         headers: { Accept: 'application/json' },
@@ -153,6 +181,31 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, a
     startTransition(() => router.refresh())
   }
 
+  async function addCanvasNode(node: DeliveryCanvasNodeForClient) {
+    if (!share) return
+    setPendingNodeId(node.nodeId)
+    setMessage(null)
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/delivery/items`, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        shareId: share.id,
+        canvasNodeId: node.nodeId,
+      }),
+    })
+    const data = await res.json().catch(() => ({})) as { share?: DeliveryShareForClient; message?: string; errorCode?: string }
+    setPendingNodeId(null)
+    if (!res.ok) {
+      setMessage({ ok: false, text: `${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '添加画布节点失败'}` })
+      return
+    }
+    if (data.share) setShare(data.share)
+    setMessage({ ok: true, text: '画布节点已加入交付。' })
+    startTransition(() => router.refresh())
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
@@ -193,6 +246,14 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, a
             >
               {loadingAssets ? '加载中...' : '添加素材到交付'}
             </button>
+            <button
+              type="button"
+              onClick={() => setNodePickerOpen((current) => !current)}
+              disabled={!share}
+              className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              添加画布节点到交付
+            </button>
           </div>
 
           {!share?.items?.length ? (
@@ -221,7 +282,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, a
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-white">{asset.title ?? asset.name}</div>
                         <div className="mt-1 text-xs text-white/40">
-                          {asset.type} · {asset.project ? `项目：${asset.project.title}` : '未关联项目'}
+                          {asset.type} · {asset.projectId === projectId ? '已绑定当前项目' : asset.project ? `项目：${asset.project.title}` : '未关联项目'}
                         </div>
                       </div>
                       <button
@@ -231,6 +292,36 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, a
                         className="shrink-0 rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {includedAssetIds.has(asset.id) ? '已添加' : pendingAssetId === asset.id ? '添加中...' : '加入交付'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {nodePickerOpen ? (
+            <div className="mt-5 border-t border-white/10 pt-4">
+              {canvasNodes.length === 0 ? (
+                <p className="text-sm text-white/45">当前画布还没有可加入交付的节点。</p>
+              ) : (
+                <div className="space-y-3">
+                  {canvasNodes.map((node) => (
+                    <div key={node.nodeId} className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-white">{node.title || node.prompt || '未命名节点'}</div>
+                        <div className="mt-1 text-xs text-white/40">
+                          {nodeTypeLabel(node.kind)}
+                          {node.resultImageUrl || node.resultVideoUrl || node.resultAudioUrl ? ' · 有链接结果' : node.resultText ? ' · 有文本结果' : ' · 占位内容'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void addCanvasNode(node)}
+                        disabled={!share || includedCanvasNodeIds.has(node.nodeId) || pendingNodeId === node.nodeId}
+                        className="shrink-0 rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75 hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {includedCanvasNodeIds.has(node.nodeId) ? '已添加' : pendingNodeId === node.nodeId ? '添加中...' : '加入交付'}
                       </button>
                     </div>
                   ))}
