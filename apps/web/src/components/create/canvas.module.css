@@ -5374,6 +5374,27 @@
   opacity: 0.92;
 }
 
+.scope :global(.canvas-node-image-button) {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+.scope :global(.canvas-node-image-error) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 190, 174, 0.94);
+  font-size: 13px;
+  font-weight: 720;
+}
+
 .scope :global(.canvas-node-preview:hover .canvas-node-preview-video) {
   opacity: 1;
 }
@@ -5384,6 +5405,94 @@
   color: rgba(255, 255, 255, 0.42);
   font-size: 10px;
   font-weight: 700;
+}
+
+.scope :global(.canvas-choice-button.is-disabled),
+.scope :global(.canvas-choice-button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.scope :global(.canvas-image-preview-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.52);
+  padding: 24px;
+}
+
+.scope :global(.canvas-image-preview-dialog) {
+  display: grid;
+  width: min(960px, calc(100vw - 48px));
+  max-height: min(86vh, 860px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(18, 20, 24, 0.97);
+  padding: 14px;
+  box-shadow: 0 28px 88px rgba(0, 0, 0, 0.46);
+}
+
+.scope :global(.canvas-image-preview-head),
+.scope :global(.canvas-image-preview-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scope :global(.canvas-image-preview-head span) {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-image-preview-head button),
+.scope :global(.canvas-image-preview-actions button) {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.scope :global(.canvas-image-preview-head button) {
+  width: 34px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.scope :global(.canvas-image-preview-media) {
+  min-height: 0;
+  max-height: 68vh;
+  max-width: 100%;
+  justify-self: center;
+  align-self: center;
+  object-fit: contain;
+}
+
+.scope :global(.canvas-image-preview-error) {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: rgba(255, 190, 174, 0.94);
+  font-size: 14px;
+  font-weight: 720;
 }
 
 .scope :global(.canvas-node-card.node-text .canvas-node-body) {

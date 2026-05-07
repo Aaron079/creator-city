@@ -12,6 +12,7 @@ type SaveGeneratedAssetInput = {
   nodeType: GenerateNodeType
   prompt: string
   projectId?: string
+  workflowId?: string
   nodeId?: string
   generationJobId?: string
   result: GenerateResult
@@ -121,7 +122,15 @@ export async function saveGeneratedAsset(input: SaveGeneratedAssetInput) {
       })
     : null
 
-  const workflow = input.projectId
+  const workflow = input.workflowId
+    ? await db.canvasWorkflow.findFirst({
+        where: {
+          id: input.workflowId,
+          ...(input.projectId ? { projectId: input.projectId } : {}),
+        },
+        select: { id: true },
+      })
+    : input.projectId
     ? await db.canvasWorkflow.findFirst({
         where: { projectId: input.projectId },
         orderBy: { createdAt: 'asc' },
@@ -181,10 +190,29 @@ export async function attachGeneratedAsset(response: GenerateResponse, input: Om
     return null
   })
   if (!asset) return response
+  const assetUrl = asset.url || asset.dataUrl || undefined
+  const resultImageUrl = input.nodeType === 'image' && assetUrl
+    ? assetUrl
+    : response.result.imageUrl
   return {
     ...response,
+    asset: {
+      id: asset.id,
+      type: asset.type,
+      title: asset.title,
+      url: asset.url,
+      dataUrl: asset.dataUrl,
+      thumbnailUrl: asset.thumbnailUrl,
+      providerId: asset.providerId,
+      generationJobId: asset.generationJobId,
+      projectId: asset.projectId,
+      workflowId: asset.workflowId,
+      nodeId: asset.nodeId,
+    },
     result: {
       ...response.result,
+      imageUrl: resultImageUrl,
+      previewUrl: input.nodeType === 'image' ? resultImageUrl ?? response.result.previewUrl : response.result.previewUrl,
       metadata: {
         ...(response.result.metadata ?? {}),
         assetId: asset.id,

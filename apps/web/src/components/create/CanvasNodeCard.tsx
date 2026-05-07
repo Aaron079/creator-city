@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
@@ -144,6 +144,9 @@ export function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const [imageLoadFailed, setImageLoadFailed] = useState(false)
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
+  const [imageLinkCopied, setImageLinkCopied] = useState(false)
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -159,6 +162,23 @@ export function CanvasNodeCard({
     dragging ? 'is-dragging' : '',
     node.status === 'generating' || node.status === 'running' ? 'is-generating' : '',
   ].filter(Boolean).join(' ')
+
+  useEffect(() => {
+    setImageLoadFailed(false)
+    setImagePreviewOpen(false)
+    setImageLinkCopied(false)
+  }, [node.resultImageUrl])
+
+  const copyImageLink = async () => {
+    if (!node.resultImageUrl) return
+    try {
+      await navigator.clipboard?.writeText(node.resultImageUrl)
+      setImageLinkCopied(true)
+      window.setTimeout(() => setImageLinkCopied(false), 1200)
+    } catch {
+      setImageLinkCopied(false)
+    }
+  }
 
   return (
     <motion.div
@@ -329,12 +349,29 @@ export function CanvasNodeCard({
                 />
               ) : null}
               {node.kind === 'image' && node.resultImageUrl ? (
-                <img
-                  src={node.resultImageUrl}
-                  alt={node.title}
-                  className="canvas-node-preview-image"
-                  loading="lazy"
-                />
+                <button
+                  type="button"
+                  className="canvas-node-image-button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setImagePreviewOpen(true)
+                  }}
+                  aria-label="预览图片"
+                >
+                  {imageLoadFailed ? (
+                    <span className="canvas-node-image-error">图片无法加载</span>
+                  ) : (
+                    <img
+                      src={node.resultImageUrl}
+                      alt={node.title}
+                      className="canvas-node-preview-image"
+                      loading="lazy"
+                      onError={() => setImageLoadFailed(true)}
+                    />
+                  )}
+                </button>
               ) : null}
               <div className="canvas-node-preview-copy">
                 {node.resultText || node.resultPreview || node.outputLabel || '结果已生成。'}
@@ -364,6 +401,39 @@ export function CanvasNodeCard({
           )}
         </div>
       </div>
+      {imagePreviewOpen && node.resultImageUrl ? (
+        <div
+          className="canvas-image-preview-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            if (event.target === event.currentTarget) setImagePreviewOpen(false)
+          }}
+        >
+          <section
+            className="canvas-image-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="图片预览"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-image-preview-head">
+              <span>{node.title}</span>
+              <button type="button" onClick={() => setImagePreviewOpen(false)} aria-label="关闭图片预览">×</button>
+            </div>
+            {imageLoadFailed ? (
+              <div className="canvas-image-preview-error">图片无法加载</div>
+            ) : (
+              <img src={node.resultImageUrl} alt={node.title} className="canvas-image-preview-media" />
+            )}
+            <div className="canvas-image-preview-actions">
+              <button type="button" onClick={() => { void copyImageLink() }}>
+                {imageLinkCopied ? '已复制' : '复制图片链接'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </motion.div>
   )
 }

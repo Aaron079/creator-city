@@ -30,7 +30,7 @@ import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { normalizeAssetType } from '@/lib/assets/normalize'
-import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
+import { getToolProviderById, type ToolProviderNodeType, type ToolProviderStatus } from '@/lib/tools/provider-catalog'
 import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 import {
   runCanvasWorkflow,
@@ -253,6 +253,12 @@ const TEXT_NODE_PROVIDER_OPTIONS = [
   { value: 'kimi-text', label: 'Kimi K2.6', hint: '中文文本 · Kimi', badge: 'available', duration: '10~20s' },
 ] as const
 
+const IMAGE_NODE_PROVIDER_OPTIONS = [
+  { value: 'openai-image', label: 'OpenAI Image', hint: '默认图片生成', duration: '30~90s' },
+  { value: 'volcengine-seedream-image', label: 'Volcengine Seedream Image', hint: '中国图片 · Seedream', duration: '30~90s' },
+  { value: 'jimeng-image', label: 'Jimeng Image', hint: '中国图片 · 即梦', duration: '30~90s' },
+] as const
+
 const PARAMETER_RATIO_MAP: Record<(typeof PARAMETER_OPTIONS)[number]['value'], string> = {
   '16:9-balanced': '16:9',
   '9:16-vertical': '9:16',
@@ -306,6 +312,7 @@ function clampNumber(value: number, min: number, max: number) {
 
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
   if (kind === 'text') return TEXT_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
+  if (kind === 'image') return IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
 
   const providerKind = getProviderKind(kind)
   const providers = getCanvasProviders(providerKind)
@@ -323,6 +330,10 @@ function normalizeProviderId(providerId: string) {
 
 function getTextNodeProviderOption(providerId: string) {
   return TEXT_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
+}
+
+function getImageNodeProviderOption(providerId: string) {
+  return IMAGE_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
 }
 
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
@@ -358,6 +369,9 @@ type GenerateApiResult = GenerateResponse & {
   model?: string
   text?: string
   resultText?: string
+  imageUrl?: string
+  dataUrl?: string
+  asset?: { id?: string; url?: string | null }
   upstreamStatus?: number
   upstreamMessage?: string
   rawCode?: string
@@ -419,6 +433,16 @@ function textErrorMetadata(node: VisualCanvasNode, result: GenerateApiResult) {
   }
 }
 
+function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
+  return {
+    ...metadataRecord(node.metadataJson),
+    providerId: result.providerId || providerId,
+    model: result.model ?? result.result?.metadata?.model,
+    generationSource: result.providerId || providerId,
+    assetId: result.asset?.id ?? result.result?.metadata?.assetId,
+  }
+}
+
 async function callGenerationApi(
   nodeType: ToolProviderNodeType,
   providerId: string,
@@ -427,6 +451,7 @@ async function callGenerationApi(
   nodeId?: string,
   inputAssets?: Array<{ id: string; type: string; url?: string }>,
   projectId?: string,
+  workflowId?: string,
 ): Promise<GenerateApiResult> {
   const endpoint =
     nodeType === 'image' ? '/api/generate/image'
@@ -445,7 +470,7 @@ async function callGenerationApi(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ providerId, nodeType, prompt, params, maxTokens, nodeId, inputAssets, projectId }),
+      body: JSON.stringify({ providerId, nodeType, prompt, params, maxTokens, nodeId, inputAssets, projectId, workflowId }),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '网络请求失败'
@@ -699,6 +724,7 @@ export function VisualCanvasWorkspace({
   const [textEditorNodeId, setTextEditorNodeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
+  const [adminProviderStatusMap, setAdminProviderStatusMap] = useState<Map<string, ToolProviderStatus>>(new Map())
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -798,6 +824,25 @@ export function VisualCanvasWorkspace({
       devPerf('providers', 'end')
     }
   }, [liveStatusLoading])
+
+  useEffect(() => {
+    let disposed = false
+    fetch('/api/admin/providers/status', { credentials: 'include', cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { success?: boolean; providers?: Array<{ providerId?: string; configured?: boolean; available?: boolean; status?: string }> } | null) => {
+        if (disposed || !data?.success || !Array.isArray(data.providers)) return
+        const next = new Map<string, ToolProviderStatus>()
+        for (const provider of data.providers) {
+          if (!provider.providerId) continue
+          next.set(provider.providerId, provider.available || provider.configured ? 'available' : 'not-configured')
+        }
+        setAdminProviderStatusMap(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
     const resolved = typeof next === 'function' ? next(latestNodesRef.current) : next
@@ -1811,6 +1856,7 @@ export function VisualCanvasWorkspace({
           node.id,
           workflowInputAssets(inputAssets),
           projectId,
+          workflowId,
         )
 
         if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
@@ -1853,7 +1899,7 @@ export function VisualCanvasWorkspace({
     setWorkflowRunStatus('done')
     setWorkflowRunMessage('工作流完成')
     showCanvasFeedback('工作流完成')
-  }, [activeNodeId, commitNodes, projectId, saveCanvas, showCanvasFeedback, workflowRunStatus])
+  }, [activeNodeId, commitNodes, projectId, saveCanvas, showCanvasFeedback, workflowId, workflowRunStatus])
   const editingNode = useMemo(
     () => nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, nodes],
@@ -1891,6 +1937,9 @@ export function VisualCanvasWorkspace({
   const activeTextProvider = preferredKind === 'text'
     ? getTextNodeProviderOption(normalizedPromptModel)
     : null
+  const activeImageProvider = preferredKind === 'image'
+    ? getImageNodeProviderOption(normalizedPromptModel)
+    : null
   const activeProvider = useMemo(
     () => getCanvasProvider(getProviderKind(preferredKind), normalizedPromptModel),
     [preferredKind, normalizedPromptModel],
@@ -1898,12 +1947,16 @@ export function VisualCanvasWorkspace({
   const providerOptionLabels = useMemo(
     () => preferredKind === 'text'
       ? Object.fromEntries(TEXT_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
+      : preferredKind === 'image'
+        ? Object.fromEntries(IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
       : Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
     [preferredKind],
   )
-  const activeProviderLabel = activeTextProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
+  const activeProviderLabel = activeTextProvider?.label ?? activeImageProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
   const activeProviderLiveStatus = liveStatusMap.get(normalizedPromptModel)
+  const activeProviderAdminStatus = adminProviderStatusMap.get(normalizedPromptModel)
   const activeProviderStatus = activeProviderLiveStatus
+    ?? activeProviderAdminStatus
     ?? (activeTextProvider?.badge ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown'))
   const activeProviderNotice = activeProviderStatus === 'checking'
     ? '正在检查 provider 实时状态'
@@ -2681,15 +2734,25 @@ export function VisualCanvasWorkspace({
   const handleNodeDialogGenerate = useCallback(() => {
     if (!editingNode) return
 
+    const nodeSnapshot = editingNode
+    const nodeType = getProviderNodeType(nodeSnapshot.kind)
     const trimmedPrompt = canvasPrompt.trim()
-    if (!trimmedPrompt) {
-      const errMsg = '请先输入 prompt 再生成。'
+    const upstreamTextPrompt = nodeSnapshot.kind === 'image'
+      ? edges
+          .filter((edge) => edge.toNodeId === nodeSnapshot.id)
+          .map((edge) => nodes.find((node) => node.id === edge.fromNodeId)?.resultText)
+          .filter((value): value is string => Boolean(value?.trim()))
+          .join('\n\n')
+          .trim()
+      : ''
+    const generationPrompt = trimmedPrompt || upstreamTextPrompt
+    if (!generationPrompt) {
+      const errMsg = nodeSnapshot.kind === 'image'
+        ? '请先输入图片 prompt，或连接一个已有文本结果的 Text 节点。'
+        : '请先输入 prompt 再生成。'
       setDialogError(errMsg)
       return
     }
-
-    const nodeSnapshot = editingNode
-    const nodeType = getProviderNodeType(nodeSnapshot.kind)
 
     // Validate provider supports this node type
     const providerEntry = getToolProviderById(normalizedPromptModel)
@@ -2724,10 +2787,12 @@ export function VisualCanvasWorkspace({
     void callGenerationApi(
       nodeType,
       normalizedPromptModel,
-      trimmedPrompt,
+      generationPrompt,
       { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
       nodeSnapshot.id,
       upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
+      nodeType === 'image' ? projectId : undefined,
+      nodeType === 'image' ? workflowId : undefined,
     ).then(async (result) => {
       // Async job queued (e.g. Runway): poll until done or failed
       if ((result.status === 'queued' || result.status === 'running') && result.jobId) {
@@ -2810,7 +2875,7 @@ export function VisualCanvasWorkspace({
       }
 
       // Immediate result
-      const fallbackPreview = trimmedPrompt ? buildMockResult(nodeSnapshot, trimmedPrompt) : buildResultLabel(nodeSnapshot.title)
+      const fallbackPreview = generationPrompt ? buildMockResult(nodeSnapshot, generationPrompt) : buildResultLabel(nodeSnapshot.title)
 
       if (!result.success) {
         const errMsg = formatGenerateError(result)
@@ -2833,7 +2898,7 @@ export function VisualCanvasWorkspace({
       }
 
       const resultText = getGeneratedText(result)
-      const resultImageUrl = result.result?.imageUrl
+      const resultImageUrl = result.result?.imageUrl ?? result.imageUrl ?? result.dataUrl
       const resultVideoUrl = result.result?.videoUrl
       const resultPreview = resultText?.slice(0, 200) ?? (resultImageUrl ? '图片已生成' : fallbackPreview)
       handleNodePatch(nodeSnapshot.id, {
@@ -2845,6 +2910,7 @@ export function VisualCanvasWorkspace({
         resultVideoUrl: resultVideoUrl ?? nodeSnapshot.resultVideoUrl,
         errorMessage: undefined,
         ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
@@ -2859,7 +2925,7 @@ export function VisualCanvasWorkspace({
           metadataJson: { resultText: resultText.slice(0, 500) },
         })
       }
-      if (resultImageUrl) {
+      if (resultImageUrl && !result.asset?.id && !result.result?.metadata?.assetId) {
         void createGeneratedAsset({
           nodeId: nodeSnapshot.id,
           type: 'image',
@@ -2884,7 +2950,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback])
+  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -3243,6 +3309,20 @@ export function VisualCanvasWorkspace({
             badge: liveStatusMap.get(normalizeProviderId(provider.value)) ?? provider.badge,
             duration: provider.duration,
           }))
+        : preferredKind === 'image'
+          ? IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => {
+              const status = liveStatusMap.get(normalizeProviderId(provider.value))
+                ?? adminProviderStatusMap.get(provider.value)
+                ?? (liveStatusLoading ? 'checking' : 'unknown')
+              return {
+                value: provider.value,
+                label: provider.label,
+                hint: provider.hint,
+                badge: status,
+                duration: provider.duration,
+                disabled: status === 'not-configured',
+              }
+            })
         : getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
             value: provider.id,
             label: provider.name,
@@ -3277,7 +3357,7 @@ export function VisualCanvasWorkspace({
         setPromptRatio(PARAMETER_RATIO_MAP[nextValue])
       },
     },
-  ], [activeProviderLabel, assetLabel, handleProviderChange, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
+  ], [activeProviderLabel, adminProviderStatusMap, assetLabel, handleProviderChange, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
 
   const handleCreateMenuSelect = useCallback((kind: VisualCanvasNodeKind) => {
     const size = getNodeSize(kind)

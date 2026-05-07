@@ -9,6 +9,7 @@ export interface CanvasPromptFooterOption {
   icon?: string
   badge?: string
   duration?: string
+  disabled?: boolean
 }
 
 export interface CanvasPromptFooterItem {
@@ -447,11 +448,13 @@ export function CanvasPromptBox({
               <button
                 key={option.value}
                 type="button"
+                disabled={option.disabled}
                 onClick={() => {
+                  if (option.disabled) return
                   openItem.onSelect(option.value)
                   setOpenFooterId(null)
                 }}
-                className={`canvas-choice-button ${isProviderPanel ? 'is-model-row' : ''} ${active ? 'is-active' : ''}`}
+                className={`canvas-choice-button ${isProviderPanel ? 'is-model-row' : ''} ${active ? 'is-active' : ''} ${option.disabled ? 'is-disabled' : ''}`}
               >
                 <span className="canvas-choice-icon">{option.icon ?? openItem.icon ?? (isProviderPanel ? '▥' : '✦')}</span>
                 <span className="canvas-choice-copy">

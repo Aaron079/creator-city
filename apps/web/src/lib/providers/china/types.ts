@@ -37,6 +37,13 @@ export interface ChinaTextGenerationInput {
   maxTokens?: number
 }
 
+export interface ChinaImageGenerationInput {
+  prompt: string
+  aspectRatio?: string
+  size?: string
+  referenceImages?: string[]
+}
+
 type ChinaProviderErrorShape = {
   message?: string
   code?: string
@@ -50,6 +57,27 @@ export type ChinaTextGenerationResult =
       providerId: ChinaProviderId
       model: string
       text: string
+    }
+  | {
+      success: false
+      providerId: ChinaProviderId
+      model?: string
+      errorCode: string
+      message: string
+      upstreamStatus?: number
+      upstreamMessage?: string
+      rawCode?: string
+      requestId?: string
+    }
+
+export type ChinaImageGenerationResult =
+  | {
+      success: true
+      providerId: ChinaProviderId
+      model: string
+      imageUrl?: string
+      dataUrl?: string
+      metadata?: Record<string, unknown>
     }
   | {
       success: false
