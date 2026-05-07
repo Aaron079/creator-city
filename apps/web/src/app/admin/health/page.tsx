@@ -117,7 +117,7 @@ function SectionCard({ name, section }: { name: string; section: HealthSection }
       </div>
       {degraded ? (
         <div className="mt-4 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-2 text-xs text-white/58">
-          健康检查为保护连接池已跳过深度统计；业务页面不受影响。
+          已跳过深度统计：为保护数据库连接池，本次跳过深度统计；业务页面不受影响。
         </div>
       ) : null}
       {counts ? (
@@ -177,13 +177,15 @@ export default function AdminHealthPage() {
             <div className="text-[11px] uppercase tracking-[0.22em] text-white/35">Regression Center</div>
             <h1 className="mt-2 text-2xl font-semibold text-white">System Health / 系统健康检查</h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-white/50">
-              健康检查为只读轻量诊断，不触发生成、支付、上传或写入。
+              健康检查为只读轻量诊断。为保护数据库连接池，部分深度统计可能被跳过；这不代表业务不可用。
+              不触发生成、支付、上传或写入。
             </p>
           </div>
           <button
             type="button"
             onClick={() => { void loadHealth() }}
             disabled={loading}
+            aria-busy={loading}
             className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white/75 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
           >
             {loading ? '检查中...' : '重新检查'}

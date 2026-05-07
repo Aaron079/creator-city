@@ -40,14 +40,11 @@ const STORAGE_KEYS = [
   'ALIYUN_OSS_PUBLIC_BASE_URL',
 ] as const
 
-const ALIPAY_KEYS = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'] as const
+const ALIPAY_KEYS = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY', 'ALIPAY_GATEWAY'] as const
 const WECHAT_PAY_KEYS = [
   'WECHAT_PAY_APP_ID',
   'WECHAT_PAY_MCH_ID',
   'WECHAT_PAY_API_V3_KEY',
-  'WECHAT_PAY_PRIVATE_KEY',
-  'WECHAT_PAY_CERT_SERIAL_NO',
-  'WECHAT_PAY_NOTIFY_URL',
 ] as const
 
 const PROVIDER_IDS = [
@@ -86,13 +83,14 @@ async function safeSection<T extends HealthSection>(name: SectionName, check: ()
       timer = setTimeout(() => {
         resolve({
           status: 'skipped',
-          message: '健康检查为保护连接池已跳过深度统计；业务页面不受影响。',
+          message: '为保护数据库连接池，本次跳过深度统计；业务页面不受影响。',
           details: {
             section: name,
             timeoutMs: SECTION_TIMEOUT_MS,
             degraded: true,
             skipped: true,
-            note: '数据库连接池繁忙，健康检查已降级为轻量检查。',
+            mode: 'lightweight-skipped',
+            reason: 'connection-pool-protection',
           },
         })
       }, SECTION_TIMEOUT_MS)
@@ -104,9 +102,9 @@ async function safeSection<T extends HealthSection>(name: SectionName, check: ()
     return {
       status: poolBusy ? 'skipped' : 'error',
       message: poolBusy
-        ? '健康检查为保护连接池已跳过深度统计；业务页面不受影响。'
+        ? '为保护数据库连接池，本次跳过深度统计；业务页面不受影响。'
         : `${name} 检查失败：${message}`,
-      details: { error: message, degraded: poolBusy, skipped: poolBusy },
+      details: { error: message, degraded: poolBusy, skipped: poolBusy, mode: poolBusy ? 'lightweight-skipped' : 'error' },
     }
   } finally {
     if (timer) clearTimeout(timer)
@@ -159,7 +157,7 @@ async function checkDatabase(): Promise<HealthSection> {
   ])
   const missing = tables.filter((table) => !table.exists)
   return {
-    status: missing.length ? 'warning' : 'ok',
+    status: missing.length ? 'error' : 'ok',
     message: missing.length ? `${missing.length} 张关键表未确认存在。` : '关键数据表存在性检查通过。',
     details: {
       tables,
@@ -187,22 +185,17 @@ async function checkProjects(user: CurrentUser): Promise<HealthSection> {
 async function checkCanvas(): Promise<HealthSection> {
   const tables = await checkTablePresence(['CanvasWorkflow', 'CanvasNode', 'CanvasEdge'])
   const missing = tables.filter((table) => !table.exists)
-  let recentWorkflow: { id: string; projectId: string; updatedAt: Date } | null = null
-  if (!missing.length) {
-    recentWorkflow = await db.canvasWorkflow.findFirst({
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, projectId: true, updatedAt: true },
-    })
-  }
   return {
-    status: missing.length ? 'warning' : 'ok',
+    status: missing.length ? 'error' : 'ok',
     message: missing.length
-      ? '仅健康检查跳过，不代表画布业务失败。'
-      : '画布核心表存在，已跳过节点/连线深度统计。',
+      ? 'Canvas 关键表不存在，请检查数据库迁移。'
+      : 'Canvas 核心表存在，已跳过节点/连线深度统计。',
     details: {
+      section: 'canvas',
+      mode: 'table-existence-only',
       tables,
       missingCount: missing.length,
-      recentWorkflow,
+      recentWorkflowRead: 'skipped',
       nodeEdgeReadSkipped: true,
       countQueriesPerformed: false,
       lightweight: true,
@@ -267,6 +260,9 @@ async function checkPayments(): Promise<HealthSection> {
       alipay: { env: envStatus(ALIPAY_KEYS), missing: alipayMissing },
       wechatpay: { env: envStatus(WECHAT_PAY_KEYS), missing: wechatMissing },
       simulation: { key: 'PAYMENT_SANDBOX_SIMULATION_ENABLED', configured: simulationConfigured },
+      mode: 'env-only',
+      paymentOrderRead: 'skipped',
+      creditLedgerRead: 'skipped',
       recentPaymentOrderRead: 'skipped',
       recentCreditLedgerRead: 'skipped',
       countQueriesPerformed: false,
@@ -309,11 +305,13 @@ async function checkDelivery(): Promise<HealthSection> {
   const tables = await checkTablePresence(['DeliveryShare', 'DeliveryItem', 'DeliveryComment'])
   const missing = tables.filter((table) => !table.exists)
   return {
-    status: missing.length ? 'warning' : 'ok',
+    status: missing.length ? 'error' : 'ok',
     message: missing.length
-      ? '仅健康检查跳过，不代表交付业务失败。'
-      : '交付核心表存在，已跳过分享/条目/评论深度统计。',
+      ? 'Delivery 关键表不存在，请检查数据库迁移。'
+      : 'Delivery 核心表存在，已跳过分享/条目/评论深度统计。',
     details: {
+      section: 'delivery',
+      mode: 'table-existence-only',
       tables,
       missingCount: missing.length,
       recentShareRead: 'skipped',
@@ -331,11 +329,13 @@ async function checkComments(): Promise<HealthSection> {
   const tables = await checkTablePresence(['CanvasComment', 'DeliveryComment'])
   const missing = tables.filter((table) => !table.exists)
   return {
-    status: missing.length ? 'warning' : 'ok',
+    status: missing.length ? 'error' : 'ok',
     message: missing.length
-      ? '仅健康检查跳过，不代表评论业务失败。'
-      : '评论核心表存在，已跳过评论深度统计。',
+      ? 'Comments 关键表不存在，请检查数据库迁移。'
+      : 'Comments 核心表存在，已跳过评论深度统计。',
     details: {
+      section: 'comments',
+      mode: 'table-existence-only',
       tables,
       missingCount: missing.length,
       recentCanvasCommentRead: 'skipped',
