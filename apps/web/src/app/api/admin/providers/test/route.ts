@@ -6,7 +6,14 @@ export const dynamic = 'force-dynamic'
 
 type ProviderTestBody = {
   providerId?: string
-  mode?: 'env-only' | 'text-ping'
+  mode?: string
+}
+
+function normalizeTestMode(mode?: string): 'env-only' | 'text-ping' | null {
+  if (!mode) return 'env-only'
+  if (mode === 'env-only' || mode === 'envOnly') return 'env-only'
+  if (mode === 'text-ping' || mode === 'textPing') return 'text-ping'
+  return null
 }
 
 export async function POST(request: Request) {
@@ -25,8 +32,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, errorCode: 'INVALID_INPUT', message: 'providerId is required' }, { status: 400 })
   }
 
+  const mode = normalizeTestMode(body.mode)
+  if (!mode) {
+    return NextResponse.json({ success: false, errorCode: 'INVALID_INPUT', message: 'Unsupported provider test mode' }, { status: 400 })
+  }
+
   try {
-    const result = await testProviderConnection(body.providerId, body.mode ?? 'env-only')
+    const result = await testProviderConnection(body.providerId, mode)
+    if (mode === 'env-only') {
+      return NextResponse.json({
+        success: true,
+        providerId: body.providerId,
+        ok: result.ok,
+        status: result.status,
+        message: result.message,
+        configured: result.configured,
+        missingEnv: result.missingEnv,
+        missingEnvKeys: result.missingEnvKeys,
+        model: result.model,
+        baseUrl: result.baseUrl,
+        sample: result.sample,
+        checkedAt: result.checkedAt,
+        mode,
+        testMode: mode,
+      })
+    }
+
     if (!result.ok) {
       return NextResponse.json({
         success: false,
@@ -41,10 +72,14 @@ export async function POST(request: Request) {
         model: result.model,
         baseUrl: result.baseUrl,
         sample: result.sample,
+        upstreamStatus: result.upstreamStatus,
+        upstreamMessage: result.upstreamMessage,
+        rawCode: result.rawCode,
+        requestId: result.requestId,
         checkedAt: result.checkedAt,
-        mode: result.mode,
-        testMode: result.testMode,
-      }, { status: result.status === 'not-configured' ? 200 : 400 })
+        mode,
+        testMode: mode,
+      })
     }
     return NextResponse.json({
       success: true,
@@ -58,9 +93,13 @@ export async function POST(request: Request) {
       model: result.model,
       baseUrl: result.baseUrl,
       sample: result.sample,
+      upstreamStatus: result.upstreamStatus,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
       checkedAt: result.checkedAt,
-      mode: result.mode,
-      testMode: result.testMode,
+      mode,
+      testMode: mode,
     })
   } catch (error) {
     console.error('[admin/providers/test]', error)

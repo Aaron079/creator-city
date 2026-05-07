@@ -59,7 +59,7 @@ export async function generateDeepSeekText(input: ChinaTextGenerationInput & { p
     baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     model,
     prompt: input.prompt,
-    system: input.system,
+    system: input.system || '你是 Creator City 的 API 连通性测试助手。',
     maxTokens: input.maxTokens,
     errorCode: 'DEEPSEEK_TEXT_FAILED',
   })

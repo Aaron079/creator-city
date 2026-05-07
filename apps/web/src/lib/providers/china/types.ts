@@ -37,6 +37,13 @@ export interface ChinaTextGenerationInput {
   maxTokens?: number
 }
 
+type ChinaProviderErrorShape = {
+  message?: string
+  code?: string
+  type?: string
+  request_id?: string
+}
+
 export type ChinaTextGenerationResult =
   | {
       success: true
@@ -50,6 +57,10 @@ export type ChinaTextGenerationResult =
       model?: string
       errorCode: string
       message: string
+      upstreamStatus?: number
+      upstreamMessage?: string
+      rawCode?: string
+      requestId?: string
     }
 
 export function getChinaProviderStatus(config: ChinaProviderConfig): ChinaProviderStatus {
@@ -89,7 +100,8 @@ export async function postOpenAICompatibleChat(options: {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20000)
   try {
-    const response = await fetch(`${options.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const baseUrl = options.baseUrl.replace(/\/+$/, '')
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
@@ -102,13 +114,19 @@ export async function postOpenAICompatibleChat(options: {
           { role: 'system', content: options.system || '你是 Creator City 的创作助手。' },
           { role: 'user', content: options.prompt },
         ],
-        temperature: 0.2,
+        temperature: 0,
         max_tokens: options.maxTokens || 32,
       }),
     })
 
     const raw = await response.text()
-    let data: { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } } = {}
+    let data: {
+      choices?: Array<{ message?: { content?: string } }>
+      error?: ChinaProviderErrorShape
+      message?: string
+      code?: string
+      request_id?: string
+    } = {}
     if (raw.trim()) {
       try {
         data = JSON.parse(raw) as typeof data
@@ -119,17 +137,24 @@ export async function postOpenAICompatibleChat(options: {
           model: options.model,
           errorCode: options.errorCode,
           message: `${options.providerId} 返回了无效 JSON 响应。`,
+          upstreamStatus: response.status,
+          upstreamMessage: raw.slice(0, 500),
         }
       }
     }
 
     if (!response.ok) {
+      const upstreamMessage = data.error?.message || data.message || `${options.providerId} HTTP ${response.status}`
       return {
         success: false,
         providerId: options.providerId,
         model: options.model,
         errorCode: options.errorCode,
-        message: data.error?.message || `${options.providerId} HTTP ${response.status}`,
+        message: upstreamMessage,
+        upstreamStatus: response.status,
+        upstreamMessage,
+        rawCode: data.error?.code || data.error?.type || data.code,
+        requestId: data.error?.request_id || data.request_id || response.headers.get('x-request-id') || response.headers.get('x-ms-request-id') || undefined,
       }
     }
 
@@ -141,6 +166,8 @@ export async function postOpenAICompatibleChat(options: {
         model: options.model,
         errorCode: options.errorCode,
         message: `${options.providerId} 未返回文本内容。`,
+        upstreamStatus: response.status,
+        upstreamMessage: raw.slice(0, 500),
       }
     }
 
@@ -157,6 +184,7 @@ export async function postOpenAICompatibleChat(options: {
       model: options.model,
       errorCode: options.errorCode,
       message: error instanceof Error ? error.message : `${options.providerId} 调用失败。`,
+      upstreamMessage: error instanceof Error ? error.message : `${options.providerId} 调用失败。`,
     }
   } finally {
     clearTimeout(timer)

@@ -547,7 +547,9 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
   }
 }
 
-export async function testProviderConnection(providerId: string, mode: 'env-only' | 'text-ping' = 'env-only') {
+type AdminProviderTestMode = 'env-only' | 'text-ping'
+
+export async function testProviderConnection(providerId: string, mode: AdminProviderTestMode = 'env-only') {
   const definition = getAdminProviderDefinition(providerId)
   if (!definition) {
     return {
@@ -562,8 +564,8 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
       baseUrl: null,
       sample: '',
       checkedAt: new Date().toISOString(),
-      mode: 'env-only' as const,
-      testMode: 'env-only' as const,
+      mode,
+      testMode: mode,
     }
   }
 
@@ -578,7 +580,9 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
       ok: false,
       status: 'not-configured' as const,
       errorCode: 'PROVIDER_NOT_CONFIGURED',
-      message: `Missing environment variables: ${envCheck.missing.join(', ')}`,
+      message: mode === 'text-ping'
+        ? '缺少环境变量，不能测试'
+        : `Missing environment variables: ${envCheck.missing.join(', ')}`,
       configured: false,
       missingEnv: envCheck.missing,
       missingEnvKeys: envCheck.missing,
@@ -586,13 +590,13 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
       baseUrl,
       sample: '',
       checkedAt: new Date().toISOString(),
-      mode: 'env-only',
-      testMode: 'env-only',
+      mode,
+      testMode: mode,
     }
   }
 
   if (mode === 'text-ping') {
-    if (providerId !== 'kimi-text' && providerId !== 'deepseek-text' && providerId !== 'deepseek-reasoner') {
+    if (providerId !== 'kimi-text' && providerId !== 'kimi-multimodal' && providerId !== 'deepseek-text' && providerId !== 'deepseek-reasoner') {
       return {
         ok: false,
         status: 'error' as const,
@@ -610,21 +614,25 @@ export async function testProviderConnection(providerId: string, mode: 'env-only
       }
     }
 
-    const pingResult = providerId === 'kimi-text'
-      ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 16 })
+    const pingResult = providerId === 'kimi-text' || providerId === 'kimi-multimodal'
+      ? await generateKimiText({ prompt: '请只回复 OK', maxTokens: 16, providerId })
       : await generateDeepSeekText({ prompt: '请只回复 OK', maxTokens: 16, providerId })
 
     return {
       ok: pingResult.success,
       status: pingResult.success ? 'configured' as const : 'error' as const,
-      errorCode: pingResult.success ? undefined : pingResult.errorCode,
-      message: pingResult.success ? '轻量文本测试通过。' : pingResult.message,
+      errorCode: pingResult.success ? undefined : 'PROVIDER_TEXT_PING_FAILED',
+      message: pingResult.success ? '轻量文本测试通过。' : '轻量文本测试失败',
       configured: true,
       missingEnv: [],
       missingEnvKeys: [],
       model: pingResult.model ?? model,
       baseUrl,
       sample: pingResult.success ? pingResult.text : '',
+      upstreamStatus: pingResult.success ? undefined : pingResult.upstreamStatus,
+      upstreamMessage: pingResult.success ? undefined : pingResult.upstreamMessage ?? pingResult.message,
+      rawCode: pingResult.success ? undefined : pingResult.rawCode ?? pingResult.errorCode,
+      requestId: pingResult.success ? undefined : pingResult.requestId,
       checkedAt: new Date().toISOString(),
       mode: 'text-ping' as const,
       testMode: 'text-ping' as const,

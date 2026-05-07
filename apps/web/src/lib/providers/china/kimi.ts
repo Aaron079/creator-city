@@ -36,13 +36,16 @@ export function testKimiConnection(providerId: 'kimi-text' | 'kimi-multimodal') 
   return getKimiStatus(providerId)
 }
 
-export async function generateKimiText(input: ChinaTextGenerationInput) {
+export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal' }) {
+  const providerId = input.providerId ?? 'kimi-text'
   const apiKey = process.env.MOONSHOT_API_KEY
-  const model = process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
+  const model = providerId === 'kimi-multimodal'
+    ? process.env.KIMI_MODEL_MULTIMODAL || process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
+    : process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
   if (!apiKey) {
     return {
       success: false as const,
-      providerId: 'kimi-text' as const,
+      providerId,
       model,
       errorCode: 'PROVIDER_NOT_CONFIGURED',
       message: 'MOONSHOT_API_KEY 未配置',
@@ -50,12 +53,12 @@ export async function generateKimiText(input: ChinaTextGenerationInput) {
   }
 
   return postOpenAICompatibleChat({
-    providerId: 'kimi-text',
+    providerId,
     apiKey,
     baseUrl: process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1',
     model,
     prompt: input.prompt,
-    system: input.system,
+    system: input.system || '你是 Creator City 的 API 连通性测试助手。',
     maxTokens: input.maxTokens,
     errorCode: 'KIMI_TEXT_FAILED',
   })

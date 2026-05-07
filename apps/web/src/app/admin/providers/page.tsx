@@ -76,6 +76,10 @@ interface TestResponse {
   mode?: string
   testMode?: string
   errorCode?: string
+  upstreamStatus?: number
+  upstreamMessage?: string
+  rawCode?: string
+  requestId?: string
 }
 
 const ALL_CATEGORIES = 'All'
@@ -139,9 +143,20 @@ function buildClientSummary(providers: ProviderRow[]): ProviderSummary {
 function canRunTextPing(provider: ProviderRow) {
   return provider.configured && (
     provider.providerId === 'kimi-text' ||
+    provider.providerId === 'kimi-multimodal' ||
     provider.providerId === 'deepseek-text' ||
     provider.providerId === 'deepseek-reasoner'
   )
+}
+
+function formatTestMessage(data: TestResponse) {
+  const parts = [
+    data.errorCode,
+    data.message,
+    data.upstreamMessage ? `upstream: ${data.upstreamMessage}` : '',
+    data.sample ? `sample: ${data.sample}` : '',
+  ].filter(Boolean)
+  return parts.join(' · ')
 }
 
 export default function AdminProvidersPage() {
@@ -263,9 +278,6 @@ export default function AdminProvidersPage() {
         body: JSON.stringify({ providerId: provider.providerId, mode }),
       })
       const data = await readJsonResponse<TestResponse>(response)
-      if (!response.ok || data.success === false) {
-        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '测试失败。'}` : data.message ?? '测试失败。')
-      }
       setTestResults((current) => ({ ...current, [provider.providerId]: data }))
       setProviders((current) => current.map((item) => (
         item.providerId === provider.providerId
@@ -278,7 +290,10 @@ export default function AdminProvidersPage() {
             }
           : item
       )))
-      setMessage(`${provider.displayName}: ${data.message ?? (data.ok ? '测试通过。' : '测试失败。')}${data.sample ? ` sample: ${data.sample}` : ''}`)
+      if (!response.ok && data.success !== false) {
+        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '测试失败。'}` : data.message ?? '测试失败。')
+      }
+      setMessage(`${provider.displayName}: ${formatTestMessage(data) || (data.ok ? '测试通过。' : '测试失败。')}`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '测试连接失败。')
     } finally {
@@ -438,6 +453,21 @@ export default function AdminProvidersPage() {
                         ) : null}
                         {testResult?.sample ? (
                           <div className="mt-1 max-w-[220px] break-words text-xs text-emerald-200/70">sample: {testResult.sample}</div>
+                        ) : null}
+                        {testResult?.errorCode ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-200/80">errorCode: {testResult.errorCode}</div>
+                        ) : null}
+                        {testResult?.upstreamStatus ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-200/70">upstreamStatus: {testResult.upstreamStatus}</div>
+                        ) : null}
+                        {testResult?.upstreamMessage ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-100/70">upstream: {testResult.upstreamMessage}</div>
+                        ) : null}
+                        {testResult?.rawCode ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-red-100/55">rawCode: {testResult.rawCode}</div>
+                        ) : null}
+                        {testResult?.requestId ? (
+                          <div className="mt-1 max-w-[220px] break-words text-xs text-white/30">requestId: {testResult.requestId}</div>
                         ) : null}
                         {testResult?.mode || testResult?.testMode ? (
                           <div className="mt-1 text-xs text-white/30">{testResult.mode ?? testResult.testMode}</div>
