@@ -17,8 +17,9 @@ export const volcengineProviderConfigs: ChinaProviderConfig[] = [
   },
   {
     providerId: 'volcengine-seedream-image',
-    envKeys: ['VOLCENGINE_ACCESS_KEY_ID', 'VOLCENGINE_SECRET_ACCESS_KEY'],
-    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDREAM_MODEL'],
+    envKeys: ['VOLCENGINE_ARK_API_KEY'],
+    optionalEnvKeys: ['VOLCENGINE_SEEDREAM_MODEL', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_REGION'],
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
     defaultModel: 'seedream-5-0-lite',
     modelEnvKey: 'VOLCENGINE_SEEDREAM_MODEL',
@@ -111,8 +112,6 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
   const providerId = 'volcengine-seedream-image'
   const model = process.env.VOLCENGINE_SEEDREAM_MODEL || 'seedream-5-0-lite'
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY
-    || process.env.VOLCENGINE_API_KEY
-    || process.env.VOLCENGINE_SECRET_ACCESS_KEY
   const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'
 
   if (!apiKey) {
@@ -121,7 +120,7 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       providerId,
       model,
       errorCode: 'PROVIDER_NOT_CONFIGURED',
-      message: 'VOLCENGINE_ARK_API_KEY 或 VOLCENGINE_SECRET_ACCESS_KEY 未配置',
+      message: 'VOLCENGINE_ARK_API_KEY 未配置',
     }
   }
 
