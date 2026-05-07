@@ -33,6 +33,7 @@ export type CanvasWorkflowRunNodeInput<TNode extends CanvasWorkflowNode> = {
 }
 
 export type CanvasWorkflowRunNodeResult = {
+  status?: CanvasWorkflowNodeStatus
   resultText?: string
   resultImageUrl?: string
   resultVideoUrl?: string
@@ -148,7 +149,7 @@ export async function runCanvasWorkflow<TNode extends CanvasWorkflowNode>({
         upstreamText,
         inputAssets,
       })
-      patchNode(nodeById, nodes, nodeId, { ...result, status: 'done', errorMessage: undefined }, onNodeUpdate)
+      patchNode(nodeById, nodes, nodeId, { ...result, status: result.status ?? 'done', errorMessage: undefined }, onNodeUpdate)
     } catch (error) {
       const message = error instanceof Error ? error.message : '节点运行失败。'
       failedNodeIds.push(nodeId)

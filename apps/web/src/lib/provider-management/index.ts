@@ -20,6 +20,7 @@ export type AdminProviderCapability =
   | 'Video'
   | 'LLM'
   | 'Reasoning'
+  | 'Text-to-Video'
   | 'Image-to-Video'
   | 'Image Understanding'
   | 'Storage'
@@ -349,20 +350,21 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
   },
   {
     providerId: 'volcengine-seedance-video',
-    displayName: 'Volcengine Seedance 2.0 Video',
-    capability: ['Video'],
+    displayName: 'Volcengine Seedance Video',
+    capability: ['Video', 'Text-to-Video', 'Image-to-Video'],
     category: 'China',
-    envKeys: ['VOLCENGINE_ACCESS_KEY_ID', 'VOLCENGINE_SECRET_ACCESS_KEY'],
+    envKeys: ['VOLCENGINE_ARK_API_KEY'],
     optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDANCE_MODEL'],
     nodeType: 'video',
     defaultModel: 'seedance-2-0',
     modelEnvKey: 'VOLCENGINE_SEEDANCE_MODEL',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
     creditsPerCall: 200,
     estimatedCostUsd: 0.05,
     testMode: 'env-only',
     providerFamily: 'china-ai',
-    setupHint: '配置 VOLCENGINE_ACCESS_KEY_ID 和 VOLCENGINE_SECRET_ACCESS_KEY；可选 VOLCENGINE_REGION、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_SEEDANCE_MODEL。',
+    setupHint: '配置 VOLCENGINE_ARK_API_KEY；可选 VOLCENGINE_REGION、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_SEEDANCE_MODEL。',
   },
   {
     providerId: 'volcengine-seedream-image',

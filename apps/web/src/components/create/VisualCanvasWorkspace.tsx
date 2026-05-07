@@ -259,6 +259,11 @@ const IMAGE_NODE_PROVIDER_OPTIONS = [
   { value: 'openai-image', label: 'OpenAI Image', hint: '海外图片 · OpenAI', duration: '30~90s' },
 ] as const
 
+const VIDEO_NODE_PROVIDER_OPTIONS = [
+  { value: 'volcengine-seedance-video', label: 'Volcengine Seedance Video', hint: '中国视频 · Seedance', duration: '2~10 min' },
+  { value: 'custom-video-gateway', label: 'Custom Video Gateway', hint: '自有视频生成网关', duration: '1~3 min' },
+] as const
+
 const PARAMETER_RATIO_MAP: Record<(typeof PARAMETER_OPTIONS)[number]['value'], string> = {
   '16:9-balanced': '16:9',
   '9:16-vertical': '9:16',
@@ -313,6 +318,7 @@ function clampNumber(value: number, min: number, max: number) {
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
   if (kind === 'text') return TEXT_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
   if (kind === 'image') return IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
+  if (kind === 'video') return VIDEO_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
 
   const providerKind = getProviderKind(kind)
   const providers = getCanvasProviders(providerKind)
@@ -336,8 +342,16 @@ function getImageNodeProviderOption(providerId: string) {
   return IMAGE_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
 }
 
+function getVideoNodeProviderOption(providerId: string) {
+  return VIDEO_NODE_PROVIDER_OPTIONS.find((provider) => provider.value === providerId) ?? null
+}
+
 function getDefaultImageProviderId(statusMap: Map<string, ImageProviderStatusInfo>) {
   return IMAGE_NODE_PROVIDER_OPTIONS.find((provider) => statusMap.get(provider.value)?.available)?.value ?? null
+}
+
+function getDefaultVideoProviderId(statusMap: Map<string, VideoProviderStatusInfo>) {
+  return VIDEO_NODE_PROVIDER_OPTIONS.find((provider) => statusMap.get(provider.value)?.available)?.value ?? null
 }
 
 function getImageProviderStatus(
@@ -351,10 +365,26 @@ function getImageProviderStatus(
   return liveStatusMap.get(normalizeProviderId(providerId)) ?? (liveStatusLoading ? 'checking' : 'unknown')
 }
 
+function getVideoProviderStatus(
+  statusMap: Map<string, VideoProviderStatusInfo>,
+  providerId: string,
+  liveStatusMap: Map<string, ToolProviderStatus>,
+  liveStatusLoading: boolean,
+) {
+  const known = statusMap.get(providerId)
+  if (known) return known.available ? 'available' : known.status
+  return liveStatusMap.get(normalizeProviderId(providerId)) ?? (liveStatusLoading ? 'checking' : 'unknown')
+}
+
 function imageProviderUnavailableMessage(providerId: string, info?: ImageProviderStatusInfo) {
   if (providerId === 'openai-image') return 'OPENAI_IMAGE_UNAVAILABLE: OpenAI Image 暂不可用，请配置中国图片 Provider。'
   const missing = info?.missingEnv?.length ? `缺少 ${info.missingEnv.join(', ')}` : '缺少必要环境变量'
   return `PROVIDER_NOT_CONFIGURED: 图片 Provider 未配置，请先在 /admin/providers 配置环境变量。${missing ? `（${missing}）` : ''}`
+}
+
+function videoProviderUnavailableMessage(info?: VideoProviderStatusInfo) {
+  const missing = info?.missingEnv?.length ? `缺少 ${info.missingEnv.join(', ')}` : '缺少必要环境变量'
+  return `PROVIDER_NOT_CONFIGURED: 视频 Provider 未配置，请先在 /admin/providers 配置环境变量。${missing ? `（${missing}）` : ''}`
 }
 
 function getProviderKind(kind: VisualCanvasNodeKind): CanvasProviderKind {
@@ -399,6 +429,9 @@ type GenerateApiResult = GenerateResponse & {
   requestId?: string
   missingEnv?: string[]
   missingEnvKeys?: string[]
+  async?: boolean
+  taskId?: string
+  videoUrl?: string
 }
 
 type ImageProviderStatusInfo = {
@@ -412,6 +445,8 @@ type ImageProviderStatusInfo = {
   reason?: string
   model?: string
 }
+
+type VideoProviderStatusInfo = ImageProviderStatusInfo
 
 function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message'>) {
   const message = result.message ?? ''
@@ -478,6 +513,39 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
+function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
+  const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
+    ? result.result.metadata as Record<string, unknown>
+    : {}
+  const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
+  return {
+    ...metadataRecord(node.metadataJson),
+    providerId: result.providerId || providerId,
+    model: result.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined),
+    taskId,
+    generationJobId: result.jobId ?? taskId,
+  }
+}
+
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId'>, providerId: string) {
+  return {
+    ...metadataRecord(node.metadataJson),
+    providerId: result.providerId || providerId,
+    model: result.model,
+    taskId: result.taskId,
+    generationJobId: result.taskId,
+    lastError: {
+      errorCode: result.errorCode,
+      message: normalizeGenerateErrorMessage(result),
+      upstreamStatus: result.upstreamStatus,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
+      at: new Date().toISOString(),
+    },
+  }
+}
+
 async function callGenerationApi(
   nodeType: ToolProviderNodeType,
   providerId: string,
@@ -541,6 +609,30 @@ async function pollGenerationJob(jobId: string): Promise<GenerateApiResult> {
     return JSON.parse(raw) as GenerateApiResult
   } catch {
     return { success: false, providerId: '', mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）` }
+  }
+}
+
+async function pollSeedanceVideoTask(providerId: string, taskId: string): Promise<GenerateApiResult> {
+  let response: Response
+  try {
+    const params = new URLSearchParams({ providerId, taskId })
+    response = await fetch(`/api/generate/video/status?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '网络请求失败'
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, taskId }
+  }
+  const raw = await response.text().catch(() => '')
+  if (!raw.trim()) {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回空响应（HTTP ${response.status}）`, taskId }
+  }
+  try {
+    return JSON.parse(raw) as GenerateApiResult
+  } catch {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）`, taskId }
   }
 }
 
@@ -678,6 +770,16 @@ function workflowResultFromGenerateResult(node: VisualCanvasNode, result: Genera
   const resultImageUrl = result.result?.imageUrl
   const resultVideoUrl = result.result?.videoUrl
   const resultAudioUrl = result.result?.audioUrl
+  if (node.kind === 'video' && result.async && result.taskId) {
+    return {
+      status: 'running',
+      resultVideoUrl: node.resultVideoUrl,
+      resultPreview: '视频任务已提交，正在生成中',
+      outputLabel: '视频生成中',
+      preview: node.preview,
+      metadataJson: videoSuccessMetadata(node, result, node.providerId || node.model),
+    }
+  }
   const fallbackPreview = fallbackPrompt ? buildMockResult(node, fallbackPrompt) : `${node.title} 已完成`
   const resultPreview = resultText?.slice(0, 200)
     ?? (resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultAudioUrl ? '音频已生成' : fallbackPreview)
@@ -760,6 +862,7 @@ export function VisualCanvasWorkspace({
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
+  const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -875,6 +978,28 @@ export function VisualCanvasWorkspace({
           })
         }
         setImageProviderStatusMap(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    fetch('/api/generate/video', { credentials: 'include', cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { success?: boolean; providers?: VideoProviderStatusInfo[] } | null) => {
+        if (disposed || !data?.success || !Array.isArray(data.providers)) return
+        const next = new Map<string, VideoProviderStatusInfo>()
+        for (const provider of data.providers) {
+          if (!provider.providerId) continue
+          next.set(provider.providerId, {
+            ...provider,
+            missingEnv: provider.missingEnv ?? provider.missingEnvKeys ?? [],
+          })
+        }
+        setVideoProviderStatusMap(next)
       })
       .catch(() => undefined)
     return () => {
@@ -1897,6 +2022,10 @@ export function VisualCanvasWorkspace({
           workflowId,
         )
 
+        if (node.kind === 'video' && generateResult.async && generateResult.taskId) {
+          return workflowResultFromGenerateResult(node, generateResult, prompt)
+        }
+
         if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
           let polls = 0
           while (polls < 60 && generateResult.jobId && (generateResult.status === 'queued' || generateResult.status === 'running')) {
@@ -1978,6 +2107,9 @@ export function VisualCanvasWorkspace({
   const activeImageProvider = preferredKind === 'image'
     ? getImageNodeProviderOption(normalizedPromptModel)
     : null
+  const activeVideoProvider = preferredKind === 'video'
+    ? getVideoNodeProviderOption(normalizedPromptModel)
+    : null
   const activeProvider = useMemo(
     () => getCanvasProvider(getProviderKind(preferredKind), normalizedPromptModel),
     [preferredKind, normalizedPromptModel],
@@ -1987,24 +2119,33 @@ export function VisualCanvasWorkspace({
       ? Object.fromEntries(TEXT_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
       : preferredKind === 'image'
         ? Object.fromEntries(IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
+      : preferredKind === 'video'
+        ? Object.fromEntries(VIDEO_NODE_PROVIDER_OPTIONS.map((provider) => [provider.value, provider.label]))
       : Object.fromEntries(getCanvasProviders(getProviderKind(preferredKind)).map((provider) => [provider.id, provider.name])),
     [preferredKind],
   )
-  const activeProviderLabel = activeTextProvider?.label ?? activeImageProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
+  const activeProviderLabel = activeTextProvider?.label ?? activeImageProvider?.label ?? activeVideoProvider?.label ?? activeProvider?.name ?? getCanvasProviderLabel(getProviderKind(preferredKind), normalizedPromptModel)
   const activeProviderLiveStatus = liveStatusMap.get(normalizedPromptModel)
   const activeProviderImageStatus = preferredKind === 'image' ? imageProviderStatusMap.get(normalizedPromptModel) : undefined
+  const activeProviderVideoStatus = preferredKind === 'video' ? videoProviderStatusMap.get(normalizedPromptModel) : undefined
   const activeProviderStatus = activeProviderLiveStatus
     ?? (activeProviderImageStatus ? (activeProviderImageStatus.available ? 'available' : activeProviderImageStatus.status) : undefined)
+    ?? (activeProviderVideoStatus ? (activeProviderVideoStatus.available ? 'available' : activeProviderVideoStatus.status) : undefined)
     ?? (activeTextProvider?.badge ?? (liveStatusLoading ? 'checking' : activeProvider?.status ?? getCanvasProviderStatus(getProviderKind(preferredKind), normalizedPromptModel) ?? 'unknown'))
   const defaultImageProviderId = getDefaultImageProviderId(imageProviderStatusMap)
+  const defaultVideoProviderId = getDefaultVideoProviderId(videoProviderStatusMap)
   const activeProviderNotice = activeProviderStatus === 'checking'
     ? '正在检查 provider 实时状态'
     : activeProviderStatus === 'unknown'
-      ? (preferredKind === 'image' ? '请先在 /admin/providers 配置图片 Provider' : '暂时无法确认 provider 实时状态')
+      ? (preferredKind === 'image' ? '请先在 /admin/providers 配置图片 Provider' : preferredKind === 'video' ? '请先在 /admin/providers 配置视频 Provider' : '暂时无法确认 provider 实时状态')
       : preferredKind === 'image' && activeProviderImageStatus && !activeProviderImageStatus.available
         ? activeProviderImageStatus.reason || `未配置：缺少 ${activeProviderImageStatus.missingEnv.join(', ')}`
+        : preferredKind === 'video' && activeProviderVideoStatus && !activeProviderVideoStatus.available
+          ? activeProviderVideoStatus.reason || `未配置：缺少 ${activeProviderVideoStatus.missingEnv.join(', ')}`
         : preferredKind === 'image' && normalizedPromptModel === 'openai-image' && defaultImageProviderId && defaultImageProviderId !== 'openai-image'
           ? '建议切换到已配置的中国图片 Provider。'
+          : preferredKind === 'video' && defaultVideoProviderId && defaultVideoProviderId !== normalizedPromptModel
+            ? '建议切换到已配置的视频 Provider。'
           : activeProviderStatus === 'disabled'
             ? '该 Provider 已停用'
             : getCanvasProviderNoticeFromStatus(activeProviderStatus)
@@ -2202,6 +2343,8 @@ export function VisualCanvasWorkspace({
     const providerKind = getProviderKind(kind)
     const defaultModel = kind === 'image'
       ? getDefaultImageProviderId(imageProviderStatusMap) ?? meta.model
+      : kind === 'video'
+        ? getDefaultVideoProviderId(videoProviderStatusMap) ?? meta.model
       : getCanvasProvider(providerKind, meta.model)?.id ?? CANVAS_PROVIDER_FALLBACKS[providerKind]
     setPreferredKind(kind)
     setPromptModel(defaultModel)
@@ -2212,7 +2355,7 @@ export function VisualCanvasWorkspace({
         setPromptParameter(preset as keyof typeof PARAMETER_RATIO_MAP)
       }
     }
-  }, [imageProviderStatusMap])
+  }, [imageProviderStatusMap, videoProviderStatusMap])
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
     setActiveNodeId(node.id)
@@ -2285,6 +2428,8 @@ export function VisualCanvasWorkspace({
     syncPromptPreset(kind)
     const model = kind === 'image'
       ? getDefaultImageProviderId(imageProviderStatusMap) ?? NODE_META[kind].model
+      : kind === 'video'
+        ? getDefaultVideoProviderId(videoProviderStatusMap) ?? NODE_META[kind].model
       : NODE_META[kind].model
     createNode(kind, {
       title: presetTitle ?? NODE_META[kind].title,
@@ -2292,7 +2437,7 @@ export function VisualCanvasWorkspace({
       ratio: NODE_META[kind].ratio,
     })
     setEditingNodeId(null)
-  }, [createNode, imageProviderStatusMap, syncPromptPreset])
+  }, [createNode, imageProviderStatusMap, syncPromptPreset, videoProviderStatusMap])
 
   const closeCanvasPanel = useCallback(() => {
     setActivePanel(null)
@@ -2787,7 +2932,92 @@ export function VisualCanvasWorkspace({
     const nodeSnapshot = editingNode
     const nodeType = getProviderNodeType(nodeSnapshot.kind)
     const trimmedPrompt = canvasPrompt.trim()
-    const upstreamTextPrompt = nodeSnapshot.kind === 'image'
+    const currentMetadata = metadataRecord(nodeSnapshot.metadataJson)
+    const currentTaskId = typeof currentMetadata.taskId === 'string'
+      ? currentMetadata.taskId
+      : typeof currentMetadata.generationJobId === 'string'
+        ? currentMetadata.generationJobId
+        : ''
+    if (nodeSnapshot.kind === 'video' && normalizedPromptModel === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
+      setDialogError(null)
+      showCanvasFeedback('正在查询视频任务状态...')
+      void pollSeedanceVideoTask(normalizedPromptModel, currentTaskId).then((statusResult) => {
+        if (statusResult.status === 'running') {
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'running',
+            resultPreview: statusResult.message || '视频任务已提交，正在生成中',
+            outputLabel: statusResult.message || '视频生成中',
+            metadataJson: {
+              ...metadataRecord(nodeSnapshot.metadataJson),
+              providerId: statusResult.providerId || normalizedPromptModel,
+              model: statusResult.model ?? currentMetadata.model,
+              taskId: currentTaskId,
+              generationJobId: currentTaskId,
+            },
+          })
+          showCanvasFeedback('视频任务已提交，正在生成中')
+          return
+        }
+        if (!statusResult.success || statusResult.status === 'failed') {
+          const errMsg = formatGenerateError(statusResult)
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: nodeSnapshot.resultPreview ?? '视频任务失败',
+            outputLabel: '视频任务失败',
+            metadataJson: videoErrorMetadata(nodeSnapshot, { ...statusResult, taskId: currentTaskId }, normalizedPromptModel),
+          })
+          setDialogError(errMsg)
+          showCanvasFeedback(errMsg)
+          return
+        }
+        const videoUrl = statusResult.videoUrl ?? statusResult.result?.videoUrl
+        if (!videoUrl) {
+          const errMsg = 'VOLCENGINE_SEEDANCE_VIDEO_EMPTY: 视频任务已完成，但未返回视频 URL。'
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: nodeSnapshot.resultPreview ?? '视频任务未返回 URL',
+            outputLabel: '视频任务未返回 URL',
+          })
+          setDialogError(errMsg)
+          showCanvasFeedback(errMsg)
+          return
+        }
+        const metadataJson = {
+          ...metadataRecord(nodeSnapshot.metadataJson),
+          providerId: statusResult.providerId || normalizedPromptModel,
+          model: statusResult.model ?? currentMetadata.model,
+          taskId: currentTaskId,
+          generationJobId: currentTaskId,
+        }
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'done',
+          resultVideoUrl: videoUrl,
+          resultPreview: '视频已生成',
+          outputLabel: '视频已生成',
+          errorMessage: undefined,
+          metadataJson,
+          preview: { type: 'remote-video', url: videoUrl, poster: videoUrl, licenseType: 'original', attribution: 'Generated by Volcengine Seedance' },
+        })
+        void createGeneratedAsset({
+          nodeId: nodeSnapshot.id,
+          type: 'video',
+          title: `${nodeSnapshot.title} 视频结果`,
+          url: videoUrl,
+          providerId: normalizedPromptModel,
+          generationJobId: currentTaskId,
+          metadataJson,
+        })
+        commitEdges((current) => current.map((edge) => (
+          edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
+        )))
+        showCanvasFeedback('视频生成完成')
+      })
+      return
+    }
+
+    const upstreamTextPrompt = nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video'
       ? edges
           .filter((edge) => edge.toNodeId === nodeSnapshot.id)
           .map((edge) => nodes.find((node) => node.id === edge.fromNodeId)?.resultText)
@@ -2796,9 +3026,18 @@ export function VisualCanvasWorkspace({
           .trim()
       : ''
     const generationPrompt = trimmedPrompt || upstreamTextPrompt
-    if (!generationPrompt) {
+    const upstreamImageAssets = edges
+      .filter((edge) => edge.toNodeId === nodeSnapshot.id)
+      .flatMap((edge) => {
+        const upstreamNode = nodes.find((n) => n.id === edge.fromNodeId)
+        if (!upstreamNode?.resultImageUrl) return []
+        return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
+      })
+    if (!generationPrompt && !(nodeSnapshot.kind === 'video' && upstreamImageAssets.length > 0)) {
       const errMsg = nodeSnapshot.kind === 'image'
         ? '请先输入图片 prompt，或连接一个已有文本结果的 Text 节点。'
+        : nodeSnapshot.kind === 'video'
+          ? '请先输入视频 prompt，或连接一个已有 Text/Image 结果的上游节点。'
         : '请先输入 prompt 再生成。'
       setDialogError(errMsg)
       return
@@ -2829,15 +3068,22 @@ export function VisualCanvasWorkspace({
         return
       }
     }
-
-    // Collect image URLs from upstream nodes connected by edges (for image→video workflow)
-    const upstreamImageAssets = edges
-      .filter((edge) => edge.toNodeId === nodeSnapshot.id)
-      .flatMap((edge) => {
-        const upstreamNode = nodes.find((n) => n.id === edge.fromNodeId)
-        if (!upstreamNode?.resultImageUrl) return []
-        return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
-      })
+    if (nodeSnapshot.kind === 'video') {
+      const selectedProviderInfo = videoProviderStatusMap.get(normalizedPromptModel)
+      const selectedProviderStatus = getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      if (selectedProviderStatus !== 'available') {
+        const errMsg = videoProviderUnavailableMessage(selectedProviderInfo)
+        setDialogError(errMsg)
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'error',
+          errorMessage: errMsg,
+          resultPreview: '请先选择并配置可用视频 Provider。',
+          outputLabel: '视频 Provider 未配置',
+        })
+        showCanvasFeedback(errMsg)
+        return
+      }
+    }
 
     setDialogError(null)
     handleNodePatch(editingNode.id, {
@@ -2857,9 +3103,22 @@ export function VisualCanvasWorkspace({
       { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
       nodeSnapshot.id,
       upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
-      nodeType === 'image' ? projectId : undefined,
-      nodeType === 'image' ? workflowId : undefined,
+      nodeType === 'image' || nodeType === 'video' ? projectId : undefined,
+      nodeType === 'image' || nodeType === 'video' ? workflowId : undefined,
     ).then(async (result) => {
+      if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
+        const metadataJson = videoSuccessMetadata(nodeSnapshot, result, normalizedPromptModel)
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'running',
+          resultPreview: '视频任务已提交，正在生成中',
+          outputLabel: '视频生成中',
+          errorMessage: undefined,
+          metadataJson,
+        })
+        showCanvasFeedback('视频任务已提交，正在生成中')
+        return
+      }
+
       // Async job queued (e.g. Runway): poll until done or failed
       if ((result.status === 'queued' || result.status === 'running') && result.jobId) {
         const queuingPreview = `${result.providerId} · 生成中，请稍候…`
@@ -2887,6 +3146,7 @@ export function VisualCanvasWorkspace({
               resultPreview: jobFallback,
               outputLabel: jobFallback,
               ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, jobResult) } : {}),
+              ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(nodeSnapshot, jobResult, normalizedPromptModel) } : {}),
             })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -2951,6 +3211,7 @@ export function VisualCanvasWorkspace({
           resultPreview: fallbackPreview,
           outputLabel: fallbackPreview,
           ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, result) } : {}),
+          ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
         })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
@@ -2977,6 +3238,7 @@ export function VisualCanvasWorkspace({
         errorMessage: undefined,
         ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
         ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
@@ -3016,7 +3278,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, workflowId])
+  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -3389,6 +3651,20 @@ export function VisualCanvasWorkspace({
                 disabled: status === 'not-configured' || status === 'disabled',
               }
             })
+        : preferredKind === 'video'
+          ? VIDEO_NODE_PROVIDER_OPTIONS.map((provider) => {
+              const info = videoProviderStatusMap.get(provider.value)
+              const status = getVideoProviderStatus(videoProviderStatusMap, provider.value, liveStatusMap, liveStatusLoading)
+              const missing = info?.missingEnv?.length ? `未配置：缺少 ${info.missingEnv.join(', ')}` : provider.hint
+              return {
+                value: provider.value,
+                label: provider.label,
+                hint: info?.available ? provider.hint : missing,
+                badge: status,
+                duration: provider.duration,
+                disabled: status === 'not-configured' || status === 'disabled',
+              }
+            })
         : getCanvasProviders(getProviderKind(preferredKind)).map((provider) => ({
             value: provider.id,
             label: provider.name,
@@ -3423,7 +3699,7 @@ export function VisualCanvasWorkspace({
         setPromptRatio(PARAMETER_RATIO_MAP[nextValue])
       },
     },
-  ], [activeProviderLabel, assetLabel, handleProviderChange, imageProviderStatusMap, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset])
+  ], [activeProviderLabel, assetLabel, handleProviderChange, imageProviderStatusMap, liveStatusLoading, liveStatusMap, onShowStartup, parameterLabel, preferredKind, stageLabel, syncPromptPreset, videoProviderStatusMap])
 
   const handleCreateMenuSelect = useCallback((kind: VisualCanvasNodeKind) => {
     const size = getNodeSize(kind)
@@ -3436,6 +3712,8 @@ export function VisualCanvasWorkspace({
     syncPromptPreset(kind)
     const model = kind === 'image'
       ? getDefaultImageProviderId(imageProviderStatusMap) ?? NODE_META[kind].model
+      : kind === 'video'
+        ? getDefaultVideoProviderId(videoProviderStatusMap) ?? NODE_META[kind].model
       : NODE_META[kind].model
     const node = createNode(kind, {
       title: NODE_META[kind].title,
@@ -3445,7 +3723,7 @@ export function VisualCanvasWorkspace({
     })
     setEditingNodeId(node.id)
     setNodeCreateMenu(null)
-  }, [createNode, imageProviderStatusMap, nodeCreateMenu, syncPromptPreset])
+  }, [createNode, imageProviderStatusMap, nodeCreateMenu, syncPromptPreset, videoProviderStatusMap])
 
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const element = event.target as HTMLElement | null
@@ -3587,7 +3865,13 @@ export function VisualCanvasWorkspace({
   const selectedImageProviderStatus = editingNode?.kind === 'image'
     ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
     : null
+  const selectedVideoProviderStatus = editingNode?.kind === 'video'
+    ? getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+    : null
   const imageGenerateDisabled = editingNode?.kind === 'image' && selectedImageProviderStatus !== 'available'
+  const videoGenerateDisabled = editingNode?.kind === 'video'
+    && selectedVideoProviderStatus !== 'available'
+    && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
 
   return (
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
@@ -4051,10 +4335,14 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateDisabled={imageGenerateDisabled || editingNode.status === 'generating'}
+            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || editingNode.status === 'generating'}
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
+                : editingNode.kind === 'video' && normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && (metadataRecord(editingNode.metadataJson).taskId || metadataRecord(editingNode.metadataJson).generationJobId)
+                  ? '查询结果'
+                : editingNode.kind === 'video' && videoGenerateDisabled
+                  ? '未配置'
                 : editingNode.kind === 'image' && !defaultImageProviderId
                   ? '请先配置图片 Provider'
                 : editingNode.kind === 'image' && imageGenerateDisabled

@@ -388,7 +388,9 @@ export function CanvasNodeCard({
           ) : node.status === 'generating' || node.status === 'running' || node.status === 'queued' ? (
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
-              <div className="canvas-node-preview-copy">{node.status === 'queued' ? '排队中...' : '运行中...'}</div>
+              <div className="canvas-node-preview-copy">
+                {node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '运行中...')}
+              </div>
             </div>
           ) : node.status === 'error' ? (
             <div className="canvas-node-preview is-error-preview">
