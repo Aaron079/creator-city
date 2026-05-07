@@ -75,8 +75,8 @@ export async function loadProjectDelivery(projectId: string) {
   })
   const workflowIds = workflows.map((workflow) => workflow.id)
 
-  const [share, assets, canvasNodes] = await Promise.all([
-    db.deliveryShare.findFirst({
+  const [shares, assets, canvasNodes] = await Promise.all([
+    db.deliveryShare.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -118,7 +118,8 @@ export async function loadProjectDelivery(projectId: string) {
   ])
 
   return {
-    share,
+    share: shares[0] ?? null,
+    shares,
     assets: assets.map(serializeDeliveryAsset),
     canvasNodes: canvasNodes.map(serializeDeliveryCanvasNode),
   }

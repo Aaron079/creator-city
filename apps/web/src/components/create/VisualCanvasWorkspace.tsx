@@ -29,7 +29,6 @@ import {
 import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
-import { getClientDeliveryHref } from '@/lib/routing/actions'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 import canvasStyles from '@/components/create/canvas.module.css'
@@ -2790,9 +2789,14 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const handleOpenClientDelivery = useCallback(() => {
-    const projectId = new URLSearchParams(window.location.search).get('projectId') ?? undefined
-    window.location.assign(getClientDeliveryHref(projectId))
-  }, [])
+    const currentProjectId = projectId || new URLSearchParams(window.location.search).get('projectId') || ''
+    if (!currentProjectId) {
+      window.alert('请先打开一个项目，再创建客户交付。')
+      router.push('/projects')
+      return
+    }
+    router.push(`/projects/${encodeURIComponent(currentProjectId)}/delivery`)
+  }, [projectId, router])
 
   const handleOpenProjects = useCallback(() => {
     try {
@@ -2907,26 +2911,6 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          <button
-            type="button"
-            className="canvas-secondary-button"
-            title={saveMessage || saveStatus}
-            onClick={() => { if (saveStatus === 'failed' || saveStatus === 'local-draft' || saveStatus === 'restored-draft') void saveCanvas() }}
-          >
-            {saveStatus === 'opening'
-              ? '正在打开项目...'
-              : saveStatus === 'saving'
-                ? 'Saving...'
-                : saveStatus === 'dirty'
-                  ? 'Saving...'
-                  : saveStatus === 'local-draft'
-                    ? 'Offline draft saved'
-                    : saveStatus === 'restored-draft'
-                      ? 'Restored draft'
-                      : saveStatus === 'failed'
-                        ? 'Save failed'
-                        : 'Saved'}
-          </button>
           <button
             type="button"
             className="canvas-secondary-button"

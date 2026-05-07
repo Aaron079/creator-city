@@ -74,6 +74,7 @@ export default async function ProjectDeliveryPage({ params }: Props) {
           projectId={projectId}
           projectTitle={project.title}
           initialShare={delivery.share ? asClientJson(serializeDeliveryShare(delivery.share)) as unknown as DeliveryShareForClient : null}
+          initialShares={asClientJson(delivery.shares.map(serializeDeliveryShare)) as unknown as DeliveryShareForClient[]}
           assets={asClientJson(delivery.assets) as unknown as DeliveryAssetForClient[]}
           canvasNodes={asClientJson(delivery.canvasNodes) as unknown as DeliveryCanvasNodeForClient[]}
         />

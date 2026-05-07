@@ -57,7 +57,12 @@ export default async function PublicDeliveryPage({ params }: Props) {
         <div className="mx-auto max-w-5xl px-4 py-10">
           <p className="text-sm text-cyan-200">Creator City Delivery</p>
           <h1 className="mt-2 text-3xl font-semibold">{share.title}</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/55">{share.project.description || share.project.title}</p>
+          {share.recipientName ? (
+            <p className="mt-2 text-sm text-white/60">收件客户：{share.recipientName}</p>
+          ) : null}
+          <p className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-6 text-white/55">
+            {share.message || share.project.description || share.project.title}
+          </p>
         </div>
       </section>
 

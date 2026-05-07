@@ -603,6 +603,10 @@ model DeliveryShare {
   token     String    @unique
   title     String
   status    String    @default("active")
+  recipientName  String?
+  recipientEmail String?
+  message        String?   @db.Text
+  metadataJson   Json?
   expiresAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -614,6 +618,7 @@ model DeliveryShare {
 
   @@index([projectId])
   @@index([ownerId])
+  @@index([recipientEmail])
   @@index([status])
   @@index([createdAt])
 }

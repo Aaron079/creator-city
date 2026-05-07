@@ -25,10 +25,12 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 
   const delivery = await loadProjectDelivery(params.projectId)
   const serializedShare = delivery.share ? serializeDeliveryShare(delivery.share) : null
+  const serializedShares = delivery.shares.map(serializeDeliveryShare)
   return NextResponse.json({
     success: true,
     project,
     share: serializedShare,
+    shares: serializedShares,
     items: serializedShare?.items ?? [],
     comments: serializedShare?.comments ?? [],
     assets: delivery.assets,
