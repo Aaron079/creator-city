@@ -337,6 +337,14 @@ function getProviderNodeType(kind: VisualCanvasNodeKind): ToolProviderNodeType {
   return 'text'
 }
 
+function getNodeStatusLabel(status: VisualCanvasNode['status']) {
+  if (status === 'queued') return '排队中'
+  if (status === 'running' || status === 'generating') return '运行中'
+  if (status === 'done') return '完成'
+  if (status === 'error') return '失败'
+  return '待运行'
+}
+
 function getNodeKindForPublicTemplate(nodeType: PublicTemplate['nodeType']): VisualCanvasNodeKind {
   if (nodeType === 'text' || nodeType === 'image' || nodeType === 'video' || nodeType === 'audio') {
     return nodeType
@@ -348,18 +356,67 @@ type GenerateApiResult = GenerateResponse & {
   requiredCredits?: number
   availableCredits?: number
   model?: string
+  text?: string
+  resultText?: string
   upstreamStatus?: number
   upstreamMessage?: string
+  rawCode?: string
+  requestId?: string
+}
+
+function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message'>) {
+  const message = result.message ?? ''
+  if (
+    result.errorCode === 'KIMI_REQUEST_TIMEOUT'
+    || (result.errorCode === 'KIMI_TEXT_FAILED' && message.toLowerCase().includes('abort'))
+  ) {
+    return 'Kimi 请求超时或被中断，请重试。'
+  }
+  return message
 }
 
 function formatGenerateError(result: GenerateApiResult) {
+  const message = normalizeGenerateErrorMessage(result)
   return [
     result.errorCode,
-    result.message,
+    message,
     result.model ? `model: ${result.model}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
-    result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 240)}` : '',
+    result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
   ].filter(Boolean).join(' · ') || '生成失败'
+}
+
+function getGeneratedText(result: GenerateApiResult) {
+  return result.result?.text ?? result.resultText ?? result.text
+}
+
+function metadataRecord(metadataJson: unknown) {
+  return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
+    ? metadataJson as Record<string, unknown>
+    : {}
+}
+
+function textSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
+  return {
+    ...metadataRecord(node.metadataJson),
+    model: result.model ?? result.result?.metadata?.model,
+    providerId: result.providerId || providerId,
+  }
+}
+
+function textErrorMetadata(node: VisualCanvasNode, result: GenerateApiResult) {
+  return {
+    ...metadataRecord(node.metadataJson),
+    lastError: {
+      errorCode: result.errorCode,
+      message: normalizeGenerateErrorMessage(result),
+      upstreamStatus: result.upstreamStatus,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
+      at: new Date().toISOString(),
+    },
+  }
 }
 
 async function callGenerationApi(
@@ -557,7 +614,7 @@ function workflowErrorFromGenerateResult(node: VisualCanvasNode, result: Generat
 }
 
 function workflowResultFromGenerateResult(node: VisualCanvasNode, result: GenerateApiResult, fallbackPrompt: string): CanvasWorkflowRunNodeResult {
-  const resultText = result.result?.text
+  const resultText = getGeneratedText(result)
   const resultImageUrl = result.result?.imageUrl
   const resultVideoUrl = result.result?.videoUrl
   const resultAudioUrl = result.result?.audioUrl
@@ -639,6 +696,9 @@ export function VisualCanvasWorkspace({
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
+  const [textEditorNodeId, setTextEditorNodeId] = useState<string | null>(null)
+  const [textEditorDraft, setTextEditorDraft] = useState('')
+  const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -1798,6 +1858,23 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, nodes],
   )
+  const textEditorNode = useMemo(
+    () => nodes.find((node) => node.id === textEditorNodeId && node.kind === 'text') ?? null,
+    [nodes, textEditorNodeId],
+  )
+  const textEditorMetadata = useMemo(
+    () => metadataRecord(textEditorNode?.metadataJson),
+    [textEditorNode?.metadataJson],
+  )
+  const textEditorProviderId = textEditorNode
+    ? normalizeProviderId(textEditorNode.providerId || textEditorNode.model)
+    : ''
+  const textEditorProviderLabel = textEditorProviderId
+    ? getTextNodeProviderOption(textEditorProviderId)?.label ?? getCanvasProviderLabel('text', textEditorProviderId)
+    : ''
+  const textEditorModel = typeof textEditorMetadata.model === 'string'
+    ? textEditorMetadata.model
+    : textEditorNode?.model
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -2051,6 +2128,51 @@ export function VisualCanvasWorkspace({
       promptInputRef.current?.select()
     }, 0)
   }, [syncPromptPreset])
+
+  const openTextEditor = useCallback((node: VisualCanvasNode) => {
+    setActiveNodeId(node.id)
+    setTextEditorNodeId(node.id)
+    setTextEditorDraft(node.resultText ?? '')
+    setTextEditorCopied(false)
+  }, [])
+
+  const closeTextEditor = useCallback(() => {
+    setTextEditorNodeId(null)
+    setTextEditorDraft('')
+    setTextEditorCopied(false)
+  }, [])
+
+  const saveTextEditor = useCallback(() => {
+    if (!textEditorNode) return
+    const now = new Date().toISOString()
+    handleNodePatch(textEditorNode.id, {
+      resultText: textEditorDraft,
+      resultPreview: textEditorDraft.slice(0, 200),
+      outputLabel: textEditorDraft.slice(0, 80) || '文本已手动保存',
+      status: 'done',
+      errorMessage: undefined,
+      metadataJson: {
+        ...metadataRecord(textEditorNode.metadataJson),
+        manuallyEdited: true,
+        editedAt: now,
+      },
+    })
+    if (editingNodeId === textEditorNode.id) setDialogError(null)
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('文本修改已保存。')
+    closeTextEditor()
+  }, [closeTextEditor, editingNodeId, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback, textEditorDraft, textEditorNode])
+
+  const copyTextEditor = useCallback(async () => {
+    try {
+      await navigator.clipboard?.writeText(textEditorDraft)
+      setTextEditorCopied(true)
+      window.setTimeout(() => setTextEditorCopied(false), 1200)
+    } catch {
+      showCanvasFeedback('复制失败，请手动选择文本复制。')
+    }
+  }, [showCanvasFeedback, textEditorDraft])
 
   const buildResultLabel = useCallback((title: string) => {
     const assetCopy = promptAssetMode === 'none' ? '无素材' : assetLabel
@@ -2628,7 +2750,13 @@ export function VisualCanvasWorkspace({
           const jobFallback = buildResultLabel(nodeSnapshot.title)
           if (!jobResult.success) {
             const errMsg = formatGenerateError(jobResult)
-            handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: jobFallback, outputLabel: jobFallback })
+            handleNodePatch(nodeSnapshot.id, {
+              status: 'error',
+              errorMessage: errMsg,
+              resultPreview: jobFallback,
+              outputLabel: jobFallback,
+              ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, jobResult) } : {}),
+            })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
             } else if (jobResult.status === 'not-configured' || jobResult.errorCode === 'PROVIDER_NOT_CONFIGURED') {
@@ -2639,7 +2767,7 @@ export function VisualCanvasWorkspace({
             setDialogError(errMsg)
             return
           }
-          const jobResultText = jobResult.result?.text
+          const jobResultText = getGeneratedText(jobResult)
           handleNodePatch(nodeSnapshot.id, {
             status: 'done',
             resultText: jobResultText,
@@ -2647,6 +2775,7 @@ export function VisualCanvasWorkspace({
             outputLabel: jobFallback,
             resultVideoUrl: jobResult.result?.videoUrl ?? nodeSnapshot.resultVideoUrl,
             errorMessage: undefined,
+            ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, jobResult, normalizedPromptModel) } : {}),
             preview: jobResult.result?.videoUrl
               ? { type: 'remote-video', url: jobResult.result.videoUrl, poster: jobResult.result.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
               : nodeSnapshot.preview,
@@ -2685,7 +2814,13 @@ export function VisualCanvasWorkspace({
 
       if (!result.success) {
         const errMsg = formatGenerateError(result)
-        handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: fallbackPreview, outputLabel: fallbackPreview })
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'error',
+          errorMessage: errMsg,
+          resultPreview: fallbackPreview,
+          outputLabel: fallbackPreview,
+          ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, result) } : {}),
+        })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
           showCanvasFeedback(`积分不足，需要 ${result.requiredCredits ?? '?'}，可用 ${result.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -2697,7 +2832,7 @@ export function VisualCanvasWorkspace({
         return
       }
 
-      const resultText = result.result?.text
+      const resultText = getGeneratedText(result)
       const resultImageUrl = result.result?.imageUrl
       const resultVideoUrl = result.result?.videoUrl
       const resultPreview = resultText?.slice(0, 200) ?? (resultImageUrl ? '图片已生成' : fallbackPreview)
@@ -2709,6 +2844,7 @@ export function VisualCanvasWorkspace({
         resultImageUrl: resultImageUrl ?? nodeSnapshot.resultImageUrl,
         resultVideoUrl: resultVideoUrl ?? nodeSnapshot.resultVideoUrl,
         errorMessage: undefined,
+        ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
@@ -3730,6 +3866,7 @@ export function VisualCanvasWorkspace({
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
+                onOpenTextEditor={() => openTextEditor(node)}
               />
             </div>
           ))}
@@ -3752,7 +3889,7 @@ export function VisualCanvasWorkspace({
             modelOptionLabels={providerOptionLabels}
             providerStatus={activeProviderStatus}
             providerNotice={activeProviderNotice}
-            resultSummary={editingNode.status === 'done' ? (editingNode.resultText ?? editingNode.resultPreview ?? editingNode.outputLabel) : undefined}
+            resultSummary={editingNode.kind === 'text' ? undefined : editingNode.status === 'done' ? (editingNode.resultText ?? editingNode.resultPreview ?? editingNode.outputLabel) : undefined}
             errorMessage={dialogError ?? undefined}
             models={workspaceModels}
             onModelChange={handleProviderChange}
@@ -3783,6 +3920,58 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setEditingNodeId(null)}
           />
+        </div>
+      ) : null}
+
+      {textEditorNode ? (
+        <div
+          className="canvas-text-editor-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) closeTextEditor()
+          }}
+        >
+          <section
+            className="canvas-text-editor-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="canvas-text-editor-title"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-text-editor-head">
+              <div className="min-w-0">
+                <h2 id="canvas-text-editor-title">查看/编辑文本</h2>
+                <div className="canvas-text-editor-meta">
+                  <span>{textEditorProviderLabel || textEditorProviderId || 'Text Provider'}</span>
+                  <span>{textEditorModel || 'default'}</span>
+                  <span>{getNodeStatusLabel(textEditorNode.status)}</span>
+                </div>
+              </div>
+              <button type="button" className="canvas-text-editor-close" onClick={closeTextEditor} aria-label="关闭">
+                ×
+              </button>
+            </div>
+
+            <textarea
+              className="canvas-text-editor-textarea"
+              value={textEditorDraft}
+              onChange={(event) => setTextEditorDraft(event.target.value)}
+              placeholder=""
+            />
+
+            <div className="canvas-text-editor-actions">
+              <button type="button" className="canvas-text-editor-button" onClick={copyTextEditor}>
+                {textEditorCopied ? '已复制' : '复制文本'}
+              </button>
+              <div className="canvas-text-editor-action-spacer" />
+              <button type="button" className="canvas-text-editor-button" onClick={closeTextEditor}>
+                取消
+              </button>
+              <button type="button" className="canvas-text-editor-button is-primary" onClick={saveTextEditor}>
+                保存修改
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 

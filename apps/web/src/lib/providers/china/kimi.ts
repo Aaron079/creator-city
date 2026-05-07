@@ -77,7 +77,8 @@ export async function generateKimiText(input: ChinaTextGenerationInput & { provi
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20000)
+  const timeoutMs = purpose === 'generate' ? 60000 : 20000
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const baseUrl = (process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1').replace(/\/+$/, '')
     const body: Record<string, unknown> = {
@@ -167,6 +168,17 @@ export async function generateKimiText(input: ChinaTextGenerationInput & { provi
       rawCode: 'KIMI_EMPTY_FINAL_CONTENT',
     }
   } catch (error) {
+    const isAbort = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
+    if (isAbort) {
+      return {
+        success: false as const,
+        providerId,
+        model,
+        errorCode: 'KIMI_REQUEST_TIMEOUT',
+        message: 'Kimi 请求超时或被中断，请重试。',
+        upstreamMessage: 'Kimi request aborted or timed out.',
+      }
+    }
     const message = error instanceof Error ? error.message : 'Kimi 调用失败。'
     return {
       success: false as const,

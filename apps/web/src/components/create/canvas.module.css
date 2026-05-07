@@ -5385,3 +5385,184 @@
   font-size: 10px;
   font-weight: 700;
 }
+
+.scope :global(.canvas-node-card.node-text .canvas-node-body) {
+  min-height: 0;
+  padding: 10px 12px 12px;
+}
+
+.scope :global(.canvas-node-text-result) {
+  display: flex;
+  height: 100%;
+  max-height: 220px;
+  min-height: 0;
+  width: 100%;
+  cursor: text;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
+    rgba(0, 0, 0, 0.24);
+  padding: 12px;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.scope :global(.canvas-node-text-result:hover),
+.scope :global(.canvas-node-text-result:focus-visible) {
+  border-color: rgba(124, 255, 234, 0.32);
+  outline: none;
+}
+
+.scope :global(.canvas-node-text-result.is-placeholder) {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.scope :global(.canvas-node-text-copy) {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.scope :global(.canvas-node-text-error) {
+  display: block;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 92, 92, 0.24);
+  background: rgba(255, 92, 92, 0.09);
+  padding: 7px 9px;
+  color: rgba(255, 178, 160, 0.94);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.scope :global(.canvas-text-editor-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.42);
+  padding: 24px;
+}
+
+.scope :global(.canvas-text-editor-dialog) {
+  display: grid;
+  width: min(880px, calc(100vw - 48px));
+  max-height: min(84vh, 820px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(18, 20, 24, 0.96);
+  box-shadow: 0 28px 88px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(24px);
+  padding: 18px;
+}
+
+.scope :global(.canvas-text-editor-head) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scope :global(.canvas-text-editor-head h2) {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-text-editor-meta) {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.scope :global(.canvas-text-editor-meta span) {
+  max-width: 260px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 8px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-text-editor-close) {
+  display: inline-flex;
+  height: 32px;
+  width: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.scope :global(.canvas-text-editor-textarea) {
+  min-height: 60vh;
+  min-width: 0;
+  resize: none;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  line-height: 1.65;
+  outline: none;
+  white-space: pre-wrap;
+}
+
+.scope :global(.canvas-text-editor-textarea:focus) {
+  border-color: rgba(124, 255, 234, 0.34);
+}
+
+.scope :global(.canvas-text-editor-actions) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scope :global(.canvas-text-editor-action-spacer) {
+  flex: 1;
+}
+
+.scope :global(.canvas-text-editor-button) {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0 13px;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.scope :global(.canvas-text-editor-button.is-primary) {
+  border-color: rgba(124, 255, 234, 0.34);
+  background: rgba(124, 255, 234, 0.14);
+  color: rgba(230, 255, 251, 0.96);
+}

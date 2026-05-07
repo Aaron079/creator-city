@@ -52,6 +52,7 @@ interface CanvasNodeCardProps {
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
+  onOpenTextEditor?: () => void
   dragging?: boolean
 }
 
@@ -118,6 +119,17 @@ function getStatusLabel(status: VisualCanvasNodeStatus) {
   return '待运行'
 }
 
+function summarizeTextError(errorMessage?: string) {
+  const message = errorMessage?.trim()
+  if (!message) return '生成失败，请重试。'
+  const lower = message.toLowerCase()
+  if ((message.includes('KIMI_TEXT_FAILED') || message.includes('KIMI_REQUEST_TIMEOUT')) && lower.includes('abort')) {
+    return 'Kimi 请求超时或被中断，请重试。'
+  }
+  if (message.includes('KIMI_REQUEST_TIMEOUT')) return 'Kimi 请求超时或被中断，请重试。'
+  return message.length > 200 ? `${message.slice(0, 200)}...` : message
+}
+
 export function CanvasNodeCard({
   node,
   active,
@@ -127,10 +139,19 @@ export function CanvasNodeCard({
   onDragStart,
   onOpenContextMenu,
   onEdit,
+  onOpenTextEditor,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const textResult = node.resultText?.trim() ? node.resultText : ''
+  const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
+  const textDisplay = node.status === 'queued'
+    ? '排队中...'
+    : node.status === 'running' || node.status === 'generating'
+      ? '正在生成文本...'
+      : textResult || textErrorSummary || '生成结果会显示在这里。'
+  const textIsPlaceholder = !textResult && !textErrorSummary && node.status !== 'queued' && node.status !== 'running' && node.status !== 'generating'
   const className = [
     'canvas-node-card',
     `node-${node.kind}`,
@@ -252,7 +273,26 @@ export function CanvasNodeCard({
         </div>
 
         <div className="canvas-node-body">
-          {node.status === 'done' ? (
+          {node.kind === 'text' ? (
+            <button
+              type="button"
+              className={`canvas-node-text-result ${textIsPlaceholder ? 'is-placeholder' : ''} ${node.status === 'error' ? 'is-error' : ''}`}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpenTextEditor?.()
+              }}
+              aria-label="查看或编辑文本结果"
+            >
+              {node.status === 'error' && textResult ? (
+                <span className="canvas-node-text-error">{textErrorSummary}</span>
+              ) : null}
+              <span className="canvas-node-text-copy">{textDisplay}</span>
+            </button>
+          ) : node.status === 'done' ? (
             <div
               className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)} ${node.preview?.type === 'placeholder-video' ? 'has-placeholder-preview' : ''}`}
               onMouseEnter={(event) => {
@@ -291,7 +331,7 @@ export function CanvasNodeCard({
                 />
               ) : null}
               <div className="canvas-node-preview-copy">
-                {node.resultText || node.resultPreview || node.outputLabel || (node.kind === 'text' ? '生成结果会显示在这里' : '结果已生成。')}
+                {node.resultText || node.resultPreview || node.outputLabel || '结果已生成。'}
                 {node.preview?.type === 'placeholder-video' ? (
                   <span className="canvas-node-preview-license">合法占位预览 · 无第三方素材</span>
                 ) : null}
