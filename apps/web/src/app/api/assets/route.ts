@@ -7,13 +7,14 @@ import {
   isProjectCanvasSchemaMissing,
   projectJsonError,
 } from '@/lib/projects/api-errors'
+import { normalizeAssetType as normalizeAssetTypeValue } from '@/lib/assets/normalize'
 import { serializeAsset } from '@/lib/projects/canvas-mappers'
 
 export const dynamic = 'force-dynamic'
 
 const ASSET_TYPES = new Set<AssetType>(['VIDEO', 'AUDIO', 'IMAGE', 'SCRIPT', 'DOCUMENT', 'MODEL_3D', 'PRESET', 'TEMPLATE'])
 
-function normalizeAssetType(value: string | null): AssetType | undefined {
+function normalizeAssetTypeParam(value: string | null): AssetType | undefined {
   if (!value) return undefined
   const normalized = value.trim().toUpperCase()
   if (normalized === 'TEXT') return 'SCRIPT'
@@ -38,11 +39,15 @@ function serializeAssetForList(asset: AssetWithProjectLinks) {
   const linkedProject = asset.project ?? asset.projectAssets[0]?.project ?? null
   const { projectAssets, ...rest } = asset
   void projectAssets
-  return serializeAsset({
+  const serialized = serializeAsset({
     ...rest,
     project: linkedProject,
     projectId: rest.projectId ?? linkedProject?.id ?? null,
   })
+  return {
+    ...serialized,
+    normalizedType: normalizeAssetTypeValue(rest.type),
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const projectId = searchParams.get('projectId') ?? undefined
   const includeUnbound = searchParams.get('includeUnbound') === '1'
-  const type = normalizeAssetType(searchParams.get('type'))
+  const type = normalizeAssetTypeParam(searchParams.get('type'))
   const limit = normalizeLimit(searchParams.get('limit'))
 
   try {

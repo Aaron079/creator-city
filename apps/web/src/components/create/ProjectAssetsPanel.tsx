@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { FileText, ImageIcon, LinkIcon, Loader2, Music, Search, Video, X } from 'lucide-react'
+import { normalizeAssetType } from '@/lib/assets/normalize'
 
 export interface ProjectAssetItem {
   id: string
   title?: string | null
   name?: string | null
   type: string
+  normalizedType?: string | null
   url?: string | null
   dataUrl?: string | null
   mimeType?: string | null
@@ -36,20 +38,20 @@ function getAssetTitle(asset: ProjectAssetItem) {
 }
 
 function getAssetTypeLabel(type: string) {
-  const normalized = type.toUpperCase()
-  if (normalized === 'IMAGE') return '图片'
-  if (normalized === 'SCRIPT' || normalized === 'TEXT') return '文本'
-  if (normalized === 'VIDEO') return '视频'
-  if (normalized === 'AUDIO') return '音频'
+  const normalized = normalizeAssetType(type)
+  if (normalized === 'image') return '图片'
+  if (normalized === 'script' || normalized === 'text') return '文本'
+  if (normalized === 'video') return '视频'
+  if (normalized === 'audio') return '音频'
   return '文件'
 }
 
 function getAssetIcon(type: string) {
-  const normalized = type.toUpperCase()
-  if (normalized === 'IMAGE') return ImageIcon
-  if (normalized === 'SCRIPT' || normalized === 'TEXT') return FileText
-  if (normalized === 'VIDEO') return Video
-  if (normalized === 'AUDIO') return Music
+  const normalized = normalizeAssetType(type)
+  if (normalized === 'image') return ImageIcon
+  if (normalized === 'script' || normalized === 'text') return FileText
+  if (normalized === 'video') return Video
+  if (normalized === 'audio') return Music
   return LinkIcon
 }
 
@@ -153,10 +155,11 @@ export function ProjectAssetsPanel({ projectId, onClose, onAddAssetToCanvas }: P
   }
 
   function renderAsset(asset: ProjectAssetItem) {
-    const Icon = getAssetIcon(asset.type)
+    const normalizedType = normalizeAssetType(asset.normalizedType || asset.type)
+    const Icon = getAssetIcon(normalizedType)
     const title = getAssetTitle(asset)
     const previewUrl = getAssetPreviewUrl(asset)
-    const isImage = asset.type.toUpperCase() === 'IMAGE' && previewUrl
+    const isImage = normalizedType === 'image' && previewUrl
     const bound = asset.projectId === projectId
     const assetSize = formatAssetSize(asset.sizeBytes)
     return (
@@ -172,7 +175,7 @@ export function ProjectAssetsPanel({ projectId, onClose, onAddAssetToCanvas }: P
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-white">{title}</div>
             <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-white/55">
-              <span className="rounded border border-white/10 px-1.5 py-0.5">{getAssetTypeLabel(asset.type)}</span>
+              <span className="rounded border border-white/10 px-1.5 py-0.5">{getAssetTypeLabel(normalizedType)}</span>
               <span className="rounded border border-white/10 px-1.5 py-0.5">{asset.providerId || 'asset-library'}</span>
               {assetSize ? <span className="rounded border border-white/10 px-1.5 py-0.5">{assetSize}</span> : null}
             </div>

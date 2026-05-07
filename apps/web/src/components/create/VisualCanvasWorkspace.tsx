@@ -30,6 +30,7 @@ import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { getClientDeliveryHref } from '@/lib/routing/actions'
+import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 import canvasStyles from '@/components/create/canvas.module.css'
 
@@ -1678,14 +1679,14 @@ export function VisualCanvasWorkspace({
 
   const handleAddProjectAssetToCanvas = useCallback((asset: ProjectAssetItem) => {
     setHasStarted(true)
-    const normalizedType = asset.type.toUpperCase()
-    const kind: VisualCanvasNodeKind = normalizedType === 'IMAGE'
+    const normalizedType = normalizeAssetType(asset.normalizedType || asset.type)
+    const kind: VisualCanvasNodeKind = normalizedType === 'image'
       ? 'image'
-      : normalizedType === 'SCRIPT' || normalizedType === 'TEXT'
+      : normalizedType === 'script' || normalizedType === 'text'
         ? 'text'
-        : normalizedType === 'VIDEO'
+        : normalizedType === 'video'
           ? 'video'
-          : normalizedType === 'AUDIO'
+          : normalizedType === 'audio'
             ? 'audio'
             : 'asset'
     const title = asset.title?.trim() || asset.name?.trim() || '素材'
@@ -1723,6 +1724,7 @@ export function VisualCanvasWorkspace({
         assetId: asset.id,
         assetUrl,
         assetType: asset.type,
+        source: 'asset-library',
         providerId,
       },
     })
