@@ -21,6 +21,7 @@ interface ProjectListItem {
   lastOpenedAt: string | null
   workflowId?: string | null
   nodeCount?: number
+  assetCount?: number
   ownerRole?: string | null
   membershipRole?: string | null
 }
@@ -69,7 +70,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     for (const project of projects.slice(0, 6)) {
-      router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
+      router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
     }
   }, [projects, router])
 
@@ -172,12 +173,12 @@ export default function ProjectsPage() {
             {projects.map((project) => (
               <Link
                 key={project.id}
-                href={`/projects/${encodeURIComponent(project.id)}`}
+                href={`/create?projectId=${encodeURIComponent(project.id)}`}
                 onPointerEnter={() => {
-                  router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
+                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
                 }}
                 onFocus={() => {
-                  router.prefetch(`/projects/${encodeURIComponent(project.id)}`)
+                  router.prefetch(`/create?projectId=${encodeURIComponent(project.id)}`)
                 }}
                 onClick={() => {
                   try {
@@ -193,7 +194,10 @@ export default function ProjectsPage() {
                   <div>
                     <div className="text-base font-semibold text-white">{project.title || 'Untitled Project'}</div>
                     <div className="mt-1 text-xs text-white/40">
-                      {project.description || 'Main Canvas'} · {project.visibility} · {project.status} · {project.nodeCount ?? 0} nodes · {project.ownerRole ?? project.membershipRole ?? 'MEMBER'}
+                      {project.description || 'Main Canvas'} · {project.visibility} · {project.status} · {project.nodeCount ?? 0} nodes · {project.assetCount ?? 0} assets · {project.ownerRole ?? project.membershipRole ?? 'MEMBER'}
+                    </div>
+                    <div className="mt-1 font-mono text-[11px] text-white/25">
+                      {project.id}
                     </div>
                   </div>
                   <div className="text-xs text-white/40">

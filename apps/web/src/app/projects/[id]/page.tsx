@@ -205,7 +205,7 @@ export default function ProjectHomePage() {
         links: {
           review: `/review/${projectId}`,
           create: `/create?projectId=${projectId}`,
-          delivery: `/create?projectId=${projectId}&tab=delivery`,
+          delivery: `/projects/${projectId}/delivery`,
           detail: `/projects/${projectId}`,
         },
       },

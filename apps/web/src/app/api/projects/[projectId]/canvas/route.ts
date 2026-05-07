@@ -84,12 +84,9 @@ async function requireProjectAccess(projectId: string, userId: string, write = f
 }
 
 async function ensureWorkflow(projectId: string) {
-  const existing = await db.canvasWorkflow.findFirst({
-    where: { projectId },
-    orderBy: { createdAt: 'asc' },
-    select: WORKFLOW_SELECT,
-  })
-  if (existing) return existing
+  const { workflow } = await selectCanvasWorkflow(projectId)
+  if (workflow) return workflow
+
   // Auto-create if project exists but has no workflow yet.
   return db.canvasWorkflow.create({
     data: {
@@ -101,6 +98,55 @@ async function ensureWorkflow(projectId: string) {
   })
 }
 
+async function selectCanvasWorkflow(projectId: string) {
+  const workflows = await db.canvasWorkflow.findMany({
+    where: { projectId },
+    select: {
+      ...WORKFLOW_SELECT,
+      _count: { select: { nodes: true } },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+  })
+
+  const selected = [...workflows].sort((left, right) => {
+    const leftHasNodes = left._count.nodes > 0 ? 1 : 0
+    const rightHasNodes = right._count.nodes > 0 ? 1 : 0
+    if (leftHasNodes !== rightHasNodes) return rightHasNodes - leftHasNodes
+
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  })[0]
+
+  if (!selected) {
+    return {
+      workflow: null,
+      workflowCandidates: [],
+    }
+  }
+
+  const workflow = {
+    id: selected.id,
+    projectId: selected.projectId,
+    name: selected.name,
+    version: selected.version,
+    viewportJson: selected.viewportJson,
+    metadataJson: selected.metadataJson,
+    createdAt: selected.createdAt,
+    updatedAt: selected.updatedAt,
+  }
+  return {
+    workflow,
+    workflowCandidates: workflows.map((candidate) => ({
+      id: candidate.id,
+      projectId: candidate.projectId,
+      name: candidate.name,
+      nodeCount: candidate._count.nodes,
+      updatedAt: candidate.updatedAt,
+      createdAt: candidate.createdAt,
+      selected: candidate.id === selected.id,
+    })),
+  }
+}
+
 export async function GET(_request: NextRequest, { params }: RouteContext) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
@@ -110,7 +156,15 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
 
-    const workflow = await ensureWorkflow(params.projectId)
+    const selected = await selectCanvasWorkflow(params.projectId)
+    const workflow = selected.workflow ?? await db.canvasWorkflow.create({
+      data: {
+        projectId: params.projectId,
+        name: 'Main Canvas',
+        viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
+      },
+      select: WORKFLOW_SELECT,
+    })
     const [nodes, edges] = await Promise.all([
       db.canvasNode.findMany({
         where: { workflowId: workflow.id },
@@ -172,6 +226,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       assets: [],
       viewport: workflow.viewportJson,
       serverUpdatedAt: workflow.updatedAt,
+      workflowCandidates: selected.workflowCandidates,
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
@@ -215,22 +270,6 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     return projectJsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
   }
 
-  // Skip empty writes when canvas already has nodes (prevents accidental wipe on cold mount).
-  const isEmptyWrite = body.nodes.length === 0 && !body.clearCanvas
-  if (isEmptyWrite) {
-    try {
-      const wf = body.workflowId
-        ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: { id: true } })
-        : await db.canvasWorkflow.findFirst({ where: { projectId: params.projectId }, select: { id: true } })
-      if (wf) {
-        const existingCount = await db.canvasNode.count({ where: { workflowId: wf.id } })
-        if (existingCount > 0) {
-          return NextResponse.json({ success: true, skipped: true, reason: 'EMPTY_NODES_IGNORED', existingCount })
-        }
-      }
-    } catch { /* non-fatal */ }
-  }
-
   try {
     const project = await requireProjectAccess(params.projectId, user.id, true)
     if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
@@ -240,6 +279,15 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: WORKFLOW_SELECT })
       : null
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
+    if (body.nodes.length === 0 && !body.clearCanvas) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        reason: 'EMPTY_NODES_IGNORED',
+        workflowId: workflow.id,
+      })
+    }
+
     const now = new Date()
 
     // Sequential individual writes — avoids pgBouncer interactive-transaction incompatibility.

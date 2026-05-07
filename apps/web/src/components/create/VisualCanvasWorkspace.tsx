@@ -71,6 +71,15 @@ interface CanvasCache extends CanvasDraft {
   serverUpdatedAt?: string
 }
 
+interface DraftRestorePrompt {
+  projectId: string
+  workflowId: string
+  nodes: VisualCanvasNode[]
+  edges: CanvasEdge[]
+  viewport: { zoom: number; pan: { x: number; y: number } }
+  source: 'cache' | 'draft'
+}
+
 function getDraftKey(projectId: string) {
   return `creator-city:draft:${projectId}`
 }
@@ -420,6 +429,7 @@ export function VisualCanvasWorkspace({
   const [projectTitleError, setProjectTitleError] = useState('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('opening')
   const [saveMessage, setSaveMessage] = useState('')
+  const [draftRestorePrompt, setDraftRestorePrompt] = useState<DraftRestorePrompt | null>(null)
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -471,7 +481,6 @@ export function VisualCanvasWorkspace({
   const initAbortRef = useRef<AbortController | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
   const isSwitchingProjectRef = useRef(false)
-  const cacheHydratedRef = useRef('')
   const skipNextAutosaveRef = useRef(false)
   const providerStatusPerfStartedRef = useRef(false)
   const saveTimerRef = useRef<number | null>(null)
@@ -725,12 +734,24 @@ export function VisualCanvasWorkspace({
           deletedEdgeIds: deletedEdgeIdsRef.current,
         }),
       })
-      const data = await response.json().catch(() => ({})) as { errorCode?: string; message?: string; success?: boolean; savedAt?: string }
+      const data = await response.json().catch(() => ({})) as {
+        errorCode?: string
+        message?: string
+        success?: boolean
+        savedAt?: string
+        skipped?: boolean
+        reason?: string
+      }
       if (response.status === 401) {
         router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${projectId}`)}`)
         return
       }
       if (!response.ok) throw new Error(data.message ?? '保存画布失败。')
+      if (data.skipped) {
+        setSaveStatus('saved')
+        setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : 'Saved')
+        return
+      }
       deletedNodeIdsRef.current = []
       deletedEdgeIdsRef.current = []
       writeLocalDraft(data.savedAt ?? new Date().toISOString())
@@ -746,6 +767,61 @@ export function VisualCanvasWorkspace({
       if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
   }, [getCanvasSnapshot, projectId, router, workflowId, writeCanvasCache, writeLocalDraft])
+
+  const restoreDraftToServer = useCallback(async () => {
+    if (!draftRestorePrompt?.workflowId) return
+    const draft = draftRestorePrompt
+    setDraftRestorePrompt(null)
+    applyCanvasSnapshot({
+      projectId: draft.projectId,
+      workflowId: draft.workflowId,
+      nodes: draft.nodes,
+      edges: draft.edges,
+      viewport: draft.viewport,
+      status: 'restored-draft',
+      message: '本地草稿已恢复，正在同步...',
+    })
+    hasHydratedCanvasRef.current = true
+    isInitializingRef.current = false
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(draft.projectId)}/canvas`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          workflowId: draft.workflowId,
+          viewport: draft.viewport,
+          nodes: draft.nodes,
+          edges: draft.edges,
+          deletedNodeIds: [],
+          deletedEdgeIds: [],
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as { savedAt?: string; message?: string }
+      if (!response.ok) throw new Error(data.message ?? '同步草稿失败。')
+      const savedAt = data.savedAt ?? new Date().toISOString()
+      writeCanvasCache({
+        projectId: draft.projectId,
+        workflowId: draft.workflowId,
+        nodes: draft.nodes,
+        edges: draft.edges,
+        viewport: draft.viewport,
+        syncedAt: savedAt,
+        serverUpdatedAt: savedAt,
+      })
+      setSaveStatus('saved')
+      setSaveMessage('草稿已恢复并同步')
+    } catch (error) {
+      setSaveStatus('local-draft')
+      setSaveMessage(error instanceof Error ? error.message : '草稿已恢复到本地，稍后可再次保存')
+    }
+  }, [applyCanvasSnapshot, draftRestorePrompt, writeCanvasCache])
+
+  const keepServerEmptyCanvas = useCallback(() => {
+    setDraftRestorePrompt(null)
+    setSaveStatus('saved')
+    setSaveMessage('使用服务器空画布')
+  }, [])
 
   const scheduleCanvasSave = useCallback((delay = 800) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
@@ -805,6 +881,7 @@ export function VisualCanvasWorkspace({
 
       setSaveStatus('opening')
       setSaveMessage('')
+      setDraftRestorePrompt(null)
       canvasLoadedRef.current = false
       hasHydratedCanvasRef.current = false
       isInitializingRef.current = true
@@ -871,42 +948,8 @@ export function VisualCanvasWorkspace({
           return
         }
 
-        devPerf('cache-hydrate', 'start')
         const cache = readCanvasCache(resolvedProjectId)
         const draftBeforeFetch = readLocalDraft(resolvedProjectId)
-        if (cache?.workflowId && cache.projectId === resolvedProjectId && cacheHydratedRef.current !== resolvedProjectId) {
-          cacheHydratedRef.current = resolvedProjectId
-          applyCanvasSnapshot({
-            projectId: resolvedProjectId,
-            workflowId: cache.workflowId,
-            title: cache.title,
-            nodes: cache.nodes,
-            edges: cache.edges,
-            viewport: cache.viewport,
-            status: 'saved',
-            message: '本地缓存已加载，正在同步...',
-          })
-          canvasLoadedRef.current = true
-          hasHydratedCanvasRef.current = true
-          isInitializingRef.current = false
-          devPerf('first-render')
-        } else if (draftBeforeFetch?.workflowId && draftBeforeFetch.nodes.length > 0 && cacheHydratedRef.current !== resolvedProjectId) {
-          cacheHydratedRef.current = resolvedProjectId
-          applyCanvasSnapshot({
-            projectId: resolvedProjectId,
-            workflowId: draftBeforeFetch.workflowId,
-            nodes: draftBeforeFetch.nodes,
-            edges: draftBeforeFetch.edges,
-            viewport: draftBeforeFetch.viewport,
-            status: 'restored-draft',
-            message: '本地草稿已加载，正在同步...',
-          })
-          canvasLoadedRef.current = true
-          hasHydratedCanvasRef.current = true
-          isInitializingRef.current = false
-          devPerf('first-render')
-        }
-        devPerf('cache-hydrate', 'end')
 
         devPerf('canvas-fetch', 'start')
         const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
@@ -945,73 +988,51 @@ export function VisualCanvasWorkspace({
         setWorkflowId(data.workflow?.id ?? '')
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
-        const draft = draftBeforeFetch ?? readLocalDraft(resolvedProjectId)
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
-        const serverUpdatedAt = serverUpdatedAtText ? new Date(serverUpdatedAtText).getTime() : 0
-        const draftUpdatedAt = draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0
-        const shouldUseDraft = Boolean(draft && draft.nodes.length > 0 && draftUpdatedAt > serverUpdatedAt)
-        const shouldPreserveLocalNodes = serverNodes.length === 0 && Boolean(cache?.nodes.length)
-        const nextNodes = shouldUseDraft
-          ? draft!.nodes
-          : shouldPreserveLocalNodes
-            ? cache!.nodes
-            : serverNodes
-        const nextEdges = shouldUseDraft
-          ? draft!.edges
-          : shouldPreserveLocalNodes
-            ? cache!.edges
-            : serverEdges
-        if (shouldPreserveLocalNodes) {
-          setSaveMessage('同步失败，使用本地草稿')
-        }
-        if (shouldUseDraft) {
-          setSaveMessage('发现本地未同步草稿，已自动恢复')
-          setSaveStatus('restored-draft')
-        }
+        const draft = draftBeforeFetch ?? readLocalDraft(resolvedProjectId)
+        const localCandidate = draft?.nodes.length
+          ? { source: 'draft' as const, value: draft }
+          : cache?.nodes.length
+            ? { source: 'cache' as const, value: cache }
+            : null
+        const shouldPromptDraftRestore = serverNodes.length === 0 && Boolean(localCandidate?.value.nodes.length)
         const viewport = data.viewport ?? data.workflow?.viewportJson
-        const nextViewport = shouldUseDraft ? draft!.viewport : shouldPreserveLocalNodes ? cache!.viewport : viewport
         applyCanvasSnapshot({
           projectId: resolvedProjectId,
-          workflowId: data.workflow?.id ?? cache?.workflowId ?? '',
+          workflowId: data.workflow?.id ?? '',
           title: data.project?.title ?? projectTitle,
-          nodes: nextNodes,
-          edges: nextEdges,
-          viewport: nextViewport,
+          nodes: serverNodes,
+          edges: serverEdges,
+          viewport,
         })
-        writeCanvasCache({
-          projectId: resolvedProjectId,
-          workflowId: data.workflow?.id ?? cache?.workflowId ?? '',
-          nodes: nextNodes,
-          edges: nextEdges,
-          viewport: nextViewport as CanvasCache['viewport'],
-          serverUpdatedAt: serverUpdatedAtText,
-          syncedAt: serverUpdatedAtText,
-        })
-        setSaveStatus(shouldUseDraft ? 'restored-draft' : shouldPreserveLocalNodes ? 'local-draft' : 'saved')
-        if (!shouldUseDraft && !shouldPreserveLocalNodes) setSaveMessage('已同步')
+        if (shouldPromptDraftRestore && localCandidate) {
+          setDraftRestorePrompt({
+            projectId: resolvedProjectId,
+            workflowId: data.workflow?.id ?? localCandidate.value.workflowId,
+            nodes: localCandidate.value.nodes,
+            edges: localCandidate.value.edges,
+            viewport: localCandidate.value.viewport,
+            source: localCandidate.source,
+          })
+          setSaveStatus('local-draft')
+          setSaveMessage('发现本地画布草稿，是否恢复？')
+        } else {
+          setDraftRestorePrompt(null)
+          writeCanvasCache({
+            projectId: resolvedProjectId,
+            workflowId: data.workflow?.id ?? '',
+            nodes: serverNodes,
+            edges: serverEdges,
+            viewport: viewport as CanvasCache['viewport'],
+            serverUpdatedAt: serverUpdatedAtText,
+            syncedAt: serverUpdatedAtText,
+          })
+          setSaveStatus('saved')
+          setSaveMessage('已同步')
+        }
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
         isInitializingRef.current = false
-        if (shouldPreserveLocalNodes && nextNodes.length > 0) {
-          const restoredWorkflowId = data.workflow?.id ?? cache?.workflowId
-          if (restoredWorkflowId) {
-            window.setTimeout(() => {
-              void fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                  workflowId: restoredWorkflowId,
-                  viewport: nextViewport,
-                  nodes: nextNodes,
-                  edges: nextEdges,
-                  deletedNodeIds: [],
-                  deletedEdgeIds: [],
-                }),
-              }).catch(() => {})
-            }, 0)
-          }
-        }
         devPerf('first-render')
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return
@@ -2748,6 +2769,31 @@ export function VisualCanvasWorkspace({
         source="create"
         beforeCreate={handleBeforeNewProject}
       />
+
+      {draftRestorePrompt ? (
+        <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
+          <div className="text-sm font-semibold text-white">发现本地画布草稿，是否恢复？</div>
+          <div className="mt-1 text-xs text-white/50">
+            {draftRestorePrompt.source === 'draft' ? '本地草稿' : '本地缓存'}包含 {draftRestorePrompt.nodes.length} 个节点。
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { void restoreDraftToServer() }}
+              className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100"
+            >
+              恢复草稿
+            </button>
+            <button
+              type="button"
+              onClick={keepServerEmptyCanvas}
+              className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
+            >
+              使用服务器空画布
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {saveStatus === 'opening' ? (
         <div className="canvas-empty-overlay">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
@@ -24,15 +25,16 @@ function projectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
+    _count: { select: { generatedAssets: true } },
     canvasWorkflows: {
-      take: 1,
-      orderBy: { createdAt: 'asc' as const },
+      orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
         id: true,
+        updatedAt: true,
         _count: { select: { nodes: true } },
       },
     },
-  } as const
+  } satisfies Prisma.ProjectSelect
 }
 
 function fastOwnedProjectSelect() {
@@ -47,14 +49,30 @@ function fastOwnedProjectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
+    _count: { select: { generatedAssets: true } },
     canvasWorkflows: {
-      take: 1,
-      orderBy: { createdAt: 'asc' as const },
+      orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
         id: true,
+        updatedAt: true,
+        _count: { select: { nodes: true } },
       },
     },
-  } as const
+  } satisfies Prisma.ProjectSelect
+}
+
+function pickProjectWorkflow<T extends { id: string; updatedAt: Date; _count: { nodes: number } }>(workflows: T[]) {
+  return [...workflows].sort((left, right) => {
+    const leftHasNodes = left._count.nodes > 0 ? 1 : 0
+    const rightHasNodes = right._count.nodes > 0 ? 1 : 0
+    if (leftHasNodes !== rightHasNodes) return rightHasNodes - leftHasNodes
+
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  })[0] ?? null
+}
+
+function countProjectNodes<T extends { _count: { nodes: number } }>(workflows: T[]) {
+  return workflows.reduce((sum, workflow) => sum + workflow._count.nodes, 0)
 }
 
 export async function GET(request: NextRequest) {
@@ -74,6 +92,7 @@ export async function GET(request: NextRequest) {
         orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
       })
       const workflow = project?.canvasWorkflows[0]
+      const bestWorkflow = project ? pickProjectWorkflow(project.canvasWorkflows) : null
       const recentProject = project
         ? {
             id: project.id,
@@ -86,8 +105,9 @@ export async function GET(request: NextRequest) {
             createdAt: project.createdAt,
             updatedAt: project.updatedAt,
             lastOpenedAt: project.lastOpenedAt,
-            workflowId: workflow?.id ?? null,
-            nodeCount: workflow?._count.nodes ?? 0,
+            workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
+            nodeCount: countProjectNodes(project.canvasWorkflows),
+            assetCount: project._count.generatedAssets,
             ownerRole: 'OWNER',
             membershipRole: null,
           }
@@ -114,7 +134,7 @@ export async function GET(request: NextRequest) {
       })
       const projects = ownedProjects
         .map((project) => {
-          const workflow = project.canvasWorkflows[0]
+          const workflow = pickProjectWorkflow(project.canvasWorkflows)
           return {
             id: project.id,
             title: project.title,
@@ -127,7 +147,8 @@ export async function GET(request: NextRequest) {
             updatedAt: project.updatedAt,
             lastOpenedAt: project.lastOpenedAt,
             workflowId: workflow?.id ?? null,
-            nodeCount: 0,
+            nodeCount: countProjectNodes(project.canvasWorkflows),
+            assetCount: project._count.generatedAssets,
             ownerRole: 'OWNER',
             membershipRole: null,
           }
@@ -190,6 +211,7 @@ export async function GET(request: NextRequest) {
       })
       .map((project) => {
         const workflow = project.canvasWorkflows[0]
+        const bestWorkflow = pickProjectWorkflow(project.canvasWorkflows)
         const isOwner = project.ownerId === user.id
         return {
           id: project.id,
@@ -202,8 +224,9 @@ export async function GET(request: NextRequest) {
           createdAt: project.createdAt,
           updatedAt: project.updatedAt,
           lastOpenedAt: project.lastOpenedAt,
-          workflowId: workflow?.id ?? null,
-          nodeCount: workflow?._count.nodes ?? 0,
+          workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
+          nodeCount: countProjectNodes(project.canvasWorkflows),
+          assetCount: project._count.generatedAssets,
           ownerRole: isOwner ? 'OWNER' : null,
           membershipRole: membershipByProjectId.get(project.id) ?? null,
         }
