@@ -38,6 +38,7 @@ type CanvasSaveNode = {
   ratio?: string
   outputLabel?: string
   preview?: unknown
+  metadataJson?: unknown
 }
 
 type CanvasSaveEdge = {
@@ -303,6 +304,14 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     for (const node of body.nodes ?? []) {
       if (!node.id || !node.kind) continue
       const providerId = node.providerId ?? node.model ?? null
+      const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
+        ? node.metadataJson as Record<string, unknown>
+        : {}
+      const metadataJson = {
+        ...nodeMetadata,
+        outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
+        preview: node.preview ?? nodeMetadata.preview ?? null,
+      }
       await db.canvasNode.upsert({
         where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
         create: {
@@ -324,7 +333,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
           resultPreview: node.resultPreview ?? null,
           errorMessage: node.errorMessage ?? null,
           paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-          metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
+          metadataJson,
         },
         update: {
           kind: node.kind,
@@ -343,7 +352,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
           resultPreview: node.resultPreview ?? null,
           errorMessage: node.errorMessage ?? null,
           paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-          metadataJson: { outputLabel: node.outputLabel ?? null, preview: node.preview ?? null },
+          metadataJson,
           updatedAt: now,
         },
       })

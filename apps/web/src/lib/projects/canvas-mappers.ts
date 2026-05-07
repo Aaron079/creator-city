@@ -63,6 +63,7 @@ export function mapCanvasNode(row: DbCanvasNode) {
     errorMessage: row.errorMessage ?? undefined,
     outputLabel: typeof metadata.outputLabel === 'string' ? metadata.outputLabel : undefined,
     preview: metadata.preview,
+    metadataJson: metadata,
     x: row.x,
     y: row.y,
     width: row.width,

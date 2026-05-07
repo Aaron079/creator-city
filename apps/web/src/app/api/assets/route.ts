@@ -51,14 +51,24 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const projectId = searchParams.get('projectId') ?? undefined
+  const includeUnbound = searchParams.get('includeUnbound') === '1'
   const type = normalizeAssetType(searchParams.get('type'))
   const limit = normalizeLimit(searchParams.get('limit'))
 
   try {
+    const projectFilter: Prisma.AssetWhereInput = projectId
+      ? {
+        OR: [
+          { projectId },
+          { projectAssets: { some: { projectId } } },
+          ...(includeUnbound ? [{ projectId: null }] : []),
+        ],
+      }
+      : {}
     const where: Prisma.AssetWhereInput = {
       ownerId: user.id,
       ...(type ? { type } : {}),
-      ...(projectId ? { OR: [{ projectId }, { projectId: null }, { projectAssets: { some: { projectId } } }] } : {}),
+      ...projectFilter,
     }
 
     const assets = await db.asset.findMany({

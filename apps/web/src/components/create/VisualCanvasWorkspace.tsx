@@ -11,7 +11,7 @@ import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/Can
 import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
-import { WorkspaceAssetsPanel } from '@/components/create/WorkspaceAssetsPanel'
+import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
   getPublicTemplateById,
@@ -114,6 +114,7 @@ type VisualCanvasNode = CanvasNodeCardNode & {
   resultVideoUrl?: string
   resultAudioUrl?: string
   resultText?: string
+  metadataJson?: unknown
 }
 
 type CanvasEdgeStatus = 'idle' | 'active' | 'done'
@@ -203,7 +204,9 @@ function getEntryKindLabel(kind: VisualCanvasNodeKind) {
             ? '音频'
             : kind === 'world'
               ? '3D 世界'
-              : '交付'
+              : kind === 'delivery'
+                ? '交付'
+                : '素材'
 }
 
 function getOptionLabel(
@@ -1673,20 +1676,61 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback(activeNode?.kind === 'image' ? '已打开当前图片节点的编辑器。' : '请选择一个高级编辑功能。')
   }, [activeNode, showCanvasFeedback])
 
-  const handleAddAsset = useCallback((asset: { title: string; category: string; prompt: string }) => {
+  const handleAddProjectAssetToCanvas = useCallback((asset: ProjectAssetItem) => {
     setHasStarted(true)
-    const node = createNode('asset', {
-      title: asset.title,
-      prompt: asset.prompt,
-      model: NODE_META.asset.model,
+    const normalizedType = asset.type.toUpperCase()
+    const kind: VisualCanvasNodeKind = normalizedType === 'IMAGE'
+      ? 'image'
+      : normalizedType === 'SCRIPT' || normalizedType === 'TEXT'
+        ? 'text'
+        : normalizedType === 'VIDEO'
+          ? 'video'
+          : normalizedType === 'AUDIO'
+            ? 'audio'
+            : 'asset'
+    const title = asset.title?.trim() || asset.name?.trim() || '素材'
+    const assetUrl = asset.url || asset.dataUrl || ''
+    const metadata = asset.metadataJson && typeof asset.metadataJson === 'object'
+      ? asset.metadataJson as Record<string, unknown>
+      : {}
+    const contentText = typeof metadata.contentText === 'string' && metadata.contentText.trim()
+      ? metadata.contentText.trim()
+      : title
+    const resultPreview = kind === 'image'
+      ? '图片素材已加入画布。'
+      : kind === 'text'
+        ? contentText.slice(0, 220)
+        : assetUrl
+          ? `链接占位 · ${assetUrl}`
+          : `${title} 已加入画布。`
+    const providerId = asset.providerId || 'asset-library'
+    const node = createNode(kind, {
+      title,
+      prompt: title,
+      model: providerId,
       status: 'done',
     })
     handleNodePatch(node.id, {
-      resultPreview: `${asset.category} · ${asset.title} 已加入素材库，可拖入后续生成链路。`,
-      outputLabel: '素材已就绪',
+      providerId,
+      model: providerId,
+      resultImageUrl: kind === 'image' ? assetUrl : undefined,
+      resultText: kind === 'text' ? contentText.slice(0, 1000) : undefined,
+      resultVideoUrl: kind === 'video' ? assetUrl : undefined,
+      resultAudioUrl: kind === 'audio' ? assetUrl : undefined,
+      resultPreview,
+      outputLabel: kind === 'image' ? '图片素材' : getEntryKindLabel(kind),
+      metadataJson: {
+        assetId: asset.id,
+        assetUrl,
+        assetType: asset.type,
+        providerId,
+      },
     })
-    showCanvasFeedback(`${asset.title} 已加入画布素材。`)
-  }, [createNode, handleNodePatch, showCanvasFeedback])
+    setActivePanel(null)
+    setEditingNodeId(null)
+    scheduleCanvasSave(0)
+    showCanvasFeedback(`${title} 已加入画布。`)
+  }, [createNode, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
   const handleSelectTemplate = useCallback((template: PublicTemplate) => {
     setSelectedTemplateId(template.id)
@@ -2852,15 +2896,10 @@ export function VisualCanvasWorkspace({
             exit={{ opacity: 0, x: -18, scale: 0.98, filter: 'blur(8px)' }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
           >
-            <WorkspaceAssetsPanel
-              compact
-              shotCount={nodes.filter((node) => node.kind === 'video').length}
-              storyboardFrameCount={nodes.filter((node) => node.kind === 'image').length}
-              versionCount={nodes.filter((node) => node.status === 'done').length}
-              audioCueCount={nodes.filter((node) => node.kind === 'audio').length}
+            <ProjectAssetsPanel
+              projectId={projectId}
               onClose={closeCanvasPanel}
-              onUploadMock={() => handleAddAsset({ title: '上传素材', category: 'Upload', prompt: '上传入口创建的本地素材，可替换为真实文件后继续生成。' })}
-              onAddAsset={handleAddAsset}
+              onAddAssetToCanvas={handleAddProjectAssetToCanvas}
             />
           </motion.section>
         ) : activePanel === 'templates' ? (

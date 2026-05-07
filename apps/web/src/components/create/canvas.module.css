@@ -5331,6 +5331,15 @@
   transition: opacity 0.18s ease;
 }
 
+.scope :global(.canvas-node-preview-image) {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+}
+
 .scope :global(.canvas-node-preview:hover .canvas-node-preview-video) {
   opacity: 1;
 }
