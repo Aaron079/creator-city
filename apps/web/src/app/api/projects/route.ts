@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
@@ -10,6 +11,7 @@ import {
 } from '@/lib/projects/api-errors'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
 
@@ -37,7 +39,7 @@ function projectSelect() {
   } satisfies Prisma.ProjectSelect
 }
 
-function fastOwnedProjectSelect() {
+function safeOwnedProjectSelect() {
   return {
     id: true,
     title: true,
@@ -49,13 +51,12 @@ function fastOwnedProjectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
-    _count: { select: { generatedAssets: true, assets: true } },
     canvasWorkflows: {
       orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
         id: true,
         updatedAt: true,
-        _count: { select: { nodes: true } },
+        createdAt: true,
       },
     },
   } satisfies Prisma.ProjectSelect
@@ -80,10 +81,10 @@ function countProjectAssets(project: { _count: { generatedAssets: number; assets
 }
 
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser()
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
-
   try {
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+
     const limitParam = request.nextUrl.searchParams.get('limit')
     const limit = limitParam ? Math.max(1, Math.min(50, Number.parseInt(limitParam, 10) || 0)) : null
     const sort = request.nextUrl.searchParams.get('sort')
@@ -117,8 +118,7 @@ export async function GET(request: NextRequest) {
           }
         : null
 
-      return NextResponse.json({
-        success: true,
+      return jsonOk({
         projects: recentProject ? [recentProject] : [],
         summary: {
           ownedProjectsCount: recentProject ? 1 : 0,
@@ -130,43 +130,64 @@ export async function GET(request: NextRequest) {
     }
 
     if (scope === 'owned') {
-      const ownedProjects = await db.project.findMany({
-        where: { ownerId: user.id },
-        select: fastOwnedProjectSelect(),
-        orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
-        take: limit ?? 50,
-      })
-      const projects = ownedProjects
-        .map((project) => {
-          const workflow = pickProjectWorkflow(project.canvasWorkflows)
-          return {
-            id: project.id,
-            title: project.title,
-            description: project.description,
-            status: project.status,
-            visibility: project.visibility,
-            thumbnailUrl: project.thumbnailUrl,
-            ownerId: project.ownerId,
-            createdAt: project.createdAt,
-            updatedAt: project.updatedAt,
-            lastOpenedAt: project.lastOpenedAt,
-            workflowId: workflow?.id ?? null,
-            nodeCount: countProjectNodes(project.canvasWorkflows),
-            assetCount: countProjectAssets(project),
-            ownerRole: 'OWNER',
-            membershipRole: null,
-          }
-        })
+      type OwnedRow = {
+        id: string
+        title: string
+        description: string | null
+        status: string
+        visibility: string
+        thumbnailUrl: string | null
+        ownerId: string
+        createdAt: Date
+        updatedAt: Date
+        lastOpenedAt: Date | null
+        canvasWorkflows: Array<{ id: string; updatedAt: Date; createdAt: Date }>
+      }
+      let ownedProjects: OwnedRow[] = []
+      const warnings: string[] = []
+      try {
+        ownedProjects = await db.project.findMany({
+          where: { ownerId: user.id },
+          select: safeOwnedProjectSelect(),
+          orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
+          take: limit ?? 50,
+        }) as OwnedRow[]
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        console.warn('[projects] owned project query failed', { userId: user.id, error })
+        warnings.push(`owned_query: ${msg}`)
+      }
 
-      return NextResponse.json({
-        success: true,
+      const projects = ownedProjects.map((project) => {
+        const workflow = project.canvasWorkflows[0] ?? null
+        return {
+          id: project.id,
+          title: project.title,
+          description: project.description,
+          status: project.status,
+          visibility: project.visibility,
+          thumbnailUrl: project.thumbnailUrl,
+          ownerId: project.ownerId,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+          lastOpenedAt: project.lastOpenedAt,
+          workflowId: workflow?.id ?? null,
+          nodeCount: 0,
+          assetCount: 0,
+          ownerRole: 'OWNER',
+          membershipRole: null,
+        }
+      })
+
+      return jsonOk({
         projects,
         summary: {
-          ownedProjectsCount: ownedProjects.length,
+          ownedProjectsCount: projects.length,
           activeMembershipsCount: 0,
           currentProjectId: projects[0]?.id ?? null,
           recentProject: projects[0] ?? null,
         },
+        ...(warnings.length > 0 ? { warnings } : {}),
       })
     }
 
@@ -237,8 +258,7 @@ export async function GET(request: NextRequest) {
       })
       .slice(0, limit ?? undefined)
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       projects,
       summary: {
         ownedProjectsCount: ownedProjects.length,
@@ -252,13 +272,9 @@ export async function GET(request: NextRequest) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    const safeMessage = error instanceof Error ? error.message : '加载项目列表失败。'
+    const safeMessage = safeErrorMessage(error, '加载项目列表失败。')
     console.error('[projects] failed to list projects', error)
-    return NextResponse.json({
-      success: false,
-      errorCode: 'PROJECT_ACCESS_FAILED',
-      message: safeMessage,
-    }, { status: 500 })
+    return jsonError('PROJECT_ACCESS_FAILED', safeMessage, 500)
   }
 }
 
@@ -273,25 +289,25 @@ type ProjectCreateBody = {
 const PROJECT_TYPES = new Set(['blank', 'video', 'image', 'text', 'template'])
 
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser()
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
-
-  let body: ProjectCreateBody = {}
   try {
-    body = await request.json() as typeof body
-  } catch {
-    body = {}
-  }
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
-  if (body.projectType && !PROJECT_TYPES.has(body.projectType)) {
-    return projectJsonError('VALIDATION_FAILED', '项目类型无效。', 400)
-  }
+    let body: ProjectCreateBody = {}
+    try {
+      body = await request.json() as typeof body
+    } catch {
+      body = {}
+    }
 
-  const title = body.title?.trim() || 'Untitled Project'
-  const description = body.description?.trim() ?? ''
-  const now = new Date()
+    if (body.projectType && !PROJECT_TYPES.has(body.projectType)) {
+      return jsonError('VALIDATION_FAILED', '项目类型无效。', 400)
+    }
 
-  try {
+    const title = body.title?.trim() || 'Untitled Project'
+    const description = body.description?.trim() ?? ''
+    const now = new Date()
+
     // Step 1: create Project — no $transaction to stay compatible with pgBouncer
     const project = await db.project.create({
       data: {
@@ -343,8 +359,7 @@ export async function POST(request: NextRequest) {
         e instanceof Error ? e.message : String(e))
     })
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       project,
       workflow,
       redirectTo: `/create?projectId=${encodeURIComponent(project.id)}`,
@@ -353,8 +368,8 @@ export async function POST(request: NextRequest) {
     if (isProjectCanvasSchemaMissing(error)) {
       return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    const safeMessage = error instanceof Error ? error.message : '创建项目失败。'
+    const safeMessage = safeErrorMessage(error, '创建项目失败。')
     console.error('[projects] failed to create project', error)
-    return projectJsonError('CREATE_PROJECT_FAILED', safeMessage, 500)
+    return jsonError('CREATE_PROJECT_FAILED', safeMessage, 500)
   }
 }

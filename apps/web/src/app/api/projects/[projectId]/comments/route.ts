@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { isProjectCanvasSchemaMissing } from '@/lib/projects/api-errors'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 
@@ -26,15 +27,6 @@ const COMMENT_SELECT = {
   createdAt: true,
   updatedAt: true,
 } as const
-
-function jsonError(errorCode: string, message: string, status: number, details?: string) {
-  return NextResponse.json({
-    success: false,
-    errorCode,
-    message,
-    ...(details ? { details } : {}),
-  }, { status })
-}
 
 async function requireProjectAccess(projectId: string, userId: string, write = false) {
   const project = await db.project.findUnique({
@@ -102,8 +94,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       select: COMMENT_SELECT,
     })
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       projectId: params.projectId,
       workflowId: workflow.id,
       comments: comments.map(mapComment),
@@ -112,7 +103,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (isProjectCanvasSchemaMissing(error)) {
       return jsonError('DB_SCHEMA_MISSING', 'CanvasComment 表未同步，请执行 canvas-comments-setup.sql。', 503)
     }
-    const message = error instanceof Error ? error.message : String(error)
+    const message = safeErrorMessage(error)
     console.error('[canvas-comments-api] list failed', { projectId: params.projectId, error })
     return jsonError('COMMENTS_LOAD_FAILED', `加载画布评论失败：${message}`, 500)
   }
@@ -163,15 +154,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       select: COMMENT_SELECT,
     })
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       comment: mapComment(comment),
     }, { status: 201 })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return jsonError('DB_SCHEMA_MISSING', 'CanvasComment 表未同步，请执行 canvas-comments-setup.sql。', 503)
     }
-    const message = error instanceof Error ? error.message : String(error)
+    const message = safeErrorMessage(error)
     console.error('[canvas-comments-api] create failed', { projectId: params.projectId, error })
     return jsonError('COMMENT_CREATE_FAILED', `保存画布评论失败：${message}`, 500)
   }

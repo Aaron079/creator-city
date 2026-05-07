@@ -112,6 +112,16 @@ function selectedSummary(assetCount: number, nodeCount: number) {
   return `本次客户只能看到以下 ${assetCount + nodeCount} 个作品。`
 }
 
+async function readJson<T>(response: Response): Promise<T> {
+  const raw = await response.text().catch(() => '')
+  if (!raw) return {} as T
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return { message: '接口返回了非 JSON 内容。' } as T
+  }
+}
+
 export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, initialShares, assets, canvasNodes }: Props) {
   const router = useRouter()
   const [share, setShare] = useState(initialShare)
@@ -165,7 +175,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data = await res.json().catch(() => ({})) as { assets?: DeliveryAssetForClient[]; message?: string; errorCode?: string }
+      const data = await readJson<{ assets?: DeliveryAssetForClient[]; message?: string; errorCode?: string }>(res)
       if (!res.ok) throw new Error(`${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '加载素材失败'}`)
       setAvailableAssets(data.assets ?? [])
     } catch (error) {
@@ -184,7 +194,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ title: `${projectTitle} 客户交付` }),
     })
-    const data = await res.json().catch(() => ({})) as { share?: DeliveryShareForClient; message?: string }
+    const data = await readJson<{ share?: DeliveryShareForClient; message?: string }>(res)
     if (!res.ok) {
       setMessage({ ok: false, text: data.message ?? '创建交付链接失败' })
       return
@@ -239,13 +249,13 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
         canvasNodeIds: selectedCanvasNodeIds,
       }),
     })
-    const data = await res.json().catch(() => ({})) as {
+    const data = await readJson<{
       success?: boolean
       share?: DeliveryShareForClient
       publicUrl?: string
       errorCode?: string
       message?: string
-    }
+    }>(res)
     setSubmittingToClient(false)
     if (!res.ok || !data.success || !data.share) {
       setMessage({ ok: false, text: `${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '生成客户链接失败'}` })
@@ -280,7 +290,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
         contentText: getTextFromAsset(asset) || undefined,
       }),
     })
-    const data = await res.json().catch(() => ({})) as { share?: DeliveryShareForClient; message?: string; errorCode?: string }
+    const data = await readJson<{ share?: DeliveryShareForClient; message?: string; errorCode?: string }>(res)
     setPendingAssetId(null)
     if (!res.ok) {
       setMessage({ ok: false, text: `${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '添加素材失败'}` })
@@ -308,7 +318,7 @@ export function ProjectDeliveryClient({ projectId, projectTitle, initialShare, i
         canvasNodeId: node.nodeId,
       }),
     })
-    const data = await res.json().catch(() => ({})) as { share?: DeliveryShareForClient; message?: string; errorCode?: string }
+    const data = await readJson<{ share?: DeliveryShareForClient; message?: string; errorCode?: string }>(res)
     setPendingNodeId(null)
     if (!res.ok) {
       setMessage({ ok: false, text: `${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '添加画布节点失败'}` })

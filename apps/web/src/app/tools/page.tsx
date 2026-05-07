@@ -1,7 +1,27 @@
 import { TopNavigation } from '@/components/layout/TopNavigation'
 import { ToolProviderStatusPanel } from '@/components/tools/ToolProviderStatusPanel'
+import { getCurrentUser, isAdminEmail } from '@/lib/auth/current-user'
 
-export default function ToolsPage() {
+export default async function ToolsPage() {
+  const user = await getCurrentUser()
+  const canAccess = user?.role === 'ADMIN' || (user?.email ? isAdminEmail(user.email) : false)
+
+  if (!user || !canAccess) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white">
+        <TopNavigation />
+        <main className="mx-auto max-w-2xl px-6 pt-28">
+          <section className="rounded-lg border border-white/10 bg-white/[0.03] p-8">
+            <h1 className="text-xl font-semibold text-white">需要管理员权限</h1>
+            <p className="mt-3 text-sm leading-6 text-white/55">
+              /tools 属于管理区，只对 ADMIN 或配置为开发者的账号开放，不影响客户交付入口。
+            </p>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[#050505] text-white">
       <TopNavigation />

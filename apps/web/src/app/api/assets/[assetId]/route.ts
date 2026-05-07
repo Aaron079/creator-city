@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
-import { projectJsonError } from '@/lib/projects/api-errors'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { serializeAsset } from '@/lib/projects/canvas-mappers'
 
 export const dynamic = 'force-dynamic'
@@ -17,34 +17,32 @@ type PatchAssetBody = {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
-  const user = await getCurrentUser()
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
-
-  let body: PatchAssetBody
   try {
-    body = await request.json() as PatchAssetBody
-  } catch {
-    return projectJsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
-  }
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
-  const asset = await db.asset.findFirst({
-    where: { id: params.assetId, ownerId: user.id },
-    select: { id: true },
-  })
-  if (!asset) {
-    return NextResponse.json({ success: false, errorCode: 'ASSET_NOT_FOUND', message: '素材不存在。' }, { status: 404 })
-  }
-
-  const nextProjectId = body.projectId === undefined ? undefined : body.projectId?.trim() || null
-  if (nextProjectId) {
-    const access = await getProjectAccess(user.id, nextProjectId)
-    if (!access.canWrite || access.source !== 'owner') {
-      return NextResponse.json({ success: false, errorCode: 'PROJECT_ACCESS_DENIED', message: '无权绑定到该项目。' }, { status: 403 })
+    let body: PatchAssetBody
+    try {
+      body = await request.json() as PatchAssetBody
+    } catch {
+      return jsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
     }
-  }
 
-  const nextTitle = body.title === undefined ? undefined : body.title.trim()
-  try {
+    const asset = await db.asset.findFirst({
+      where: { id: params.assetId, ownerId: user.id },
+      select: { id: true },
+    })
+    if (!asset) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
+
+    const nextProjectId = body.projectId === undefined ? undefined : body.projectId?.trim() || null
+    if (nextProjectId) {
+      const access = await getProjectAccess(user.id, nextProjectId)
+      if (!access.canWrite || access.source !== 'owner') {
+        return jsonError('PROJECT_ACCESS_DENIED', '无权绑定到该项目。', 403)
+      }
+    }
+
+    const nextTitle = body.title === undefined ? undefined : body.title.trim()
     const updated = await db.asset.update({
       where: { id: params.assetId },
       data: {
@@ -61,9 +59,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       })
     }
 
-    return NextResponse.json({ success: true, asset: serializeAsset(updated) })
+    return jsonOk({ asset: serializeAsset(updated) })
   } catch (error) {
-    console.error('[assets] failed to update asset', error)
-    return NextResponse.json({ success: false, errorCode: 'ASSET_UPDATE_FAILED', message: '更新素材失败。' }, { status: 500 })
+    console.error('[assets] failed to update asset', { assetId: params.assetId, error })
+    return jsonError('ASSET_UPDATE_FAILED', safeErrorMessage(error, '更新素材失败。'), 500)
   }
 }

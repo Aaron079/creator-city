@@ -31,6 +31,7 @@ import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
+import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -821,7 +822,7 @@ export function VisualCanvasWorkspace({
       writeLocalDraft()
       setSaveStatus('failed')
       const detail = error instanceof Error ? error.message : '保存失败'
-      setSaveMessage(`${detail}；已保留离线草稿`)
+      setSaveMessage(`${detail}；已保留本地草稿`)
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
@@ -955,6 +956,12 @@ export function VisualCanvasWorkspace({
 
       try {
         const resolvedProjectId = nextProjectId
+        if (isPlaceholderProjectId(resolvedProjectId)) {
+          setSaveStatus('failed')
+          setSaveMessage('这是示例地址，请从项目列表选择真实项目。')
+          isInitializingRef.current = false
+          return
+        }
 
         if (!resolvedProjectId) {
           setSaveMessage('正在打开项目...')
@@ -2790,7 +2797,7 @@ export function VisualCanvasWorkspace({
 
   const handleOpenClientDelivery = useCallback(() => {
     const currentProjectId = projectId || new URLSearchParams(window.location.search).get('projectId') || ''
-    if (!currentProjectId) {
+    if (!currentProjectId || isPlaceholderProjectId(currentProjectId)) {
       window.alert('请先打开一个项目，再创建客户交付。')
       router.push('/projects')
       return

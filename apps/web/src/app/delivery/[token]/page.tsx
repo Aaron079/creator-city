@@ -39,7 +39,13 @@ export default async function PublicDeliveryPage({ params }: Props) {
     )
   }
 
-  const share = await getPublicDelivery(params.token)
+  let share: Awaited<ReturnType<typeof getPublicDelivery>>
+  try {
+    share = await getPublicDelivery(params.token)
+  } catch (error) {
+    console.error('[delivery-page] failed to load public delivery', { token: params.token, error })
+    share = null
+  }
   if (!share || share === 'DISABLED' || share === 'EXPIRED') {
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-16 text-white">

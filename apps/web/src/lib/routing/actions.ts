@@ -66,7 +66,7 @@ export function getReviewHref(projectId: string) {
 }
 
 export function getClientDeliveryHref(projectId?: string) {
-  return `${getReviewHref(projectId || 'order-seed-1')}#delivery-approval`
+  return projectId ? `/projects/${encodeProjectId(projectId)}/delivery` : '/projects'
 }
 
 export function getDashboardHref(anchor?: string) {
@@ -108,20 +108,19 @@ export function getWorkspaceHref(projectId?: string) {
 
   const access = resolveAccess(projectId)
   if (access?.state === 'invited') return getInvitationInboxHref()
-  if (access?.state === 'client-only') return `${getReviewHref(projectId)}#delivery-snapshot`
+  if (access?.state === 'client-only') return getClientDeliveryHref(projectId)
   if (access?.state === 'outsider') return getMeHref()
 
-  return '/create#workspace'
+  return `/create?projectId=${encodeProjectId(projectId)}#workspace`
 }
 
 export function getDeliveryHref(projectId?: string) {
-  if (!projectId) return '/create#delivery'
+  if (!projectId) return '/projects'
 
   const access = resolveAccess(projectId)
   if (access?.state === 'invited') return getInvitationInboxHref()
-  if (access?.state === 'client-only' || access?.state === 'outsider') {
-    return `${getReviewHref(projectId)}#delivery-snapshot`
-  }
+  if (access?.state === 'client-only') return getClientDeliveryHref(projectId)
+  if (access?.state === 'outsider') return getMeHref()
 
   return `/projects/${encodeProjectId(projectId)}/delivery`
 }

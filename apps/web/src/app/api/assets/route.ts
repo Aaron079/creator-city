@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import type { AssetType, Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { normalizeAssetType as normalizeAssetTypeValue } from '@/lib/assets/normalize'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 const ASSET_TYPES = new Set<AssetType>(['VIDEO', 'AUDIO', 'IMAGE', 'SCRIPT', 'DOCUMENT', 'MODEL_3D', 'PRESET', 'TEMPLATE'])
 
@@ -40,6 +42,7 @@ const ASSET_LIST_SELECT = {
   metadataJson: true,
   createdAt: true,
   updatedAt: true,
+  project: { select: { id: true, title: true } },
 } satisfies Prisma.AssetSelect
 
 type AssetListRow = Prisma.AssetGetPayload<{ select: typeof ASSET_LIST_SELECT }>
@@ -56,7 +59,7 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
     if (!user) {
-      return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
+      return jsonError('UNAUTHORIZED', '请先登录。', 401)
     }
 
     const { searchParams } = new URL(request.url)
@@ -85,13 +88,9 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({ success: true, assets: assets.map(serializeAssetForList) })
+    return jsonOk({ assets: assets.map(serializeAssetForList) })
   } catch (error) {
     console.error('[assets] failed to list assets', error)
-    const message = error instanceof Error ? error.message : String(error)
-    return NextResponse.json(
-      { success: false, errorCode: 'ASSETS_LOAD_FAILED', message },
-      { status: 500 },
-    )
+    return jsonError('ASSETS_LOAD_FAILED', safeErrorMessage(error, '加载素材失败。'), 500)
   }
 }

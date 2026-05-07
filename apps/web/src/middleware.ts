@@ -8,6 +8,11 @@ const PROTECTED_PREFIXES = [
   '/admin',
   '/dashboard',
   '/projects',
+  '/create',
+  '/assets',
+  '/billing',
+  '/tools',
+  '/providers',
 ]
 
 function isProtected(pathname: string): boolean {

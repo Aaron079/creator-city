@@ -8921,7 +8921,7 @@ export default function CreatePage() {
                     : roleContext.source === 'fallback'
                       ? `当前身份解析为 ${resolvedProjectRole}（来源：fallback），但这个项目还没有找到对应的 active role assignment。为了避免暴露完整创作工作区，你现在只会看到交付相关信息。若需要编辑权限，请让 Producer 将你加入项目团队并激活项目角色。`
                       : resolvedProjectRole === 'client'
-                    ? `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。Client 角色不能进入完整 create workspace，也不会看到内部创作与复杂参数。你可以在这里查看交付信息，或前往 review portal 完成确认。`
+                    ? `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。Client 角色不能进入完整 create workspace，也不会看到内部创作与复杂参数。客户交付请使用 /delivery/<token> 公开链接；内部成员可回到项目交付页管理链接。`
                     : `当前身份解析为 ${resolvedProjectRole}（来源：${roleContext.source}）。当前项目角色没有完整创作编辑权限。你仍然可以查看与当前项目相关的交付信息和输出状态。`}
                 details={[
                   `当前账号：${currentUser?.displayName ?? currentUser?.id ?? '未解析'}`,
@@ -8931,15 +8931,15 @@ export default function CreatePage() {
                 actionHref={projectAccess.state === 'invited'
                   ? '/me'
                   : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
-                    ? `/review/${deliveryProjectId}`
+                    ? `/projects/${deliveryProjectId}/delivery`
                     : '/me'}
                 actionLabel={projectAccess.state === 'invited'
                   ? '前往我的邀请页'
                   : roleContext.source === 'fallback' || resolvedProjectRole === 'client'
-                    ? '前往 Review Portal'
+                    ? '前往项目交付页'
                     : '查看当前身份'}
-                secondaryHref={projectAccess.state === 'outsider' ? '/review/' + deliveryProjectId : undefined}
-                secondaryLabel={projectAccess.state === 'outsider' ? '尝试查看 Review' : undefined}
+                secondaryHref={projectAccess.state === 'outsider' ? '/projects' : undefined}
+                secondaryLabel={projectAccess.state === 'outsider' ? '返回项目列表' : undefined}
               />
             </div>
           ) : null}

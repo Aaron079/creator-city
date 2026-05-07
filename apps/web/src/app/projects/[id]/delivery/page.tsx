@@ -55,7 +55,22 @@ export default async function ProjectDeliveryPage({ params }: Props) {
     )
   }
 
-  const delivery = await loadProjectDelivery(projectId)
+  let delivery: Awaited<ReturnType<typeof loadProjectDelivery>>
+  try {
+    delivery = await loadProjectDelivery(projectId)
+  } catch (error) {
+    console.error('[project-delivery-page] failed to load delivery', { projectId, error })
+    return (
+      <DashboardShell>
+        <main className="mx-auto max-w-2xl px-4 py-16">
+          <section className="rounded-lg border border-red-400/20 bg-red-400/10 p-8 text-sm text-red-100">
+            <h1 className="text-lg font-semibold text-white">交付数据加载失败</h1>
+            <p className="mt-3 text-red-100/80">接口已保留 JSON 错误响应；请稍后重试，已生成的客户链接和交付项不会被清空。</p>
+          </section>
+        </main>
+      </DashboardShell>
+    )
+  }
 
   return (
     <DashboardShell>

@@ -27,7 +27,7 @@ function explainPage(pathname: string, routeName: string, pageSummary: string) {
     return `${routeName}：${pageSummary}\n\n查看个人工作台、邀请记录、通知和账户设置。`
   }
   if (pathname.startsWith('/review/')) {
-    return `${routeName}：${pageSummary}\n\n这里适合客户查看版本、提交反馈，并在交付审批区域确认交付。外部客户页只解释当前流程。`
+    return `${routeName}：${pageSummary}\n\n这是内部项目成员 Review Portal，不是客户交付链接。真实客户请使用 /delivery/<token>，无需登录或加入 ProjectMember。`
   }
   return `${routeName}：${pageSummary}`
 }
@@ -97,8 +97,8 @@ export async function runLocalCreatorModel(
     text.includes('delivery')
   ) {
     const projectPart = projectId
-      ? `当前项目会进入 /review/${projectId}#delivery-approval。`
-      : '可进入 /review/order-seed-1#delivery-approval。'
+      ? `当前项目会进入 /projects/${projectId}/delivery。`
+      : '没有当前项目时会先进入 /projects，请先打开一个真实项目。'
     content = `${prefix}进入客户交付：点击 Agent 的"客户交付"快捷动作，或在 /create 画布右上角点击"客户"。${projectPart}`
   } else if (
     text.includes('api') ||

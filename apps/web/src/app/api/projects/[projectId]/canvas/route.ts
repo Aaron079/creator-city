@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
   isProjectCanvasSchemaMissing,
-  projectJsonError,
 } from '@/lib/projects/api-errors'
 import { mapCanvasEdge, mapCanvasNode } from '@/lib/projects/canvas-mappers'
 import { getProjectAccess } from '@/lib/projects/ensure-active-project'
@@ -151,12 +151,12 @@ async function selectCanvasWorkflow(projectId: string) {
 
 export async function GET(_request: NextRequest, { params }: RouteContext) {
   const user = await getCurrentUser()
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
+  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
     const project = await requireProjectAccess(params.projectId, user.id)
-    if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
-    if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
+    if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
+    if (project === 'FORBIDDEN') return jsonError('FORBIDDEN', '无权访问该项目。', 403)
 
     const selected = await selectCanvasWorkflow(params.projectId)
     const workflow = selected.workflow ?? await db.canvasWorkflow.create({
@@ -219,8 +219,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
     )
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       project,
       workflow,
       nodes: nodes.map(mapCanvasNode),
@@ -232,14 +231,11 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
-      return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
+      return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = safeErrorMessage(error)
     console.error('[canvas-api] load failed', { projectId: params.projectId, error })
-    return NextResponse.json(
-      { success: false, errorCode: 'CANVAS_LOAD_FAILED', message: `加载画布失败：${msg}` },
-      { status: 500 },
-    )
+    return jsonError('CANVAS_LOAD_FAILED', `加载画布失败：${msg}`, 500)
   }
 }
 
@@ -248,14 +244,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
     user = await getCurrentUser()
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = safeErrorMessage(error)
     console.error('[canvas-api] auth failed before save', { projectId: params.projectId, error })
-    return NextResponse.json(
-      { success: false, errorCode: 'CANVAS_SAVE_FAILED', message: `保存画布失败：${msg}` },
-      { status: 500 },
-    )
+    return jsonError('CANVAS_SAVE_FAILED', `保存画布失败：${msg}`, 500)
   }
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
+  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
   let body: {
     workflowId?: string
@@ -269,23 +262,23 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
     body = await request.json() as typeof body
   } catch {
-    return projectJsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
+    return jsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
   }
 
   if (!Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
-    return projectJsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
+    return jsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
   }
   const invalidNode = body.nodes.find(
     (node) => typeof node.id !== 'string' || !node.id || typeof node.kind !== 'string' || !node.kind,
   )
   if (invalidNode) {
-    return projectJsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
+    return jsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
   }
 
   try {
     const project = await requireProjectAccess(params.projectId, user.id, true)
-    if (!project) return projectJsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
-    if (project === 'FORBIDDEN') return projectJsonError('FORBIDDEN', '无权访问该项目。', 403)
+    if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
+    if (project === 'FORBIDDEN') return jsonError('FORBIDDEN', '无权访问该项目。', 403)
 
     const existingWorkflow = body.workflowId
       ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: WORKFLOW_SELECT })
@@ -293,8 +286,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
     if (body.nodes.length === 0 && !body.clearCanvas) {
       const savedAt = new Date().toISOString()
-      return NextResponse.json({
-        success: true,
+      return jsonOk({
         skipped: true,
         reason: 'EMPTY_NODES_IGNORED',
         workflowId: workflow.id,
@@ -419,8 +411,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
     )
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       workflowId: workflow.id,
       savedAt: now.toISOString(),
       nodeCount: body.nodes.length,
@@ -428,13 +419,10 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
-      return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
+      return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = safeErrorMessage(error)
     console.error('[canvas-api] save failed', { projectId: params.projectId, error })
-    return NextResponse.json(
-      { success: false, errorCode: 'CANVAS_SAVE_FAILED', message: `保存画布失败：${msg}` },
-      { status: 500 },
-    )
+    return jsonError('CANVAS_SAVE_FAILED', `保存画布失败：${msg}`, 500)
   }
 }

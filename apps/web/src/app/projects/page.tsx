@@ -50,6 +50,16 @@ function writeProjectsCache(projects: ProjectListItem[]) {
   }
 }
 
+async function readJson<T>(response: Response): Promise<T> {
+  const raw = await response.text().catch(() => '')
+  if (!raw) return {} as T
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return { message: '接口返回了非 JSON 内容。' } as T
+  }
+}
+
 export default function ProjectsPage() {
   const router = useRouter()
   const { status: authStatus } = useCurrentUser()
@@ -91,7 +101,7 @@ export default function ProjectsPage() {
           cache: 'no-store',
           headers: { Accept: 'application/json' },
         })
-        const data = await response.json().catch(() => ({})) as { projects?: ProjectListItem[]; message?: string; errorCode?: string }
+        const data = await readJson<{ projects?: ProjectListItem[]; message?: string; errorCode?: string }>(response)
         if (response.status === 401) {
           router.replace('/auth/login?next=/projects')
           return

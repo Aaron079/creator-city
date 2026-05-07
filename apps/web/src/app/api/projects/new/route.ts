@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
 import {
   PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
@@ -17,12 +18,8 @@ type NewProjectBody = {
   source?: string
 }
 
-function jsonError(errorCode: string, message: string, status: number) {
-  return NextResponse.json({ success: false, errorCode, message }, { status })
-}
-
 function safeMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return safeErrorMessage(error)
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -170,8 +167,7 @@ export async function POST(request: NextRequest) {
     })
 
     console.time('[projects/new] response')
-    const response = NextResponse.json({
-      success: true,
+    const response = jsonOk({
       project: {
         id: projectId,
         title,

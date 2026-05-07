@@ -49,6 +49,16 @@ function formatBytes(size?: number | null) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
+async function readJson<T>(response: Response): Promise<T> {
+  const raw = await response.text().catch(() => '')
+  if (!raw) return {} as T
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return { message: '接口返回了非 JSON 内容。' } as T
+  }
+}
+
 export default function AssetsPage() {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [assets, setAssets] = useState<AssetItem[]>([])
@@ -67,7 +77,7 @@ export default function AssetsPage() {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data = await response.json().catch(() => ({})) as { assets?: AssetItem[]; message?: string }
+      const data = await readJson<{ assets?: AssetItem[]; message?: string }>(response)
       if (response.status === 401) {
         setMessage({ type: 'error', text: '请先登录后查看素材。' })
         setAssets([])
@@ -89,7 +99,7 @@ export default function AssetsPage() {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data = await response.json().catch(() => ({})) as { projects?: ProjectItem[] }
+      const data = await readJson<{ projects?: ProjectItem[] }>(response)
       if (response.ok) setProjects(data.projects ?? [])
     } catch (error) {
       console.warn('[assets] failed to load projects', error)
@@ -112,12 +122,12 @@ export default function AssetsPage() {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ projectId }),
       })
-      const data = await response.json().catch(() => ({})) as {
+      const data = await readJson<{
         success?: boolean
         asset?: AssetItem
         errorCode?: string
         message?: string
-      }
+      }>(response)
       if (!response.ok || !data.success || !data.asset) {
         throw new Error(`${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '绑定项目失败'}`)
       }
@@ -145,12 +155,12 @@ export default function AssetsPage() {
         headers: { Accept: 'application/json' },
         body: formData,
       })
-      const data = await response.json().catch(() => ({})) as {
+      const data = await readJson<{
         success?: boolean
         asset?: AssetItem
         errorCode?: string
         message?: string
-      }
+      }>(response)
       if (!response.ok || !data.success || !data.asset) {
         const text = data.errorCode === 'STORAGE_NOT_CONFIGURED'
           ? '对象存储未配置，请在 /admin/china 配置 OSS/COS。'

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { normalizeAssetType } from '@/lib/assets/normalize'
+import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import {
   assetToDeliveryType,
   createDeliveryToken,
@@ -30,10 +31,6 @@ type SubmitDeliveryBody = {
 
 type DeliveryAsset = NonNullable<Awaited<ReturnType<typeof db.asset.findFirst>>>
 type DeliveryCanvasNode = NonNullable<Awaited<ReturnType<typeof db.canvasNode.findFirst>>>
-
-function jsonError(errorCode: string, message: string, status: number) {
-  return NextResponse.json({ success: false, errorCode, message }, { status })
-}
 
 function uniqueStrings(value: unknown) {
   return Array.isArray(value)
@@ -194,15 +191,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       },
     })
 
-    return NextResponse.json({
-      success: true,
+    return jsonOk({
       share: serializeDeliveryShare(shareWithRelations),
       items,
       publicUrl: `/delivery/${share.token}`,
     }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
     console.error('[delivery-submit] failed', { projectId: params.projectId, error })
-    return jsonError('DELIVERY_SUBMIT_FAILED', `生成客户交付链接失败：${message}`, 500)
+    return jsonError('DELIVERY_SUBMIT_FAILED', `生成客户交付链接失败：${safeErrorMessage(error)}`, 500)
   }
 }

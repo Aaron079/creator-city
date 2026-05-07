@@ -72,6 +72,16 @@ function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?:
   }
 }
 
+async function readJson<T>(response: Response): Promise<T | null> {
+  const raw = await response.text().catch(() => '')
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
 export default function BillingPage() {
   const { payingPackageId, createPayment } = useChinaPaymentCheckout()
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated' | 'unknown'>('loading')
@@ -102,7 +112,7 @@ export default function BillingPage() {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       })
-      const data = await response.json().catch(() => null) as AuthMeResponse | null
+      const data = await readJson<AuthMeResponse>(response)
       const nextStatus = response.ok && data?.authenticated ? 'authenticated' : 'unauthenticated'
       setAuthStatus(nextStatus)
       return nextStatus
@@ -150,7 +160,7 @@ export default function BillingPage() {
           cache: 'no-store',
           headers: { Accept: 'application/json' },
         })
-        const data = await bootstrapRes.json().catch(() => null) as BillingBootstrapResponse | null
+        const data = await readJson<BillingBootstrapResponse>(bootstrapRes)
         const auth = data?.auth
         if (typeof auth?.authenticated === 'boolean') {
           setAuthStatus(auth.authenticated ? 'authenticated' : 'unauthenticated')
@@ -237,7 +247,7 @@ export default function BillingPage() {
             note: `Billing manual recharge package: ${pkg.name}`,
           }),
         })
-        const data = await res.json().catch(() => ({})) as { orderId?: string; message?: string }
+        const data = await readJson<{ orderId?: string; message?: string }>(res) ?? {}
         if (res.status === 401) {
           setAuthStatus('unauthenticated')
           setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
@@ -272,13 +282,13 @@ export default function BillingPage() {
         },
         body: JSON.stringify({ packageId, region, paymentMethod: provider }),
       })
-      const data = await res.json().catch(() => ({})) as {
+      const data = await readJson<{
         status?: string
         errorCode?: string
         message?: string
         checkoutUrl?: string
         paymentUrl?: string
-      }
+      }>(res) ?? {}
       if (res.status === 401 || data.errorCode === 'UNAUTHORIZED') {
         setNotice({ type: 'error', message: '登录已过期，请重新登录', errorCode: 'UNAUTHORIZED' })
         return
@@ -390,7 +400,7 @@ export default function BillingPage() {
         onPaid={async () => {
           const walletRes = await fetch('/api/credits/wallet', { credentials: 'include', cache: 'no-store' }).catch(() => null)
           if (walletRes?.ok) {
-            const wallet = await walletRes.json().catch(() => null) as UserWallet | null
+            const wallet = await readJson<UserWallet>(walletRes)
             if (wallet) {
               setWalletSummary(wallet)
               writeWalletCache(wallet)

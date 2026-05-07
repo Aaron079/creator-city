@@ -38,7 +38,14 @@ export function useCurrentUser() {
         setState({ status: 'unauthenticated', user: null, error: `AUTH_ME_${res.status}` })
         return
       }
-      const data = await res.json() as AuthMeResponse
+      const raw = await res.text().catch(() => '')
+      let data: AuthMeResponse = {}
+      try {
+        data = raw ? JSON.parse(raw) as AuthMeResponse : {}
+      } catch {
+        setState({ status: 'unknown', user: null, error: 'AUTH_ME_NON_JSON' })
+        return
+      }
       if (data.authenticated === true && data.user) {
         setState({ status: 'authenticated', user: data.user, error: null })
         return

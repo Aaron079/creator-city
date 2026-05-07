@@ -421,8 +421,8 @@ export default function ClientReviewPortalPage() {
         {!canOpenReview ? (
           <div className="mb-6">
             <AccessNotice
-              title="当前账号还不是这个项目的成员"
-              message="Review Portal 只对项目成员或被绑定的客户身份开放。当前账号还没有 active project membership，因此只能先查看身份信息或联系 Producer 加入项目。"
+              title="这是项目成员 Review Portal，不是客户交付链接"
+              message="Review Portal 只对项目成员或被绑定的内部客户身份开放。真实客户请使用创作者生成的 /delivery/<token> 交付链接，无需登录或加入 ProjectMember。"
               details={[
                 `当前账号：${currentUser?.displayName ?? currentUser?.id ?? '未解析'}`,
                 `当前 Profile：${currentProfileId ?? '未解析'}`,

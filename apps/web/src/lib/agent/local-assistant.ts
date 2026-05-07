@@ -18,7 +18,7 @@ export function explainCurrentPage(context: AgentPageContext) {
   }
 
   if (context.pathname.startsWith('/review/')) {
-    return `${context.routeName}：${context.pageSummary}\n\n这里适合客户查看版本、提交反馈，并在交付审批区域确认交付。外部客户页只解释当前流程，不暴露内部项目数据。${actions}`
+    return `${context.routeName}：${context.pageSummary}\n\n这是内部项目成员 Review Portal，不是客户交付链接。真实客户请使用 /delivery/<token>，不会进入 ProjectMember gate。${actions}`
   }
 
   return `${context.routeName}：${context.pageSummary}${actions}`
@@ -71,7 +71,7 @@ export function buildLocalAgentReply(input: {
   }
 
   if (text.includes('客户') || text.includes('交付') || text.includes('审片') || text.includes('delivery') || text.includes('review')) {
-    const projectPart = input.context.projectId ? `当前项目会进入 /review/${input.context.projectId}#delivery-approval。` : '没有当前项目时会进入 /review/order-seed-1#delivery-approval。'
+    const projectPart = input.context.projectId ? `当前项目会进入 /projects/${input.context.projectId}/delivery。` : '没有当前项目时会先进入 /projects，请先打开一个真实项目。'
     return `${prefix}进入客户交付：点击 Agent 的“客户交付”快捷动作，或在 /create 画布右上角点击“客户”。${projectPart}`
   }
 
