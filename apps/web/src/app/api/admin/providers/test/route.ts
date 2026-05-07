@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
-import { testProviderConnection } from '@/lib/admin/provider-management'
+import { testProviderConnection } from '@/lib/provider-management'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +33,8 @@ export async function POST(request: Request) {
       status: result.status,
       message: result.message,
       missingEnvKeys: result.missingEnvKeys,
+      checkedAt: result.checkedAt,
+      mode: result.mode,
     })
   } catch (error) {
     console.error('[admin/providers/test]', error)

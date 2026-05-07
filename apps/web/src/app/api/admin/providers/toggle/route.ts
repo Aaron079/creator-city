@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
-import { setProviderEnabled } from '@/lib/admin/provider-management'
+import { setProviderEnabled } from '@/lib/provider-management'
 
 export const dynamic = 'force-dynamic'
 

@@ -52,6 +52,8 @@ interface TestResponse {
   status?: ProviderStatus
   message?: string
   missingEnvKeys?: string[]
+  checkedAt?: string
+  mode?: string
   errorCode?: string
 }
 
@@ -189,7 +191,7 @@ export default function AdminProvidersPage() {
               ...item,
               status: data.status ?? item.status,
               lastTestStatus: data.ok ? 'passed' : 'failed',
-              lastCheckedAt: new Date().toISOString(),
+              lastCheckedAt: data.checkedAt ?? new Date().toISOString(),
               missingEnvKeys: data.missingEnvKeys ?? item.missingEnvKeys,
             }
           : item
@@ -214,7 +216,7 @@ export default function AdminProvidersPage() {
     }
   }
 
-  const categoryTabs = [ALL_CATEGORIES, ...categories, 'LLM', 'Image-to-Video', 'Voice']
+  const categoryTabs = [ALL_CATEGORIES, ...categories, 'LLM', 'Image-to-Video']
     .filter((value, index, array) => array.indexOf(value) === index)
 
   return (
@@ -224,15 +226,16 @@ export default function AdminProvidersPage() {
           <div>
             <h1 className="text-2xl font-semibold text-white">API Provider 管理中心</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/50">
-              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、价格和积分成本。测试连接不会触发真实生成。
+              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、价格和积分成本。测试连接不会触发真实生成、支付、扣费或上传。
             </p>
           </div>
           <button
             type="button"
             onClick={() => void loadProviders()}
-            className="rounded-md border border-white/10 px-3 py-2 text-sm text-white/70 transition hover:border-white/25 hover:text-white"
+            disabled={loading}
+            className="rounded-md border border-white/10 px-3 py-2 text-sm text-white/70 transition hover:border-white/25 hover:text-white disabled:cursor-wait disabled:opacity-50"
           >
-            刷新状态
+            {loading ? '刷新中...' : '刷新状态'}
           </button>
         </div>
 
@@ -313,8 +316,10 @@ export default function AdminProvidersPage() {
                       <td className="max-w-[260px] px-4 py-3">
                         <code className="block whitespace-pre-wrap break-words text-xs text-white/46">{provider.envKey || 'none'}</code>
                         {provider.missingEnvKeys.length ? (
-                          <div className="mt-1 text-xs text-amber-200/80">missing: {missingText}</div>
-                        ) : null}
+                          <div className="mt-1 text-xs text-amber-200/80">missingEnv: {missingText}</div>
+                        ) : (
+                          <div className="mt-1 text-xs text-emerald-200/70">missingEnv: none</div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-xs ${statusClass(provider.status)}`}>
@@ -342,6 +347,9 @@ export default function AdminProvidersPage() {
                         <div className="mt-1 max-w-[220px] text-xs text-white/34">
                           {testResult?.message ?? (provider.lastCheckedAt ? new Date(provider.lastCheckedAt).toLocaleString('zh-CN') : 'never')}
                         </div>
+                        {testResult?.mode ? (
+                          <div className="mt-1 text-xs text-white/30">{testResult.mode}</div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
