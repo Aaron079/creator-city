@@ -8,6 +8,7 @@ import {
 } from '@/lib/gateway/schema-errors'
 
 export type AdminProviderStatus = 'configured' | 'not-configured' | 'error'
+export type AdminProviderAvailabilityStatus = 'available' | 'disabled' | 'not-configured' | 'error'
 export type AdminProviderLastTestStatus = 'untested' | 'passed' | 'failed'
 
 export type AdminProviderCapability =
@@ -52,15 +53,20 @@ export type AdminProviderStatusRow = {
   status: AdminProviderStatus
   configured: boolean
   enabled: boolean
+  available: boolean
+  availabilityStatus: AdminProviderAvailabilityStatus
   estimatedCost: number
   creditsPerCall: number
   monthlyBudgetUsd: number | null
   currentMonthCostUsd: number
   budgetMonth: string | null
+  missingEnv: string[]
   missingEnvKeys: string[]
   lastTestStatus: AdminProviderLastTestStatus
   lastCheckedAt: string | null
   canTest: boolean
+  canToggle: boolean
+  reason: string
   setupHint: string
 }
 
@@ -73,6 +79,8 @@ export type ProviderManagementResult = {
     error: number
     enabled: number
     disabled: number
+    available: number
+    unavailable: number
   }
   categories: string[]
   errorCode?: string
@@ -247,10 +255,12 @@ export async function buildProviderManagementStatus(): Promise<ProviderManagemen
     if (provider.status === 'configured') acc.configured += 1
     if (provider.status === 'not-configured') acc.notConfigured += 1
     if (provider.status === 'error') acc.error += 1
-    if (provider.enabled) acc.enabled += 1
-    else acc.disabled += 1
+    if (provider.available) acc.available += 1
+    if (provider.available) acc.enabled += 1
+    if (provider.configured && !provider.enabled) acc.disabled += 1
+    if (!provider.configured) acc.unavailable += 1
     return acc
-  }, { total: 0, configured: 0, notConfigured: 0, error: 0, enabled: 0, disabled: 0 })
+  }, { total: 0, configured: 0, notConfigured: 0, error: 0, enabled: 0, disabled: 0, available: 0, unavailable: 0 })
 
   return {
     providers,
@@ -264,6 +274,21 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
   const definition = getAdminProviderDefinition(providerId)
   if (!definition) {
     return { ok: false, status: 404, body: { success: false, errorCode: 'PROVIDER_NOT_FOUND', message: `Unknown providerId: ${providerId}` } }
+  }
+
+  const envCheck = checkEnvKeys(definition.envKeys)
+  if (!envCheck.configured) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        success: false,
+        errorCode: 'PROVIDER_NOT_CONFIGURED',
+        message: '缺少环境变量，不能启用该 Provider',
+        missingEnv: envCheck.missing,
+        missingEnvKeys: envCheck.missing,
+      },
+    }
   }
 
   try {
@@ -286,6 +311,10 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
         success: true,
         providerId,
         enabled: account.isActive,
+        available: account.isActive,
+        availabilityStatus: account.isActive ? 'available' : 'disabled',
+        canToggle: true,
+        reason: account.isActive ? '可用' : '已停用',
         account: {
           providerId: account.providerId,
           displayName: account.displayName,
@@ -340,7 +369,12 @@ export async function testProviderConnection(providerId: string) {
 function toProviderStatusRow(definition: AdminProviderDefinition, account?: AdminProviderAccountRow): AdminProviderStatusRow {
   const envCheck = checkEnvKeys(definition.envKeys)
   const pricing = getGatewayPricing(definition.pricingProviderId ?? definition.providerId, definition.nodeType)
+  const configured = envCheck.configured
+  const enabled = configured ? account?.isActive ?? true : false
+  const available = configured && enabled
   const status: AdminProviderStatus = envCheck.configured ? 'configured' : 'not-configured'
+  const availabilityStatus: AdminProviderAvailabilityStatus = configured ? (enabled ? 'available' : 'disabled') : 'not-configured'
+  const reason = configured ? (enabled ? '可用' : '已停用') : `缺少环境变量：${envCheck.missing.join(', ')}`
   return {
     providerId: definition.providerId,
     displayName: account?.displayName || definition.displayName,
@@ -350,17 +384,22 @@ function toProviderStatusRow(definition: AdminProviderDefinition, account?: Admi
     envKeys: definition.envKeys,
     optionalEnvKeys: definition.optionalEnvKeys ?? [],
     status,
-    configured: envCheck.configured,
-    enabled: account?.isActive ?? true,
+    configured,
+    enabled,
+    available,
+    availabilityStatus,
     estimatedCost: pricing.estimatedCostUsd,
     creditsPerCall: pricing.creditsPerCall,
     monthlyBudgetUsd: account?.monthlyBudgetUsd != null ? Number(account.monthlyBudgetUsd) : null,
     currentMonthCostUsd: account?.currentMonthCostUsd != null ? Number(account.currentMonthCostUsd) : 0,
     budgetMonth: account?.budgetMonth ?? null,
+    missingEnv: envCheck.missing,
     missingEnvKeys: envCheck.missing,
     lastTestStatus: account?.lastCheckedAt ? (envCheck.configured ? 'passed' : 'failed') : 'untested',
     lastCheckedAt: account?.lastCheckedAt ? account.lastCheckedAt.toISOString() : null,
     canTest: true,
+    canToggle: configured,
+    reason,
     setupHint: definition.setupHint,
   }
 }

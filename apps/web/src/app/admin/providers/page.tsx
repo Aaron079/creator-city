@@ -5,6 +5,7 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 
 type ProviderStatus = 'configured' | 'not-configured' | 'error'
+type AvailabilityStatus = 'available' | 'disabled' | 'not-configured' | 'error'
 type LastTestStatus = 'untested' | 'passed' | 'failed'
 
 interface ProviderRow {
@@ -18,29 +19,38 @@ interface ProviderRow {
   status: ProviderStatus
   configured: boolean
   enabled: boolean
+  available: boolean
+  availabilityStatus: AvailabilityStatus
   estimatedCost: number
   creditsPerCall: number
   monthlyBudgetUsd: number | null
   currentMonthCostUsd: number
+  missingEnv: string[]
   missingEnvKeys: string[]
   lastTestStatus: LastTestStatus
   lastCheckedAt: string | null
   canTest: boolean
+  canToggle: boolean
+  reason: string
   setupHint: string
+}
+
+interface ProviderSummary {
+  total: number
+  configured: number
+  notConfigured: number
+  error: number
+  enabled: number
+  disabled: number
+  available: number
+  unavailable: number
 }
 
 interface StatusResponse {
   success?: boolean
   providers?: ProviderRow[]
   categories?: string[]
-  summary?: {
-    total: number
-    configured: number
-    notConfigured: number
-    error: number
-    enabled: number
-    disabled: number
-  }
+  summary?: ProviderSummary
   errorCode?: string
   message?: string
 }
@@ -85,6 +95,34 @@ function testLabel(status: LastTestStatus) {
   if (status === 'passed') return 'passed'
   if (status === 'failed') return 'failed'
   return 'untested'
+}
+
+function availabilityClass(status: AvailabilityStatus) {
+  if (status === 'available') return 'border-emerald-300/25 bg-emerald-400/10 text-emerald-200'
+  if (status === 'disabled') return 'border-red-300/25 bg-red-400/10 text-red-200'
+  if (status === 'error') return 'border-red-300/25 bg-red-400/10 text-red-200'
+  return 'border-white/12 bg-white/[0.05] text-white/48'
+}
+
+function availabilityLabel(provider: ProviderRow) {
+  if (!provider.configured) return '不可用'
+  return provider.enabled ? 'enabled' : 'disabled'
+}
+
+function buildClientSummary(providers: ProviderRow[]): ProviderSummary {
+  return providers.reduce<ProviderSummary>((acc, provider) => {
+    acc.total += 1
+    if (provider.configured) acc.configured += 1
+    else acc.notConfigured += 1
+    if (provider.status === 'error') acc.error += 1
+    if (provider.available) {
+      acc.available += 1
+      acc.enabled += 1
+    }
+    if (provider.configured && !provider.enabled) acc.disabled += 1
+    if (!provider.configured) acc.unavailable += 1
+    return acc
+  }, { total: 0, configured: 0, notConfigured: 0, error: 0, enabled: 0, disabled: 0, available: 0, unavailable: 0 })
 }
 
 export default function AdminProvidersPage() {
@@ -146,6 +184,10 @@ export default function AdminProvidersPage() {
   ), [activeCategory, providers])
 
   async function handleToggle(provider: ProviderRow) {
+    if (!provider.canToggle) {
+      setMessage(`${provider.displayName}: ${provider.reason || '缺少环境变量，不能启用该 Provider'}`)
+      return
+    }
     setTogglingId(provider.providerId)
     setMessage(null)
     try {
@@ -155,13 +197,33 @@ export default function AdminProvidersPage() {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ providerId: provider.providerId, enabled: !provider.enabled }),
       })
-      const data = await readJsonResponse<{ success?: boolean; message?: string; errorCode?: string; enabled?: boolean }>(response)
+      const data = await readJsonResponse<{
+        success?: boolean
+        message?: string
+        errorCode?: string
+        enabled?: boolean
+        available?: boolean
+        availabilityStatus?: AvailabilityStatus
+        reason?: string
+      }>(response)
       if (!response.ok || data.success === false) {
         throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '更新失败。'}` : data.message ?? '更新失败。')
       }
-      setProviders((current) => current.map((item) => (
-        item.providerId === provider.providerId ? { ...item, enabled: Boolean(data.enabled) } : item
-      )))
+      setProviders((current) => {
+        const next = current.map((item) => (
+          item.providerId === provider.providerId
+            ? {
+                ...item,
+                enabled: Boolean(data.enabled),
+                available: Boolean(data.available),
+                availabilityStatus: data.availabilityStatus ?? (data.enabled ? 'available' : 'disabled'),
+                reason: data.reason ?? (data.enabled ? '可用' : '已停用'),
+              }
+            : item
+        ))
+        setSummary(buildClientSummary(next))
+        return next
+      })
       setMessage(`${provider.displayName} 已${data.enabled ? '启用' : '停用'}。`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '更新启用状态失败。')
@@ -245,14 +307,15 @@ export default function AdminProvidersPage() {
           </div>
         ) : null}
 
-        <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
           {[
             ['Total', summary?.total ?? providers.length],
             ['Configured', summary?.configured ?? 0],
             ['Missing Env', summary?.notConfigured ?? 0],
-            ['Error', summary?.error ?? 0],
-            ['Enabled', summary?.enabled ?? 0],
+            ['Available', summary?.available ?? summary?.enabled ?? 0],
             ['Disabled', summary?.disabled ?? 0],
+            ['Unavailable', summary?.unavailable ?? summary?.notConfigured ?? 0],
+            ['Error', summary?.error ?? 0],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-white/10 bg-white/[0.035] px-4 py-3">
               <div className="text-xs text-white/38">{label}</div>
@@ -299,7 +362,8 @@ export default function AdminProvidersPage() {
               <tbody>
                 {visibleProviders.map((provider) => {
                   const testResult = testResults[provider.providerId]
-                  const missingText = provider.missingEnvKeys.join(', ')
+                  const missing = provider.missingEnvKeys.length ? provider.missingEnvKeys : provider.missingEnv
+                  const missingText = missing.join(', ')
                   return (
                     <tr key={provider.providerId} className="border-b border-white/5 align-top hover:bg-white/[0.02]">
                       <td className="px-4 py-3">
@@ -315,7 +379,7 @@ export default function AdminProvidersPage() {
                       </td>
                       <td className="max-w-[260px] px-4 py-3">
                         <code className="block whitespace-pre-wrap break-words text-xs text-white/46">{provider.envKey || 'none'}</code>
-                        {provider.missingEnvKeys.length ? (
+                        {missing.length ? (
                           <div className="mt-1 text-xs text-amber-200/80">missingEnv: {missingText}</div>
                         ) : (
                           <div className="mt-1 text-xs text-emerald-200/70">missingEnv: none</div>
@@ -330,15 +394,12 @@ export default function AdminProvidersPage() {
                         <button
                           type="button"
                           onClick={() => void handleToggle(provider)}
-                          disabled={togglingId === provider.providerId}
-                          className={`rounded-md border px-3 py-1.5 text-xs transition ${
-                            provider.enabled
-                              ? 'border-emerald-300/25 bg-emerald-400/10 text-emerald-200'
-                              : 'border-red-300/25 bg-red-400/10 text-red-200'
-                          }`}
+                          disabled={!provider.canToggle || togglingId === provider.providerId}
+                          className={`rounded-md border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-70 ${availabilityClass(provider.availabilityStatus)}`}
                         >
-                          {togglingId === provider.providerId ? '更新中...' : provider.enabled ? 'enabled' : 'disabled'}
+                          {togglingId === provider.providerId ? '更新中...' : availabilityLabel(provider)}
                         </button>
+                        <div className="mt-1 max-w-[180px] text-xs text-white/34">{provider.reason}</div>
                       </td>
                       <td className="px-4 py-3 tabular-nums">${provider.estimatedCost.toFixed(4)}</td>
                       <td className="px-4 py-3 tabular-nums">{provider.creditsPerCall}</td>
