@@ -4,7 +4,7 @@ import { useRef, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
-export type VisualCanvasNodeStatus = 'idle' | 'generating' | 'done' | 'error'
+export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
 export type VisualCanvasNodePreview = {
   type: 'none' | 'placeholder-video' | 'remote-video'
   url?: string
@@ -110,6 +110,14 @@ function getResultPreviewClass(kind: VisualCanvasNodeKind) {
   return ''
 }
 
+function getStatusLabel(status: VisualCanvasNodeStatus) {
+  if (status === 'queued') return '排队中'
+  if (status === 'running' || status === 'generating') return '运行中'
+  if (status === 'done') return '完成'
+  if (status === 'error') return '失败'
+  return '待运行'
+}
+
 export function CanvasNodeCard({
   node,
   active,
@@ -128,7 +136,7 @@ export function CanvasNodeCard({
     `node-${node.kind}`,
     active ? 'is-active' : '',
     dragging ? 'is-dragging' : '',
-    node.status === 'generating' ? 'is-generating' : '',
+    node.status === 'generating' || node.status === 'running' ? 'is-generating' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -227,6 +235,7 @@ export function CanvasNodeCard({
           </div>
 
           <div className="flex items-center gap-2">
+            <span className={`canvas-node-status-text status-${node.status}`}>{getStatusLabel(node.status)}</span>
             <span className={`canvas-node-status-dot status-${node.status}`} aria-hidden="true" />
             <button
               type="button"
@@ -293,10 +302,10 @@ export function CanvasNodeCard({
                 ) : null}
               </div>
             </div>
-          ) : node.status === 'generating' ? (
+          ) : node.status === 'generating' || node.status === 'running' || node.status === 'queued' ? (
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
-              <div className="canvas-node-preview-copy">生成中</div>
+              <div className="canvas-node-preview-copy">{node.status === 'queued' ? '排队中...' : '运行中...'}</div>
             </div>
           ) : node.status === 'error' ? (
             <div className="canvas-node-preview is-error-preview">

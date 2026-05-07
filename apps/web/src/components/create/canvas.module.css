@@ -2654,9 +2654,43 @@
   box-shadow: 0 0 18px rgba(142, 247, 255, 0.34);
 }
 
+.scope :global(.canvas-node-status-dot.status-queued),
+.scope :global(.canvas-node-status-dot.status-running) {
+  background: #8ef7ff;
+  box-shadow: 0 0 18px rgba(142, 247, 255, 0.34);
+}
+
 .scope :global(.canvas-node-status-dot.status-done) {
   background: #8dffb2;
   box-shadow: 0 0 18px rgba(141, 255, 178, 0.26);
+}
+
+.scope :global(.canvas-node-status-dot.status-error) {
+  background: #ff6b8a;
+  box-shadow: 0 0 18px rgba(255, 107, 138, 0.26);
+}
+
+.scope :global(.canvas-node-status-text) {
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.scope :global(.canvas-node-status-text.status-queued),
+.scope :global(.canvas-node-status-text.status-running),
+.scope :global(.canvas-node-status-text.status-generating) {
+  color: #d6f8ff;
+}
+
+.scope :global(.canvas-node-status-text.status-done) {
+  color: #baffd9;
+}
+
+.scope :global(.canvas-node-status-text.status-error) {
+  color: #ffb3c0;
 }
 
 .scope :global(.canvas-node-more) {

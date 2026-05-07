@@ -32,6 +32,11 @@ import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType } from '@/lib/tools/provider-catalog'
 import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
+import {
+  runCanvasWorkflow,
+  type CanvasWorkflowRunNodeResult,
+  type CanvasWorkflowInputAsset,
+} from '@/lib/canvas/workflow-runner'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -45,6 +50,7 @@ interface VisualCanvasWorkspaceProps {
 }
 
 type SaveStatus = 'idle' | 'opening' | 'dirty' | 'saving' | 'saved' | 'failed' | 'local-draft' | 'restored-draft'
+type WorkflowRunStatus = 'idle' | 'running' | 'done' | 'partial-failed' | 'error'
 
 interface CanvasLoadResponse {
   success?: boolean
@@ -297,6 +303,7 @@ async function callGenerationApi(
   params?: Record<string, string | number | boolean | undefined>,
   nodeId?: string,
   inputAssets?: Array<{ id: string; type: string; url?: string }>,
+  projectId?: string,
 ): Promise<GenerateApiResult> {
   const endpoint =
     nodeType === 'image' ? '/api/generate/image'
@@ -314,7 +321,7 @@ async function callGenerationApi(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ providerId, nodeType, prompt, params, nodeId, inputAssets }),
+      body: JSON.stringify({ providerId, nodeType, prompt, params, nodeId, inputAssets, projectId }),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '网络请求失败'
@@ -429,6 +436,86 @@ function buildMockResult(node: VisualCanvasNode, prompt: string) {
   return `文本结果 · ${promptCopy.slice(0, 88)}${promptCopy.length > 88 ? '...' : ''}`
 }
 
+function workflowPromptForNode(node: VisualCanvasNode, upstreamText: string) {
+  const ownPrompt = node.prompt?.trim() ?? ''
+  const context = upstreamText.trim()
+  if (node.kind === 'image') {
+    return ownPrompt && context
+      ? `${ownPrompt}\n\n上游文本上下文：\n${context}`
+      : ownPrompt || context
+  }
+  if (node.kind === 'video') {
+    return ownPrompt && context
+      ? `${ownPrompt}\n\n上游文本上下文：\n${context}`
+      : ownPrompt || context || '根据上游素材生成视频镜头。'
+  }
+  return ownPrompt && context
+    ? `${ownPrompt}\n\n参考上游上下文：\n${context}`
+    : ownPrompt || context
+}
+
+function workflowInputAssets(inputAssets: CanvasWorkflowInputAsset[]) {
+  return inputAssets
+    .filter((asset): asset is CanvasWorkflowInputAsset & { type: 'image' | 'video' | 'audio'; url: string } => (
+      Boolean(asset.url) && (asset.type === 'image' || asset.type === 'video' || asset.type === 'audio')
+    ))
+    .map((asset) => ({ id: asset.id, type: asset.type, url: asset.url }))
+}
+
+function isReusableAssetNode(node: VisualCanvasNode) {
+  return node.providerId === 'asset-library'
+    || node.kind === 'asset'
+    || node.kind === 'upload'
+    || (node.kind === 'image' && Boolean(node.resultImageUrl))
+}
+
+function passthroughWorkflowResult(node: VisualCanvasNode): CanvasWorkflowRunNodeResult {
+  return {
+    resultText: node.resultText,
+    resultImageUrl: node.resultImageUrl,
+    resultVideoUrl: node.resultVideoUrl,
+    resultAudioUrl: node.resultAudioUrl,
+    resultPreview: node.resultPreview ?? node.outputLabel ?? '节点结果已作为下游输入。',
+    outputLabel: node.outputLabel ?? '已有结果',
+    preview: node.preview,
+    metadataJson: node.metadataJson,
+  }
+}
+
+function workflowErrorFromGenerateResult(node: VisualCanvasNode, result: GenerateApiResult) {
+  if (node.kind === 'video' && (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED')) {
+    return `VIDEO_PROVIDER_NOT_CONFIGURED: ${result.message || '视频 provider 未配置'}`
+  }
+  return result.errorCode ? `${result.errorCode}: ${result.message}` : result.message || '节点运行失败。'
+}
+
+function workflowResultFromGenerateResult(node: VisualCanvasNode, result: GenerateApiResult, fallbackPrompt: string): CanvasWorkflowRunNodeResult {
+  const resultText = result.result?.text
+  const resultImageUrl = result.result?.imageUrl
+  const resultVideoUrl = result.result?.videoUrl
+  const resultAudioUrl = result.result?.audioUrl
+  const fallbackPreview = fallbackPrompt ? buildMockResult(node, fallbackPrompt) : `${node.title} 已完成`
+  const resultPreview = resultText?.slice(0, 200)
+    ?? (resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultAudioUrl ? '音频已生成' : fallbackPreview)
+
+  return {
+    resultText,
+    resultImageUrl: resultImageUrl ?? node.resultImageUrl,
+    resultVideoUrl: resultVideoUrl ?? node.resultVideoUrl,
+    resultAudioUrl: resultAudioUrl ?? node.resultAudioUrl,
+    resultPreview,
+    outputLabel: resultText?.slice(0, 80) ?? resultPreview,
+    preview: resultVideoUrl
+      ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
+      : node.preview,
+    metadataJson: node.metadataJson,
+  }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
 export function VisualCanvasWorkspace({
   projectTitle,
   templateName,
@@ -452,6 +539,8 @@ export function VisualCanvasWorkspace({
   const [projectTitleError, setProjectTitleError] = useState('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('opening')
   const [saveMessage, setSaveMessage] = useState('')
+  const [workflowRunStatus, setWorkflowRunStatus] = useState<WorkflowRunStatus>('idle')
+  const [workflowRunMessage, setWorkflowRunMessage] = useState('')
   const [draftRestorePrompt, setDraftRestorePrompt] = useState<DraftRestorePrompt | null>(null)
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
@@ -1427,6 +1516,94 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
   )
+
+  const handleRunWorkflow = useCallback(async () => {
+    if (workflowRunStatus === 'running') return
+    if (!latestNodesRef.current.length) {
+      showCanvasFeedback('画布上还没有可运行的节点。')
+      return
+    }
+
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+
+    setWorkflowRunStatus('running')
+    setWorkflowRunMessage('工作流运行中...')
+    showCanvasFeedback('工作流运行中...')
+    setDialogError(null)
+
+    const result = await runCanvasWorkflow({
+      nodes: latestNodesRef.current,
+      edges: latestEdgesRef.current,
+      startNodeId: activeNodeId,
+      onNodeUpdate: (_nodeId, _patch, nextNodes) => {
+        commitNodes(nextNodes)
+      },
+      runNode: async ({ node, upstreamText, inputAssets }) => {
+        if (isReusableAssetNode(node)) {
+          return passthroughWorkflowResult(node)
+        }
+
+        const nodeType = getProviderNodeType(node.kind)
+        const providerId = normalizeProviderId(node.providerId || node.model || NODE_META[node.kind]?.model || NODE_META.text.model)
+        const prompt = workflowPromptForNode(node, upstreamText)
+        if (!prompt.trim()) {
+          throw new Error('WORKFLOW_NODE_PROMPT_REQUIRED: 节点缺少 prompt 或上游文本。')
+        }
+
+        let generateResult = await callGenerationApi(
+          nodeType,
+          providerId,
+          prompt,
+          { ratio: node.ratio ?? '16:9', stage: node.stage ?? 'draft', workflowRun: true },
+          node.id,
+          workflowInputAssets(inputAssets),
+          projectId,
+        )
+
+        if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
+          let polls = 0
+          while (polls < 60 && generateResult.jobId && (generateResult.status === 'queued' || generateResult.status === 'running')) {
+            await delay(5000)
+            generateResult = await pollGenerationJob(generateResult.jobId)
+            polls += 1
+          }
+        }
+
+        if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
+          throw new Error(`WORKFLOW_NODE_TIMEOUT: ${generateResult.message || '节点仍在运行，请稍后检查任务状态。'}`)
+        }
+        if (!generateResult.success) {
+          throw new Error(workflowErrorFromGenerateResult(node, generateResult))
+        }
+
+        return workflowResultFromGenerateResult(node, generateResult, prompt)
+      },
+    })
+
+    commitNodes(result.nodes)
+    void saveCanvas()
+
+    if (!result.ok) {
+      setWorkflowRunStatus('error')
+      setWorkflowRunMessage(result.errorCode)
+      showCanvasFeedback(result.errorCode)
+      return
+    }
+
+    if (result.failedNodeIds.length > 0) {
+      setWorkflowRunStatus('partial-failed')
+      setWorkflowRunMessage('部分节点失败')
+      showCanvasFeedback('部分节点失败')
+      return
+    }
+
+    setWorkflowRunStatus('done')
+    setWorkflowRunMessage('工作流完成')
+    showCanvasFeedback('工作流完成')
+  }, [activeNodeId, commitNodes, projectId, saveCanvas, showCanvasFeedback, workflowRunStatus])
   const editingNode = useMemo(
     () => nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, nodes],
@@ -2984,6 +3161,21 @@ export function VisualCanvasWorkspace({
                 : saveStatus === 'failed'
                   ? '保存失败，重试'
                   : '保存'}
+          </button>
+          <button
+            type="button"
+            className="canvas-secondary-button"
+            title={workflowRunMessage || (activeNode ? `从「${activeNode.title}」开始运行` : '从所有无入边节点开始运行')}
+            disabled={saveStatus === 'opening' || workflowRunStatus === 'running' || !projectId || nodes.length === 0}
+            onClick={() => { void handleRunWorkflow() }}
+          >
+            {workflowRunStatus === 'running'
+              ? '运行中...'
+              : workflowRunStatus === 'done'
+                ? '完成'
+                : workflowRunStatus === 'partial-failed'
+                  ? '部分失败'
+                  : '运行工作流'}
           </button>
           <button
             type="button"
