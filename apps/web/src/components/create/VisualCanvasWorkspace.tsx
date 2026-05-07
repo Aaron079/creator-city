@@ -3937,6 +3937,8 @@ export function VisualCanvasWorkspace({
             aria-modal="true"
             aria-labelledby="canvas-text-editor-title"
             onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
           >
             <div className="canvas-text-editor-head">
               <div className="min-w-0">
@@ -3956,6 +3958,8 @@ export function VisualCanvasWorkspace({
               className="canvas-text-editor-textarea"
               value={textEditorDraft}
               onChange={(event) => setTextEditorDraft(event.target.value)}
+              onWheel={(event) => event.stopPropagation()}
+              onWheelCapture={(event) => event.stopPropagation()}
               placeholder=""
             />
 

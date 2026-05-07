@@ -280,6 +280,12 @@ export function CanvasNodeCard({
               onPointerDown={(event) => {
                 event.stopPropagation()
               }}
+              onWheel={(event) => {
+                event.stopPropagation()
+              }}
+              onWheelCapture={(event) => {
+                event.stopPropagation()
+              }}
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()

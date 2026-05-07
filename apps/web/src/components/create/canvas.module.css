@@ -5459,6 +5459,7 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   overflow: hidden;
+  overscroll-behavior: contain;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.13);
   background: rgba(18, 20, 24, 0.96);
@@ -5522,6 +5523,7 @@
   min-width: 0;
   resize: none;
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.28);
