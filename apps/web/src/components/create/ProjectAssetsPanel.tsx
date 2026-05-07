@@ -86,12 +86,19 @@ export function ProjectAssetsPanel({ projectId, onClose, onAddAssetToCanvas }: P
       try {
         const response = await fetch(`/api/assets?projectId=${encodeURIComponent(projectId)}&includeUnbound=1`, {
           credentials: 'include',
+          cache: 'no-store',
           headers: { Accept: 'application/json' },
         })
         const raw = await response.text()
-        const data = raw ? JSON.parse(raw) as AssetsResponse : {}
+        let data: AssetsResponse = {}
+        try {
+          data = raw ? JSON.parse(raw) as AssetsResponse : {}
+        } catch {
+          data = { success: false, errorCode: 'ASSETS_PARSE_FAILED', message: raw.slice(0, 240) || '素材接口返回了非 JSON 响应。' }
+        }
         if (!response.ok || data.success === false) {
-          throw new Error(data.message ?? data.errorCode ?? '素材加载失败。')
+          const detail = [data.errorCode, data.message].filter(Boolean).join(': ')
+          throw new Error(detail || '素材加载失败。')
         }
         if (!cancelled) setAssets(data.assets ?? [])
       } catch (err) {
@@ -116,7 +123,7 @@ export function ProjectAssetsPanel({ projectId, onClose, onAddAssetToCanvas }: P
     if (!normalized) return assets
     return assets.filter((asset) => (
       getAssetTitle(asset).toLowerCase().includes(normalized)
-      || asset.type.toLowerCase().includes(normalized)
+      || normalizeAssetType(asset.normalizedType || asset.type).includes(normalized)
       || asset.providerId?.toLowerCase().includes(normalized)
     ))
   }, [assets, query])

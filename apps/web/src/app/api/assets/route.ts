@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { AssetType, Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
-import {
-  PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE,
-  isProjectCanvasSchemaMissing,
-  projectJsonError,
-} from '@/lib/projects/api-errors'
 import { normalizeAssetType as normalizeAssetTypeValue } from '@/lib/assets/normalize'
-import { serializeAsset } from '@/lib/projects/canvas-mappers'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +12,7 @@ function normalizeAssetTypeParam(value: string | null): AssetType | undefined {
   if (!value) return undefined
   const normalized = value.trim().toUpperCase()
   if (normalized === 'TEXT') return 'SCRIPT'
+  if (normalized === 'FILE') return 'DOCUMENT'
   return ASSET_TYPES.has(normalized as AssetType) ? normalized as AssetType : undefined
 }
 
@@ -28,44 +23,51 @@ function normalizeLimit(value: string | null) {
   return Math.max(1, Math.min(parsed, 200))
 }
 
-type AssetWithProjectLinks = Prisma.AssetGetPayload<{
-  include: {
-    project: { select: { id: true; title: true } }
-    projectAssets: { select: { project: { select: { id: true; title: true } } } }
-  }
-}>
+const ASSET_LIST_SELECT = {
+  id: true,
+  title: true,
+  name: true,
+  projectId: true,
+  workflowId: true,
+  nodeId: true,
+  type: true,
+  url: true,
+  dataUrl: true,
+  thumbnailUrl: true,
+  mimeType: true,
+  sizeBytes: true,
+  providerId: true,
+  metadataJson: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.AssetSelect
 
-function serializeAssetForList(asset: AssetWithProjectLinks) {
-  const linkedProject = asset.project ?? asset.projectAssets[0]?.project ?? null
-  const { projectAssets, ...rest } = asset
-  void projectAssets
-  const serialized = serializeAsset({
-    ...rest,
-    project: linkedProject,
-    projectId: rest.projectId ?? linkedProject?.id ?? null,
-  })
+type AssetListRow = Prisma.AssetGetPayload<{ select: typeof ASSET_LIST_SELECT }>
+
+function serializeAssetForList(asset: AssetListRow) {
   return {
-    ...serialized,
-    normalizedType: normalizeAssetTypeValue(rest.type),
+    ...asset,
+    sizeBytes: typeof asset.sizeBytes === 'bigint' ? Number(asset.sizeBytes) : asset.sizeBytes,
+    normalizedType: normalizeAssetTypeValue(asset.type),
   }
 }
 
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser()
-  if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
-
-  const { searchParams } = new URL(request.url)
-  const projectId = searchParams.get('projectId') ?? undefined
-  const includeUnbound = searchParams.get('includeUnbound') === '1'
-  const type = normalizeAssetTypeParam(searchParams.get('type'))
-  const limit = normalizeLimit(searchParams.get('limit'))
-
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const projectId = searchParams.get('projectId')?.trim() || undefined
+    const includeUnbound = searchParams.get('includeUnbound') === '1'
+    const type = normalizeAssetTypeParam(searchParams.get('type'))
+    const limit = normalizeLimit(searchParams.get('limit'))
     const projectFilter: Prisma.AssetWhereInput = projectId
       ? {
         OR: [
           { projectId },
-          { projectAssets: { some: { projectId } } },
           ...(includeUnbound ? [{ projectId: null }] : []),
         ],
       }
@@ -78,23 +80,18 @@ export async function GET(request: NextRequest) {
 
     const assets = await db.asset.findMany({
       where,
-      include: {
-        project: { select: { id: true, title: true } },
-        projectAssets: {
-          ...(projectId ? { where: { projectId } } : { take: 1 }),
-          select: { project: { select: { id: true, title: true } } },
-        },
-      },
+      select: ASSET_LIST_SELECT,
       orderBy: { createdAt: 'desc' },
       take: limit,
     })
 
     return NextResponse.json({ success: true, assets: assets.map(serializeAssetForList) })
   } catch (error) {
-    if (isProjectCanvasSchemaMissing(error)) {
-      return projectJsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
-    }
     console.error('[assets] failed to list assets', error)
-    return NextResponse.json({ success: false, errorCode: 'ASSET_LIST_FAILED', message: '加载资产失败。' }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json(
+      { success: false, errorCode: 'ASSETS_LOAD_FAILED', message },
+      { status: 500 },
+    )
   }
 }
