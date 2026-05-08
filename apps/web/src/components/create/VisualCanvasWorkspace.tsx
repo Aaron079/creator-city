@@ -11,6 +11,7 @@ import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/Can
 import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
+import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
@@ -42,6 +43,7 @@ import {
   type CanvasWorkflowInputAsset,
 } from '@/lib/canvas/workflow-runner'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
+import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
 import { buildStoryboardFromCanvas } from '@/lib/storyboard'
 import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
@@ -995,6 +997,7 @@ export function VisualCanvasWorkspace({
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
+  const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
@@ -2043,6 +2046,10 @@ export function VisualCanvasWorkspace({
     setActiveInspectorNodeId(null)
   }, [])
 
+  const closeEdgeDirector = useCallback(() => {
+    setActiveEdgeId(null)
+  }, [])
+
   const deleteNode = useCallback((nodeId: string) => {
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
     const removedEdges = edges
@@ -2059,6 +2066,7 @@ export function VisualCanvasWorkspace({
     if (activeInspectorNodeId === nodeId) {
       closePromptInspector()
     }
+    setActiveEdgeId((current) => current && removedEdges.includes(current) ? null : current)
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
@@ -2105,6 +2113,9 @@ export function VisualCanvasWorkspace({
         }
         if (activeInspectorNodeId) {
           closePromptInspector()
+        }
+        if (activeEdgeId) {
+          closeEdgeDirector()
         }
         setStoryboardPreviewOpen(false)
         setContextMenu(null)
@@ -2156,11 +2167,23 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
+  }, [activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeEdgeDirector, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
+  )
+  const activeEdge = useMemo(
+    () => edges.find((edge) => edge.id === activeEdgeId) ?? null,
+    [activeEdgeId, edges],
+  )
+  const activeEdgeSourceNode = useMemo(
+    () => nodes.find((node) => node.id === activeEdge?.fromNodeId) ?? null,
+    [activeEdge?.fromNodeId, nodes],
+  )
+  const activeEdgeTargetNode = useMemo(
+    () => nodes.find((node) => node.id === activeEdge?.toNodeId) ?? null,
+    [activeEdge?.toNodeId, nodes],
   )
   const activeInspectorNode = useMemo(
     () => nodes.find((node) => node.id === activeInspectorNodeId) ?? null,
@@ -2239,7 +2262,7 @@ export function VisualCanvasWorkspace({
       onNodeUpdate: (_nodeId, _patch, nextNodes) => {
         commitNodes(nextNodes)
       },
-      runNode: async ({ node, upstreamText, inputAssets }) => {
+      runNode: async ({ node, upstreamNodes, incomingEdges, upstreamText, inputAssets }) => {
         if (isReusableAssetNode(node)) {
           return passthroughWorkflowResult(node)
         }
@@ -2248,6 +2271,11 @@ export function VisualCanvasWorkspace({
         const providerId = normalizeProviderId(node.providerId || node.model || NODE_META[node.kind]?.model || NODE_META.text.model)
         const userPrompt = workflowPromptForNode(node, upstreamText)
         const upstreamImageUrl = inputAssets.find((asset) => asset.type === 'image' && asset.url)?.url
+        const edgeDirectives = buildEdgeDirectivesForNode({
+          targetNodeId: node.id,
+          nodes: [node, ...upstreamNodes],
+          edges: incomingEdges,
+        })
         const compiled = isPromptCompilerNodeKind(node.kind)
           ? compileNodePrompt({
               nodeKind: node.kind,
@@ -2257,6 +2285,7 @@ export function VisualCanvasWorkspace({
               styleBible,
               enabledSkills: enabledCreatorSkills,
               providerId,
+              edgeDirectives,
             })
           : null
         const prompt = compiled?.prompt ?? userPrompt
@@ -2570,6 +2599,13 @@ export function VisualCanvasWorkspace({
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
 
+  const handleEdgePatch = useCallback((edgeId: string, patch: Partial<CanvasEdge>) => {
+    commitEdges((current) => current.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)))
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('连接导演已保存。')
+  }, [commitEdges, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
+
   const handleQueryGenerationTask = useCallback(async (task: CanvasGenerationTask) => {
     if (task.kind !== 'video' || task.providerId !== 'volcengine-seedance-video') {
       const message = '当前任务中心第一版仅支持查询 Volcengine Seedance Video。'
@@ -2692,6 +2728,7 @@ export function VisualCanvasWorkspace({
       latestY: node.y,
     }
     setActiveNodeId(nodeId)
+    setActiveEdgeId(null)
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
       closeActivePreview()
     }
@@ -2767,6 +2804,7 @@ export function VisualCanvasWorkspace({
       closeActivePreview()
     }
     setActiveNodeId(node.id)
+    setActiveEdgeId(null)
     setEditingNodeId(node.id)
     setCanvasPrompt(node.prompt)
     syncPromptPreset(node.kind)
@@ -2784,6 +2822,7 @@ export function VisualCanvasWorkspace({
     if (type !== 'text' && type !== node.kind) return
     if (type === 'text' && node.kind !== 'text') return
     setActiveNodeId(node.id)
+    setActiveEdgeId(null)
     setEditingNodeId(null)
     setActivePreviewNodeId(node.id)
     setActivePreviewType(type)
@@ -2803,6 +2842,20 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
   }, [])
+
+  const openEdgeDirector = useCallback((edgeId: string) => {
+    const edge = latestEdgesRef.current.find((item) => item.id === edgeId)
+    if (!edge) return
+    setActiveEdgeId(edgeId)
+    setActiveNodeId(null)
+    setEditingNodeId(null)
+    closeActivePreview()
+    closePromptInspector()
+    setStoryboardPreviewOpen(false)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setNodeCreateMenu(null)
+  }, [closeActivePreview, closePromptInspector])
 
   const saveTextEditor = useCallback(() => {
     if (!textEditorNode) return
@@ -3461,19 +3514,20 @@ export function VisualCanvasWorkspace({
       return
     }
 
+    const incomingEdges = edges.filter((edge) => edge.toNodeId === nodeSnapshot.id)
+    const upstreamNodes = incomingEdges
+      .map((edge) => nodes.find((node) => node.id === edge.fromNodeId))
+      .filter((node): node is VisualCanvasNode => Boolean(node))
     const upstreamTextPrompt = nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video'
-      ? edges
-          .filter((edge) => edge.toNodeId === nodeSnapshot.id)
-          .map((edge) => nodes.find((node) => node.id === edge.fromNodeId)?.resultText)
+      ? upstreamNodes
+          .map((node) => node.resultText)
           .filter((value): value is string => Boolean(value?.trim()))
           .join('\n\n')
           .trim()
       : ''
     const generationPrompt = trimmedPrompt || upstreamTextPrompt
-    const upstreamImageAssets = edges
-      .filter((edge) => edge.toNodeId === nodeSnapshot.id)
-      .flatMap((edge) => {
-        const upstreamNode = nodes.find((n) => n.id === edge.fromNodeId)
+    const upstreamImageAssets = upstreamNodes
+      .flatMap((upstreamNode) => {
         if (!upstreamNode?.resultImageUrl) return []
         return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
       })
@@ -3539,6 +3593,11 @@ export function VisualCanvasWorkspace({
           styleBible,
           enabledSkills: enabledCreatorSkills,
           providerId: normalizedPromptModel,
+          edgeDirectives: buildEdgeDirectivesForNode({
+            targetNodeId: nodeSnapshot.id,
+            nodes: [nodeSnapshot, ...upstreamNodes],
+            edges: incomingEdges,
+          }),
         })
       : null
     const compiledMetadata = compiled ? compiledPromptMetadata(nodeSnapshot.metadataJson, compiled) : nodeSnapshot.metadataJson
@@ -4029,7 +4088,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-storyboard-preview="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -4046,6 +4105,7 @@ export function VisualCanvasWorkspace({
 
     closeActivePreview()
     closePromptInspector()
+    closeEdgeDirector()
     setStoryboardPreviewOpen(false)
     setEditingNodeId(null)
     setIsPanning(true)
@@ -4059,7 +4119,7 @@ export function VisualCanvasWorkspace({
       panY: canvasPan.y,
     }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview, closePromptInspector])
+  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview, closeEdgeDirector, closePromptInspector])
 
   const handleCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isPanning || event.pointerId !== panStartRef.current.pointerId) return
@@ -4785,7 +4845,9 @@ export function VisualCanvasWorkspace({
                     y1={fromNode.y + fromNode.height / 2}
                     x2={toNode.x - CONNECTOR_CENTER_OFFSET}
                     y2={toNode.y + toNode.height / 2}
-                    active={edge.status === 'active' || activeNodeId === fromNode.id || activeNodeId === toNode.id}
+                    active={edge.id === activeEdgeId || edge.status === 'active' || activeNodeId === fromNode.id || activeNodeId === toNode.id}
+                    directorType={getEdgeDirectorConfig(edge.metadataJson)?.type}
+                    onOpenDirector={() => openEdgeDirector(edge.id)}
                   />
                 )
               })}
@@ -4840,6 +4902,15 @@ export function VisualCanvasWorkspace({
         tasks={generationTasks}
         onClose={() => setGenerationTasksOpen(false)}
         onQueryTask={handleQueryGenerationTask}
+      />
+
+      <EdgeDirectorPanel
+        open={Boolean(activeEdge)}
+        edge={activeEdge}
+        sourceNode={activeEdgeSourceNode}
+        targetNode={activeEdgeTargetNode}
+        onClose={closeEdgeDirector}
+        onPatchEdge={handleEdgePatch}
       />
 
       <StoryboardPreviewPanel

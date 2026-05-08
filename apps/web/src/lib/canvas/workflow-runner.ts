@@ -16,6 +16,7 @@ export type CanvasWorkflowEdge = {
   id: string
   fromNodeId: string
   toNodeId: string
+  metadataJson?: unknown
 }
 
 export type CanvasWorkflowInputAsset = {
@@ -28,6 +29,7 @@ export type CanvasWorkflowInputAsset = {
 export type CanvasWorkflowRunNodeInput<TNode extends CanvasWorkflowNode> = {
   node: TNode
   upstreamNodes: TNode[]
+  incomingEdges: CanvasWorkflowEdge[]
   upstreamText: string
   inputAssets: CanvasWorkflowInputAsset[]
 }
@@ -134,6 +136,7 @@ export async function runCanvasWorkflow<TNode extends CanvasWorkflowNode>({
     const upstreamNodes = (incoming.get(nodeId) ?? [])
       .map((id) => nodeById.get(id))
       .filter((item): item is TNode => Boolean(item))
+    const incomingEdges = validEdges.filter((edge) => edge.toNodeId === nodeId)
     const upstreamText = upstreamNodes
       .map((item) => item.resultText)
       .filter((item): item is string => Boolean(item?.trim()))
@@ -146,6 +149,7 @@ export async function runCanvasWorkflow<TNode extends CanvasWorkflowNode>({
       const result = await runNode({
         node: nodeById.get(nodeId) ?? node,
         upstreamNodes,
+        incomingEdges,
         upstreamText,
         inputAssets,
       })

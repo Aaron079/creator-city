@@ -1364,12 +1364,28 @@
   overflow: visible;
 }
 
+.scope :global(.canvas-flow.is-interactive) {
+  pointer-events: auto;
+}
+
+.scope :global(.canvas-flow-hit) {
+  fill: none;
+  pointer-events: stroke;
+  stroke: transparent;
+  stroke-width: 18;
+  cursor: pointer;
+}
+
 .scope :global(.canvas-flow-path) {
   fill: none;
   stroke: rgba(255, 255, 255, 0.14);
   stroke-width: 1;
   stroke-linecap: round;
   opacity: 0.56;
+}
+
+.scope :global(.canvas-flow-path.is-dashed) {
+  stroke-dasharray: 7 9;
 }
 
 .scope :global(.canvas-flow-path.is-active) {
