@@ -10,6 +10,7 @@ import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
 import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
+import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
@@ -39,6 +40,8 @@ import {
   type CanvasWorkflowInputAsset,
 } from '@/lib/canvas/workflow-runner'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
+import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
+import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -59,7 +62,7 @@ interface CanvasLoadResponse {
   errorCode?: string
   message?: string
   project?: { id: string; title: string }
-  workflow?: { id: string; viewportJson?: unknown; updatedAt?: string }
+  workflow?: { id: string; viewportJson?: unknown; metadataJson?: unknown; updatedAt?: string }
   nodes?: VisualCanvasNode[]
   edges?: CanvasEdge[]
   viewport?: unknown
@@ -116,6 +119,14 @@ function getCanvasCacheKey(projectId: string) {
 
 function getCanvasSnapshotKey(projectId: string) {
   return `creator-city:canvas-snapshot:${projectId}`
+}
+
+function getStyleBibleKey(projectId: string) {
+  return `creator-city:style-bible:${projectId}`
+}
+
+function getEnabledSkillsKey(projectId: string) {
+  return `creator-city:enabled-skills:${projectId}`
 }
 
 function timeValue(input?: string) {
@@ -484,6 +495,84 @@ function metadataRecord(metadataJson: unknown) {
     : {}
 }
 
+function isPromptCompilerNodeKind(kind: VisualCanvasNodeKind): kind is 'text' | 'image' | 'video' {
+  return kind === 'text' || kind === 'image' || kind === 'video'
+}
+
+function compactText(value: string | undefined, limit: number) {
+  const text = value?.trim() ?? ''
+  return text.length > limit ? `${text.slice(0, limit)}...` : text
+}
+
+function compiledPromptMetadata(metadataJson: unknown, compiled: CompiledNodePrompt) {
+  return {
+    ...metadataRecord(metadataJson),
+    compiledPromptPreview: compactText(compiled.prompt, 1000),
+    compiledPromptDebug: {
+      ...compiled.debug,
+      userPrompt: compactText(compiled.debug.userPrompt, 300),
+    },
+    compiledAt: new Date().toISOString(),
+  }
+}
+
+function normalizeStyleBible(input: unknown): ProjectStyleBible {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+  const record = input as Record<string, unknown>
+  const read = (key: keyof ProjectStyleBible) => typeof record[key] === 'string' ? String(record[key]) : undefined
+  const keywords = Array.isArray(record.referenceKeywords)
+    ? record.referenceKeywords.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+    : undefined
+  return {
+    logline: read('logline'),
+    storyWorld: read('storyWorld'),
+    visualStyle: read('visualStyle'),
+    colorPalette: read('colorPalette'),
+    cameraLanguage: read('cameraLanguage'),
+    characterRules: read('characterRules'),
+    sceneRules: read('sceneRules'),
+    negativeRules: read('negativeRules'),
+    referenceKeywords: keywords,
+    updatedAt: read('updatedAt'),
+  }
+}
+
+function workflowStyleBible(metadataJson: unknown) {
+  const metadata = metadataRecord(metadataJson)
+  return metadata.styleBible ? normalizeStyleBible(metadata.styleBible) : null
+}
+
+function persistWorkflowStyleBibleFallback(projectId: string, metadataJson: unknown) {
+  if (typeof window === 'undefined' || !projectId) return
+  const fromWorkflow = workflowStyleBible(metadataJson)
+  if (!fromWorkflow) return
+  try {
+    window.localStorage.setItem(getStyleBibleKey(projectId), JSON.stringify(fromWorkflow))
+  } catch {
+    // Style Bible also remains in memory if localStorage is unavailable.
+  }
+}
+
+function deriveStyleBibleTemplate(nodes: VisualCanvasNode[], current: ProjectStyleBible): ProjectStyleBible {
+  const textSeed = nodes
+    .map((node) => node.resultText || node.prompt || node.resultPreview)
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join('\n')
+  const seed = compactText(textSeed, 280)
+  return {
+    ...current,
+    logline: current.logline || seed || '一句话描述项目核心冲突、主角和目标。',
+    storyWorld: current.storyWorld || '设定故事发生的地点、时代、社会规则和世界观边界。',
+    visualStyle: current.visualStyle || '电影感、写实质感、统一媒介语言和高制作值。',
+    colorPalette: current.colorPalette || '定义主色调、辅助色、光影对比和整体氛围。',
+    cameraLanguage: current.cameraLanguage || '定义景别、焦段、机位、构图、运动方式和摄影风格。',
+    characterRules: current.characterRules || '定义主角外貌、服装、道具、年龄、身份和不可改变特征。',
+    sceneRules: current.sceneRules || '定义主要场景结构、建筑/室内外、天气和时代符号。',
+    negativeRules: current.negativeRules || '避免风格漂移、角色变形、年龄变化、场景时代错乱和低质量画面。',
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 function textSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
@@ -566,6 +655,7 @@ async function callGenerationApi(
   inputAssets?: Array<{ id: string; type: string; url?: string }>,
   projectId?: string,
   workflowId?: string,
+  system?: string,
 ): Promise<GenerateApiResult> {
   const endpoint =
     nodeType === 'image' ? '/api/generate/image'
@@ -583,6 +673,8 @@ async function callGenerationApi(
     providerId,
     nodeType,
     prompt,
+    compiledPrompt: prompt,
+    system,
     params,
     maxTokens,
     nodeId,
@@ -881,7 +973,7 @@ export function VisualCanvasWorkspace({
   const [shareCopied, setShareCopied] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
-  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | null>(null)
+  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -891,6 +983,8 @@ export function VisualCanvasWorkspace({
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
+  const [styleBible, setStyleBible] = useState<ProjectStyleBible>({})
+  const [enabledSkillIds, setEnabledSkillIds] = useState<string[]>(() => getDefaultCreatorSkillIds())
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
@@ -972,6 +1066,23 @@ export function VisualCanvasWorkspace({
   useEffect(() => {
     latestCommentsRef.current = comments
   }, [comments])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !projectId) return
+    try {
+      const rawStyle = window.localStorage.getItem(getStyleBibleKey(projectId))
+      setStyleBible(rawStyle ? normalizeStyleBible(JSON.parse(rawStyle)) : {})
+    } catch {
+      setStyleBible({})
+    }
+    try {
+      const rawSkills = window.localStorage.getItem(getEnabledSkillsKey(projectId))
+      const parsed = rawSkills ? JSON.parse(rawSkills) : null
+      setEnabledSkillIds(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : getDefaultCreatorSkillIds())
+    } catch {
+      setEnabledSkillIds(getDefaultCreatorSkillIds())
+    }
+  }, [projectId])
 
   useEffect(() => {
     const stopAutosave = () => {
@@ -1559,13 +1670,14 @@ export function VisualCanvasWorkspace({
           devPerf('canvas-fetch', 'end')
           const ensureData = await ensureRes.json().catch(() => ({})) as {
             success?: boolean; errorCode?: string; message?: string
-            project?: { id: string; title: string }; workflow?: { id: string; viewportJson?: unknown; updatedAt?: string }
+            project?: { id: string; title: string }; workflow?: { id: string; viewportJson?: unknown; metadataJson?: unknown; updatedAt?: string }
             nodes?: VisualCanvasNode[]; edges?: CanvasEdge[]; viewport?: unknown; serverUpdatedAt?: string
           }
           if (ensureRes.status === 401) { router.replace(`/auth/login?next=${encodeURIComponent('/create')}`); return }
           if (ensureData.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
           if (!ensureRes.ok || !ensureData.project?.id || !ensureData.workflow?.id) throw new Error(ensureData.message ?? '打开项目失败。')
           if (cancelled) return
+          persistWorkflowStyleBibleFallback(ensureData.project.id, ensureData.workflow.metadataJson)
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
@@ -1641,6 +1753,7 @@ export function VisualCanvasWorkspace({
         }
         if (!response.ok) throw new Error(data.message ?? '加载画布失败。')
         if (cancelled) return
+        persistWorkflowStyleBibleFallback(resolvedProjectId, data.workflow?.metadataJson)
 
         // Persist so next visit to /create (without ?projectId) reopens this project
         try {
@@ -2031,6 +2144,41 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
   )
+  const enabledCreatorSkills = useMemo(
+    () => resolveCreatorSkills(enabledSkillIds),
+    [enabledSkillIds],
+  )
+
+  const persistStyleBibleSettings = useCallback((nextStyleBible = styleBible, nextSkillIds = enabledSkillIds) => {
+    if (typeof window === 'undefined' || !projectId) return
+    const styleBibleWithTimestamp = {
+      ...nextStyleBible,
+      updatedAt: new Date().toISOString(),
+    }
+    setStyleBible(styleBibleWithTimestamp)
+    setEnabledSkillIds(nextSkillIds)
+    try {
+      window.localStorage.setItem(getStyleBibleKey(projectId), JSON.stringify(styleBibleWithTimestamp))
+      window.localStorage.setItem(getEnabledSkillsKey(projectId), JSON.stringify(nextSkillIds))
+    } catch {
+      // Local persistence is a fallback; generation can still use in-memory settings.
+    }
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+  }, [enabledSkillIds, flushLocalSnapshot, projectId, scheduleCanvasSave, styleBible])
+
+  const toggleCreatorSkill = useCallback((skillId: string) => {
+    setEnabledSkillIds((current) => (
+      current.includes(skillId)
+        ? current.filter((id) => id !== skillId)
+        : [...current, skillId]
+    ))
+  }, [])
+
+  const generateStyleBibleTemplate = useCallback(() => {
+    setStyleBible((current) => deriveStyleBibleTemplate(latestNodesRef.current, current))
+    showCanvasFeedback('已根据当前节点生成风格圣经模板。')
+  }, [showCanvasFeedback])
 
   const handleRunWorkflow = useCallback(async () => {
     if (workflowRunStatus === 'running') return
@@ -2063,7 +2211,23 @@ export function VisualCanvasWorkspace({
 
         const nodeType = getProviderNodeType(node.kind)
         const providerId = normalizeProviderId(node.providerId || node.model || NODE_META[node.kind]?.model || NODE_META.text.model)
-        const prompt = workflowPromptForNode(node, upstreamText)
+        const userPrompt = workflowPromptForNode(node, upstreamText)
+        const upstreamImageUrl = inputAssets.find((asset) => asset.type === 'image' && asset.url)?.url
+        const compiled = isPromptCompilerNodeKind(node.kind)
+          ? compileNodePrompt({
+              nodeKind: node.kind,
+              userPrompt: node.prompt?.trim() || userPrompt,
+              upstreamText,
+              upstreamImageUrl,
+              styleBible,
+              enabledSkills: enabledCreatorSkills,
+              providerId,
+            })
+          : null
+        const prompt = compiled?.prompt ?? userPrompt
+        const nodeForGeneration = compiled
+          ? { ...node, metadataJson: compiledPromptMetadata(node.metadataJson, compiled) }
+          : node
         if (!prompt.trim()) {
           throw new Error('WORKFLOW_NODE_PROMPT_REQUIRED: 节点缺少 prompt 或上游文本。')
         }
@@ -2077,10 +2241,11 @@ export function VisualCanvasWorkspace({
           workflowInputAssets(inputAssets),
           projectId,
           workflowId,
+          compiled?.system,
         )
 
         if (node.kind === 'video' && generateResult.async && generateResult.taskId) {
-          return workflowResultFromGenerateResult(node, generateResult, prompt)
+          return workflowResultFromGenerateResult(nodeForGeneration, generateResult, prompt)
         }
 
         if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
@@ -2099,7 +2264,7 @@ export function VisualCanvasWorkspace({
           throw new Error(workflowErrorFromGenerateResult(node, generateResult))
         }
 
-        return workflowResultFromGenerateResult(node, generateResult, prompt)
+        return workflowResultFromGenerateResult(nodeForGeneration, generateResult, prompt)
       },
     })
 
@@ -2123,7 +2288,7 @@ export function VisualCanvasWorkspace({
     setWorkflowRunStatus('done')
     setWorkflowRunMessage('工作流完成')
     showCanvasFeedback('工作流完成')
-  }, [activeNodeId, commitNodes, projectId, saveCanvas, showCanvasFeedback, workflowId, workflowRunStatus])
+  }, [activeNodeId, commitNodes, enabledCreatorSkills, projectId, saveCanvas, showCanvasFeedback, styleBible, workflowId, workflowRunStatus])
 
   const generationTasks = useMemo(() => collectGenerationTasks(nodes), [nodes])
   const runningGenerationTaskCount = useMemo(
@@ -2714,6 +2879,16 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
   }, [flushLocalSnapshot])
 
+  const handleOpenSkillPanel = useCallback(() => {
+    flushLocalSnapshot()
+    setActivePanel((current) => (current === 'skills' ? null : 'skills'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [flushLocalSnapshot])
+
   const handleOpenImageEditor = useCallback(() => {
     flushLocalSnapshot()
     setHasStarted(true)
@@ -3259,6 +3434,7 @@ export function VisualCanvasWorkspace({
         if (!upstreamNode?.resultImageUrl) return []
         return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
       })
+    const upstreamImageUrl = upstreamImageAssets.find((asset) => asset.url)?.url
     if (!generationPrompt && !(nodeSnapshot.kind === 'video' && upstreamImageAssets.length > 0)) {
       const errMsg = nodeSnapshot.kind === 'image'
         ? '请先输入图片 prompt，或连接一个已有文本结果的 Text 节点。'
@@ -3311,6 +3487,23 @@ export function VisualCanvasWorkspace({
       }
     }
 
+    const compiled = isPromptCompilerNodeKind(nodeSnapshot.kind)
+      ? compileNodePrompt({
+          nodeKind: nodeSnapshot.kind,
+          userPrompt: trimmedPrompt || generationPrompt || '根据上游素材生成内容。',
+          upstreamText: upstreamTextPrompt,
+          upstreamImageUrl,
+          styleBible,
+          enabledSkills: enabledCreatorSkills,
+          providerId: normalizedPromptModel,
+        })
+      : null
+    const compiledMetadata = compiled ? compiledPromptMetadata(nodeSnapshot.metadataJson, compiled) : nodeSnapshot.metadataJson
+    const generationNodeSnapshot: VisualCanvasNode = {
+      ...nodeSnapshot,
+      metadataJson: compiledMetadata,
+    }
+
     setDialogError(null)
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
@@ -3320,20 +3513,22 @@ export function VisualCanvasWorkspace({
       ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
       status: 'generating',
       errorMessage: undefined,
+      metadataJson: compiledMetadata,
     })
 
     void callGenerationApi(
       nodeType,
       normalizedPromptModel,
-      generationPrompt,
+      compiled?.prompt ?? generationPrompt,
       { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
       nodeSnapshot.id,
       upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
       nodeType === 'image' || nodeType === 'video' ? projectId : undefined,
       nodeType === 'image' || nodeType === 'video' ? workflowId : undefined,
+      compiled?.system,
     ).then(async (result) => {
       if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
-        const metadataJson = videoSuccessMetadata(nodeSnapshot, result, normalizedPromptModel)
+        const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel)
         handleNodePatch(nodeSnapshot.id, {
           status: 'running',
           resultPreview: '视频任务已提交，正在生成中',
@@ -3371,8 +3566,8 @@ export function VisualCanvasWorkspace({
               errorMessage: errMsg,
               resultPreview: jobFallback,
               outputLabel: jobFallback,
-              ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, jobResult) } : {}),
-              ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(nodeSnapshot, jobResult, normalizedPromptModel) } : {}),
+              ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, jobResult) } : {}),
+              ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, jobResult, normalizedPromptModel) } : {}),
             })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -3392,7 +3587,7 @@ export function VisualCanvasWorkspace({
             outputLabel: jobFallback,
             resultVideoUrl: jobResult.result?.videoUrl ?? nodeSnapshot.resultVideoUrl,
             errorMessage: undefined,
-            ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, jobResult, normalizedPromptModel) } : {}),
+            ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(generationNodeSnapshot, jobResult, normalizedPromptModel) } : {}),
             preview: jobResult.result?.videoUrl
               ? { type: 'remote-video', url: jobResult.result.videoUrl, poster: jobResult.result.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
               : nodeSnapshot.preview,
@@ -3436,8 +3631,8 @@ export function VisualCanvasWorkspace({
           errorMessage: errMsg,
           resultPreview: fallbackPreview,
           outputLabel: fallbackPreview,
-          ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(nodeSnapshot, result) } : {}),
-          ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
+          ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, result) } : {}),
+          ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
         })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
@@ -3462,9 +3657,9 @@ export function VisualCanvasWorkspace({
         resultImageUrl: resultImageUrl ?? nodeSnapshot.resultImageUrl,
         resultVideoUrl: resultVideoUrl ?? nodeSnapshot.resultVideoUrl,
         errorMessage: undefined,
-        ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
-        ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
-        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(nodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
@@ -3504,7 +3699,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
+  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, enabledCreatorSkills, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -4338,6 +4533,7 @@ export function VisualCanvasWorkspace({
           onToggleCommentsPanel={handleToggleCommentsPanel}
           onOpenHistoryPanel={handleOpenHistoryPanel}
           onOpenImageEditor={handleOpenImageEditor}
+          onOpenSkillPanel={handleOpenSkillPanel}
         />
       ) : null}
 
@@ -4403,6 +4599,29 @@ export function VisualCanvasWorkspace({
               nodeTitle={activeNode?.kind === 'image' ? activeNode.title : '图片编辑器'}
               appliedAction={appliedImageEdit}
               onApply={handleApplyImageEdit}
+              onClose={closeCanvasPanel}
+            />
+          </motion.div>
+        ) : activePanel === 'skills' ? (
+          <motion.div
+            key="skills"
+            className="canvas-motion-panel-layer"
+            initial={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <CanvasSkillPanel
+              styleBible={styleBible}
+              skills={CREATOR_SKILL_REGISTRY}
+              enabledSkillIds={enabledSkillIds}
+              onStyleBibleChange={setStyleBible}
+              onToggleSkill={toggleCreatorSkill}
+              onGenerateTemplate={generateStyleBibleTemplate}
+              onApply={() => {
+                persistStyleBibleSettings(styleBible, enabledSkillIds)
+                showCanvasFeedback('风格圣经与 Skills 已应用。')
+              }}
               onClose={closeCanvasPanel}
             />
           </motion.div>
@@ -4550,6 +4769,8 @@ export function VisualCanvasWorkspace({
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
+                enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
+                onOpenSkillPanel={handleOpenSkillPanel}
               />
             </div>
           ))}

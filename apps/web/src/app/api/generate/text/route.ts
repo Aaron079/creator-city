@@ -22,6 +22,7 @@ type TextGenerateResponse = GenerateResponse & {
 type TextGenerateBody = Partial<GenerateRequest> & {
   maxTokens?: number
   system?: string
+  compiledPrompt?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     const providerId = body.providerId || 'openai-text'
-    const prompt = body.prompt?.trim() ?? ''
+    const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
     if (!prompt) {
       return NextResponse.json({
         success: false,

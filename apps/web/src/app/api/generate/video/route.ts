@@ -14,6 +14,8 @@ type VideoGenerateBody = Partial<GenerateRequest> & {
   imageUrl?: string
   duration?: number
   aspectRatio?: string
+  system?: string
+  compiledPrompt?: string
 }
 
 const VIDEO_PROVIDER_ORDER = ['volcengine-seedance-video', 'custom-video-gateway', 'creator-video-gateway'] as const
@@ -100,7 +102,7 @@ export async function POST(request: NextRequest) {
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
-  const prompt = body.prompt ?? ''
+  const prompt = body.compiledPrompt?.trim() || body.prompt || ''
   const imageUrl = firstImageInput(body)
 
   if (!prompt.trim() && !imageUrl) {

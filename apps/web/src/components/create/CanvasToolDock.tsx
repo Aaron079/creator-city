@@ -12,6 +12,7 @@ import {
   ListPlus,
   MessageCircle,
   Plus,
+  Sparkles,
   Text,
   Upload,
   UserRound,
@@ -31,6 +32,7 @@ interface CanvasToolDockProps {
   onToggleCommentsPanel: () => void
   onOpenHistoryPanel: () => void
   onOpenImageEditor: () => void
+  onOpenSkillPanel: () => void
 }
 
 const TOOLS = [
@@ -39,6 +41,7 @@ const TOOLS = [
   { id: 'templates', label: '模板', icon: ListPlus },
   { id: 'comments', label: '打开评论模式', icon: MessageCircle },
   { id: 'history', label: '历史', icon: History },
+  { id: 'skills', label: '风格圣经', icon: Sparkles },
   { id: 'image-editor', label: '高级编辑', icon: ImagePlus },
 ] as const
 
@@ -70,6 +73,7 @@ export function CanvasToolDock({
   onToggleCommentsPanel,
   onOpenHistoryPanel,
   onOpenImageEditor,
+  onOpenSkillPanel,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
 
@@ -94,6 +98,10 @@ export function CanvasToolDock({
     }
     if (toolId === 'history') {
       onOpenHistoryPanel()
+      return
+    }
+    if (toolId === 'skills') {
+      onOpenSkillPanel()
       return
     }
     if (toolId === 'image-editor') {

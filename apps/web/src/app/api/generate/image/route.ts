@@ -16,6 +16,8 @@ type ImageGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
   aspectRatio?: string
   size?: string
+  system?: string
+  compiledPrompt?: string
 }
 
 const IMAGE_PROVIDER_ORDER = ['volcengine-seedream-image', 'jimeng-image', 'openai-image'] as const
@@ -104,7 +106,7 @@ export async function POST(request: NextRequest) {
       }
       return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [])
     }
-    const prompt = body.prompt?.trim() ?? ''
+    const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
     if (!prompt) {
       return NextResponse.json({
         success: false,

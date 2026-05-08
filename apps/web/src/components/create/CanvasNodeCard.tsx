@@ -54,6 +54,8 @@ interface CanvasNodeCardProps {
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
+  enabledSkillCount?: number
+  onOpenSkillPanel?: () => void
   dragging?: boolean
 }
 
@@ -248,6 +250,8 @@ export function CanvasNodeCard({
   onOpenContextMenu,
   onEdit,
   onOpenPreview,
+  enabledSkillCount = 0,
+  onOpenSkillPanel,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
@@ -598,6 +602,22 @@ export function CanvasNodeCard({
           )}
         </div>
       </div>
+      {enabledSkillCount > 0 ? (
+        <button
+          type="button"
+          className="canvas-node-skill-badge"
+          data-no-node-drag="true"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenSkillPanel?.()
+          }}
+          title="打开风格圣经"
+        >
+          Skills: {enabledSkillCount}
+        </button>
+      ) : null}
     </motion.div>
   )
 }
