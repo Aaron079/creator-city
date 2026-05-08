@@ -353,10 +353,9 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     displayName: 'Volcengine Seedance Video',
     capability: ['Video', 'Text-to-Video', 'Image-to-Video'],
     category: 'China',
-    envKeys: ['VOLCENGINE_ARK_API_KEY'],
-    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDANCE_MODEL'],
+    envKeys: ['VOLCENGINE_ARK_API_KEY', 'VOLCENGINE_SEEDANCE_MODEL'],
+    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL'],
     nodeType: 'video',
-    defaultModel: 'seedance-2-0',
     modelEnvKey: 'VOLCENGINE_SEEDANCE_MODEL',
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
@@ -364,7 +363,7 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     estimatedCostUsd: 0.05,
     testMode: 'env-only',
     providerFamily: 'china-ai',
-    setupHint: '配置 VOLCENGINE_ARK_API_KEY；可选 VOLCENGINE_REGION、VOLCENGINE_ARK_BASE_URL 和 VOLCENGINE_SEEDANCE_MODEL。',
+    setupHint: '配置 VOLCENGINE_ARK_API_KEY；VOLCENGINE_SEEDANCE_MODEL 需要从火山方舟 Seedance 调用示例复制真实 model。可选 VOLCENGINE_REGION 和 VOLCENGINE_ARK_BASE_URL。',
   },
   {
     providerId: 'volcengine-seedream-image',
@@ -707,8 +706,8 @@ function toProviderStatusRow(definition: AdminProviderDefinition, account?: Admi
 }
 
 function getDefinitionModel(definition: AdminProviderDefinition) {
-  if (!definition.defaultModel) return ''
-  return definition.modelEnvKey ? process.env[definition.modelEnvKey] || definition.defaultModel : definition.defaultModel
+  if (definition.modelEnvKey) return process.env[definition.modelEnvKey] || definition.defaultModel || ''
+  return definition.defaultModel || ''
 }
 
 function getDefinitionBaseUrl(definition: AdminProviderDefinition) {

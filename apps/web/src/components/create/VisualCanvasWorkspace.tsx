@@ -432,6 +432,8 @@ type GenerateApiResult = GenerateResponse & {
   async?: boolean
   taskId?: string
   videoUrl?: string
+  submittedAt?: string
+  completedAt?: string
 }
 
 type ImageProviderStatusInfo = {
@@ -518,12 +520,19 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ? result.result.metadata as Record<string, unknown>
     : {}
   const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
+  const generationJobId = result.jobId
+    ?? (typeof resultMetadata.generationJobId === 'string' ? resultMetadata.generationJobId : undefined)
+    ?? taskId
+  const submittedAt = result.submittedAt ?? (typeof resultMetadata.submittedAt === 'string' ? resultMetadata.submittedAt : undefined)
+  const completedAt = result.completedAt ?? (typeof resultMetadata.completedAt === 'string' ? resultMetadata.completedAt : undefined)
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
     model: result.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined),
     taskId,
-    generationJobId: result.jobId ?? taskId,
+    generationJobId,
+    ...(submittedAt ? { submittedAt } : {}),
+    ...(completedAt ? { completedAt } : {}),
   }
 }
 
@@ -567,13 +576,37 @@ async function callGenerationApi(
     console.info('[canvas-generate] submit', { nodeType, providerId })
   }
 
+  const firstImageUrl = inputAssets?.find((asset) => asset.type === 'image' && asset.url)?.url
+  const requestBody = {
+    providerId,
+    nodeType,
+    prompt,
+    params,
+    maxTokens,
+    nodeId,
+    inputAssets,
+    projectId,
+    workflowId,
+    ...(nodeType === 'video'
+      ? {
+          imageUrl: firstImageUrl,
+          duration: typeof params?.duration === 'number' ? params.duration : 5,
+          aspectRatio: typeof params?.aspectRatio === 'string'
+            ? params.aspectRatio
+            : typeof params?.ratio === 'string'
+              ? params.ratio
+              : '16:9',
+        }
+      : {}),
+  }
+
   let response: Response
   try {
     response = await fetch(endpoint, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ providerId, nodeType, prompt, params, maxTokens, nodeId, inputAssets, projectId, workflowId }),
+      body: JSON.stringify(requestBody),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '网络请求失败'
@@ -2945,8 +2978,8 @@ export function VisualCanvasWorkspace({
         if (statusResult.status === 'running') {
           handleNodePatch(nodeSnapshot.id, {
             status: 'running',
-            resultPreview: statusResult.message || '视频任务已提交，正在生成中',
-            outputLabel: statusResult.message || '视频生成中',
+            resultPreview: '视频生成中，请稍后再查。',
+            outputLabel: '视频生成中',
             metadataJson: {
               ...metadataRecord(nodeSnapshot.metadataJson),
               providerId: statusResult.providerId || normalizedPromptModel,
@@ -2955,7 +2988,7 @@ export function VisualCanvasWorkspace({
               generationJobId: currentTaskId,
             },
           })
-          showCanvasFeedback('视频任务已提交，正在生成中')
+          showCanvasFeedback('视频生成中，请稍后再查。')
           return
         }
         if (!statusResult.success || statusResult.status === 'failed') {
@@ -2990,6 +3023,7 @@ export function VisualCanvasWorkspace({
           model: statusResult.model ?? currentMetadata.model,
           taskId: currentTaskId,
           generationJobId: currentTaskId,
+          completedAt: new Date().toISOString(),
         }
         handleNodePatch(nodeSnapshot.id, {
           status: 'done',

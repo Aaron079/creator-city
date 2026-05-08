@@ -195,6 +195,10 @@ export function CanvasNodeCard({
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
   const [imageLinkCopied, setImageLinkCopied] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false)
+  const videoPreviewUrl = node.kind === 'video'
+    ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
+    : undefined
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -227,6 +231,10 @@ export function CanvasNodeCard({
     setImageLinkCopied(false)
     setImageNaturalRatio(null)
   }, [node.resultImageUrl])
+
+  useEffect(() => {
+    setVideoPreviewOpen(false)
+  }, [videoPreviewUrl])
 
   const copyImageLink = async () => {
     if (!node.resultImageUrl) return
@@ -397,16 +405,34 @@ export function CanvasNodeCard({
                 } as CSSProperties
                 : node.kind === 'image' ? imageFrameStyle : undefined}
             >
-              {node.preview?.type === 'remote-video' && node.preview.url ? (
-                <video
-                  className="canvas-node-preview-video"
-                  src={node.preview.url}
-                  poster={node.preview.poster}
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                />
+              {node.kind === 'video' && videoPreviewUrl ? (
+                <div
+                  className="canvas-node-video-button"
+                  role="button"
+                  tabIndex={0}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setVideoPreviewOpen(true)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setVideoPreviewOpen(true)
+                  }}
+                  aria-label="预览视频"
+                >
+                  <video
+                    className="canvas-node-preview-video"
+                    src={videoPreviewUrl}
+                    poster={node.preview?.poster}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                </div>
               ) : null}
               {node.kind === 'image' && node.resultImageUrl ? (
                 <button
@@ -499,6 +525,30 @@ export function CanvasNodeCard({
                 {imageLinkCopied ? '已复制' : '复制图片链接'}
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+      {videoPreviewOpen && videoPreviewUrl ? (
+        <div
+          className="canvas-video-preview-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            if (event.target === event.currentTarget) setVideoPreviewOpen(false)
+          }}
+        >
+          <section
+            className="canvas-video-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="视频预览"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-video-preview-head">
+              <span>{node.title}</span>
+              <button type="button" onClick={() => setVideoPreviewOpen(false)} aria-label="关闭视频预览">×</button>
+            </div>
+            <video src={videoPreviewUrl} className="canvas-video-preview-media" controls autoPlay playsInline />
           </section>
         </div>
       ) : null}

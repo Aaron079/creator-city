@@ -5,6 +5,7 @@ import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { generateSeedanceVideo } from '@/lib/providers/china/volcengine'
+import { getCurrentUser } from '@/lib/auth/current-user'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,6 +87,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
   }
 
+  const currentUser = await getCurrentUser()
+  if (!currentUser) {
+    return NextResponse.json({
+      success: false,
+      errorCode: 'UNAUTHORIZED',
+      message: '请先登录后再生成视频。',
+      status: 'failed',
+    }, { status: 401 })
+  }
+
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
@@ -111,10 +122,11 @@ export async function POST(request: NextRequest) {
   if (providerId === 'volcengine-seedance-video') {
     const params = body.params ?? {}
     const duration = body.duration
-      ?? (typeof params.duration === 'number' ? params.duration : undefined)
+      ?? (typeof params.duration === 'number' ? params.duration : 5)
     const aspectRatio = body.aspectRatio
       ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
       ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
+      ?? '16:9'
     const raw = await generateSeedanceVideo({
       prompt,
       imageUrl,
@@ -143,6 +155,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (raw.async) {
+      const submittedAt = new Date().toISOString()
       return NextResponse.json({
         success: true,
         async: true,
@@ -153,17 +166,20 @@ export async function POST(request: NextRequest) {
         mode: 'real',
         status: 'running',
         message: '视频任务已提交，正在生成中',
+        submittedAt,
         result: {
           metadata: {
             providerId,
             model: raw.model,
             taskId: raw.taskId,
             generationJobId: raw.taskId,
+            submittedAt,
           },
         },
       }, { status: 200 })
     }
 
+    const completedAt = new Date().toISOString()
     return NextResponse.json({
       success: true,
       async: false,
@@ -173,12 +189,14 @@ export async function POST(request: NextRequest) {
       mode: 'real',
       status: 'succeeded',
       message: `视频生成成功（${raw.model}）`,
+      completedAt,
       result: {
         videoUrl: raw.videoUrl,
         previewUrl: raw.videoUrl,
         metadata: {
           providerId,
           model: raw.model,
+          completedAt,
         },
       },
     }, { status: 200 })

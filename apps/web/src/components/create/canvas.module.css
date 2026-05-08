@@ -5369,6 +5369,14 @@
   padding: 0;
 }
 
+.scope :global(.canvas-node-video-button) {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  cursor: zoom-in;
+}
+
 .scope :global(.canvas-node-preview-video) {
   position: absolute;
   inset: 0;
@@ -5377,6 +5385,10 @@
   object-fit: cover;
   opacity: 0;
   transition: opacity 0.18s ease;
+}
+
+.scope :global(.canvas-node-card.node-video .canvas-node-preview-video) {
+  opacity: 1;
 }
 
 .scope :global(.canvas-node-preview-image) {
@@ -5433,7 +5445,8 @@
   filter: grayscale(0.4);
 }
 
-.scope :global(.canvas-image-preview-backdrop) {
+.scope :global(.canvas-image-preview-backdrop),
+.scope :global(.canvas-video-preview-backdrop) {
   position: fixed;
   inset: 0;
   z-index: 90;
@@ -5443,7 +5456,8 @@
   padding: 24px;
 }
 
-.scope :global(.canvas-image-preview-dialog) {
+.scope :global(.canvas-image-preview-dialog),
+.scope :global(.canvas-video-preview-dialog) {
   display: grid;
   width: min(960px, calc(100vw - 48px));
   max-height: min(86vh, 860px);
@@ -5458,6 +5472,7 @@
 }
 
 .scope :global(.canvas-image-preview-head),
+.scope :global(.canvas-video-preview-head),
 .scope :global(.canvas-image-preview-actions) {
   display: flex;
   align-items: center;
@@ -5465,7 +5480,8 @@
   gap: 12px;
 }
 
-.scope :global(.canvas-image-preview-head span) {
+.scope :global(.canvas-image-preview-head span),
+.scope :global(.canvas-video-preview-head span) {
   min-width: 0;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.82);
@@ -5476,6 +5492,7 @@
 }
 
 .scope :global(.canvas-image-preview-head button),
+.scope :global(.canvas-video-preview-head button),
 .scope :global(.canvas-image-preview-actions button) {
   display: inline-flex;
   min-height: 34px;
@@ -5490,20 +5507,27 @@
   font-weight: 720;
 }
 
-.scope :global(.canvas-image-preview-head button) {
+.scope :global(.canvas-image-preview-head button),
+.scope :global(.canvas-video-preview-head button) {
   width: 34px;
   padding: 0;
   font-size: 22px;
   line-height: 1;
 }
 
-.scope :global(.canvas-image-preview-media) {
+.scope :global(.canvas-image-preview-media),
+.scope :global(.canvas-video-preview-media) {
   min-height: 0;
   max-height: 68vh;
   max-width: 100%;
   justify-self: center;
   align-self: center;
   object-fit: contain;
+}
+
+.scope :global(.canvas-video-preview-media) {
+  width: min(100%, 960px);
+  background: #000;
 }
 
 .scope :global(.canvas-image-preview-error) {

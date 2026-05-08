@@ -8,16 +8,15 @@ import {
 
 const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const VOLCENGINE_SEEDANCE_PROVIDER_ID = 'volcengine-seedance-video' as const
-const VOLCENGINE_SEEDANCE_DEFAULT_MODEL = 'seedance-2-0'
 
 export const volcengineProviderConfigs: ChinaProviderConfig[] = [
   {
     providerId: VOLCENGINE_SEEDANCE_PROVIDER_ID,
-    envKeys: ['VOLCENGINE_ARK_API_KEY'],
-    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_SEEDANCE_MODEL'],
+    envKeys: ['VOLCENGINE_ARK_API_KEY', 'VOLCENGINE_SEEDANCE_MODEL'],
+    optionalEnvKeys: ['VOLCENGINE_REGION', 'VOLCENGINE_ARK_BASE_URL'],
     defaultBaseUrl: VOLCENGINE_ARK_DEFAULT_BASE_URL,
     baseUrlEnvKey: 'VOLCENGINE_ARK_BASE_URL',
-    defaultModel: VOLCENGINE_SEEDANCE_DEFAULT_MODEL,
+    defaultModel: '',
     modelEnvKey: 'VOLCENGINE_SEEDANCE_MODEL',
   },
   {
@@ -125,8 +124,10 @@ function findTaskId(value: unknown): string | null {
     const candidate = record[key]
     if (typeof candidate === 'string' && candidate) return candidate
   }
-  const data = record.data
-  if (data && typeof data === 'object') return findTaskId(data)
+  for (const nested of Object.values(record)) {
+    const found = findTaskId(nested)
+    if (found) return found
+  }
   return null
 }
 
@@ -146,7 +147,9 @@ function findVideoUrl(value: unknown): string | null {
   if (typeof value !== 'object') return null
   const record = value as Record<string, unknown>
   for (const key of ['video_url', 'videoUrl', 'url', 'output_url', 'outputUrl', 'content_url', 'contentUrl']) {
-    const found = findVideoUrl(record[key])
+    const candidate = record[key]
+    if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) return candidate
+    const found = findVideoUrl(candidate)
     if (found) return found
   }
   for (const nested of Object.values(record)) {
@@ -177,6 +180,15 @@ function getRawError(data: unknown, fallback: string) {
       ? record.request_id
       : undefined
   return { message, code, requestId }
+}
+
+function upstreamMessage(data: unknown, raw: string, limit = 1000) {
+  if (raw.trim()) return raw.slice(0, limit)
+  try {
+    return JSON.stringify(data).slice(0, limit)
+  } catch {
+    return ''
+  }
 }
 
 function isModelNotFoundError(status: number, message: string) {
@@ -234,6 +246,7 @@ export type SeedanceVideoResult =
       taskId: string
       status: 'running'
       message: string
+      upstream?: string
     }
   | {
       success: true
@@ -288,9 +301,9 @@ export type SeedanceVideoStatusResult =
 
 export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<SeedanceVideoResult> {
   const providerId = VOLCENGINE_SEEDANCE_PROVIDER_ID
-  const model = input.model || process.env.VOLCENGINE_SEEDANCE_MODEL || VOLCENGINE_SEEDANCE_DEFAULT_MODEL
+  const model = (input.model || process.env.VOLCENGINE_SEEDANCE_MODEL || '').trim()
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY
-  const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL
+  const baseUrl = (process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL).replace(/\/+$/, '')
 
   if (!apiKey) {
     return {
@@ -299,6 +312,15 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       model,
       errorCode: 'PROVIDER_NOT_CONFIGURED',
       message: 'VOLCENGINE_ARK_API_KEY 未配置',
+    }
+  }
+  if (!model) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
+      message: '请在 Vercel 填写 VOLCENGINE_SEEDANCE_MODEL，值从火山方舟 Seedance 调用示例复制。',
     }
   }
 
@@ -323,9 +345,11 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
   const body: Record<string, unknown> = {
     model,
     content,
+    parameters: {
+      ...(input.duration ? { duration: input.duration } : {}),
+      aspect_ratio: input.aspectRatio || '16:9',
+    },
   }
-  if (input.duration) body.duration = input.duration
-  if (input.aspectRatio) body.ratio = input.aspectRatio
   if (input.projectId || input.workflowId || input.nodeId) {
     body.metadata = {
       projectId: input.projectId,
@@ -370,10 +394,10 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
         success: false,
         providerId,
         model,
-        errorCode: 'VOLCENGINE_SEEDANCE_FAILED',
+        errorCode: 'SEEDANCE_TASK_CREATE_FAILED',
         message: rawError.message,
         upstreamStatus: response.status,
-        upstreamMessage: rawError.message,
+        upstreamMessage: upstreamMessage(data, raw) || rawError.message,
         rawCode: rawError.code,
         requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
       }
@@ -400,6 +424,7 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
         taskId,
         status: 'running',
         message: '视频任务已提交',
+        upstream: upstreamMessage(data, raw),
       }
     }
 
@@ -407,10 +432,10 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       success: false,
       providerId,
       model,
-      errorCode: 'SEEDANCE_API_MAPPING_REQUIRED',
-      message: 'Seedance API 已配置，但请求字段/路径需要按火山官方文档确认。',
+      errorCode: 'SEEDANCE_RESPONSE_UNRECOGNIZED',
+      message: 'Seedance 创建任务返回结构无法识别，请查看 upstreamMessage。',
       upstreamStatus: response.status,
-      upstreamMessage: raw.slice(0, 500),
+      upstreamMessage: upstreamMessage(data, raw),
     }
   } catch (error) {
     const aborted = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
@@ -429,9 +454,9 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
 
 export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVideoStatusResult> {
   const providerId = VOLCENGINE_SEEDANCE_PROVIDER_ID
-  const model = process.env.VOLCENGINE_SEEDANCE_MODEL || VOLCENGINE_SEEDANCE_DEFAULT_MODEL
+  const model = process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() || ''
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY
-  const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL
+  const baseUrl = (process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL).replace(/\/+$/, '')
 
   if (!apiKey) {
     return {
@@ -442,6 +467,17 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
       status: 'error',
       errorCode: 'PROVIDER_NOT_CONFIGURED',
       message: 'VOLCENGINE_ARK_API_KEY 未配置',
+    }
+  }
+  if (!model) {
+    return {
+      success: false,
+      providerId,
+      model,
+      taskId,
+      status: 'error',
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
+      message: '请在 Vercel 填写 VOLCENGINE_SEEDANCE_MODEL，值从火山方舟 Seedance 调用示例复制。',
     }
   }
 
@@ -468,10 +504,10 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
           model,
           taskId,
           status: 'error',
-          errorCode: 'VOLCENGINE_SEEDANCE_STATUS_FAILED',
+          errorCode: 'SEEDANCE_TASK_STATUS_FAILED',
           message: 'Volcengine Seedance 查询任务返回了无效 JSON 响应。',
           upstreamStatus: response.status,
-          upstreamMessage: raw.slice(0, 500),
+          upstreamMessage: raw.slice(0, 1000),
         }
       }
     }
@@ -484,10 +520,10 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
         model,
         taskId,
         status: 'error',
-        errorCode: 'VOLCENGINE_SEEDANCE_STATUS_FAILED',
+        errorCode: 'SEEDANCE_TASK_STATUS_FAILED',
         message: rawError.message,
         upstreamStatus: response.status,
-        upstreamMessage: rawError.message,
+        upstreamMessage: upstreamMessage(data, raw) || rawError.message,
         rawCode: rawError.code,
         requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
       }
@@ -503,10 +539,10 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
           model,
           taskId,
           status: 'error',
-          errorCode: 'VOLCENGINE_SEEDANCE_VIDEO_EMPTY',
-          message: 'Seedance 任务已完成，但未返回视频 URL。',
+          errorCode: 'SEEDANCE_VIDEO_URL_MISSING',
+          message: '任务完成但未找到 videoUrl，请查看 upstreamMessage。',
           upstreamStatus: response.status,
-          upstreamMessage: raw.slice(0, 500),
+          upstreamMessage: upstreamMessage(data, raw),
         }
       }
       return {
@@ -528,10 +564,10 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
         model,
         taskId,
         status: 'error',
-        errorCode: rawError.code || 'VOLCENGINE_SEEDANCE_TASK_FAILED',
+        errorCode: 'SEEDANCE_TASK_FAILED',
         message: rawError.message,
         upstreamStatus: response.status,
-        upstreamMessage: raw.slice(0, 500),
+        upstreamMessage: upstreamMessage(data, raw),
         rawCode: rawError.code,
         requestId: rawError.requestId,
       }
