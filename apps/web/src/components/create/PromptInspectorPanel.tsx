@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import type { CharacterProfile } from '@/lib/characters'
-import { getSceneEdits, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
+import { getImageEditLayers, getSceneEdits, getSceneEditToolOption, imageEditLayerIcon, imageEditLayerLabel, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 
 interface PromptInspectorPanelProps {
@@ -205,6 +205,7 @@ export function PromptInspectorPanel({
   const sceneEditPromptPreview = stringValue(metadata.sceneEditPromptPreview)
   const sceneEditPromptSourceNodeId = stringValue(metadata.sceneEditPromptSourceNodeId)
   const sceneEdits = useMemo(() => getSceneEdits(node?.metadataJson), [node?.metadataJson])
+  const imageEditLayers = useMemo(() => getImageEditLayers(node?.metadataJson), [node?.metadataJson])
   const generationIdInputs: Array<[string, unknown]> = [
     ['generationJobId', metadata.generationJobId || nodeGenerationJobId],
     ['taskId', metadata.taskId],
@@ -466,6 +467,30 @@ export function PromptInspectorPanel({
           </Section>
 
           <Section title="场景可视化编辑">
+            {imageEditLayers.length ? (
+              <div className="mb-3 space-y-2">
+                <h4 className="text-xs font-semibold text-white/52">图片编辑层</h4>
+                {imageEditLayers.map((layer) => (
+                  <article key={layer.id} className="rounded-md border border-cyan-100/12 bg-cyan-200/[0.045] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-cyan-50/86">
+                        <span className="mr-2" aria-hidden="true">{imageEditLayerIcon(layer.type)}</span>
+                        {layer.name}
+                      </h4>
+                      <span className="text-xs text-white/44">{layer.visible ? '显示' : '隐藏'}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/48">{imageEditLayerLabel(layer.type)} · opacity {Math.round((layer.opacity ?? 1) * 100)}%</p>
+                    {layer.instruction ? <p className="mt-2 text-sm leading-6 text-white/68">{layer.instruction}</p> : null}
+                    {layer.params && Object.keys(layer.params).length ? (
+                      <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 font-mono text-xs text-white/58">{displayValue(layer.params)}</pre>
+                    ) : null}
+                    {layer.marks?.length ? (
+                      <p className="mt-2 text-xs text-cyan-100/62">标记：{layer.marks.length} 个</p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : null}
             {sceneEdits.length ? (
               <div className="space-y-2">
                 {sceneEdits.map((edit) => {
