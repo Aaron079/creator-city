@@ -3644,6 +3644,245 @@
   color: white;
 }
 
+.scope :global(.canvas-generation-tasks-trigger) {
+  position: relative;
+  gap: 7px;
+}
+
+.scope :global(.canvas-generation-tasks-badge) {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(124, 255, 234, 0.18);
+  color: rgba(176, 255, 243, 0.98);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.scope :global(.canvas-generation-tasks-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.34);
+  padding: 72px 18px 18px;
+}
+
+.scope :global(.canvas-generation-tasks-panel) {
+  display: grid;
+  width: min(420px, calc(100vw - 36px));
+  max-height: calc(100vh - 90px);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 16, 19, 0.96);
+  box-shadow: 0 24px 74px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(28px);
+}
+
+.scope :global(.canvas-generation-tasks-head) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 18px 18px 14px;
+}
+
+.scope :global(.canvas-generation-tasks-head h2) {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-generation-tasks-head p) {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+}
+
+.scope :global(.canvas-generation-tasks-head button) {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.scope :global(.canvas-generation-tasks-actions) {
+  padding: 12px 18px;
+}
+
+.scope :global(.canvas-generation-tasks-actions button),
+.scope :global(.canvas-generation-task-query) {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(124, 255, 234, 0.18);
+  background: rgba(124, 255, 234, 0.09);
+  color: rgba(210, 255, 248, 0.95);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-generation-tasks-actions button:disabled),
+.scope :global(.canvas-generation-task-query:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scope :global(.canvas-generation-tasks-empty),
+.scope :global(.canvas-generation-tasks-groups) {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 18px 18px;
+}
+
+.scope :global(.canvas-generation-tasks-empty) {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 13px;
+}
+
+.scope :global(.canvas-generation-tasks-group) {
+  margin-top: 12px;
+}
+
+.scope :global(.canvas-generation-tasks-group h3) {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-generation-task-list) {
+  display: grid;
+  gap: 10px;
+}
+
+.scope :global(.canvas-generation-task-card) {
+  display: grid;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.045);
+  padding: 12px;
+}
+
+.scope :global(.canvas-generation-task-card.status-error) {
+  border-color: rgba(255, 120, 120, 0.22);
+  background: rgba(255, 92, 92, 0.06);
+}
+
+.scope :global(.canvas-generation-task-card.status-done) {
+  border-color: rgba(124, 255, 180, 0.18);
+}
+
+.scope :global(.canvas-generation-task-topline) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-generation-task-topline span) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-generation-task-topline strong) {
+  flex: 0 0 auto;
+  color: rgba(124, 255, 234, 0.86);
+  font-size: 11px;
+}
+
+.scope :global(.canvas-generation-task-card dl) {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.scope :global(.canvas-generation-task-card dl div) {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.scope :global(.canvas-generation-task-card dt) {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 11px;
+}
+
+.scope :global(.canvas-generation-task-card dd) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+.scope :global(.canvas-generation-task-card code) {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  text-overflow: ellipsis;
+}
+
+.scope :global(.canvas-generation-task-card dd button) {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: rgba(124, 255, 234, 0.78);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.scope :global(.canvas-generation-task-error),
+.scope :global(.canvas-generation-task-notice) {
+  margin: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.scope :global(.canvas-generation-task-error) {
+  background: rgba(255, 92, 92, 0.1);
+  color: rgba(255, 190, 174, 0.92);
+}
+
+.scope :global(.canvas-generation-task-notice) {
+  background: rgba(124, 255, 234, 0.08);
+  color: rgba(210, 255, 248, 0.84);
+}
+
+.scope :global(.canvas-generation-task-link) {
+  color: rgba(124, 255, 234, 0.9);
+  font-size: 12px;
+  font-weight: 760;
+  text-decoration: none;
+}
+
 .scope :global(.canvas-toolbar-button) {
   cursor: pointer;
 }
