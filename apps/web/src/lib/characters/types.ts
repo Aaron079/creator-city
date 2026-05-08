@@ -21,10 +21,12 @@ export type CharacterReferenceAsset = {
   label: string
   imageUrl: string
   sourceNodeId?: string
+  sourceImageUrl?: string
   sourcePrompt?: string
   providerId?: string
   model?: string
   isHero?: boolean
+  generationTemplate?: string
   notes?: string
   createdAt: string
   updatedAt?: string

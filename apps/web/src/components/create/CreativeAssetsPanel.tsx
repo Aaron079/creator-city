@@ -13,8 +13,10 @@ import type { SceneBible } from '@/lib/scenes'
 import { SceneBiblePanel } from './SceneBiblePanel'
 import { SceneLabPanel } from './SceneLabPanel'
 import { CharacterReferenceBoard } from './CharacterReferenceBoard'
+import { CharacterReferencePackGenerator } from './CharacterReferencePackGenerator'
 
-type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'ref-board' | 'palette' | 'props' | 'camera'
+type CharacterSubTab = 'settings' | 'references' | 'generator'
+type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'
 
 interface CreativeAssetsPanelProps {
   open: boolean
@@ -39,12 +41,17 @@ interface CreativeAssetsPanelProps {
 
 const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
   { id: 'characters', label: '角色' },
-  { id: 'ref-board', label: '参考板' },
   { id: 'scenes', label: '场景' },
   { id: 'scene-lab', label: 'Scene Lab' },
   { id: 'palette', label: '调色' },
   { id: 'props', label: '道具' },
   { id: 'camera', label: '镜头' },
+]
+
+const CHARACTER_SUB_TABS: Array<{ id: CharacterSubTab; label: string }> = [
+  { id: 'settings', label: '角色设定' },
+  { id: 'references', label: '参考资产' },
+  { id: 'generator', label: '生成参考包' },
 ]
 
 const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
@@ -147,7 +154,8 @@ export function CreativeAssetsPanel({
   onSceneEditPromptChange,
   onClose,
 }: CreativeAssetsPanelProps) {
-  const [activeTab, setActiveTab] = useState<CreativeAssetTab>(initialTab)
+  const [activeTab, setActiveTab] = useState<CreativeAssetTab>(initialTab ?? 'characters')
+  const [characterSubTab, setCharacterSubTab] = useState<CharacterSubTab>('settings')
   const [draftCharacterBible, setDraftCharacterBible] = useState<CharacterBible>(characterBible)
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -164,7 +172,7 @@ export function CreativeAssetsPanel({
       return
     }
     if (!wasOpenRef.current) {
-      setActiveTab(initialTab === 'characters' && currentNodeCanSeedSceneLab && sceneBible.scenes.length === 0 ? 'scene-lab' : initialTab)
+      setActiveTab((initialTab ?? 'characters') === 'characters' && currentNodeCanSeedSceneLab && sceneBible.scenes.length === 0 ? 'scene-lab' : (initialTab ?? 'characters'))
       wasOpenRef.current = true
     }
     setDraftCharacterBible(characterBible)
@@ -287,128 +295,166 @@ export function CreativeAssetsPanel({
           <BindingSummary characterCount={selectedCharacterIds.length} sceneCount={selectedSceneIds.length} />
 
           {activeTab === 'characters' ? (
-            <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-              <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-white/82">角色绑定</h3>
-                  {selectedCharacterIds.length ? (
-                    <button type="button" className="text-xs text-white/42 hover:text-white/78" onClick={() => onCharacterIdsChange([])}>
-                      清空
-                    </button>
-                  ) : null}
-                </div>
-                {draftCharacterBible.characters.length ? (
-                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                    {draftCharacterBible.characters.map((character) => {
-                      const checked = selectedCharacterIdSet.has(character.id)
-                      return (
-                        <label
-                          key={character.id}
-                          className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-2 text-xs transition ${checked ? 'border-cyan-200/30 bg-cyan-200/12' : 'border-white/8 bg-black/16 hover:bg-white/[0.06]'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => onCharacterIdsChange(toggleId(selectedCharacterIds, character.id, event.target.checked))}
-                            className="mt-0.5"
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate font-semibold text-white/82">{character.name}</span>
-                            <span className="mt-0.5 block truncate text-white/46">{character.role || character.logline || '未填写身份'}</span>
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/45">角色库为空。可在右侧新建角色。</p>
-                )}
-              </section>
+            <div className="mt-4 space-y-4">
+              {/* Character sub-tab navigation */}
+              <div className="flex gap-1.5">
+                {CHARACTER_SUB_TABS.map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${characterSubTab === sub.id ? 'border-cyan-200/35 bg-cyan-200/12 text-cyan-50' : 'border-white/10 bg-white/[0.03] text-white/52 hover:bg-white/[0.07] hover:text-white/80'}`}
+                    onClick={() => setCharacterSubTab(sub.id)}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
 
-              <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white/82">角色库 / Character Bible</h3>
-                    <p className="mt-1 text-xs text-white/42">当前 {draftCharacterBible.characters.length} 个角色</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={addCharacter}>
-                      新建角色
-                    </button>
-                    <button type="button" className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white" onClick={() => onCharacterBibleSave(draftCharacterBible)}>
-                      保存角色库
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)]">
-                  <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
-                    {draftCharacterBible.characters.map((character) => (
-                      <button
-                        key={character.id}
-                        type="button"
-                        className={`w-full rounded-md border px-3 py-2 text-left transition ${character.id === selectedCharacter?.id ? 'border-cyan-200/35 bg-cyan-200/12' : 'border-white/10 bg-black/16 hover:bg-white/[0.06]'}`}
-                        onClick={() => setSelectedCharacterId(character.id)}
-                      >
-                        <span className="block truncate text-sm font-semibold text-white/86">{character.name}</span>
-                        <span className="mt-1 block truncate text-xs text-white/46">{character.role || character.logline || '未填写身份'}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {selectedCharacter ? (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h4 className="text-sm font-semibold text-white">{selectedCharacter.name}</h4>
-                          <p className="mt-1 text-xs text-white/42">角色 ID: {selectedCharacter.id}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={() => { void copySelectedCharacter() }}>
-                            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制角色设定'}
-                          </button>
-                          <button type="button" className="rounded-md border border-red-200/20 bg-red-400/10 px-3 py-2 text-xs font-semibold text-red-100/78 hover:bg-red-400/18" onClick={removeSelectedCharacter}>
-                            删除
-                          </button>
-                        </div>
-                      </div>
-                      {CHARACTER_FIELDS.map((field) => (
-                        <label key={field.key} className="grid gap-1.5">
-                          <span className="text-xs font-semibold text-white/56">{field.label}</span>
-                          {field.multiline ? (
-                            <textarea
-                              value={String(selectedCharacter[field.key] ?? '')}
-                              onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
-                              placeholder={field.placeholder}
-                              rows={3}
-                              className={textareaClassName}
-                            />
-                          ) : (
-                            <input
-                              value={String(selectedCharacter[field.key] ?? '')}
-                              onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
-                              placeholder={field.placeholder}
-                              className={inputClassName}
-                            />
-                          )}
-                        </label>
-                      ))}
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold text-white/56">参考关键词</span>
-                        <textarea
-                          value={selectedCharacter.referenceKeywords?.join(', ') ?? ''}
-                          onChange={(event) => patchSelectedCharacter({ referenceKeywords: parseKeywords(event.target.value) })}
-                          placeholder="cyberpunk courier, black trench coat, metal message tube"
-                          rows={2}
-                          className={compactTextareaClassName}
-                        />
-                      </label>
+              {/* 角色设定 */}
+              {characterSubTab === 'settings' ? (
+                <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                  <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-white/82">角色绑定</h3>
+                      {selectedCharacterIds.length ? (
+                        <button type="button" className="text-xs text-white/42 hover:text-white/78" onClick={() => onCharacterIdsChange([])}>
+                          清空
+                        </button>
+                      ) : null}
                     </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-white/14 p-5 text-sm text-white/48">选择或新建一个角色后编辑设定。</div>
-                  )}
+                    {draftCharacterBible.characters.length ? (
+                      <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {draftCharacterBible.characters.map((character) => {
+                          const checked = selectedCharacterIdSet.has(character.id)
+                          return (
+                            <label
+                              key={character.id}
+                              className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-2 text-xs transition ${checked ? 'border-cyan-200/30 bg-cyan-200/12' : 'border-white/8 bg-black/16 hover:bg-white/[0.06]'}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => onCharacterIdsChange(toggleId(selectedCharacterIds, character.id, event.target.checked))}
+                                className="mt-0.5"
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate font-semibold text-white/82">{character.name}</span>
+                                <span className="mt-0.5 block truncate text-white/46">{character.role || character.logline || '未填写身份'}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/45">角色库为空。可在右侧新建角色。</p>
+                    )}
+                  </section>
+
+                  <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white/82">角色库 / Character Bible</h3>
+                        <p className="mt-1 text-xs text-white/42">当前 {draftCharacterBible.characters.length} 个角色</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={addCharacter}>
+                          新建角色
+                        </button>
+                        <button type="button" className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white" onClick={() => onCharacterBibleSave(draftCharacterBible)}>
+                          保存角色库
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)]">
+                      <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                        {draftCharacterBible.characters.map((character) => (
+                          <button
+                            key={character.id}
+                            type="button"
+                            className={`w-full rounded-md border px-3 py-2 text-left transition ${character.id === selectedCharacter?.id ? 'border-cyan-200/35 bg-cyan-200/12' : 'border-white/10 bg-black/16 hover:bg-white/[0.06]'}`}
+                            onClick={() => setSelectedCharacterId(character.id)}
+                          >
+                            <span className="block truncate text-sm font-semibold text-white/86">{character.name}</span>
+                            <span className="mt-1 block truncate text-xs text-white/46">{character.role || character.logline || '未填写身份'}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {selectedCharacter ? (
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-sm font-semibold text-white">{selectedCharacter.name}</h4>
+                              <p className="mt-1 text-xs text-white/42">角色 ID: {selectedCharacter.id}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={() => { void copySelectedCharacter() }}>
+                                {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制角色设定'}
+                              </button>
+                              <button type="button" className="rounded-md border border-red-200/20 bg-red-400/10 px-3 py-2 text-xs font-semibold text-red-100/78 hover:bg-red-400/18" onClick={removeSelectedCharacter}>
+                                删除
+                              </button>
+                            </div>
+                          </div>
+                          {CHARACTER_FIELDS.map((field) => (
+                            <label key={field.key} className="grid gap-1.5">
+                              <span className="text-xs font-semibold text-white/56">{field.label}</span>
+                              {field.multiline ? (
+                                <textarea
+                                  value={String(selectedCharacter[field.key] ?? '')}
+                                  onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
+                                  placeholder={field.placeholder}
+                                  rows={3}
+                                  className={textareaClassName}
+                                />
+                              ) : (
+                                <input
+                                  value={String(selectedCharacter[field.key] ?? '')}
+                                  onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
+                                  placeholder={field.placeholder}
+                                  className={inputClassName}
+                                />
+                              )}
+                            </label>
+                          ))}
+                          <label className="grid gap-1.5">
+                            <span className="text-xs font-semibold text-white/56">参考关键词</span>
+                            <textarea
+                              value={selectedCharacter.referenceKeywords?.join(', ') ?? ''}
+                              onChange={(event) => patchSelectedCharacter({ referenceKeywords: parseKeywords(event.target.value) })}
+                              placeholder="cyberpunk courier, black trench coat, metal message tube"
+                              rows={2}
+                              className={compactTextareaClassName}
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-white/14 p-5 text-sm text-white/48">选择或新建一个角色后编辑设定。</div>
+                      )}
+                    </div>
+                  </section>
                 </div>
-              </section>
+              ) : null}
+
+              {/* 参考资产 */}
+              {characterSubTab === 'references' ? (
+                <CharacterReferenceBoard
+                  characterBible={draftCharacterBible}
+                  currentNode={currentNode}
+                  selectedCharacterIds={selectedCharacterIds}
+                  onSaveCharacterBible={handleReferencesBibleSave}
+                />
+              ) : null}
+
+              {/* 生成参考包 */}
+              {characterSubTab === 'generator' ? (
+                <CharacterReferencePackGenerator
+                  characterBible={draftCharacterBible}
+                  currentNode={currentNode}
+                  onSaveCharacterBible={handleReferencesBibleSave}
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -493,17 +539,6 @@ export function CreativeAssetsPanel({
                 onSceneIdsChange={onSceneIdsChange}
                 onSendPromptToNode={onSendPromptToNode}
                 onSceneEditPromptChange={onSceneEditPromptChange}
-              />
-            </div>
-          ) : null}
-
-          {activeTab === 'ref-board' ? (
-            <div className="mt-4">
-              <CharacterReferenceBoard
-                characterBible={draftCharacterBible}
-                currentNode={currentNode}
-                selectedCharacterIds={selectedCharacterIds}
-                onSaveCharacterBible={handleReferencesBibleSave}
               />
             </div>
           ) : null}
