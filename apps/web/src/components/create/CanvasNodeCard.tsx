@@ -54,6 +54,7 @@ interface CanvasNodeCardProps {
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
+  onOpenPromptInspector?: () => void
   enabledSkillCount?: number
   onOpenSkillPanel?: () => void
   dragging?: boolean
@@ -251,6 +252,7 @@ export function CanvasNodeCard({
   onOpenContextMenu,
   onEdit,
   onOpenPreview,
+  onOpenPromptInspector,
   enabledSkillCount = 0,
   onOpenSkillPanel,
   dragging = false,
@@ -622,6 +624,30 @@ export function CanvasNodeCard({
           title="打开风格圣经"
         >
           Skills: {enabledSkillCount}
+        </button>
+      ) : null}
+      {onOpenPromptInspector && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
+        <button
+          type="button"
+          className="absolute bottom-2 left-2 z-[4] inline-flex min-h-6 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"
+          data-no-node-drag="true"
+          onPointerDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenPromptInspector()
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          aria-label="查看生成依据"
+          title="查看生成依据"
+        >
+          生成依据
         </button>
       ) : null}
     </motion.div>

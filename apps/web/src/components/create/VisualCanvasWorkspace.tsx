@@ -13,6 +13,7 @@ import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
+import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
@@ -990,6 +991,7 @@ export function VisualCanvasWorkspace({
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
+  const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
@@ -2034,6 +2036,10 @@ export function VisualCanvasWorkspace({
     setPreviewLinkCopied(false)
   }, [])
 
+  const closePromptInspector = useCallback(() => {
+    setActiveInspectorNodeId(null)
+  }, [])
+
   const deleteNode = useCallback((nodeId: string) => {
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
     const removedEdges = edges
@@ -2047,10 +2053,13 @@ export function VisualCanvasWorkspace({
     if (activePreviewNodeId === nodeId) {
       closeActivePreview()
     }
+    if (activeInspectorNodeId === nodeId) {
+      closePromptInspector()
+    }
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [activePreviewNodeId, closeActivePreview, commitEdges, commitNodes, edges])
+  }, [activeInspectorNodeId, activePreviewNodeId, closeActivePreview, closePromptInspector, commitEdges, commitNodes, edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -2085,9 +2094,14 @@ export function VisualCanvasWorkspace({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (activePreviewNodeId) {
+        if (activePreviewNodeId || activeInspectorNodeId) {
           event.preventDefault()
+        }
+        if (activePreviewNodeId) {
           closeActivePreview()
+        }
+        if (activeInspectorNodeId) {
+          closePromptInspector()
         }
         setContextMenu(null)
         setNodeAddMenu(null)
@@ -2138,12 +2152,25 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, deleteNode, resetCanvasView, setZoomAroundPoint])
+  }, [activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
   )
+  const activeInspectorNode = useMemo(
+    () => nodes.find((node) => node.id === activeInspectorNodeId) ?? null,
+    [activeInspectorNodeId, nodes],
+  )
+  const activeInspectorUpstreamNodes = useMemo(() => {
+    if (!activeInspectorNodeId) return []
+    const upstreamIds = new Set(
+      edges
+        .filter((edge) => edge.toNodeId === activeInspectorNodeId)
+        .map((edge) => edge.fromNodeId),
+    )
+    return nodes.filter((node) => upstreamIds.has(node.id))
+  }, [activeInspectorNodeId, edges, nodes])
   const enabledCreatorSkills = useMemo(
     () => resolveCreatorSkills(enabledSkillIds),
     [enabledSkillIds],
@@ -2759,6 +2786,14 @@ export function VisualCanvasWorkspace({
       setTextEditorDraft('')
     }
     setTextEditorCopied(false)
+  }, [])
+
+  const openPromptInspector = useCallback((nodeId: string) => {
+    setActiveNodeId(nodeId)
+    setActiveInspectorNodeId(nodeId)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setNodeCreateMenu(null)
   }, [])
 
   const saveTextEditor = useCallback(() => {
@@ -3986,7 +4021,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -4002,6 +4037,7 @@ export function VisualCanvasWorkspace({
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
 
     closeActivePreview()
+    closePromptInspector()
     setEditingNodeId(null)
     setIsPanning(true)
     setContextMenu(null)
@@ -4014,7 +4050,7 @@ export function VisualCanvasWorkspace({
       panY: canvasPan.y,
     }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview])
+  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview, closePromptInspector])
 
   const handleCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isPanning || event.pointerId !== panStartRef.current.pointerId) return
@@ -4769,6 +4805,7 @@ export function VisualCanvasWorkspace({
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
+                onOpenPromptInspector={() => openPromptInspector(node.id)}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
               />
@@ -4782,6 +4819,15 @@ export function VisualCanvasWorkspace({
         tasks={generationTasks}
         onClose={() => setGenerationTasksOpen(false)}
         onQueryTask={handleQueryGenerationTask}
+      />
+
+      <PromptInspectorPanel
+        open={Boolean(activeInspectorNode)}
+        node={activeInspectorNode}
+        upstreamNodes={activeInspectorUpstreamNodes}
+        styleBible={styleBible}
+        enabledSkills={enabledCreatorSkills}
+        onClose={closePromptInspector}
       />
 
       {editingNode && nodeDialogStyle ? (
