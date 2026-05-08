@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
-import type { CharacterProfile } from '@/lib/characters'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -58,9 +57,8 @@ interface CanvasNodeCardProps {
   onOpenPromptInspector?: () => void
   enabledSkillCount?: number
   onOpenSkillPanel?: () => void
-  characters?: CharacterProfile[]
-  selectedCharacterIds?: string[]
-  onCharacterIdsChange?: (characterIds: string[]) => void
+  creativeAssetLabel?: string
+  onOpenCreativeAssets?: () => void
   dragging?: boolean
 }
 
@@ -259,9 +257,8 @@ export function CanvasNodeCard({
   onOpenPromptInspector,
   enabledSkillCount = 0,
   onOpenSkillPanel,
-  characters = [],
-  selectedCharacterIds = [],
-  onCharacterIdsChange,
+  creativeAssetLabel = '创作资产',
+  onOpenCreativeAssets,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
@@ -269,7 +266,6 @@ export function CanvasNodeCard({
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
-  const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
   const videoPreviewUrl = node.kind === 'video'
     ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
     : undefined
@@ -312,9 +308,7 @@ export function CanvasNodeCard({
         width: videoAspectRatioValue < 1 ? 'auto' : '100%',
       } as CSSProperties
     : undefined
-  const canBindCharacters = Boolean(onCharacterIdsChange && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video'))
-  const selectedCharacterIdSet = new Set(selectedCharacterIds)
-  const selectedCharacterCount = selectedCharacterIds.length
+  const canOpenCreativeAssets = Boolean(onOpenCreativeAssets && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video'))
 
   useEffect(() => {
     setImageLoadFailed(false)
@@ -637,114 +631,57 @@ export function CanvasNodeCard({
           Skills: {enabledSkillCount}
         </button>
       ) : null}
-      {canBindCharacters ? (
-        <div
-          className="absolute bottom-2 right-2 z-[6]"
-          data-no-node-drag="true"
-          onPointerDown={(event) => {
-            event.stopPropagation()
-          }}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="inline-flex min-h-6 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"
-            data-no-node-drag="true"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setCharacterMenuOpen((current) => !current)
-            }}
-            aria-label="绑定角色"
-            title="绑定角色"
-          >
-            {selectedCharacterCount > 0 ? `角色 ${selectedCharacterCount}` : '角色'}
-          </button>
-          {characterMenuOpen ? (
-            <div
-              className="absolute bottom-8 right-0 w-56 rounded-lg border border-white/12 bg-[#101214]/96 p-2 text-white shadow-2xl backdrop-blur"
+      {(onOpenPromptInspector || canOpenCreativeAssets) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
+        <div className="absolute bottom-2 left-2 z-[6] flex max-w-[calc(100%-16px)] items-center gap-1.5" data-no-node-drag="true">
+          {onOpenPromptInspector ? (
+            <button
+              type="button"
+              className="inline-flex min-h-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"
               data-no-node-drag="true"
-              onWheel={(event) => event.stopPropagation()}
-              onWheelCapture={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpenPromptInspector()
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              aria-label="查看生成依据"
+              title="查看生成依据"
             >
-              <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                <span className="text-xs font-semibold text-white/76">绑定角色</span>
-                {selectedCharacterCount > 0 ? (
-                  <button
-                    type="button"
-                    className="text-xs text-white/42 hover:text-white/78"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      onCharacterIdsChange?.([])
-                    }}
-                  >
-                    清空
-                  </button>
-                ) : null}
-              </div>
-              {characters.length ? (
-                <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-                  {characters.map((character) => {
-                    const checked = selectedCharacterIdSet.has(character.id)
-                    return (
-                      <label
-                        key={character.id}
-                        className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-2 text-xs transition ${checked ? 'border-cyan-200/30 bg-cyan-200/12' : 'border-white/8 bg-white/[0.035] hover:bg-white/[0.07]'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            const next = event.target.checked
-                              ? [...selectedCharacterIds, character.id]
-                              : selectedCharacterIds.filter((id) => id !== character.id)
-                            onCharacterIdsChange?.([...new Set(next)])
-                          }}
-                          className="mt-0.5"
-                        />
-                        <span className="min-w-0">
-                          <span className="block truncate font-semibold text-white/82">{character.name}</span>
-                          <span className="mt-0.5 block truncate text-white/46">{character.role || character.logline || '未填写身份'}</span>
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/45">
-                  角色库为空。先在顶部打开“角色库”创建角色。
-                </p>
-              )}
-            </div>
+              生成依据
+            </button>
+          ) : null}
+          {canOpenCreativeAssets ? (
+            <button
+              type="button"
+              className="inline-flex min-h-6 min-w-0 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"
+              data-no-node-drag="true"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpenCreativeAssets?.()
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              aria-label="打开创作资产"
+              title="打开创作资产"
+            >
+              <span className="truncate">{creativeAssetLabel}</span>
+            </button>
           ) : null}
         </div>
-      ) : null}
-      {onOpenPromptInspector && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
-        <button
-          type="button"
-          className="absolute bottom-2 left-2 z-[4] inline-flex min-h-6 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"
-          data-no-node-drag="true"
-          onPointerDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            onOpenPromptInspector()
-          }}
-          onDoubleClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          aria-label="查看生成依据"
-          title="查看生成依据"
-        >
-          生成依据
-        </button>
       ) : null}
     </motion.div>
   )

@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import type { CharacterProfile } from '@/lib/characters'
+import type { SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 
 interface PromptInspectorPanelProps {
@@ -16,6 +17,12 @@ interface PromptInspectorPanelProps {
     inheritedCharacters: CharacterProfile[]
     inheritedCharacterIdsFromEdges: string[]
     lockCharacterConsistency: boolean
+  } | null
+  sceneContext?: {
+    boundScenes: SceneProfile[]
+    inheritedScenes: SceneProfile[]
+    inheritedSceneIdsFromEdges: string[]
+    lockSceneConsistency: boolean
   } | null
   onClose: () => void
 }
@@ -74,6 +81,17 @@ function characterSummary(character: CharacterProfile) {
     character.costume,
     character.hairstyle,
     character.props,
+  ].filter(Boolean).join(' · ')
+}
+
+function sceneSummary(scene: SceneProfile) {
+  return [
+    scene.location,
+    scene.era,
+    scene.atmosphere,
+    scene.architecture,
+    scene.lighting,
+    scene.weather,
   ].filter(Boolean).join(' · ')
 }
 
@@ -154,6 +172,7 @@ export function PromptInspectorPanel({
   styleBible,
   enabledSkills = [],
   characterContext,
+  sceneContext,
   onClose,
 }: PromptInspectorPanelProps) {
   const [copyState, setCopyState] = useState<CopyState>({})
@@ -219,6 +238,9 @@ export function PromptInspectorPanel({
   const boundCharacters = characterContext?.boundCharacters ?? []
   const inheritedCharacters = characterContext?.inheritedCharacters ?? []
   const hasCharacters = boundCharacters.length > 0 || inheritedCharacters.length > 0
+  const boundScenes = sceneContext?.boundScenes ?? []
+  const inheritedScenes = sceneContext?.inheritedScenes ?? []
+  const hasScenes = boundScenes.length > 0 || inheritedScenes.length > 0
 
   const copyText = async (target: CopyTarget, text: string) => {
     try {
@@ -391,6 +413,52 @@ export function PromptInspectorPanel({
               </div>
             ) : (
               <p className="text-sm text-white/45">当前节点未绑定角色。</p>
+            )}
+          </Section>
+
+          <Section title="场景依据">
+            {hasScenes ? (
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-white/52">当前节点绑定场景</h4>
+                  {boundScenes.length ? (
+                    <div className="mt-2 space-y-2">
+                      {boundScenes.map((scene) => (
+                        <article key={scene.id} className="rounded-md border border-white/10 bg-black/16 p-3">
+                          <div className="text-sm font-semibold text-white/82">{scene.name}</div>
+                          <p className="mt-1 text-sm leading-5 text-white/60">{sceneSummary(scene) || scene.logline || '已绑定，暂无详细设定。'}</p>
+                          {scene.negativeRules ? (
+                            <p className="mt-2 text-xs leading-5 text-red-100/70">禁止变化项：{scene.negativeRules}</p>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-white/45">当前节点未直接绑定场景。</p>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-white/52">从连接线继承的场景</h4>
+                  {inheritedScenes.length ? (
+                    <div className="mt-2 space-y-2">
+                      {inheritedScenes.map((scene) => (
+                        <article key={scene.id} className="rounded-md border border-cyan-100/14 bg-cyan-200/[0.06] p-3">
+                          <div className="text-sm font-semibold text-cyan-50/88">{scene.name}</div>
+                          <p className="mt-1 text-sm leading-5 text-white/62">{sceneSummary(scene) || '由上游场景连续继承。'}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-white/45">没有从连接线继承场景。</p>
+                  )}
+                </div>
+                <div className="rounded-md bg-black/18 p-3 text-sm leading-6 text-white/64">
+                  场景一致性规则：保持场景结构、地点、时代、天气、光线、色彩和氛围；图片/视频生成不得随意改变昼夜、建筑类型或环境基调。
+                  {sceneContext?.lockSceneConsistency ? <span className="block text-cyan-100/72">Edge Director 已开启场景连续。</span> : null}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-white/45">当前节点未绑定场景。</p>
             )}
           </Section>
 

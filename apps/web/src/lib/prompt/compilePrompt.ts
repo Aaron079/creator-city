@@ -1,6 +1,7 @@
 import type { CompileNodePromptInput, CompiledNodePrompt } from './types'
 import { EDGE_DIRECTOR_LABELS, type EdgeDirective } from '@/lib/canvas/edge-director'
 import type { CharacterProfile } from '@/lib/characters'
+import type { SceneProfile } from '@/lib/scenes'
 import type { ProjectStyleBible } from '@/lib/skills'
 
 function lines(items: Array<string | false | null | undefined>) {
@@ -171,7 +172,75 @@ function formatCharacterConsistency(input: CompileNodePromptInput) {
   ].join('\n\n')
 }
 
-function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string) {
+function sceneKeywordText(scene: SceneProfile) {
+  return Array.isArray(scene.referenceKeywords)
+    ? scene.referenceKeywords.filter(Boolean).join(', ')
+    : ''
+}
+
+function formatSceneItem(scene: SceneProfile) {
+  return lines([
+    `- 场景名：${scene.name}`,
+    scene.logline && `  - 一句话描述：${scene.logline}`,
+    scene.location && `  - 地点：${scene.location}`,
+    scene.era && `  - 时代：${scene.era}`,
+    scene.atmosphere && `  - 氛围：${scene.atmosphere}`,
+    scene.architecture && `  - 建筑/空间结构：${scene.architecture}`,
+    scene.lighting && `  - 光线：${scene.lighting}`,
+    scene.weather && `  - 天气：${scene.weather}`,
+    scene.colorRules && `  - 色彩规则：${scene.colorRules}`,
+    scene.keyObjects && `  - 关键物件：${scene.keyObjects}`,
+    scene.continuityRules && `  - 连续性规则：${scene.continuityRules}`,
+    scene.negativeRules && `  - 禁止变化项：${scene.negativeRules}`,
+    sceneKeywordText(scene) && `  - 参考关键词：${sceneKeywordText(scene)}`,
+  ]).join('\n')
+}
+
+function nodeSceneStrategy(input: CompileNodePromptInput) {
+  const lockText = input.edgeSceneDirectives?.lockSceneConsistency
+    ? '5. Edge Director 已开启场景连续，场景一致性的优先级提高。'
+    : ''
+  if (input.nodeKind === 'text') {
+    return lines([
+      '生成要求：',
+      '1. 场景影响故事发生地点、氛围和事件设计。',
+      '2. 必须保持场景结构、天气、光线、色彩和时代一致。',
+      '3. 不要随意改变地点、昼夜、建筑类型或氛围。',
+      lockText,
+    ]).join('\n')
+  }
+  if (input.nodeKind === 'image') {
+    return lines([
+      '生成要求：',
+      '1. 场景强影响视觉空间、光影、天气和建筑。',
+      '2. 必须保持场景结构、天气、光线、色彩和时代一致。',
+      '3. 如果生成图片，场景风格必须连续。',
+      '4. 不要随意改变地点、昼夜、建筑类型或氛围。',
+      lockText,
+    ]).join('\n')
+  }
+  return lines([
+    '生成要求：',
+    '1. 场景强影响镜头运动中的空间连续性和环境动态。',
+    '2. 必须保持场景结构、天气、光线、色彩和时代一致。',
+    '3. 如果生成视频，场景风格必须连续。',
+    '4. 不要随意改变地点、昼夜、建筑类型或氛围。',
+    lockText,
+  ]).join('\n')
+}
+
+function formatSceneConsistency(input: CompileNodePromptInput) {
+  const scenes = input.scenes?.filter((scene) => scene.name?.trim()) ?? []
+  if (!scenes.length) return ''
+  return [
+    '【场景一致性】',
+    '当前节点绑定场景：',
+    ...scenes.map(formatSceneItem),
+    nodeSceneStrategy(input),
+  ].join('\n\n')
+}
+
+function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string, sceneText: string) {
   const userPrompt = input.userPrompt.trim()
   const upstreamText = truncate(input.upstreamText ?? '')
   const skillPrompt = input.enabledSkills
@@ -186,6 +255,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       upstreamText && `上游文本上下文：\n${upstreamText}`,
       edgeDirectorText,
       characterText,
+      sceneText,
       styleText && `项目风格圣经：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：结构清晰，保留人物、世界观、场景与因果连续性；如涉及分镜，请给出可直接转化为画面和镜头的描述。',
@@ -199,6 +269,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       upstreamText && `上游文本，请转化为具体视觉提示：\n${upstreamText}`,
       edgeDirectorText,
       characterText,
+      sceneText,
       styleText && `项目风格圣经，必须保留：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：聚焦主体、场景、构图、光线、色彩、质感、镜头和风格；保持人物/场景连续性；避免无关解释。',
@@ -212,6 +283,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
     input.upstreamImageUrl && `上游图片参考：保持该图像主体、构图、色调和场景关系一致。图片 URL: ${input.upstreamImageUrl}`,
     edgeDirectorText,
     characterText,
+    sceneText,
     styleText && `项目风格圣经，必须保留：\n${styleText}`,
     skillPrompt && `启用技能约束：\n${skillPrompt}`,
     '输出要求：明确主体动作、镜头运动、景别、速度、光影和情绪；保持与上游图像/文本的连续性；不要改变角色身份、服装或场景结构。',
@@ -223,7 +295,8 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
   const appliedSkills = input.enabledSkills.filter((skill) => skill.appliesTo.includes(input.nodeKind))
   const edgeDirectorText = formatEdgeDirectives(input.edgeDirectives)
   const characterText = formatCharacterConsistency(input)
-  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText)
+  const sceneText = formatSceneConsistency(input)
+  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText, sceneText)
   const system = buildSystem(input, styleText)
 
   return {
@@ -239,8 +312,14 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
         id: character.id,
         name: character.name,
       })),
+      scenesApplied: (input.scenes ?? []).map((scene) => ({
+        id: scene.id,
+        name: scene.name,
+      })),
       inheritedCharacterIdsFromEdges: input.edgeCharacterDirectives?.inheritedCharacterIdsFromEdges,
+      inheritedSceneIdsFromEdges: input.edgeSceneDirectives?.inheritedSceneIdsFromEdges,
       characterConsistencyLocked: Boolean(input.edgeCharacterDirectives?.lockCharacterConsistency),
+      sceneConsistencyLocked: Boolean(input.edgeSceneDirectives?.lockSceneConsistency),
       edgeDirectivesApplied: (input.edgeDirectives ?? []).map((directive) => ({
         sourceNodeId: directive.sourceNodeId,
         targetNodeId: directive.targetNodeId,
