@@ -1145,6 +1145,8 @@ export function VisualCanvasWorkspace({
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
   const [activeCreativeAssetsNodeId, setActiveCreativeAssetsNodeId] = useState<string | null>(null)
+  const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
+  const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
@@ -2206,6 +2208,7 @@ export function VisualCanvasWorkspace({
 
   const closeCreativeAssets = useCallback(() => {
     setActiveCreativeAssetsNodeId(null)
+    setActiveSceneLabSourceNodeId('')
   }, [])
 
   const closeEdgeDirector = useCallback(() => {
@@ -3241,14 +3244,50 @@ export function VisualCanvasWorkspace({
     scheduleCanvasSave()
   }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
 
-  const openCreativeAssets = useCallback((nodeId: string) => {
+  const openCreativeAssets = useCallback((
+    nodeId: string,
+    options?: { tab?: 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'; sourceNodeId?: string },
+  ) => {
     flushLocalSnapshot()
+    setActiveCreativeAssetsTab(options?.tab ?? 'characters')
+    setActiveSceneLabSourceNodeId(options?.sourceNodeId ?? '')
     setActiveCreativeAssetsNodeId(nodeId)
     setEditingNodeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
   }, [flushLocalSnapshot])
+
+  const handleSceneLabPromptMetadata = useCallback((nodeId: string, prompt: string, sourceNodeId?: string) => {
+    const node = latestNodesRef.current.find((item) => item.id === nodeId)
+    if (!node) return
+    handleNodePatch(nodeId, {
+      metadataJson: {
+        ...metadataRecord(node.metadataJson),
+        sceneEditPromptPreview: compactText(prompt, 1200),
+        sceneEditPromptSourceNodeId: sourceNodeId,
+        sceneEditPromptUpdatedAt: new Date().toISOString(),
+      },
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+
+  const handleSendSceneLabPromptToNode = useCallback((nodeId: string, prompt: string, sourceNodeId?: string) => {
+    const node = latestNodesRef.current.find((item) => item.id === nodeId)
+    if (!node) return
+    const metadataJson = {
+      ...metadataRecord(node.metadataJson),
+      sceneEditPromptPreview: compactText(prompt, 1200),
+      sceneEditPromptSourceNodeId: sourceNodeId,
+      sceneEditPromptUpdatedAt: new Date().toISOString(),
+    }
+    handleNodePatch(nodeId, { prompt, metadataJson })
+    if (editingNodeId === nodeId || activeNodeId === nodeId) setCanvasPrompt(prompt)
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+    showCanvasFeedback('已发送到当前 Image 节点 Prompt，未自动生成。')
+  }, [activeNodeId, editingNodeId, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
   const handleOpenImageEditor = useCallback(() => {
     flushLocalSnapshot()
@@ -5231,14 +5270,21 @@ export function VisualCanvasWorkspace({
         <CreativeAssetsPanel
           open
           nodeTitle={activeCreativeAssetsNode.title}
+          nodes={nodes}
+          currentNodeId={activeCreativeAssetsNode.id}
+          projectId={projectId}
           characterBible={characterBible}
           sceneBible={sceneBible}
           selectedCharacterIds={getNodeCharacterIds(activeCreativeAssetsNode)}
           selectedSceneIds={getNodeSceneIds(activeCreativeAssetsNode)}
+          initialTab={activeCreativeAssetsTab}
+          initialSceneLabSourceNodeId={activeSceneLabSourceNodeId}
           onCharacterBibleSave={persistCharacterBibleSettings}
           onSceneBibleSave={persistSceneBibleSettings}
           onCharacterIdsChange={(characterIds) => handleNodeCharacterIdsChange(activeCreativeAssetsNode.id, characterIds)}
           onSceneIdsChange={(sceneIds) => handleNodeSceneIdsChange(activeCreativeAssetsNode.id, sceneIds)}
+          onSendPromptToNode={handleSendSceneLabPromptToNode}
+          onSceneEditPromptChange={handleSceneLabPromptMetadata}
           onClose={closeCreativeAssets}
         />
       ) : null}

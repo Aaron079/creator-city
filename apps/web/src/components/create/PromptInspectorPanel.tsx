@@ -202,6 +202,8 @@ export function PromptInspectorPanel({
     ? stringValue((node as { generationJobId?: unknown }).generationJobId)
     : ''
   const compiledPromptPreview = stringValue(metadata.compiledPromptPreview)
+  const sceneEditPromptPreview = stringValue(metadata.sceneEditPromptPreview)
+  const sceneEditPromptSourceNodeId = stringValue(metadata.sceneEditPromptSourceNodeId)
   const generationIdInputs: Array<[string, unknown]> = [
     ['generationJobId', metadata.generationJobId || nodeGenerationJobId],
     ['taskId', metadata.taskId],
@@ -506,6 +508,21 @@ export function PromptInspectorPanel({
               <p className="text-sm text-white/45">当前节点还没有 compiledPromptPreview，下一次生成后会显示。</p>
             )}
           </Section>
+
+          {sceneEditPromptPreview ? (
+            <Section title="Scene Lab 场景改造">
+              <dl className="space-y-2 text-sm">
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">来源节点</dt>
+                  <dd className="mt-1 break-words font-mono text-xs text-white/70">{sceneEditPromptSourceNodeId || '未记录'}</dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">sceneEditPromptPreview</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-white/72">{sceneEditPromptPreview}</dd>
+                </div>
+              </dl>
+            </Section>
+          ) : null}
 
           <Section title="Debug">
             <dl className="space-y-2 text-sm">

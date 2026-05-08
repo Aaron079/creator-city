@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import {
   createCharacterProfile,
   deleteCharacterProfile,
@@ -10,26 +11,35 @@ import {
 } from '@/lib/characters'
 import type { SceneBible } from '@/lib/scenes'
 import { SceneBiblePanel } from './SceneBiblePanel'
+import { SceneLabPanel } from './SceneLabPanel'
 
-type CreativeAssetTab = 'characters' | 'scenes' | 'palette' | 'props' | 'camera'
+type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'
 
 interface CreativeAssetsPanelProps {
   open: boolean
   nodeTitle: string
+  nodes: CanvasNode[]
+  currentNodeId?: string
+  projectId?: string
   characterBible: CharacterBible
   sceneBible: SceneBible
   selectedCharacterIds: string[]
   selectedSceneIds: string[]
+  initialTab?: CreativeAssetTab
+  initialSceneLabSourceNodeId?: string
   onCharacterBibleSave: (bible: CharacterBible) => void
   onSceneBibleSave: (bible: SceneBible) => void
   onCharacterIdsChange: (characterIds: string[]) => void
   onSceneIdsChange: (sceneIds: string[]) => void
+  onSendPromptToNode?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
+  onSceneEditPromptChange?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
   onClose: () => void
 }
 
 const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
   { id: 'characters', label: '角色' },
   { id: 'scenes', label: '场景' },
+  { id: 'scene-lab', label: 'Scene Lab' },
   { id: 'palette', label: '调色' },
   { id: 'props', label: '道具' },
   { id: 'camera', label: '镜头' },
@@ -114,23 +124,31 @@ function PlaceholderTab({ label }: { label: string }) {
 export function CreativeAssetsPanel({
   open,
   nodeTitle,
+  nodes,
+  currentNodeId,
+  projectId,
   characterBible,
   sceneBible,
   selectedCharacterIds,
   selectedSceneIds,
+  initialTab = 'characters',
+  initialSceneLabSourceNodeId,
   onCharacterBibleSave,
   onSceneBibleSave,
   onCharacterIdsChange,
   onSceneIdsChange,
+  onSendPromptToNode,
+  onSceneEditPromptChange,
   onClose,
 }: CreativeAssetsPanelProps) {
-  const [activeTab, setActiveTab] = useState<CreativeAssetTab>('characters')
+  const [activeTab, setActiveTab] = useState<CreativeAssetTab>(initialTab)
   const [draftCharacterBible, setDraftCharacterBible] = useState<CharacterBible>(characterBible)
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
     if (!open) return
+    setActiveTab(initialTab)
     setDraftCharacterBible(characterBible)
     setSelectedCharacterId((current) => (
       characterBible.characters.some((character) => character.id === current)
@@ -138,7 +156,7 @@ export function CreativeAssetsPanel({
         : characterBible.characters[0]?.id || ''
     ))
     setCopyState('idle')
-  }, [characterBible, open])
+  }, [characterBible, initialTab, open])
 
   const selectedCharacter = useMemo(
     () => draftCharacterBible.characters.find((character) => character.id === selectedCharacterId) ?? draftCharacterBible.characters[0] ?? null,
@@ -408,6 +426,27 @@ export function CreativeAssetsPanel({
                 embedded
                 bible={sceneBible}
                 onSave={onSceneBibleSave}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === 'scene-lab' ? (
+            <div className="mt-4">
+              <SceneLabPanel
+                nodes={nodes}
+                projectId={projectId}
+                currentNodeId={currentNodeId}
+                sceneBible={sceneBible}
+                initialSourceNodeId={initialSceneLabSourceNodeId}
+                onSaveScene={(scene) => {
+                  const nextBible = {
+                    scenes: [...sceneBible.scenes.filter((item) => item.id !== scene.id), scene],
+                    updatedAt: new Date().toISOString(),
+                  }
+                  onSceneBibleSave(nextBible)
+                }}
+                onSendPromptToNode={onSendPromptToNode}
+                onSceneEditPromptChange={onSceneEditPromptChange}
               />
             </div>
           ) : null}
