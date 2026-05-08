@@ -116,6 +116,8 @@ export function CanvasPromptBox({
   const panelRef = useRef<HTMLDivElement | null>(null)
   const footerButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const toolLabelTimerRef = useRef<number | null>(null)
+  const isSeedreamImageModel = model === 'volcengine-seedream-image'
+  const qualityOptions = isSeedreamImageModel ? ['2K'] : PARAMETER_QUALITIES
   const providerItem = footerItems.find((item) => item.id === 'api' || item.id === 'provider') ?? null
   const ratioItem: CanvasPromptFooterItem | null = ratio && ratios && onRatioChange
     ? {
@@ -214,6 +216,14 @@ export function CanvasPromptBox({
       setOpenFooterId(null)
     }
   }, [footerItems, openFooterId, ratioItem?.id])
+
+  useEffect(() => {
+    if (isSeedreamImageModel) {
+      setParamQuality('2K')
+    } else if (paramQuality === '2K') {
+      setParamQuality('1080p')
+    }
+  }, [isSeedreamImageModel, paramQuality])
 
   useLayoutEffect(() => {
     if (!openItem) {
@@ -365,7 +375,7 @@ export function CanvasPromptBox({
           <div className="canvas-param-section">
             <div className="canvas-param-label">清晰度</div>
             <div className="canvas-param-segment">
-              {PARAMETER_QUALITIES.map((item) => (
+              {qualityOptions.map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -379,6 +389,7 @@ export function CanvasPromptBox({
                 </button>
               ))}
             </div>
+            {isSeedreamImageModel ? <div className="canvas-choice-hint">Seedream 最低 2K</div> : null}
           </div>
 
           <div className="canvas-param-section">

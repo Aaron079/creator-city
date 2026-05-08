@@ -40,11 +40,18 @@ export function testVolcengineConnection(providerId: 'volcengine-seedance-video'
   return getVolcengineStatus(providerId)
 }
 
-function imageSize(input: ChinaImageGenerationInput) {
-  if (input.size) return input.size
-  if (input.aspectRatio === '9:16') return '1024x1792'
-  if (input.aspectRatio === '1:1') return '2048x2048'
-  return '1792x1024'
+function normalizeSeedreamSize(input?: string) {
+  const value = String(input || '').toLowerCase()
+
+  if (!value || value === '1080p' || value === '1920x1080' || value === '16:9') {
+    return '2K'
+  }
+
+  if (value === '2k' || value === '2560x1440') {
+    return '2K'
+  }
+
+  return input
 }
 
 function imageEndpoint(baseUrl: string) {
@@ -583,10 +590,13 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 90000)
   try {
+    const seedreamInput = input as ChinaImageGenerationInput & { resolution?: string; quality?: string }
+    const seedreamSize = normalizeSeedreamSize(seedreamInput.size || seedreamInput.resolution || seedreamInput.quality || seedreamInput.aspectRatio)
     const body: Record<string, unknown> = {
       model,
       prompt: input.prompt,
-      size: imageSize(input),
+      size: seedreamSize || '2K',
+      output_format: 'png',
       response_format: 'url',
       stream: false,
       watermark: false,
