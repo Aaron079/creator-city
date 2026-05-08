@@ -5360,13 +5360,39 @@
     linear-gradient(135deg, var(--node-preview-from, #101827), var(--node-preview-to, #315cff));
 }
 
+.scope :global(.canvas-node-card.node-image) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.scope :global(.canvas-node-card.node-image:hover),
+.scope :global(.canvas-node-card.node-image.is-active) {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.scope :global(.canvas-node-card.node-image .canvas-node-body) {
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
 .scope :global(.canvas-node-card.node-image .canvas-node-preview.is-image-result) {
   position: relative;
+  aspect-ratio: var(--image-aspect-ratio, 16 / 9);
+  width: 100%;
+  height: auto;
   overflow: hidden;
   min-height: 0;
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.24);
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(20, 20, 20, 0.92);
   padding: 0;
+}
+
+.scope :global(.canvas-node-card.node-image.is-active .canvas-node-preview.is-image-result) {
+  border-color: rgba(124, 255, 234, 0.62);
 }
 
 .scope :global(.canvas-node-video-button) {

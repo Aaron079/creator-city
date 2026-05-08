@@ -169,9 +169,21 @@ function resolveImageAspectRatio(node: VisualCanvasNode, naturalRatio: number | 
   const params = metadata.params && typeof metadata.params === 'object' && !Array.isArray(metadata.params)
     ? metadata.params as Record<string, unknown>
     : {}
+  const generationParams = metadata.generationParams && typeof metadata.generationParams === 'object' && !Array.isArray(metadata.generationParams)
+    ? metadata.generationParams as Record<string, unknown>
+    : {}
+  const nodeParams = (node as VisualCanvasNode & { params?: unknown }).params
+  const nodeParamsRecord = nodeParams && typeof nodeParams === 'object' && !Array.isArray(nodeParams)
+    ? nodeParams as Record<string, unknown>
+    : {}
   return aspectRatioFromValue(metadata.aspectRatio)
     ?? aspectRatioFromValue((node as VisualCanvasNode & { aspectRatio?: unknown }).aspectRatio)
     ?? aspectRatioFromValue(params.aspectRatio)
+    ?? aspectRatioFromValue(params.ratio)
+    ?? aspectRatioFromValue(generationParams.aspectRatio)
+    ?? aspectRatioFromValue(generationParams.ratio)
+    ?? aspectRatioFromValue(nodeParamsRecord.aspectRatio)
+    ?? aspectRatioFromValue(nodeParamsRecord.ratio)
     ?? aspectRatioFromValue(node.ratio)
     ?? naturalRatio
     ?? 16 / 9
@@ -215,14 +227,16 @@ export function CanvasNodeCard({
     node.status === 'generating' || node.status === 'running' ? 'is-generating' : '',
   ].filter(Boolean).join(' ')
   const imageAspectRatioValue = node.kind === 'image' ? resolveImageAspectRatio(node, imageNaturalRatio) : 16 / 9
+  const imageAspectRatioCssValue = aspectRatioCss(imageAspectRatioValue)
   const imageFrameStyle = node.kind === 'image'
     ? {
-        aspectRatio: aspectRatioCss(imageAspectRatioValue),
-        height: imageAspectRatioValue < 1 ? '100%' : undefined,
+        '--image-aspect-ratio': imageAspectRatioCssValue,
+        aspectRatio: imageAspectRatioCssValue,
+        height: imageAspectRatioValue < 1 ? '100%' : 'auto',
         maxHeight: '100%',
         maxWidth: '100%',
         width: imageAspectRatioValue < 1 ? 'auto' : '100%',
-      } satisfies CSSProperties
+      } as CSSProperties
     : undefined
 
   useEffect(() => {
