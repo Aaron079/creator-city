@@ -5805,7 +5805,7 @@
   place-items: center;
   overflow: hidden;
   border-radius: inherit;
-  cursor: zoom-in;
+  cursor: grab;
 }
 
 .scope :global(.canvas-node-preview-video) {
@@ -5855,6 +5855,7 @@
   border: 0;
   border-radius: inherit;
   background: transparent;
+  cursor: grab;
   padding: 0;
 }
 

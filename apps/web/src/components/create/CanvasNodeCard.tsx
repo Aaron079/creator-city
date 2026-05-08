@@ -147,13 +147,14 @@ function isInteractiveTarget(target: EventTarget | null) {
     'textarea',
     'select',
     'a',
-    'video',
+    'video[controls]',
     'audio',
     '[contenteditable="true"]',
+    '[data-provider-menu="true"]',
     '[data-no-node-drag="true"]',
     '[data-connection-handle="true"]',
+    '[data-node-action="true"]',
     '[data-node-preview-overlay="true"]',
-    '[data-provider-menu="true"]',
     '.canvas-node-dialog',
     '.canvas-prompt-box',
     '.canvas-context-menu',
@@ -489,10 +490,7 @@ export function CanvasNodeCard({
                   className="canvas-node-video-button"
                   role="button"
                   tabIndex={0}
-                  data-no-node-drag="true"
-                  onPointerDown={(event) => event.stopPropagation()}
                   onWheel={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -524,6 +522,7 @@ export function CanvasNodeCard({
                         muted
                         playsInline
                         preload="metadata"
+                        style={{ pointerEvents: 'none' }}
                         onError={() => setVideoLoadFailed(true)}
                       />
                       <span className="canvas-node-video-play" aria-hidden="true">▶</span>
@@ -532,18 +531,23 @@ export function CanvasNodeCard({
                 </div>
               ) : null}
               {node.kind === 'image' && node.resultImageUrl ? (
-                <button
-                  type="button"
-                  data-no-node-drag="true"
+                <div
                   className="canvas-node-image-button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
+                  role="button"
+                  tabIndex={0}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
                     onSelect()
                   }}
                   onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!node.resultImageUrl) return
+                    onOpenPreview('image')
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     event.stopPropagation()
                     if (!node.resultImageUrl) return
@@ -559,6 +563,8 @@ export function CanvasNodeCard({
                       alt={node.title}
                       className="canvas-node-preview-image"
                       loading="lazy"
+                      draggable={false}
+                      style={{ pointerEvents: 'none' }}
                       onLoad={(event) => {
                         const { naturalWidth, naturalHeight } = event.currentTarget
                         if (naturalWidth > 0 && naturalHeight > 0) {
@@ -568,7 +574,7 @@ export function CanvasNodeCard({
                       onError={() => setImageLoadFailed(true)}
                     />
                   )}
-                </button>
+                </div>
               ) : null}
               <div className="canvas-node-preview-copy">
                 {node.resultText || node.resultPreview || node.outputLabel || '结果已生成。'}
