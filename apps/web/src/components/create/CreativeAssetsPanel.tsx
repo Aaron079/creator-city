@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import {
   createCharacterProfile,
@@ -44,6 +44,10 @@ const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
   { id: 'props', label: '道具' },
   { id: 'camera', label: '镜头' },
 ]
+
+const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const textareaClassName = 'min-h-[74px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const compactTextareaClassName = 'min-h-[58px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
 
 const CHARACTER_FIELDS: Array<{
   key: keyof Pick<CharacterProfile, 'name' | 'role' | 'logline' | 'appearance' | 'ageAndTemperament' | 'costume' | 'hairstyle' | 'props' | 'behaviorRules' | 'negativeRules'>
@@ -145,10 +149,22 @@ export function CreativeAssetsPanel({
   const [draftCharacterBible, setDraftCharacterBible] = useState<CharacterBible>(characterBible)
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const wasOpenRef = useRef(false)
+  const currentNode = useMemo(
+    () => nodes.find((node) => node.id === currentNodeId) ?? null,
+    [currentNodeId, nodes],
+  )
+  const currentNodeCanSeedSceneLab = currentNode?.kind === 'image' || currentNode?.kind === 'video'
 
   useEffect(() => {
-    if (!open) return
-    setActiveTab(initialTab)
+    if (!open) {
+      wasOpenRef.current = false
+      return
+    }
+    if (!wasOpenRef.current) {
+      setActiveTab(initialTab === 'characters' && currentNodeCanSeedSceneLab && sceneBible.scenes.length === 0 ? 'scene-lab' : initialTab)
+      wasOpenRef.current = true
+    }
     setDraftCharacterBible(characterBible)
     setSelectedCharacterId((current) => (
       characterBible.characters.some((character) => character.id === current)
@@ -156,7 +172,7 @@ export function CreativeAssetsPanel({
         : characterBible.characters[0]?.id || ''
     ))
     setCopyState('idle')
-  }, [characterBible, initialTab, open])
+  }, [characterBible, currentNodeCanSeedSceneLab, initialTab, open, sceneBible.scenes.length])
 
   const selectedCharacter = useMemo(
     () => draftCharacterBible.characters.find((character) => character.id === selectedCharacterId) ?? draftCharacterBible.characters[0] ?? null,
@@ -351,14 +367,14 @@ export function CreativeAssetsPanel({
                               onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
                               placeholder={field.placeholder}
                               rows={3}
-                              className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                              className={textareaClassName}
                             />
                           ) : (
                             <input
                               value={String(selectedCharacter[field.key] ?? '')}
                               onChange={(event) => patchSelectedCharacter({ [field.key]: event.target.value })}
                               placeholder={field.placeholder}
-                              className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                              className={inputClassName}
                             />
                           )}
                         </label>
@@ -370,7 +386,7 @@ export function CreativeAssetsPanel({
                           onChange={(event) => patchSelectedCharacter({ referenceKeywords: parseKeywords(event.target.value) })}
                           placeholder="cyberpunk courier, black trench coat, metal message tube"
                           rows={2}
-                          className="min-h-[58px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                          className={compactTextareaClassName}
                         />
                       </label>
                     </div>
@@ -417,7 +433,19 @@ export function CreativeAssetsPanel({
                     })}
                   </div>
                 ) : (
-                  <p className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/45">场景库为空。可在右侧新建场景。</p>
+                  <div className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/48">
+                    <p className="font-semibold text-white/70">场景库为空</p>
+                    <p className="mt-2">你可以在右侧新建场景，或在 Scene Lab 中从当前 Image / Video 节点提取场景。</p>
+                    {currentNodeCanSeedSceneLab ? (
+                      <button
+                        type="button"
+                        className="mt-3 w-full rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
+                        onClick={() => setActiveTab('scene-lab')}
+                      >
+                        {currentNode?.kind === 'image' ? '从当前图片提取场景' : '从当前节点提取场景'}
+                      </button>
+                    ) : null}
+                  </div>
                 )}
               </section>
 
@@ -426,6 +454,7 @@ export function CreativeAssetsPanel({
                 embedded
                 bible={sceneBible}
                 onSave={onSceneBibleSave}
+                onOpenSceneLab={() => setActiveTab('scene-lab')}
               />
             </div>
           ) : null}
@@ -435,8 +464,10 @@ export function CreativeAssetsPanel({
               <SceneLabPanel
                 nodes={nodes}
                 projectId={projectId}
+                currentNode={currentNode}
                 currentNodeId={currentNodeId}
                 sceneBible={sceneBible}
+                selectedSceneIds={selectedSceneIds}
                 initialSourceNodeId={initialSceneLabSourceNodeId}
                 onSaveScene={(scene) => {
                   const nextBible = {
@@ -445,6 +476,7 @@ export function CreativeAssetsPanel({
                   }
                   onSceneBibleSave(nextBible)
                 }}
+                onSceneIdsChange={onSceneIdsChange}
                 onSendPromptToNode={onSendPromptToNode}
                 onSceneEditPromptChange={onSceneEditPromptChange}
               />

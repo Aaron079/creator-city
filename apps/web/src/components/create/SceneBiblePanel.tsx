@@ -15,6 +15,7 @@ interface SceneBiblePanelProps {
   embedded?: boolean
   onClose?: () => void
   onSave: (bible: SceneBible) => void
+  onOpenSceneLab?: () => void
 }
 
 const SCENE_FIELDS: Array<{
@@ -36,6 +37,10 @@ const SCENE_FIELDS: Array<{
   { key: 'continuityRules', label: '连续性规则', placeholder: '始终保持雨夜、霓虹、湿润反光和高楼压迫感', multiline: true },
   { key: 'negativeRules', label: '禁止变化项', placeholder: '不要变成白天，不要乡村，不要暖色阳光，不要卡通化', multiline: true },
 ]
+
+const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const textareaClassName = 'min-h-[74px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const compactTextareaClassName = 'min-h-[58px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
 
 function formatSceneForCopy(scene: SceneProfile) {
   const keywords = scene.referenceKeywords?.filter(Boolean).join(', ')
@@ -69,6 +74,7 @@ export function SceneBiblePanel({
   embedded = false,
   onClose,
   onSave,
+  onOpenSceneLab,
 }: SceneBiblePanelProps) {
   const [draftBible, setDraftBible] = useState<SceneBible>(bible)
   const [selectedId, setSelectedId] = useState('')
@@ -171,8 +177,18 @@ export function SceneBiblePanel({
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-white/14 p-4 text-sm text-white/48">
-              还没有场景。点击“新建场景”创建第一处场景。
+            <div className="rounded-lg border border-dashed border-white/14 p-4 text-sm leading-6 text-white/48">
+              <p className="font-semibold text-white/72">场景库为空</p>
+              <p className="mt-2">你可以点击“新建场景”手动创建，或在 Scene Lab 中从当前 Image / Video 节点提取场景。</p>
+              {onOpenSceneLab ? (
+                <button
+                  type="button"
+                  className="mt-3 w-full rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
+                  onClick={onOpenSceneLab}
+                >
+                  去 Scene Lab 提取场景
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -205,14 +221,14 @@ export function SceneBiblePanel({
                         onChange={(event) => patchSelected({ [field.key]: event.target.value })}
                         placeholder={field.placeholder}
                         rows={3}
-                        className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                        className={textareaClassName}
                       />
                     ) : (
                       <input
                         value={String(selectedScene[field.key] ?? '')}
                         onChange={(event) => patchSelected({ [field.key]: event.target.value })}
                         placeholder={field.placeholder}
-                        className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                        className={inputClassName}
                       />
                     )}
                   </label>
@@ -225,7 +241,7 @@ export function SceneBiblePanel({
                     onChange={(event) => patchSelected({ referenceKeywords: parseKeywords(event.target.value) })}
                     placeholder="rainy neon city, wet street, cyberpunk district"
                     rows={2}
-                    className="min-h-[58px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                    className={compactTextareaClassName}
                   />
                 </label>
               </div>

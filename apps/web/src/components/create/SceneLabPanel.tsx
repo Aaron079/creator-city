@@ -15,10 +15,13 @@ import {
 interface SceneLabPanelProps {
   nodes: CanvasNode[]
   projectId?: string
+  currentNode?: CanvasNode | null
   currentNodeId?: string
   sceneBible: SceneBible
+  selectedSceneIds?: string[]
   initialSourceNodeId?: string
   onSaveScene: (scene: SceneProfile) => void
+  onSceneIdsChange?: (sceneIds: string[]) => void
   onSendPromptToNode?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
   onSceneEditPromptChange?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
 }
@@ -59,6 +62,11 @@ const BRIEF_FIELDS: Array<{
   { key: 'negativeRules', label: '禁止项', placeholder: '禁止变成白天乡村，禁止卡通化', multiline: true },
 ]
 
+const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const textareaClassName = 'min-h-[74px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const compactTextareaClassName = 'min-h-[58px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
+const selectClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[#151719] px-3 text-sm text-white outline-none focus:border-cyan-200/60'
+
 function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
@@ -95,10 +103,13 @@ function parseKeywords(value: string) {
 export function SceneLabPanel({
   nodes,
   projectId,
+  currentNode,
   currentNodeId,
   sceneBible,
+  selectedSceneIds = [],
   initialSourceNodeId,
   onSaveScene,
+  onSceneIdsChange,
   onSendPromptToNode,
   onSceneEditPromptChange,
 }: SceneLabPanelProps) {
@@ -106,7 +117,9 @@ export function SceneLabPanel({
     () => nodes.filter((node) => node.kind === 'image' || node.kind === 'video'),
     [nodes],
   )
-  const [sourceNodeId, setSourceNodeId] = useState(initialSourceNodeId || sourceNodes[0]?.id || '')
+  const currentSourceNode = currentNode?.kind === 'image' || currentNode?.kind === 'video' ? currentNode : null
+  const defaultSourceNodeId = initialSourceNodeId || currentSourceNode?.id || sourceNodes[0]?.id || ''
+  const [sourceNodeId, setSourceNodeId] = useState(defaultSourceNodeId)
   const [sceneDraft, setSceneDraft] = useState<SceneProfile | null>(null)
   const [brief, setBrief] = useState<Partial<SceneEditBrief>>({})
   const [sceneEditPrompt, setSceneEditPrompt] = useState('')
@@ -118,14 +131,17 @@ export function SceneLabPanel({
   }, [initialSourceNodeId])
 
   useEffect(() => {
-    if (!sourceNodeId && sourceNodes[0]?.id) setSourceNodeId(sourceNodes[0].id)
-  }, [sourceNodeId, sourceNodes])
+    if (!sourceNodeId && defaultSourceNodeId) setSourceNodeId(defaultSourceNodeId)
+  }, [defaultSourceNodeId, sourceNodeId])
 
   const sourceNode = sourceNodes.find((node) => node.id === sourceNodeId) ?? null
   const source = sourceNode ? sourceFromNode(sourceNode) : null
   const currentImageNode = currentNodeId
     ? nodes.find((node) => node.id === currentNodeId && node.kind === 'image') ?? null
     : null
+  const boundScenes = sceneBible.scenes.filter((scene) => selectedSceneIds.includes(scene.id))
+  const sourceIsCurrentNode = Boolean(source && currentNodeId && source.nodeId === currentNodeId)
+  const sourceHasResult = Boolean(source?.resultImageUrl || source?.resultVideoUrl)
 
   const extractDraft = () => {
     if (!source) return
@@ -133,9 +149,12 @@ export function SceneLabPanel({
     setSaveState('idle')
   }
 
-  const saveDraft = () => {
+  const saveDraft = (bindToCurrentNode = false) => {
     if (!sceneDraft) return
     onSaveScene(sceneDraft)
+    if (bindToCurrentNode && currentNodeId && onSceneIdsChange) {
+      onSceneIdsChange([...new Set([...selectedSceneIds, sceneDraft.id])])
+    }
     setSaveState('saved')
     window.setTimeout(() => setSaveState('idle'), 1400)
   }
@@ -193,13 +212,29 @@ export function SceneLabPanel({
               setSceneDraft(null)
               setSceneEditPrompt('')
             }}
-            className="h-9 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white/82 outline-none focus:border-cyan-200/36"
+            className={selectClassName}
           >
+            {!sourceNodes.length ? <option value="">暂无 Image / Video 节点</option> : null}
             {sourceNodes.map((node) => (
               <option key={node.id} value={node.id}>{node.kind.toUpperCase()} · {node.title}</option>
             ))}
           </select>
         </label>
+
+        <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="text-xs font-semibold text-white/60">当前节点绑定场景：{selectedSceneIds.length} 个</div>
+          {boundScenes.length ? (
+            <div className="mt-2 space-y-1">
+              {boundScenes.map((scene) => (
+                <div key={scene.id} className="truncate text-xs text-cyan-50/80">- {scene.name}</div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs leading-5 text-white/45">
+              {sceneBible.scenes.length ? '当前节点还未绑定场景。可在“场景”Tab 勾选，或保存草稿后直接绑定。' : '暂无可绑定场景。可以先从当前节点提取场景。'}
+            </p>
+          )}
+        </div>
 
         {source ? (
           <div className="mt-4 space-y-3">
@@ -208,17 +243,24 @@ export function SceneLabPanel({
             ) : source.resultVideoUrl ? (
               <video src={source.resultVideoUrl} className="max-h-44 w-full rounded-lg border border-white/10 object-cover" muted playsInline preload="metadata" />
             ) : (
-              <div className="rounded-lg border border-dashed border-white/14 p-4 text-sm text-white/45">来源节点还没有可预览的生成结果。</div>
+              <div className="rounded-lg border border-dashed border-white/14 p-4 text-sm leading-6 text-white/45">
+                该节点还没有生成结果，仍可根据 prompt 提取场景草稿。
+              </div>
             )}
-            <div className="rounded-md bg-black/18 p-3 text-xs leading-5 text-white/58">
+            <div className="rounded-md bg-black/30 p-3 text-xs leading-5 text-white/60">
               <pre className="whitespace-pre-wrap break-words">{summarizeSceneSource(source)}</pre>
             </div>
+            {sourceIsCurrentNode ? (
+              <p className="rounded-md border border-cyan-100/15 bg-cyan-100/[0.08] px-3 py-2 text-xs leading-5 text-cyan-50/70">
+                已自动选中当前 {source.kind === 'video' ? 'Video' : 'Image'} 节点作为来源。
+              </p>
+            ) : null}
             <button
               type="button"
               className="w-full rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
               onClick={extractDraft}
             >
-              提取为场景
+              {sourceIsCurrentNode && sourceHasResult && source.kind === 'image' ? '从当前图片提取场景' : '从当前节点提取场景'}
             </button>
           </div>
         ) : (
@@ -235,14 +277,24 @@ export function SceneLabPanel({
               <h3 className="text-sm font-semibold text-white/84">提取为场景</h3>
               <p className="mt-1 text-xs text-white/42">基于来源节点已有 prompt/result/metadata 生成草稿，不调用模型。</p>
             </div>
-            <button
-              type="button"
-              className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 disabled:opacity-45"
-              disabled={!sceneDraft}
-              onClick={saveDraft}
-            >
-              {saveState === 'saved' ? '已保存' : '保存到场景库'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 disabled:opacity-45"
+                disabled={!sceneDraft}
+                onClick={() => saveDraft(false)}
+              >
+                {saveState === 'saved' ? '已保存' : '保存到场景库'}
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white disabled:opacity-45"
+                disabled={!sceneDraft || !currentNodeId || !onSceneIdsChange}
+                onClick={() => saveDraft(true)}
+              >
+                保存并绑定到当前节点
+              </button>
+            </div>
           </div>
 
           {sceneDraft ? (
@@ -255,13 +307,13 @@ export function SceneLabPanel({
                       value={String(sceneDraft[field.key] ?? '')}
                       onChange={(event) => setSceneDraft((current) => current ? { ...current, [field.key]: event.target.value } : current)}
                       rows={3}
-                      className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                      className={textareaClassName}
                     />
                   ) : (
                     <input
                       value={String(sceneDraft[field.key] ?? '')}
                       onChange={(event) => setSceneDraft((current) => current ? { ...current, [field.key]: event.target.value } : current)}
-                      className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                      className={inputClassName}
                     />
                   )}
                 </label>
@@ -272,7 +324,7 @@ export function SceneLabPanel({
                   value={sceneDraft.referenceKeywords?.join(', ') ?? ''}
                   onChange={(event) => setSceneDraft((current) => current ? { ...current, referenceKeywords: parseKeywords(event.target.value) } : current)}
                   rows={2}
-                  className="min-h-[58px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                  className={compactTextareaClassName}
                 />
               </label>
             </div>
@@ -328,14 +380,14 @@ export function SceneLabPanel({
                     onChange={(event) => setBrief((current) => ({ ...current, [field.key]: event.target.value }))}
                     placeholder={field.placeholder}
                     rows={3}
-                    className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                    className={textareaClassName}
                   />
                 ) : (
                   <input
                     value={String(brief[field.key] ?? '')}
                     onChange={(event) => setBrief((current) => ({ ...current, [field.key]: event.target.value }))}
                     placeholder={field.placeholder}
-                    className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                    className={inputClassName}
                   />
                 )}
               </label>
@@ -345,7 +397,7 @@ export function SceneLabPanel({
           <div className="mt-4">
             <div className="mb-2 text-xs font-semibold text-white/56">输出区</div>
             {sceneEditPrompt ? (
-              <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/22 p-3 text-sm leading-6 text-white/78">
+              <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/30 p-3 text-sm leading-6 text-white/80">
                 {sceneEditPrompt}
               </pre>
             ) : (
