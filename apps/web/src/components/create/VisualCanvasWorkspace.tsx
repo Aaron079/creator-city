@@ -2434,7 +2434,6 @@ export function VisualCanvasWorkspace({
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
 
-    event.preventDefault()
     event.stopPropagation()
     nodeDragRef.current = {
       nodeId,

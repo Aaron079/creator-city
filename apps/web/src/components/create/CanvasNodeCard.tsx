@@ -136,6 +136,28 @@ function metadataRecord(metadataJson: unknown) {
     : {}
 }
 
+function isInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(target.closest([
+    'button',
+    'input',
+    'textarea',
+    'select',
+    'a',
+    'video',
+    'audio',
+    '[contenteditable="true"]',
+    '[data-no-node-drag="true"]',
+    '[data-connection-handle="true"]',
+    '.canvas-node-dialog',
+    '.canvas-prompt-box',
+    '.canvas-context-menu',
+    '.canvas-node-add-menu',
+    '.canvas-node-create-menu',
+    '.canvas-side-panel',
+  ].join(',')))
+}
+
 function aspectRatioFromValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     if (Math.abs(value - 1.777) < 0.04) return 16 / 9
@@ -330,6 +352,9 @@ export function CanvasNodeCard({
       onPointerDown={(event) => {
         if (event.button !== 0) return
         pointerDownPos.current = { x: event.clientX, y: event.clientY }
+        if (isInteractiveTarget(event.target)) return
+        event.stopPropagation()
+        onDragStart(event)
       }}
       onClick={(event) => {
         const down = pointerDownPos.current
@@ -371,6 +396,7 @@ export function CanvasNodeCard({
         className="canvas-node-connector is-left"
         aria-label="Add previous node"
         data-canvas-connector="true"
+        data-connection-handle="true"
         data-node-id={node.id}
         data-handle="left"
       >
@@ -390,6 +416,7 @@ export function CanvasNodeCard({
         className="canvas-node-connector is-right"
         aria-label="Add next node"
         data-canvas-connector="true"
+        data-connection-handle="true"
         data-node-id={node.id}
         data-handle="right"
       >
@@ -398,13 +425,6 @@ export function CanvasNodeCard({
 
       <div
         className="relative z-[1] flex h-full flex-col"
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          const el = event.target as HTMLElement
-          if (el.closest('button')) return
-          pointerDownPos.current = { x: event.clientX, y: event.clientY }
-          onDragStart(event)
-        }}
       >
         <div className="canvas-node-header">
           <div className="min-w-0 flex items-center gap-2">
@@ -436,8 +456,12 @@ export function CanvasNodeCard({
           {node.kind === 'text' ? (
             <button
               type="button"
+              data-no-node-drag="true"
               className={`canvas-node-text-result ${textIsPlaceholder ? 'is-placeholder' : ''} ${node.status === 'error' ? 'is-error' : ''}`}
               onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onMouseDown={(event) => {
                 event.stopPropagation()
               }}
               onWheel={(event) => {
@@ -447,6 +471,11 @@ export function CanvasNodeCard({
                 event.stopPropagation()
               }}
               onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onSelect()
+              }}
+              onDoubleClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
                 onOpenTextEditor?.()
@@ -484,13 +513,19 @@ export function CanvasNodeCard({
                   className="canvas-node-video-button"
                   role="button"
                   tabIndex={0}
+                  data-no-node-drag="true"
                   onPointerDown={(event) => event.stopPropagation()}
                   onWheel={(event) => event.stopPropagation()}
                   onMouseDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    if (videoLoadFailed) return
+                    onSelect()
+                  }}
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (videoLoadFailed || !videoPreviewUrl) return
                     setVideoPreviewOpen(true)
                   }}
                   onKeyDown={(event) => {
@@ -523,11 +558,19 @@ export function CanvasNodeCard({
               {node.kind === 'image' && node.resultImageUrl ? (
                 <button
                   type="button"
+                  data-no-node-drag="true"
                   className="canvas-node-image-button"
                   onPointerDown={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
+                    onSelect()
+                  }}
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!node.resultImageUrl) return
                     setImagePreviewOpen(true)
                   }}
                   aria-label="预览图片"
@@ -587,6 +630,11 @@ export function CanvasNodeCard({
         <div
           className="canvas-image-preview-backdrop"
           role="presentation"
+          data-no-node-drag="true"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
           onPointerDown={(event) => {
             event.stopPropagation()
             if (event.target === event.currentTarget) setImagePreviewOpen(false)
@@ -598,6 +646,10 @@ export function CanvasNodeCard({
             aria-modal="true"
             aria-label="图片预览"
             onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
           >
             <div className="canvas-image-preview-head">
               <span>{node.title}</span>
@@ -620,7 +672,9 @@ export function CanvasNodeCard({
         <div
           className="canvas-video-preview-backdrop"
           role="presentation"
+          data-no-node-drag="true"
           onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
           onPointerDown={(event) => {
@@ -636,6 +690,7 @@ export function CanvasNodeCard({
             onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
           >
             <div className="canvas-video-preview-head">
