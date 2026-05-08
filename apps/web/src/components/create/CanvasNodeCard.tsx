@@ -264,10 +264,26 @@ export function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
+
+  function handleVideoPreviewEnter() {
+    const video = videoPreviewRef.current
+    if (!video) return
+    video.muted = true
+    video.playsInline = true
+    void video.play().catch(() => undefined)
+  }
+
+  function handleVideoPreviewLeave() {
+    const video = videoPreviewRef.current
+    if (!video) return
+    video.pause()
+    video.currentTime = 0
+  }
   const videoPreviewUrl = node.kind === 'video'
     ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
     : undefined
@@ -373,7 +389,10 @@ export function CanvasNodeCard({
         event.dataTransfer.dropEffect = 'copy'
         setCharRefDragOver(true)
       }}
-      onDragLeave={() => setCharRefDragOver(false)}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return
+        setCharRefDragOver(false)
+      }}
       onDrop={(event) => {
         setCharRefDragOver(false)
         if (!event.dataTransfer.types.includes(CHAR_REF_DRAG_MIME)) return
@@ -513,15 +532,6 @@ export function CanvasNodeCard({
           ) : node.status === 'done' ? (
             <div
               className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)} ${node.preview?.type === 'placeholder-video' ? 'has-placeholder-preview' : ''}`}
-              onMouseEnter={(event) => {
-                event.currentTarget.querySelector('video')?.play().catch(() => undefined)
-              }}
-              onMouseLeave={(event) => {
-                const video = event.currentTarget.querySelector('video')
-                if (!video) return
-                video.pause()
-                video.currentTime = 0
-              }}
               style={node.preview?.gradientFrom && node.preview?.gradientTo
                 ? {
                   '--node-preview-from': node.preview.gradientFrom,
@@ -536,6 +546,8 @@ export function CanvasNodeCard({
                   className="canvas-node-video-button"
                   role="button"
                   tabIndex={0}
+                  onMouseEnter={handleVideoPreviewEnter}
+                  onMouseLeave={handleVideoPreviewLeave}
                   onWheel={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.preventDefault()
@@ -562,6 +574,7 @@ export function CanvasNodeCard({
                   ) : (
                     <>
                       <video
+                        ref={videoPreviewRef}
                         className="canvas-node-preview-video"
                         src={videoPreviewUrl}
                         poster={node.preview?.poster}
