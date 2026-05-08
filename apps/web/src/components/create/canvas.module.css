@@ -5634,9 +5634,25 @@
   border-color: rgba(124, 255, 234, 0.62);
 }
 
+.scope :global(.canvas-node-card.node-video .canvas-node-preview.is-video-result) {
+  position: relative;
+  aspect-ratio: var(--video-aspect-ratio, 16 / 9);
+  overflow: hidden;
+  min-height: 0;
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.46);
+  padding: 0;
+}
+
+.scope :global(.canvas-node-card.node-video .canvas-node-preview.is-video-result)::after {
+  display: none;
+}
+
 .scope :global(.canvas-node-video-button) {
   position: absolute;
   inset: 0;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   border-radius: inherit;
   cursor: zoom-in;
@@ -5654,6 +5670,22 @@
 
 .scope :global(.canvas-node-card.node-video .canvas-node-preview-video) {
   opacity: 1;
+}
+
+.scope :global(.canvas-node-video-play) {
+  position: relative;
+  z-index: 2;
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.44);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 16px;
+  line-height: 1;
+  backdrop-filter: blur(14px);
 }
 
 .scope :global(.canvas-node-preview-image) {
@@ -5677,6 +5709,16 @@
 }
 
 .scope :global(.canvas-node-image-error) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 190, 174, 0.94);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.scope :global(.canvas-node-video-error) {
   position: absolute;
   inset: 0;
   display: grid;
@@ -5738,7 +5780,8 @@
 
 .scope :global(.canvas-image-preview-head),
 .scope :global(.canvas-video-preview-head),
-.scope :global(.canvas-image-preview-actions) {
+.scope :global(.canvas-image-preview-actions),
+.scope :global(.canvas-video-preview-actions) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5756,9 +5799,26 @@
   white-space: nowrap;
 }
 
+.scope :global(.canvas-video-preview-title) {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.scope :global(.canvas-video-preview-title small) {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .scope :global(.canvas-image-preview-head button),
 .scope :global(.canvas-video-preview-head button),
-.scope :global(.canvas-image-preview-actions button) {
+.scope :global(.canvas-image-preview-actions button),
+.scope :global(.canvas-video-preview-actions button) {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
@@ -5792,10 +5852,12 @@
 
 .scope :global(.canvas-video-preview-media) {
   width: min(100%, 960px);
+  max-height: 70vh;
   background: #000;
 }
 
-.scope :global(.canvas-image-preview-error) {
+.scope :global(.canvas-image-preview-error),
+.scope :global(.canvas-video-preview-error) {
   display: grid;
   min-height: 240px;
   place-items: center;

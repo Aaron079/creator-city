@@ -189,6 +189,30 @@ function resolveImageAspectRatio(node: VisualCanvasNode, naturalRatio: number | 
     ?? 16 / 9
 }
 
+function resolveVideoAspectRatio(node: VisualCanvasNode) {
+  const metadata = metadataRecord(node.metadataJson)
+  const params = metadata.params && typeof metadata.params === 'object' && !Array.isArray(metadata.params)
+    ? metadata.params as Record<string, unknown>
+    : {}
+  const generationParams = metadata.generationParams && typeof metadata.generationParams === 'object' && !Array.isArray(metadata.generationParams)
+    ? metadata.generationParams as Record<string, unknown>
+    : {}
+  const nodeParams = (node as VisualCanvasNode & { params?: unknown }).params
+  const nodeParamsRecord = nodeParams && typeof nodeParams === 'object' && !Array.isArray(nodeParams)
+    ? nodeParams as Record<string, unknown>
+    : {}
+  return aspectRatioFromValue(metadata.aspectRatio)
+    ?? aspectRatioFromValue((node as VisualCanvasNode & { aspectRatio?: unknown }).aspectRatio)
+    ?? aspectRatioFromValue(params.aspectRatio)
+    ?? aspectRatioFromValue(params.ratio)
+    ?? aspectRatioFromValue(generationParams.aspectRatio)
+    ?? aspectRatioFromValue(generationParams.ratio)
+    ?? aspectRatioFromValue(nodeParamsRecord.aspectRatio)
+    ?? aspectRatioFromValue(nodeParamsRecord.ratio)
+    ?? aspectRatioFromValue(node.ratio)
+    ?? 16 / 9
+}
+
 export function CanvasNodeCard({
   node,
   active,
@@ -208,9 +232,14 @@ export function CanvasNodeCard({
   const [imageLinkCopied, setImageLinkCopied] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoPreviewOpen, setVideoPreviewOpen] = useState(false)
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [videoLinkCopied, setVideoLinkCopied] = useState(false)
   const videoPreviewUrl = node.kind === 'video'
     ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
     : undefined
+  const nodeMetadata = metadataRecord(node.metadataJson)
+  const videoProviderLabel = node.providerId || (typeof nodeMetadata.providerId === 'string' ? nodeMetadata.providerId : '')
+  const videoModelLabel = typeof nodeMetadata.model === 'string' ? nodeMetadata.model : node.model
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -238,6 +267,18 @@ export function CanvasNodeCard({
         width: imageAspectRatioValue < 1 ? 'auto' : '100%',
       } as CSSProperties
     : undefined
+  const videoAspectRatioValue = node.kind === 'video' ? resolveVideoAspectRatio(node) : 16 / 9
+  const videoAspectRatioCssValue = aspectRatioCss(videoAspectRatioValue)
+  const videoFrameStyle = node.kind === 'video'
+    ? {
+        '--video-aspect-ratio': videoAspectRatioCssValue,
+        aspectRatio: videoAspectRatioCssValue,
+        height: videoAspectRatioValue < 1 ? '100%' : 'auto',
+        maxHeight: '100%',
+        maxWidth: '100%',
+        width: videoAspectRatioValue < 1 ? 'auto' : '100%',
+      } as CSSProperties
+    : undefined
 
   useEffect(() => {
     setImageLoadFailed(false)
@@ -248,6 +289,8 @@ export function CanvasNodeCard({
 
   useEffect(() => {
     setVideoPreviewOpen(false)
+    setVideoLoadFailed(false)
+    setVideoLinkCopied(false)
   }, [videoPreviewUrl])
 
   const copyImageLink = async () => {
@@ -259,6 +302,22 @@ export function CanvasNodeCard({
     } catch {
       setImageLinkCopied(false)
     }
+  }
+
+  const copyVideoLink = async () => {
+    if (!videoPreviewUrl) return
+    try {
+      await navigator.clipboard?.writeText(videoPreviewUrl)
+      setVideoLinkCopied(true)
+      window.setTimeout(() => setVideoLinkCopied(false), 1200)
+    } catch {
+      setVideoLinkCopied(false)
+    }
+  }
+
+  const openVideoInNewTab = () => {
+    if (!videoPreviewUrl) return
+    window.open(videoPreviewUrl, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -416,8 +475,9 @@ export function CanvasNodeCard({
                   '--node-preview-from': node.preview.gradientFrom,
                   '--node-preview-to': node.preview.gradientTo,
                   ...(node.kind === 'image' ? imageFrameStyle : {}),
+                  ...(node.kind === 'video' ? videoFrameStyle : {}),
                 } as CSSProperties
-                : node.kind === 'image' ? imageFrameStyle : undefined}
+                : node.kind === 'image' ? imageFrameStyle : node.kind === 'video' ? videoFrameStyle : undefined}
             >
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div
@@ -425,27 +485,39 @@ export function CanvasNodeCard({
                   role="button"
                   tabIndex={0}
                   onPointerDown={(event) => event.stopPropagation()}
+                  onWheel={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
+                    if (videoLoadFailed) return
                     setVideoPreviewOpen(true)
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     event.stopPropagation()
+                    if (videoLoadFailed) return
                     setVideoPreviewOpen(true)
                   }}
                   aria-label="预览视频"
                 >
-                  <video
-                    className="canvas-node-preview-video"
-                    src={videoPreviewUrl}
-                    poster={node.preview?.poster}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
+                  {videoLoadFailed ? (
+                    <span className="canvas-node-video-error">视频无法加载</span>
+                  ) : (
+                    <>
+                      <video
+                        className="canvas-node-preview-video"
+                        src={videoPreviewUrl}
+                        poster={node.preview?.poster}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onError={() => setVideoLoadFailed(true)}
+                      />
+                      <span className="canvas-node-video-play" aria-hidden="true">▶</span>
+                    </>
+                  )}
                 </div>
               ) : null}
               {node.kind === 'image' && node.resultImageUrl ? (
@@ -495,7 +567,9 @@ export function CanvasNodeCard({
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
               <div className="canvas-node-preview-copy">
-                {node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '运行中...')}
+                {node.kind === 'video'
+                  ? (node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '视频生成中，请稍后查询结果'))
+                  : node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '运行中...')}
               </div>
             </div>
           ) : node.status === 'error' ? (
@@ -546,6 +620,9 @@ export function CanvasNodeCard({
         <div
           className="canvas-video-preview-backdrop"
           role="presentation"
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
           onPointerDown={(event) => {
             event.stopPropagation()
             if (event.target === event.currentTarget) setVideoPreviewOpen(false)
@@ -557,12 +634,36 @@ export function CanvasNodeCard({
             aria-modal="true"
             aria-label="视频预览"
             onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
           >
             <div className="canvas-video-preview-head">
-              <span>{node.title}</span>
+              <div className="canvas-video-preview-title">
+                <span>视频预览</span>
+                <small>{[videoProviderLabel, videoModelLabel, node.title].filter(Boolean).join(' / ')}</small>
+              </div>
               <button type="button" onClick={() => setVideoPreviewOpen(false)} aria-label="关闭视频预览">×</button>
             </div>
-            <video src={videoPreviewUrl} className="canvas-video-preview-media" controls autoPlay playsInline />
+            {videoLoadFailed ? (
+              <div className="canvas-video-preview-error">视频无法加载</div>
+            ) : (
+              <video
+                src={videoPreviewUrl}
+                className="canvas-video-preview-media"
+                controls
+                autoPlay
+                playsInline
+                onError={() => setVideoLoadFailed(true)}
+              />
+            )}
+            <div className="canvas-video-preview-actions">
+              <button type="button" onClick={() => { void copyVideoLink() }}>
+                {videoLinkCopied ? '已复制' : '复制视频链接'}
+              </button>
+              <button type="button" onClick={openVideoInNewTab}>新标签页打开</button>
+              <button type="button" onClick={() => setVideoPreviewOpen(false)}>关闭</button>
+            </div>
           </section>
         </div>
       ) : null}
