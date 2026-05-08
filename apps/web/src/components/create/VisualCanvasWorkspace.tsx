@@ -14,6 +14,7 @@ import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
+import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
@@ -42,6 +43,7 @@ import {
 } from '@/lib/canvas/workflow-runner'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
+import { buildStoryboardFromCanvas } from '@/lib/storyboard'
 import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
 import canvasStyles from '@/components/create/canvas.module.css'
 
@@ -974,6 +976,7 @@ export function VisualCanvasWorkspace({
   const [shareCopied, setShareCopied] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
+  const [storyboardPreviewOpen, setStoryboardPreviewOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
@@ -2103,6 +2106,7 @@ export function VisualCanvasWorkspace({
         if (activeInspectorNodeId) {
           closePromptInspector()
         }
+        setStoryboardPreviewOpen(false)
         setContextMenu(null)
         setNodeAddMenu(null)
         setNodeCreateMenu(null)
@@ -2171,6 +2175,10 @@ export function VisualCanvasWorkspace({
     )
     return nodes.filter((node) => upstreamIds.has(node.id))
   }, [activeInspectorNodeId, edges, nodes])
+  const storyboardShotCount = useMemo(
+    () => buildStoryboardFromCanvas(nodes, edges).length,
+    [edges, nodes],
+  )
   const enabledCreatorSkills = useMemo(
     () => resolveCreatorSkills(enabledSkillIds),
     [enabledSkillIds],
@@ -4021,7 +4029,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-storyboard-preview="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -4038,6 +4046,7 @@ export function VisualCanvasWorkspace({
 
     closeActivePreview()
     closePromptInspector()
+    setStoryboardPreviewOpen(false)
     setEditingNodeId(null)
     setIsPanning(true)
     setContextMenu(null)
@@ -4452,6 +4461,18 @@ export function VisualCanvasWorkspace({
           </button>
           <button
             type="button"
+            className="canvas-secondary-button canvas-generation-tasks-trigger"
+            title="按连接顺序查看 Storyboard Timeline"
+            disabled={nodes.length === 0}
+            onClick={() => setStoryboardPreviewOpen(true)}
+          >
+            组合预览
+            {storyboardShotCount > 0 ? (
+              <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             onClick={() => setNewProjectOpen(true)}
             className="canvas-secondary-button"
             title="新建项目"
@@ -4819,6 +4840,18 @@ export function VisualCanvasWorkspace({
         tasks={generationTasks}
         onClose={() => setGenerationTasksOpen(false)}
         onQueryTask={handleQueryGenerationTask}
+      />
+
+      <StoryboardPreviewPanel
+        open={storyboardPreviewOpen}
+        nodes={nodes}
+        edges={edges}
+        projectId={projectId}
+        onClose={() => setStoryboardPreviewOpen(false)}
+        onOpenPromptInspector={(nodeId) => {
+          setStoryboardPreviewOpen(false)
+          openPromptInspector(nodeId)
+        }}
       />
 
       <PromptInspectorPanel
