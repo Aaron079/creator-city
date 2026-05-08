@@ -5,199 +5,99 @@ import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasN
 import { ImageEditCanvas, type ImageEditTool } from './ImageEditCanvas'
 import { ImageEditLayersPanel } from './ImageEditLayersPanel'
 import {
-  createImageEditLayer,
-  defaultImageEditInstruction,
-  formatImageEditLayersForPrompt,
-  imageEditLayerIcon,
-  imageEditLayersToSceneEdits,
-  updateImageEditLayer,
+  SCENE_EDIT_TASK_OPTIONS,
+  createSceneEditTask,
+  formatSceneEditTasksForPrompt,
+  imageEditLayersToSceneEditTasks,
+  sceneEditTasksToSceneEdits,
+  sceneEditsToSceneEditTasks,
   type ImageEditLayer,
-  type ImageEditLayerMark,
-  type ImageEditLayerType,
   type SceneEditMark,
+  type SceneEditTask,
+  type SceneEditTaskType,
 } from '@/lib/scenes'
 
 interface ImageEditStudioProps {
   node: CanvasNode
   imageUrl: string
-  imageEditLayers: ImageEditLayer[]
-  sceneEdits: SceneEditMark[]
-  onSaveLayers: (layers: ImageEditLayer[], sceneEdits: SceneEditMark[], prompt: string) => void
+  sceneEditTasks: SceneEditTask[]
+  sceneEdits?: SceneEditMark[]
+  imageEditLayers?: ImageEditLayer[]
+  onSaveTasks: (tasks: SceneEditTask[], sceneEdits: SceneEditMark[], prompt: string) => void
   onSendPromptToImageNode?: (nodeId: string, prompt: string) => void
   onClose?: () => void
 }
 
 const TOOL_OPTIONS: Array<{ tool: ImageEditTool; label: string; icon: string; description: string }> = [
-  { tool: 'select', label: '选择', icon: '↖', description: '选择或移动已有标记。' },
-  { tool: 'color', label: '调色', icon: '🎨', description: '调整亮度、对比、饱和和暖色。' },
-  { tool: 'weather', label: '天气', icon: '☔', description: '叠加雨、雪或雨雾。' },
-  { tool: 'light', label: '光线', icon: '💡', description: '点击图片添加光源点。' },
-  { tool: 'fog', label: '雾气', icon: '🌫', description: '叠加电影感雾气层。' },
-  { tool: 'mask', label: '遮罩', icon: '🖌', description: '点击或框选局部重绘区域。' },
-  { tool: 'person', label: '人物', icon: '👤', description: '点击添加人物标记。' },
-  { tool: 'architecture', label: '建筑', icon: '🏙', description: '点击添加建筑/空间标记。' },
-  { tool: 'prop', label: '道具', icon: '🧩', description: '点击添加道具/物件标记。' },
-  { tool: 'camera', label: '镜头', icon: '🎥', description: '点击添加构图/镜头标记。' },
+  { tool: 'select', label: '选择区域', icon: '⬚', description: '选择或调整已有场景修改区域。' },
+  ...SCENE_EDIT_TASK_OPTIONS.map((option) => ({
+    tool: option.type,
+    label: option.label,
+    icon: option.icon,
+    description: option.instruction,
+  })),
 ]
 
-function layerTypeForTool(tool: ImageEditTool): ImageEditLayerType | null {
-  if (tool === 'color') return 'color-adjustment'
-  if (tool === 'weather') return 'weather-overlay'
-  if (tool === 'light') return 'light-overlay'
-  if (tool === 'fog') return 'fog-overlay'
-  if (tool === 'mask') return 'mask'
-  if (tool === 'person') return 'person-marker'
-  if (tool === 'architecture') return 'architecture-marker'
-  if (tool === 'prop') return 'prop-marker'
-  if (tool === 'camera') return 'camera-guide'
-  return null
-}
-
-function createMark(input: {
-  x: number
-  y: number
-  width?: number
-  height?: number
-  label: string
-  instruction: string
-}): ImageEditLayerMark {
-  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `image-mark-${Math.random().toString(36).slice(2, 10)}`
-  return {
-    id,
-    x: input.x,
-    y: input.y,
-    width: input.width,
-    height: input.height,
-    label: input.label,
-    instruction: input.instruction,
-  }
-}
-
-function ensureBaseLayer(layers: ImageEditLayer[]) {
-  return layers.some((layer) => layer.type === 'base')
-    ? layers
-    : [createImageEditLayer({ type: 'base', name: '原图层', visible: true, opacity: 1 }), ...layers]
-}
-
-function buildEditPrompt(layers: ImageEditLayer[], sceneEdits: SceneEditMark[]) {
-  const layerText = formatImageEditLayersForPrompt(layers)
-  const markText = sceneEdits.length
-    ? [
-        '【场景编辑标记】',
-        ...sceneEdits.map((edit, index) => (
-          `标记 ${index + 1}：${edit.label}，位置 x ${Math.round(edit.x * 100)}% / y ${Math.round(edit.y * 100)}%。${edit.instruction}`
-        )),
-      ].join('\n')
-    : ''
-  return [layerText, markText].filter(Boolean).join('\n\n')
+function initialTasks(input: {
+  sceneEditTasks: SceneEditTask[]
+  sceneEdits?: SceneEditMark[]
+  imageEditLayers?: ImageEditLayer[]
+}) {
+  if (input.sceneEditTasks.length) return input.sceneEditTasks
+  const fromSceneEdits = sceneEditsToSceneEditTasks(input.sceneEdits ?? [])
+  if (fromSceneEdits.length) return fromSceneEdits
+  return imageEditLayersToSceneEditTasks(input.imageEditLayers ?? [])
 }
 
 export function ImageEditStudio({
   node,
   imageUrl,
-  imageEditLayers,
-  sceneEdits,
-  onSaveLayers,
+  sceneEditTasks,
+  sceneEdits = [],
+  imageEditLayers = [],
+  onSaveTasks,
   onSendPromptToImageNode,
   onClose,
 }: ImageEditStudioProps) {
-  const [layers, setLayers] = useState<ImageEditLayer[]>(() => ensureBaseLayer(imageEditLayers))
+  const [tasks, setTasks] = useState<SceneEditTask[]>(() => initialTasks({ sceneEditTasks, sceneEdits, imageEditLayers }))
   const [activeTool, setActiveTool] = useState<ImageEditTool>('select')
-  const [selectedLayerId, setSelectedLayerId] = useState('')
-  const [selectedMarkId, setSelectedMarkId] = useState('')
+  const [selectedTaskId, setSelectedTaskId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const derivedSceneEdits = useMemo(() => {
-    const derived = imageEditLayersToSceneEdits(layers)
-    return derived.length ? derived : sceneEdits
-  }, [layers, sceneEdits])
+  const derivedSceneEdits = useMemo(() => sceneEditTasksToSceneEdits(tasks), [tasks])
 
-  const selectLayer = (layerId: string, markId?: string) => {
-    setSelectedLayerId(layerId)
-    setSelectedMarkId(markId || '')
-  }
-
-  const updateLayer = (layerId: string, patch: Partial<ImageEditLayer>) => {
-    setLayers((current) => updateImageEditLayer(current, layerId, patch))
-  }
-
-  const updateMark = (layerId: string, markId: string, patch: Partial<ImageEditLayerMark>) => {
-    setLayers((current) => current.map((layer) => (
-      layer.id === layerId
-        ? { ...layer, marks: (layer.marks ?? []).map((mark) => mark.id === markId ? { ...mark, ...patch } : mark), updatedAt: new Date().toISOString() }
-        : layer
+  const updateTask = (taskId: string, patch: Partial<SceneEditTask>) => {
+    setTasks((current) => current.map((task) => (
+      task.id === taskId ? { ...task, ...patch, id: task.id, createdAt: task.createdAt } : task
     )))
   }
 
-  const deleteLayer = (layerId: string) => {
-    setLayers((current) => current.filter((layer) => layer.id !== layerId || layer.type === 'base'))
-    if (selectedLayerId === layerId) {
-      setSelectedLayerId('')
-      setSelectedMarkId('')
-    }
+  const deleteTask = (taskId: string) => {
+    setTasks((current) => current.filter((task) => task.id !== taskId))
+    if (selectedTaskId === taskId) setSelectedTaskId('')
   }
 
-  const activateTool = (tool: ImageEditTool) => {
-    setActiveTool(tool)
-    const type = layerTypeForTool(tool)
-    if (!type || ['light-overlay', 'mask', 'person-marker', 'architecture-marker', 'prop-marker', 'camera-guide'].includes(type)) return
-    const existing = layers.find((layer) => layer.type === type)
-    if (existing) {
-      selectLayer(existing.id, existing.marks?.[0]?.id)
-      return
-    }
-    const layer = createImageEditLayer({ type })
-    setLayers((current) => [...current, layer])
-    selectLayer(layer.id)
+  const commitCanvasAction = (input: { type: SceneEditTaskType; x: number; y: number; width: number; height: number }) => {
+    const task = createSceneEditTask(input)
+    setTasks((current) => [...current, task])
+    setSelectedTaskId(task.id)
+    setActiveTool('select')
   }
 
-  const commitCanvasAction = (input: { tool: ImageEditTool; x: number; y: number; width?: number; height?: number }) => {
-    const type = layerTypeForTool(input.tool)
-    if (!type) return
-    if (type === 'color-adjustment' || type === 'weather-overlay' || type === 'fog-overlay') {
-      activateTool(input.tool)
-      return
-    }
-    const mark = createMark({
-      x: input.x,
-      y: input.y,
-      width: input.width,
-      height: input.height,
-      label: type === 'mask' ? '局部遮罩' : imageEditLayerIcon(type),
-      instruction: defaultImageEditInstruction(type),
-    })
-    const existing = layers.find((layer) => layer.type === type && ['light-overlay', 'mask'].includes(type) === false)
-    if (existing && type !== 'light-overlay') {
-      const nextMarks = [...(existing.marks ?? []), mark]
-      setLayers((current) => updateImageEditLayer(current, existing.id, { marks: nextMarks }))
-      selectLayer(existing.id, mark.id)
-      return
-    }
-    const layer = createImageEditLayer({
-      type,
-      marks: [mark],
-      name: type === 'light-overlay' ? '光线层' : undefined,
-    })
-    setLayers((current) => [...current, layer])
-    selectLayer(layer.id, mark.id)
-  }
-
-  const moveMark = (layerId: string, markId: string, x: number, y: number) => {
-    updateMark(layerId, markId, { x, y })
+  const moveTask = (taskId: string, x: number, y: number) => {
+    updateTask(taskId, { x, y })
   }
 
   const generatePrompt = () => {
-    const nextPrompt = buildEditPrompt(layers, derivedSceneEdits)
+    const nextPrompt = formatSceneEditTasksForPrompt(tasks)
     setPrompt(nextPrompt)
     return nextPrompt
   }
 
-  const saveLayers = () => {
+  const saveTasks = () => {
     const nextPrompt = prompt || generatePrompt()
-    onSaveLayers(layers, derivedSceneEdits, nextPrompt)
+    onSaveTasks(tasks, derivedSceneEdits, nextPrompt)
   }
 
   const copyPrompt = async () => {
@@ -213,15 +113,14 @@ export function ImageEditStudio({
 
   const sendPrompt = () => {
     const nextPrompt = prompt || generatePrompt()
-    onSaveLayers(layers, derivedSceneEdits, nextPrompt)
+    onSaveTasks(tasks, derivedSceneEdits, nextPrompt)
     onSendPromptToImageNode?.(node.id, nextPrompt)
   }
 
-  const clearLayers = () => {
-    if (!window.confirm('确定清空所有图片编辑层？')) return
-    setLayers(ensureBaseLayer([]))
-    setSelectedLayerId('')
-    setSelectedMarkId('')
+  const clearTasks = () => {
+    if (!window.confirm('确定清空所有场景修改任务？')) return
+    setTasks([])
+    setSelectedTaskId('')
     setPrompt('')
   }
 
@@ -233,7 +132,7 @@ export function ImageEditStudio({
             key={tool.tool}
             type="button"
             className={activeTool === tool.tool ? 'is-active' : ''}
-            onClick={() => activateTool(tool.tool)}
+            onClick={() => setActiveTool(tool.tool)}
             title={tool.description}
           >
             <span>{tool.icon}</span>
@@ -245,7 +144,7 @@ export function ImageEditStudio({
       <main className="image-edit-main">
         <header className="image-edit-main-head">
           <div>
-            <p>Image Edit Studio</p>
+            <p>Scene Edit Plugin</p>
             <h3>{node.title}</h3>
           </div>
           {onClose ? <button type="button" onClick={onClose}>关闭</button> : null}
@@ -253,31 +152,30 @@ export function ImageEditStudio({
         <ImageEditCanvas
           imageUrl={imageUrl}
           imageAlt={node.title}
-          layers={layers}
+          tasks={tasks}
           activeTool={activeTool}
-          selectedLayerId={selectedLayerId}
-          selectedMarkId={selectedMarkId}
+          selectedTaskId={selectedTaskId}
           onCanvasCommit={commitCanvasAction}
-          onSelectLayer={selectLayer}
-          onMoveMark={moveMark}
+          onSelectTask={setSelectedTaskId}
+          onMoveTask={moveTask}
         />
         <footer className="image-edit-footer">
-          <button type="button" onClick={saveLayers}>保存编辑层</button>
-          <button type="button" onClick={copyPrompt}>{copied ? '已复制' : '复制编辑 Prompt'}</button>
-          <button type="button" onClick={sendPrompt}>发送到当前 Image Prompt</button>
-          <button type="button" onClick={clearLayers}>清空编辑层</button>
+          <button type="button" onClick={saveTasks}>保存场景修改任务</button>
+          <button type="button" onClick={copyPrompt} disabled={!tasks.length}>{copied ? '已复制' : '复制场景修改 Prompt'}</button>
+          <button type="button" onClick={sendPrompt} disabled={!tasks.length}>发送到当前 Image Prompt</button>
+          <button type="button" disabled title="下一轮支持创建新版 Image 节点">创建新版 Image 节点</button>
+          <button type="button" onClick={clearTasks} disabled={!tasks.length}>清空任务</button>
         </footer>
         {prompt ? <pre className="image-edit-prompt-preview">{prompt}</pre> : null}
       </main>
 
       <ImageEditLayersPanel
-        layers={layers}
-        selectedLayerId={selectedLayerId}
-        selectedMarkId={selectedMarkId}
-        onSelectLayer={selectLayer}
-        onUpdateLayer={updateLayer}
-        onDeleteLayer={deleteLayer}
-        onUpdateMark={updateMark}
+        tasks={tasks}
+        activeTool={activeTool}
+        selectedTaskId={selectedTaskId}
+        onSelectTask={setSelectedTaskId}
+        onUpdateTask={updateTask}
+        onDeleteTask={deleteTask}
       />
     </div>
   )

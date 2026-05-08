@@ -46,9 +46,9 @@ export function SceneToolPalette({
       onWheelCapture={(event) => event.stopPropagation()}
     >
       <div className="scene-tool-palette-head">
-        <p>Scene Tools</p>
-        <strong>场景工具层</strong>
-        <span>{sceneEdits.length} 个标记</span>
+        <p>Scene Edit Plugin</p>
+        <strong>场景修改任务</strong>
+        <span>{sceneEdits.length} 个任务</span>
       </div>
 
       <div className="scene-tool-grid" role="toolbar" aria-label="场景可视化工具">
@@ -74,10 +74,10 @@ export function SceneToolPalette({
 
       <div className="scene-tool-actions">
         <button type="button" onClick={onCopyInstructions} disabled={!sceneEdits.length}>
-          {copied ? '已复制' : '复制场景编辑指令'}
+          {copied ? '已复制' : '复制场景修改 Prompt'}
         </button>
         <button type="button" onClick={onSaveLayer} disabled={!sceneEdits.length}>
-          保存编辑层
+          保存任务
         </button>
         <button type="button" onClick={onClearEdits} disabled={!sceneEdits.length}>
           清空
@@ -130,7 +130,7 @@ export function SceneToolPalette({
         ) : (
           <div className="scene-tool-empty">
             <strong>还没有场景编辑标记</strong>
-            <p>选择右侧工具后，在图片上点击或拖拽，标记天气、光线、人物、建筑或遮罩等导演意图。</p>
+            <p>选择场景工具后，在图片上点击或拖拽，标记替换场景、天气时间、空间结构、保留、移除或一致性任务。</p>
           </div>
         )}
       </div>

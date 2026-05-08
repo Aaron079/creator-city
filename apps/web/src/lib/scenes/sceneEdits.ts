@@ -1,4 +1,10 @@
 export type SceneEditTool =
+  | 'replace-scene'
+  | 'weather-time'
+  | 'space-structure'
+  | 'preserve'
+  | 'remove'
+  | 'continuity'
   | 'weather'
   | 'color'
   | 'lighting'
@@ -30,6 +36,51 @@ export type SceneEditToolOption = {
 }
 
 export const SCENE_EDIT_TOOL_OPTIONS: SceneEditToolOption[] = [
+  {
+    tool: 'replace-scene',
+    label: '替换场景',
+    icon: '🏙',
+    instruction: '把选区改成新的场景，例如海边城市、室内大厅、废土街区。',
+    cursor: 'crosshair',
+  },
+  {
+    tool: 'weather-time',
+    label: '天气时间',
+    icon: '🌧',
+    instruction: '修改选区或整体天气、时间，例如雪夜、黄昏、清晨、雾天。',
+    cursor: 'crosshair',
+  },
+  {
+    tool: 'space-structure',
+    label: '空间结构',
+    icon: '🏗',
+    instruction: '调整建筑密度、街道纵深、空间开阔度、天空比例。',
+    cursor: 'crosshair',
+  },
+  {
+    tool: 'preserve',
+    label: '保留区域',
+    icon: '🔒',
+    instruction: '明确这个区域不要改变。',
+    cursor: 'crosshair',
+  },
+  {
+    tool: 'remove',
+    label: '移除区域',
+    icon: '🧹',
+    instruction: '移除杂乱路人、招牌、车辆等。',
+    cursor: 'crosshair',
+  },
+  {
+    tool: 'continuity',
+    label: '场景一致性',
+    icon: '🧭',
+    instruction: '保持当前场景的构图、透视、世界观、色调和空间关系。',
+    cursor: 'crosshair',
+  },
+]
+
+const LEGACY_SCENE_EDIT_TOOL_OPTIONS: SceneEditToolOption[] = [
   {
     tool: 'weather',
     label: '天气',
@@ -96,10 +147,10 @@ export const SCENE_EDIT_TOOL_OPTIONS: SceneEditToolOption[] = [
 ]
 
 const DEFAULT_SCENE_EDIT_TOOL_OPTION: SceneEditToolOption = {
-  tool: 'weather',
-  label: '天气',
-  icon: '☔',
-  instruction: '调整这里的天气效果，例如雨、雪、雾、湿度、天空状态。',
+  tool: 'replace-scene',
+  label: '替换场景',
+  icon: '🏙',
+  instruction: '把选区改成新的场景，例如海边城市、室内大厅、废土街区。',
   cursor: 'crosshair',
 }
 
@@ -134,11 +185,13 @@ function recordValue(value: unknown) {
 }
 
 export function getSceneEditToolOption(tool: SceneEditTool) {
-  return SCENE_EDIT_TOOL_OPTIONS.find((option) => option.tool === tool) ?? DEFAULT_SCENE_EDIT_TOOL_OPTION
+  return SCENE_EDIT_TOOL_OPTIONS.find((option) => option.tool === tool)
+    ?? LEGACY_SCENE_EDIT_TOOL_OPTIONS.find((option) => option.tool === tool)
+    ?? DEFAULT_SCENE_EDIT_TOOL_OPTION
 }
 
 export function isSceneEditTool(value: unknown): value is SceneEditTool {
-  return typeof value === 'string' && SCENE_EDIT_TOOL_OPTIONS.some((option) => option.tool === value)
+  return typeof value === 'string' && [...SCENE_EDIT_TOOL_OPTIONS, ...LEGACY_SCENE_EDIT_TOOL_OPTIONS].some((option) => option.tool === value)
 }
 
 export function createSceneEditMark(input: {

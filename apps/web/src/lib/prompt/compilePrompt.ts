@@ -1,7 +1,7 @@
 import type { CompileNodePromptInput, CompiledNodePrompt } from './types'
 import { EDGE_DIRECTOR_LABELS, type EdgeDirective } from '@/lib/canvas/edge-director'
 import type { CharacterProfile } from '@/lib/characters'
-import { formatImageEditLayersForPrompt, formatSceneEditsForPrompt, type SceneProfile } from '@/lib/scenes'
+import { formatSceneEditTasksForPrompt, formatSceneEditsForPrompt, type SceneProfile } from '@/lib/scenes'
 import type { ProjectStyleBible } from '@/lib/skills'
 
 function lines(items: Array<string | false | null | undefined>) {
@@ -240,7 +240,7 @@ function formatSceneConsistency(input: CompileNodePromptInput) {
   ].join('\n\n')
 }
 
-function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string, sceneText: string, sceneEditText: string, imageEditText: string) {
+function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string, sceneText: string, sceneEditText: string) {
   const userPrompt = input.userPrompt.trim()
   const upstreamText = truncate(input.upstreamText ?? '')
   const skillPrompt = input.enabledSkills
@@ -257,7 +257,6 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       characterText,
       sceneText,
       sceneEditText,
-      imageEditText,
       styleText && `项目风格圣经：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：结构清晰，保留人物、世界观、场景与因果连续性；如涉及分镜，请给出可直接转化为画面和镜头的描述。',
@@ -273,7 +272,6 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       characterText,
       sceneText,
       sceneEditText,
-      imageEditText,
       styleText && `项目风格圣经，必须保留：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：聚焦主体、场景、构图、光线、色彩、质感、镜头和风格；保持人物/场景连续性；避免无关解释。',
@@ -289,7 +287,6 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
     characterText,
     sceneText,
     sceneEditText,
-    imageEditText,
     styleText && `项目风格圣经，必须保留：\n${styleText}`,
     skillPrompt && `启用技能约束：\n${skillPrompt}`,
     '输出要求：明确主体动作、镜头运动、景别、速度、光影和情绪；保持与上游图像/文本的连续性；不要改变角色身份、服装或场景结构。',
@@ -302,9 +299,8 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
   const edgeDirectorText = formatEdgeDirectives(input.edgeDirectives)
   const characterText = formatCharacterConsistency(input)
   const sceneText = formatSceneConsistency(input)
-  const sceneEditText = formatSceneEditsForPrompt(input.sceneEdits ?? [])
-  const imageEditText = formatImageEditLayersForPrompt(input.imageEditLayers ?? [])
-  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText, sceneText, sceneEditText, imageEditText)
+  const sceneEditText = formatSceneEditTasksForPrompt(input.sceneEditTasks ?? []) || formatSceneEditsForPrompt(input.sceneEdits ?? [])
+  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText, sceneText, sceneEditText)
   const system = buildSystem(input, styleText)
 
   return {
@@ -329,11 +325,10 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
         tool: edit.tool,
         label: edit.label,
       })),
-      imageEditLayersApplied: (input.imageEditLayers ?? []).map((layer) => ({
-        id: layer.id,
-        type: layer.type,
-        name: layer.name,
-        visible: layer.visible,
+      sceneEditTasksApplied: (input.sceneEditTasks ?? []).map((task) => ({
+        id: task.id,
+        type: task.type,
+        label: task.label,
       })),
       inheritedCharacterIdsFromEdges: input.edgeCharacterDirectives?.inheritedCharacterIdsFromEdges,
       inheritedSceneIdsFromEdges: input.edgeSceneDirectives?.inheritedSceneIdsFromEdges,

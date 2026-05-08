@@ -96,13 +96,15 @@ export function SceneToolLayer({
     const point = ratioFromPointer(event, element)
     const width = Math.abs(point.x - draftRect.startX)
     const height = Math.abs(point.y - draftRect.startY)
-    const shouldUseArea = activeTool === 'mask' || width > 0.025 || height > 0.025
+    const shouldUseArea = width > 0.025 || height > 0.025
+    const defaultWidth = 0.16
+    const defaultHeight = 0.12
     const mark = createSceneEditMark({
       tool: activeTool,
-      x: shouldUseArea ? Math.min(point.x, draftRect.startX) : point.x,
-      y: shouldUseArea ? Math.min(point.y, draftRect.startY) : point.y,
-      width: shouldUseArea ? width : undefined,
-      height: shouldUseArea ? height : undefined,
+      x: shouldUseArea ? Math.min(point.x, draftRect.startX) : Math.min(1 - defaultWidth, Math.max(0, point.x - defaultWidth / 2)),
+      y: shouldUseArea ? Math.min(point.y, draftRect.startY) : Math.min(1 - defaultHeight, Math.max(0, point.y - defaultHeight / 2)),
+      width: shouldUseArea ? width : defaultWidth,
+      height: shouldUseArea ? height : defaultHeight,
     })
     onSceneEditsChange([...sceneEdits, mark])
     onSelectEdit(mark.id)
@@ -124,7 +126,7 @@ export function SceneToolLayer({
         onPointerCancel={() => setDraftRect(null)}
       >
         <div className="scene-tool-hint">
-          当前工具：{activeOption.label}。点击图片标记需要修改的位置，拖拽可标记区域。
+          当前工具：{activeOption.label}。拖拽框选场景修改区域；单击会创建一个小区域。
         </div>
         {sceneEdits.map((edit, index) => {
           const option = getSceneEditToolOption(edit.tool)

@@ -7,13 +7,15 @@ import {
   buildSceneProfileDraftFromNode,
   getImageEditLayers,
   getSceneEdits,
-  imageEditLayersMetadata,
+  getSceneEditTasks,
+  sceneEditTasksMetadata,
+  sceneEditTasksToSceneEdits,
   sceneEditsMetadata,
   summarizeSceneSource,
-  type ImageEditLayer,
   type SceneBible,
   type SceneEditBrief,
   type SceneEditMark,
+  type SceneEditTask,
   type SceneProfile,
   type SceneSourceNode,
 } from '@/lib/scenes'
@@ -86,14 +88,14 @@ function sourceFromNode(node: CanvasNode): SceneSourceNode {
 
 function mutateNodeMetadata(
   node: CanvasNode | null | undefined,
-  imageEditLayers: ImageEditLayer[],
+  sceneEditTasks: SceneEditTask[],
   sceneEdits: SceneEditMark[],
   patch: Record<string, unknown> = {},
 ) {
   if (!node) return
-  const withImageLayers = imageEditLayersMetadata(node.metadataJson, imageEditLayers)
+  const withSceneTasks = sceneEditTasksMetadata(node.metadataJson, sceneEditTasks)
   node.metadataJson = {
-    ...sceneEditsMetadata(withImageLayers, sceneEdits),
+    ...sceneEditsMetadata(withSceneTasks, sceneEdits),
     ...patch,
   }
 }
@@ -135,12 +137,13 @@ export function SceneLabPanel({
   const imageUrl = sourceNode?.kind === 'image' ? sourceNode.resultImageUrl : ''
   const boundScenes = sceneBible.scenes.filter((scene) => selectedSceneIds.includes(scene.id))
 
-  const saveLayers = (layers: ImageEditLayer[], sceneEdits: SceneEditMark[], prompt: string) => {
+  const saveTasks = (tasks: SceneEditTask[], sceneEdits: SceneEditMark[], prompt: string) => {
     if (!sourceNode || !source) return
-    mutateNodeMetadata(sourceNode, layers, sceneEdits, {
+    mutateNodeMetadata(sourceNode, tasks, sceneEdits, {
       sceneEditPromptPreview: compactText(prompt, 1000),
       sceneEditPromptSourceNodeId: source.nodeId,
       sceneEditPromptUpdatedAt: new Date().toISOString(),
+      sceneEditTaskMode: 'scene-edit-plugin',
     })
     onSceneEditPromptChange?.(source.nodeId, prompt, source.nodeId)
   }
@@ -150,13 +153,14 @@ export function SceneLabPanel({
     if (!targetNode || !source) return
     mutateNodeMetadata(
       targetNode,
-      getImageEditLayers(targetNode.metadataJson),
-      getSceneEdits(targetNode.metadataJson),
+      getSceneEditTasks(targetNode.metadataJson),
+      sceneEditTasksToSceneEdits(getSceneEditTasks(targetNode.metadataJson)),
       {
         previousPrompt: targetNode.prompt,
         sceneEditPromptPreview: compactText(prompt, 1000),
         sceneEditPromptSourceNodeId: source.nodeId,
         sceneEditPromptUpdatedAt: new Date().toISOString(),
+        sceneEditTaskMode: 'scene-edit-plugin',
       },
     )
     onSendPromptToNode?.(targetNode.id, prompt, source.nodeId)
@@ -185,8 +189,8 @@ export function SceneLabPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Scene Lab</p>
-            <h3 className="mt-1 text-base font-semibold text-white/88">Image Edit Studio / 可视化图片编辑工作台</h3>
-            <p className="mt-1 text-xs text-white/46">调色、天气、光线、雾气、遮罩和标记都会直接显示在图片上。</p>
+            <h3 className="mt-1 text-base font-semibold text-white/88">Scene Edit Plugin / 场景修改插件</h3>
+            <p className="mt-1 text-xs text-white/46">只框选场景区域并定义替换、天气时间、空间结构、保留、移除和一致性任务；不会覆盖或破坏原图。</p>
           </div>
           <label className="grid min-w-[240px] gap-1.5">
             <span className="text-xs font-semibold text-white/50">来源 Image 节点</span>
@@ -205,9 +209,10 @@ export function SceneLabPanel({
           key={sourceNode.id}
           node={sourceNode}
           imageUrl={imageUrl}
-          imageEditLayers={getImageEditLayers(sourceNode.metadataJson)}
+          sceneEditTasks={getSceneEditTasks(sourceNode.metadataJson)}
           sceneEdits={getSceneEdits(sourceNode.metadataJson)}
-          onSaveLayers={saveLayers}
+          imageEditLayers={getImageEditLayers(sourceNode.metadataJson)}
+          onSaveTasks={saveTasks}
           onSendPromptToImageNode={sendPrompt}
         />
       ) : (

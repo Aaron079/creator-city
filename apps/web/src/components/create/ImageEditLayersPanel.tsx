@@ -1,189 +1,97 @@
 'use client'
 
 import {
-  imageEditLayerIcon,
-  imageEditLayerLabel,
-  type ImageEditLayer,
-  type ImageEditLayerMark,
+  SCENE_EDIT_TASK_OPTIONS,
+  getSceneEditTaskOption,
+  type SceneEditTask,
+  type SceneEditTaskType,
 } from '@/lib/scenes'
 
 interface ImageEditLayersPanelProps {
-  layers: ImageEditLayer[]
-  selectedLayerId?: string
-  selectedMarkId?: string
-  onSelectLayer: (layerId: string, markId?: string) => void
-  onUpdateLayer: (layerId: string, patch: Partial<ImageEditLayer>) => void
-  onDeleteLayer: (layerId: string) => void
-  onUpdateMark: (layerId: string, markId: string, patch: Partial<ImageEditLayerMark>) => void
+  tasks: SceneEditTask[]
+  activeTool: SceneEditTaskType | 'select'
+  selectedTaskId?: string
+  onSelectTask: (taskId: string) => void
+  onUpdateTask: (taskId: string, patch: Partial<SceneEditTask>) => void
+  onDeleteTask: (taskId: string) => void
 }
 
-function numberParam(layer: ImageEditLayer, key: string, fallback: number) {
-  const value = layer.params?.[key]
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function stringParam(layer: ImageEditLayer, key: string, fallback: string) {
-  const value = layer.params?.[key]
-  return typeof value === 'string' && value ? value : fallback
-}
-
-function RangeControl({
-  label,
-  value,
-  min = 0,
-  max = 100,
-  onChange,
-}: {
-  label: string
-  value: number
-  min?: number
-  max?: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="image-edit-control">
-      <span>{label}</span>
-      <input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-      <small>{value}</small>
-    </label>
-  )
+function compact(value: string, limit = 42) {
+  const text = value.trim()
+  return text.length > limit ? `${text.slice(0, limit)}...` : text
 }
 
 export function ImageEditLayersPanel({
-  layers,
-  selectedLayerId,
-  selectedMarkId,
-  onSelectLayer,
-  onUpdateLayer,
-  onDeleteLayer,
-  onUpdateMark,
+  tasks,
+  activeTool,
+  selectedTaskId,
+  onSelectTask,
+  onUpdateTask,
+  onDeleteTask,
 }: ImageEditLayersPanelProps) {
-  const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? layers.find((layer) => layer.type !== 'base') ?? null
-  const selectedMark = selectedLayer?.marks?.find((mark) => mark.id === selectedMarkId) ?? selectedLayer?.marks?.[0] ?? null
-
-  const patchParams = (layer: ImageEditLayer, patch: Record<string, unknown>) => {
-    onUpdateLayer(layer.id, { params: { ...(layer.params ?? {}), ...patch } })
-  }
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null
+  const activeLabel = activeTool === 'select' ? '选择区域' : getSceneEditTaskOption(activeTool).label
 
   return (
     <aside className="image-edit-layers-panel" data-no-node-drag="true" onWheel={(event) => event.stopPropagation()}>
       <header>
-        <p>Layers</p>
-        <strong>图层 / 参数</strong>
-        <span>{layers.length} 个图层</span>
+        <p>Scene Edit Plugin</p>
+        <strong>场景修改任务</strong>
+        <span>当前工具：{activeLabel} · {tasks.length} 个任务</span>
       </header>
 
       <div className="image-edit-layer-list">
-        {layers.map((layer) => (
-          <article key={layer.id} className={selectedLayerId === layer.id ? 'is-selected' : ''}>
-            <button type="button" className="image-edit-layer-row" onClick={() => onSelectLayer(layer.id, layer.marks?.[0]?.id)}>
-              <span>{imageEditLayerIcon(layer.type)}</span>
-              <b>{layer.name}</b>
-              <small>{imageEditLayerLabel(layer.type)}</small>
-            </button>
-            <div className="image-edit-layer-actions">
-              <button type="button" onClick={() => onUpdateLayer(layer.id, { visible: !layer.visible })}>
-                {layer.visible ? '隐藏' : '显示'}
-              </button>
-              <label>
-                <span>透明度</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={layer.opacity ?? 1}
-                  onChange={(event) => onUpdateLayer(layer.id, { opacity: Number(event.target.value) })}
-                />
-              </label>
-              {layer.type !== 'base' ? <button type="button" onClick={() => onDeleteLayer(layer.id)}>删除</button> : null}
-            </div>
-          </article>
-        ))}
+        {tasks.length ? (
+          tasks.map((task, index) => {
+            const option = getSceneEditTaskOption(task.type)
+            return (
+              <article key={task.id} className={selectedTaskId === task.id ? 'is-selected' : ''}>
+                <button type="button" className="image-edit-layer-row" onClick={() => onSelectTask(task.id)}>
+                  <span>{option.icon}</span>
+                  <b>{index + 1}. {task.label}</b>
+                  <small>{compact(task.instruction)}</small>
+                </button>
+                <div className="image-edit-layer-actions">
+                  <button type="button" onClick={() => onDeleteTask(task.id)}>删除</button>
+                  <small>x {Math.round(task.x * 100)}% / y {Math.round(task.y * 100)}%</small>
+                </div>
+              </article>
+            )
+          })
+        ) : (
+          <div className="image-edit-empty">选择场景工具后，在图片上拖拽框选要修改、保留或移除的区域。</div>
+        )}
       </div>
 
-      {selectedLayer ? (
+      {selectedTask ? (
         <section className="image-edit-selected-panel">
-          <h4>当前选中</h4>
+          <h4>当前任务</h4>
           <label className="image-edit-text-field">
-            <span>图层名称</span>
-            <input value={selectedLayer.name} onChange={(event) => onUpdateLayer(selectedLayer.id, { name: event.target.value })} />
+            <span>任务类型</span>
+            <select value={selectedTask.type} onChange={(event) => onUpdateTask(selectedTask.id, { type: event.target.value as SceneEditTaskType })}>
+              {SCENE_EDIT_TASK_OPTIONS.map((option) => (
+                <option key={option.type} value={option.type}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <label className="image-edit-text-field">
-            <span>图层指令</span>
-            <textarea
-              rows={3}
-              value={selectedLayer.instruction ?? ''}
-              onChange={(event) => onUpdateLayer(selectedLayer.id, { instruction: event.target.value })}
-            />
+            <span>标签</span>
+            <input value={selectedTask.label} onChange={(event) => onUpdateTask(selectedTask.id, { label: event.target.value })} />
           </label>
-
-          {selectedLayer.type === 'color-adjustment' ? (
-            <>
-              <RangeControl label="亮度" value={numberParam(selectedLayer, 'brightness', 104)} min={60} max={150} onChange={(value) => patchParams(selectedLayer, { brightness: value })} />
-              <RangeControl label="对比" value={numberParam(selectedLayer, 'contrast', 112)} min={60} max={160} onChange={(value) => patchParams(selectedLayer, { contrast: value })} />
-              <RangeControl label="饱和" value={numberParam(selectedLayer, 'saturation', 112)} min={0} max={200} onChange={(value) => patchParams(selectedLayer, { saturation: value })} />
-              <RangeControl label="暖色" value={numberParam(selectedLayer, 'warmth', 8)} min={-40} max={40} onChange={(value) => patchParams(selectedLayer, { warmth: value })} />
-            </>
-          ) : null}
-
-          {selectedLayer.type === 'weather-overlay' ? (
-            <>
-              <label className="image-edit-text-field">
-                <span>天气类型</span>
-                <select value={stringParam(selectedLayer, 'weatherType', 'rain')} onChange={(event) => patchParams(selectedLayer, { weatherType: event.target.value })}>
-                  <option value="rain">雨</option>
-                  <option value="snow">雪</option>
-                  <option value="fog-rain">雨雾</option>
-                </select>
-              </label>
-              <RangeControl label="强度" value={numberParam(selectedLayer, 'intensity', 62)} min={0} max={100} onChange={(value) => patchParams(selectedLayer, { intensity: value })} />
-              <RangeControl label="方向" value={numberParam(selectedLayer, 'direction', 18)} min={-45} max={45} onChange={(value) => patchParams(selectedLayer, { direction: value })} />
-            </>
-          ) : null}
-
-          {selectedLayer.type === 'light-overlay' ? (
-            <>
-              <label className="image-edit-text-field">
-                <span>光色</span>
-                <input type="color" value={stringParam(selectedLayer, 'color', '#ffd28a')} onChange={(event) => patchParams(selectedLayer, { color: event.target.value })} />
-              </label>
-              <RangeControl label="强度" value={numberParam(selectedLayer, 'intensity', 68)} min={0} max={100} onChange={(value) => patchParams(selectedLayer, { intensity: value })} />
-              <RangeControl label="半径" value={numberParam(selectedLayer, 'radius', 36)} min={12} max={90} onChange={(value) => patchParams(selectedLayer, { radius: value })} />
-            </>
-          ) : null}
-
-          {selectedLayer.type === 'fog-overlay' ? (
-            <>
-              <label className="image-edit-text-field">
-                <span>雾色</span>
-                <input type="color" value={stringParam(selectedLayer, 'color', '#d7e7ff')} onChange={(event) => patchParams(selectedLayer, { color: event.target.value })} />
-              </label>
-              <RangeControl label="密度" value={numberParam(selectedLayer, 'density', 42)} min={0} max={100} onChange={(value) => patchParams(selectedLayer, { density: value })} />
-            </>
-          ) : null}
-
-          {selectedMark ? (
-            <div className="image-edit-mark-panel">
-              <h5>当前标记</h5>
-              <label className="image-edit-text-field">
-                <span>标记标签</span>
-                <input value={selectedMark.label ?? ''} onChange={(event) => onUpdateMark(selectedLayer.id, selectedMark.id, { label: event.target.value })} />
-              </label>
-              <label className="image-edit-text-field">
-                <span>标记指令</span>
-                <textarea
-                  rows={3}
-                  value={selectedMark.instruction ?? ''}
-                  onChange={(event) => onUpdateMark(selectedLayer.id, selectedMark.id, { instruction: event.target.value })}
-                />
-              </label>
-            </div>
-          ) : null}
+          <label className="image-edit-text-field">
+            <span>修改指令</span>
+            <textarea rows={4} value={selectedTask.instruction} onChange={(event) => onUpdateTask(selectedTask.id, { instruction: event.target.value })} />
+          </label>
+          <label className="image-edit-text-field">
+            <span>保留要求</span>
+            <textarea rows={3} value={selectedTask.preserveInstruction ?? ''} onChange={(event) => onUpdateTask(selectedTask.id, { preserveInstruction: event.target.value })} placeholder="例如：保留霓虹灯、湿润街道和主体透视。" />
+          </label>
+          <label className="image-edit-text-field">
+            <span>禁止项</span>
+            <textarea rows={3} value={selectedTask.negativeInstruction ?? ''} onChange={(event) => onUpdateTask(selectedTask.id, { negativeInstruction: event.target.value })} placeholder="例如：不要变成乡村，不要卡通化，不要改变主体。" />
+          </label>
         </section>
-      ) : (
-        <div className="image-edit-empty">请选择工具并在图片上添加图层。</div>
-      )}
+      ) : null}
     </aside>
   )
 }

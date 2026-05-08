@@ -3,7 +3,8 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import type { CharacterProfile } from '@/lib/characters'
-import { getImageEditLayers, getSceneEdits, getSceneEditToolOption, imageEditLayerIcon, imageEditLayerLabel, type SceneProfile } from '@/lib/scenes'
+import { CHARACTER_REFERENCE_KIND_LABELS, getHeroReference } from '@/lib/characters'
+import { getSceneEdits, getSceneEditTasks, getSceneEditTaskOption, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 
 interface PromptInspectorPanelProps {
@@ -205,7 +206,7 @@ export function PromptInspectorPanel({
   const sceneEditPromptPreview = stringValue(metadata.sceneEditPromptPreview)
   const sceneEditPromptSourceNodeId = stringValue(metadata.sceneEditPromptSourceNodeId)
   const sceneEdits = useMemo(() => getSceneEdits(node?.metadataJson), [node?.metadataJson])
-  const imageEditLayers = useMemo(() => getImageEditLayers(node?.metadataJson), [node?.metadataJson])
+  const sceneEditTasks = useMemo(() => getSceneEditTasks(node?.metadataJson), [node?.metadataJson])
   const generationIdInputs: Array<[string, unknown]> = [
     ['generationJobId', metadata.generationJobId || nodeGenerationJobId],
     ['taskId', metadata.taskId],
@@ -381,20 +382,96 @@ export function PromptInspectorPanel({
                   <h4 className="text-xs font-semibold text-white/52">当前节点绑定角色</h4>
                   {boundCharacters.length ? (
                     <div className="mt-2 space-y-2">
-                      {boundCharacters.map((character) => (
-                        <article key={character.id} className="rounded-md border border-white/10 bg-black/16 p-3">
-                          <div className="text-sm font-semibold text-white/82">{character.name}</div>
-                          <p className="mt-1 text-sm leading-5 text-white/60">{characterSummary(character) || '已绑定，暂无详细设定。'}</p>
-                          {character.negativeRules ? (
-                            <p className="mt-2 text-xs leading-5 text-red-100/70">禁止变化项：{character.negativeRules}</p>
-                          ) : null}
-                        </article>
-                      ))}
+                      {boundCharacters.map((character) => {
+                        const heroRef = getHeroReference(character)
+                        return (
+                          <article key={character.id} className="rounded-md border border-white/10 bg-black/16 p-3">
+                            <div className="flex items-start gap-3">
+                              {heroRef ? (
+                                <div className="shrink-0">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={heroRef.imageUrl}
+                                    alt={heroRef.label}
+                                    className="h-14 w-14 rounded-lg border border-white/12 object-cover"
+                                  />
+                                  <div className="mt-1 text-center text-[9px] text-amber-300/70">★ 主参考</div>
+                                </div>
+                              ) : null}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-white/82">{character.name}</div>
+                                <p className="mt-1 text-sm leading-5 text-white/60">{characterSummary(character) || '已绑定，暂无详细设定。'}</p>
+                                {character.negativeRules ? (
+                                  <p className="mt-2 text-xs leading-5 text-red-100/70">禁止变化项：{character.negativeRules}</p>
+                                ) : null}
+                              </div>
+                            </div>
+                            {(character.referencePack?.length ?? 0) > 1 ? (
+                              <div className="mt-3 flex flex-wrap gap-1.5">
+                                {character.referencePack!.slice(0, 6).map((ref) => (
+                                  <div key={ref.id} className="relative">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={ref.imageUrl}
+                                      alt={ref.label}
+                                      className="h-10 w-10 rounded-md border border-white/10 object-cover"
+                                      title={`${CHARACTER_REFERENCE_KIND_LABELS[ref.kind] ?? ref.kind}: ${ref.label}`}
+                                    />
+                                    {ref.isHero ? (
+                                      <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[7px] font-bold text-slate-900">★</span>
+                                    ) : null}
+                                  </div>
+                                ))}
+                                {(character.referencePack?.length ?? 0) > 6 ? (
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-[10px] text-white/40">
+                                    +{(character.referencePack?.length ?? 0) - 6}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </article>
+                        )
+                      })}
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-white/45">当前节点未直接绑定角色。</p>
                   )}
                 </div>
+
+                {/* Character reference images applied to this prompt */}
+                {(() => {
+                  const metadata = metadataRecord(node?.metadataJson)
+                  const debugRecord = metadata.compiledPromptDebug && typeof metadata.compiledPromptDebug === 'object'
+                    ? metadata.compiledPromptDebug as Record<string, unknown>
+                    : null
+                  const charRefs = Array.isArray(debugRecord?.characterReferencesApplied)
+                    ? debugRecord.characterReferencesApplied as Array<{
+                        referenceId: string; characterName?: string; kind: string; label: string; imageUrl: string; isHero?: boolean
+                      }>
+                    : []
+                  if (!charRefs.length) return null
+                  return (
+                    <div>
+                      <h4 className="text-xs font-semibold text-white/52">本次注入角色参考图</h4>
+                      <div className="mt-2 flex flex-col gap-2">
+                        {charRefs.map((ref) => (
+                          <div key={ref.referenceId} className="flex items-center gap-3 rounded-md border border-amber-200/14 bg-amber-200/[0.06] p-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ref.imageUrl} alt={ref.label} className="h-10 w-10 shrink-0 rounded-md object-cover" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-amber-50/82">
+                                {ref.characterName ?? '角色'} · {CHARACTER_REFERENCE_KIND_LABELS[ref.kind as keyof typeof CHARACTER_REFERENCE_KIND_LABELS] ?? ref.kind}
+                              </div>
+                              <div className="mt-0.5 truncate text-[10px] text-white/38">{ref.label}</div>
+                              {ref.isHero ? <div className="mt-0.5 text-[9px] text-amber-300/60">★ 主参考</div> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 <div>
                   <h4 className="text-xs font-semibold text-white/52">从连接线继承的角色</h4>
                   {inheritedCharacters.length ? (
@@ -466,33 +543,39 @@ export function PromptInspectorPanel({
             )}
           </Section>
 
-          <Section title="场景可视化编辑">
-            {imageEditLayers.length ? (
+          <Section title="场景修改任务">
+            {sceneEditTasks.length ? (
               <div className="mb-3 space-y-2">
-                <h4 className="text-xs font-semibold text-white/52">图片编辑层</h4>
-                {imageEditLayers.map((layer) => (
-                  <article key={layer.id} className="rounded-md border border-cyan-100/12 bg-cyan-200/[0.045] p-3">
+                <h4 className="text-xs font-semibold text-white/52">Scene Edit Plugin</h4>
+                {sceneEditTasks.map((task, index) => {
+                  const option = getSceneEditTaskOption(task.type)
+                  return (
+                  <article key={task.id} className="rounded-md border border-cyan-100/12 bg-cyan-200/[0.045] p-3">
                     <div className="flex items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-cyan-50/86">
-                        <span className="mr-2" aria-hidden="true">{imageEditLayerIcon(layer.type)}</span>
-                        {layer.name}
+                        <span className="mr-2" aria-hidden="true">{option.icon}</span>
+                        任务 {index + 1}：{option.label}
                       </h4>
-                      <span className="text-xs text-white/44">{layer.visible ? '显示' : '隐藏'}</span>
+                      <span className="font-mono text-xs text-white/44">
+                        x {Math.round(task.x * 100)}% / y {Math.round(task.y * 100)}%
+                      </span>
                     </div>
-                    <p className="mt-1 text-xs text-white/48">{imageEditLayerLabel(layer.type)} · opacity {Math.round((layer.opacity ?? 1) * 100)}%</p>
-                    {layer.instruction ? <p className="mt-2 text-sm leading-6 text-white/68">{layer.instruction}</p> : null}
-                    {layer.params && Object.keys(layer.params).length ? (
-                      <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 font-mono text-xs text-white/58">{displayValue(layer.params)}</pre>
+                    <p className="mt-1 font-mono text-xs text-white/48">区域：{Math.round(task.width * 100)}% × {Math.round(task.height * 100)}%</p>
+                    <p className="mt-2 text-sm leading-6 text-white/68">{task.instruction}</p>
+                    {task.preserveInstruction ? (
+                      <p className="mt-2 text-xs leading-5 text-emerald-100/70">保留：{task.preserveInstruction}</p>
                     ) : null}
-                    {layer.marks?.length ? (
-                      <p className="mt-2 text-xs text-cyan-100/62">标记：{layer.marks.length} 个</p>
+                    {task.negativeInstruction ? (
+                      <p className="mt-1 text-xs leading-5 text-red-100/70">禁止：{task.negativeInstruction}</p>
                     ) : null}
                   </article>
-                ))}
+                  )
+                })}
               </div>
             ) : null}
-            {sceneEdits.length ? (
+            {!sceneEditTasks.length && sceneEdits.length ? (
               <div className="space-y-2">
+                <p className="rounded-md border border-white/10 bg-black/16 p-3 text-sm text-white/58">旧场景标记已兼容为场景修改意图；下一次在 Scene Lab 保存后会写入 sceneEditTasks。</p>
                 {sceneEdits.map((edit) => {
                   const option = getSceneEditToolOption(edit.tool)
                   return (
@@ -518,7 +601,7 @@ export function PromptInspectorPanel({
                 })}
               </div>
             ) : (
-              <p className="text-sm text-white/45">当前节点还没有场景编辑标记。</p>
+              <p className="text-sm text-white/45">当前节点还没有场景修改任务。</p>
             )}
           </Section>
 

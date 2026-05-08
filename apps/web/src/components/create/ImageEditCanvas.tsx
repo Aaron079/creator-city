@@ -1,34 +1,23 @@
 'use client'
 
-import { useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import {
-  imageEditLayerIcon,
-  type ImageEditLayer,
-  type ImageEditLayerMark,
+  getSceneEditTaskOption,
+  type SceneEditTask,
+  type SceneEditTaskType,
 } from '@/lib/scenes'
 
-export type ImageEditTool =
-  | 'select'
-  | 'color'
-  | 'weather'
-  | 'light'
-  | 'fog'
-  | 'mask'
-  | 'person'
-  | 'architecture'
-  | 'prop'
-  | 'camera'
+export type ImageEditTool = 'select' | SceneEditTaskType
 
 interface ImageEditCanvasProps {
   imageUrl: string
   imageAlt: string
-  layers: ImageEditLayer[]
+  tasks: SceneEditTask[]
   activeTool: ImageEditTool
-  selectedLayerId?: string
-  selectedMarkId?: string
-  onCanvasCommit: (input: { tool: ImageEditTool; x: number; y: number; width?: number; height?: number }) => void
-  onSelectLayer: (layerId: string, markId?: string) => void
-  onMoveMark: (layerId: string, markId: string, x: number, y: number) => void
+  selectedTaskId?: string
+  onCanvasCommit: (input: { type: SceneEditTaskType; x: number; y: number; width: number; height: number }) => void
+  onSelectTask: (taskId: string) => void
+  onMoveTask: (taskId: string, x: number, y: number) => void
 }
 
 type DraftRect = {
@@ -40,9 +29,10 @@ type DraftRect = {
   height: number
 }
 
-type DraggingMark = {
-  layerId: string
-  markId: string
+type DraggingTask = {
+  taskId: string
+  offsetX: number
+  offsetY: number
 }
 
 function ratioFromPointer(event: PointerEvent<HTMLElement>, element: HTMLElement) {
@@ -54,44 +44,10 @@ function ratioFromPointer(event: PointerEvent<HTMLElement>, element: HTMLElement
 }
 
 function cursorForTool(tool: ImageEditTool) {
-  if (tool === 'select') return 'default'
-  if (tool === 'color') return 'cell'
-  if (tool === 'person' || tool === 'prop') return 'copy'
-  return 'crosshair'
+  return tool === 'select' ? 'default' : 'crosshair'
 }
 
-function layerColorFilter(layers: ImageEditLayer[]) {
-  const colorLayers = layers.filter((layer) => layer.visible && layer.type === 'color-adjustment')
-  if (!colorLayers.length) return 'none'
-  const merged = colorLayers.reduce((acc, layer) => {
-    const params = layer.params ?? {}
-    return {
-      brightness: acc.brightness + (Number(params.brightness ?? 100) - 100) * (layer.opacity ?? 1),
-      contrast: acc.contrast + (Number(params.contrast ?? 100) - 100) * (layer.opacity ?? 1),
-      saturation: acc.saturation + (Number(params.saturation ?? 100) - 100) * (layer.opacity ?? 1),
-      hueRotate: acc.hueRotate + Number(params.hueRotate ?? 0) * (layer.opacity ?? 1),
-      warmth: acc.warmth + Number(params.warmth ?? 0) * (layer.opacity ?? 1),
-    }
-  }, { brightness: 100, contrast: 100, saturation: 100, hueRotate: 0, warmth: 0 })
-  return [
-    `brightness(${merged.brightness}%)`,
-    `contrast(${merged.contrast}%)`,
-    `saturate(${merged.saturation}%)`,
-    `hue-rotate(${merged.hueRotate + merged.warmth * 0.35}deg)`,
-    `sepia(${Math.max(0, Math.min(0.28, merged.warmth / 100))})`,
-  ].join(' ')
-}
-
-function markStyle(mark: ImageEditLayerMark) {
-  return {
-    left: `${mark.x * 100}%`,
-    top: `${mark.y * 100}%`,
-    width: mark.width ? `${mark.width * 100}%` : undefined,
-    height: mark.height ? `${mark.height * 100}%` : undefined,
-  }
-}
-
-function draftStyle(rect: DraftRect) {
+function rectStyle(rect: { x: number; y: number; width: number; height: number }) {
   return {
     left: `${rect.x * 100}%`,
     top: `${rect.y * 100}%`,
@@ -100,34 +56,84 @@ function draftStyle(rect: DraftRect) {
   }
 }
 
+function taskFrameStyle(task: SceneEditTask, color: string, selected: boolean): CSSProperties {
+  return {
+    ...rectStyle(task),
+    position: 'absolute',
+    display: 'block',
+    overflow: 'visible',
+    borderRadius: 10,
+    border: `2px solid ${color}`,
+    background: selected ? `${color}2b` : 'rgba(0,0,0,0.035)',
+    boxShadow: selected
+      ? `0 0 0 4px ${color}3d, 0 14px 34px rgba(0,0,0,0.3)`
+      : 'inset 0 0 0 1px rgba(255,255,255,0.16), 0 10px 28px rgba(0,0,0,0.22)',
+    color: 'white',
+    textAlign: 'left',
+    touchAction: 'none',
+  }
+}
+
+const numberStyle: CSSProperties = {
+  position: 'absolute',
+  top: -12,
+  left: -12,
+  display: 'inline-grid',
+  width: 24,
+  height: 24,
+  placeItems: 'center',
+  borderRadius: 999,
+  border: '1px solid rgba(255,255,255,0.58)',
+  color: '#061018',
+  fontSize: 12,
+  fontWeight: 900,
+}
+
+const labelStyle: CSSProperties = {
+  position: 'absolute',
+  top: 6,
+  left: 6,
+  maxWidth: 'calc(100% - 12px)',
+  overflow: 'hidden',
+  borderRadius: 999,
+  background: 'rgba(0,0,0,0.62)',
+  padding: '3px 7px',
+  color: 'rgba(255,255,255,0.92)',
+  fontSize: 11,
+  fontWeight: 820,
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
+const noteStyle: CSSProperties = {
+  position: 'absolute',
+  left: 6,
+  right: 6,
+  bottom: 6,
+  overflow: 'hidden',
+  borderRadius: 8,
+  background: 'rgba(0,0,0,0.56)',
+  padding: '5px 7px',
+  color: 'rgba(255,255,255,0.78)',
+  fontSize: 11,
+  lineHeight: 1.35,
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+}
+
 export function ImageEditCanvas({
   imageUrl,
   imageAlt,
-  layers,
+  tasks,
   activeTool,
-  selectedLayerId,
-  selectedMarkId,
+  selectedTaskId,
   onCanvasCommit,
-  onSelectLayer,
-  onMoveMark,
+  onSelectTask,
+  onMoveTask,
 }: ImageEditCanvasProps) {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [draftRect, setDraftRect] = useState<DraftRect | null>(null)
-  const [draggingMark, setDraggingMark] = useState<DraggingMark | null>(null)
-  const visibleLayers = layers.filter((layer) => layer.visible)
-  const filter = useMemo(() => layerColorFilter(layers), [layers])
-  const weatherLayers = visibleLayers.filter((layer) => layer.type === 'weather-overlay')
-  const lightLayers = visibleLayers.filter((layer) => layer.type === 'light-overlay')
-  const fogLayers = visibleLayers.filter((layer) => layer.type === 'fog-overlay')
-  const maskLayers = visibleLayers.filter((layer) => layer.type === 'mask')
-  const markerLayers = visibleLayers.filter((layer) => [
-    'person-marker',
-    'architecture-marker',
-    'prop-marker',
-    'camera-guide',
-    'mask',
-    'light-overlay',
-  ].includes(layer.type))
+  const [draggingTask, setDraggingTask] = useState<DraggingTask | null>(null)
 
   const beginCanvasAction = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || activeTool === 'select') return
@@ -142,8 +148,14 @@ export function ImageEditCanvas({
     const element = stageRef.current
     if (!element) return
     const point = ratioFromPointer(event, element)
-    if (draggingMark) {
-      onMoveMark(draggingMark.layerId, draggingMark.markId, point.x, point.y)
+    if (draggingTask) {
+      const task = tasks.find((item) => item.id === draggingTask.taskId)
+      if (!task) return
+      onMoveTask(
+        task.id,
+        Math.min(1 - task.width, Math.max(0, point.x - draggingTask.offsetX)),
+        Math.min(1 - task.height, Math.max(0, point.y - draggingTask.offsetY)),
+      )
       return
     }
     if (!draftRect) return
@@ -155,21 +167,23 @@ export function ImageEditCanvas({
   const commitCanvasAction = (event: PointerEvent<HTMLDivElement>) => {
     const element = stageRef.current
     if (!element) return
-    if (draggingMark) {
-      setDraggingMark(null)
+    if (draggingTask) {
+      setDraggingTask(null)
       return
     }
-    if (!draftRect) return
+    if (!draftRect || activeTool === 'select') return
     const point = ratioFromPointer(event, element)
     const width = Math.abs(point.x - draftRect.startX)
     const height = Math.abs(point.y - draftRect.startY)
-    const useArea = activeTool === 'mask' || width > 0.025 || height > 0.025
+    const useArea = width > 0.025 || height > 0.025
+    const defaultWidth = 0.16
+    const defaultHeight = 0.12
     onCanvasCommit({
-      tool: activeTool,
-      x: useArea ? Math.min(point.x, draftRect.startX) : point.x,
-      y: useArea ? Math.min(point.y, draftRect.startY) : point.y,
-      width: useArea ? width : undefined,
-      height: useArea ? height : undefined,
+      type: activeTool,
+      x: useArea ? Math.min(point.x, draftRect.startX) : Math.min(1 - defaultWidth, Math.max(0, point.x - defaultWidth / 2)),
+      y: useArea ? Math.min(point.y, draftRect.startY) : Math.min(1 - defaultHeight, Math.max(0, point.y - defaultHeight / 2)),
+      width: useArea ? Math.max(0.05, width) : defaultWidth,
+      height: useArea ? Math.max(0.05, height) : defaultHeight,
     })
     setDraftRect(null)
   }
@@ -185,100 +199,44 @@ export function ImageEditCanvas({
         onPointerUp={commitCanvasAction}
         onPointerCancel={() => {
           setDraftRect(null)
-          setDraggingMark(null)
+          setDraggingTask(null)
         }}
       >
-        <img src={imageUrl} alt={imageAlt} draggable={false} style={{ filter }} />
+        <img src={imageUrl} alt={imageAlt} draggable={false} />
 
-        {weatherLayers.map((layer) => {
-          const params = layer.params ?? {}
-          const weatherType = String(params.weatherType ?? 'rain')
-          const intensity = Number(params.intensity ?? 60)
+        {tasks.map((task, index) => {
+          const option = getSceneEditTaskOption(task.type)
+          const selected = selectedTaskId === task.id
           return (
-            <div
-              key={layer.id}
-              className={`image-edit-weather is-${weatherType}`}
-              style={{ opacity: Math.min(0.9, (layer.opacity ?? 0.7) * intensity / 70) }}
-            />
-          )
-        })}
-
-        {fogLayers.map((layer) => {
-          const params = layer.params ?? {}
-          return (
-            <div
-              key={layer.id}
-              className="image-edit-fog"
-              style={{
-                opacity: Math.min(0.85, Number(params.density ?? 42) / 100 * (layer.opacity ?? 0.7)),
-                backgroundColor: String(params.color ?? '#d7e7ff'),
+            <button
+              key={task.id}
+              type="button"
+              className={`image-edit-region-task ${selected ? 'is-selected' : ''}`}
+              style={taskFrameStyle(task, option.color, selected)}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                const element = stageRef.current
+                if (!element) return
+                const point = ratioFromPointer(event, element)
+                onSelectTask(task.id)
+                setDraggingTask({ taskId: task.id, offsetX: point.x - task.x, offsetY: point.y - task.y })
               }}
-            />
+              title={`${option.label}: ${task.instruction}`}
+            >
+              <span className="image-edit-region-number" style={{ ...numberStyle, background: option.color }}>{index + 1}</span>
+              <span className="image-edit-region-label" style={labelStyle}>{option.icon} {option.label}</span>
+              <span className="image-edit-region-note" style={noteStyle}>{task.instruction}</span>
+            </button>
           )
         })}
-
-        {lightLayers.map((layer) => {
-          const mark = layer.marks?.[0] ?? { x: 0.72, y: 0.22 }
-          const params = layer.params ?? {}
-          return (
-            <div
-              key={layer.id}
-              className="image-edit-light"
-              style={{
-                left: `${mark.x * 100}%`,
-                top: `${mark.y * 100}%`,
-                width: `${Number(params.radius ?? 36)}%`,
-                height: `${Number(params.radius ?? 36)}%`,
-                background: `radial-gradient(circle, ${String(params.color ?? '#ffd28a')} 0%, rgba(255,255,255,0.26) 28%, transparent 68%)`,
-                opacity: Math.min(0.95, Number(params.intensity ?? 68) / 100 * (layer.opacity ?? 0.75)),
-              }}
-            />
-          )
-        })}
-
-        {maskLayers.flatMap((layer) => (layer.marks ?? []).map((mark) => (
-          <button
-            key={`${layer.id}:${mark.id}`}
-            type="button"
-            className={`image-edit-mark is-mask ${selectedLayerId === layer.id && selectedMarkId === mark.id ? 'is-selected' : ''}`}
-            style={markStyle(mark)}
-            onPointerDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onSelectLayer(layer.id, mark.id)
-              setDraggingMark({ layerId: layer.id, markId: mark.id })
-            }}
-            title={mark.instruction || layer.instruction}
-          >
-            <span>{imageEditLayerIcon(layer.type)}</span>
-          </button>
-        )))}
-
-        {markerLayers.flatMap((layer) => layer.type === 'mask' ? [] : (layer.marks ?? []).map((mark, index) => (
-          <button
-            key={`${layer.id}:${mark.id}`}
-            type="button"
-            className={`image-edit-mark is-${layer.type} ${selectedLayerId === layer.id && selectedMarkId === mark.id ? 'is-selected' : ''}`}
-            style={markStyle(mark)}
-            onPointerDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onSelectLayer(layer.id, mark.id)
-              setDraggingMark({ layerId: layer.id, markId: mark.id })
-            }}
-            title={mark.instruction || layer.instruction}
-          >
-            <span>{imageEditLayerIcon(layer.type)}</span>
-            <small>{index + 1}</small>
-          </button>
-        )))}
 
         {draftRect && (draftRect.width > 0.01 || draftRect.height > 0.01) ? (
-          <div className="image-edit-draft-rect" style={draftStyle(draftRect)} />
+          <div className="image-edit-draft-rect" style={rectStyle(draftRect)} />
         ) : null}
 
         <div className="image-edit-tool-hint">
-          {activeTool === 'select' ? '选择/移动：拖动标记调整位置。' : '点击添加图层或标记，拖拽可框选区域。'}
+          {activeTool === 'select' ? '选择区域：拖动任务框调整位置。' : '拖拽框选场景区域；单击会创建一个小区域。'}
         </div>
       </div>
     </div>
