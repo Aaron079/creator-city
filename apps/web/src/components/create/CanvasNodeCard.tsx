@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
+export type CanvasNodePreviewType = 'text' | 'image' | 'video'
 export type VisualCanvasNodePreview = {
   type: 'none' | 'placeholder-video' | 'remote-video'
   url?: string
@@ -52,7 +53,7 @@ interface CanvasNodeCardProps {
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
-  onOpenTextEditor?: () => void
+  onOpenPreview: (type: CanvasNodePreviewType) => void
   dragging?: boolean
 }
 
@@ -149,6 +150,8 @@ function isInteractiveTarget(target: EventTarget | null) {
     '[contenteditable="true"]',
     '[data-no-node-drag="true"]',
     '[data-connection-handle="true"]',
+    '[data-node-preview-overlay="true"]',
+    '[data-provider-menu="true"]',
     '.canvas-node-dialog',
     '.canvas-prompt-box',
     '.canvas-context-menu',
@@ -244,24 +247,17 @@ export function CanvasNodeCard({
   onDragStart,
   onOpenContextMenu,
   onEdit,
-  onOpenTextEditor,
+  onOpenPreview,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
-  const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
-  const [imageLinkCopied, setImageLinkCopied] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
-  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
-  const [videoLinkCopied, setVideoLinkCopied] = useState(false)
   const videoPreviewUrl = node.kind === 'video'
     ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
     : undefined
-  const nodeMetadata = metadataRecord(node.metadataJson)
-  const videoProviderLabel = node.providerId || (typeof nodeMetadata.providerId === 'string' ? nodeMetadata.providerId : '')
-  const videoModelLabel = typeof nodeMetadata.model === 'string' ? nodeMetadata.model : node.model
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -304,43 +300,12 @@ export function CanvasNodeCard({
 
   useEffect(() => {
     setImageLoadFailed(false)
-    setImagePreviewOpen(false)
-    setImageLinkCopied(false)
     setImageNaturalRatio(null)
   }, [node.resultImageUrl])
 
   useEffect(() => {
-    setVideoPreviewOpen(false)
     setVideoLoadFailed(false)
-    setVideoLinkCopied(false)
   }, [videoPreviewUrl])
-
-  const copyImageLink = async () => {
-    if (!node.resultImageUrl) return
-    try {
-      await navigator.clipboard?.writeText(node.resultImageUrl)
-      setImageLinkCopied(true)
-      window.setTimeout(() => setImageLinkCopied(false), 1200)
-    } catch {
-      setImageLinkCopied(false)
-    }
-  }
-
-  const copyVideoLink = async () => {
-    if (!videoPreviewUrl) return
-    try {
-      await navigator.clipboard?.writeText(videoPreviewUrl)
-      setVideoLinkCopied(true)
-      window.setTimeout(() => setVideoLinkCopied(false), 1200)
-    } catch {
-      setVideoLinkCopied(false)
-    }
-  }
-
-  const openVideoInNewTab = () => {
-    if (!videoPreviewUrl) return
-    window.open(videoPreviewUrl, '_blank', 'noopener,noreferrer')
-  }
 
   return (
     <motion.div
@@ -353,10 +318,17 @@ export function CanvasNodeCard({
         if (event.button !== 0) return
         pointerDownPos.current = { x: event.clientX, y: event.clientY }
         if (isInteractiveTarget(event.target)) return
+        event.preventDefault()
         event.stopPropagation()
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          // Pointer capture is best-effort; window-level listeners still carry the drag.
+        }
         onDragStart(event)
       }}
       onClick={(event) => {
+        if (isInteractiveTarget(event.target)) return
         const down = pointerDownPos.current
         if (down && (Math.abs(event.clientX - down.x) > 6 || Math.abs(event.clientY - down.y) > 6)) return
         onSelect()
@@ -478,7 +450,7 @@ export function CanvasNodeCard({
               onDoubleClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                onOpenTextEditor?.()
+                onOpenPreview('text')
               }}
               aria-label="查看或编辑文本结果"
             >
@@ -526,14 +498,14 @@ export function CanvasNodeCard({
                     event.preventDefault()
                     event.stopPropagation()
                     if (videoLoadFailed || !videoPreviewUrl) return
-                    setVideoPreviewOpen(true)
+                    onOpenPreview('video')
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     event.stopPropagation()
                     if (videoLoadFailed) return
-                    setVideoPreviewOpen(true)
+                    onOpenPreview('video')
                   }}
                   aria-label="预览视频"
                 >
@@ -571,7 +543,7 @@ export function CanvasNodeCard({
                     event.preventDefault()
                     event.stopPropagation()
                     if (!node.resultImageUrl) return
-                    setImagePreviewOpen(true)
+                    onOpenPreview('image')
                   }}
                   aria-label="预览图片"
                 >
@@ -626,102 +598,6 @@ export function CanvasNodeCard({
           )}
         </div>
       </div>
-      {imagePreviewOpen && node.resultImageUrl ? (
-        <div
-          className="canvas-image-preview-backdrop"
-          role="presentation"
-          data-no-node-drag="true"
-          onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onWheel={(event) => event.stopPropagation()}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            if (event.target === event.currentTarget) setImagePreviewOpen(false)
-          }}
-        >
-          <section
-            className="canvas-image-preview-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="图片预览"
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-          >
-            <div className="canvas-image-preview-head">
-              <span>{node.title}</span>
-              <button type="button" onClick={() => setImagePreviewOpen(false)} aria-label="关闭图片预览">×</button>
-            </div>
-            {imageLoadFailed ? (
-              <div className="canvas-image-preview-error">图片无法加载</div>
-            ) : (
-              <img src={node.resultImageUrl} alt={node.title} className="canvas-image-preview-media" />
-            )}
-            <div className="canvas-image-preview-actions">
-              <button type="button" onClick={() => { void copyImageLink() }}>
-                {imageLinkCopied ? '已复制' : '复制图片链接'}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-      {videoPreviewOpen && videoPreviewUrl ? (
-        <div
-          className="canvas-video-preview-backdrop"
-          role="presentation"
-          data-no-node-drag="true"
-          onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onWheel={(event) => event.stopPropagation()}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            if (event.target === event.currentTarget) setVideoPreviewOpen(false)
-          }}
-        >
-          <section
-            className="canvas-video-preview-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="视频预览"
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-          >
-            <div className="canvas-video-preview-head">
-              <div className="canvas-video-preview-title">
-                <span>视频预览</span>
-                <small>{[videoProviderLabel, videoModelLabel, node.title].filter(Boolean).join(' / ')}</small>
-              </div>
-              <button type="button" onClick={() => setVideoPreviewOpen(false)} aria-label="关闭视频预览">×</button>
-            </div>
-            {videoLoadFailed ? (
-              <div className="canvas-video-preview-error">视频无法加载</div>
-            ) : (
-              <video
-                src={videoPreviewUrl}
-                className="canvas-video-preview-media"
-                controls
-                autoPlay
-                playsInline
-                onError={() => setVideoLoadFailed(true)}
-              />
-            )}
-            <div className="canvas-video-preview-actions">
-              <button type="button" onClick={() => { void copyVideoLink() }}>
-                {videoLinkCopied ? '已复制' : '复制视频链接'}
-              </button>
-              <button type="button" onClick={openVideoInNewTab}>新标签页打开</button>
-              <button type="button" onClick={() => setVideoPreviewOpen(false)}>关闭</button>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </motion.div>
   )
 }

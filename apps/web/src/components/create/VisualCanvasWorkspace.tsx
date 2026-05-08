@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
-import { CanvasNodeCard, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { CanvasNodeCard, type CanvasNodePreviewType, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -894,9 +894,11 @@ export function VisualCanvasWorkspace({
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
-  const [textEditorNodeId, setTextEditorNodeId] = useState<string | null>(null)
+  const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
+  const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
+  const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
@@ -943,10 +945,13 @@ export function VisualCanvasWorkspace({
   })
   const nodeDragRef = useRef<{
     nodeId: string
+    pointerId: number
     startClientX: number
     startClientY: number
     startX: number
     startY: number
+    latestX: number
+    latestY: number
   } | null>(null)
   const connectionDragRef = useRef<{
     nodeId: string
@@ -1908,6 +1913,14 @@ export function VisualCanvasWorkspace({
     }
   }, [loadedProjectTitle, projectId, projectTitleDraft, projectTitleSaving, showCanvasFeedback])
 
+  const closeActivePreview = useCallback(() => {
+    setActivePreviewNodeId(null)
+    setActivePreviewType(null)
+    setTextEditorDraft('')
+    setTextEditorCopied(false)
+    setPreviewLinkCopied(false)
+  }, [])
+
   const deleteNode = useCallback((nodeId: string) => {
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
     const removedEdges = edges
@@ -1918,10 +1931,13 @@ export function VisualCanvasWorkspace({
     commitEdges((current) => current.filter((edge) => edge.fromNodeId !== nodeId && edge.toNodeId !== nodeId))
     setActiveNodeId((current) => (current === nodeId ? null : current))
     setEditingNodeId((current) => (current === nodeId ? null : current))
+    if (activePreviewNodeId === nodeId) {
+      closeActivePreview()
+    }
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [commitEdges, commitNodes, edges])
+  }, [activePreviewNodeId, closeActivePreview, commitEdges, commitNodes, edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -1942,10 +1958,11 @@ export function VisualCanvasWorkspace({
     commitNodes((current) => [...current, duplicate])
     setActiveNodeId(nodeId)
     setEditingNodeId(null)
+    closeActivePreview()
     setContextMenu(null)
     setNodeAddMenu(null)
     return duplicate
-  }, [commitNodes, nodes])
+  }, [closeActivePreview, commitNodes, nodes])
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -1954,6 +1971,21 @@ export function VisualCanvasWorkspace({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (activePreviewNodeId) {
+          event.preventDefault()
+          closeActivePreview()
+        }
+        setContextMenu(null)
+        setNodeAddMenu(null)
+        setNodeCreateMenu(null)
+        setConnectionDraft(null)
+        connectionDragRef.current = null
+        setIsAddMenuOpen(false)
+        setEditingNodeId(null)
+        return
+      }
+
       if (isEditableTarget(event.target)) return
       if (event.code === 'Space') {
         setIsSpacePressed(true)
@@ -1963,17 +1995,6 @@ export function VisualCanvasWorkspace({
       if ((event.key === 'Delete' || event.key === 'Backspace') && activeNodeId) {
         event.preventDefault()
         deleteNode(activeNodeId)
-        return
-      }
-
-      if (event.key === 'Escape') {
-        setContextMenu(null)
-        setNodeAddMenu(null)
-        setNodeCreateMenu(null)
-        setConnectionDraft(null)
-        connectionDragRef.current = null
-        setIsAddMenuOpen(false)
-        setEditingNodeId(null)
         return
       }
 
@@ -2004,7 +2025,7 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeNodeId, canvasZoom, deleteNode, resetCanvasView, setZoomAroundPoint])
+  }, [activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, deleteNode, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
@@ -2114,9 +2135,15 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === editingNodeId) ?? null,
     [editingNodeId, nodes],
   )
+  const activePreviewNode = useMemo(
+    () => nodes.find((node) => node.id === activePreviewNodeId) ?? null,
+    [activePreviewNodeId, nodes],
+  )
   const textEditorNode = useMemo(
-    () => nodes.find((node) => node.id === textEditorNodeId && node.kind === 'text') ?? null,
-    [nodes, textEditorNodeId],
+    () => activePreviewType === 'text'
+      ? activePreviewNode && activePreviewNode.kind === 'text' ? activePreviewNode : null
+      : null,
+    [activePreviewNode, activePreviewType],
   )
   const textEditorMetadata = useMemo(
     () => metadataRecord(textEditorNode?.metadataJson),
@@ -2131,6 +2158,19 @@ export function VisualCanvasWorkspace({
   const textEditorModel = typeof textEditorMetadata.model === 'string'
     ? textEditorMetadata.model
     : textEditorNode?.model
+  const activePreviewMetadata = useMemo(
+    () => metadataRecord(activePreviewNode?.metadataJson),
+    [activePreviewNode?.metadataJson],
+  )
+  const activePreviewVideoUrl = activePreviewNode?.kind === 'video'
+    ? activePreviewNode.resultVideoUrl || (activePreviewNode.preview?.type === 'remote-video' ? activePreviewNode.preview.url : undefined)
+    : undefined
+  const activePreviewVideoProviderLabel = activePreviewNode?.kind === 'video'
+    ? activePreviewNode.providerId || (typeof activePreviewMetadata.providerId === 'string' ? activePreviewMetadata.providerId : '')
+    : ''
+  const activePreviewVideoModelLabel = activePreviewNode?.kind === 'video'
+    ? typeof activePreviewMetadata.model === 'string' ? activePreviewMetadata.model : activePreviewNode.model
+    : ''
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -2434,47 +2474,74 @@ export function VisualCanvasWorkspace({
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
 
+    event.preventDefault()
     event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Window pointer listeners still handle the drag if capture is unavailable.
+    }
     nodeDragRef.current = {
       nodeId,
+      pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startX: node.x,
       startY: node.y,
+      latestX: node.x,
+      latestY: node.y,
     }
     setActiveNodeId(nodeId)
+    if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
+      closeActivePreview()
+    }
+    setEditingNodeId(null)
     setDraggingNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [nodes])
+  }, [activePreviewNodeId, closeActivePreview, nodes])
   const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const drag = nodeDragRef.current
       if (!drag) return
+      event.preventDefault()
+      event.stopPropagation()
       const nextX = drag.startX + (event.clientX - drag.startClientX) / canvasZoom
       const nextY = drag.startY + (event.clientY - drag.startClientY) / canvasZoom
+      drag.latestX = Number.isFinite(nextX) ? nextX : drag.startX
+      drag.latestY = Number.isFinite(nextY) ? nextY : drag.startY
       handleNodePatch(drag.nodeId, {
-        x: Number.isFinite(nextX) ? nextX : drag.startX,
-        y: Number.isFinite(nextY) ? nextY : drag.startY,
+        x: drag.latestX,
+        y: drag.latestY,
       })
     }
 
-    const handlePointerUp = () => {
-      const hadDrag = Boolean(nodeDragRef.current)
+    const handlePointerUp = (event: PointerEvent) => {
+      const drag = nodeDragRef.current
       nodeDragRef.current = null
       setDraggingNodeId('')
-      if (hadDrag) scheduleCanvasSave(0)
+      if (!drag) return
+      event.preventDefault()
+      event.stopPropagation()
+      handleNodePatch(drag.nodeId, {
+        x: drag.latestX,
+        y: drag.latestY,
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [canvasZoom, handleNodePatch, scheduleCanvasSave])
+  }, [canvasZoom, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
 
   const syncPromptPreset = useCallback((kind: VisualCanvasNodeKind) => {
     const meta = NODE_META[kind]
@@ -2496,6 +2563,9 @@ export function VisualCanvasWorkspace({
   }, [imageProviderStatusMap, videoProviderStatusMap])
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
+    if (activePreviewNodeId && activePreviewNodeId !== node.id) {
+      closeActivePreview()
+    }
     setActiveNodeId(node.id)
     setEditingNodeId(node.id)
     setCanvasPrompt(node.prompt)
@@ -2508,18 +2578,21 @@ export function VisualCanvasWorkspace({
       promptInputRef.current?.focus()
       promptInputRef.current?.select()
     }, 0)
-  }, [syncPromptPreset])
+  }, [activePreviewNodeId, closeActivePreview, syncPromptPreset])
 
-  const openTextEditor = useCallback((node: VisualCanvasNode) => {
+  const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
+    if (type !== 'text' && type !== node.kind) return
+    if (type === 'text' && node.kind !== 'text') return
     setActiveNodeId(node.id)
-    setTextEditorNodeId(node.id)
-    setTextEditorDraft(node.resultText ?? '')
-    setTextEditorCopied(false)
-  }, [])
-
-  const closeTextEditor = useCallback(() => {
-    setTextEditorNodeId(null)
-    setTextEditorDraft('')
+    setEditingNodeId(null)
+    setActivePreviewNodeId(node.id)
+    setActivePreviewType(type)
+    setPreviewLinkCopied(false)
+    if (type === 'text') {
+      setTextEditorDraft(node.resultText ?? '')
+    } else {
+      setTextEditorDraft('')
+    }
     setTextEditorCopied(false)
   }, [])
 
@@ -2542,8 +2615,8 @@ export function VisualCanvasWorkspace({
     flushLocalSnapshot()
     scheduleCanvasSave(0)
     showCanvasFeedback('文本修改已保存。')
-    closeTextEditor()
-  }, [closeTextEditor, editingNodeId, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback, textEditorDraft, textEditorNode])
+    closeActivePreview()
+  }, [closeActivePreview, editingNodeId, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback, textEditorDraft, textEditorNode])
 
   const copyTextEditor = useCallback(async () => {
     try {
@@ -2554,6 +2627,20 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback('复制失败，请手动选择文本复制。')
     }
   }, [showCanvasFeedback, textEditorDraft])
+
+  const copyActivePreviewLink = useCallback(async (url: string) => {
+    try {
+      await navigator.clipboard?.writeText(url)
+      setPreviewLinkCopied(true)
+      window.setTimeout(() => setPreviewLinkCopied(false), 1200)
+    } catch {
+      showCanvasFeedback('复制失败，请手动复制链接。')
+    }
+  }, [showCanvasFeedback])
+
+  const openActivePreviewLink = useCallback((url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }, [])
 
   const buildResultLabel = useCallback((title: string) => {
     const assetCopy = promptAssetMode === 'none' ? '无素材' : assetLabel
@@ -3550,6 +3637,9 @@ export function VisualCanvasWorkspace({
       startClientY: event.clientY,
     }
     setActiveNodeId(nodeId)
+    if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
+      closeActivePreview()
+    }
     setContextMenu(null)
     setNodeAddMenu(null)
     setEditingNodeId(null)
@@ -3564,7 +3654,7 @@ export function VisualCanvasWorkspace({
         : sourceNode.x - CONNECTOR_CENTER_OFFSET - CONNECTION_DRAFT_HANDLE_OFFSET,
       y2: sourceNode.y + sourceNode.height / 2,
     })
-  }, [nodes])
+  }, [activePreviewNodeId, closeActivePreview, nodes])
 
   const openNodeContextMenu = useCallback((nodeId: string, clientX: number, clientY: number) => {
     const position = clampMenuPosition(clientX, clientY, NODE_MENU_WIDTH, NODE_MENU_HEIGHT)
@@ -3572,7 +3662,10 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
     setIsAddMenuOpen(false)
     setActiveNodeId(nodeId)
-  }, [])
+    if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
+      closeActivePreview()
+    }
+  }, [activePreviewNodeId, closeActivePreview])
 
   const copyNodeToClipboard = useCallback((node: VisualCanvasNode) => {
     setClipboardNode(node)
@@ -3698,7 +3791,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, [contenteditable="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -3713,6 +3806,7 @@ export function VisualCanvasWorkspace({
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
 
+    closeActivePreview()
     setEditingNodeId(null)
     setIsPanning(true)
     setContextMenu(null)
@@ -3725,7 +3819,7 @@ export function VisualCanvasWorkspace({
       panY: canvasPan.y,
     }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }, [canStartCanvasPan, canvasPan.x, canvasPan.y])
+  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview])
 
   const handleCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isPanning || event.pointerId !== panStartRef.current.pointerId) return
@@ -3872,6 +3966,7 @@ export function VisualCanvasWorkspace({
     event.stopPropagation()
 
     setHasStarted(true)
+    closeActivePreview()
     const viewportRect = viewportRef.current?.getBoundingClientRect()
     const referencePoint = viewportRect
       ? getViewportWorldPoint(
@@ -3894,7 +3989,7 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
-  }, [canStartCanvasPan, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
+  }, [canStartCanvasPan, closeActivePreview, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
 
   const handleShareCanvasLink = useCallback(async () => {
     flushLocalSnapshot()
@@ -4454,7 +4549,7 @@ export function VisualCanvasWorkspace({
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
                 onEdit={() => focusPromptForNode(node)}
-                onOpenTextEditor={() => openTextEditor(node)}
+                onOpenPreview={(type) => openNodePreview(node, type)}
               />
             </div>
           ))}
@@ -4527,20 +4622,108 @@ export function VisualCanvasWorkspace({
         </div>
       ) : null}
 
+      {activePreviewType === 'image' && activePreviewNode?.kind === 'image' && activePreviewNode.resultImageUrl ? (
+        <div
+          className="canvas-image-preview-backdrop"
+          role="presentation"
+          data-node-preview-overlay="true"
+          data-no-node-drag="true"
+        >
+          <section
+            className="canvas-image-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="图片预览"
+            data-node-preview-overlay="true"
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-image-preview-head">
+              <span>{activePreviewNode.title}</span>
+              <button type="button" onClick={closeActivePreview} aria-label="关闭图片预览">×</button>
+            </div>
+            <img src={activePreviewNode.resultImageUrl} alt={activePreviewNode.title} className="canvas-image-preview-media" />
+            <div className="canvas-image-preview-actions">
+              <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewNode.resultImageUrl!) }}>
+                {previewLinkCopied ? '已复制' : '复制图片链接'}
+              </button>
+              <button type="button" onClick={() => openActivePreviewLink(activePreviewNode.resultImageUrl!)}>
+                新标签页打开
+              </button>
+              <button type="button" onClick={closeActivePreview}>关闭</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activePreviewType === 'video' && activePreviewNode?.kind === 'video' && activePreviewVideoUrl ? (
+        <div
+          className="canvas-video-preview-backdrop"
+          role="presentation"
+          data-node-preview-overlay="true"
+          data-no-node-drag="true"
+        >
+          <section
+            className="canvas-video-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="视频预览"
+            data-node-preview-overlay="true"
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-video-preview-head">
+              <div className="canvas-video-preview-title">
+                <span>视频预览</span>
+                <small>{[activePreviewVideoProviderLabel, activePreviewVideoModelLabel, activePreviewNode.title].filter(Boolean).join(' / ')}</small>
+              </div>
+              <button type="button" onClick={closeActivePreview} aria-label="关闭视频预览">×</button>
+            </div>
+            <video
+              src={activePreviewVideoUrl}
+              poster={activePreviewNode.preview?.poster}
+              className="canvas-video-preview-media"
+              controls
+              autoPlay
+              playsInline
+            />
+            <div className="canvas-video-preview-actions">
+              <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewVideoUrl) }}>
+                {previewLinkCopied ? '已复制' : '复制视频链接'}
+              </button>
+              <button type="button" onClick={() => openActivePreviewLink(activePreviewVideoUrl)}>
+                新标签页打开
+              </button>
+              <button type="button" onClick={closeActivePreview}>关闭</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {textEditorNode ? (
         <div
           className="canvas-text-editor-backdrop"
           role="presentation"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) closeTextEditor()
-          }}
+          data-node-preview-overlay="true"
         >
           <section
             className="canvas-text-editor-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="canvas-text-editor-title"
+            data-node-preview-overlay="true"
             onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
             onWheelCapture={(event) => event.stopPropagation()}
           >
@@ -4553,7 +4736,7 @@ export function VisualCanvasWorkspace({
                   <span>{getNodeStatusLabel(textEditorNode.status)}</span>
                 </div>
               </div>
-              <button type="button" className="canvas-text-editor-close" onClick={closeTextEditor} aria-label="关闭">
+              <button type="button" className="canvas-text-editor-close" onClick={closeActivePreview} aria-label="关闭">
                 ×
               </button>
             </div>
@@ -4572,7 +4755,7 @@ export function VisualCanvasWorkspace({
                 {textEditorCopied ? '已复制' : '复制文本'}
               </button>
               <div className="canvas-text-editor-action-spacer" />
-              <button type="button" className="canvas-text-editor-button" onClick={closeTextEditor}>
+              <button type="button" className="canvas-text-editor-button" onClick={closeActivePreview}>
                 取消
               </button>
               <button type="button" className="canvas-text-editor-button is-primary" onClick={saveTextEditor}>
