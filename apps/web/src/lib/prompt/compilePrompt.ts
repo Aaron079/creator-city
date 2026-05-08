@@ -1,6 +1,7 @@
 import type { CompileNodePromptInput, CompiledNodePrompt } from './types'
 import { EDGE_DIRECTOR_LABELS, type EdgeDirective } from '@/lib/canvas/edge-director'
-import type { CharacterProfile } from '@/lib/characters'
+import type { CharacterProfile, CharacterReferenceAsset } from '@/lib/characters'
+import { CHARACTER_REFERENCE_KIND_LABELS, getHeroReference } from '@/lib/characters'
 import { formatSceneEditTasksForPrompt, formatSceneEditsForPrompt, type SceneProfile } from '@/lib/scenes'
 import type { ProjectStyleBible } from '@/lib/skills'
 
@@ -161,6 +162,45 @@ function nodeCharacterStrategy(input: CompileNodePromptInput) {
   ]).join('\n')
 }
 
+function collectCharacterReferences(input: CompileNodePromptInput): CharacterReferenceAsset[] {
+  if (input.characterReferences?.length) return input.characterReferences
+  const characters = input.characters?.filter((c) => c.name?.trim()) ?? []
+  return characters
+    .map((c) => getHeroReference(c))
+    .filter((ref): ref is CharacterReferenceAsset => ref !== null)
+}
+
+function formatCharacterReferenceSection(input: CompileNodePromptInput) {
+  const refs = collectCharacterReferences(input)
+  if (!refs.length) return ''
+  const kindLabel = (ref: CharacterReferenceAsset) =>
+    CHARACTER_REFERENCE_KIND_LABELS[ref.kind] ?? ref.kind
+  const characterMap = new Map((input.characters ?? []).map((c) => [c.id, c]))
+  return [
+    '【角色参考图】',
+    '当前节点使用以下角色参考图，生成时必须保持图中角色的视觉一致性：',
+    ...refs.map((ref) => {
+      const character = characterMap.get(ref.characterId)
+      return lines([
+        `- 角色：${character?.name ?? ref.characterId}`,
+        `  - 参考类型：${kindLabel(ref)}`,
+        ref.label && `  - 标签：${ref.label}`,
+        `  - 参考图 URL：${ref.imageUrl}`,
+        ref.sourceNodeId ? `  - 来源节点：${ref.sourceNodeId}` : null,
+        `  - 一致性要求：保持脸型、发型、肤色、服装、气质、关键道具一致。不要改变年龄、发型、服装或道具。`,
+      ]).join('\n')
+    }),
+    input.nodeKind === 'image'
+      ? '生成要求：强制以上述参考图为视觉锚点，角色外貌必须与参考图高度一致。'
+      : input.nodeKind === 'video'
+        ? '生成要求：角色外观和服装必须与参考图一致。只增加运动、镜头、情绪和时间变化，不改变角色外貌。'
+        : '生成要求：角色外貌需参考上述图片，保持视觉一致性。',
+    input.edgeCharacterDirectives?.lockCharacterConsistency
+      ? 'Edge Director 已开启角色锁定，角色参考图的优先级最高，必须严格遵守。'
+      : null,
+  ].filter(Boolean).join('\n\n')
+}
+
 function formatCharacterConsistency(input: CompileNodePromptInput) {
   const characters = input.characters?.filter((character) => character.name?.trim()) ?? []
   if (!characters.length) return ''
@@ -240,7 +280,7 @@ function formatSceneConsistency(input: CompileNodePromptInput) {
   ].join('\n\n')
 }
 
-function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string, sceneText: string, sceneEditText: string) {
+function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string, characterRefText: string, sceneText: string, sceneEditText: string) {
   const userPrompt = input.userPrompt.trim()
   const upstreamText = truncate(input.upstreamText ?? '')
   const skillPrompt = input.enabledSkills
@@ -254,6 +294,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       userPrompt && `用户原始需求：\n${userPrompt}`,
       upstreamText && `上游文本上下文：\n${upstreamText}`,
       edgeDirectorText,
+      characterRefText,
       characterText,
       sceneText,
       sceneEditText,
@@ -269,6 +310,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       userPrompt && `用户原始需求：\n${userPrompt}`,
       upstreamText && `上游文本，请转化为具体视觉提示：\n${upstreamText}`,
       edgeDirectorText,
+      characterRefText,
       characterText,
       sceneText,
       sceneEditText,
@@ -284,6 +326,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
     upstreamText && `上游文本，作为动作、情绪和镜头描述：\n${upstreamText}`,
     input.upstreamImageUrl && `上游图片参考：保持该图像主体、构图、色调和场景关系一致。图片 URL: ${input.upstreamImageUrl}`,
     edgeDirectorText,
+    characterRefText,
     characterText,
     sceneText,
     sceneEditText,
@@ -298,10 +341,13 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
   const appliedSkills = input.enabledSkills.filter((skill) => skill.appliesTo.includes(input.nodeKind))
   const edgeDirectorText = formatEdgeDirectives(input.edgeDirectives)
   const characterText = formatCharacterConsistency(input)
+  const characterRefText = formatCharacterReferenceSection(input)
+  const appliedRefs = collectCharacterReferences(input)
   const sceneText = formatSceneConsistency(input)
   const sceneEditText = formatSceneEditTasksForPrompt(input.sceneEditTasks ?? []) || formatSceneEditsForPrompt(input.sceneEdits ?? [])
-  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText, sceneText, sceneEditText)
+  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText, characterRefText, sceneText, sceneEditText)
   const system = buildSystem(input, styleText)
+  const characterMap = new Map((input.characters ?? []).map((c) => [c.id, c]))
 
   return {
     prompt,
@@ -340,6 +386,17 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
         type: directive.config.type,
         influenceWeight: directive.config.influenceWeight,
       })),
+      characterReferencesApplied: appliedRefs.length
+        ? appliedRefs.map((ref) => ({
+            referenceId: ref.id,
+            characterId: ref.characterId,
+            characterName: characterMap.get(ref.characterId)?.name,
+            kind: ref.kind,
+            label: ref.label,
+            imageUrl: ref.imageUrl,
+            isHero: ref.isHero,
+          }))
+        : undefined,
     },
   }
 }

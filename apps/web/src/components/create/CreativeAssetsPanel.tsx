@@ -12,8 +12,9 @@ import {
 import type { SceneBible } from '@/lib/scenes'
 import { SceneBiblePanel } from './SceneBiblePanel'
 import { SceneLabPanel } from './SceneLabPanel'
+import { CharacterReferenceBoard } from './CharacterReferenceBoard'
 
-type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'
+type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'ref-board' | 'palette' | 'props' | 'camera'
 
 interface CreativeAssetsPanelProps {
   open: boolean
@@ -38,6 +39,7 @@ interface CreativeAssetsPanelProps {
 
 const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
   { id: 'characters', label: '角色' },
+  { id: 'ref-board', label: '参考板' },
   { id: 'scenes', label: '场景' },
   { id: 'scene-lab', label: 'Scene Lab' },
   { id: 'palette', label: '调色' },
@@ -180,6 +182,18 @@ export function CreativeAssetsPanel({
   )
   const selectedCharacterIdSet = new Set(selectedCharacterIds)
   const selectedSceneIdSet = new Set(selectedSceneIds)
+
+  // Save references directly (not via draft) — preserves unsaved character form edits
+  const handleReferencesBibleSave = (updatedBible: CharacterBible) => {
+    setDraftCharacterBible((currentDraft) => ({
+      ...updatedBible,
+      characters: currentDraft.characters.map((c) => {
+        const updated = updatedBible.characters.find((uc) => uc.id === c.id)
+        return updated ? { ...c, referencePack: updated.referencePack } : c
+      }),
+    }))
+    onCharacterBibleSave(updatedBible)
+  }
 
   const patchSelectedCharacter = (patch: Partial<CharacterProfile>) => {
     if (!selectedCharacter) return
@@ -479,6 +493,17 @@ export function CreativeAssetsPanel({
                 onSceneIdsChange={onSceneIdsChange}
                 onSendPromptToNode={onSendPromptToNode}
                 onSceneEditPromptChange={onSceneEditPromptChange}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === 'ref-board' ? (
+            <div className="mt-4">
+              <CharacterReferenceBoard
+                characterBible={draftCharacterBible}
+                currentNode={currentNode}
+                selectedCharacterIds={selectedCharacterIds}
+                onSaveCharacterBible={handleReferencesBibleSave}
               />
             </div>
           ) : null}

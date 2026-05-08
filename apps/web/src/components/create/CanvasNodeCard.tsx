@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
+import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -266,6 +267,7 @@ export function CanvasNodeCard({
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [charRefDragOver, setCharRefDragOver] = useState(false)
   const videoPreviewUrl = node.kind === 'video'
     ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
     : undefined
@@ -364,8 +366,45 @@ export function CanvasNodeCard({
         event.stopPropagation()
         onOpenContextMenu(event)
       }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(CHAR_REF_DRAG_MIME)) return
+        if (node.kind !== 'image' && node.kind !== 'video') return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        setCharRefDragOver(true)
+      }}
+      onDragLeave={() => setCharRefDragOver(false)}
+      onDrop={(event) => {
+        setCharRefDragOver(false)
+        if (!event.dataTransfer.types.includes(CHAR_REF_DRAG_MIME)) return
+        event.preventDefault()
+        event.stopPropagation()
+        try {
+          const raw = event.dataTransfer.getData(CHAR_REF_DRAG_MIME)
+          const payload = JSON.parse(raw) as CharacterReferenceDragPayload
+          window.dispatchEvent(new CustomEvent('creator-city:char-ref-drop', {
+            detail: {
+              nodeId: node.id,
+              referenceId: payload.referenceId,
+              characterId: payload.characterId,
+              imageUrl: payload.imageUrl,
+              kind: payload.kind,
+              label: payload.label,
+            },
+          }))
+        } catch {
+          // Malformed payload — ignore
+        }
+      }}
     >
       <div className="canvas-node-topline" />
+      {charRefDragOver && (node.kind === 'image' || node.kind === 'video') ? (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-cyan-300/70 bg-cyan-300/10">
+          <div className="rounded-xl border border-cyan-200/40 bg-black/70 px-3 py-2 text-xs font-semibold text-cyan-100 backdrop-blur-sm">
+            放开绑定角色参考
+          </div>
+        </div>
+      ) : null}
       <button
         type="button"
         onPointerDown={(event) => {

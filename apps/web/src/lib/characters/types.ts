@@ -1,3 +1,35 @@
+export type CharacterReferenceKind =
+  | 'hero'
+  | 'full-body'
+  | 'medium-shot'
+  | 'close-up'
+  | 'extreme-close-up'
+  | 'front'
+  | 'side'
+  | 'back'
+  | 'three-quarter'
+  | 'expression'
+  | 'costume'
+  | 'prop'
+  | 'pose'
+  | 'other'
+
+export type CharacterReferenceAsset = {
+  id: string
+  characterId: string
+  kind: CharacterReferenceKind
+  label: string
+  imageUrl: string
+  sourceNodeId?: string
+  sourcePrompt?: string
+  providerId?: string
+  model?: string
+  isHero?: boolean
+  notes?: string
+  createdAt: string
+  updatedAt?: string
+}
+
 export type CharacterProfile = {
   id: string
   name: string
@@ -11,12 +43,14 @@ export type CharacterProfile = {
   behaviorRules?: string
   negativeRules?: string
   referenceKeywords?: string[]
+  referencePack?: CharacterReferenceAsset[]
   createdAt?: string
   updatedAt?: string
 }
 
 export type CharacterBible = {
   characters: CharacterProfile[]
+  nodeReferenceBindings?: Record<string, string[]>
   updatedAt?: string
 }
 

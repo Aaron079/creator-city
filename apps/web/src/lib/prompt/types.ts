@@ -1,6 +1,6 @@
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 import type { EdgeDirective } from '@/lib/canvas/edge-director'
-import type { CharacterProfile } from '@/lib/characters'
+import type { CharacterProfile, CharacterReferenceAsset } from '@/lib/characters'
 import type { SceneEditMark, SceneEditTask, SceneProfile } from '@/lib/scenes'
 
 export type CompileNodePromptInput = {
@@ -16,6 +16,7 @@ export type CompileNodePromptInput = {
   scenes?: SceneProfile[]
   sceneEditTasks?: SceneEditTask[]
   sceneEdits?: SceneEditMark[]
+  characterReferences?: CharacterReferenceAsset[]
   edgeCharacterDirectives?: {
     inheritedCharacterIdsFromEdges?: string[]
     lockCharacterConsistency?: boolean
@@ -62,6 +63,15 @@ export type CompiledNodePrompt = {
       targetNodeId: string
       type: string
       influenceWeight: number
+    }>
+    characterReferencesApplied?: Array<{
+      referenceId: string
+      characterId: string
+      characterName?: string
+      kind: string
+      label: string
+      imageUrl: string
+      isHero?: boolean
     }>
   }
 }
