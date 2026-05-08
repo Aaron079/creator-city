@@ -130,6 +130,53 @@ function summarizeTextError(errorMessage?: string) {
   return message.length > 200 ? `${message.slice(0, 200)}...` : message
 }
 
+function metadataRecord(metadataJson: unknown) {
+  return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
+    ? metadataJson as Record<string, unknown>
+    : {}
+}
+
+function aspectRatioFromValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    if (Math.abs(value - 1.777) < 0.04) return 16 / 9
+    if (Math.abs(value - 1) < 0.04) return 1
+    if (Math.abs(value - 0.5625) < 0.04) return 9 / 16
+    return value
+  }
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized === '16:9') return 16 / 9
+  if (normalized === '9:16') return 9 / 16
+  if (normalized === '1:1') return 1
+  if (normalized === '4:3') return 4 / 3
+  if (normalized === '3:4') return 3 / 4
+  const numeric = Number(normalized)
+  return Number.isFinite(numeric) && numeric > 0 ? aspectRatioFromValue(numeric) : null
+}
+
+function aspectRatioCss(value: number) {
+  if (Math.abs(value - 16 / 9) < 0.04) return '16 / 9'
+  if (Math.abs(value - 9 / 16) < 0.04) return '9 / 16'
+  if (Math.abs(value - 1) < 0.04) return '1 / 1'
+  if (Math.abs(value - 4 / 3) < 0.04) return '4 / 3'
+  if (Math.abs(value - 3 / 4) < 0.04) return '3 / 4'
+  return `${Math.max(0.1, value).toFixed(4)} / 1`
+}
+
+function resolveImageAspectRatio(node: VisualCanvasNode, naturalRatio: number | null) {
+  const metadata = metadataRecord(node.metadataJson)
+  const params = metadata.params && typeof metadata.params === 'object' && !Array.isArray(metadata.params)
+    ? metadata.params as Record<string, unknown>
+    : {}
+  return aspectRatioFromValue(metadata.aspectRatio)
+    ?? aspectRatioFromValue((node as VisualCanvasNode & { aspectRatio?: unknown }).aspectRatio)
+    ?? aspectRatioFromValue(params.aspectRatio)
+    ?? aspectRatioFromValue(node.ratio)
+    ?? naturalRatio
+    ?? 16 / 9
+}
+
 export function CanvasNodeCard({
   node,
   active,
@@ -147,6 +194,7 @@ export function CanvasNodeCard({
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
   const [imageLinkCopied, setImageLinkCopied] = useState(false)
+  const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -162,11 +210,22 @@ export function CanvasNodeCard({
     dragging ? 'is-dragging' : '',
     node.status === 'generating' || node.status === 'running' ? 'is-generating' : '',
   ].filter(Boolean).join(' ')
+  const imageAspectRatioValue = node.kind === 'image' ? resolveImageAspectRatio(node, imageNaturalRatio) : 16 / 9
+  const imageFrameStyle = node.kind === 'image'
+    ? {
+        aspectRatio: aspectRatioCss(imageAspectRatioValue),
+        height: imageAspectRatioValue < 1 ? '100%' : undefined,
+        maxHeight: '100%',
+        maxWidth: '100%',
+        width: imageAspectRatioValue < 1 ? 'auto' : '100%',
+      } satisfies CSSProperties
+    : undefined
 
   useEffect(() => {
     setImageLoadFailed(false)
     setImagePreviewOpen(false)
     setImageLinkCopied(false)
+    setImageNaturalRatio(null)
   }, [node.resultImageUrl])
 
   const copyImageLink = async () => {
@@ -334,8 +393,9 @@ export function CanvasNodeCard({
                 ? {
                   '--node-preview-from': node.preview.gradientFrom,
                   '--node-preview-to': node.preview.gradientTo,
+                  ...(node.kind === 'image' ? imageFrameStyle : {}),
                 } as CSSProperties
-                : undefined}
+                : node.kind === 'image' ? imageFrameStyle : undefined}
             >
               {node.preview?.type === 'remote-video' && node.preview.url ? (
                 <video
@@ -368,6 +428,12 @@ export function CanvasNodeCard({
                       alt={node.title}
                       className="canvas-node-preview-image"
                       loading="lazy"
+                      onLoad={(event) => {
+                        const { naturalWidth, naturalHeight } = event.currentTarget
+                        if (naturalWidth > 0 && naturalHeight > 0) {
+                          setImageNaturalRatio(naturalWidth / naturalHeight)
+                        }
+                      }}
                       onError={() => setImageLoadFailed(true)}
                     />
                   )}

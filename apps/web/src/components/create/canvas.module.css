@@ -624,6 +624,11 @@
 
 .scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.26); }
 .scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 255, 255, 0.22); }
+
+.scope :global(.canvas-node-card.node-image .canvas-node-body) {
+  align-items: center;
+  justify-content: center;
+}
 .scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(138, 43, 226, 0.24); }
 .scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.22); }
 .scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.18); }
@@ -5353,6 +5358,15 @@
   background:
     radial-gradient(circle at 72% 30%, rgba(255, 255, 255, 0.24), transparent 17%),
     linear-gradient(135deg, var(--node-preview-from, #101827), var(--node-preview-to, #315cff));
+}
+
+.scope :global(.canvas-node-card.node-image .canvas-node-preview.is-image-result) {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 0;
 }
 
 .scope :global(.canvas-node-preview-video) {
