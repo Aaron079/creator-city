@@ -16,6 +16,8 @@ import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
+import { SceneToolLayer } from '@/components/create/SceneToolLayer'
+import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
@@ -57,10 +59,15 @@ import {
 } from '@/lib/characters'
 import {
   getNodeSceneIds,
+  getSceneEdits,
   loadSceneBible,
   saveSceneBible,
+  sceneEditsMetadata,
   sceneIdsMetadata,
+  summarizeSceneEdits,
   type SceneBible,
+  type SceneEditMark,
+  type SceneEditTool,
 } from '@/lib/scenes'
 import canvasStyles from '@/components/create/canvas.module.css'
 
@@ -1151,6 +1158,9 @@ export function VisualCanvasWorkspace({
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
+  const [activeSceneTool, setActiveSceneTool] = useState<SceneEditTool>('weather')
+  const [selectedSceneEditId, setSelectedSceneEditId] = useState('')
+  const [sceneEditInstructionsCopied, setSceneEditInstructionsCopied] = useState(false)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
@@ -2200,6 +2210,8 @@ export function VisualCanvasWorkspace({
     setTextEditorDraft('')
     setTextEditorCopied(false)
     setPreviewLinkCopied(false)
+    setSelectedSceneEditId('')
+    setSceneEditInstructionsCopied(false)
   }, [])
 
   const closePromptInspector = useCallback(() => {
@@ -2515,6 +2527,7 @@ export function VisualCanvasWorkspace({
               edgeDirectives,
               characters: characterContext.characters,
               scenes: sceneContext.scenes,
+              sceneEdits: getSceneEdits(node.metadataJson),
               edgeCharacterDirectives: {
                 inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
                 lockCharacterConsistency: characterContext.lockCharacterConsistency,
@@ -2626,6 +2639,10 @@ export function VisualCanvasWorkspace({
     : textEditorNode?.model
   const activePreviewMetadata = useMemo(
     () => metadataRecord(activePreviewNode?.metadataJson),
+    [activePreviewNode?.metadataJson],
+  )
+  const activePreviewSceneEdits = useMemo(
+    () => getSceneEdits(activePreviewNode?.metadataJson),
     [activePreviewNode?.metadataJson],
   )
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video'
@@ -3139,6 +3156,26 @@ export function VisualCanvasWorkspace({
   const openActivePreviewLink = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer')
   }, [])
+
+  const handleNodeSceneEditsChange = useCallback((nodeId: string, sceneEdits: SceneEditMark[]) => {
+    const node = latestNodesRef.current.find((item) => item.id === nodeId)
+    if (!node) return
+    handleNodePatch(nodeId, {
+      metadataJson: sceneEditsMetadata(node.metadataJson, sceneEdits),
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+
+  const copySceneEditInstructions = useCallback(async (sceneEdits: SceneEditMark[]) => {
+    try {
+      await navigator.clipboard?.writeText(summarizeSceneEdits(sceneEdits))
+      setSceneEditInstructionsCopied(true)
+      window.setTimeout(() => setSceneEditInstructionsCopied(false), 1200)
+    } catch {
+      showCanvasFeedback('复制失败，请手动复制场景编辑指令。')
+    }
+  }, [showCanvasFeedback])
 
   const buildResultLabel = useCallback((title: string) => {
     const assetCopy = promptAssetMode === 'none' ? '无素材' : assetLabel
@@ -3917,6 +3954,7 @@ export function VisualCanvasWorkspace({
           edgeDirectives,
           characters: characterContext.characters,
           scenes: sceneContext.scenes,
+          sceneEdits: getSceneEdits(nodeSnapshot.metadataJson),
           edgeCharacterDirectives: {
             inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
             lockCharacterConsistency: characterContext.lockCharacterConsistency,
@@ -5356,7 +5394,7 @@ export function VisualCanvasWorkspace({
           data-no-node-drag="true"
         >
           <section
-            className="canvas-image-preview-dialog"
+            className="canvas-image-preview-dialog has-scene-tools"
             role="dialog"
             aria-modal="true"
             aria-label="图片预览"
@@ -5372,7 +5410,40 @@ export function VisualCanvasWorkspace({
               <span>{activePreviewNode.title}</span>
               <button type="button" onClick={closeActivePreview} aria-label="关闭图片预览">×</button>
             </div>
-            <img src={activePreviewNode.resultImageUrl} alt={activePreviewNode.title} className="canvas-image-preview-media" />
+            <div className="canvas-image-preview-stage">
+              <SceneToolLayer
+                imageUrl={activePreviewNode.resultImageUrl}
+                imageAlt={activePreviewNode.title}
+                activeTool={activeSceneTool}
+                sceneEdits={activePreviewSceneEdits}
+                selectedEditId={selectedSceneEditId}
+                onSceneEditsChange={(sceneEdits) => handleNodeSceneEditsChange(activePreviewNode.id, sceneEdits)}
+                onSelectEdit={setSelectedSceneEditId}
+              />
+              <SceneToolPalette
+                activeTool={activeSceneTool}
+                sceneEdits={activePreviewSceneEdits}
+                selectedEditId={selectedSceneEditId}
+                copied={sceneEditInstructionsCopied}
+                onToolChange={setActiveSceneTool}
+                onSelectEdit={setSelectedSceneEditId}
+                onInstructionChange={(editId, instruction) => {
+                  handleNodeSceneEditsChange(activePreviewNode.id, activePreviewSceneEdits.map((edit) => (
+                    edit.id === editId ? { ...edit, instruction } : edit
+                  )))
+                }}
+                onDeleteEdit={(editId) => {
+                  handleNodeSceneEditsChange(activePreviewNode.id, activePreviewSceneEdits.filter((edit) => edit.id !== editId))
+                  if (selectedSceneEditId === editId) setSelectedSceneEditId('')
+                }}
+                onClearEdits={() => {
+                  handleNodeSceneEditsChange(activePreviewNode.id, [])
+                  setSelectedSceneEditId('')
+                }}
+                onCopyInstructions={() => { void copySceneEditInstructions(activePreviewSceneEdits) }}
+                onSaveLayer={() => showCanvasFeedback('场景工具层已保存到当前图片节点。')}
+              />
+            </div>
             <div className="canvas-image-preview-actions">
               <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewNode.resultImageUrl!) }}>
                 {previewLinkCopied ? '已复制' : '复制图片链接'}

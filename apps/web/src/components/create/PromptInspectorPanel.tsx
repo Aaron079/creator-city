@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
 import type { CharacterProfile } from '@/lib/characters'
-import type { SceneProfile } from '@/lib/scenes'
+import { getSceneEdits, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 
 interface PromptInspectorPanelProps {
@@ -204,6 +204,7 @@ export function PromptInspectorPanel({
   const compiledPromptPreview = stringValue(metadata.compiledPromptPreview)
   const sceneEditPromptPreview = stringValue(metadata.sceneEditPromptPreview)
   const sceneEditPromptSourceNodeId = stringValue(metadata.sceneEditPromptSourceNodeId)
+  const sceneEdits = useMemo(() => getSceneEdits(node?.metadataJson), [node?.metadataJson])
   const generationIdInputs: Array<[string, unknown]> = [
     ['generationJobId', metadata.generationJobId || nodeGenerationJobId],
     ['taskId', metadata.taskId],
@@ -461,6 +462,38 @@ export function PromptInspectorPanel({
               </div>
             ) : (
               <p className="text-sm text-white/45">当前节点未绑定场景。</p>
+            )}
+          </Section>
+
+          <Section title="场景可视化编辑">
+            {sceneEdits.length ? (
+              <div className="space-y-2">
+                {sceneEdits.map((edit) => {
+                  const option = getSceneEditToolOption(edit.tool)
+                  return (
+                    <article key={edit.id} className="rounded-md border border-white/10 bg-black/16 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-white/82">
+                          <span className="mr-2" aria-hidden="true">{option.icon}</span>
+                          {edit.label}
+                        </h4>
+                        <span className="font-mono text-xs text-white/42">
+                          x {Math.round(edit.x * 100)}% / y {Math.round(edit.y * 100)}%
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-white/70">{edit.instruction}</p>
+                      {edit.width && edit.height ? (
+                        <p className="mt-2 font-mono text-xs text-cyan-100/62">
+                          区域：{Math.round(edit.width * 100)}% × {Math.round(edit.height * 100)}%
+                        </p>
+                      ) : null}
+                      <p className="mt-2 font-mono text-xs text-white/36">创建时间：{formatDateValue(edit.createdAt)}</p>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-white/45">当前节点还没有场景编辑标记。</p>
             )}
           </Section>
 

@@ -1,7 +1,7 @@
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 import type { EdgeDirective } from '@/lib/canvas/edge-director'
 import type { CharacterProfile } from '@/lib/characters'
-import type { SceneProfile } from '@/lib/scenes'
+import type { SceneEditMark, SceneProfile } from '@/lib/scenes'
 
 export type CompileNodePromptInput = {
   nodeKind: CreatorSkillTarget
@@ -14,6 +14,7 @@ export type CompileNodePromptInput = {
   edgeDirectives?: EdgeDirective[]
   characters?: CharacterProfile[]
   scenes?: SceneProfile[]
+  sceneEdits?: SceneEditMark[]
   edgeCharacterDirectives?: {
     inheritedCharacterIdsFromEdges?: string[]
     lockCharacterConsistency?: boolean
@@ -45,6 +46,11 @@ export type CompiledNodePrompt = {
     inheritedSceneIdsFromEdges?: string[]
     characterConsistencyLocked?: boolean
     sceneConsistencyLocked?: boolean
+    sceneEditsApplied?: Array<{
+      id: string
+      tool: string
+      label: string
+    }>
     edgeDirectivesApplied: Array<{
       sourceNodeId: string
       targetNodeId: string
