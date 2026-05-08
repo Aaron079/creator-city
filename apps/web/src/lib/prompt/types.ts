@@ -1,5 +1,6 @@
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 import type { EdgeDirective } from '@/lib/canvas/edge-director'
+import type { CharacterProfile } from '@/lib/characters'
 
 export type CompileNodePromptInput = {
   nodeKind: CreatorSkillTarget
@@ -10,6 +11,11 @@ export type CompileNodePromptInput = {
   enabledSkills: CreatorSkill[]
   providerId?: string
   edgeDirectives?: EdgeDirective[]
+  characters?: CharacterProfile[]
+  edgeCharacterDirectives?: {
+    inheritedCharacterIdsFromEdges?: string[]
+    lockCharacterConsistency?: boolean
+  }
 }
 
 export type CompiledNodePrompt = {
@@ -21,6 +27,12 @@ export type CompiledNodePrompt = {
     upstreamImageIncluded: boolean
     styleBibleIncluded: boolean
     skillsApplied: string[]
+    charactersApplied: Array<{
+      id: string
+      name: string
+    }>
+    inheritedCharacterIdsFromEdges?: string[]
+    characterConsistencyLocked?: boolean
     edgeDirectivesApplied: Array<{
       sourceNodeId: string
       targetNodeId: string

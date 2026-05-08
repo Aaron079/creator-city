@@ -11,6 +11,7 @@ import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/Can
 import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
+import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
@@ -47,6 +48,13 @@ import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
 import { buildStoryboardFromCanvas } from '@/lib/storyboard'
 import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
+import {
+  characterIdsMetadata,
+  getNodeCharacterIds,
+  loadCharacterBible,
+  saveCharacterBible,
+  type CharacterBible,
+} from '@/lib/characters'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -512,7 +520,7 @@ function compactText(value: string | undefined, limit: number) {
 function compiledPromptMetadata(metadataJson: unknown, compiled: CompiledNodePrompt) {
   return {
     ...metadataRecord(metadataJson),
-    compiledPromptPreview: compactText(compiled.prompt, 1000),
+    compiledPromptPreview: compactText(compiled.prompt, 1600),
     compiledPromptDebug: {
       ...compiled.debug,
       userPrompt: compactText(compiled.debug.userPrompt, 300),
@@ -547,6 +555,11 @@ function workflowStyleBible(metadataJson: unknown) {
   return metadata.styleBible ? normalizeStyleBible(metadata.styleBible) : null
 }
 
+function workflowCharacterBible(metadataJson: unknown) {
+  const metadata = metadataRecord(metadataJson)
+  return metadata.characterBible ? loadCharacterBible('', metadataJson) : null
+}
+
 function persistWorkflowStyleBibleFallback(projectId: string, metadataJson: unknown) {
   if (typeof window === 'undefined' || !projectId) return
   const fromWorkflow = workflowStyleBible(metadataJson)
@@ -555,6 +568,67 @@ function persistWorkflowStyleBibleFallback(projectId: string, metadataJson: unkn
     window.localStorage.setItem(getStyleBibleKey(projectId), JSON.stringify(fromWorkflow))
   } catch {
     // Style Bible also remains in memory if localStorage is unavailable.
+  }
+}
+
+function persistWorkflowCharacterBibleFallback(projectId: string, metadataJson: unknown) {
+  if (typeof window === 'undefined' || !projectId) return
+  const fromWorkflow = workflowCharacterBible(metadataJson)
+  if (!fromWorkflow) return
+  saveCharacterBible(projectId, fromWorkflow)
+}
+
+function edgeDirectorRecord(metadataJson: unknown) {
+  const metadata = metadataRecord(metadataJson)
+  return metadataRecord(metadata.edgeDirector)
+}
+
+type CharacterContextEdge = {
+  fromNodeId: string
+  toNodeId: string
+  metadataJson?: unknown
+}
+
+function edgeRequestsCharacterInheritance(edge: CharacterContextEdge) {
+  const config = getEdgeDirectorConfig(edge.metadataJson)
+  if (config) return config.type === 'character-lock' || config.inheritCharacter
+  const director = edgeDirectorRecord(edge.metadataJson)
+  return director.characterLock === true || director.inheritCharacter === true
+}
+
+function edgeLocksCharacter(edge: CharacterContextEdge) {
+  const config = getEdgeDirectorConfig(edge.metadataJson)
+  if (config) return config.type === 'character-lock'
+  return edgeDirectorRecord(edge.metadataJson).characterLock === true
+}
+
+function resolveCharacterPromptContext({
+  node,
+  upstreamNodes,
+  incomingEdges,
+  characterBible,
+}: {
+  node: VisualCanvasNode
+  upstreamNodes: VisualCanvasNode[]
+  incomingEdges: CharacterContextEdge[]
+  characterBible: CharacterBible
+}) {
+  const ownIds = getNodeCharacterIds(node)
+  const upstreamById = new Map(upstreamNodes.map((upstreamNode) => [upstreamNode.id, upstreamNode]))
+  const inheritedCharacterIds = incomingEdges
+    .filter(edgeRequestsCharacterInheritance)
+    .flatMap((edge) => getNodeCharacterIds(upstreamById.get(edge.fromNodeId)))
+  const characterIds = [...new Set([...ownIds, ...inheritedCharacterIds])]
+  const characterIdSet = new Set(characterIds)
+  const inheritedCharacterIdSet = new Set(inheritedCharacterIds)
+  const characters = characterBible.characters.filter((character) => characterIdSet.has(character.id))
+  const inheritedCharacters = characterBible.characters.filter((character) => inheritedCharacterIdSet.has(character.id))
+  return {
+    characters,
+    boundCharacters: characterBible.characters.filter((character) => ownIds.includes(character.id)),
+    inheritedCharacters,
+    inheritedCharacterIdsFromEdges: [...new Set(inheritedCharacterIds)],
+    lockCharacterConsistency: incomingEdges.some(edgeLocksCharacter),
   }
 }
 
@@ -979,7 +1053,7 @@ export function VisualCanvasWorkspace({
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
   const [storyboardPreviewOpen, setStoryboardPreviewOpen] = useState(false)
-  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
+  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | 'characters' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -990,6 +1064,7 @@ export function VisualCanvasWorkspace({
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
   const [styleBible, setStyleBible] = useState<ProjectStyleBible>({})
+  const [characterBible, setCharacterBible] = useState<CharacterBible>({ characters: [] })
   const [enabledSkillIds, setEnabledSkillIds] = useState<string[]>(() => getDefaultCreatorSkillIds())
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
@@ -1083,6 +1158,7 @@ export function VisualCanvasWorkspace({
     } catch {
       setStyleBible({})
     }
+    setCharacterBible(loadCharacterBible(projectId))
     try {
       const rawSkills = window.localStorage.getItem(getEnabledSkillsKey(projectId))
       const parsed = rawSkills ? JSON.parse(rawSkills) : null
@@ -1686,6 +1762,8 @@ export function VisualCanvasWorkspace({
           if (!ensureRes.ok || !ensureData.project?.id || !ensureData.workflow?.id) throw new Error(ensureData.message ?? '打开项目失败。')
           if (cancelled) return
           persistWorkflowStyleBibleFallback(ensureData.project.id, ensureData.workflow.metadataJson)
+          persistWorkflowCharacterBibleFallback(ensureData.project.id, ensureData.workflow.metadataJson)
+          setCharacterBible(loadCharacterBible(ensureData.project.id, ensureData.workflow.metadataJson))
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
@@ -1762,6 +1840,8 @@ export function VisualCanvasWorkspace({
         if (!response.ok) throw new Error(data.message ?? '加载画布失败。')
         if (cancelled) return
         persistWorkflowStyleBibleFallback(resolvedProjectId, data.workflow?.metadataJson)
+        persistWorkflowCharacterBibleFallback(resolvedProjectId, data.workflow?.metadataJson)
+        setCharacterBible(loadCharacterBible(resolvedProjectId, data.workflow?.metadataJson))
 
         // Persist so next visit to /create (without ?projectId) reopens this project
         try {
@@ -2198,6 +2278,22 @@ export function VisualCanvasWorkspace({
     )
     return nodes.filter((node) => upstreamIds.has(node.id))
   }, [activeInspectorNodeId, edges, nodes])
+  const activeInspectorIncomingEdges = useMemo(
+    () => activeInspectorNodeId
+      ? edges.filter((edge) => edge.toNodeId === activeInspectorNodeId)
+      : [],
+    [activeInspectorNodeId, edges],
+  )
+  const activeInspectorCharacterContext = useMemo(() => (
+    activeInspectorNode
+      ? resolveCharacterPromptContext({
+          node: activeInspectorNode,
+          upstreamNodes: activeInspectorUpstreamNodes,
+          incomingEdges: activeInspectorIncomingEdges,
+          characterBible,
+        })
+      : null
+  ), [activeInspectorIncomingEdges, activeInspectorNode, activeInspectorUpstreamNodes, characterBible])
   const storyboardShotCount = useMemo(
     () => buildStoryboardFromCanvas(nodes, edges).length,
     [edges, nodes],
@@ -2224,6 +2320,13 @@ export function VisualCanvasWorkspace({
     flushLocalSnapshot()
     scheduleCanvasSave(0)
   }, [enabledSkillIds, flushLocalSnapshot, projectId, scheduleCanvasSave, styleBible])
+
+  const persistCharacterBibleSettings = useCallback((nextBible: CharacterBible) => {
+    if (!projectId) return
+    const savedBible = saveCharacterBible(projectId, nextBible)
+    setCharacterBible(savedBible)
+    showCanvasFeedback('角色库已保存。')
+  }, [projectId, showCanvasFeedback])
 
   const toggleCreatorSkill = useCallback((skillId: string) => {
     setEnabledSkillIds((current) => (
@@ -2276,6 +2379,12 @@ export function VisualCanvasWorkspace({
           nodes: [node, ...upstreamNodes],
           edges: incomingEdges,
         })
+        const characterContext = resolveCharacterPromptContext({
+          node,
+          upstreamNodes,
+          incomingEdges,
+          characterBible,
+        })
         const compiled = isPromptCompilerNodeKind(node.kind)
           ? compileNodePrompt({
               nodeKind: node.kind,
@@ -2286,6 +2395,11 @@ export function VisualCanvasWorkspace({
               enabledSkills: enabledCreatorSkills,
               providerId,
               edgeDirectives,
+              characters: characterContext.characters,
+              edgeCharacterDirectives: {
+                inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
+                lockCharacterConsistency: characterContext.lockCharacterConsistency,
+              },
             })
           : null
         const prompt = compiled?.prompt ?? userPrompt
@@ -2352,7 +2466,7 @@ export function VisualCanvasWorkspace({
     setWorkflowRunStatus('done')
     setWorkflowRunMessage('工作流完成')
     showCanvasFeedback('工作流完成')
-  }, [activeNodeId, commitNodes, enabledCreatorSkills, projectId, saveCanvas, showCanvasFeedback, styleBible, workflowId, workflowRunStatus])
+  }, [activeNodeId, characterBible, commitNodes, enabledCreatorSkills, projectId, saveCanvas, showCanvasFeedback, styleBible, workflowId, workflowRunStatus])
 
   const generationTasks = useMemo(() => collectGenerationTasks(nodes), [nodes])
   const runningGenerationTaskCount = useMemo(
@@ -2985,6 +3099,27 @@ export function VisualCanvasWorkspace({
     setNodeAddMenu(null)
   }, [flushLocalSnapshot])
 
+  const handleOpenCharacterBible = useCallback(() => {
+    flushLocalSnapshot()
+    setActivePanel((current) => (current === 'characters' ? null : 'characters'))
+    setCommentsEnabled(false)
+    setIsAddMenuOpen(false)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [flushLocalSnapshot])
+
+  const handleNodeCharacterIdsChange = useCallback((nodeId: string, characterIds: string[]) => {
+    handleNodePatch(nodeId, {
+      metadataJson: characterIdsMetadata(
+        latestNodesRef.current.find((node) => node.id === nodeId)?.metadataJson,
+        characterIds,
+      ),
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+
   const handleOpenImageEditor = useCallback(() => {
     flushLocalSnapshot()
     setHasStarted(true)
@@ -3584,6 +3719,17 @@ export function VisualCanvasWorkspace({
       }
     }
 
+    const edgeDirectives = buildEdgeDirectivesForNode({
+      targetNodeId: nodeSnapshot.id,
+      nodes: [nodeSnapshot, ...upstreamNodes],
+      edges: incomingEdges,
+    })
+    const characterContext = resolveCharacterPromptContext({
+      node: nodeSnapshot,
+      upstreamNodes,
+      incomingEdges,
+      characterBible,
+    })
     const compiled = isPromptCompilerNodeKind(nodeSnapshot.kind)
       ? compileNodePrompt({
           nodeKind: nodeSnapshot.kind,
@@ -3593,11 +3739,12 @@ export function VisualCanvasWorkspace({
           styleBible,
           enabledSkills: enabledCreatorSkills,
           providerId: normalizedPromptModel,
-          edgeDirectives: buildEdgeDirectivesForNode({
-            targetNodeId: nodeSnapshot.id,
-            nodes: [nodeSnapshot, ...upstreamNodes],
-            edges: incomingEdges,
-          }),
+          edgeDirectives,
+          characters: characterContext.characters,
+          edgeCharacterDirectives: {
+            inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
+            lockCharacterConsistency: characterContext.lockCharacterConsistency,
+          },
         })
       : null
     const compiledMetadata = compiled ? compiledPromptMetadata(nodeSnapshot.metadataJson, compiled) : nodeSnapshot.metadataJson
@@ -3801,7 +3948,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, edges, editingNode, enabledCreatorSkills, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
+  }, [buildResultLabel, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, edges, editingNode, enabledCreatorSkills, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -4533,6 +4680,18 @@ export function VisualCanvasWorkspace({
           </button>
           <button
             type="button"
+            className="canvas-secondary-button canvas-generation-tasks-trigger"
+            title="维护项目角色库"
+            disabled={!projectId}
+            onClick={handleOpenCharacterBible}
+          >
+            角色库
+            {characterBible.characters.length > 0 ? (
+              <span className="canvas-generation-tasks-badge">{characterBible.characters.length}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             onClick={() => setNewProjectOpen(true)}
             className="canvas-secondary-button"
             title="新建项目"
@@ -4742,6 +4901,13 @@ export function VisualCanvasWorkspace({
               onClose={closeCanvasPanel}
             />
           </motion.div>
+        ) : activePanel === 'characters' ? (
+          <CharacterBiblePanel
+            open
+            bible={characterBible}
+            onSave={persistCharacterBibleSettings}
+            onClose={closeCanvasPanel}
+          />
         ) : null}
       </AnimatePresence>
 
@@ -4891,6 +5057,9 @@ export function VisualCanvasWorkspace({
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
+                characters={characterBible.characters}
+                selectedCharacterIds={getNodeCharacterIds(node)}
+                onCharacterIdsChange={(characterIds) => handleNodeCharacterIdsChange(node.id, characterIds)}
               />
             </div>
           ))}
@@ -4931,6 +5100,7 @@ export function VisualCanvasWorkspace({
         upstreamNodes={activeInspectorUpstreamNodes}
         styleBible={styleBible}
         enabledSkills={enabledCreatorSkills}
+        characterContext={activeInspectorCharacterContext}
         onClose={closePromptInspector}
       />
 

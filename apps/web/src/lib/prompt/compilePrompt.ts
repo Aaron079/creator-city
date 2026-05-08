@@ -1,5 +1,6 @@
 import type { CompileNodePromptInput, CompiledNodePrompt } from './types'
 import { EDGE_DIRECTOR_LABELS, type EdgeDirective } from '@/lib/canvas/edge-director'
+import type { CharacterProfile } from '@/lib/characters'
 import type { ProjectStyleBible } from '@/lib/skills'
 
 function lines(items: Array<string | false | null | undefined>) {
@@ -104,7 +105,73 @@ function formatEdgeDirectives(edgeDirectives?: EdgeDirective[]) {
   ].join('\n\n')
 }
 
-function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string) {
+function keywordText(character: CharacterProfile) {
+  return Array.isArray(character.referenceKeywords)
+    ? character.referenceKeywords.filter(Boolean).join(', ')
+    : ''
+}
+
+function formatCharacterItem(character: CharacterProfile) {
+  return lines([
+    `- 角色名：${character.name}`,
+    character.role && `  - 身份：${character.role}`,
+    character.logline && `  - 一句话身份：${character.logline}`,
+    character.appearance && `  - 外貌：${character.appearance}`,
+    character.ageAndTemperament && `  - 年龄/气质：${character.ageAndTemperament}`,
+    character.costume && `  - 服装：${character.costume}`,
+    character.hairstyle && `  - 发型：${character.hairstyle}`,
+    character.props && `  - 关键道具：${character.props}`,
+    character.behaviorRules && `  - 行为规则：${character.behaviorRules}`,
+    character.negativeRules && `  - 禁止变化项：${character.negativeRules}`,
+    keywordText(character) && `  - 参考关键词：${keywordText(character)}`,
+  ]).join('\n')
+}
+
+function nodeCharacterStrategy(input: CompileNodePromptInput) {
+  const lockText = input.edgeCharacterDirectives?.lockCharacterConsistency
+    ? '5. Edge Director 已开启角色锁定，角色一致性的优先级提高。'
+    : ''
+  if (input.nodeKind === 'text') {
+    return lines([
+      '生成要求：',
+      '1. 角色可影响故事、行为、台词和身份。',
+      '2. 不强制堆叠视觉细节，但必须保留角色核心身份与不可变化项。',
+      '3. 不要随意改变年龄、身份、关键道具或行为规则。',
+      lockText,
+    ]).join('\n')
+  }
+  if (input.nodeKind === 'image') {
+    return lines([
+      '生成要求：',
+      '1. 必须保持这些角色特征。',
+      '2. 强注入外貌、服装、发型、关键道具和禁止变化项。',
+      '3. 角色外观必须在不同图片中保持一致。',
+      '4. 不要随意改变年龄、服装、发型、道具。',
+      lockText,
+    ]).join('\n')
+  }
+  return lines([
+    '生成要求：',
+    '1. 必须保持上游图片一致性和角色一致性。',
+    '2. 不要改变角色服装、外貌、发型、年龄和关键道具。',
+    '3. 只增加运动、镜头、情绪和时间变化。',
+    '4. 如果生成视频，角色外观必须保持一致。',
+    lockText,
+  ]).join('\n')
+}
+
+function formatCharacterConsistency(input: CompileNodePromptInput) {
+  const characters = input.characters?.filter((character) => character.name?.trim()) ?? []
+  if (!characters.length) return ''
+  return [
+    '【角色一致性】',
+    '当前节点绑定角色：',
+    ...characters.map(formatCharacterItem),
+    nodeCharacterStrategy(input),
+  ].join('\n\n')
+}
+
+function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeDirectorText: string, characterText: string) {
   const userPrompt = input.userPrompt.trim()
   const upstreamText = truncate(input.upstreamText ?? '')
   const skillPrompt = input.enabledSkills
@@ -118,6 +185,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       userPrompt && `用户原始需求：\n${userPrompt}`,
       upstreamText && `上游文本上下文：\n${upstreamText}`,
       edgeDirectorText,
+      characterText,
       styleText && `项目风格圣经：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：结构清晰，保留人物、世界观、场景与因果连续性；如涉及分镜，请给出可直接转化为画面和镜头的描述。',
@@ -130,6 +198,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
       userPrompt && `用户原始需求：\n${userPrompt}`,
       upstreamText && `上游文本，请转化为具体视觉提示：\n${upstreamText}`,
       edgeDirectorText,
+      characterText,
       styleText && `项目风格圣经，必须保留：\n${styleText}`,
       skillPrompt && `启用技能约束：\n${skillPrompt}`,
       '输出要求：聚焦主体、场景、构图、光线、色彩、质感、镜头和风格；保持人物/场景连续性；避免无关解释。',
@@ -142,6 +211,7 @@ function buildNodePrompt(input: CompileNodePromptInput, styleText: string, edgeD
     upstreamText && `上游文本，作为动作、情绪和镜头描述：\n${upstreamText}`,
     input.upstreamImageUrl && `上游图片参考：保持该图像主体、构图、色调和场景关系一致。图片 URL: ${input.upstreamImageUrl}`,
     edgeDirectorText,
+    characterText,
     styleText && `项目风格圣经，必须保留：\n${styleText}`,
     skillPrompt && `启用技能约束：\n${skillPrompt}`,
     '输出要求：明确主体动作、镜头运动、景别、速度、光影和情绪；保持与上游图像/文本的连续性；不要改变角色身份、服装或场景结构。',
@@ -152,7 +222,8 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
   const styleText = formatStyleBible(input.styleBible)
   const appliedSkills = input.enabledSkills.filter((skill) => skill.appliesTo.includes(input.nodeKind))
   const edgeDirectorText = formatEdgeDirectives(input.edgeDirectives)
-  const prompt = buildNodePrompt(input, styleText, edgeDirectorText)
+  const characterText = formatCharacterConsistency(input)
+  const prompt = buildNodePrompt(input, styleText, edgeDirectorText, characterText)
   const system = buildSystem(input, styleText)
 
   return {
@@ -164,6 +235,12 @@ export function compileNodePrompt(input: CompileNodePromptInput): CompiledNodePr
       upstreamImageIncluded: Boolean(input.upstreamImageUrl?.trim()),
       styleBibleIncluded: Boolean(styleText),
       skillsApplied: appliedSkills.map((skill) => skill.id),
+      charactersApplied: (input.characters ?? []).map((character) => ({
+        id: character.id,
+        name: character.name,
+      })),
+      inheritedCharacterIdsFromEdges: input.edgeCharacterDirectives?.inheritedCharacterIdsFromEdges,
+      characterConsistencyLocked: Boolean(input.edgeCharacterDirectives?.lockCharacterConsistency),
       edgeDirectivesApplied: (input.edgeDirectives ?? []).map((directive) => ({
         sourceNodeId: directive.sourceNodeId,
         targetNodeId: directive.targetNodeId,

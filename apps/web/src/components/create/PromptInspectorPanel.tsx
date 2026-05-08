@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
+import type { CharacterProfile } from '@/lib/characters'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 
 interface PromptInspectorPanelProps {
@@ -10,6 +11,12 @@ interface PromptInspectorPanelProps {
   upstreamNodes?: CanvasNode[]
   styleBible?: ProjectStyleBible | null
   enabledSkills?: CreatorSkill[]
+  characterContext?: {
+    boundCharacters: CharacterProfile[]
+    inheritedCharacters: CharacterProfile[]
+    inheritedCharacterIdsFromEdges: string[]
+    lockCharacterConsistency: boolean
+  } | null
   onClose: () => void
 }
 
@@ -58,6 +65,16 @@ function displayValue(value: unknown) {
 function compactText(value: string, limit: number) {
   const text = value.trim()
   return text.length > limit ? `${text.slice(0, limit)}...` : text
+}
+
+function characterSummary(character: CharacterProfile) {
+  return [
+    character.role || character.logline,
+    character.appearance,
+    character.costume,
+    character.hairstyle,
+    character.props,
+  ].filter(Boolean).join(' · ')
 }
 
 function formatDateValue(value: unknown) {
@@ -136,6 +153,7 @@ export function PromptInspectorPanel({
   upstreamNodes = [],
   styleBible,
   enabledSkills = [],
+  characterContext,
   onClose,
 }: PromptInspectorPanelProps) {
   const [copyState, setCopyState] = useState<CopyState>({})
@@ -198,6 +216,9 @@ export function PromptInspectorPanel({
     ['model', model],
     ...generationIds,
   ]
+  const boundCharacters = characterContext?.boundCharacters ?? []
+  const inheritedCharacters = characterContext?.inheritedCharacters ?? []
+  const hasCharacters = boundCharacters.length > 0 || inheritedCharacters.length > 0
 
   const copyText = async (target: CopyTarget, text: string) => {
     try {
@@ -324,6 +345,52 @@ export function PromptInspectorPanel({
               </dl>
             ) : (
               <p className="text-sm text-white/45">当前项目还没有填写风格圣经。</p>
+            )}
+          </Section>
+
+          <Section title="角色依据">
+            {hasCharacters ? (
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-white/52">当前节点绑定角色</h4>
+                  {boundCharacters.length ? (
+                    <div className="mt-2 space-y-2">
+                      {boundCharacters.map((character) => (
+                        <article key={character.id} className="rounded-md border border-white/10 bg-black/16 p-3">
+                          <div className="text-sm font-semibold text-white/82">{character.name}</div>
+                          <p className="mt-1 text-sm leading-5 text-white/60">{characterSummary(character) || '已绑定，暂无详细设定。'}</p>
+                          {character.negativeRules ? (
+                            <p className="mt-2 text-xs leading-5 text-red-100/70">禁止变化项：{character.negativeRules}</p>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-white/45">当前节点未直接绑定角色。</p>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-white/52">从连接线继承的角色</h4>
+                  {inheritedCharacters.length ? (
+                    <div className="mt-2 space-y-2">
+                      {inheritedCharacters.map((character) => (
+                        <article key={character.id} className="rounded-md border border-cyan-100/14 bg-cyan-200/[0.06] p-3">
+                          <div className="text-sm font-semibold text-cyan-50/88">{character.name}</div>
+                          <p className="mt-1 text-sm leading-5 text-white/62">{characterSummary(character) || '由上游角色锁定继承。'}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-white/45">没有从连接线继承角色。</p>
+                  )}
+                </div>
+                <div className="rounded-md bg-black/18 p-3 text-sm leading-6 text-white/64">
+                  角色一致性规则：保持角色身份、外貌、年龄/气质、服装、发型与关键道具；图片/视频生成不得随意改变角色外观。
+                  {characterContext?.lockCharacterConsistency ? <span className="block text-cyan-100/72">Edge Director 已开启角色锁定。</span> : null}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-white/45">当前节点未绑定角色。</p>
             )}
           </Section>
 
