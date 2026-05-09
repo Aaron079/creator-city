@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
 import { getNodeImageUrlSource, getNodeVideoUrlSource } from '@/lib/canvas/media-urls'
+import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -63,6 +64,7 @@ interface CanvasNodeCardProps {
   onOpenSkillPanel?: () => void
   creativeAssetLabel?: string
   onOpenCreativeAssets?: () => void
+  onOpenAssetIntelligence?: () => void
   dragging?: boolean
 }
 
@@ -310,6 +312,7 @@ export function CanvasNodeCard({
   onOpenSkillPanel,
   creativeAssetLabel = '创作资产',
   onOpenCreativeAssets,
+  onOpenAssetIntelligence,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
@@ -338,6 +341,7 @@ export function CanvasNodeCard({
   const imageMedia = mediaState(node.kind === 'image' ? getNodeImageUrlSource(node) : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? getNodeVideoUrlSource(node) : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)
+  const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
   const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
   const assetUrl = stringValue(nodeMetadata.assetUrl)
   const activeMedia = node.kind === 'image' ? imageMedia : node.kind === 'video' ? videoMedia : null
@@ -394,6 +398,7 @@ export function CanvasNodeCard({
       } as CSSProperties
     : undefined
   const canOpenCreativeAssets = Boolean(onOpenCreativeAssets && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video'))
+  const canOpenAssetIntelligence = Boolean(onOpenAssetIntelligence && assetIntelligenceTagCount > 0 && (node.kind === 'image' || node.kind === 'video'))
 
   const copyMediaUrl = async (kind: 'image' | 'video', url: string) => {
     if (!url.trim()) return
@@ -901,6 +906,29 @@ export function CanvasNodeCard({
           title="打开风格圣经"
         >
           Skills: {enabledSkillCount}
+        </button>
+      ) : null}
+      {canOpenAssetIntelligence ? (
+        <button
+          type="button"
+          className="absolute right-2 top-9 z-[6] inline-flex min-h-6 items-center rounded-full border border-violet-200/25 bg-violet-200/12 px-2 text-[10px] font-bold text-violet-50 shadow-sm transition hover:border-cyan-200/35 hover:bg-cyan-200/12"
+          data-no-node-drag="true"
+          onPointerDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenAssetIntelligence?.()
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          title="打开智能资产"
+        >
+          AI Tags: {assetIntelligenceTagCount}
         </button>
       ) : null}
       {(onOpenPromptInspector || canOpenCreativeAssets) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (

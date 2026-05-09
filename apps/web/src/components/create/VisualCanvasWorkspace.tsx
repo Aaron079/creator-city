@@ -473,6 +473,7 @@ type GenerateApiResult = GenerateResponse & {
   originalProviderImageUrl?: string
   originalProviderVideoUrl?: string
   mediaPersistence?: unknown
+  assetIntelligence?: unknown
   warning?: string
   upstreamStatus?: number
   upstreamMessage?: string
@@ -780,6 +781,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     assetUrl,
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
   }
 }
@@ -807,6 +809,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     assetUrl,
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
     ...(submittedAt ? { submittedAt } : {}),
     ...(completedAt ? { completedAt } : {}),
@@ -928,7 +931,7 @@ async function pollGenerationJob(jobId: string): Promise<GenerateApiResult> {
 async function pollSeedanceVideoTask(
   providerId: string,
   taskId: string,
-  context?: { projectId?: string; workflowId?: string; nodeId?: string },
+  context?: { projectId?: string; workflowId?: string; nodeId?: string; prompt?: string; compiledPrompt?: string },
 ): Promise<GenerateApiResult> {
   let response: Response
   try {
@@ -936,6 +939,8 @@ async function pollSeedanceVideoTask(
     if (context?.projectId) params.set('projectId', context.projectId)
     if (context?.workflowId) params.set('workflowId', context.workflowId)
     if (context?.nodeId) params.set('nodeId', context.nodeId)
+    if (context?.prompt) params.set('prompt', context.prompt)
+    if (context?.compiledPrompt) params.set('compiledPrompt', context.compiledPrompt)
     response = await fetch(`/api/generate/video/status?${params.toString()}`, {
       credentials: 'include',
       cache: 'no-store',
@@ -1189,7 +1194,7 @@ export function VisualCanvasWorkspace({
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
   const [activeMediaDiagnostics, setActiveMediaDiagnostics] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
   const [activeCreativeAssetsNodeId, setActiveCreativeAssetsNodeId] = useState<string | null>(null)
-  const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
+  const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'intelligence' | 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
   const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
@@ -3013,13 +3018,15 @@ export function VisualCanvasWorkspace({
     }
 
     const checkedAt = new Date().toISOString()
+    const currentMetadata = metadataRecord(nodeSnapshot.metadataJson)
     const statusResult = await pollSeedanceVideoTask(task.providerId, task.taskId, {
       projectId,
       workflowId,
       nodeId: task.nodeId,
+      prompt: nodeSnapshot.prompt,
+      compiledPrompt: typeof currentMetadata.compiledPromptPreview === 'string' ? currentMetadata.compiledPromptPreview : undefined,
     })
     const normalizedStatus = String(statusResult.status ?? '')
-    const currentMetadata = metadataRecord(nodeSnapshot.metadataJson)
 
     if (statusResult.success && normalizedStatus === 'running') {
       handleNodePatch(task.nodeId, {
@@ -3054,6 +3061,7 @@ export function VisualCanvasWorkspace({
         assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
         originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
         mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
+        assetIntelligence: statusResult.assetIntelligence ?? currentMetadata.assetIntelligence,
         ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
         completedAt,
         lastCheckedAt: checkedAt,
@@ -3438,7 +3446,7 @@ export function VisualCanvasWorkspace({
 
   const openCreativeAssets = useCallback((
     nodeId: string,
-    options?: { tab?: 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'; sourceNodeId?: string },
+    options?: { tab?: 'intelligence' | 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'; sourceNodeId?: string },
   ) => {
     flushLocalSnapshot()
     setActiveCreativeAssetsTab(options?.tab ?? 'characters')
@@ -4025,6 +4033,8 @@ export function VisualCanvasWorkspace({
         projectId,
         workflowId,
         nodeId: nodeSnapshot.id,
+        prompt: nodeSnapshot.prompt,
+        compiledPrompt: typeof currentMetadata.compiledPromptPreview === 'string' ? currentMetadata.compiledPromptPreview : undefined,
       }).then((statusResult) => {
         if (statusResult.status === 'running') {
           handleNodePatch(nodeSnapshot.id, {
@@ -4078,6 +4088,7 @@ export function VisualCanvasWorkspace({
           assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
           originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
           mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
+          assetIntelligence: statusResult.assetIntelligence ?? currentMetadata.assetIntelligence,
           ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
           completedAt: new Date().toISOString(),
         }
@@ -5520,6 +5531,7 @@ export function VisualCanvasWorkspace({
                 onOpenSkillPanel={handleOpenSkillPanel}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}
                 onOpenCreativeAssets={() => openCreativeAssets(node.id)}
+                onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
               />
             </div>
           ))}

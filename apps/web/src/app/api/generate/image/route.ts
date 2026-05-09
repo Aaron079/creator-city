@@ -5,6 +5,7 @@ import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
+import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
@@ -255,6 +256,13 @@ export async function POST(request: NextRequest) {
     const resultMetadata = finalized.result.metadata && typeof finalized.result.metadata === 'object'
       ? finalized.result.metadata as Record<string, unknown>
       : {}
+    const assetIntelligence = analyzeAssetIntelligence({
+      mediaType: 'image',
+      prompt: body.prompt,
+      compiledPrompt: body.compiledPrompt || prompt,
+      providerId,
+      metadata: resultMetadata,
+    })
     const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
     let finalImageUrl = providerImageUrl
     let assetId: string | undefined
@@ -280,6 +288,7 @@ export async function POST(request: NextRequest) {
             model: resultMetadata.model ?? raw.model,
             prompt,
             generationJobId: finalized.billingJobId ?? finalized.jobId,
+            assetIntelligence,
           },
         })
         if (persistence.ok) {
@@ -307,6 +316,7 @@ export async function POST(request: NextRequest) {
       ...(assetId ? { assetId, assetUrl: finalImageUrl } : {}),
       originalProviderImageUrl: providerImageUrl,
       mediaPersistence,
+      assetIntelligence,
       ...(warning ? { mediaPersistenceWarning: warning } : {}),
     }
 
@@ -319,6 +329,7 @@ export async function POST(request: NextRequest) {
       assetId,
       originalProviderImageUrl: providerImageUrl,
       mediaPersistence,
+      assetIntelligence,
       warning,
       asset: assetId ? {
         id: assetId,

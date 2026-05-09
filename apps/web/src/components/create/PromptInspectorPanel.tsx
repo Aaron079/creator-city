@@ -7,6 +7,8 @@ import { CHARACTER_REFERENCE_KIND_LABELS, getHeroReference } from '@/lib/charact
 import { getSceneEdits, getSceneEditTasks, getSceneEditTaskOption, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
+import { asAssetIntelligence } from '@/lib/asset-intelligence'
+import { AssetIntelligencePanel } from './AssetIntelligencePanel'
 
 interface PromptInspectorPanelProps {
   open: boolean
@@ -287,6 +289,7 @@ export function PromptInspectorPanel({
     ['是否临时外链', currentMediaUrl && isLikelyTemporaryUrl(currentMediaUrl) ? '是' : '否'],
     ['最近诊断结果', metadata.mediaDiagnostics ?? metadata.mediaResyncDiagnostic ?? metadata.mediaResync],
   ]
+  const assetIntelligence = asAssetIntelligence(metadata.assetIntelligence)
   const debugItems: Array<[string, unknown]> = [
     ['compiledPromptDebug', compiledDebug],
     ['lastError', lastError],
@@ -420,6 +423,12 @@ export function PromptInspectorPanel({
                   </div>
                 ))}
               </dl>
+            </Section>
+          ) : null}
+
+          {assetIntelligence ? (
+            <Section title="Asset Intelligence">
+              <AssetIntelligencePanel intelligence={assetIntelligence} compact />
             </Section>
           ) : null}
 

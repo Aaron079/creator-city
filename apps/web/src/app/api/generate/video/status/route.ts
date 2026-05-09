@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { getSeedanceVideoStatus } from '@/lib/providers/china/volcengine'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
+import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest) {
   const projectId = searchParams.get('projectId')?.trim() || undefined
   const workflowId = searchParams.get('workflowId')?.trim() || undefined
   const nodeId = searchParams.get('nodeId')?.trim() || undefined
+  const prompt = searchParams.get('prompt')?.trim() || undefined
+  const compiledPrompt = searchParams.get('compiledPrompt')?.trim() || undefined
 
   if (!taskId) {
     return NextResponse.json({
@@ -62,6 +65,13 @@ export async function GET(request: NextRequest) {
   }
 
   if (result.status === 'done' && result.videoUrl) {
+    const assetIntelligence = analyzeAssetIntelligence({
+      mediaType: 'video',
+      prompt,
+      compiledPrompt,
+      providerId,
+      metadata: { model: result.model, taskId },
+    })
     const persistence = await persistGeneratedMedia({
       url: result.videoUrl,
       type: 'video',
@@ -71,7 +81,7 @@ export async function GET(request: NextRequest) {
       filenameHint: 'generated-video.mp4',
       sourceProvider: providerId,
       userId: currentUser.id,
-      metadata: { model: result.model, taskId },
+      metadata: { model: result.model, taskId, assetIntelligence },
     }).catch((error: unknown) => ({
       ok: false as const,
       errorCode: 'MEDIA_PERSIST_FAILED',
@@ -90,6 +100,7 @@ export async function GET(request: NextRequest) {
         assetId: persistence.assetId,
         originalProviderVideoUrl: result.videoUrl,
         mediaPersistence: persistence,
+        assetIntelligence,
         model: result.model,
         message: result.message,
       }, { status: 200 })
@@ -108,6 +119,7 @@ export async function GET(request: NextRequest) {
         errorCode: persistence.errorCode,
         message: persistence.message,
       },
+      assetIntelligence,
       warning: '生成成功，但媒体转存失败，链接可能会过期。',
       model: result.model,
       message: result.message,

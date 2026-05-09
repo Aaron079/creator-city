@@ -14,10 +14,11 @@ import { SceneBiblePanel } from './SceneBiblePanel'
 import { SceneLabPanel } from './SceneLabPanel'
 import { CharacterReferenceBoard } from './CharacterReferenceBoard'
 import { CharacterReferencePackGenerator } from './CharacterReferencePackGenerator'
+import { AssetIntelligencePanel } from './AssetIntelligencePanel'
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 
 type CharacterSubTab = 'settings' | 'references' | 'generator'
-type CreativeAssetTab = 'characters' | 'scenes' | 'palette' | 'props' | 'camera'
+type CreativeAssetTab = 'intelligence' | 'characters' | 'scenes' | 'palette' | 'props' | 'camera'
 type CreativeAssetInitialTab = CreativeAssetTab | 'scene-lab'
 type SceneSubTab = 'library' | 'plugins'
 
@@ -48,6 +49,7 @@ interface CreativeAssetsPanelProps {
 }
 
 const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
+  { id: 'intelligence', label: '智能资产' },
   { id: 'characters', label: '角色' },
   { id: 'scenes', label: '场景' },
   { id: 'palette', label: '调色' },
@@ -93,6 +95,12 @@ function parseKeywords(value: string) {
     .split(/[,，\n]/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function metadataRecord(metadataJson: unknown) {
+  return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
+    ? metadataJson as Record<string, unknown>
+    : {}
 }
 
 function formatCharacterForCopy(character: CharacterProfile) {
@@ -182,6 +190,7 @@ export function CreativeAssetsPanel({
     () => nodes.find((node) => node.id === currentNodeId) ?? null,
     [currentNodeId, nodes],
   )
+  const currentAssetIntelligence = metadataRecord(currentNode?.metadataJson).assetIntelligence
   const currentNodeCanSeedSceneLab = currentNode?.kind === 'image' || currentNode?.kind === 'video'
 
   useEffect(() => {
@@ -313,6 +322,12 @@ export function CreativeAssetsPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <BindingSummary characterCount={selectedCharacterIds.length} sceneCount={selectedSceneIds.length} />
+
+          {activeTab === 'intelligence' ? (
+            <div className="mt-4">
+              <AssetIntelligencePanel intelligence={currentAssetIntelligence} />
+            </div>
+          ) : null}
 
           {activeTab === 'characters' ? (
             <div className="mt-4 space-y-4">
