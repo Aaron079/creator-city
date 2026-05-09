@@ -3405,11 +3405,14 @@
   min-height: 0;
   border: 0;
   background: transparent;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .scope :global(.canvas-node-dialog .canvas-prompt-input) {
   height: 100%;
   min-height: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   padding: 12px 0 0;
@@ -5936,40 +5939,61 @@
   z-index: 2600;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, 0.52);
+  background: rgba(0, 0, 0, 0.78);
   padding: 24px;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .scope :global(.canvas-image-preview-dialog),
 .scope :global(.canvas-video-preview-dialog) {
+  position: relative;
   display: grid;
-  width: min(960px, calc(100vw - 48px));
-  max-height: min(86vh, 860px);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(18, 20, 24, 0.97);
-  padding: 14px;
-  box-shadow: 0 28px 88px rgba(0, 0, 0, 0.46);
+  width: min(1280px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
   pointer-events: auto;
 }
 
 .scope :global(.canvas-image-preview-dialog.has-scene-tools) {
   width: min(1180px, calc(100vw - 48px));
   grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
 }
 
 .scope :global(.canvas-image-preview-head),
 .scope :global(.canvas-video-preview-head),
 .scope :global(.canvas-image-preview-actions),
 .scope :global(.canvas-video-preview-actions) {
+  position: absolute;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.scope :global(.canvas-image-preview-head),
+.scope :global(.canvas-video-preview-head) {
+  left: 0;
+  right: 0;
+  top: -44px;
+}
+
+.scope :global(.canvas-image-preview-actions),
+.scope :global(.canvas-video-preview-actions) {
+  right: 0;
+  bottom: -46px;
+}
+
+.scope :global(.canvas-image-preview-dialog.has-scene-tools .canvas-image-preview-head),
+.scope :global(.canvas-image-preview-dialog.has-scene-tools .canvas-image-preview-actions) {
+  position: static;
 }
 
 .scope :global(.canvas-image-preview-head span),
@@ -6008,12 +6032,13 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
+  border: 0;
+  background: rgba(12, 12, 14, 0.62);
   padding: 0 12px;
-  color: rgba(255, 255, 255, 0.76);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 12px;
   font-weight: 720;
+  backdrop-filter: blur(18px);
 }
 
 .scope :global(.canvas-image-preview-head button),
@@ -6027,7 +6052,7 @@
 .scope :global(.canvas-image-preview-media),
 .scope :global(.canvas-video-preview-media) {
   min-height: 0;
-  max-height: 68vh;
+  max-height: calc(100vh - 112px);
   max-width: 100%;
   justify-self: center;
   align-self: center;
@@ -6037,9 +6062,29 @@
 .scope :global(.canvas-image-preview-stage) {
   display: grid;
   min-height: 0;
+  max-height: calc(100vh - 112px);
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 14px;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.scope :global(.canvas-image-preview-stage.is-lightbox) {
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+}
+
+.scope :global(.canvas-image-preview-stage.is-lightbox .canvas-image-preview-media) {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(96vw, 1280px);
+  max-height: calc(100vh - 112px);
+}
+
+.scope :global(.canvas-video-preview-media) {
+  display: block;
+  width: min(96vw, 1280px);
+  height: auto;
 }
 
 .scope :global(.scene-tool-layer-frame) {

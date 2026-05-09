@@ -2697,6 +2697,7 @@ export function VisualCanvasWorkspace({
     () => getSceneEdits(activePreviewNode?.metadataJson),
     [activePreviewNode?.metadataJson],
   )
+  const showSceneToolPreview = activePreviewNode?.kind === 'image' && activePreviewSceneEdits.length > 0
   const activePreviewImageUrl = activePreviewNode?.kind === 'image' ? getNodeImageUrl(activePreviewNode) : ''
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
   const activePreviewVideoProviderLabel = activePreviewNode?.kind === 'video'
@@ -4901,7 +4902,9 @@ export function VisualCanvasWorkspace({
     if (!rect) return undefined
 
     const viewportMargin = 24
+    const dialogScale = clampNumber(canvasZoom, 0.56, 1)
     const dialogWidth = Math.max(320, Math.min(640, window.innerWidth - viewportMargin * 2))
+    const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
     const nodeTop = rect.top + surfaceOffset.top + canvasPan.y + editingNode.y * canvasZoom
@@ -4910,20 +4913,23 @@ export function VisualCanvasWorkspace({
     const nodeBottom = nodeTop + nodeHeight
     const nodeCenterX = nodeLeft + nodeWidth / 2
     const dialogHeight = window.innerWidth <= 900 ? 190 : NODE_DIALOG_HEIGHT
+    const visualDialogHeight = dialogHeight * dialogScale
     const belowTop = nodeBottom + NODE_DIALOG_GAP
-    const aboveTop = nodeTop - NODE_DIALOG_GAP - dialogHeight
-    const hasRoomBelow = belowTop + dialogHeight <= window.innerHeight - viewportMargin
+    const aboveTop = nodeTop - NODE_DIALOG_GAP - visualDialogHeight
+    const hasRoomBelow = belowTop + visualDialogHeight <= window.innerHeight - viewportMargin
     const hasRoomAbove = aboveTop >= viewportMargin
     const top = hasRoomBelow
       ? belowTop
       : hasRoomAbove
         ? aboveTop
-        : clampNumber(belowTop, viewportMargin, Math.max(viewportMargin, window.innerHeight - dialogHeight - viewportMargin))
+        : clampNumber(belowTop, viewportMargin, Math.max(viewportMargin, window.innerHeight - visualDialogHeight - viewportMargin))
 
     return {
-      left: clampNumber(nodeCenterX - dialogWidth / 2, viewportMargin, window.innerWidth - dialogWidth - viewportMargin),
+      left: clampNumber(nodeCenterX - visualDialogWidth / 2, viewportMargin, window.innerWidth - visualDialogWidth - viewportMargin),
       height: dialogHeight,
       top,
+      transform: `scale(${dialogScale})`,
+      transformOrigin: 'top left',
       width: dialogWidth,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
@@ -5569,9 +5575,10 @@ export function VisualCanvasWorkspace({
           role="presentation"
           data-node-preview-overlay="true"
           data-no-node-drag="true"
+          onClick={closeActivePreview}
         >
           <section
-            className="canvas-image-preview-dialog has-scene-tools"
+            className={`canvas-image-preview-dialog ${showSceneToolPreview ? 'has-scene-tools' : 'is-lightbox'}`}
             role="dialog"
             aria-modal="true"
             aria-label="图片预览"
@@ -5587,7 +5594,9 @@ export function VisualCanvasWorkspace({
               <span>{activePreviewNode.title}</span>
               <button type="button" onClick={closeActivePreview} aria-label="关闭图片预览">×</button>
             </div>
-            <div className="canvas-image-preview-stage">
+            <div className={`canvas-image-preview-stage ${showSceneToolPreview ? 'has-scene-tools' : 'is-lightbox'}`}>
+              {showSceneToolPreview ? (
+                <>
               <SceneToolLayer
                 imageUrl={activePreviewImageUrl}
                 imageAlt={activePreviewNode.title}
@@ -5620,6 +5629,15 @@ export function VisualCanvasWorkspace({
                 onCopyInstructions={() => { void copySceneEditInstructions(activePreviewSceneEdits) }}
                 onSaveLayer={() => showCanvasFeedback('场景工具层已保存到当前图片节点。')}
               />
+                </>
+              ) : (
+                <img
+                  src={activePreviewImageUrl}
+                  alt={activePreviewNode.title}
+                  className="canvas-image-preview-media"
+                  draggable={false}
+                />
+              )}
             </div>
             <div className="canvas-image-preview-actions">
               <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewImageUrl) }}>
@@ -5640,6 +5658,7 @@ export function VisualCanvasWorkspace({
           role="presentation"
           data-node-preview-overlay="true"
           data-no-node-drag="true"
+          onClick={closeActivePreview}
         >
           <section
             className="canvas-video-preview-dialog"

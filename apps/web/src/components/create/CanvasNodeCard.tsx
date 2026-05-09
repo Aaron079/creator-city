@@ -595,6 +595,12 @@ export function CanvasNodeCard({
                   className="canvas-node-video-button"
                   role="button"
                   tabIndex={0}
+                  onDoubleClickCapture={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!videoPreviewUrl) return
+                    onOpenPreview('video')
+                  }}
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
                   onWheel={(event) => event.stopPropagation()}
@@ -684,6 +690,12 @@ export function CanvasNodeCard({
                   className="canvas-node-image-button"
                   role="button"
                   tabIndex={0}
+                  onDoubleClickCapture={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!imagePreviewUrl) return
+                    onOpenPreview('image')
+                  }}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
