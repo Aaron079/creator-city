@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         status: 'done',
         resultVideoUrl: persistence.stableUrl,
         videoUrl: persistence.stableUrl,
+        assetUrl: persistence.stableUrl,
         assetId: persistence.assetId,
         originalProviderVideoUrl: result.videoUrl,
         mediaPersistence: persistence,

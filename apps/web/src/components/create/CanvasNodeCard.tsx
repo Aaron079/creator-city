@@ -58,6 +58,7 @@ interface CanvasNodeCardProps {
   onOpenPreview: (type: CanvasNodePreviewType) => void
   onOpenPromptInspector?: () => void
   onOpenMediaDiagnostics?: (type: 'image' | 'video') => void
+  onCreateStableCopy?: () => void
   enabledSkillCount?: number
   onOpenSkillPanel?: () => void
   creativeAssetLabel?: string
@@ -145,6 +146,10 @@ function metadataRecord(metadataJson: unknown) {
     : {}
 }
 
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
 type MediaState = {
   url: string
   source: string
@@ -175,6 +180,15 @@ function mediaState(source: { url: string; source: string }, loadFailed: boolean
     loadFailed,
     isExpiredLikely: Boolean(source.url && (loadFailed || isTemporarySignedUrl(source.url))),
   }
+}
+
+function mediaPersistenceStatus(value: unknown) {
+  const record = metadataRecord(value)
+  if (record.status === 'persisted' || record.ok === true) return 'persisted'
+  if (record.status === 'failed' || record.ok === false || record.errorCode) return 'failed'
+  if (record.status === 'disabled') return 'disabled'
+  if (record.status === 'skipped') return 'skipped'
+  return 'missing'
 }
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -291,6 +305,7 @@ export function CanvasNodeCard({
   onOpenPreview,
   onOpenPromptInspector,
   onOpenMediaDiagnostics,
+  onCreateStableCopy,
   enabledSkillCount = 0,
   onOpenSkillPanel,
   creativeAssetLabel = '创作资产',
@@ -322,6 +337,20 @@ export function CanvasNodeCard({
   }
   const imageMedia = mediaState(node.kind === 'image' ? getNodeImageUrlSource(node) : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? getNodeVideoUrlSource(node) : { url: '', source: '' }, videoLoadFailed)
+  const nodeMetadata = metadataRecord(node.metadataJson)
+  const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
+  const assetUrl = stringValue(nodeMetadata.assetUrl)
+  const activeMedia = node.kind === 'image' ? imageMedia : node.kind === 'video' ? videoMedia : null
+  const mediaVaultStatus = activeMedia?.hasUrl
+    ? persistenceStatus === 'persisted'
+      ? { label: '已保存', tone: 'persisted' }
+      : persistenceStatus === 'failed'
+        ? { label: '临时链接', tone: 'temporary' }
+        : !assetUrl && activeMedia.isExpiredLikely
+          ? { label: '可能过期', tone: 'expired' }
+          : null
+    : null
+  const canCreateStableCopy = Boolean(onCreateStableCopy && activeMedia?.loadFailed && persistenceStatus !== 'persisted')
   const imagePreviewUrl = imageMedia.url
   const videoPreviewUrl = videoMedia.url
   const hasMediaResult = (node.kind === 'image' && imageMedia.hasUrl) || (node.kind === 'video' && videoMedia.hasUrl)
@@ -590,6 +619,19 @@ export function CanvasNodeCard({
                 } as CSSProperties
                 : node.kind === 'image' ? imageFrameStyle : node.kind === 'video' ? videoFrameStyle : undefined}
             >
+              {mediaVaultStatus ? (
+                <span
+                  className={`absolute right-2.5 top-2.5 z-[5] inline-flex min-h-[22px] items-center rounded-full border px-2 text-[10px] font-bold leading-none backdrop-blur ${
+                    mediaVaultStatus.tone === 'persisted'
+                      ? 'border-emerald-300/35 bg-emerald-950/65 text-emerald-100'
+                      : mediaVaultStatus.tone === 'temporary'
+                        ? 'border-amber-300/35 bg-amber-950/65 text-amber-100'
+                        : 'border-red-300/35 bg-red-950/65 text-red-100'
+                  }`}
+                >
+                  {mediaVaultStatus.label}
+                </span>
+              ) : null}
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div
                   className="canvas-node-video-button"
@@ -627,6 +669,11 @@ export function CanvasNodeCard({
                   {videoMedia.loadFailed ? (
                     <span className="canvas-node-video-error">
                       视频链接可能已过期或不可访问。
+                      {canCreateStableCopy ? (
+                        <span className="block max-w-[240px] text-[11px] font-semibold leading-snug text-[#ffdcc7c7]">
+                          源媒体链接已过期，且该结果生成时未转存到素材库，无法恢复原文件。
+                        </span>
+                      ) : null}
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -662,6 +709,19 @@ export function CanvasNodeCard({
                           }}
                         >
                           查看生成依据
+                        </button>
+                      ) : null}
+                      {canCreateStableCopy ? (
+                        <button
+                          type="button"
+                          className="mt-2 rounded border border-emerald-200/25 bg-emerald-200/10 px-2 py-1 text-xs font-semibold text-emerald-50"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            onCreateStableCopy?.()
+                          }}
+                        >
+                          用原 Prompt 创建稳定副本
                         </button>
                       ) : null}
                     </span>
@@ -719,6 +779,11 @@ export function CanvasNodeCard({
                   {imageMedia.loadFailed ? (
                     <span className="canvas-node-image-error">
                       图片链接可能已过期或不可访问。
+                      {canCreateStableCopy ? (
+                        <span className="block max-w-[240px] text-[11px] font-semibold leading-snug text-[#ffdcc7c7]">
+                          源媒体链接已过期，且该结果生成时未转存到素材库，无法恢复原文件。
+                        </span>
+                      ) : null}
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -754,6 +819,19 @@ export function CanvasNodeCard({
                           }}
                         >
                           查看生成依据
+                        </button>
+                      ) : null}
+                      {canCreateStableCopy ? (
+                        <button
+                          type="button"
+                          className="mt-2 rounded border border-emerald-200/25 bg-emerald-200/10 px-2 py-1 text-xs font-semibold text-emerald-50"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            onCreateStableCopy?.()
+                          }}
+                        >
+                          用原 Prompt 创建稳定副本
                         </button>
                       ) : null}
                     </span>

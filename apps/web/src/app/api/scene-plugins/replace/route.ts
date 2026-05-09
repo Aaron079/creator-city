@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth/current-user'
+import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 
 type ScenePluginRegion = {
   x: number
@@ -143,11 +145,65 @@ export async function POST(request: Request) {
     )
   }
 
+  const currentUser = await getCurrentUser()
+  const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
+  let finalImageUrl = imageUrl
+  let assetId: string | undefined
+  let mediaPersistence: unknown = imageUrl.startsWith('data:')
+    ? { status: 'skipped' }
+    : mediaPersistenceEnabled
+      ? { status: 'pending' }
+      : { status: 'disabled' }
+  let warning: string | undefined
+
+  if (mediaPersistenceEnabled && !imageUrl.startsWith('data:')) {
+    const persistence = await persistGeneratedMedia({
+      url: imageUrl,
+      type: 'image',
+      projectId: stringValue(body.projectId),
+      nodeId: stringValue(body.sourceNodeId),
+      filenameHint: 'scene-plugin-result.png',
+      sourceProvider: stringValue(process.env.SCENE_PLUGIN_PROVIDER) || 'custom-scene-plugin',
+      userId: currentUser?.id,
+      metadata: {
+        source: 'scene-plugin-replace',
+        sourceNodeId: stringValue(body.sourceNodeId),
+        region,
+        targetDescription,
+      },
+    })
+    if (persistence.ok) {
+      finalImageUrl = persistence.stableUrl
+      assetId = persistence.assetId
+      mediaPersistence = { status: 'persisted', ...persistence }
+    } else {
+      mediaPersistence = {
+        status: 'failed',
+        errorCode: persistence.errorCode,
+        message: persistence.message,
+      }
+      warning = '场景插件已返回新图，但媒体转存失败，该链接可能会过期。'
+    }
+  }
+
   return NextResponse.json({
     success: true,
-    imageUrl,
+    imageUrl: finalImageUrl,
+    assetUrl: assetId ? finalImageUrl : undefined,
+    assetId,
+    originalProviderImageUrl: imageUrl,
+    mediaPersistence,
+    warning,
     pluginProvider: stringValue(process.env.SCENE_PLUGIN_PROVIDER) || 'custom',
     workflowId: stringValue(process.env.SCENE_REPLACE_WORKFLOW_ID),
-    result: upstreamJson,
+    result: {
+      upstream: upstreamJson,
+      imageUrl: finalImageUrl,
+      assetUrl: assetId ? finalImageUrl : undefined,
+      assetId,
+      originalProviderImageUrl: imageUrl,
+      mediaPersistence,
+      warning,
+    },
   })
 }

@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
+import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -24,6 +25,9 @@ type RequestBody = {
   items?: GenerateItem[]
   providerId?: string
   model?: string
+  projectId?: string
+  workflowId?: string
+  nodeId?: string
 }
 
 const REFERENCE_SUPPORTED_PROVIDERS = new Set([
@@ -73,7 +77,8 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    await getCurrentUser()
+    const currentUser = await getCurrentUser()
+    const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
 
     const references: Array<{
       id: string
@@ -85,6 +90,11 @@ export async function POST(request: NextRequest) {
       providerId: string
       model?: string
       generationTemplate?: string
+      assetId?: string
+      assetUrl?: string
+      originalProviderImageUrl?: string
+      mediaPersistence?: unknown
+      warning?: string
       createdAt: string
     }> = []
 
@@ -105,16 +115,63 @@ export async function POST(request: NextRequest) {
         if (result.success) {
           const imageUrl = result.imageUrl ?? result.dataUrl
           if (imageUrl) {
+            let finalImageUrl = imageUrl
+            let assetId: string | undefined
+            let mediaPersistence: unknown = imageUrl.startsWith('data:')
+              ? { status: 'skipped' }
+              : mediaPersistenceEnabled
+                ? { status: 'pending' }
+                : { status: 'disabled' }
+            let warning: string | undefined
+
+            if (mediaPersistenceEnabled && !imageUrl.startsWith('data:')) {
+              const persistence = await persistGeneratedMedia({
+                url: imageUrl,
+                type: 'image',
+                projectId: body.projectId,
+                workflowId: body.workflowId,
+                nodeId: body.nodeId,
+                filenameHint: `character-reference-${item.kind}.png`,
+                sourceProvider: providerId,
+                userId: currentUser?.id,
+                metadata: {
+                  source: 'character-reference',
+                  characterId,
+                  referenceKind: item.kind,
+                  label: item.label,
+                  model: result.model,
+                  generationTemplate: template,
+                },
+              })
+              if (persistence.ok) {
+                finalImageUrl = persistence.stableUrl
+                assetId = persistence.assetId
+                mediaPersistence = { status: 'persisted', ...persistence }
+              } else {
+                mediaPersistence = {
+                  status: 'failed',
+                  errorCode: persistence.errorCode,
+                  message: persistence.message,
+                }
+                warning = '角色参考图生成成功，但媒体转存失败，该链接可能会过期。'
+              }
+            }
+
             references.push({
               id: crypto.randomUUID(),
               characterId,
               kind: item.kind,
               label: item.label,
-              imageUrl,
+              imageUrl: finalImageUrl,
               sourceImageUrl,
               providerId,
               model: result.model,
               generationTemplate: template,
+              assetId,
+              assetUrl: assetId ? finalImageUrl : undefined,
+              originalProviderImageUrl: imageUrl,
+              mediaPersistence,
+              warning,
               createdAt: new Date().toISOString(),
             })
           } else {

@@ -467,6 +467,7 @@ type GenerateApiResult = GenerateResponse & {
   dataUrl?: string
   asset?: { id?: string; url?: string | null }
   assetId?: string
+  assetUrl?: string
   resultImageUrl?: string
   resultVideoUrl?: string
   originalProviderImageUrl?: string
@@ -769,7 +770,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     : {}
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
-    : result.asset?.url || result.result?.imageUrl || result.imageUrl || result.resultImageUrl
+    : result.assetUrl || result.asset?.url || undefined
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -795,7 +796,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   const completedAt = result.completedAt ?? (typeof resultMetadata.completedAt === 'string' ? resultMetadata.completedAt : undefined)
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
-    : result.asset?.url || result.result?.videoUrl || result.videoUrl || result.resultVideoUrl
+    : result.assetUrl || result.asset?.url || undefined
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -2320,6 +2321,65 @@ export function VisualCanvasWorkspace({
     return duplicate
   }, [closeActivePreview, commitNodes, nodes])
 
+  const createStableCopyFromExpiredNode = useCallback((node: VisualCanvasNode) => {
+    if (node.kind !== 'image' && node.kind !== 'video') return
+    const position = resolveNonOverlappingPosition(
+      { x: node.x + node.width + 120, y: node.y, width: node.width, height: node.height },
+      nodes,
+    )
+    const now = new Date().toISOString()
+    const nodeId = createNodeId(node.kind)
+    const previousMetadata = metadataRecord(node.metadataJson)
+    const providerId = normalizeProviderId(node.providerId || node.model || (node.kind === 'image' ? NODE_META.image.model : NODE_META.video.model))
+    const expiredMediaUrl = node.kind === 'image' ? getNodeImageUrl(node) : getNodeVideoUrl(node)
+    const metadataJson = {
+      providerId,
+      model: previousMetadata.model ?? node.model,
+      params: previousMetadata.params,
+      generationParams: previousMetadata.generationParams,
+      aspectRatio: previousMetadata.aspectRatio,
+      ratio: previousMetadata.ratio ?? node.ratio,
+      recreatedFromExpiredNodeId: node.id,
+      recreatedFromExpiredMediaUrl: expiredMediaUrl,
+      recreatedAt: now,
+      mediaPersistence: {
+        status: 'missing',
+        message: '源媒体链接已过期，旧结果未转存到素材库。此节点用于重新生成稳定副本。',
+      },
+    }
+    const nextNode: VisualCanvasNode = {
+      id: nodeId,
+      type: node.kind,
+      kind: node.kind,
+      title: `${node.title || (node.kind === 'image' ? 'Image' : 'Video')} 稳定副本`,
+      subtitle: node.subtitle,
+      prompt: node.prompt,
+      model: providerId,
+      providerId,
+      stage: node.stage || promptStage,
+      ratio: node.ratio,
+      status: 'idle',
+      resultPreview: undefined,
+      outputLabel: undefined,
+      x: position.x,
+      y: position.y,
+      width: node.width,
+      height: node.height,
+      createdAt: Date.now(),
+      metadataJson,
+    }
+    commitNodes((current) => [...current, nextNode])
+    setActiveNodeId(nodeId)
+    setEditingNodeId(nodeId)
+    setCanvasPrompt(node.prompt)
+    setPromptModel(providerId)
+    setPreferredKind(node.kind)
+    closeActivePreview()
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('已创建稳定副本节点，未自动生成。')
+  }, [closeActivePreview, commitNodes, flushLocalSnapshot, nodes, promptStage, scheduleCanvasSave, showCanvasFeedback])
+
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
       const element = target as HTMLElement | null
@@ -2991,7 +3051,7 @@ export function VisualCanvasWorkspace({
         taskId: task.taskId,
         generationJobId: task.taskId,
         assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
-        assetUrl: videoUrl,
+        assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
         originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
         mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
         ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
@@ -3436,6 +3496,10 @@ export function VisualCanvasWorkspace({
     const size = getNodeSize('image')
     const nodeId = createNodeId('image')
     const pluginProvider = input.run.pluginProvider || 'custom'
+    const pluginResult = metadataRecord(input.run.pluginResult)
+    const pluginAssetId = typeof pluginResult.assetId === 'string' ? pluginResult.assetId : undefined
+    const pluginAssetUrl = typeof pluginResult.assetUrl === 'string' ? pluginResult.assetUrl : undefined
+    const pluginOriginalProviderImageUrl = typeof pluginResult.originalProviderImageUrl === 'string' ? pluginResult.originalProviderImageUrl : undefined
     const metadataJson = {
       sourceImageNodeId: sourceNode.id,
       sourceImageUrl: input.run.sourceImageUrl || sourceNode.resultImageUrl,
@@ -3448,6 +3512,11 @@ export function VisualCanvasWorkspace({
       pluginProvider,
       pluginResult: input.run.pluginResult,
       sceneReplacePrompt: input.prompt,
+      ...(pluginAssetId ? { assetId: pluginAssetId } : {}),
+      ...(pluginAssetUrl ? { assetUrl: pluginAssetUrl } : {}),
+      ...(pluginOriginalProviderImageUrl ? { originalProviderImageUrl: pluginOriginalProviderImageUrl } : {}),
+      ...(pluginResult.mediaPersistence ? { mediaPersistence: pluginResult.mediaPersistence } : {}),
+      ...(typeof pluginResult.warning === 'string' ? { mediaPersistenceWarning: pluginResult.warning } : {}),
     }
     const newNode: VisualCanvasNode = {
       id: nodeId,
@@ -4006,7 +4075,7 @@ export function VisualCanvasWorkspace({
           taskId: currentTaskId,
           generationJobId: currentTaskId,
           assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
-          assetUrl: videoUrl,
+          assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
           originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
           mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
           ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
@@ -5446,6 +5515,7 @@ export function VisualCanvasWorkspace({
                 onOpenPreview={(type) => openNodePreview(node, type)}
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
                 onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
+                onCreateStableCopy={() => createStableCopyFromExpiredNode(node)}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}

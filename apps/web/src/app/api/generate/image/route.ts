@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
     const resultMetadata = finalized.result.metadata && typeof finalized.result.metadata === 'object'
       ? finalized.result.metadata as Record<string, unknown>
       : {}
-    const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED === 'true'
+    const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
     let finalImageUrl = providerImageUrl
     let assetId: string | undefined
     let mediaPersistence: unknown = providerImageUrl.startsWith('data:')
@@ -314,6 +314,7 @@ export async function POST(request: NextRequest) {
       ...finalized,
       resultImageUrl: finalImageUrl,
       imageUrl: finalImageUrl,
+      assetUrl: assetId ? finalImageUrl : undefined,
       dataUrl: finalImageUrl.startsWith('data:image/') ? finalImageUrl : undefined,
       assetId,
       originalProviderImageUrl: providerImageUrl,
