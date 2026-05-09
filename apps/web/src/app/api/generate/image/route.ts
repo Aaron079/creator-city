@@ -4,7 +4,7 @@ import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
-import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
+import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
@@ -46,6 +46,26 @@ function providerNotConfiguredResponse(providerId: string, missingEnv: string[] 
     mode: 'unavailable',
     status: 'not-configured',
   }, { status: 200 })
+}
+
+function failedMediaPersistence(errorCode: string, message: string) {
+  return {
+    status: 'failed',
+    errorCode,
+    message,
+  }
+}
+
+function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
+  return failedMediaPersistence(result.errorCode, result.message)
+}
+
+function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string }) {
+  return response.result?.imageUrl
+    ?? response.resultImageUrl
+    ?? response.imageUrl
+    ?? response.dataUrl
+    ?? ''
 }
 
 export async function GET() {
@@ -209,39 +229,115 @@ export async function POST(request: NextRequest) {
       }, currentUser?.id)
     }
 
-    const result = await attachGeneratedAsset(await finalizeBilling(raw, billing.ctx.billingJobId), {
-      userId: currentUser?.id ?? billing.ctx.userId,
-      providerId,
-      nodeType: 'image',
-      prompt,
-      projectId: body.projectId,
-      workflowId: body.workflowId,
-      nodeId: body.nodeId,
-    })
-    const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
-      ? result.result.metadata as Record<string, unknown>
-      : {}
-    const resultWithMedia = result as typeof result & {
-      asset?: { id?: string }
-      originalProviderImageUrl?: unknown
-      mediaPersistence?: unknown
-      warning?: unknown
+    const finalized = await finalizeBilling(raw, billing.ctx.billingJobId)
+    if (!finalized.success || !finalized.result) {
+      return NextResponse.json({
+        ...finalized,
+        model: raw.model,
+        upstreamStatus: raw.upstreamStatus,
+        upstreamMessage: raw.upstreamMessage,
+        rawCode: raw.rawCode,
+        requestId: raw.requestId,
+      }, { status: 200 })
     }
+
+    const providerImageUrl = imageUrlFromResponse(finalized)
+    if (!providerImageUrl) {
+      return NextResponse.json({
+        ...finalized,
+        success: false,
+        errorCode: 'IMAGE_URL_EMPTY',
+        message: finalized.message || '图片生成成功，但 Provider 未返回图片 URL。',
+        model: raw.model,
+      }, { status: 200 })
+    }
+
+    const resultMetadata = finalized.result.metadata && typeof finalized.result.metadata === 'object'
+      ? finalized.result.metadata as Record<string, unknown>
+      : {}
+    let finalImageUrl = providerImageUrl
+    let assetId: string | undefined
+    let mediaPersistence: unknown = { status: providerImageUrl.startsWith('data:') ? 'skipped' : 'pending' }
+    let warning: string | undefined
+
+    if (!providerImageUrl.startsWith('data:')) {
+      try {
+        const persistence = await persistGeneratedMedia({
+          url: providerImageUrl,
+          type: 'image',
+          projectId: body.projectId,
+          workflowId: body.workflowId,
+          nodeId: body.nodeId,
+          filenameHint: 'generated-image.png',
+          sourceProvider: providerId,
+          userId: currentUser?.id ?? billing.ctx.userId,
+          metadata: {
+            model: resultMetadata.model ?? raw.model,
+            prompt,
+            generationJobId: finalized.billingJobId ?? finalized.jobId,
+          },
+        })
+        if (persistence.ok) {
+          finalImageUrl = persistence.stableUrl
+          assetId = persistence.assetId
+          mediaPersistence = {
+            status: 'persisted',
+            ...persistence,
+          }
+        } else {
+          mediaPersistence = normalizePersistFailure(persistence)
+          warning = '图片生成成功，但媒体转存失败，该链接可能会过期。'
+        }
+      } catch (error) {
+        mediaPersistence = failedMediaPersistence(
+          'MEDIA_PERSISTENCE_FAILED',
+          error instanceof Error ? error.message : '图片媒体转存失败。',
+        )
+        warning = '图片生成成功，但媒体转存失败，该链接可能会过期。'
+      }
+    }
+
+    const finalMetadata = {
+      ...resultMetadata,
+      ...(assetId ? { assetId, assetUrl: finalImageUrl } : {}),
+      originalProviderImageUrl: providerImageUrl,
+      mediaPersistence,
+      ...(warning ? { mediaPersistenceWarning: warning } : {}),
+    }
+
     return NextResponse.json({
-      ...result,
-      resultImageUrl: result.result?.imageUrl,
-      imageUrl: result.result?.imageUrl,
-      dataUrl: result.result?.imageUrl?.startsWith('data:image/') ? result.result.imageUrl : undefined,
-      assetId: resultWithMedia.asset?.id ?? resultMetadata.assetId,
-      originalProviderImageUrl: resultMetadata.originalProviderImageUrl ?? resultWithMedia.originalProviderImageUrl,
-      mediaPersistence: resultMetadata.mediaPersistence ?? resultWithMedia.mediaPersistence,
-      warning: resultWithMedia.warning,
+      ...finalized,
+      resultImageUrl: finalImageUrl,
+      imageUrl: finalImageUrl,
+      dataUrl: finalImageUrl.startsWith('data:image/') ? finalImageUrl : undefined,
+      assetId,
+      originalProviderImageUrl: providerImageUrl,
+      mediaPersistence,
+      warning,
+      asset: assetId ? {
+        id: assetId,
+        type: 'IMAGE',
+        url: finalImageUrl,
+        dataUrl: null,
+        thumbnailUrl: finalImageUrl,
+        providerId: 'generated-media-persistence',
+        generationJobId: finalized.billingJobId ?? finalized.jobId,
+        projectId: body.projectId,
+        workflowId: body.workflowId,
+        nodeId: body.nodeId,
+      } : undefined,
+      result: {
+        ...finalized.result,
+        imageUrl: finalImageUrl,
+        previewUrl: finalImageUrl,
+        metadata: finalMetadata,
+      },
       model: typeof resultMetadata.model === 'string' ? resultMetadata.model : raw.model,
       upstreamStatus: raw.upstreamStatus,
       upstreamMessage: raw.upstreamMessage,
       rawCode: raw.rawCode,
       requestId: raw.requestId,
-    }, { status: result.success ? 200 : 200 })
+    }, { status: 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/image]', err)
