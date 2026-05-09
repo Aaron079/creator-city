@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
+import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -269,6 +270,7 @@ export function CanvasNodeCard({
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
+  const [copiedMediaUrl, setCopiedMediaUrl] = useState<'image' | 'video' | null>(null)
 
   function handleVideoPreviewEnter() {
     const video = videoPreviewRef.current
@@ -284,9 +286,8 @@ export function CanvasNodeCard({
     video.pause()
     video.currentTime = 0
   }
-  const videoPreviewUrl = node.kind === 'video'
-    ? node.resultVideoUrl || (node.preview?.type === 'remote-video' ? node.preview.url : undefined)
-    : undefined
+  const imagePreviewUrl = node.kind === 'image' ? getNodeImageUrl(node) : ''
+  const videoPreviewUrl = node.kind === 'video' ? getNodeVideoUrl(node) : ''
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -328,10 +329,21 @@ export function CanvasNodeCard({
     : undefined
   const canOpenCreativeAssets = Boolean(onOpenCreativeAssets && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video'))
 
+  const copyMediaUrl = async (kind: 'image' | 'video', url: string) => {
+    if (!url.trim()) return
+    try {
+      await navigator.clipboard?.writeText(url)
+      setCopiedMediaUrl(kind)
+      window.setTimeout(() => setCopiedMediaUrl(null), 1200)
+    } catch {
+      setCopiedMediaUrl(null)
+    }
+  }
+
   useEffect(() => {
     setImageLoadFailed(false)
     setImageNaturalRatio(null)
-  }, [node.resultImageUrl])
+  }, [imagePreviewUrl])
 
   useEffect(() => {
     setVideoLoadFailed(false)
@@ -570,7 +582,20 @@ export function CanvasNodeCard({
                   aria-label="预览视频"
                 >
                   {videoLoadFailed ? (
-                    <span className="canvas-node-video-error">视频无法加载</span>
+                    <span className="canvas-node-video-error">
+                      视频链接无法加载。媒体链接可能已过期。请从素材库重新同步或重新生成。
+                      <button
+                        type="button"
+                        className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void copyMediaUrl('video', videoPreviewUrl)
+                        }}
+                      >
+                        {copiedMediaUrl === 'video' ? '已复制' : '复制视频链接'}
+                      </button>
+                    </span>
                   ) : (
                     <>
                       <video
@@ -589,7 +614,7 @@ export function CanvasNodeCard({
                   )}
                 </div>
               ) : null}
-              {node.kind === 'image' && node.resultImageUrl ? (
+              {node.kind === 'image' && imagePreviewUrl ? (
                 <div
                   className="canvas-node-image-button"
                   role="button"
@@ -602,23 +627,36 @@ export function CanvasNodeCard({
                   onDoubleClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    if (!node.resultImageUrl) return
+                    if (!imagePreviewUrl) return
                     onOpenPreview('image')
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     event.stopPropagation()
-                    if (!node.resultImageUrl) return
+                    if (!imagePreviewUrl) return
                     onOpenPreview('image')
                   }}
                   aria-label="预览图片"
                 >
                   {imageLoadFailed ? (
-                    <span className="canvas-node-image-error">图片无法加载</span>
+                    <span className="canvas-node-image-error">
+                      图片链接无法加载。媒体链接可能已过期。请从素材库重新同步或重新生成。
+                      <button
+                        type="button"
+                        className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void copyMediaUrl('image', imagePreviewUrl)
+                        }}
+                      >
+                        {copiedMediaUrl === 'image' ? '已复制' : '复制图片链接'}
+                      </button>
+                    </span>
                   ) : (
                     <img
-                      src={node.resultImageUrl}
+                      src={imagePreviewUrl}
                       alt={node.title}
                       className="canvas-node-preview-image"
                       loading="lazy"

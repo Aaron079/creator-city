@@ -45,6 +45,7 @@ import {
   type CanvasWorkflowRunNodeResult,
   type CanvasWorkflowInputAsset,
 } from '@/lib/canvas/workflow-runner'
+import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
 import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
@@ -2646,9 +2647,8 @@ export function VisualCanvasWorkspace({
     () => getSceneEdits(activePreviewNode?.metadataJson),
     [activePreviewNode?.metadataJson],
   )
-  const activePreviewVideoUrl = activePreviewNode?.kind === 'video'
-    ? activePreviewNode.resultVideoUrl || (activePreviewNode.preview?.type === 'remote-video' ? activePreviewNode.preview.url : undefined)
-    : undefined
+  const activePreviewImageUrl = activePreviewNode?.kind === 'image' ? getNodeImageUrl(activePreviewNode) : ''
+  const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
   const activePreviewVideoProviderLabel = activePreviewNode?.kind === 'video'
     ? activePreviewNode.providerId || (typeof activePreviewMetadata.providerId === 'string' ? activePreviewMetadata.providerId : '')
     : ''
@@ -5467,7 +5467,7 @@ export function VisualCanvasWorkspace({
         </div>
       ) : null}
 
-      {activePreviewType === 'image' && activePreviewNode?.kind === 'image' && activePreviewNode.resultImageUrl ? (
+      {activePreviewType === 'image' && activePreviewNode?.kind === 'image' && activePreviewImageUrl ? (
         <div
           className="canvas-image-preview-backdrop"
           role="presentation"
@@ -5493,7 +5493,7 @@ export function VisualCanvasWorkspace({
             </div>
             <div className="canvas-image-preview-stage">
               <SceneToolLayer
-                imageUrl={activePreviewNode.resultImageUrl}
+                imageUrl={activePreviewImageUrl}
                 imageAlt={activePreviewNode.title}
                 activeTool={activeSceneTool}
                 sceneEdits={activePreviewSceneEdits}
@@ -5526,10 +5526,10 @@ export function VisualCanvasWorkspace({
               />
             </div>
             <div className="canvas-image-preview-actions">
-              <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewNode.resultImageUrl!) }}>
+              <button type="button" onClick={() => { void copyActivePreviewLink(activePreviewImageUrl) }}>
                 {previewLinkCopied ? '已复制' : '复制图片链接'}
               </button>
-              <button type="button" onClick={() => openActivePreviewLink(activePreviewNode.resultImageUrl!)}>
+              <button type="button" onClick={() => openActivePreviewLink(activePreviewImageUrl)}>
                 新标签页打开
               </button>
               <button type="button" onClick={closeActivePreview}>关闭</button>
