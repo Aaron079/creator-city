@@ -6,6 +6,7 @@ import type { CharacterProfile } from '@/lib/characters'
 import { CHARACTER_REFERENCE_KIND_LABELS, getHeroReference } from '@/lib/characters'
 import { getSceneEdits, getSceneEditTasks, getSceneEditTaskOption, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
+import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 
 interface PromptInspectorPanelProps {
   open: boolean
@@ -272,9 +273,9 @@ export function PromptInspectorPanel({
       ? stringValue(metadata.originalProviderVideoUrl)
       : ''
   const currentMediaUrl = mediaType === 'image'
-    ? node?.resultImageUrl || assetUrl || originalProviderUrl
+    ? getNodeImageUrl(node)
     : mediaType === 'video'
-      ? node?.resultVideoUrl || assetUrl || originalProviderUrl
+      ? getNodeVideoUrl(node)
       : ''
   const mediaStatusItems: Array<[string, unknown]> = [
     ['resultImageUrl', node?.resultImageUrl],
