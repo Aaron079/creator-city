@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
-import { getNodeImageUrlSource, getNodeVideoUrlSource } from '@/lib/canvas/media-urls'
+import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { auditNodeMedia, type MediaRecoveryAudit } from '@/lib/media/recovery-audit'
@@ -166,6 +166,13 @@ type MediaState = {
 
 type MediaRecoveryStatus = 'idle' | 'checking' | 'recovered' | 'unrecoverable'
 
+type CandidateProbe = MediaUrlSource & {
+  proxiedUrl: string
+  proxyStatus: number
+  upstreamStatus?: number
+  reachable: boolean
+}
+
 function isTemporarySignedUrl(url: string) {
   const lower = url.toLowerCase()
   return [
@@ -187,6 +194,35 @@ function mediaState(source: { url: string; source: string }, loadFailed: boolean
     hasUrl: Boolean(source.url),
     loadFailed,
     isExpiredLikely: Boolean(source.url && (loadFailed || isTemporarySignedUrl(source.url))),
+  }
+}
+
+function candidateKey(candidates: MediaUrlSource[]) {
+  return candidates.map((candidate) => `${candidate.source}=${candidate.url}`).join('|')
+}
+
+async function probeMediaCandidate(candidate: MediaUrlSource): Promise<CandidateProbe> {
+  const proxiedUrl = getProxiedMediaUrl(candidate.url)
+  if (candidate.url.startsWith('data:')) {
+    return { ...candidate, proxiedUrl, proxyStatus: 200, upstreamStatus: 200, reachable: true }
+  }
+  try {
+    const response = await fetch(proxiedUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { Range: 'bytes=0-1' },
+    })
+    const upstreamStatusHeader = response.headers.get('x-media-proxy-upstream-status')
+    const upstreamStatus = upstreamStatusHeader ? Number(upstreamStatusHeader) : response.status
+    return {
+      ...candidate,
+      proxiedUrl,
+      proxyStatus: response.status,
+      upstreamStatus: Number.isFinite(upstreamStatus) ? upstreamStatus : response.status,
+      reachable: response.ok || response.status === 206,
+    }
+  } catch {
+    return { ...candidate, proxiedUrl, proxyStatus: 0, upstreamStatus: 0, reachable: false }
   }
 }
 
@@ -349,6 +385,8 @@ export function CanvasNodeCard({
   const [charRefDragOver, setCharRefDragOver] = useState(false)
   const [copiedMediaUrl, setCopiedMediaUrl] = useState<'image' | 'video' | null>(null)
   const [mediaRecoveryStatus, setMediaRecoveryStatus] = useState<MediaRecoveryStatus>('idle')
+  const [selectedImageSource, setSelectedImageSource] = useState<MediaUrlSource | null>(null)
+  const [selectedVideoSource, setSelectedVideoSource] = useState<MediaUrlSource | null>(null)
   const recoveryAttemptKeyRef = useRef('')
 
   function handleVideoPreviewEnter() {
@@ -365,8 +403,18 @@ export function CanvasNodeCard({
     video.pause()
     video.currentTime = 0
   }
-  const imageMedia = mediaState(node.kind === 'image' ? getNodeImageUrlSource(node) : { url: '', source: '' }, imageLoadFailed)
-  const videoMedia = mediaState(node.kind === 'video' ? getNodeVideoUrlSource(node) : { url: '', source: '' }, videoLoadFailed)
+  const imageCandidateUrls = useMemo(() => (node.kind === 'image' ? getNodeImageUrlSources(node) : []), [node])
+  const videoCandidateUrls = useMemo(() => (node.kind === 'video' ? getNodeVideoUrlSources(node) : []), [node])
+  const imageCandidateUrlsKey = useMemo(() => candidateKey(imageCandidateUrls), [imageCandidateUrls])
+  const videoCandidateUrlsKey = useMemo(() => candidateKey(videoCandidateUrls), [videoCandidateUrls])
+  const imageSource = selectedImageSource && imageCandidateUrls.some((candidate) => candidate.url === selectedImageSource.url)
+    ? selectedImageSource
+    : imageCandidateUrls[0] ?? { url: '', source: '' }
+  const videoSource = selectedVideoSource && videoCandidateUrls.some((candidate) => candidate.url === selectedVideoSource.url)
+    ? selectedVideoSource
+    : videoCandidateUrls[0] ?? { url: '', source: '' }
+  const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
+  const videoMedia = mediaState(node.kind === 'video' ? videoSource : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)
   const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
   const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
@@ -440,6 +488,144 @@ export function CanvasNodeCard({
     }
   }
 
+  const selectNextImageCandidate = () => {
+    const currentIndex = imageCandidateUrls.findIndex((candidate) => candidate.url === imagePreviewUrl)
+    const next = imageCandidateUrls[currentIndex + 1]
+    if (next) {
+      setSelectedImageSource(next)
+      setImageLoadFailed(false)
+      return
+    }
+    setImageLoadFailed(true)
+  }
+
+  const selectNextVideoCandidate = () => {
+    const currentIndex = videoCandidateUrls.findIndex((candidate) => candidate.url === videoPreviewUrl)
+    const next = videoCandidateUrls[currentIndex + 1]
+    if (next) {
+      setSelectedVideoSource(next)
+      setVideoLoadFailed(false)
+      return
+    }
+    setVideoLoadFailed(true)
+  }
+
+  useEffect(() => {
+    if (node.kind !== 'image') {
+      setSelectedImageSource(null)
+      return
+    }
+    if (!imageCandidateUrls.length) {
+      setSelectedImageSource(null)
+      setImageLoadFailed(false)
+      return
+    }
+
+    let cancelled = false
+    setImageLoadFailed(false)
+
+    void (async () => {
+      const probes: CandidateProbe[] = []
+      for (const candidate of imageCandidateUrls) {
+        const probe = await probeMediaCandidate(candidate)
+        probes.push(probe)
+        if (cancelled) return
+        if (probe.reachable) {
+          setSelectedImageSource(candidate)
+          setImageLoadFailed(false)
+          console.log('[legacy-media-recovery]', {
+            nodeId: node.id,
+            kind: node.kind,
+            metadataJson: node.metadataJson,
+            candidateUrls: imageCandidateUrls,
+            selectedDisplayUrl: candidate.url,
+            proxiedUrl: probe.proxiedUrl,
+            proxyStatus: probe.proxyStatus,
+            upstreamStatus: probe.upstreamStatus,
+          })
+          return
+        }
+      }
+      if (!cancelled) {
+        setSelectedImageSource(imageCandidateUrls[0] ?? null)
+        setImageLoadFailed(true)
+        console.log('[legacy-media-recovery]', {
+          nodeId: node.id,
+          kind: node.kind,
+          metadataJson: node.metadataJson,
+          candidateUrls: imageCandidateUrls,
+          selectedDisplayUrl: '',
+          proxiedUrl: probes[0]?.proxiedUrl ?? '',
+          proxyStatus: probes[0]?.proxyStatus ?? 0,
+          upstreamStatus: probes[0]?.upstreamStatus ?? 0,
+          probes,
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [imageCandidateUrls, imageCandidateUrlsKey, node.id, node.kind, node.metadataJson])
+
+  useEffect(() => {
+    if (node.kind !== 'video') {
+      setSelectedVideoSource(null)
+      return
+    }
+    if (!videoCandidateUrls.length) {
+      setSelectedVideoSource(null)
+      setVideoLoadFailed(false)
+      return
+    }
+
+    let cancelled = false
+    setVideoLoadFailed(false)
+
+    void (async () => {
+      const probes: CandidateProbe[] = []
+      for (const candidate of videoCandidateUrls) {
+        const probe = await probeMediaCandidate(candidate)
+        probes.push(probe)
+        if (cancelled) return
+        if (probe.reachable) {
+          setSelectedVideoSource(candidate)
+          setVideoLoadFailed(false)
+          console.log('[legacy-media-recovery]', {
+            nodeId: node.id,
+            kind: node.kind,
+            metadataJson: node.metadataJson,
+            candidateUrls: videoCandidateUrls,
+            selectedDisplayUrl: candidate.url,
+            proxiedUrl: probe.proxiedUrl,
+            proxyStatus: probe.proxyStatus,
+            upstreamStatus: probe.upstreamStatus,
+          })
+          return
+        }
+      }
+      if (!cancelled) {
+        setSelectedVideoSource(videoCandidateUrls[0] ?? null)
+        setVideoLoadFailed(true)
+        console.log('[legacy-media-recovery]', {
+          nodeId: node.id,
+          kind: node.kind,
+          metadataJson: node.metadataJson,
+          candidateUrls: videoCandidateUrls,
+          selectedDisplayUrl: '',
+          proxiedUrl: probes[0]?.proxiedUrl ?? '',
+          proxyStatus: probes[0]?.proxyStatus ?? 0,
+          upstreamStatus: probes[0]?.upstreamStatus ?? 0,
+          probes,
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [node.id, node.kind, node.metadataJson, videoCandidateUrls, videoCandidateUrlsKey])
+
   useEffect(() => {
     if (!onRecoverMedia || (node.kind !== 'image' && node.kind !== 'video')) return
 
@@ -472,13 +658,15 @@ export function CanvasNodeCard({
     let cancelled = false
     setMediaRecoveryStatus('checking')
 
-    const patchRecoveredNode = (stableUrl: string, audit: MediaRecoveryAudit, extraMetadata?: Record<string, unknown>) => {
+    const patchRecoveredNode = (workingUrl: string, audit: MediaRecoveryAudit, extraMetadata?: Record<string, unknown>) => {
       const recoveredAt = new Date().toISOString()
+      const recoveredFrom = audit.selectedWorkingSource ?? audit.providerUrl ?? audit.stableAssetUrl ?? audit.currentUrl ?? 'unknown'
       const nextMetadata = {
         ...metadataRecord(node.metadataJson),
-        assetUrl: stableUrl,
+        recoveredAt,
+        recoveredFrom,
+        recoveryStatus: 'recovered',
         mediaPersistence: persistedRecoveryMetadata(nodeMetadata.mediaPersistence, recoveredAt),
-        recoveredFromProvider: true,
         mediaRecoveryAudit: audit,
         mediaRecoveredAt: recoveredAt,
         ...(mediaKind === 'image' && audit.providerUrl ? { originalProviderImageUrl: audit.providerUrl } : {}),
@@ -486,7 +674,7 @@ export function CanvasNodeCard({
         ...(extraMetadata ?? {}),
       }
       onRecoverMedia(node.id, {
-        ...(mediaKind === 'image' ? { resultImageUrl: stableUrl } : { resultVideoUrl: stableUrl }),
+        ...(mediaKind === 'image' ? { resultImageUrl: workingUrl } : { resultVideoUrl: workingUrl }),
         metadataJson: nextMetadata,
       })
       setMediaRecoveryStatus('recovered')
@@ -495,11 +683,15 @@ export function CanvasNodeCard({
     void auditNodeMedia(node, mediaKind).then(async (audit) => {
       if (cancelled) return
       if (audit.assetReachable && audit.stableAssetUrl) {
-        patchRecoveredNode(audit.stableAssetUrl, audit)
+        patchRecoveredNode(audit.stableAssetUrl, audit, { assetUrl: audit.stableAssetUrl })
         return
       }
 
-      if (!audit.hasStableAsset && audit.providerReachable && audit.providerUrl) {
+      const resyncUrl = !audit.hasStableAsset
+        ? audit.selectedWorkingUrl ?? (audit.providerReachable ? audit.providerUrl : undefined)
+        : undefined
+
+      if (resyncUrl) {
         try {
           const response = await fetch('/api/media/resync', {
             method: 'POST',
@@ -507,7 +699,7 @@ export function CanvasNodeCard({
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-              url: audit.providerUrl,
+              url: resyncUrl,
               type: mediaKind,
               nodeId: node.id,
               filenameHint: `${node.title || node.id || 'recovered'}-${mediaKind}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
@@ -517,11 +709,14 @@ export function CanvasNodeCard({
           const data = await response.json().catch(() => ({})) as {
             success?: boolean
             stableUrl?: string
+            assetId?: string
             mediaPersistence?: unknown
             diagnostic?: unknown
           }
           if (!cancelled && response.ok && data.success && data.stableUrl) {
             patchRecoveredNode(data.stableUrl, audit, {
+              assetUrl: data.stableUrl,
+              assetId: data.assetId,
               mediaPersistence: data.mediaPersistence
                 ? { ...metadataRecord(data.mediaPersistence), status: 'persisted' }
                 : persistedRecoveryMetadata(nodeMetadata.mediaPersistence, new Date().toISOString()),
@@ -532,6 +727,16 @@ export function CanvasNodeCard({
         } catch {
           // Fall through to the unrecoverable state when the visible media has already failed.
         }
+      }
+
+      if (audit.selectedWorkingUrl) {
+        patchRecoveredNode(audit.selectedWorkingUrl, audit, {
+          mediaPersistence: {
+            ...metadataRecord(nodeMetadata.mediaPersistence),
+            status: mediaPersistenceStatus(nodeMetadata.mediaPersistence),
+          },
+        })
+        return
       }
 
       setMediaRecoveryStatus(loadFailed && !audit.likelyRecoverable ? 'unrecoverable' : 'idle')
@@ -890,7 +1095,7 @@ export function CanvasNodeCard({
                         playsInline
                         preload="metadata"
                         style={{ pointerEvents: 'none' }}
-                        onError={() => setVideoLoadFailed(true)}
+                        onError={selectNextVideoCandidate}
                         onLoadedMetadata={() => setVideoLoadFailed(false)}
                         onCanPlay={() => setVideoLoadFailed(false)}
                       />
@@ -1008,7 +1213,7 @@ export function CanvasNodeCard({
                           setImageNaturalRatio(naturalWidth / naturalHeight)
                         }
                       }}
-                      onError={() => setImageLoadFailed(true)}
+                      onError={selectNextImageCandidate}
                     />
                   )}
                 </div>

@@ -10,8 +10,22 @@ type DiagnosticResult = {
   success?: boolean
   reachable?: boolean
   status?: number
+  proxyStatus?: number
+  upstreamStatus?: number
   contentType?: string
   contentLength?: string
+  candidateUrls?: Array<{ source?: string; url?: string; reachable?: boolean; proxyStatus?: number; upstreamStatus?: number }>
+  selectedWorkingUrl?: string
+  selectedWorkingSource?: string
+  proxiedUrl?: string
+  proxyUrlRoundTripMatches?: boolean
+  queryPreserved?: boolean
+  corsBlocked?: boolean
+  rangeSupported?: boolean
+  hasAssetUrl?: boolean
+  hasAssetId?: boolean
+  hasMediaPersistence?: boolean
+  legacyStableAssetMissing?: boolean
   expiredLikely?: boolean
   message?: string
   errorCode?: string
@@ -165,7 +179,7 @@ export function MediaDiagnosticsPanel({
         cache: 'no-store',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ url: mediaUrl, type: mediaType, nodeId: node.id, metadataJson: node.metadataJson }),
+        body: JSON.stringify({ url: mediaUrl, type: mediaType, nodeId: node.id, node, metadataJson: node.metadataJson }),
       })
       const data = await response.json().catch(() => ({})) as DiagnosticResult
       setDiagnostic(data)
@@ -227,6 +241,9 @@ export function MediaDiagnosticsPanel({
         ...metadata,
         assetUrl: data.stableUrl,
         assetId: data.assetId,
+        recoveredAt: new Date().toISOString(),
+        recoveredFrom: mediaUrl,
+        recoveryStatus: 'recovered',
         mediaPersistence: data.mediaPersistence,
         mediaResync: {
           sourceUrl: mediaUrl,
@@ -349,6 +366,14 @@ export function MediaDiagnosticsPanel({
                 <dd className="mt-1 font-mono text-white/74">{diagnostic?.status ?? '未检查'}</dd>
               </div>
               <div className="rounded-md bg-black/18 p-2">
+                <dt className="text-white/38">proxy status</dt>
+                <dd className="mt-1 font-mono text-white/74">{diagnostic?.proxyStatus ?? '未检查'}</dd>
+              </div>
+              <div className="rounded-md bg-black/18 p-2">
+                <dt className="text-white/38">upstream status</dt>
+                <dd className="mt-1 font-mono text-white/74">{diagnostic?.upstreamStatus ?? '未检查'}</dd>
+              </div>
+              <div className="rounded-md bg-black/18 p-2">
                 <dt className="text-white/38">contentType</dt>
                 <dd className="mt-1 truncate font-mono text-white/74">{diagnostic?.contentType || '未记录'}</dd>
               </div>
@@ -381,6 +406,17 @@ export function MediaDiagnosticsPanel({
                 ['metadata.assetId', metadata.assetId],
                 ['metadata.originalProviderImageUrl', metadata.originalProviderImageUrl],
                 ['metadata.originalProviderVideoUrl', metadata.originalProviderVideoUrl],
+                ['candidateUrls', diagnostic?.candidateUrls],
+                ['selectedWorkingUrl', diagnostic?.selectedWorkingUrl],
+                ['selectedWorkingSource', diagnostic?.selectedWorkingSource],
+                ['proxyUrlRoundTripMatches', diagnostic?.proxyUrlRoundTripMatches],
+                ['queryPreserved', diagnostic?.queryPreserved],
+                ['corsBlocked', diagnostic?.corsBlocked],
+                ['rangeSupported', diagnostic?.rangeSupported],
+                ['hasAssetUrl', diagnostic?.hasAssetUrl],
+                ['hasAssetId', diagnostic?.hasAssetId],
+                ['hasMediaPersistence', diagnostic?.hasMediaPersistence],
+                ['legacyStableAssetMissing', diagnostic?.legacyStableAssetMissing],
               ] as Array<[string, unknown]>).map(([label, value]) => (
                 <div key={label} className="rounded-md bg-black/18 p-2">
                   <dt className="font-mono text-white/38">{label}</dt>

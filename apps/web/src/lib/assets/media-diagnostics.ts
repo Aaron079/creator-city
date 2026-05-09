@@ -3,10 +3,16 @@ export type MediaDiagnosticType = 'image' | 'video'
 export type MediaUrlDiagnostic = {
   reachable: boolean
   status: number
+  upstreamStatus: number
   contentType?: string
   contentLength?: string
+  method?: 'HEAD' | 'GET'
+  rangeRequested?: boolean
+  rangeSupported?: boolean
+  corsBlocked: boolean
   expiredLikely: boolean
   message: string
+  bodySnippet?: string
 }
 
 const TEMPORARY_SIGNATURE_PATTERNS = [
@@ -80,7 +86,7 @@ async function readFirstTextChunk(response: Response) {
   }
 }
 
-function diagnosticFromResponse(response: Response, url: string, bodyText = ''): MediaUrlDiagnostic {
+function diagnosticFromResponse(response: Response, url: string, method: 'HEAD' | 'GET', bodyText = ''): MediaUrlDiagnostic {
   const status = response.status
   const reachable = status >= 200 && status < 400
   const expiredLikely = status === 403
@@ -90,10 +96,16 @@ function diagnosticFromResponse(response: Response, url: string, bodyText = ''):
   return {
     reachable,
     status,
+    upstreamStatus: status,
     contentType: response.headers.get('content-type') ?? undefined,
     contentLength: response.headers.get('content-length') ?? undefined,
+    method,
+    rangeRequested: method === 'GET',
+    rangeSupported: response.status === 206 || response.headers.get('accept-ranges')?.toLowerCase() === 'bytes',
+    corsBlocked: false,
     expiredLikely,
     message: responseMessage(reachable, status, expiredLikely),
+    bodySnippet: bodyText || undefined,
   }
 }
 
@@ -116,6 +128,8 @@ export async function diagnoseMediaUrl(url: string): Promise<MediaUrlDiagnostic>
     return {
       reachable: false,
       status: 0,
+      upstreamStatus: 0,
+      corsBlocked: false,
       expiredLikely: false,
       message: '媒体 URL 格式无效。',
     }
@@ -125,7 +139,7 @@ export async function diagnoseMediaUrl(url: string): Promise<MediaUrlDiagnostic>
   try {
     headResponse = await fetchWithTimeout(trimmed, { method: 'HEAD' })
     if (headResponse.ok || (headResponse.status !== 403 && headResponse.status !== 404 && headResponse.status !== 405)) {
-      return diagnosticFromResponse(headResponse, trimmed)
+      return diagnosticFromResponse(headResponse, trimmed, 'HEAD')
     }
   } catch {
     headResponse = null
@@ -137,15 +151,20 @@ export async function diagnoseMediaUrl(url: string): Promise<MediaUrlDiagnostic>
       headers: { Range: 'bytes=0-1' },
     })
     const bodyText = getResponse.ok ? '' : await readFirstTextChunk(getResponse)
-    return diagnosticFromResponse(getResponse, trimmed, bodyText)
+    return diagnosticFromResponse(getResponse, trimmed, 'GET', bodyText)
   } catch (error) {
     const status = headResponse?.status ?? 0
     const expiredLikely = status === 403 || status === 404 || looksLikeTemporarySignedUrl(trimmed)
     return {
       reachable: false,
       status,
+      upstreamStatus: status,
       contentType: headResponse?.headers.get('content-type') ?? undefined,
       contentLength: headResponse?.headers.get('content-length') ?? undefined,
+      method: headResponse ? 'HEAD' : undefined,
+      rangeRequested: false,
+      rangeSupported: headResponse?.headers.get('accept-ranges')?.toLowerCase() === 'bytes',
+      corsBlocked: false,
       expiredLikely,
       message: error instanceof Error ? error.message : responseMessage(false, status, expiredLikely),
     }

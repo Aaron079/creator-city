@@ -1,4 +1,5 @@
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
+import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 
 export type MediaRecoveryAuditNode = {
   id?: string
@@ -16,14 +17,28 @@ export type MediaRecoveryAudit = {
   assetReachable: boolean
   likelyRecoverable: boolean
   diagnosis: string
+  candidateUrls: MediaRecoveryCandidateAudit[]
   stableAssetUrl?: string
   providerUrl?: string
   currentUrl?: string
+  selectedWorkingUrl?: string
+  selectedWorkingSource?: string
   currentReachable?: boolean
   providerReachable?: boolean
   proxyStatus?: number
+  upstreamStatus?: number
   assetStatus?: number
   providerStatus?: number
+}
+
+export type MediaRecoveryCandidateAudit = MediaUrlSource & {
+  proxiedUrl: string
+  proxyReachable: boolean
+  proxyStatus: number
+  upstreamStatus?: number
+  contentType?: string
+  contentLength?: string
+  message?: string
 }
 
 type MediaKind = 'image' | 'video'
@@ -91,22 +106,74 @@ async function diagnoseUrl(url: string) {
   }
 }
 
-async function checkProxy(url: string) {
-  if (!url) return { reachable: false, status: 0 }
-  if (url.startsWith('data:')) return { reachable: true, status: 200 }
-  if (!isHttpUrl(url)) return { reachable: false, status: 0 }
+async function checkProxy(url: string): Promise<MediaRecoveryCandidateAudit> {
+  const proxiedUrl = getProxiedMediaUrl(url)
+  if (!url) {
+    return {
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: false,
+      proxyStatus: 0,
+      upstreamStatus: 0,
+    }
+  }
+  if (url.startsWith('data:')) {
+    return {
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: true,
+      proxyStatus: 200,
+      upstreamStatus: 200,
+    }
+  }
+  if (!isHttpUrl(url)) {
+    return {
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: false,
+      proxyStatus: 0,
+      upstreamStatus: 0,
+    }
+  }
   try {
-    const response = await fetch(getProxiedMediaUrl(url), {
+    const response = await fetch(proxiedUrl, {
       method: 'GET',
       cache: 'no-store',
       headers: { Range: 'bytes=0-1' },
     })
+    const upstreamStatusHeader = response.headers.get('x-media-proxy-upstream-status')
+    const upstreamStatus = upstreamStatusHeader ? Number(upstreamStatusHeader) : response.status
     return {
-      reachable: (response.ok || response.status === 206),
-      status: response.status,
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: (response.ok || response.status === 206),
+      proxyStatus: response.status,
+      upstreamStatus: Number.isFinite(upstreamStatus) ? upstreamStatus : response.status,
+      contentType: response.headers.get('content-type') ?? undefined,
+      contentLength: response.headers.get('content-length') ?? undefined,
     }
-  } catch {
-    return { reachable: false, status: 0 }
+  } catch (error) {
+    return {
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: false,
+      proxyStatus: 0,
+      upstreamStatus: 0,
+      message: error instanceof Error ? error.message : 'Proxy fetch failed.',
+    }
+  }
+}
+
+async function auditCandidate(candidate: MediaUrlSource): Promise<MediaRecoveryCandidateAudit> {
+  const checked = await checkProxy(candidate.url)
+  return {
+    ...checked,
+    source: candidate.source,
   }
 }
 
@@ -119,9 +186,19 @@ export async function auditNodeMedia(
   const stableAssetUrl = stringValue(metadata.assetUrl)
   const currentUrl = getCurrentMediaUrl(node, kind)
   const providerUrl = getProviderUrl(metadata, kind, currentUrl)
+  const candidateSources = kind === 'video' ? getNodeVideoUrlSources(node) : getNodeImageUrlSources(node)
+  const candidateUrls: MediaRecoveryCandidateAudit[] = []
+  let selectedWorkingCandidate: MediaRecoveryCandidateAudit | undefined
 
-  const [currentProxy, assetDiagnostic, providerDiagnostic] = await Promise.all([
-    checkProxy(currentUrl),
+  for (const candidate of candidateSources) {
+    const audited = await auditCandidate(candidate)
+    candidateUrls.push(audited)
+    if (!selectedWorkingCandidate && audited.proxyReachable) {
+      selectedWorkingCandidate = audited
+    }
+  }
+
+  const [assetDiagnostic, providerDiagnostic] = await Promise.all([
     stableAssetUrl ? diagnoseUrl(stableAssetUrl) : Promise.resolve({ reachable: false, status: 0 }),
     providerUrl ? diagnoseUrl(providerUrl) : Promise.resolve({ reachable: false, status: 0 }),
   ])
@@ -129,18 +206,19 @@ export async function auditNodeMedia(
   const hasStableAsset = Boolean(stableAssetUrl)
   const hasProviderUrl = Boolean(providerUrl)
   const assetReachable = hasStableAsset && assetDiagnostic.reachable
-  const proxyReachable = currentProxy.reachable
+  const currentProxy = candidateUrls.find((candidate) => candidate.url === currentUrl)
+  const proxyReachable = Boolean(currentProxy?.proxyReachable)
   const providerReachable = hasProviderUrl && providerDiagnostic.reachable
-  const likelyRecoverable = assetReachable || proxyReachable || providerReachable
+  const likelyRecoverable = assetReachable || Boolean(selectedWorkingCandidate) || providerReachable
   const diagnosis = assetReachable
     ? 'Stable asset is reachable and can be used for display.'
+    : selectedWorkingCandidate
+      ? 'A recorded media URL is reachable through the media proxy.'
     : providerReachable
       ? 'Provider URL is still reachable and can be resynced into a stable asset.'
-      : proxyReachable
-        ? 'Current media URL is reachable through the media proxy.'
-        : hasStableAsset || hasProviderUrl
-          ? 'Media URLs are present, but proxy/provider checks failed.'
-          : 'No stable asset or provider URL is recorded for this node.'
+      : hasStableAsset || hasProviderUrl || candidateUrls.length
+        ? 'Media URLs are present, but proxy/provider checks failed.'
+        : 'No stable asset or provider URL is recorded for this node.'
 
   return {
     hasStableAsset,
@@ -149,12 +227,16 @@ export async function auditNodeMedia(
     assetReachable,
     likelyRecoverable,
     diagnosis,
+    candidateUrls,
     stableAssetUrl: stableAssetUrl || undefined,
     providerUrl: providerUrl || undefined,
     currentUrl: currentUrl || undefined,
+    selectedWorkingUrl: selectedWorkingCandidate?.url,
+    selectedWorkingSource: selectedWorkingCandidate?.source,
     currentReachable: proxyReachable,
     providerReachable,
-    proxyStatus: currentProxy.status,
+    proxyStatus: currentProxy?.proxyStatus ?? selectedWorkingCandidate?.proxyStatus ?? 0,
+    upstreamStatus: currentProxy?.upstreamStatus ?? selectedWorkingCandidate?.upstreamStatus,
     assetStatus: assetDiagnostic.status,
     providerStatus: providerDiagnostic.status,
   }

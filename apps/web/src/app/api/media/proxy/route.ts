@@ -24,6 +24,7 @@ function isPrivateHost(hostname: string) {
 
 export async function GET(request: NextRequest) {
   const rawUrl = request.nextUrl.searchParams.get('url') ?? ''
+  const proxyRequestUrl = request.nextUrl.toString()
   if (!rawUrl.trim()) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 })
   }
@@ -66,21 +67,40 @@ export async function GET(request: NextRequest) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Upstream fetch failed'
-    return NextResponse.json({ error: msg }, { status: 502 })
+    console.log('[media-proxy]', {
+      receivedUrl: rawUrl,
+      proxyRequestUrl,
+      error: msg,
+    })
+    return NextResponse.json({ error: msg, receivedUrl: rawUrl }, { status: 502 })
   }
 
+  console.log('[media-proxy]', {
+    receivedUrl: rawUrl,
+    targetUrl: target.toString(),
+    urlExactMatch: rawUrl === target.toString(),
+    proxyRequestUrl,
+    upstreamStatus: upstream.status,
+    contentType: upstream.headers.get('content-type'),
+    contentLength: upstream.headers.get('content-length'),
+  })
+
   if (!upstream.ok && upstream.status !== 206) {
+    const headers = new Headers()
+    headers.set('x-media-proxy-upstream-status', String(upstream.status))
     return NextResponse.json(
-      { error: `Upstream returned ${upstream.status}`, upstreamStatus: upstream.status },
-      { status: upstream.status },
+      { error: `Upstream returned ${upstream.status}`, upstreamStatus: upstream.status, receivedUrl: rawUrl },
+      { status: upstream.status, headers },
     )
   }
 
   const contentType = upstream.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
   if (!isAllowedContentType(contentType)) {
+    const headers = new Headers()
+    headers.set('x-media-proxy-upstream-status', String(upstream.status))
     return NextResponse.json(
-      { error: `Non-media content type: ${contentType || 'unknown'}` },
-      { status: 415 },
+      { error: `Non-media content type: ${contentType || 'unknown'}`, upstreamStatus: upstream.status, receivedUrl: rawUrl },
+      { status: 415, headers },
     )
   }
 
@@ -88,6 +108,8 @@ export async function GET(request: NextRequest) {
   out.set('Content-Type', contentType)
   out.set('Access-Control-Allow-Origin', '*')
   out.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60')
+  out.set('x-media-proxy-upstream-status', String(upstream.status))
+  out.set('x-media-proxy-url-exact-match', rawUrl === target.toString() ? 'true' : 'false')
   for (const h of ['content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
     const v = upstream.headers.get(h)
     if (v) out.set(h, v)
