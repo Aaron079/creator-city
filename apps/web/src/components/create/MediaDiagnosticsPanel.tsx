@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
+import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 
 type MediaType = 'image' | 'video'
 
@@ -372,6 +373,8 @@ export function MediaDiagnosticsPanel({
             <h3 className="text-sm font-semibold text-white/86">媒体字段</h3>
             <dl className="mt-3 space-y-2 text-xs">
               {([
+                ['当前实际播放地址 (raw)', mediaUrl],
+                ['proxied URL', getProxiedMediaUrl(mediaUrl)],
                 ['resultImageUrl', node.resultImageUrl],
                 ['resultVideoUrl', node.resultVideoUrl],
                 ['metadata.assetUrl', metadata.assetUrl],

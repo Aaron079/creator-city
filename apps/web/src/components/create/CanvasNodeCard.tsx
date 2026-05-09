@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
 import { getNodeImageUrlSource, getNodeVideoUrlSource } from '@/lib/canvas/media-urls'
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
+import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -320,9 +321,7 @@ export function CanvasNodeCard({
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
-  const [imageUseProxy, setImageUseProxy] = useState(false)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
-  const [videoUseProxy, setVideoUseProxy] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
   const [copiedMediaUrl, setCopiedMediaUrl] = useState<'image' | 'video' | null>(null)
 
@@ -359,12 +358,8 @@ export function CanvasNodeCard({
   const canCreateStableCopy = Boolean(onCreateStableCopy && activeMedia?.loadFailed && persistenceStatus !== 'persisted')
   const imagePreviewUrl = imageMedia.url
   const videoPreviewUrl = videoMedia.url
-  const imageEffectiveSrc = imageUseProxy && imagePreviewUrl && !imagePreviewUrl.startsWith('data:')
-    ? `/api/media/proxy?url=${encodeURIComponent(imagePreviewUrl)}`
-    : imagePreviewUrl
-  const videoEffectiveSrc = videoUseProxy && videoPreviewUrl && !videoPreviewUrl.startsWith('data:')
-    ? `/api/media/proxy?url=${encodeURIComponent(videoPreviewUrl)}`
-    : videoPreviewUrl
+  const imageProxiedSrc = getProxiedMediaUrl(imagePreviewUrl)
+  const videoProxiedSrc = getProxiedMediaUrl(videoPreviewUrl)
   const hasMediaResult = (node.kind === 'image' && imageMedia.hasUrl) || (node.kind === 'video' && videoMedia.hasUrl)
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
@@ -422,12 +417,10 @@ export function CanvasNodeCard({
   useEffect(() => {
     setImageLoadFailed(false)
     setImageNaturalRatio(null)
-    setImageUseProxy(false)
   }, [imagePreviewUrl])
 
   useEffect(() => {
     setVideoLoadFailed(false)
-    setVideoUseProxy(false)
   }, [videoPreviewUrl])
 
   return (
@@ -740,19 +733,13 @@ export function CanvasNodeCard({
                       <video
                         ref={videoPreviewRef}
                         className="canvas-node-preview-video"
-                        src={videoEffectiveSrc}
+                        src={videoProxiedSrc}
                         poster={node.preview?.poster}
                         muted
                         playsInline
                         preload="metadata"
                         style={{ pointerEvents: 'none' }}
-                        onError={() => {
-                          if (!videoUseProxy && videoPreviewUrl && !videoPreviewUrl.startsWith('data:')) {
-                            setVideoUseProxy(true)
-                          } else {
-                            setVideoLoadFailed(true)
-                          }
-                        }}
+                        onError={() => setVideoLoadFailed(true)}
                         onLoadedMetadata={() => setVideoLoadFailed(false)}
                         onCanPlay={() => setVideoLoadFailed(false)}
                       />
@@ -848,7 +835,7 @@ export function CanvasNodeCard({
                     </span>
                   ) : (
                     <img
-                      src={imageEffectiveSrc}
+                      src={imageProxiedSrc}
                       alt={node.title}
                       className="canvas-node-preview-image"
                       loading="lazy"
@@ -861,13 +848,7 @@ export function CanvasNodeCard({
                           setImageNaturalRatio(naturalWidth / naturalHeight)
                         }
                       }}
-                      onError={() => {
-                        if (!imageUseProxy && imagePreviewUrl && !imagePreviewUrl.startsWith('data:')) {
-                          setImageUseProxy(true)
-                        } else {
-                          setImageLoadFailed(true)
-                        }
-                      }}
+                      onError={() => setImageLoadFailed(true)}
                     />
                   )}
                 </div>

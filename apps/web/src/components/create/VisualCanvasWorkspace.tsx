@@ -47,6 +47,7 @@ import {
   type CanvasWorkflowInputAsset,
 } from '@/lib/canvas/workflow-runner'
 import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
+import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
 import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
@@ -2761,6 +2762,8 @@ export function VisualCanvasWorkspace({
   const showSceneToolPreview = activePreviewNode?.kind === 'image' && activePreviewSceneEdits.length > 0
   const activePreviewImageUrl = activePreviewNode?.kind === 'image' ? getNodeImageUrl(activePreviewNode) : ''
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
+  const activePreviewImageDisplayUrl = getProxiedMediaUrl(activePreviewImageUrl)
+  const activePreviewVideoDisplayUrl = getProxiedMediaUrl(activePreviewVideoUrl)
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -5706,7 +5709,7 @@ export function VisualCanvasWorkspace({
                 </>
               ) : (
                 <img
-                  src={activePreviewImageUrl}
+                  src={activePreviewImageDisplayUrl}
                   alt={activePreviewNode.title}
                   className="canvas-image-preview-media"
                   draggable={false}
@@ -5750,7 +5753,7 @@ export function VisualCanvasWorkspace({
             onWheelCapture={(event) => event.stopPropagation()}
           >
             <video
-              src={activePreviewVideoUrl}
+              src={activePreviewVideoDisplayUrl}
               poster={activePreviewNode.preview?.poster}
               className="canvas-video-preview-media"
               controls

@@ -7,6 +7,7 @@ import { CHARACTER_REFERENCE_KIND_LABELS, getHeroReference } from '@/lib/charact
 import { getSceneEdits, getSceneEditTasks, getSceneEditTaskOption, getSceneEditToolOption, type SceneProfile } from '@/lib/scenes'
 import type { CreatorSkill, CreatorSkillTarget, ProjectStyleBible } from '@/lib/skills'
 import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
+import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { asAssetIntelligence } from '@/lib/asset-intelligence'
 import { AssetIntelligencePanel } from './AssetIntelligencePanel'
 
@@ -279,11 +280,14 @@ export function PromptInspectorPanel({
     : mediaType === 'video'
       ? getNodeVideoUrl(node)
       : ''
+  const proxiedMediaUrl = getProxiedMediaUrl(currentMediaUrl)
   const mediaStatusItems: Array<[string, unknown]> = [
     ['resultImageUrl', node?.resultImageUrl],
     ['resultVideoUrl', node?.resultVideoUrl],
     ['assetUrl', assetUrl],
     ['originalProvider URL', originalProviderUrl],
+    ['当前实际播放地址', currentMediaUrl],
+    ['proxied URL', proxiedMediaUrl],
     ['mediaPersistence', mediaPersistenceStatus(metadata.mediaPersistence)],
     ['当前 URL 是否稳定资产', currentMediaUrl && assetUrl && currentMediaUrl === assetUrl && mediaPersistenceStatus(metadata.mediaPersistence) === 'persisted' ? '是' : '否'],
     ['是否临时外链', currentMediaUrl && isLikelyTemporaryUrl(currentMediaUrl) ? '是' : '否'],
