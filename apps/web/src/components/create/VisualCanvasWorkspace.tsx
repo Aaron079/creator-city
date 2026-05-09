@@ -4057,10 +4057,16 @@ export function VisualCanvasWorkspace({
       : typeof currentMetadata.generationJobId === 'string'
         ? currentMetadata.generationJobId
         : ''
-    if (nodeSnapshot.kind === 'video' && normalizedPromptModel === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
+    const selectedVideoStatusForGenerate = nodeSnapshot.kind === 'video'
+      ? getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      : null
+    const generationProviderId = nodeSnapshot.kind === 'video' && selectedVideoStatusForGenerate !== 'available' && defaultVideoProviderId
+      ? defaultVideoProviderId
+      : normalizedPromptModel
+    if (nodeSnapshot.kind === 'video' && generationProviderId === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
       setDialogError(null)
       showCanvasFeedback('正在查询视频任务状态...')
-      void pollSeedanceVideoTask(normalizedPromptModel, currentTaskId, {
+      void pollSeedanceVideoTask(generationProviderId, currentTaskId, {
         projectId,
         workflowId,
         nodeId: nodeSnapshot.id,
@@ -4074,7 +4080,7 @@ export function VisualCanvasWorkspace({
             outputLabel: '视频生成中',
             metadataJson: {
               ...metadataRecord(nodeSnapshot.metadataJson),
-              providerId: statusResult.providerId || normalizedPromptModel,
+              providerId: statusResult.providerId || generationProviderId,
               model: statusResult.model ?? currentMetadata.model,
               taskId: currentTaskId,
               generationJobId: currentTaskId,
@@ -4090,7 +4096,7 @@ export function VisualCanvasWorkspace({
             errorMessage: errMsg,
             resultPreview: nodeSnapshot.resultPreview ?? '视频任务失败',
             outputLabel: '视频任务失败',
-            metadataJson: videoErrorMetadata(nodeSnapshot, { ...statusResult, taskId: currentTaskId }, normalizedPromptModel),
+            metadataJson: videoErrorMetadata(nodeSnapshot, { ...statusResult, taskId: currentTaskId }, generationProviderId),
           })
           setDialogError(errMsg)
           showCanvasFeedback(errMsg)
@@ -4111,7 +4117,7 @@ export function VisualCanvasWorkspace({
         }
         const metadataJson = {
           ...metadataRecord(nodeSnapshot.metadataJson),
-          providerId: statusResult.providerId || normalizedPromptModel,
+          providerId: statusResult.providerId || generationProviderId,
           model: statusResult.model ?? currentMetadata.model,
           taskId: currentTaskId,
           generationJobId: currentTaskId,
@@ -4138,7 +4144,7 @@ export function VisualCanvasWorkspace({
             type: 'video',
             title: `${nodeSnapshot.title} 视频结果`,
             url: videoUrl,
-            providerId: normalizedPromptModel,
+            providerId: generationProviderId,
             generationJobId: currentTaskId,
             metadataJson,
           })
@@ -4180,7 +4186,7 @@ export function VisualCanvasWorkspace({
     }
 
     // Validate provider supports this node type
-    const providerEntry = getToolProviderById(normalizedPromptModel)
+    const providerEntry = getToolProviderById(generationProviderId)
     if (providerEntry && !providerEntry.nodeTypes.includes(nodeType)) {
       const supportedTypes = providerEntry.nodeTypes.join(' / ')
       const errMsg = `${providerEntry.name} 仅支持 ${supportedTypes} 节点，当前节点类型为 ${nodeType}。请切换到对应节点后重试。`
@@ -4205,8 +4211,8 @@ export function VisualCanvasWorkspace({
       }
     }
     if (nodeSnapshot.kind === 'video') {
-      const selectedProviderInfo = videoProviderStatusMap.get(normalizedPromptModel)
-      const selectedProviderStatus = getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      const selectedProviderInfo = videoProviderStatusMap.get(generationProviderId)
+      const selectedProviderStatus = getVideoProviderStatus(videoProviderStatusMap, generationProviderId, liveStatusMap, liveStatusLoading)
       if (selectedProviderStatus !== 'available') {
         const errMsg = videoProviderUnavailableMessage(selectedProviderInfo)
         setDialogError(errMsg)
@@ -4246,7 +4252,7 @@ export function VisualCanvasWorkspace({
           upstreamImageUrl,
           styleBible,
           enabledSkills: enabledCreatorSkills,
-          providerId: normalizedPromptModel,
+          providerId: generationProviderId,
           edgeDirectives,
           characters: characterContext.characters,
           scenes: sceneContext.scenes,
@@ -4270,8 +4276,8 @@ export function VisualCanvasWorkspace({
     setDialogError(null)
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
-      model: normalizedPromptModel,
-      providerId: normalizedPromptModel,
+      model: generationProviderId,
+      providerId: generationProviderId,
       stage: promptStage,
       ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
       status: 'generating',
@@ -4281,7 +4287,7 @@ export function VisualCanvasWorkspace({
 
     void callGenerationApi(
       nodeType,
-      normalizedPromptModel,
+      generationProviderId,
       compiled?.prompt ?? generationPrompt,
       { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
       nodeSnapshot.id,
@@ -4291,7 +4297,7 @@ export function VisualCanvasWorkspace({
       compiled?.system,
     ).then(async (result) => {
       if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
-        const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel)
+        const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId)
         handleNodePatch(nodeSnapshot.id, {
           status: 'running',
           resultPreview: '视频任务已提交，正在生成中',
@@ -4330,7 +4336,7 @@ export function VisualCanvasWorkspace({
               resultPreview: jobFallback,
               outputLabel: jobFallback,
               ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, jobResult) } : {}),
-              ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, jobResult, normalizedPromptModel) } : {}),
+              ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, jobResult, generationProviderId) } : {}),
             })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
               showCanvasFeedback(`积分不足，需要 ${jobResult.requiredCredits ?? '?'}，可用 ${jobResult.availableCredits ?? 0}。前往 /account/credits 购买。`)
@@ -4360,7 +4366,7 @@ export function VisualCanvasWorkspace({
               nodeId: nodeSnapshot.id,
               type: 'text',
               title: `${nodeSnapshot.title} 文本结果`,
-              providerId: normalizedPromptModel,
+              providerId: generationProviderId,
               generationJobId: result.jobId,
               metadataJson: { resultText: jobResultText.slice(0, 500) },
             })
@@ -4371,7 +4377,7 @@ export function VisualCanvasWorkspace({
               type: 'video',
               title: `${nodeSnapshot.title} 视频结果`,
               url: jobResult.result.videoUrl,
-              providerId: normalizedPromptModel,
+              providerId: generationProviderId,
               generationJobId: result.jobId,
             })
           }
@@ -4395,7 +4401,7 @@ export function VisualCanvasWorkspace({
           resultPreview: fallbackPreview,
           outputLabel: fallbackPreview,
           ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, result) } : {}),
-          ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
+          ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         })
         setDialogError(errMsg)
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
@@ -4422,7 +4428,7 @@ export function VisualCanvasWorkspace({
         errorMessage: undefined,
         ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
         ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
-        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
+        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,
@@ -4432,7 +4438,7 @@ export function VisualCanvasWorkspace({
           nodeId: nodeSnapshot.id,
           type: 'text',
           title: `${nodeSnapshot.title} 文本结果`,
-          providerId: normalizedPromptModel,
+          providerId: generationProviderId,
           generationJobId: result.jobId,
           metadataJson: { resultText: resultText.slice(0, 500) },
         })
@@ -4443,7 +4449,7 @@ export function VisualCanvasWorkspace({
           type: 'image',
           title: `${nodeSnapshot.title} 图片结果`,
           url: resultImageUrl,
-          providerId: normalizedPromptModel,
+          providerId: generationProviderId,
           generationJobId: result.jobId,
         })
       }
@@ -4453,7 +4459,7 @@ export function VisualCanvasWorkspace({
           type: 'video',
           title: `${nodeSnapshot.title} 视频结果`,
           url: resultVideoUrl,
-          providerId: normalizedPromptModel,
+          providerId: generationProviderId,
           generationJobId: result.jobId,
         })
       }
@@ -4462,7 +4468,7 @@ export function VisualCanvasWorkspace({
       )))
       // Keep dialog open so user can see the result — they close it manually
     })
-  }, [buildResultLabel, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, edges, editingNode, enabledCreatorSkills, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, sceneBible, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
+  }, [buildResultLabel, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, enabledCreatorSkills, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, sceneBible, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -5072,6 +5078,7 @@ export function VisualCanvasWorkspace({
   const imageGenerateDisabled = editingNode?.kind === 'image' && selectedImageProviderStatus !== 'available'
   const videoGenerateDisabled = editingNode?.kind === 'video'
     && selectedVideoProviderStatus !== 'available'
+    && !defaultVideoProviderId
     && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
 
   return (
@@ -5802,7 +5809,7 @@ export function VisualCanvasWorkspace({
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
-                : editingNode.kind === 'video' && normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && (metadataRecord(editingNode.metadataJson).taskId || metadataRecord(editingNode.metadataJson).generationJobId)
+                : editingNode.kind === 'video' && (normalizedPromptModel === 'volcengine-seedance-video' || defaultVideoProviderId === 'volcengine-seedance-video') && editingNode.status === 'running' && (metadataRecord(editingNode.metadataJson).taskId || metadataRecord(editingNode.metadataJson).generationJobId)
                   ? '查询结果'
                 : editingNode.kind === 'video' && videoGenerateDisabled
                   ? '未配置'

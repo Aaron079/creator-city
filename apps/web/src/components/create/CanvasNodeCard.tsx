@@ -647,6 +647,13 @@ export function CanvasNodeCard({
                   className="canvas-node-video-button"
                   role="button"
                   tabIndex={0}
+                  data-no-node-drag="true"
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                  }}
+                  onMouseDown={(event) => {
+                    event.stopPropagation()
+                  }}
                   onDoubleClickCapture={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -755,6 +762,13 @@ export function CanvasNodeCard({
                   className="canvas-node-image-button"
                   role="button"
                   tabIndex={0}
+                  data-no-node-drag="true"
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                  }}
+                  onMouseDown={(event) => {
+                    event.stopPropagation()
+                  }}
                   onDoubleClickCapture={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
