@@ -255,12 +255,17 @@ export async function POST(request: NextRequest) {
     const resultMetadata = finalized.result.metadata && typeof finalized.result.metadata === 'object'
       ? finalized.result.metadata as Record<string, unknown>
       : {}
+    const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED === 'true'
     let finalImageUrl = providerImageUrl
     let assetId: string | undefined
-    let mediaPersistence: unknown = { status: providerImageUrl.startsWith('data:') ? 'skipped' : 'pending' }
+    let mediaPersistence: unknown = providerImageUrl.startsWith('data:')
+      ? { status: 'skipped' }
+      : mediaPersistenceEnabled
+        ? { status: 'pending' }
+        : { status: 'disabled' }
     let warning: string | undefined
 
-    if (!providerImageUrl.startsWith('data:')) {
+    if (mediaPersistenceEnabled && !providerImageUrl.startsWith('data:')) {
       try {
         const persistence = await persistGeneratedMedia({
           url: providerImageUrl,
@@ -341,6 +346,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/image]', err)
-    return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 500 })
+    return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 200 })
   }
 }
