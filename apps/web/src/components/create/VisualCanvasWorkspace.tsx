@@ -20,6 +20,9 @@ import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
+import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
+import { readDirectorState, writeDirectorState, createShotCard, addNodeToShot } from '@/lib/storyboard/director'
+import type { StoryboardState } from '@/lib/storyboard/types'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
@@ -1173,6 +1176,9 @@ export function VisualCanvasWorkspace({
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
   const [storyboardPreviewOpen, setStoryboardPreviewOpen] = useState(false)
+  const [storyboardDirectorOpen, setStoryboardDirectorOpen] = useState(false)
+  const [directorState, setDirectorState] = useState<StoryboardState>({ version: '1', shots: [], updatedAt: '' })
+  const [directorActiveShotId, setDirectorActiveShotId] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
@@ -1295,7 +1301,13 @@ export function VisualCanvasWorkspace({
     } catch {
       setEnabledSkillIds(getDefaultCreatorSkillIds())
     }
+    setDirectorState(readDirectorState(projectId))
   }, [projectId])
+
+  useEffect(() => {
+    if (!directorState.updatedAt) return
+    writeDirectorState(directorState, projectId)
+  }, [directorState, projectId])
 
   useEffect(() => {
     const stopAutosave = () => {
@@ -2410,6 +2422,7 @@ export function VisualCanvasWorkspace({
           closeEdgeDirector()
         }
         setStoryboardPreviewOpen(false)
+        setStoryboardDirectorOpen(false)
         setContextMenu(null)
         setNodeAddMenu(null)
         setNodeCreateMenu(null)
@@ -3395,6 +3408,25 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
   }, [flushLocalSnapshot])
+
+  const handleAddNodeToDirector = useCallback((node: CanvasNodeCardNode) => {
+    setDirectorState((current) => {
+      const thumbnailUrl = node.kind === 'image' ? (node.resultImageUrl ?? undefined) : node.kind === 'video' ? (node.resultVideoUrl ?? undefined) : undefined
+      if (current.shots.length === 0) {
+        const newShot = createShotCard(0)
+        const updated = addNodeToShot(newShot, node.id, thumbnailUrl)
+        const next = { ...current, shots: [updated], updatedAt: new Date().toISOString() }
+        setDirectorActiveShotId(updated.id)
+        setStoryboardDirectorOpen(true)
+        return next
+      }
+      const targetId = directorActiveShotId ?? current.shots[current.shots.length - 1]?.id
+      if (!targetId) return current
+      const nextShots = current.shots.map((s) => s.id === targetId ? addNodeToShot(s, node.id, !s.thumbnailUrl ? thumbnailUrl : s.thumbnailUrl) : s)
+      return { ...current, shots: nextShots, updatedAt: new Date().toISOString() }
+    })
+    if (!storyboardDirectorOpen) setStoryboardDirectorOpen(true)
+  }, [directorActiveShotId, storyboardDirectorOpen])
 
   const handleNodeCharacterIdsChange = useCallback((nodeId: string, characterIds: string[]) => {
     handleNodePatch(nodeId, {
@@ -5143,6 +5175,17 @@ export function VisualCanvasWorkspace({
           </button>
           <button
             type="button"
+            className="canvas-secondary-button"
+            title="打开分镜导演"
+            onClick={() => setStoryboardDirectorOpen(true)}
+          >
+            分镜
+            {directorState.shots.length > 0 ? (
+              <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             onClick={() => setNewProjectOpen(true)}
             className="canvas-secondary-button"
             title="新建项目"
@@ -5506,6 +5549,7 @@ export function VisualCanvasWorkspace({
                 creativeAssetLabel={creativeAssetLabelForNode(node)}
                 onOpenCreativeAssets={() => openCreativeAssets(node.id)}
                 onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
+                onAddToStoryboard={() => handleAddNodeToDirector(node)}
               />
             </div>
           ))}
@@ -5538,6 +5582,23 @@ export function VisualCanvasWorkspace({
           setStoryboardPreviewOpen(false)
           openPromptInspector(nodeId)
         }}
+      />
+
+      <StoryboardDirectorPanel
+        open={storyboardDirectorOpen}
+        state={directorState}
+        activeShotId={directorActiveShotId}
+        projectId={projectId}
+        canvasNodes={nodes.map((n) => ({
+          id: n.id,
+          kind: n.kind,
+          title: n.title,
+          resultImageUrl: n.resultImageUrl,
+          resultVideoUrl: n.resultVideoUrl,
+        }))}
+        onStateChange={(next) => setDirectorState(next)}
+        onActiveShotChange={(id) => setDirectorActiveShotId(id)}
+        onClose={() => setStoryboardDirectorOpen(false)}
       />
 
       <PromptInspectorPanel

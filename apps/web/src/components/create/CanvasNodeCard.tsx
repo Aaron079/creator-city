@@ -66,6 +66,7 @@ interface CanvasNodeCardProps {
   creativeAssetLabel?: string
   onOpenCreativeAssets?: () => void
   onOpenAssetIntelligence?: () => void
+  onAddToStoryboard?: () => void
   dragging?: boolean
 }
 
@@ -314,6 +315,7 @@ export function CanvasNodeCard({
   creativeAssetLabel = '创作资产',
   onOpenCreativeAssets,
   onOpenAssetIntelligence,
+  onAddToStoryboard,
   dragging = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
@@ -924,7 +926,7 @@ export function CanvasNodeCard({
           AI Tags: {assetIntelligenceTagCount}
         </button>
       ) : null}
-      {(onOpenPromptInspector || canOpenCreativeAssets) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
+      {(onOpenPromptInspector || canOpenCreativeAssets || onAddToStoryboard) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
         <div className="absolute bottom-2 left-2 z-[6] flex max-w-[calc(100%-16px)] items-center gap-1.5" data-no-node-drag="true">
           {onOpenPromptInspector ? (
             <button
@@ -972,6 +974,30 @@ export function CanvasNodeCard({
               title="打开创作资产"
             >
               <span className="truncate">{creativeAssetLabel}</span>
+            </button>
+          ) : null}
+          {onAddToStoryboard ? (
+            <button
+              type="button"
+              className="inline-flex min-h-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-amber-200/30 hover:bg-amber-200/10 hover:text-amber-50"
+              data-no-node-drag="true"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onAddToStoryboard()
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              aria-label="加入分镜"
+              title="加入当前分镜"
+            >
+              加入分镜
             </button>
           ) : null}
         </div>

@@ -48,3 +48,26 @@ export type StoryboardCanvasEdge = {
   source?: string
   target?: string
 }
+
+export type ShotCard = {
+  id: string
+  index: number
+  title: string
+  shotType?: string
+  durationSec?: number
+  mood?: string
+  cameraMovement?: string
+  directorNote?: string
+  characterIds?: string[]
+  sceneIds?: string[]
+  nodeIds: string[]
+  thumbnailUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type StoryboardState = {
+  version: string
+  shots: ShotCard[]
+  updatedAt: string
+}
