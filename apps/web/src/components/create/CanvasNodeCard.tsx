@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
-import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
+import { getNodeImageUrlSource, getNodeVideoUrlSource } from '@/lib/canvas/media-urls'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -143,6 +143,38 @@ function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
     : {}
+}
+
+type MediaState = {
+  url: string
+  source: string
+  hasUrl: boolean
+  loadFailed: boolean
+  isExpiredLikely: boolean
+}
+
+function isTemporarySignedUrl(url: string) {
+  const lower = url.toLowerCase()
+  return [
+    'x-tos-expires',
+    'x-tos-signature',
+    'x-amz-expires',
+    'x-amz-signature',
+    'x-oss-expires',
+    'x-oss-signature',
+    'expires=',
+    'signature=',
+    'security-token=',
+  ].some((pattern) => lower.includes(pattern))
+}
+
+function mediaState(source: { url: string; source: string }, loadFailed: boolean): MediaState {
+  return {
+    ...source,
+    hasUrl: Boolean(source.url),
+    loadFailed,
+    isExpiredLikely: Boolean(source.url && (loadFailed || isTemporarySignedUrl(source.url))),
+  }
 }
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -288,8 +320,11 @@ export function CanvasNodeCard({
     video.pause()
     video.currentTime = 0
   }
-  const imagePreviewUrl = node.kind === 'image' ? getNodeImageUrl(node) : ''
-  const videoPreviewUrl = node.kind === 'video' ? getNodeVideoUrl(node) : ''
+  const imageMedia = mediaState(node.kind === 'image' ? getNodeImageUrlSource(node) : { url: '', source: '' }, imageLoadFailed)
+  const videoMedia = mediaState(node.kind === 'video' ? getNodeVideoUrlSource(node) : { url: '', source: '' }, videoLoadFailed)
+  const imagePreviewUrl = imageMedia.url
+  const videoPreviewUrl = videoMedia.url
+  const hasMediaResult = (node.kind === 'image' && imageMedia.hasUrl) || (node.kind === 'video' && videoMedia.hasUrl)
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
   const textDisplay = node.status === 'queued'
@@ -543,7 +578,7 @@ export function CanvasNodeCard({
               ) : null}
               <span className="canvas-node-text-copy">{textDisplay}</span>
             </button>
-          ) : node.status === 'done' ? (
+          ) : hasMediaResult ? (
             <div
               className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)} ${node.preview?.type === 'placeholder-video' ? 'has-placeholder-preview' : ''}`}
               style={node.preview?.gradientFrom && node.preview?.gradientTo
@@ -571,21 +606,21 @@ export function CanvasNodeCard({
                   onDoubleClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    if (videoLoadFailed || !videoPreviewUrl) return
+                    if (!videoPreviewUrl) return
                     onOpenPreview('video')
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     event.stopPropagation()
-                    if (videoLoadFailed) return
+                    if (!videoPreviewUrl) return
                     onOpenPreview('video')
                   }}
                   aria-label="预览视频"
                 >
-                  {videoLoadFailed ? (
+                  {videoMedia.loadFailed ? (
                     <span className="canvas-node-video-error">
-                      视频链接可能已过期。请从素材库重新同步或重新生成。
+                      视频链接可能已过期或不可访问。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -636,6 +671,8 @@ export function CanvasNodeCard({
                         preload="metadata"
                         style={{ pointerEvents: 'none' }}
                         onError={() => setVideoLoadFailed(true)}
+                        onLoadedMetadata={() => setVideoLoadFailed(false)}
+                        onCanPlay={() => setVideoLoadFailed(false)}
                       />
                       <span className="canvas-node-video-play" aria-hidden="true">▶</span>
                     </>
@@ -667,9 +704,9 @@ export function CanvasNodeCard({
                   }}
                   aria-label="预览图片"
                 >
-                  {imageLoadFailed ? (
+                  {imageMedia.loadFailed ? (
                     <span className="canvas-node-image-error">
-                      图片链接可能已过期。请从素材库重新同步或重新生成。
+                      图片链接可能已过期或不可访问。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -717,6 +754,7 @@ export function CanvasNodeCard({
                       draggable={false}
                       style={{ pointerEvents: 'none' }}
                       onLoad={(event) => {
+                        setImageLoadFailed(false)
                         const { naturalWidth, naturalHeight } = event.currentTarget
                         if (naturalWidth > 0 && naturalHeight > 0) {
                           setImageNaturalRatio(naturalWidth / naturalHeight)
