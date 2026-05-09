@@ -15,6 +15,7 @@ import { CreativeAssetsPanel } from '@/components/create/CreativeAssetsPanel'
 import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
+import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
@@ -1185,6 +1186,7 @@ export function VisualCanvasWorkspace({
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
+  const [activeMediaDiagnostics, setActiveMediaDiagnostics] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
   const [activeCreativeAssetsNodeId, setActiveCreativeAssetsNodeId] = useState<string | null>(null)
   const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
   const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
@@ -2252,6 +2254,10 @@ export function VisualCanvasWorkspace({
     setActiveInspectorNodeId(null)
   }, [])
 
+  const closeMediaDiagnostics = useCallback(() => {
+    setActiveMediaDiagnostics(null)
+  }, [])
+
   const closeCreativeAssets = useCallback(() => {
     setActiveCreativeAssetsNodeId(null)
     setActiveSceneLabSourceNodeId('')
@@ -2277,6 +2283,9 @@ export function VisualCanvasWorkspace({
     if (activeInspectorNodeId === nodeId) {
       closePromptInspector()
     }
+    if (activeMediaDiagnostics?.nodeId === nodeId) {
+      closeMediaDiagnostics()
+    }
     if (activeCreativeAssetsNodeId === nodeId) {
       closeCreativeAssets()
     }
@@ -2284,7 +2293,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closePromptInspector, commitEdges, commitNodes, edges])
+  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activeMediaDiagnostics?.nodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closeMediaDiagnostics, closePromptInspector, commitEdges, commitNodes, edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -2406,6 +2415,15 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === activeInspectorNodeId) ?? null,
     [activeInspectorNodeId, nodes],
   )
+  const activeMediaDiagnosticsNode = useMemo(
+    () => nodes.find((node) => node.id === activeMediaDiagnostics?.nodeId) ?? null,
+    [activeMediaDiagnostics?.nodeId, nodes],
+  )
+  const activeMediaDiagnosticsUrl = activeMediaDiagnosticsNode && activeMediaDiagnostics
+    ? activeMediaDiagnostics.type === 'image'
+      ? getNodeImageUrl(activeMediaDiagnosticsNode)
+      : getNodeVideoUrl(activeMediaDiagnosticsNode)
+    : ''
   const activeCreativeAssetsNode = useMemo(
     () => nodes.find((node) => node.id === activeCreativeAssetsNodeId) ?? null,
     [activeCreativeAssetsNodeId, nodes],
@@ -2886,6 +2904,13 @@ export function VisualCanvasWorkspace({
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
 
+  const handleMediaDiagnosticsPatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
+    handleNodePatch(nodeId, patch)
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('媒体已重新同步到素材库。')
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
+
   const handleEdgePatch = useCallback((edgeId: string, patch: Partial<CanvasEdge>) => {
     commitEdges((current) => current.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)))
     flushLocalSnapshot()
@@ -3134,6 +3159,14 @@ export function VisualCanvasWorkspace({
   const openPromptInspector = useCallback((nodeId: string) => {
     setActiveNodeId(nodeId)
     setActiveInspectorNodeId(nodeId)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setNodeCreateMenu(null)
+  }, [])
+
+  const openMediaDiagnostics = useCallback((nodeId: string, type: 'image' | 'video') => {
+    setActiveNodeId(nodeId)
+    setActiveMediaDiagnostics({ nodeId, type })
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
@@ -4585,7 +4618,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-creative-assets="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-media-diagnostics="true"], [data-creative-assets="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -5387,6 +5420,7 @@ export function VisualCanvasWorkspace({
                 onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
+                onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}
@@ -5434,6 +5468,16 @@ export function VisualCanvasWorkspace({
         characterContext={activeInspectorCharacterContext}
         sceneContext={activeInspectorSceneContext}
         onClose={closePromptInspector}
+      />
+
+      <MediaDiagnosticsPanel
+        open={Boolean(activeMediaDiagnostics && activeMediaDiagnosticsNode)}
+        node={activeMediaDiagnosticsNode}
+        mediaType={activeMediaDiagnostics?.type ?? 'image'}
+        mediaUrl={activeMediaDiagnosticsUrl}
+        projectId={projectId}
+        onClose={closeMediaDiagnostics}
+        onPatchNode={handleMediaDiagnosticsPatch}
       />
 
       {activeCreativeAssetsNode ? (

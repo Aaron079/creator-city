@@ -70,6 +70,30 @@ function displayValue(value: unknown) {
   }
 }
 
+function isLikelyTemporaryUrl(url: string) {
+  const lower = url.toLowerCase()
+  return [
+    'x-tos-expires',
+    'x-tos-signature',
+    'x-amz-expires',
+    'x-amz-signature',
+    'x-oss-expires',
+    'x-oss-signature',
+    'expires=',
+    'signature=',
+    'security-token=',
+  ].some((pattern) => lower.includes(pattern))
+}
+
+function mediaPersistenceStatus(value: unknown) {
+  const record = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  if (record.status === 'persisted' || record.ok === true) return 'persisted'
+  if (record.status === 'failed' || record.ok === false || record.errorCode) return 'failed'
+  return 'missing'
+}
+
 function compactText(value: string, limit: number) {
   const text = value.trim()
   return text.length > limit ? `${text.slice(0, limit)}...` : text
@@ -240,6 +264,28 @@ export function PromptInspectorPanel({
       : node?.kind === 'video'
         ? node.resultVideoUrl || ''
         : ''
+  const mediaType = node?.kind === 'image' || node?.kind === 'video' ? node.kind : null
+  const assetUrl = stringValue(metadata.assetUrl)
+  const originalProviderUrl = mediaType === 'image'
+    ? stringValue(metadata.originalProviderImageUrl)
+    : mediaType === 'video'
+      ? stringValue(metadata.originalProviderVideoUrl)
+      : ''
+  const currentMediaUrl = mediaType === 'image'
+    ? node?.resultImageUrl || assetUrl || originalProviderUrl
+    : mediaType === 'video'
+      ? node?.resultVideoUrl || assetUrl || originalProviderUrl
+      : ''
+  const mediaStatusItems: Array<[string, unknown]> = [
+    ['resultImageUrl', node?.resultImageUrl],
+    ['resultVideoUrl', node?.resultVideoUrl],
+    ['assetUrl', assetUrl],
+    ['originalProvider URL', originalProviderUrl],
+    ['mediaPersistence', mediaPersistenceStatus(metadata.mediaPersistence)],
+    ['当前 URL 是否稳定资产', currentMediaUrl && assetUrl && currentMediaUrl === assetUrl && mediaPersistenceStatus(metadata.mediaPersistence) === 'persisted' ? '是' : '否'],
+    ['是否临时外链', currentMediaUrl && isLikelyTemporaryUrl(currentMediaUrl) ? '是' : '否'],
+    ['最近诊断结果', metadata.mediaDiagnostics ?? metadata.mediaResyncDiagnostic ?? metadata.mediaResync],
+  ]
   const debugItems: Array<[string, unknown]> = [
     ['compiledPromptDebug', compiledDebug],
     ['lastError', lastError],
@@ -362,6 +408,19 @@ export function PromptInspectorPanel({
               </div>
             ) : null}
           </Section>
+
+          {mediaType ? (
+            <Section title="媒体状态">
+              <dl className="space-y-2 text-sm">
+                {mediaStatusItems.map(([label, value]) => (
+                  <div key={label} className="rounded-md bg-black/18 p-2">
+                    <dt className="font-mono text-xs text-white/42">{label}</dt>
+                    <dd className="mt-1 break-all font-mono text-xs leading-5 text-white/70">{displayValue(value) || '未记录'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Section>
+          ) : null}
 
           <Section title="Project Style Bible">
             {hasStyleBible ? (

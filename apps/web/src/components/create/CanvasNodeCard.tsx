@@ -57,6 +57,7 @@ interface CanvasNodeCardProps {
   onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
   onOpenPromptInspector?: () => void
+  onOpenMediaDiagnostics?: (type: 'image' | 'video') => void
   enabledSkillCount?: number
   onOpenSkillPanel?: () => void
   creativeAssetLabel?: string
@@ -257,6 +258,7 @@ export function CanvasNodeCard({
   onEdit,
   onOpenPreview,
   onOpenPromptInspector,
+  onOpenMediaDiagnostics,
   enabledSkillCount = 0,
   onOpenSkillPanel,
   creativeAssetLabel = '创作资产',
@@ -583,7 +585,7 @@ export function CanvasNodeCard({
                 >
                   {videoLoadFailed ? (
                     <span className="canvas-node-video-error">
-                      视频链接无法加载。媒体链接可能已过期。请从素材库重新同步或重新生成。
+                      视频链接可能已过期。请从素材库重新同步或重新生成。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -595,6 +597,19 @@ export function CanvasNodeCard({
                       >
                         {copiedMediaUrl === 'video' ? '已复制' : '复制视频链接'}
                       </button>
+                      {onOpenMediaDiagnostics ? (
+                        <button
+                          type="button"
+                          className="mt-2 rounded border border-cyan-200/25 bg-cyan-200/10 px-2 py-1 text-xs font-semibold text-cyan-50"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            onOpenMediaDiagnostics('video')
+                          }}
+                        >
+                          媒体诊断
+                        </button>
+                      ) : null}
                       {onOpenPromptInspector ? (
                         <button
                           type="button"
@@ -654,7 +669,7 @@ export function CanvasNodeCard({
                 >
                   {imageLoadFailed ? (
                     <span className="canvas-node-image-error">
-                      图片链接无法加载。媒体链接可能已过期。请从素材库重新同步或重新生成。
+                      图片链接可能已过期。请从素材库重新同步或重新生成。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -666,6 +681,19 @@ export function CanvasNodeCard({
                       >
                         {copiedMediaUrl === 'image' ? '已复制' : '复制图片链接'}
                       </button>
+                      {onOpenMediaDiagnostics ? (
+                        <button
+                          type="button"
+                          className="mt-2 rounded border border-cyan-200/25 bg-cyan-200/10 px-2 py-1 text-xs font-semibold text-cyan-50"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            onOpenMediaDiagnostics('image')
+                          }}
+                        >
+                          媒体诊断
+                        </button>
+                      ) : null}
                       {onOpenPromptInspector ? (
                         <button
                           type="button"
