@@ -271,9 +271,9 @@ export function PromptInspectorPanel({
   const mediaType = node?.kind === 'image' || node?.kind === 'video' ? node.kind : null
   const assetUrl = stringValue(metadata.assetUrl)
   const originalProviderUrl = mediaType === 'image'
-    ? stringValue(metadata.originalProviderImageUrl)
+    ? stringValue(metadata.originalProviderImageUrl) || stringValue(metadata.originalProviderUrl)
     : mediaType === 'video'
-      ? stringValue(metadata.originalProviderVideoUrl)
+      ? stringValue(metadata.originalProviderVideoUrl) || stringValue(metadata.originalProviderUrl)
       : ''
   const currentMediaUrl = mediaType === 'image'
     ? getNodeImageUrl(node)
@@ -289,6 +289,7 @@ export function PromptInspectorPanel({
     ['当前实际播放地址', currentMediaUrl],
     ['proxied URL', proxiedMediaUrl],
     ['mediaPersistence', mediaPersistenceStatus(metadata.mediaPersistence)],
+    ['recoveredFromProvider', metadata.recoveredFromProvider === true ? 'true' : 'false'],
     ['当前 URL 是否稳定资产', currentMediaUrl && assetUrl && currentMediaUrl === assetUrl && mediaPersistenceStatus(metadata.mediaPersistence) === 'persisted' ? '是' : '否'],
     ['是否临时外链', currentMediaUrl && isLikelyTemporaryUrl(currentMediaUrl) ? '是' : '否'],
     ['最近诊断结果', metadata.mediaDiagnostics ?? metadata.mediaResyncDiagnostic ?? metadata.mediaResync],

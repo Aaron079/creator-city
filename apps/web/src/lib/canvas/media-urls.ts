@@ -41,10 +41,12 @@ export function getNodeImageUrlSource(node?: MediaNodeLike | null): MediaUrlSour
   const pluginOutput = recordValue(pluginResult.output)
 
   const candidates: Array<[string, string]> = [
-    ['resultImageUrl', stringValue(node.resultImageUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['resultImageUrl', stringValue(node.resultImageUrl)],
     ['metadata.resultImageUrl', stringValue(metadata.resultImageUrl)],
     ['metadata.imageUrl', stringValue(metadata.imageUrl)],
+    ['metadata.originalProviderImageUrl', stringValue(metadata.originalProviderImageUrl)],
+    ['metadata.originalProviderUrl', stringValue(metadata.originalProviderUrl)],
     ['metadata.pluginResult.imageUrl', stringValue(pluginResult.imageUrl)],
     ['metadata.pluginResult.resultImageUrl', stringValue(pluginResult.resultImageUrl)],
     ['metadata.pluginResult.data.imageUrl', stringValue(pluginData.imageUrl)],
@@ -68,10 +70,12 @@ export function getNodeVideoUrlSource(node?: MediaNodeLike | null): MediaUrlSour
   const pluginOutput = recordValue(pluginResult.output)
 
   const candidates: Array<[string, string]> = [
-    ['resultVideoUrl', stringValue(node.resultVideoUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['resultVideoUrl', stringValue(node.resultVideoUrl)],
     ['metadata.resultVideoUrl', stringValue(metadata.resultVideoUrl)],
     ['metadata.videoUrl', stringValue(metadata.videoUrl)],
+    ['metadata.originalProviderVideoUrl', stringValue(metadata.originalProviderVideoUrl)],
+    ['metadata.originalProviderUrl', stringValue(metadata.originalProviderUrl)],
     ['metadata.pluginResult.videoUrl', stringValue(pluginResult.videoUrl)],
     ['metadata.pluginResult.resultVideoUrl', stringValue(pluginResult.resultVideoUrl)],
     ['metadata.pluginResult.data.videoUrl', stringValue(pluginData.videoUrl)],

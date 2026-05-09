@@ -6108,6 +6108,116 @@
   object-fit: contain;
 }
 
+.scope :global(.canvas-floating-review-window) {
+  position: fixed;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  min-width: 320px;
+  min-height: 240px;
+  max-width: 42vw;
+  max-height: 72vh;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(10, 12, 18, 0.88);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  color: rgba(255, 255, 255, 0.88);
+  pointer-events: auto;
+  touch-action: none;
+  backdrop-filter: blur(18px);
+}
+
+.scope :global(.canvas-floating-review-head) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0 8px 0 12px;
+  cursor: move;
+  user-select: none;
+}
+
+.scope :global(.canvas-floating-review-title) {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.scope :global(.canvas-floating-review-title span) {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-floating-review-title small) {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  font-weight: 620;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-floating-review-close) {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.scope :global(.canvas-floating-review-close:hover) {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.scope :global(.canvas-floating-review-stage) {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.scope :global(.canvas-floating-review-media) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.scope :global(.canvas-floating-review-resize) {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(135deg, transparent 0 52%, rgba(255, 255, 255, 0.18) 52% 58%, transparent 58% 100%),
+    linear-gradient(135deg, transparent 0 68%, rgba(255, 255, 255, 0.26) 68% 74%, transparent 74% 100%);
+  cursor: nwse-resize;
+}
+
 .scope :global(.scene-tool-layer-frame) {
   position: relative;
   display: grid;

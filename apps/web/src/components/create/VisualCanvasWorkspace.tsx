@@ -234,6 +234,17 @@ interface CanvasEdge {
   metadataJson?: unknown
 }
 
+type MediaReviewWindow = {
+  id: string
+  nodeId: string
+  type: 'image' | 'video'
+  x: number
+  y: number
+  width: number
+  height: number
+  zIndex: number
+}
+
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
   text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'openai-text' },
   image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'openai-image', ratio: '16:9' },
@@ -272,6 +283,12 @@ const NODE_ADD_MENU_WIDTH = 190
 const NODE_ADD_MENU_HEIGHT = 220
 const NODE_DIALOG_GAP = 16
 const NODE_DIALOG_HEIGHT = 210
+const REVIEW_WINDOW_GAP = 18
+const REVIEW_WINDOW_TOP_GUARD = 104
+const REVIEW_WINDOW_MIN_WIDTH = 320
+const REVIEW_WINDOW_MIN_HEIGHT = 240
+const REVIEW_WINDOW_IMAGE_WIDTH = 520
+const REVIEW_WINDOW_VIDEO_WIDTH = 640
 const STAGE_OPTIONS = [
   { value: 'draft', label: '起稿', hint: '先把方向和内容结构定下来' },
   { value: 'lookdev', label: '视觉开发', hint: '推进风格、关键帧和 look & feel' },
@@ -1025,6 +1042,20 @@ function clampMenuPosition(clientX: number, clientY: number, width: number, heig
   }
 }
 
+function clampReviewWindowGeometry(input: { x: number; y: number; width: number; height: number }) {
+  if (typeof window === 'undefined') return input
+  const maxWidth = Math.max(REVIEW_WINDOW_MIN_WIDTH, window.innerWidth * 0.42)
+  const maxHeight = Math.max(REVIEW_WINDOW_MIN_HEIGHT, window.innerHeight * 0.72)
+  const width = Math.max(REVIEW_WINDOW_MIN_WIDTH, Math.min(input.width, maxWidth, window.innerWidth - 24))
+  const height = Math.max(REVIEW_WINDOW_MIN_HEIGHT, Math.min(input.height, maxHeight, window.innerHeight - REVIEW_WINDOW_TOP_GUARD - 12))
+  return {
+    width,
+    height,
+    x: Math.max(12, Math.min(input.x, window.innerWidth - width - 12)),
+    y: Math.max(REVIEW_WINDOW_TOP_GUARD, Math.min(input.y, window.innerHeight - height - 12)),
+  }
+}
+
 function getSurfaceOffset(surface: HTMLDivElement | null) {
   return {
     left: surface?.offsetLeft ?? 0,
@@ -1131,6 +1162,156 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
+function FloatingMediaReviewWindow({
+  review,
+  node,
+  displayUrl,
+  posterUrl,
+  onClose,
+  onFocus,
+  onMove,
+  onResize,
+}: {
+  review: MediaReviewWindow
+  node: VisualCanvasNode
+  displayUrl: string
+  posterUrl?: string
+  onClose: (id: string) => void
+  onFocus: (id: string) => void
+  onMove: (id: string, x: number, y: number) => void
+  onResize: (id: string, width: number, height: number) => void
+}) {
+  const startDrag = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    onFocus(review.id)
+    const startX = event.clientX
+    const startY = event.clientY
+    const startLeft = review.x
+    const startTop = review.y
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault()
+      const next = clampReviewWindowGeometry({
+        x: startLeft + moveEvent.clientX - startX,
+        y: startTop + moveEvent.clientY - startY,
+        width: review.width,
+        height: review.height,
+      })
+      onMove(review.id, next.x, next.y)
+    }
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+  }
+
+  const startResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    onFocus(review.id)
+    const startX = event.clientX
+    const startY = event.clientY
+    const startWidth = review.width
+    const startHeight = review.height
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault()
+      const next = clampReviewWindowGeometry({
+        x: review.x,
+        y: review.y,
+        width: startWidth + moveEvent.clientX - startX,
+        height: startHeight + moveEvent.clientY - startY,
+      })
+      onMove(review.id, next.x, next.y)
+      onResize(review.id, next.width, next.height)
+    }
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+  }
+
+  return (
+    <section
+      className={`canvas-floating-review-window is-${review.type}`}
+      role="dialog"
+      aria-label={review.type === 'image' ? 'Image Preview' : 'Video Preview'}
+      data-node-preview-overlay="true"
+      data-no-node-drag="true"
+      style={{
+        left: review.x,
+        top: review.y,
+        width: review.width,
+        height: review.height,
+        zIndex: 2700 + review.zIndex,
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        onFocus(review.id)
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+      onWheelCapture={(event) => event.stopPropagation()}
+    >
+      <header className="canvas-floating-review-head" onPointerDown={startDrag}>
+        <div className="canvas-floating-review-title">
+          <span>{review.type === 'image' ? 'Image Preview' : 'Video Preview'}</span>
+          <small>{node.title}</small>
+        </div>
+        <button
+          type="button"
+          className="canvas-floating-review-close"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onClose(review.id)
+          }}
+          aria-label="Close preview"
+        >
+          ×
+        </button>
+      </header>
+      <div className="canvas-floating-review-stage">
+        {review.type === 'image' ? (
+          <img
+            src={displayUrl}
+            alt={node.title}
+            className="canvas-floating-review-media"
+            draggable={false}
+          />
+        ) : (
+          <video
+            src={displayUrl}
+            poster={posterUrl}
+            className="canvas-floating-review-media"
+            controls
+            playsInline
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        className="canvas-floating-review-resize"
+        onPointerDown={startResize}
+        aria-label="Resize preview"
+      />
+    </section>
+  )
+}
+
 export function VisualCanvasWorkspace({
   projectTitle,
   templateName,
@@ -1198,7 +1379,7 @@ export function VisualCanvasWorkspace({
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
-  const [activeMediaReview, setActiveMediaReview] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
+  const [mediaReviewWindows, setMediaReviewWindows] = useState<MediaReviewWindow[]>([])
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
   const [activeMediaDiagnostics, setActiveMediaDiagnostics] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
   const [activeCreativeAssetsNodeId, setActiveCreativeAssetsNodeId] = useState<string | null>(null)
@@ -1245,6 +1426,7 @@ export function VisualCanvasWorkspace({
   const latestEdgesRef = useRef<CanvasEdge[]>([])
   const latestViewportRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } })
   const latestCommentsRef = useRef<CanvasComment[]>([])
+  const mediaReviewZRef = useRef(1)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -2260,10 +2442,12 @@ export function VisualCanvasWorkspace({
     }
   }, [loadedProjectTitle, projectId, projectTitleDraft, projectTitleSaving, showCanvasFeedback])
 
-  const closeActivePreview = useCallback(() => {
+  const closeActivePreview = useCallback((options?: { closeReviewWindows?: boolean }) => {
     setActivePreviewNodeId(null)
     setActivePreviewType(null)
-    setActiveMediaReview(null)
+    if (options?.closeReviewWindows !== false) {
+      setMediaReviewWindows([])
+    }
     setTextEditorDraft('')
     setTextEditorCopied(false)
     setPreviewLinkCopied(false)
@@ -2301,9 +2485,7 @@ export function VisualCanvasWorkspace({
     if (activePreviewNodeId === nodeId) {
       closeActivePreview()
     }
-    if (activeMediaReview?.nodeId === nodeId) {
-      closeActivePreview()
-    }
+    setMediaReviewWindows((current) => current.filter((review) => review.nodeId !== nodeId))
     if (activeInspectorNodeId === nodeId) {
       closePromptInspector()
     }
@@ -2317,7 +2499,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activeMediaDiagnostics?.nodeId, activeMediaReview?.nodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closeMediaDiagnostics, closePromptInspector, commitEdges, commitNodes, edges])
+  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activeMediaDiagnostics?.nodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closeMediaDiagnostics, closePromptInspector, commitEdges, commitNodes, edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -2338,7 +2520,7 @@ export function VisualCanvasWorkspace({
     commitNodes((current) => [...current, duplicate])
     setActiveNodeId(nodeId)
     setEditingNodeId(null)
-    closeActivePreview()
+    closeActivePreview({ closeReviewWindows: false })
     setContextMenu(null)
     setNodeAddMenu(null)
     return duplicate
@@ -2411,10 +2593,10 @@ export function VisualCanvasWorkspace({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (activePreviewNodeId || activeMediaReview || activeInspectorNodeId || activeCreativeAssetsNodeId) {
+        if (activePreviewNodeId || mediaReviewWindows.length > 0 || activeInspectorNodeId || activeCreativeAssetsNodeId) {
           event.preventDefault()
         }
-        if (activePreviewNodeId || activeMediaReview) {
+        if (activePreviewNodeId || mediaReviewWindows.length > 0) {
           closeActivePreview()
         }
         if (activeInspectorNodeId) {
@@ -2477,7 +2659,7 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeMediaReview, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
+  }, [activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, mediaReviewWindows.length, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
@@ -2782,16 +2964,29 @@ export function VisualCanvasWorkspace({
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
   const activePreviewImageDisplayUrl = getProxiedMediaUrl(activePreviewImageUrl)
   const activePreviewVideoDisplayUrl = getProxiedMediaUrl(activePreviewVideoUrl)
-  const activeMediaReviewNode = useMemo(
-    () => nodes.find((node) => node.id === activeMediaReview?.nodeId) ?? null,
-    [activeMediaReview?.nodeId, nodes],
-  )
-  const activeMediaReviewUrl = activeMediaReview?.type === 'image' && activeMediaReviewNode?.kind === 'image'
-    ? getNodeImageUrl(activeMediaReviewNode)
-    : activeMediaReview?.type === 'video' && activeMediaReviewNode?.kind === 'video'
-      ? getNodeVideoUrl(activeMediaReviewNode)
-      : ''
-  const activeMediaReviewDisplayUrl = getProxiedMediaUrl(activeMediaReviewUrl)
+  const closeMediaReviewWindow = useCallback((id: string) => {
+    setMediaReviewWindows((current) => current.filter((review) => review.id !== id))
+  }, [])
+
+  const focusMediaReviewWindow = useCallback((id: string) => {
+    mediaReviewZRef.current += 1
+    const nextZ = mediaReviewZRef.current
+    setMediaReviewWindows((current) => current.map((review) => (
+      review.id === id ? { ...review, zIndex: nextZ } : review
+    )))
+  }, [])
+
+  const moveMediaReviewWindow = useCallback((id: string, x: number, y: number) => {
+    setMediaReviewWindows((current) => current.map((review) => (
+      review.id === id ? { ...review, x, y } : review
+    )))
+  }, [])
+
+  const resizeMediaReviewWindow = useCallback((id: string, width: number, height: number) => {
+    setMediaReviewWindows((current) => current.map((review) => (
+      review.id === id ? { ...review, width, height } : review
+    )))
+  }, [])
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -2998,6 +3193,12 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback('媒体已重新同步到素材库。')
   }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
+  const handleMediaRecoveryPatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
+    handleNodePatch(nodeId, patch)
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+
   const handleEdgePatch = useCallback((edgeId: string, patch: Partial<CanvasEdge>) => {
     commitEdges((current) => current.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)))
     flushLocalSnapshot()
@@ -3140,14 +3341,14 @@ export function VisualCanvasWorkspace({
     }
     setActiveNodeId(nodeId)
     setActiveEdgeId(null)
-    if ((activePreviewNodeId && activePreviewNodeId !== nodeId) || (activeMediaReview && activeMediaReview.nodeId !== nodeId)) {
-      closeActivePreview()
+    if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
+      closeActivePreview({ closeReviewWindows: false })
     }
     setEditingNodeId(null)
     setDraggingNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [activeMediaReview, activePreviewNodeId, closeActivePreview, nodes])
+  }, [activePreviewNodeId, closeActivePreview, nodes])
   const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
   useEffect(() => {
@@ -3211,8 +3412,8 @@ export function VisualCanvasWorkspace({
   }, [imageProviderStatusMap, videoProviderStatusMap])
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
-    if ((activePreviewNodeId && activePreviewNodeId !== node.id) || (activeMediaReview && activeMediaReview.nodeId !== node.id)) {
-      closeActivePreview()
+    if (activePreviewNodeId && activePreviewNodeId !== node.id) {
+      closeActivePreview({ closeReviewWindows: false })
     }
     setActiveNodeId(node.id)
     setActiveEdgeId(null)
@@ -3227,7 +3428,7 @@ export function VisualCanvasWorkspace({
       promptInputRef.current?.focus()
       promptInputRef.current?.select()
     }, 0)
-  }, [activeMediaReview, activePreviewNodeId, closeActivePreview, syncPromptPreset])
+  }, [activePreviewNodeId, closeActivePreview, syncPromptPreset])
 
   const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
     if (type !== 'text' && type !== node.kind) return
@@ -3236,9 +3437,51 @@ export function VisualCanvasWorkspace({
     setActiveEdgeId(null)
     setEditingNodeId(null)
     if (type === 'image' || type === 'video') {
+      const defaultWidth = type === 'image' ? REVIEW_WINDOW_IMAGE_WIDTH : REVIEW_WINDOW_VIDEO_WIDTH
+      const initial = clampReviewWindowGeometry({
+        x: 120,
+        y: REVIEW_WINDOW_TOP_GUARD,
+        width: defaultWidth,
+        height: Math.round(defaultWidth * (type === 'image' ? 0.72 : 0.62)),
+      })
+      const viewportRect = viewportRef.current?.getBoundingClientRect()
+      const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+      const nodeScreenX = (viewportRect?.left ?? 0) + surfaceOffset.left + canvasPan.x + node.x * canvasZoom
+      const nodeScreenY = (viewportRect?.top ?? 0) + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
+      const nodeScreenWidth = node.width * canvasZoom
+      const nodeScreenHeight = node.height * canvasZoom
+      const rightX = nodeScreenX + nodeScreenWidth + REVIEW_WINDOW_GAP
+      const leftX = nodeScreenX - initial.width - REVIEW_WINDOW_GAP
+      const hasRightSpace = typeof window === 'undefined' || rightX + initial.width <= window.innerWidth - 12
+      const positioned = clampReviewWindowGeometry({
+        ...initial,
+        x: hasRightSpace ? rightX : leftX,
+        y: nodeScreenY + Math.max(0, (nodeScreenHeight - initial.height) / 2),
+      })
+      mediaReviewZRef.current += 1
+      const reviewId = `${node.id}-${type}`
       setActivePreviewNodeId(null)
       setActivePreviewType(null)
-      setActiveMediaReview({ nodeId: node.id, type })
+      setMediaReviewWindows((current) => {
+        const existing = current.find((review) => review.id === reviewId)
+        if (existing) {
+          return current.map((review) => (
+            review.id === reviewId
+              ? { ...review, ...positioned, zIndex: mediaReviewZRef.current }
+              : review
+          ))
+        }
+        return [
+          ...current,
+          {
+            id: reviewId,
+            nodeId: node.id,
+            type,
+            ...positioned,
+            zIndex: mediaReviewZRef.current,
+          },
+        ]
+      })
       setTextEditorDraft('')
       setTextEditorCopied(false)
       setPreviewLinkCopied(false)
@@ -3246,7 +3489,6 @@ export function VisualCanvasWorkspace({
     }
     setActivePreviewNodeId(node.id)
     setActivePreviewType(type)
-    setActiveMediaReview(null)
     setPreviewLinkCopied(false)
     if (type === 'text') {
       setTextEditorDraft(node.resultText ?? '')
@@ -3254,7 +3496,7 @@ export function VisualCanvasWorkspace({
       setTextEditorDraft('')
     }
     setTextEditorCopied(false)
-  }, [])
+  }, [canvasPan.x, canvasPan.y, canvasZoom])
 
   const openPromptInspector = useCallback((nodeId: string) => {
     setActiveNodeId(nodeId)
@@ -4602,7 +4844,7 @@ export function VisualCanvasWorkspace({
     }
     setActiveNodeId(nodeId)
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
-      closeActivePreview()
+      closeActivePreview({ closeReviewWindows: false })
     }
     setContextMenu(null)
     setNodeAddMenu(null)
@@ -4627,7 +4869,7 @@ export function VisualCanvasWorkspace({
     setIsAddMenuOpen(false)
     setActiveNodeId(nodeId)
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
-      closeActivePreview()
+      closeActivePreview({ closeReviewWindows: false })
     }
   }, [activePreviewNodeId, closeActivePreview])
 
@@ -4770,7 +5012,7 @@ export function VisualCanvasWorkspace({
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
 
-    closeActivePreview()
+    closeActivePreview({ closeReviewWindows: false })
     closePromptInspector()
     closeCreativeAssets()
     closeEdgeDirector()
@@ -5576,6 +5818,7 @@ export function VisualCanvasWorkspace({
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
                 onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
                 onCreateStableCopy={() => createStableCopyFromExpiredNode(node)}
+                onRecoverMedia={handleMediaRecoveryPatch}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}
@@ -5678,107 +5921,27 @@ export function VisualCanvasWorkspace({
         />
       ) : null}
 
-      {activeMediaReview?.type === 'image' && activeMediaReviewNode?.kind === 'image' && activeMediaReviewUrl ? (
-        <div
-          className="canvas-image-preview-backdrop"
-          role="presentation"
-          data-node-preview-overlay="true"
-          data-no-node-drag="true"
-          onClick={closeActivePreview}
-        >
-          <section
-            className="canvas-image-preview-dialog is-node-content-preview"
-            role="dialog"
-            aria-modal="true"
-            aria-label="图片审阅"
-            data-node-preview-overlay="true"
-            style={{
-              border: 0,
-              background: 'transparent',
-              boxShadow: 'none',
-              maxHeight: '88vh',
-              maxWidth: '92vw',
-              overflow: 'visible',
-              padding: 0,
-              width: 'auto',
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            onWheelCapture={(event) => event.stopPropagation()}
-          >
-            <img
-              src={activeMediaReviewDisplayUrl}
-              alt={activeMediaReviewNode.title}
-              className="canvas-image-preview-media"
-              draggable={false}
-              style={{
-                border: 0,
-                borderRadius: 0,
-                display: 'block',
-                height: 'auto',
-                maxHeight: '88vh',
-                maxWidth: '92vw',
-                objectFit: 'contain',
-                width: 'auto',
-              }}
-            />
-          </section>
-        </div>
-      ) : null}
-
-      {activeMediaReview?.type === 'video' && activeMediaReviewNode?.kind === 'video' && activeMediaReviewUrl ? (
-        <div
-          className="canvas-video-preview-backdrop"
-          role="presentation"
-          data-node-preview-overlay="true"
-          data-no-node-drag="true"
-          onClick={closeActivePreview}
-        >
-          <section
-            className="canvas-video-preview-dialog is-node-content-preview"
-            role="dialog"
-            aria-modal="true"
-            aria-label="视频审阅"
-            data-node-preview-overlay="true"
-            style={{
-              border: 0,
-              background: 'transparent',
-              boxShadow: 'none',
-              maxHeight: '88vh',
-              maxWidth: '92vw',
-              overflow: 'visible',
-              padding: 0,
-              width: 'auto',
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-            onWheelCapture={(event) => event.stopPropagation()}
-          >
-            <video
-              src={activeMediaReviewDisplayUrl}
-              poster={activeMediaReviewNode.preview?.poster ? getProxiedMediaUrl(activeMediaReviewNode.preview.poster) : undefined}
-              className="canvas-video-preview-media"
-              controls
-              autoPlay
-              playsInline
-              style={{
-                border: 0,
-                borderRadius: 0,
-                display: 'block',
-                maxHeight: '88vh',
-                maxWidth: '92vw',
-                objectFit: 'contain',
-              }}
-            />
-          </section>
-        </div>
-      ) : null}
+      {mediaReviewWindows.map((review) => {
+        const reviewNode = nodes.find((node) => node.id === review.nodeId)
+        if (!reviewNode) return null
+        const mediaUrl = review.type === 'image'
+          ? getNodeImageUrl(reviewNode)
+          : getNodeVideoUrl(reviewNode)
+        if (!mediaUrl) return null
+        return (
+          <FloatingMediaReviewWindow
+            key={review.id}
+            review={review}
+            node={reviewNode}
+            displayUrl={getProxiedMediaUrl(mediaUrl)}
+            posterUrl={review.type === 'video' && reviewNode.preview?.poster ? getProxiedMediaUrl(reviewNode.preview.poster) : undefined}
+            onClose={closeMediaReviewWindow}
+            onFocus={focusMediaReviewWindow}
+            onMove={moveMediaReviewWindow}
+            onResize={resizeMediaReviewWindow}
+          />
+        )
+      })}
 
       {editingNode && nodeDialogStyle ? (
         <div
@@ -5845,7 +6008,7 @@ export function VisualCanvasWorkspace({
           role="presentation"
           data-node-preview-overlay="true"
           data-no-node-drag="true"
-          onClick={closeActivePreview}
+          onClick={() => closeActivePreview()}
         >
           <section
             className={`canvas-image-preview-dialog ${showSceneToolPreview ? 'has-scene-tools' : 'is-node-content-preview'}`}
@@ -5863,7 +6026,7 @@ export function VisualCanvasWorkspace({
             {showSceneToolPreview ? (
               <div className="canvas-image-preview-head">
                 <span>{activePreviewNode.title}</span>
-                <button type="button" onClick={closeActivePreview} aria-label="关闭图片预览">×</button>
+                <button type="button" onClick={() => closeActivePreview()} aria-label="关闭图片预览">×</button>
               </div>
             ) : null}
             <div className={`canvas-image-preview-stage ${showSceneToolPreview ? 'has-scene-tools' : 'is-lightbox'}`}>
@@ -5919,7 +6082,7 @@ export function VisualCanvasWorkspace({
                 <button type="button" onClick={() => openActivePreviewLink(activePreviewImageUrl)}>
                   新标签页打开
                 </button>
-                <button type="button" onClick={closeActivePreview}>关闭</button>
+                <button type="button" onClick={() => closeActivePreview()}>关闭</button>
               </div>
             ) : null}
           </section>
@@ -5932,7 +6095,7 @@ export function VisualCanvasWorkspace({
           role="presentation"
           data-node-preview-overlay="true"
           data-no-node-drag="true"
-          onClick={closeActivePreview}
+          onClick={() => closeActivePreview()}
         >
           <section
             className="canvas-video-preview-dialog is-node-content-preview"
@@ -5987,7 +6150,7 @@ export function VisualCanvasWorkspace({
                   <span>{getNodeStatusLabel(textEditorNode.status)}</span>
                 </div>
               </div>
-              <button type="button" className="canvas-text-editor-close" onClick={closeActivePreview} aria-label="关闭">
+              <button type="button" className="canvas-text-editor-close" onClick={() => closeActivePreview()} aria-label="关闭">
                 ×
               </button>
             </div>
@@ -6006,7 +6169,7 @@ export function VisualCanvasWorkspace({
                 {textEditorCopied ? '已复制' : '复制文本'}
               </button>
               <div className="canvas-text-editor-action-spacer" />
-              <button type="button" className="canvas-text-editor-button" onClick={closeActivePreview}>
+              <button type="button" className="canvas-text-editor-button" onClick={() => closeActivePreview()}>
                 取消
               </button>
               <button type="button" className="canvas-text-editor-button is-primary" onClick={saveTextEditor}>

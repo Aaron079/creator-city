@@ -6,6 +6,7 @@ import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './Charac
 import { getNodeImageUrlSource, getNodeVideoUrlSource } from '@/lib/canvas/media-urls'
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
+import { auditNodeMedia, type MediaRecoveryAudit } from '@/lib/media/recovery-audit'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -61,6 +62,7 @@ interface CanvasNodeCardProps {
   onOpenPromptInspector?: () => void
   onOpenMediaDiagnostics?: (type: 'image' | 'video') => void
   onCreateStableCopy?: () => void
+  onRecoverMedia?: (nodeId: string, patch: Partial<VisualCanvasNode>) => void
   enabledSkillCount?: number
   onOpenSkillPanel?: () => void
   creativeAssetLabel?: string
@@ -162,6 +164,8 @@ type MediaState = {
   isExpiredLikely: boolean
 }
 
+type MediaRecoveryStatus = 'idle' | 'checking' | 'recovered' | 'unrecoverable'
+
 function isTemporarySignedUrl(url: string) {
   const lower = url.toLowerCase()
   return [
@@ -193,6 +197,23 @@ function mediaPersistenceStatus(value: unknown) {
   if (record.status === 'disabled') return 'disabled'
   if (record.status === 'skipped') return 'skipped'
   return 'missing'
+}
+
+function getOriginalProviderUrl(metadata: Record<string, unknown>, kind: 'image' | 'video') {
+  return kind === 'image'
+    ? stringValue(metadata.originalProviderImageUrl) || stringValue(metadata.originalProviderUrl)
+    : stringValue(metadata.originalProviderVideoUrl) || stringValue(metadata.originalProviderUrl)
+}
+
+function persistedRecoveryMetadata(value: unknown, recoveredAt: string) {
+  const record = metadataRecord(value)
+  if (record.status === 'persisted' || record.ok === true) return value
+  return {
+    ...record,
+    status: 'persisted',
+    source: stringValue(record.source) || 'media-recovery-audit',
+    recoveredAt,
+  }
 }
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -310,6 +331,7 @@ export function CanvasNodeCard({
   onOpenPromptInspector,
   onOpenMediaDiagnostics,
   onCreateStableCopy,
+  onRecoverMedia,
   enabledSkillCount = 0,
   onOpenSkillPanel,
   creativeAssetLabel = '创作资产',
@@ -326,6 +348,8 @@ export function CanvasNodeCard({
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
   const [copiedMediaUrl, setCopiedMediaUrl] = useState<'image' | 'video' | null>(null)
+  const [mediaRecoveryStatus, setMediaRecoveryStatus] = useState<MediaRecoveryStatus>('idle')
+  const recoveryAttemptKeyRef = useRef('')
 
   function handleVideoPreviewEnter() {
     const video = videoPreviewRef.current
@@ -417,12 +441,128 @@ export function CanvasNodeCard({
   }
 
   useEffect(() => {
+    if (!onRecoverMedia || (node.kind !== 'image' && node.kind !== 'video')) return
+
+    const mediaKind = node.kind
+    const resultUrl = mediaKind === 'image' ? stringValue(node.resultImageUrl) : stringValue(node.resultVideoUrl)
+    const currentUrl = mediaKind === 'image' ? imagePreviewUrl : videoPreviewUrl
+    const loadFailed = mediaKind === 'image' ? imageLoadFailed : videoLoadFailed
+    const originalProviderUrl = getOriginalProviderUrl(nodeMetadata, mediaKind) || (!assetUrl ? resultUrl : '')
+    const shouldAudit = Boolean(currentUrl || assetUrl || originalProviderUrl)
+      && (
+        loadFailed
+        || (assetUrl && resultUrl !== assetUrl)
+        || (!assetUrl && originalProviderUrl && persistenceStatus !== 'persisted')
+      )
+    if (!shouldAudit) return
+
+    const attemptKey = [
+      node.id,
+      mediaKind,
+      resultUrl,
+      currentUrl,
+      assetUrl,
+      originalProviderUrl,
+      persistenceStatus,
+      loadFailed ? 'failed' : 'ready',
+    ].join('|')
+    if (recoveryAttemptKeyRef.current === attemptKey) return
+    recoveryAttemptKeyRef.current = attemptKey
+
+    let cancelled = false
+    setMediaRecoveryStatus('checking')
+
+    const patchRecoveredNode = (stableUrl: string, audit: MediaRecoveryAudit, extraMetadata?: Record<string, unknown>) => {
+      const recoveredAt = new Date().toISOString()
+      const nextMetadata = {
+        ...metadataRecord(node.metadataJson),
+        assetUrl: stableUrl,
+        mediaPersistence: persistedRecoveryMetadata(nodeMetadata.mediaPersistence, recoveredAt),
+        recoveredFromProvider: true,
+        mediaRecoveryAudit: audit,
+        mediaRecoveredAt: recoveredAt,
+        ...(mediaKind === 'image' && audit.providerUrl ? { originalProviderImageUrl: audit.providerUrl } : {}),
+        ...(mediaKind === 'video' && audit.providerUrl ? { originalProviderVideoUrl: audit.providerUrl } : {}),
+        ...(extraMetadata ?? {}),
+      }
+      onRecoverMedia(node.id, {
+        ...(mediaKind === 'image' ? { resultImageUrl: stableUrl } : { resultVideoUrl: stableUrl }),
+        metadataJson: nextMetadata,
+      })
+      setMediaRecoveryStatus('recovered')
+    }
+
+    void auditNodeMedia(node, mediaKind).then(async (audit) => {
+      if (cancelled) return
+      if (audit.assetReachable && audit.stableAssetUrl) {
+        patchRecoveredNode(audit.stableAssetUrl, audit)
+        return
+      }
+
+      if (!audit.hasStableAsset && audit.providerReachable && audit.providerUrl) {
+        try {
+          const response = await fetch('/api/media/resync', {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              url: audit.providerUrl,
+              type: mediaKind,
+              nodeId: node.id,
+              filenameHint: `${node.title || node.id || 'recovered'}-${mediaKind}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
+              metadata: nodeMetadata,
+            }),
+          })
+          const data = await response.json().catch(() => ({})) as {
+            success?: boolean
+            stableUrl?: string
+            mediaPersistence?: unknown
+            diagnostic?: unknown
+          }
+          if (!cancelled && response.ok && data.success && data.stableUrl) {
+            patchRecoveredNode(data.stableUrl, audit, {
+              mediaPersistence: data.mediaPersistence
+                ? { ...metadataRecord(data.mediaPersistence), status: 'persisted' }
+                : persistedRecoveryMetadata(nodeMetadata.mediaPersistence, new Date().toISOString()),
+              mediaResync: data,
+            })
+            return
+          }
+        } catch {
+          // Fall through to the unrecoverable state when the visible media has already failed.
+        }
+      }
+
+      setMediaRecoveryStatus(loadFailed && !audit.likelyRecoverable ? 'unrecoverable' : 'idle')
+    }).catch(() => {
+      if (!cancelled) setMediaRecoveryStatus(loadFailed ? 'unrecoverable' : 'idle')
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    assetUrl,
+    imageLoadFailed,
+    imagePreviewUrl,
+    node,
+    nodeMetadata,
+    onRecoverMedia,
+    persistenceStatus,
+    videoLoadFailed,
+    videoPreviewUrl,
+  ])
+
+  useEffect(() => {
     setImageLoadFailed(false)
     setImageNaturalRatio(null)
+    setMediaRecoveryStatus('idle')
   }, [imagePreviewUrl])
 
   useEffect(() => {
     setVideoLoadFailed(false)
+    setMediaRecoveryStatus('idle')
   }, [videoPreviewUrl])
 
   return (
@@ -685,7 +825,9 @@ export function CanvasNodeCard({
                 >
                   {videoMedia.loadFailed ? (
                     <span className="canvas-node-video-error">
-                      媒体源当前不可访问，请检查媒体连接或重新同步到素材库。
+                      {mediaRecoveryStatus === 'checking'
+                        ? '正在检查稳定资产和原始供应商链接...'
+                        : '当前无法读取该媒体资产。'}
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -797,7 +939,9 @@ export function CanvasNodeCard({
                 >
                   {imageMedia.loadFailed ? (
                     <span className="canvas-node-image-error">
-                      媒体源当前不可访问，请检查媒体连接或重新同步到素材库。
+                      {mediaRecoveryStatus === 'checking'
+                        ? '正在检查稳定资产和原始供应商链接...'
+                        : '当前无法读取该媒体资产。'}
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
