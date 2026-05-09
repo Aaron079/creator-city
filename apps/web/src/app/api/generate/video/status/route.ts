@@ -7,6 +7,24 @@ import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 
 export const dynamic = 'force-dynamic'
 
+const VIDEO_PERSISTENCE_TIMEOUT_MS = 12_000
+
+function mediaPersistenceTimeout() {
+  return new Promise<{
+    ok: false
+    errorCode: string
+    message: string
+  }>((resolve) => {
+    setTimeout(() => {
+      resolve({
+        ok: false,
+        errorCode: 'MEDIA_PERSIST_TIMEOUT',
+        message: '视频生成已完成，但媒体转存仍在处理中，本次先返回 Provider 视频链接。',
+      })
+    }, VIDEO_PERSISTENCE_TIMEOUT_MS)
+  })
+}
+
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser()
   if (!currentUser) {
@@ -72,21 +90,24 @@ export async function GET(request: NextRequest) {
       providerId,
       metadata: { model: result.model, taskId },
     })
-    const persistence = await persistGeneratedMedia({
-      url: result.videoUrl,
-      type: 'video',
-      projectId,
-      workflowId,
-      nodeId,
-      filenameHint: 'generated-video.mp4',
-      sourceProvider: providerId,
-      userId: currentUser.id,
-      metadata: { model: result.model, taskId, assetIntelligence },
-    }).catch((error: unknown) => ({
-      ok: false as const,
-      errorCode: 'MEDIA_PERSIST_FAILED',
-      message: error instanceof Error ? error.message : '生成视频转存失败。',
-    }))
+    const persistence = await Promise.race([
+      persistGeneratedMedia({
+        url: result.videoUrl,
+        type: 'video',
+        projectId,
+        workflowId,
+        nodeId,
+        filenameHint: 'generated-video.mp4',
+        sourceProvider: providerId,
+        userId: currentUser.id,
+        metadata: { model: result.model, taskId, assetIntelligence },
+      }).catch((error: unknown) => ({
+        ok: false as const,
+        errorCode: 'MEDIA_PERSIST_FAILED',
+        message: error instanceof Error ? error.message : '生成视频转存失败。',
+      })),
+      mediaPersistenceTimeout(),
+    ])
 
     if (persistence.ok) {
       return NextResponse.json({

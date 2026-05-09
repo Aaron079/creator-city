@@ -237,7 +237,7 @@ interface CanvasEdge {
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
   text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'openai-text' },
   image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'openai-image', ratio: '16:9' },
-  video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'custom-video-gateway', ratio: '16:9' },
+  video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'volcengine-seedance-video', ratio: '16:9' },
   audio: { title: '音频', subtitle: '补充音乐、旁白和声音氛围。', model: 'elevenlabs' },
   asset: { title: '素材', subtitle: '导入图片、视频或音频参考素材。', model: 'asset-drop' },
   template: { title: '模板', subtitle: '从模板流程继续创作。', model: 'asset-drop' },
@@ -1198,6 +1198,7 @@ export function VisualCanvasWorkspace({
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
   const [activePreviewType, setActivePreviewType] = useState<CanvasNodePreviewType | null>(null)
+  const [activeMediaReview, setActiveMediaReview] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
   const [activeInspectorNodeId, setActiveInspectorNodeId] = useState<string | null>(null)
   const [activeMediaDiagnostics, setActiveMediaDiagnostics] = useState<{ nodeId: string; type: 'image' | 'video' } | null>(null)
   const [activeCreativeAssetsNodeId, setActiveCreativeAssetsNodeId] = useState<string | null>(null)
@@ -2262,6 +2263,7 @@ export function VisualCanvasWorkspace({
   const closeActivePreview = useCallback(() => {
     setActivePreviewNodeId(null)
     setActivePreviewType(null)
+    setActiveMediaReview(null)
     setTextEditorDraft('')
     setTextEditorCopied(false)
     setPreviewLinkCopied(false)
@@ -2299,6 +2301,9 @@ export function VisualCanvasWorkspace({
     if (activePreviewNodeId === nodeId) {
       closeActivePreview()
     }
+    if (activeMediaReview?.nodeId === nodeId) {
+      closeActivePreview()
+    }
     if (activeInspectorNodeId === nodeId) {
       closePromptInspector()
     }
@@ -2312,7 +2317,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activeMediaDiagnostics?.nodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closeMediaDiagnostics, closePromptInspector, commitEdges, commitNodes, edges])
+  }, [activeCreativeAssetsNodeId, activeInspectorNodeId, activeMediaDiagnostics?.nodeId, activeMediaReview?.nodeId, activePreviewNodeId, closeActivePreview, closeCreativeAssets, closeMediaDiagnostics, closePromptInspector, commitEdges, commitNodes, edges])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
     const position = resolveNonOverlappingPosition(
@@ -2406,10 +2411,10 @@ export function VisualCanvasWorkspace({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (activePreviewNodeId || activeInspectorNodeId || activeCreativeAssetsNodeId) {
+        if (activePreviewNodeId || activeMediaReview || activeInspectorNodeId || activeCreativeAssetsNodeId) {
           event.preventDefault()
         }
-        if (activePreviewNodeId) {
+        if (activePreviewNodeId || activeMediaReview) {
           closeActivePreview()
         }
         if (activeInspectorNodeId) {
@@ -2472,7 +2477,7 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
+  }, [activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeMediaReview, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
@@ -2777,6 +2782,16 @@ export function VisualCanvasWorkspace({
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
   const activePreviewImageDisplayUrl = getProxiedMediaUrl(activePreviewImageUrl)
   const activePreviewVideoDisplayUrl = getProxiedMediaUrl(activePreviewVideoUrl)
+  const activeMediaReviewNode = useMemo(
+    () => nodes.find((node) => node.id === activeMediaReview?.nodeId) ?? null,
+    [activeMediaReview?.nodeId, nodes],
+  )
+  const activeMediaReviewUrl = activeMediaReview?.type === 'image' && activeMediaReviewNode?.kind === 'image'
+    ? getNodeImageUrl(activeMediaReviewNode)
+    : activeMediaReview?.type === 'video' && activeMediaReviewNode?.kind === 'video'
+      ? getNodeVideoUrl(activeMediaReviewNode)
+      : ''
+  const activeMediaReviewDisplayUrl = getProxiedMediaUrl(activeMediaReviewUrl)
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -3125,14 +3140,14 @@ export function VisualCanvasWorkspace({
     }
     setActiveNodeId(nodeId)
     setActiveEdgeId(null)
-    if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
+    if ((activePreviewNodeId && activePreviewNodeId !== nodeId) || (activeMediaReview && activeMediaReview.nodeId !== nodeId)) {
       closeActivePreview()
     }
     setEditingNodeId(null)
     setDraggingNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [activePreviewNodeId, closeActivePreview, nodes])
+  }, [activeMediaReview, activePreviewNodeId, closeActivePreview, nodes])
   const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
   useEffect(() => {
@@ -3196,7 +3211,7 @@ export function VisualCanvasWorkspace({
   }, [imageProviderStatusMap, videoProviderStatusMap])
 
   const focusPromptForNode = useCallback((node: VisualCanvasNode) => {
-    if (activePreviewNodeId && activePreviewNodeId !== node.id) {
+    if ((activePreviewNodeId && activePreviewNodeId !== node.id) || (activeMediaReview && activeMediaReview.nodeId !== node.id)) {
       closeActivePreview()
     }
     setActiveNodeId(node.id)
@@ -3212,7 +3227,7 @@ export function VisualCanvasWorkspace({
       promptInputRef.current?.focus()
       promptInputRef.current?.select()
     }, 0)
-  }, [activePreviewNodeId, closeActivePreview, syncPromptPreset])
+  }, [activeMediaReview, activePreviewNodeId, closeActivePreview, syncPromptPreset])
 
   const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
     if (type !== 'text' && type !== node.kind) return
@@ -3220,8 +3235,18 @@ export function VisualCanvasWorkspace({
     setActiveNodeId(node.id)
     setActiveEdgeId(null)
     setEditingNodeId(null)
+    if (type === 'image' || type === 'video') {
+      setActivePreviewNodeId(null)
+      setActivePreviewType(null)
+      setActiveMediaReview({ nodeId: node.id, type })
+      setTextEditorDraft('')
+      setTextEditorCopied(false)
+      setPreviewLinkCopied(false)
+      return
+    }
     setActivePreviewNodeId(node.id)
     setActivePreviewType(type)
+    setActiveMediaReview(null)
     setPreviewLinkCopied(false)
     if (type === 'text') {
       setTextEditorDraft(node.resultText ?? '')
@@ -5644,6 +5669,108 @@ export function VisualCanvasWorkspace({
           onCreateSceneReplaceImageNode={handleCreateSceneReplaceImageNode}
           onClose={closeCreativeAssets}
         />
+      ) : null}
+
+      {activeMediaReview?.type === 'image' && activeMediaReviewNode?.kind === 'image' && activeMediaReviewUrl ? (
+        <div
+          className="canvas-image-preview-backdrop"
+          role="presentation"
+          data-node-preview-overlay="true"
+          data-no-node-drag="true"
+          onClick={closeActivePreview}
+        >
+          <section
+            className="canvas-image-preview-dialog is-node-content-preview"
+            role="dialog"
+            aria-modal="true"
+            aria-label="图片审阅"
+            data-node-preview-overlay="true"
+            style={{
+              border: 0,
+              background: 'transparent',
+              boxShadow: 'none',
+              maxHeight: '88vh',
+              maxWidth: '92vw',
+              overflow: 'visible',
+              padding: 0,
+              width: 'auto',
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <img
+              src={activeMediaReviewDisplayUrl}
+              alt={activeMediaReviewNode.title}
+              className="canvas-image-preview-media"
+              draggable={false}
+              style={{
+                border: 0,
+                borderRadius: 0,
+                display: 'block',
+                height: 'auto',
+                maxHeight: '88vh',
+                maxWidth: '92vw',
+                objectFit: 'contain',
+                width: 'auto',
+              }}
+            />
+          </section>
+        </div>
+      ) : null}
+
+      {activeMediaReview?.type === 'video' && activeMediaReviewNode?.kind === 'video' && activeMediaReviewUrl ? (
+        <div
+          className="canvas-video-preview-backdrop"
+          role="presentation"
+          data-node-preview-overlay="true"
+          data-no-node-drag="true"
+          onClick={closeActivePreview}
+        >
+          <section
+            className="canvas-video-preview-dialog is-node-content-preview"
+            role="dialog"
+            aria-modal="true"
+            aria-label="视频审阅"
+            data-node-preview-overlay="true"
+            style={{
+              border: 0,
+              background: 'transparent',
+              boxShadow: 'none',
+              maxHeight: '88vh',
+              maxWidth: '92vw',
+              overflow: 'visible',
+              padding: 0,
+              width: 'auto',
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <video
+              src={activeMediaReviewDisplayUrl}
+              poster={activeMediaReviewNode.preview?.poster ? getProxiedMediaUrl(activeMediaReviewNode.preview.poster) : undefined}
+              className="canvas-video-preview-media"
+              controls
+              autoPlay
+              playsInline
+              style={{
+                border: 0,
+                borderRadius: 0,
+                display: 'block',
+                maxHeight: '88vh',
+                maxWidth: '92vw',
+                objectFit: 'contain',
+              }}
+            />
+          </section>
+        </div>
       ) : null}
 
       {editingNode && nodeDialogStyle ? (
