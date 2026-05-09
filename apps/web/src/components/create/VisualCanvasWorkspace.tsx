@@ -465,6 +465,13 @@ type GenerateApiResult = GenerateResponse & {
   imageUrl?: string
   dataUrl?: string
   asset?: { id?: string; url?: string | null }
+  assetId?: string
+  resultImageUrl?: string
+  resultVideoUrl?: string
+  originalProviderImageUrl?: string
+  originalProviderVideoUrl?: string
+  mediaPersistence?: unknown
+  warning?: string
   upstreamStatus?: number
   upstreamMessage?: string
   rawCode?: string
@@ -756,12 +763,22 @@ function textErrorMetadata(node: VisualCanvasNode, result: GenerateApiResult) {
 }
 
 function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
+  const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
+    ? result.result.metadata as Record<string, unknown>
+    : {}
+  const assetUrl = typeof resultMetadata.assetUrl === 'string'
+    ? resultMetadata.assetUrl
+    : result.asset?.url || result.result?.imageUrl || result.imageUrl || result.resultImageUrl
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
-    model: result.model ?? result.result?.metadata?.model,
+    model: result.model ?? resultMetadata.model,
     generationSource: result.providerId || providerId,
-    assetId: result.asset?.id ?? result.result?.metadata?.assetId,
+    assetId: result.asset?.id ?? result.assetId ?? resultMetadata.assetId,
+    assetUrl,
+    originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
+    mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
   }
 }
 
@@ -775,12 +792,20 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ?? taskId
   const submittedAt = result.submittedAt ?? (typeof resultMetadata.submittedAt === 'string' ? resultMetadata.submittedAt : undefined)
   const completedAt = result.completedAt ?? (typeof resultMetadata.completedAt === 'string' ? resultMetadata.completedAt : undefined)
+  const assetUrl = typeof resultMetadata.assetUrl === 'string'
+    ? resultMetadata.assetUrl
+    : result.asset?.url || result.result?.videoUrl || result.videoUrl || result.resultVideoUrl
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
     model: result.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined),
     taskId,
     generationJobId,
+    assetId: result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined),
+    assetUrl,
+    originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
+    mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
     ...(submittedAt ? { submittedAt } : {}),
     ...(completedAt ? { completedAt } : {}),
   }
@@ -898,10 +923,17 @@ async function pollGenerationJob(jobId: string): Promise<GenerateApiResult> {
   }
 }
 
-async function pollSeedanceVideoTask(providerId: string, taskId: string): Promise<GenerateApiResult> {
+async function pollSeedanceVideoTask(
+  providerId: string,
+  taskId: string,
+  context?: { projectId?: string; workflowId?: string; nodeId?: string },
+): Promise<GenerateApiResult> {
   let response: Response
   try {
     const params = new URLSearchParams({ providerId, taskId })
+    if (context?.projectId) params.set('projectId', context.projectId)
+    if (context?.workflowId) params.set('workflowId', context.workflowId)
+    if (context?.nodeId) params.set('nodeId', context.nodeId)
     response = await fetch(`/api/generate/video/status?${params.toString()}`, {
       credentials: 'include',
       cache: 'no-store',
@@ -1053,8 +1085,8 @@ function workflowErrorFromGenerateResult(node: VisualCanvasNode, result: Generat
 
 function workflowResultFromGenerateResult(node: VisualCanvasNode, result: GenerateApiResult, fallbackPrompt: string): CanvasWorkflowRunNodeResult {
   const resultText = getGeneratedText(result)
-  const resultImageUrl = result.result?.imageUrl
-  const resultVideoUrl = result.result?.videoUrl
+  const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl
+  const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
   const resultAudioUrl = result.result?.audioUrl
   if (node.kind === 'video' && result.async && result.taskId) {
     return {
@@ -2876,7 +2908,11 @@ export function VisualCanvasWorkspace({
     }
 
     const checkedAt = new Date().toISOString()
-    const statusResult = await pollSeedanceVideoTask(task.providerId, task.taskId)
+    const statusResult = await pollSeedanceVideoTask(task.providerId, task.taskId, {
+      projectId,
+      workflowId,
+      nodeId: task.nodeId,
+    })
     const normalizedStatus = String(statusResult.status ?? '')
     const currentMetadata = metadataRecord(nodeSnapshot.metadataJson)
 
@@ -2909,6 +2945,11 @@ export function VisualCanvasWorkspace({
         model: statusResult.model ?? task.model ?? currentMetadata.model,
         taskId: task.taskId,
         generationJobId: task.taskId,
+        assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
+        assetUrl: videoUrl,
+        originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
+        mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
+        ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
         completedAt,
         lastCheckedAt: checkedAt,
       }
@@ -2955,7 +2996,7 @@ export function VisualCanvasWorkspace({
     scheduleCanvasSave(0)
     showCanvasFeedback(errMsg)
     return errMsg
-  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
+  }, [flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
 
   const handleNodeDragStart = useCallback((
     nodeId: string,
@@ -3858,7 +3899,11 @@ export function VisualCanvasWorkspace({
     if (nodeSnapshot.kind === 'video' && normalizedPromptModel === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
       setDialogError(null)
       showCanvasFeedback('正在查询视频任务状态...')
-      void pollSeedanceVideoTask(normalizedPromptModel, currentTaskId).then((statusResult) => {
+      void pollSeedanceVideoTask(normalizedPromptModel, currentTaskId, {
+        projectId,
+        workflowId,
+        nodeId: nodeSnapshot.id,
+      }).then((statusResult) => {
         if (statusResult.status === 'running') {
           handleNodePatch(nodeSnapshot.id, {
             status: 'running',
@@ -3907,6 +3952,11 @@ export function VisualCanvasWorkspace({
           model: statusResult.model ?? currentMetadata.model,
           taskId: currentTaskId,
           generationJobId: currentTaskId,
+          assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
+          assetUrl: videoUrl,
+          originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
+          mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
+          ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
           completedAt: new Date().toISOString(),
         }
         handleNodePatch(nodeSnapshot.id, {
@@ -3918,15 +3968,17 @@ export function VisualCanvasWorkspace({
           metadataJson,
           preview: { type: 'remote-video', url: videoUrl, poster: videoUrl, licenseType: 'original', attribution: 'Generated by Volcengine Seedance' },
         })
-        void createGeneratedAsset({
-          nodeId: nodeSnapshot.id,
-          type: 'video',
-          title: `${nodeSnapshot.title} 视频结果`,
-          url: videoUrl,
-          providerId: normalizedPromptModel,
-          generationJobId: currentTaskId,
-          metadataJson,
-        })
+        if (!statusResult.asset?.id && !statusResult.assetId) {
+          void createGeneratedAsset({
+            nodeId: nodeSnapshot.id,
+            type: 'video',
+            title: `${nodeSnapshot.title} 视频结果`,
+            url: videoUrl,
+            providerId: normalizedPromptModel,
+            generationJobId: currentTaskId,
+            metadataJson,
+          })
+        }
         commitEdges((current) => current.map((edge) => (
           edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
         )))
@@ -4193,8 +4245,8 @@ export function VisualCanvasWorkspace({
       }
 
       const resultText = getGeneratedText(result)
-      const resultImageUrl = result.result?.imageUrl ?? result.imageUrl ?? result.dataUrl
-      const resultVideoUrl = result.result?.videoUrl
+      const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
+      const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
       const resultPreview = resultText?.slice(0, 200) ?? (resultImageUrl ? '图片已生成' : fallbackPreview)
       handleNodePatch(nodeSnapshot.id, {
         status: 'done',
@@ -4231,7 +4283,7 @@ export function VisualCanvasWorkspace({
           generationJobId: result.jobId,
         })
       }
-      if (resultVideoUrl) {
+      if (resultVideoUrl && !result.asset?.id && !result.assetId) {
         void createGeneratedAsset({
           nodeId: nodeSnapshot.id,
           type: 'video',

@@ -221,10 +221,21 @@ export async function POST(request: NextRequest) {
     const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
       ? result.result.metadata as Record<string, unknown>
       : {}
+    const resultWithMedia = result as typeof result & {
+      asset?: { id?: string }
+      originalProviderImageUrl?: unknown
+      mediaPersistence?: unknown
+      warning?: unknown
+    }
     return NextResponse.json({
       ...result,
+      resultImageUrl: result.result?.imageUrl,
       imageUrl: result.result?.imageUrl,
       dataUrl: result.result?.imageUrl?.startsWith('data:image/') ? result.result.imageUrl : undefined,
+      assetId: resultWithMedia.asset?.id ?? resultMetadata.assetId,
+      originalProviderImageUrl: resultMetadata.originalProviderImageUrl ?? resultWithMedia.originalProviderImageUrl,
+      mediaPersistence: resultMetadata.mediaPersistence ?? resultWithMedia.mediaPersistence,
+      warning: resultWithMedia.warning,
       model: typeof resultMetadata.model === 'string' ? resultMetadata.model : raw.model,
       upstreamStatus: raw.upstreamStatus,
       upstreamMessage: raw.upstreamMessage,

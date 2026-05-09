@@ -31,9 +31,9 @@ export function getNodeImageUrl(node?: MediaNodeLike | null) {
   const pluginOutput = recordValue(pluginResult.output)
 
   return stringValue(node.resultImageUrl)
+    || stringValue(metadata.assetUrl)
     || stringValue(metadata.resultImageUrl)
     || stringValue(metadata.imageUrl)
-    || stringValue(metadata.assetUrl)
     || stringValue(pluginResult.imageUrl)
     || stringValue(pluginResult.resultImageUrl)
     || stringValue(pluginData.imageUrl)
@@ -50,9 +50,9 @@ export function getNodeVideoUrl(node?: MediaNodeLike | null) {
   const pluginOutput = recordValue(pluginResult.output)
 
   return stringValue(node.resultVideoUrl)
+    || stringValue(metadata.assetUrl)
     || stringValue(metadata.resultVideoUrl)
     || stringValue(metadata.videoUrl)
-    || stringValue(metadata.assetUrl)
     || stringValue(pluginResult.videoUrl)
     || stringValue(pluginResult.resultVideoUrl)
     || stringValue(pluginData.videoUrl)

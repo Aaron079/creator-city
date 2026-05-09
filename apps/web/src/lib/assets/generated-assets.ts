@@ -5,6 +5,7 @@ import type { GenerateResponse, GenerateResult, GenerateNodeType } from '@/lib/p
 import { toAssetType } from '@/lib/projects/canvas-mappers'
 import { isChinaStorageError } from '@/lib/storage/china/errors'
 import { isChinaStorageConfigured, putChinaObject } from '@/lib/storage/china/gateway'
+import { persistGeneratedMedia } from './persist-generated-media'
 
 type SaveGeneratedAssetInput = {
   userId: string
@@ -181,10 +182,102 @@ export async function saveGeneratedAsset(input: SaveGeneratedAssetInput) {
 
 export async function attachGeneratedAsset(response: GenerateResponse, input: Omit<SaveGeneratedAssetInput, 'generationJobId' | 'result'>) {
   if (!response.success || !response.result) return response
+  const responseResult = response.result
+  const mediaUrl = input.nodeType === 'image'
+    ? responseResult.imageUrl
+    : input.nodeType === 'video'
+      ? responseResult.videoUrl
+      : undefined
+  if ((input.nodeType === 'image' || input.nodeType === 'video') && mediaUrl && !mediaUrl.startsWith('data:')) {
+    const persistence = await persistGeneratedMedia({
+      url: mediaUrl,
+      type: input.nodeType,
+      projectId: input.projectId,
+      workflowId: input.workflowId,
+      nodeId: input.nodeId,
+      filenameHint: input.nodeType === 'image' ? 'generated-image.png' : 'generated-video.mp4',
+      sourceProvider: input.providerId,
+      userId: input.userId,
+      metadata: {
+        model: responseResult.metadata?.model,
+        prompt: input.prompt,
+        generationJobId: response.billingJobId ?? response.jobId,
+      },
+    }).catch((error: unknown) => ({
+      ok: false as const,
+      errorCode: 'MEDIA_PERSIST_FAILED',
+      message: error instanceof Error ? error.message : '生成媒体转存失败。',
+    }))
+
+    if (persistence.ok) {
+      const metadata = {
+        ...(responseResult.metadata ?? {}),
+        assetId: persistence.assetId,
+        assetUrl: persistence.stableUrl,
+        mediaPersistence: persistence,
+        ...(input.nodeType === 'image' ? { originalProviderImageUrl: mediaUrl } : { originalProviderVideoUrl: mediaUrl }),
+      }
+      return {
+        ...response,
+        asset: {
+          id: persistence.assetId,
+          type: toAssetType(input.nodeType),
+          url: persistence.stableUrl,
+          dataUrl: null,
+          thumbnailUrl: input.nodeType === 'image' ? persistence.stableUrl : null,
+          providerId: persistence.storageProvider,
+          generationJobId: response.billingJobId ?? response.jobId,
+          projectId: input.projectId,
+          workflowId: input.workflowId,
+          nodeId: input.nodeId,
+        },
+        imageUrl: input.nodeType === 'image' ? persistence.stableUrl : undefined,
+        videoUrl: input.nodeType === 'video' ? persistence.stableUrl : undefined,
+        resultImageUrl: input.nodeType === 'image' ? persistence.stableUrl : undefined,
+        resultVideoUrl: input.nodeType === 'video' ? persistence.stableUrl : undefined,
+        originalProviderImageUrl: input.nodeType === 'image' ? mediaUrl : undefined,
+        originalProviderVideoUrl: input.nodeType === 'video' ? mediaUrl : undefined,
+        mediaPersistence: persistence,
+        result: {
+          ...responseResult,
+          imageUrl: input.nodeType === 'image' ? persistence.stableUrl : responseResult.imageUrl,
+          videoUrl: input.nodeType === 'video' ? persistence.stableUrl : responseResult.videoUrl,
+          previewUrl: input.nodeType === 'image' ? persistence.stableUrl : responseResult.previewUrl,
+          metadata,
+        },
+      }
+    }
+
+    response = {
+      ...response,
+      warning: '生成成功，但媒体转存失败，链接可能会过期。',
+      originalProviderImageUrl: input.nodeType === 'image' ? mediaUrl : undefined,
+      originalProviderVideoUrl: input.nodeType === 'video' ? mediaUrl : undefined,
+      mediaPersistence: {
+        status: 'failed',
+        errorCode: persistence.errorCode,
+        message: persistence.message,
+      },
+      result: {
+        ...responseResult,
+        metadata: {
+          ...(responseResult.metadata ?? {}),
+          mediaPersistence: {
+            status: 'failed',
+            errorCode: persistence.errorCode,
+            message: persistence.message,
+          },
+          ...(input.nodeType === 'image' ? { originalProviderImageUrl: mediaUrl } : { originalProviderVideoUrl: mediaUrl }),
+        },
+      },
+    } as GenerateResponse
+  }
+  const finalResult = response.result
+  if (!finalResult) return response
   const asset = await saveGeneratedAsset({
     ...input,
     generationJobId: response.billingJobId ?? response.jobId,
-    result: response.result,
+    result: finalResult,
   }).catch((error: unknown) => {
     console.error('[assets] failed to save generated asset', error)
     return null
@@ -193,7 +286,7 @@ export async function attachGeneratedAsset(response: GenerateResponse, input: Om
   const assetUrl = asset.url || asset.dataUrl || undefined
   const resultImageUrl = input.nodeType === 'image' && assetUrl
     ? assetUrl
-    : response.result.imageUrl
+    : finalResult.imageUrl
   return {
     ...response,
     asset: {
@@ -210,11 +303,11 @@ export async function attachGeneratedAsset(response: GenerateResponse, input: Om
       nodeId: asset.nodeId,
     },
     result: {
-      ...response.result,
+      ...finalResult,
       imageUrl: resultImageUrl,
-      previewUrl: input.nodeType === 'image' ? resultImageUrl ?? response.result.previewUrl : response.result.previewUrl,
+      previewUrl: input.nodeType === 'image' ? resultImageUrl ?? finalResult.previewUrl : finalResult.previewUrl,
       metadata: {
-        ...(response.result.metadata ?? {}),
+        ...(finalResult.metadata ?? {}),
         assetId: asset.id,
       },
     },
