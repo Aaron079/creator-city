@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { VisualCanvasNode as CanvasNode } from '@/components/create/CanvasNodeCard'
-import { ImageEditStudio } from './ImageEditStudio'
+import { ImageEditCanvas } from './ImageEditCanvas'
+import { SceneReplacePluginPanel } from './SceneReplacePluginPanel'
 import {
   buildSceneProfileDraftFromNode,
-  getImageEditLayers,
-  getSceneEdits,
   getSceneEditTasks,
+  createSceneEditTask,
   sceneEditTasksMetadata,
   sceneEditTasksToSceneEdits,
   sceneEditsMetadata,
@@ -16,9 +16,11 @@ import {
   type SceneEditBrief,
   type SceneEditMark,
   type SceneEditTask,
+  type SceneEditTaskType,
   type SceneProfile,
   type SceneSourceNode,
 } from '@/lib/scenes'
+import type { ScenePluginRun } from '@/lib/scene-plugins'
 
 interface SceneLabPanelProps {
   nodes: CanvasNode[]
@@ -32,6 +34,11 @@ interface SceneLabPanelProps {
   onSceneIdsChange?: (sceneIds: string[]) => void
   onSendPromptToNode?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
   onSceneEditPromptChange?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
+  onCreateSceneReplaceImageNode?: (input: {
+    sourceNodeId: string
+    run: ScenePluginRun
+    prompt: string
+  }) => void
 }
 
 const BRIEF_FIELDS: Array<{
@@ -110,8 +117,8 @@ export function SceneLabPanel({
   initialSourceNodeId,
   onSaveScene,
   onSceneIdsChange,
-  onSendPromptToNode,
   onSceneEditPromptChange,
+  onCreateSceneReplaceImageNode,
 }: SceneLabPanelProps) {
   const sourceNodes = useMemo(
     () => nodes.filter((node) => node.kind === 'image' || node.kind === 'video'),
@@ -123,6 +130,8 @@ export function SceneLabPanel({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [brief, setBrief] = useState<Partial<SceneEditBrief>>({})
   const [sceneSaveState, setSceneSaveState] = useState<'idle' | 'saved'>('idle')
+  const [tasks, setTasks] = useState<SceneEditTask[]>([])
+  const [selectedTaskId, setSelectedTaskId] = useState('')
 
   useEffect(() => {
     if (initialSourceNodeId) setSourceNodeId(initialSourceNodeId)
@@ -136,6 +145,21 @@ export function SceneLabPanel({
   const source = sourceNode ? sourceFromNode(sourceNode) : null
   const imageUrl = sourceNode?.kind === 'image' ? sourceNode.resultImageUrl : ''
   const boundScenes = sceneBible.scenes.filter((scene) => selectedSceneIds.includes(scene.id))
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null
+  const selectedRegion = selectedTask
+    ? { x: selectedTask.x, y: selectedTask.y, width: selectedTask.width, height: selectedTask.height }
+    : null
+
+  useEffect(() => {
+    if (!sourceNode) {
+      setTasks([])
+      setSelectedTaskId('')
+      return
+    }
+    const nextTasks = getSceneEditTasks(sourceNode.metadataJson).filter((task) => task.type === 'replace-scene')
+    setTasks(nextTasks)
+    setSelectedTaskId(nextTasks[0]?.id ?? '')
+  }, [sourceNode])
 
   const saveTasks = (tasks: SceneEditTask[], sceneEdits: SceneEditMark[], prompt: string) => {
     if (!sourceNode || !source) return
@@ -148,22 +172,34 @@ export function SceneLabPanel({
     onSceneEditPromptChange?.(source.nodeId, prompt, source.nodeId)
   }
 
-  const sendPrompt = (nodeId: string, prompt: string) => {
-    const targetNode = nodes.find((node) => node.id === nodeId) ?? sourceNode
-    if (!targetNode || !source) return
-    mutateNodeMetadata(
-      targetNode,
-      getSceneEditTasks(targetNode.metadataJson),
-      sceneEditTasksToSceneEdits(getSceneEditTasks(targetNode.metadataJson)),
-      {
-        previousPrompt: targetNode.prompt,
-        sceneEditPromptPreview: compactText(prompt, 1000),
-        sceneEditPromptSourceNodeId: source.nodeId,
-        sceneEditPromptUpdatedAt: new Date().toISOString(),
-        sceneEditTaskMode: 'scene-edit-plugin',
-      },
-    )
-    onSendPromptToNode?.(targetNode.id, prompt, source.nodeId)
+  const commitCanvasAction = (input: { type: SceneEditTaskType; x: number; y: number; width: number; height: number }) => {
+    const task = createSceneEditTask({
+      ...input,
+      type: 'replace-scene',
+      instruction: '把选区替换为新的场景，同时保持未选中区域稳定。',
+    })
+    setTasks([task])
+    setSelectedTaskId(task.id)
+  }
+
+  const moveTask = (taskId: string, x: number, y: number) => {
+    setTasks((current) => current.map((task) => task.id === taskId ? { ...task, x, y } : task))
+  }
+
+  const clearReplaceRegion = () => {
+    setTasks([])
+    setSelectedTaskId('')
+  }
+
+  const createSceneReplaceImageNode = (run: ScenePluginRun, prompt: string) => {
+    if (!sourceNode) return
+    const nextTasks = tasks.length ? tasks : selectedTask ? [selectedTask] : []
+    saveTasks(nextTasks, sceneEditTasksToSceneEdits(nextTasks), prompt)
+    onCreateSceneReplaceImageNode?.({
+      sourceNodeId: sourceNode.id,
+      run,
+      prompt,
+    })
   }
 
   const saveSourceAsScene = (bindToCurrentNode = false) => {
@@ -189,8 +225,8 @@ export function SceneLabPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Scene Lab</p>
-            <h3 className="mt-1 text-base font-semibold text-white/88">Scene Edit Plugin / 场景修改插件</h3>
-            <p className="mt-1 text-xs text-white/46">只框选场景区域并定义替换、天气时间、空间结构、保留、移除和一致性任务；不会覆盖或破坏原图。</p>
+            <h3 className="mt-1 text-base font-semibold text-white/88">Scene Plugin Runtime / 场景插件</h3>
+            <p className="mt-1 text-xs text-white/46">第一版启用“场景替换”：框选区域，填写替换目标，一键创建新的 Image 节点。</p>
           </div>
           <label className="grid min-w-[240px] gap-1.5">
             <span className="text-xs font-semibold text-white/50">来源 Image 节点</span>
@@ -205,16 +241,55 @@ export function SceneLabPanel({
       </section>
 
       {sourceNode && imageUrl ? (
-        <ImageEditStudio
-          key={sourceNode.id}
-          node={sourceNode}
-          imageUrl={imageUrl}
-          sceneEditTasks={getSceneEditTasks(sourceNode.metadataJson)}
-          sceneEdits={getSceneEdits(sourceNode.metadataJson)}
-          imageEditLayers={getImageEditLayers(sourceNode.metadataJson)}
-          onSaveTasks={saveTasks}
-          onSendPromptToImageNode={sendPrompt}
-        />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" data-no-node-drag="true">
+          <div className="grid gap-3">
+            <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-xs font-semibold text-white/52">插件列表</div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                {[
+                  ['场景替换', '可用'],
+                  ['保留区域', '下一步'],
+                  ['移除区域', '下一步'],
+                  ['天气时间', '下一步'],
+                  ['空间结构', '下一步'],
+                ].map(([name, state], index) => (
+                  <button
+                    key={name}
+                    type="button"
+                    disabled={index !== 0}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs ${index === 0 ? 'border-cyan-200/28 bg-cyan-200/12 text-cyan-50' : 'border-white/10 bg-white/[0.035] text-white/38'}`}
+                  >
+                    <span className="block font-semibold">{name}</span>
+                    <span className="mt-1 block">{state}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ImageEditCanvas
+              imageUrl={imageUrl}
+              imageAlt={sourceNode.title}
+              tasks={tasks}
+              activeTool="replace-scene"
+              selectedTaskId={selectedTaskId}
+              onCanvasCommit={commitCanvasAction}
+              onSelectTask={setSelectedTaskId}
+              onMoveTask={moveTask}
+            />
+          </div>
+          <SceneReplacePluginPanel
+            sourceNode={{
+              id: sourceNode.id,
+              title: sourceNode.title,
+              prompt: sourceNode.prompt,
+              resultImageUrl: sourceNode.resultImageUrl,
+            }}
+            region={selectedRegion}
+            projectId={projectId}
+            sceneBible={sceneBible}
+            onCreateImageNode={createSceneReplaceImageNode}
+            onClearRegion={clearReplaceRegion}
+          />
+        </div>
       ) : (
         <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-white/14 bg-black/22 p-8 text-center">
           <div>

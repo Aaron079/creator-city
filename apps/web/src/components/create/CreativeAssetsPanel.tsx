@@ -14,9 +14,12 @@ import { SceneBiblePanel } from './SceneBiblePanel'
 import { SceneLabPanel } from './SceneLabPanel'
 import { CharacterReferenceBoard } from './CharacterReferenceBoard'
 import { CharacterReferencePackGenerator } from './CharacterReferencePackGenerator'
+import type { ScenePluginRun } from '@/lib/scene-plugins'
 
 type CharacterSubTab = 'settings' | 'references' | 'generator'
-type CreativeAssetTab = 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'
+type CreativeAssetTab = 'characters' | 'scenes' | 'palette' | 'props' | 'camera'
+type CreativeAssetInitialTab = CreativeAssetTab | 'scene-lab'
+type SceneSubTab = 'library' | 'plugins'
 
 interface CreativeAssetsPanelProps {
   open: boolean
@@ -28,7 +31,7 @@ interface CreativeAssetsPanelProps {
   sceneBible: SceneBible
   selectedCharacterIds: string[]
   selectedSceneIds: string[]
-  initialTab?: CreativeAssetTab
+  initialTab?: CreativeAssetInitialTab
   initialSceneLabSourceNodeId?: string
   onCharacterBibleSave: (bible: CharacterBible) => void
   onSceneBibleSave: (bible: SceneBible) => void
@@ -36,13 +39,17 @@ interface CreativeAssetsPanelProps {
   onSceneIdsChange: (sceneIds: string[]) => void
   onSendPromptToNode?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
   onSceneEditPromptChange?: (nodeId: string, prompt: string, sourceNodeId?: string) => void
+  onCreateSceneReplaceImageNode?: (input: {
+    sourceNodeId: string
+    run: ScenePluginRun
+    prompt: string
+  }) => void
   onClose: () => void
 }
 
 const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
   { id: 'characters', label: '角色' },
   { id: 'scenes', label: '场景' },
-  { id: 'scene-lab', label: 'Scene Lab' },
   { id: 'palette', label: '调色' },
   { id: 'props', label: '道具' },
   { id: 'camera', label: '镜头' },
@@ -52,6 +59,11 @@ const CHARACTER_SUB_TABS: Array<{ id: CharacterSubTab; label: string }> = [
   { id: 'settings', label: '角色设定' },
   { id: 'references', label: '参考资产' },
   { id: 'generator', label: '生成参考包' },
+]
+
+const SCENE_SUB_TABS: Array<{ id: SceneSubTab; label: string }> = [
+  { id: 'library', label: '场景库' },
+  { id: 'plugins', label: '场景编辑插件' },
 ]
 
 const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
@@ -104,6 +116,10 @@ function toggleId(ids: string[], id: string, checked: boolean) {
   return checked ? [...new Set([...ids, id])] : ids.filter((item) => item !== id)
 }
 
+function normalizeCreativeAssetTab(tab?: CreativeAssetInitialTab): CreativeAssetTab {
+  return tab === 'scene-lab' ? 'scenes' : (tab ?? 'characters')
+}
+
 function BindingSummary({
   characterCount,
   sceneCount,
@@ -152,10 +168,12 @@ export function CreativeAssetsPanel({
   onSceneIdsChange,
   onSendPromptToNode,
   onSceneEditPromptChange,
+  onCreateSceneReplaceImageNode,
   onClose,
 }: CreativeAssetsPanelProps) {
-  const [activeTab, setActiveTab] = useState<CreativeAssetTab>(initialTab ?? 'characters')
+  const [activeTab, setActiveTab] = useState<CreativeAssetTab>(normalizeCreativeAssetTab(initialTab))
   const [characterSubTab, setCharacterSubTab] = useState<CharacterSubTab>('settings')
+  const [sceneSubTab, setSceneSubTab] = useState<SceneSubTab>(initialTab === 'scene-lab' ? 'plugins' : 'library')
   const [draftCharacterBible, setDraftCharacterBible] = useState<CharacterBible>(characterBible)
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -172,7 +190,9 @@ export function CreativeAssetsPanel({
       return
     }
     if (!wasOpenRef.current) {
-      setActiveTab((initialTab ?? 'characters') === 'characters' && currentNodeCanSeedSceneLab && sceneBible.scenes.length === 0 ? 'scene-lab' : (initialTab ?? 'characters'))
+      const shouldOpenScenePlugins = initialTab === 'scene-lab' || ((initialTab ?? 'characters') === 'characters' && currentNodeCanSeedSceneLab && sceneBible.scenes.length === 0)
+      setActiveTab(shouldOpenScenePlugins ? 'scenes' : normalizeCreativeAssetTab(initialTab))
+      setSceneSubTab(shouldOpenScenePlugins ? 'plugins' : 'library')
       wasOpenRef.current = true
     }
     setDraftCharacterBible(characterBible)
@@ -459,87 +479,101 @@ export function CreativeAssetsPanel({
           ) : null}
 
           {activeTab === 'scenes' ? (
-            <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-              <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-white/82">场景绑定</h3>
-                  {selectedSceneIds.length ? (
-                    <button type="button" className="text-xs text-white/42 hover:text-white/78" onClick={() => onSceneIdsChange([])}>
-                      清空
-                    </button>
-                  ) : null}
+            <div className="mt-4 space-y-4">
+              <div className="flex gap-1.5">
+                {SCENE_SUB_TABS.map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${sceneSubTab === sub.id ? 'border-cyan-200/35 bg-cyan-200/12 text-cyan-50' : 'border-white/10 bg-white/[0.03] text-white/52 hover:bg-white/[0.07] hover:text-white/80'}`}
+                    onClick={() => setSceneSubTab(sub.id)}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+
+              {sceneSubTab === 'library' ? (
+                <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                  <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-white/82">场景绑定</h3>
+                      {selectedSceneIds.length ? (
+                        <button type="button" className="text-xs text-white/42 hover:text-white/78" onClick={() => onSceneIdsChange([])}>
+                          清空
+                        </button>
+                      ) : null}
+                    </div>
+                    {sceneBible.scenes.length ? (
+                      <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {sceneBible.scenes.map((scene) => {
+                          const checked = selectedSceneIdSet.has(scene.id)
+                          return (
+                            <label
+                              key={scene.id}
+                              className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-2 text-xs transition ${checked ? 'border-cyan-200/30 bg-cyan-200/12' : 'border-white/8 bg-black/16 hover:bg-white/[0.06]'}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => onSceneIdsChange(toggleId(selectedSceneIds, scene.id, event.target.checked))}
+                                className="mt-0.5"
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate font-semibold text-white/82">{scene.name}</span>
+                                <span className="mt-0.5 block truncate text-white/46">{scene.location || scene.logline || '未填写地点'}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/48">
+                        <p className="font-semibold text-white/70">场景库为空</p>
+                        <p className="mt-2">你可以在右侧新建场景，或在场景编辑插件中从当前 Image / Video 节点提取场景。</p>
+                        {currentNodeCanSeedSceneLab ? (
+                          <button
+                            type="button"
+                            className="mt-3 w-full rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
+                            onClick={() => setSceneSubTab('plugins')}
+                          >
+                            {currentNode?.kind === 'image' ? '从当前图片提取场景' : '从当前节点提取场景'}
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
+
+                  <SceneBiblePanel
+                    open
+                    embedded
+                    bible={sceneBible}
+                    onSave={onSceneBibleSave}
+                    onOpenSceneLab={() => setSceneSubTab('plugins')}
+                  />
                 </div>
-                {sceneBible.scenes.length ? (
-                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                    {sceneBible.scenes.map((scene) => {
-                      const checked = selectedSceneIdSet.has(scene.id)
-                      return (
-                        <label
-                          key={scene.id}
-                          className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-2 text-xs transition ${checked ? 'border-cyan-200/30 bg-cyan-200/12' : 'border-white/8 bg-black/16 hover:bg-white/[0.06]'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => onSceneIdsChange(toggleId(selectedSceneIds, scene.id, event.target.checked))}
-                            className="mt-0.5"
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate font-semibold text-white/82">{scene.name}</span>
-                            <span className="mt-0.5 block truncate text-white/46">{scene.location || scene.logline || '未填写地点'}</span>
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed border-white/12 p-3 text-xs leading-5 text-white/48">
-                    <p className="font-semibold text-white/70">场景库为空</p>
-                    <p className="mt-2">你可以在右侧新建场景，或在 Scene Lab 中从当前 Image / Video 节点提取场景。</p>
-                    {currentNodeCanSeedSceneLab ? (
-                      <button
-                        type="button"
-                        className="mt-3 w-full rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
-                        onClick={() => setActiveTab('scene-lab')}
-                      >
-                        {currentNode?.kind === 'image' ? '从当前图片提取场景' : '从当前节点提取场景'}
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </section>
-
-              <SceneBiblePanel
-                open
-                embedded
-                bible={sceneBible}
-                onSave={onSceneBibleSave}
-                onOpenSceneLab={() => setActiveTab('scene-lab')}
-              />
-            </div>
-          ) : null}
-
-          {activeTab === 'scene-lab' ? (
-            <div className="mt-4">
-              <SceneLabPanel
-                nodes={nodes}
-                projectId={projectId}
-                currentNode={currentNode}
-                currentNodeId={currentNodeId}
-                sceneBible={sceneBible}
-                selectedSceneIds={selectedSceneIds}
-                initialSourceNodeId={initialSceneLabSourceNodeId}
-                onSaveScene={(scene) => {
-                  const nextBible = {
-                    scenes: [...sceneBible.scenes.filter((item) => item.id !== scene.id), scene],
-                    updatedAt: new Date().toISOString(),
-                  }
-                  onSceneBibleSave(nextBible)
-                }}
-                onSceneIdsChange={onSceneIdsChange}
-                onSendPromptToNode={onSendPromptToNode}
-                onSceneEditPromptChange={onSceneEditPromptChange}
-              />
+              ) : (
+                <SceneLabPanel
+                  nodes={nodes}
+                  projectId={projectId}
+                  currentNode={currentNode}
+                  currentNodeId={currentNodeId}
+                  sceneBible={sceneBible}
+                  selectedSceneIds={selectedSceneIds}
+                  initialSourceNodeId={initialSceneLabSourceNodeId}
+                  onSaveScene={(scene) => {
+                    const nextBible = {
+                      scenes: [...sceneBible.scenes.filter((item) => item.id !== scene.id), scene],
+                      updatedAt: new Date().toISOString(),
+                    }
+                    onSceneBibleSave(nextBible)
+                  }}
+                  onSceneIdsChange={onSceneIdsChange}
+                  onSendPromptToNode={onSendPromptToNode}
+                  onSceneEditPromptChange={onSceneEditPromptChange}
+                  onCreateSceneReplaceImageNode={onCreateSceneReplaceImageNode}
+                />
+              )}
             </div>
           ) : null}
 

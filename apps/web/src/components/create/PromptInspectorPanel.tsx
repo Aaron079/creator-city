@@ -205,6 +205,13 @@ export function PromptInspectorPanel({
   const compiledPromptPreview = stringValue(metadata.compiledPromptPreview)
   const sceneEditPromptPreview = stringValue(metadata.sceneEditPromptPreview)
   const sceneEditPromptSourceNodeId = stringValue(metadata.sceneEditPromptSourceNodeId)
+  const scenePluginType = stringValue(metadata.scenePluginType)
+  const scenePluginSourceNodeId = stringValue(metadata.sourceImageNodeId)
+  const scenePluginSourceImageUrl = stringValue(metadata.sourceImageUrl)
+  const scenePluginResultImageUrl = scenePluginType ? (node?.resultImageUrl || '') : ''
+  const scenePluginPreserveInstruction = stringValue(metadata.preserveInstruction)
+  const scenePluginNegativeInstruction = stringValue(metadata.negativeInstruction)
+  const sceneReplacePrompt = stringValue(metadata.sceneReplacePrompt) || rawPrompt
   const sceneEdits = useMemo(() => getSceneEdits(node?.metadataJson), [node?.metadataJson])
   const sceneEditTasks = useMemo(() => getSceneEditTasks(node?.metadataJson), [node?.metadataJson])
   const generationIdInputs: Array<[string, unknown]> = [
@@ -660,6 +667,54 @@ export function PromptInspectorPanel({
                 <div className="rounded-md bg-black/18 p-2">
                   <dt className="font-mono text-xs text-white/42">sceneEditPromptPreview</dt>
                   <dd className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-white/72">{sceneEditPromptPreview}</dd>
+                </div>
+              </dl>
+            </Section>
+          ) : null}
+
+          {scenePluginType ? (
+            <Section title="Scene Replace Plugin">
+              <dl className="space-y-2 text-sm">
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Scene Plugin Type</dt>
+                  <dd className="mt-1 break-words font-mono text-xs text-white/70">{scenePluginType}</dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Source Image Node</dt>
+                  <dd className="mt-1 break-words font-mono text-xs text-white/70">{scenePluginSourceNodeId || '未记录'}</dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Source Image URL</dt>
+                  <dd className="mt-1 break-all font-mono text-xs leading-5 text-white/70">{scenePluginSourceImageUrl || '未记录'}</dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Selected Region</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-white/70">{displayValue(metadata.selectedRegion) || '未记录'}</dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Plugin Result Image</dt>
+                  {scenePluginResultImageUrl ? (
+                    <div className="mt-2 space-y-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={scenePluginResultImageUrl} alt="Scene plugin result" className="max-h-40 w-full rounded-md border border-white/10 object-cover" />
+                      <dd className="break-all font-mono text-xs leading-5 text-white/70">{scenePluginResultImageUrl}</dd>
+                    </div>
+                  ) : (
+                    <dd className="mt-1 text-xs text-white/45">未记录</dd>
+                  )}
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Preserve / Negative</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-white/72">
+                    {[
+                      scenePluginPreserveInstruction && `Preserve: ${scenePluginPreserveInstruction}`,
+                      scenePluginNegativeInstruction && `Negative: ${scenePluginNegativeInstruction}`,
+                    ].filter(Boolean).join('\n') || '未记录'}
+                  </dd>
+                </div>
+                <div className="rounded-md bg-black/18 p-2">
+                  <dt className="font-mono text-xs text-white/42">Scene Replace Prompt</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-white/72">{sceneReplacePrompt || '未记录'}</dd>
                 </div>
               </dl>
             </Section>

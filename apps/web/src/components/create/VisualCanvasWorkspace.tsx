@@ -69,6 +69,7 @@ import {
   type SceneEditMark,
   type SceneEditTool,
 } from '@/lib/scenes'
+import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
 
 interface VisualCanvasWorkspaceProps {
@@ -3326,6 +3327,85 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback('已发送到当前 Image 节点 Prompt，未自动生成。')
   }, [activeNodeId, editingNodeId, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
+  const handleCreateSceneReplaceImageNode = useCallback((input: {
+    sourceNodeId: string
+    run: ScenePluginRun
+    prompt: string
+  }) => {
+    const sourceNode = latestNodesRef.current.find((node) => node.id === input.sourceNodeId)
+    const imageUrl = input.run.resultImageUrl
+    if (!sourceNode || !imageUrl) {
+      showCanvasFeedback('场景替换插件没有返回可用图片。')
+      return
+    }
+
+    const size = getNodeSize('image')
+    const nodeId = createNodeId('image')
+    const pluginProvider = input.run.pluginProvider || 'custom'
+    const metadataJson = {
+      sourceImageNodeId: sourceNode.id,
+      sourceImageUrl: input.run.sourceImageUrl || sourceNode.resultImageUrl,
+      scenePluginRunId: input.run.id,
+      scenePluginType: 'scene-replace',
+      selectedRegion: input.run.region,
+      targetDescription: input.run.targetDescription,
+      preserveInstruction: input.run.preserveInstruction,
+      negativeInstruction: input.run.negativeInstruction,
+      pluginProvider,
+      pluginResult: input.run.pluginResult,
+      sceneReplacePrompt: input.prompt,
+    }
+    const newNode: VisualCanvasNode = {
+      id: nodeId,
+      type: 'image',
+      kind: 'image',
+      title: `${sourceNode.title || 'Image'} · 场景替换`,
+      subtitle: 'Scene Replace Plugin 输出',
+      prompt: input.prompt,
+      model: 'scene-replace-plugin',
+      providerId: pluginProvider,
+      stage: sourceNode.stage || promptStage,
+      ratio: sourceNode.ratio || NODE_META.image.ratio,
+      status: 'done',
+      resultImageUrl: imageUrl,
+      resultPreview: '场景替换插件已返回新图',
+      outputLabel: '场景替换完成',
+      x: sourceNode.x + 520,
+      y: sourceNode.y,
+      width: size.width,
+      height: size.height,
+      createdAt: Date.now(),
+      metadataJson,
+    }
+    const edgeId = `${sourceNode.id}-${nodeId}`
+    const newEdge: CanvasEdge = {
+      id: edgeId,
+      fromNodeId: sourceNode.id,
+      toNodeId: nodeId,
+      status: 'done',
+      type: 'scene-continuity',
+      metadataJson: {
+        edgeDirector: {
+          type: 'scene-continuity',
+          inheritScene: true,
+          inheritColor: true,
+          lockStyle: true,
+          customInstruction: '基于原图进行场景替换，保持未选区稳定，只修改选区。',
+        },
+      },
+    }
+
+    commitNodes((current) => [...current, newNode])
+    commitEdges((current) => [...current.filter((edge) => edge.id !== edgeId), newEdge])
+    setActiveNodeId(nodeId)
+    setCanvasPrompt(input.prompt)
+    setPromptModel(pluginProvider)
+    setPreferredKind('image')
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('场景替换完成，已创建新的 Image 节点并连接原图。')
+  }, [commitEdges, commitNodes, flushLocalSnapshot, promptStage, scheduleCanvasSave, showCanvasFeedback])
+
   const handleOpenImageEditor = useCallback(() => {
     flushLocalSnapshot()
     setHasStarted(true)
@@ -5323,6 +5403,7 @@ export function VisualCanvasWorkspace({
           onSceneIdsChange={(sceneIds) => handleNodeSceneIdsChange(activeCreativeAssetsNode.id, sceneIds)}
           onSendPromptToNode={handleSendSceneLabPromptToNode}
           onSceneEditPromptChange={handleSceneLabPromptMetadata}
+          onCreateSceneReplaceImageNode={handleCreateSceneReplaceImageNode}
           onClose={closeCreativeAssets}
         />
       ) : null}
