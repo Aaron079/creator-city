@@ -215,7 +215,7 @@ export function MediaDiagnosticsPanel({
       if (!response.ok || data.success === false || !data.stableUrl) {
         if (data.errorCode === 'MEDIA_SOURCE_EXPIRED') {
           setDiagnostic(data.diagnostic ?? { ...diagnostic, reachable: false, expiredLikely: true })
-          setSyncMessage('源媒体已过期，无法同步。可使用原 prompt 重新生成稳定版本。')
+          setSyncMessage('媒体源当前不可访问，无法同步。可使用原 prompt 重新生成稳定版本。')
           return
         }
         setSyncMessage(data.message || data.errorCode || '重新同步失败。')
@@ -268,11 +268,9 @@ export function MediaDiagnosticsPanel({
     ? '无 URL'
     : diagnostic?.reachable
       ? '可访问'
-      : diagnostic?.expiredLikely
-        ? '已过期'
-        : diagnostic
-          ? '不可访问'
-          : '未检查'
+      : diagnostic
+        ? '不可访问'
+        : '未检查'
 
   return (
     <div
@@ -359,8 +357,10 @@ export function MediaDiagnosticsPanel({
               </div>
             </dl>
             {diagnostic?.message ? (
-              <p className={`mt-3 rounded-md border p-3 text-sm leading-6 ${!diagnostic.reachable && diagnostic.expiredLikely ? 'border-red-200/20 bg-red-200/10 text-red-50' : 'border-white/10 bg-black/16 text-white/66'}`}>
-                {!diagnostic.reachable && diagnostic.expiredLikely ? '源媒体已过期，无法同步。可使用原 prompt 重新生成稳定版本。' : diagnostic.message}
+              <p className={`mt-3 rounded-md border p-3 text-sm leading-6 ${!diagnostic.reachable ? 'border-red-200/20 bg-red-200/10 text-red-50' : 'border-white/10 bg-black/16 text-white/66'}`}>
+                {!diagnostic.reachable
+                  ? `媒体源当前不可访问（HTTP ${diagnostic.status || '网络错误'}）。可尝试重新同步，或使用原 prompt 重新生成。`
+                  : diagnostic.message}
               </p>
             ) : null}
             {syncMessage ? (

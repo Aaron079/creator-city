@@ -2761,35 +2761,6 @@ export function VisualCanvasWorkspace({
   const showSceneToolPreview = activePreviewNode?.kind === 'image' && activePreviewSceneEdits.length > 0
   const activePreviewImageUrl = activePreviewNode?.kind === 'image' ? getNodeImageUrl(activePreviewNode) : ''
   const activePreviewVideoUrl = activePreviewNode?.kind === 'video' ? getNodeVideoUrl(activePreviewNode) : ''
-  const activeContentPreviewStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!activePreviewNode || (activePreviewNode.kind !== 'image' && activePreviewNode.kind !== 'video')) return undefined
-    if (activePreviewNode.kind === 'image' && showSceneToolPreview) return undefined
-    if (typeof window === 'undefined') return undefined
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return undefined
-
-    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
-    const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + activePreviewNode.x * canvasZoom
-    const nodeTop = rect.top + surfaceOffset.top + canvasPan.y + activePreviewNode.y * canvasZoom
-    const nodeWidth = Math.max(1, activePreviewNode.width * canvasZoom)
-    const nodeHeight = Math.max(1, activePreviewNode.height * canvasZoom)
-    const nodeCenterX = nodeLeft + nodeWidth / 2
-    const nodeCenterY = nodeTop + nodeHeight / 2
-    const viewportMargin = 24
-    const maxWidth = Math.max(240, window.innerWidth - viewportMargin * 2)
-    const maxHeight = Math.max(180, window.innerHeight - viewportMargin * 2)
-    const minWidth = Math.min(maxWidth, activePreviewNode.kind === 'video' ? 360 : 320)
-    const minHeight = Math.min(maxHeight, activePreviewNode.kind === 'video' ? 220 : 200)
-    const targetWidth = clampNumber(nodeWidth * 2.35, minWidth, maxWidth)
-    const targetHeight = clampNumber(nodeHeight * 2.35, minHeight, maxHeight)
-
-    return {
-      left: clampNumber(nodeCenterX - targetWidth / 2, viewportMargin, window.innerWidth - targetWidth - viewportMargin),
-      top: clampNumber(nodeCenterY - targetHeight / 2, viewportMargin, window.innerHeight - targetHeight - viewportMargin),
-      '--preview-max-width': `${targetWidth}px`,
-      '--preview-max-height': `${targetHeight}px`,
-    } as CSSProperties
-  }, [activePreviewNode, canvasPan.x, canvasPan.y, canvasZoom, showSceneToolPreview])
   const menuNode = useMemo(
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
@@ -5680,7 +5651,6 @@ export function VisualCanvasWorkspace({
         >
           <section
             className={`canvas-image-preview-dialog ${showSceneToolPreview ? 'has-scene-tools' : 'is-node-content-preview'}`}
-            style={showSceneToolPreview ? undefined : activeContentPreviewStyle}
             role="dialog"
             aria-modal="true"
             aria-label="图片预览"
@@ -5768,7 +5738,6 @@ export function VisualCanvasWorkspace({
         >
           <section
             className="canvas-video-preview-dialog is-node-content-preview"
-            style={activeContentPreviewStyle}
             role="dialog"
             aria-modal="true"
             aria-label="视频预览"

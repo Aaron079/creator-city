@@ -320,7 +320,9 @@ export function CanvasNodeCard({
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
+  const [imageUseProxy, setImageUseProxy] = useState(false)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [videoUseProxy, setVideoUseProxy] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
   const [copiedMediaUrl, setCopiedMediaUrl] = useState<'image' | 'video' | null>(null)
 
@@ -357,6 +359,12 @@ export function CanvasNodeCard({
   const canCreateStableCopy = Boolean(onCreateStableCopy && activeMedia?.loadFailed && persistenceStatus !== 'persisted')
   const imagePreviewUrl = imageMedia.url
   const videoPreviewUrl = videoMedia.url
+  const imageEffectiveSrc = imageUseProxy && imagePreviewUrl && !imagePreviewUrl.startsWith('data:')
+    ? `/api/media/proxy?url=${encodeURIComponent(imagePreviewUrl)}`
+    : imagePreviewUrl
+  const videoEffectiveSrc = videoUseProxy && videoPreviewUrl && !videoPreviewUrl.startsWith('data:')
+    ? `/api/media/proxy?url=${encodeURIComponent(videoPreviewUrl)}`
+    : videoPreviewUrl
   const hasMediaResult = (node.kind === 'image' && imageMedia.hasUrl) || (node.kind === 'video' && videoMedia.hasUrl)
   const textResult = node.resultText?.trim() ? node.resultText : ''
   const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
@@ -414,10 +422,12 @@ export function CanvasNodeCard({
   useEffect(() => {
     setImageLoadFailed(false)
     setImageNaturalRatio(null)
+    setImageUseProxy(false)
   }, [imagePreviewUrl])
 
   useEffect(() => {
     setVideoLoadFailed(false)
+    setVideoUseProxy(false)
   }, [videoPreviewUrl])
 
   return (
@@ -673,12 +683,7 @@ export function CanvasNodeCard({
                 >
                   {videoMedia.loadFailed ? (
                     <span className="canvas-node-video-error">
-                      视频链接可能已过期或不可访问。
-                      {canCreateStableCopy ? (
-                        <span className="block max-w-[240px] text-[11px] font-semibold leading-snug text-[#ffdcc7c7]">
-                          源媒体链接已过期，且该结果生成时未转存到素材库，无法恢复原文件。
-                        </span>
-                      ) : null}
+                      媒体源当前不可访问，请检查媒体连接或重新同步到素材库。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -735,13 +740,19 @@ export function CanvasNodeCard({
                       <video
                         ref={videoPreviewRef}
                         className="canvas-node-preview-video"
-                        src={videoPreviewUrl}
+                        src={videoEffectiveSrc}
                         poster={node.preview?.poster}
                         muted
                         playsInline
                         preload="metadata"
                         style={{ pointerEvents: 'none' }}
-                        onError={() => setVideoLoadFailed(true)}
+                        onError={() => {
+                          if (!videoUseProxy && videoPreviewUrl && !videoPreviewUrl.startsWith('data:')) {
+                            setVideoUseProxy(true)
+                          } else {
+                            setVideoLoadFailed(true)
+                          }
+                        }}
                         onLoadedMetadata={() => setVideoLoadFailed(false)}
                         onCanPlay={() => setVideoLoadFailed(false)}
                       />
@@ -783,12 +794,7 @@ export function CanvasNodeCard({
                 >
                   {imageMedia.loadFailed ? (
                     <span className="canvas-node-image-error">
-                      图片链接可能已过期或不可访问。
-                      {canCreateStableCopy ? (
-                        <span className="block max-w-[240px] text-[11px] font-semibold leading-snug text-[#ffdcc7c7]">
-                          源媒体链接已过期，且该结果生成时未转存到素材库，无法恢复原文件。
-                        </span>
-                      ) : null}
+                      媒体源当前不可访问，请检查媒体连接或重新同步到素材库。
                       <button
                         type="button"
                         className="mt-2 rounded border border-white/15 bg-white/[0.08] px-2 py-1 text-xs text-white/72"
@@ -842,7 +848,7 @@ export function CanvasNodeCard({
                     </span>
                   ) : (
                     <img
-                      src={imagePreviewUrl}
+                      src={imageEffectiveSrc}
                       alt={node.title}
                       className="canvas-node-preview-image"
                       loading="lazy"
@@ -855,7 +861,13 @@ export function CanvasNodeCard({
                           setImageNaturalRatio(naturalWidth / naturalHeight)
                         }
                       }}
-                      onError={() => setImageLoadFailed(true)}
+                      onError={() => {
+                        if (!imageUseProxy && imagePreviewUrl && !imagePreviewUrl.startsWith('data:')) {
+                          setImageUseProxy(true)
+                        } else {
+                          setImageLoadFailed(true)
+                        }
+                      }}
                     />
                   )}
                 </div>
