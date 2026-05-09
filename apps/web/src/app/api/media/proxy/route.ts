@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
   if (!upstream.ok && upstream.status !== 206) {
     return NextResponse.json(
       { error: `Upstream returned ${upstream.status}`, upstreamStatus: upstream.status },
-      { status: 502 },
+      { status: upstream.status },
     )
   }
 
