@@ -566,7 +566,8 @@ export function CanvasNodeCard({
     return () => {
       cancelled = true
     }
-  }, [imageCandidateUrls, imageCandidateUrlsKey, node.id, node.kind, node.metadataJson])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageCandidateUrlsKey, node.id, node.kind])
 
   useEffect(() => {
     if (node.kind !== 'video') {
@@ -624,7 +625,8 @@ export function CanvasNodeCard({
     return () => {
       cancelled = true
     }
-  }, [node.id, node.kind, node.metadataJson, videoCandidateUrls, videoCandidateUrlsKey])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoCandidateUrlsKey, node.id, node.kind])
 
   useEffect(() => {
     if (!onRecoverMedia || (node.kind !== 'image' && node.kind !== 'video')) return

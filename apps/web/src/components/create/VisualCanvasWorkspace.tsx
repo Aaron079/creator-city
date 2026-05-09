@@ -4439,7 +4439,10 @@ export function VisualCanvasWorkspace({
     if (nodeSnapshot.kind === 'image') {
       const selectedProviderInfo = imageProviderStatusMap.get(normalizedPromptModel)
       const selectedProviderStatus = getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
-      if (selectedProviderStatus !== 'available') {
+      // Only block when the server has explicitly told us this provider is unavailable.
+      // 'unknown' / 'checking' means the status map hasn't loaded yet — let the API validate instead.
+      const definitivelyUnavailable = (selectedProviderStatus === 'not-configured' || selectedProviderStatus === 'coming-soon' || selectedProviderStatus === 'disabled') && imageProviderStatusMap.size > 0
+      if (definitivelyUnavailable) {
         const errMsg = imageProviderUnavailableMessage(normalizedPromptModel, selectedProviderInfo)
         setDialogError(errMsg)
         handleNodePatch(nodeSnapshot.id, {
@@ -4455,7 +4458,10 @@ export function VisualCanvasWorkspace({
     if (nodeSnapshot.kind === 'video') {
       const selectedProviderInfo = videoProviderStatusMap.get(generationProviderId)
       const selectedProviderStatus = getVideoProviderStatus(videoProviderStatusMap, generationProviderId, liveStatusMap, liveStatusLoading)
-      if (selectedProviderStatus !== 'available') {
+      // Only block when the server has explicitly told us this provider is unavailable.
+      // 'unknown' / 'checking' means the status map hasn't loaded yet — let the API validate instead.
+      const definitivelyUnavailable = (selectedProviderStatus === 'not-configured' || selectedProviderStatus === 'coming-soon' || selectedProviderStatus === 'disabled') && videoProviderStatusMap.size > 0
+      if (definitivelyUnavailable) {
         const errMsg = videoProviderUnavailableMessage(selectedProviderInfo)
         setDialogError(errMsg)
         handleNodePatch(nodeSnapshot.id, {
