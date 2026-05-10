@@ -237,6 +237,18 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
       }
     }
     storageMissMessage = object.message || 'Storage key exists but object storage could not be read.'
+
+    // checkObjectExists() may fail when the storage provider's signed-URL implementation
+    // is not yet fully wired (e.g. Aliyun OSS without private signing keys). In that case,
+    // resolveAssetUrl() can still return the stable public URL from asset.url as a fallback.
+    // Try it before giving up and marking the asset as UNRECOVERABLE.
+    if (!object.exists) {
+      const resolved = await resolveAssetUrl(asset)
+      if (resolved.url && /^https?:\/\//i.test(resolved.url) && resolved.url !== asset.originalUrl) {
+        const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_asset_url', null)
+        return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
+      }
+    }
   }
 
   const rawUrl = originalUrlFor(asset)

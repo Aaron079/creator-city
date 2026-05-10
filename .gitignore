@@ -33,3 +33,4 @@ apps/server/prisma/generated/
 # test
 coverage
 .vercel
+.env*.local

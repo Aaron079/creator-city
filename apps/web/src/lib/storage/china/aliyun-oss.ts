@@ -104,21 +104,28 @@ export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<Ch
 
 export async function getAliyunOssSignedUploadUrl(input: SignedChinaObjectInput): Promise<ChinaStorageSignedUrlResult> {
   requireAliyunOss()
+  const publicUrl = buildPublicUrl(input.key)
   return {
     provider: 'aliyun-oss',
     bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
     key: input.key,
-    raw: { mode: 'stub', expiresInSeconds: input.expiresInSeconds },
+    ...(publicUrl ? { publicUrl, url: publicUrl } : {}),
+    raw: { mode: publicUrl ? 'public' : 'stub', expiresInSeconds: input.expiresInSeconds },
   }
 }
 
 export async function getAliyunOssSignedDownloadUrl(input: SignedChinaObjectInput): Promise<ChinaStorageSignedUrlResult> {
   requireAliyunOss()
+  // When ALIYUN_OSS_PUBLIC_BASE_URL is configured, return the stable public URL.
+  // This makes checkObjectExists() able to verify the object and resolveAssetUrl()
+  // return a working URL instead of falling back to expired provider URLs.
+  const publicUrl = buildPublicUrl(input.key)
   return {
     provider: 'aliyun-oss',
     bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
     key: input.key,
-    raw: { mode: 'stub', expiresInSeconds: input.expiresInSeconds },
+    ...(publicUrl ? { signedUrl: publicUrl, publicUrl, url: publicUrl } : {}),
+    raw: { mode: publicUrl ? 'public' : 'stub', expiresInSeconds: input.expiresInSeconds },
   }
 }
 

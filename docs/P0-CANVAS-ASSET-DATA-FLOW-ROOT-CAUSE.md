@@ -1,148 +1,129 @@
-# P0 Canvas Asset Data Flow Root Cause
+# P0 Root Cause: Canvas Asset Data Flow
 
-## Current Symptoms
+> Written: 2026-05-10 | Status: Fixed
 
-The `/create` canvas can show legacy recovery states such as "needs recovery", `recoveryStatus`, missing `storageKey`, and copy URL actions while the real image or video still does not render. The dangerous failure mode is not the status label; it is that generated media can exist only as a provider URL or browser/local canvas state without a durable `Asset.storageKey` and without `CanvasNode.metadataJson.assetId`.
+---
 
-## Real Data Flow
+## 1. 问题现象
 
-```mermaid
-flowchart LR
-  User["User clicks generate"] --> Frontend["VisualCanvasWorkspace.callGenerationApi"]
-  Frontend --> Backend["/api/generate/image or /api/generate/video"]
-  Backend --> Provider["Real provider adapter"]
-  Provider --> Job["GenerationJob"]
-  Provider --> Persist["persistGeneratedMedia"]
-  Persist --> Storage["Supabase/OSS/COS storageKey"]
-  Persist --> Asset["Asset row"]
-  Asset --> Node["Canvas node metadata assetId"]
-  Node --> Save["PUT /api/projects/:projectId/canvas"]
-  Save --> DB["CanvasWorkflow/CanvasNode/CanvasEdge"]
-  DB --> Load["GET /api/projects/:projectId/canvas"]
-  Load --> Resolve["POST /api/assets/resolve-batch"]
-  Resolve --> Media["img/video src resolvedUrl"]
+/create 画布里旧图片、旧视频节点显示：
+- "立即恢复资产" / "不可恢复" / "需要恢复"
+- storageKey 无法恢复
+- recoveryStatus: unrecoverable_provider_expired
+- 真实媒体不显示
+
+---
+
+## 2. 真实数据链路图
+
+```
+用户点击生成
+→ VisualCanvasWorkspace.tsx: callGenerationApi()
+→ POST /api/generate/image (或 /video)
+→ generateSeedreamImage() / generateSeedanceVideo()   [lib/providers/china/volcengine.ts]
+→ persistGeneratedMedia()                              [lib/assets/persist-generated-media.ts]
+  → downloadExternalAsset(providerUrl)                 [storage-adapter.ts]
+  → uploadAsset(buffer) → uploadChinaObject()          [storage-adapter.ts]
+    → putAliyunOssObject()                             [storage/china/aliyun-oss.ts]
+    → returns { storageKey, url: publicUrl }
+  → db.asset.create({ storageKey, url: publicUrl, originalUrl: providerUrl })
+  → returns { ok: true, assetId, stableUrl: publicUrl }
+→ API returns { resultImageUrl: stableUrl, assetId, ... }
+→ handleNodePatch(nodeId, { resultImageUrl: stableUrl, metadataJson: { assetId } })
+→ commitNodes() → scheduleCanvasSave(0)
+→ PUT /api/projects/:id/canvas → db.canvasNode.upsert(...)
+
+──── 页面刷新 ────
+
+→ GET /api/projects/:id/canvas → mapCanvasNode()
+→ assetResolveKey effect → POST /api/assets/resolve-batch
+  → resolveAssetRecord(asset)
+    → checkObjectExists(asset)    ← 原始断点（stub 返回 exists:false）
+    → resolveAssetUrl(asset)      ← 只有前者通过才调用
+
+→ CanvasNodeCard 显示 img/video
 ```
 
-## External API To Canvas Path
+---
 
-- Frontend submit: `apps/web/src/components/create/VisualCanvasWorkspace.tsx`, `callGenerationApi`.
-- Image backend: `apps/web/src/app/api/generate/image/route.ts`, `POST`.
-- Video backend: `apps/web/src/app/api/generate/video/route.ts`, `POST`.
-- Seedance status backend: `apps/web/src/app/api/generate/video/status/route.ts`, `GET`.
-- Provider calls: `apps/web/src/lib/providers/china/volcengine.ts`, `generateSeedreamImage`, `generateSeedanceVideo`, `getSeedanceVideoStatus`; generic gateway uses `apps/web/src/lib/providers/generate.ts`.
-- Persistence: `apps/web/src/lib/assets/persist-generated-media.ts`, `persistGeneratedMedia`.
-- Storage adapter: `apps/web/src/lib/assets/storage-adapter.ts`, `uploadAsset`, `resolveAssetUrl`, `checkObjectExists`, `downloadExternalAsset`.
+## 3. 根因（真实断点）
 
-## Canvas Save Location
+**文件**: `apps/web/src/lib/storage/china/aliyun-oss.ts`
 
-Stable canvas persistence is the database:
+`getAliyunOssSignedDownloadUrl()` 是 STUB，不返回任何 URL，导致：
 
-- `CanvasWorkflow`
-- `CanvasNode`
-- `CanvasEdge`
+1. `checkSignedObjectExists()` 得不到 URL → 返回 `{ exists: false }`
+2. `checkObjectExists()` 返回 `{ exists: false }`
+3. `resolveAssetRecord()` 跳过 `resolveAssetUrl()` → 尝试 originalUrl（已过期 Volcengine URL）→ 403/404
+4. `markAsset(UNRECOVERABLE, 'unrecoverable_provider_expired')` 写入数据库
+5. 每次页面加载都触发，不断将状态良好的 Asset 标记为 UNRECOVERABLE
 
-The API is `apps/web/src/app/api/projects/[projectId]/canvas/route.ts`.
+---
 
-Local storage is a fallback/cache, not the durable source:
+## 4. Canvas 保存/读取位置
 
-- `creator-city:canvas-snapshot:<projectId>`
-- `creator-city:canvas-cache:<projectId>`
-- `creator-city:draft:<projectId>`
-- `creator-city:last-project-id`
-- `creator-city:last-workflow-id`
+- 主持久化: DB `CanvasWorkflow` / `CanvasNode` / `CanvasEdge`
+- 本地 fallback: `localStorage` (`creator-city:canvas-snapshot:<projectId>` 等)
+- 加载逻辑: 比较 server vs local `updatedAt`，取较新的
 
-## Canvas Read Location
+---
 
-The page loads from `GET /api/projects/:projectId/canvas` or `POST /api/projects/ensure?includeCanvas=1`, then maps DB rows through `apps/web/src/lib/projects/canvas-mappers.ts`.
+## 5. Asset 保存位置
 
-`mapCanvasNode` reads `metadataJson.assetId` and `metadataJson.mediaPersistence.assetId` into the runtime node `assetId`.
+- DB `Asset` 表: `id`, `url`（OSS 公开URL）, `originalUrl`（provider URL）, `storageKey`, `storageProvider`
+- 文件存储: Aliyun OSS，通过 `ALIYUN_OSS_PUBLIC_BASE_URL/{storageKey}` 访问
 
-## Asset Save Location
+---
 
-Durable assets are rows in `Asset` with:
+## 6. 前端如何调用后端资产接口
 
-- `storageProvider`
-- `bucket`
-- `storageKey`
-- `url`
-- `originalUrl`
-- `providerJobId`
-- `generationJobId`
-- `recoveryStatus`
-
-The object bytes live in the configured storage adapter. In production this must be Supabase Storage, Aliyun OSS, or Tencent COS. `local_dev` and `/public/generated` are local-only fallback paths and are not production-safe.
-
-## Frontend Asset Resolution
-
-`VisualCanvasWorkspace` collects media-node asset IDs and calls `POST /api/assets/resolve-batch`. The resolver lives in `apps/web/src/lib/assets/asset-resolver.ts`. Ready results patch runtime nodes with `resolvedUrl`, and `CanvasNodeCard` renders `resultImageUrl` or `resultVideoUrl`.
-
-## Broken Links Found
-
-1. Video generation did not consistently pass completed media through `persistGeneratedMedia`.
-2. Seedance async submit returned a provider `taskId` but did not create a durable `GenerationJob` row for the canvas chain.
-3. The fallback project asset API, `POST /api/projects/:projectId/assets`, created media Asset rows from raw URLs without downloading/uploading them, so many Assets could have no `storageKey`.
-4. Frontend fallback `createGeneratedAsset` posted to the backend but discarded the returned Asset, so `CanvasNode.metadataJson.assetId` could remain empty.
-5. Local draft restore currently prefers any non-empty local canvas candidate; if local cache is stale and has URLs without asset IDs, it can mask a server canvas with more stable data until synced.
-
-## Why It Got Worse
-
-Recent changes added recovery UI and recovery statuses around an incomplete chain. That exposed missing `assetId`/`storageKey` but did not guarantee that every new generated media result became:
-
-`provider URL -> downloaded bytes -> object storage -> Asset.storageKey -> CanvasNode.assetId -> persisted canvas`.
-
-When a provider URL expired, the UI could only report that it was unrecoverable.
-
-## Minimal Fix In This Change
-
-1. `persistGeneratedMedia` now best-effort links the created Asset back to `GenerationJob.outputAssetId`.
-2. `/api/generate/video` now creates a `GenerationJob` for Seedance, records `providerJobId`, persists synchronous video results, and persists generic video results when the provider returns a final URL.
-3. `/api/generate/video/status` now finds the Seedance `GenerationJob`, persists completed video bytes, and returns `assetId`/stable URL metadata.
-4. `/api/projects/:projectId/assets` now routes image/video HTTP URLs through `persistGeneratedMedia` instead of only saving the URL.
-5. `VisualCanvasWorkspace.createGeneratedAsset` now patches the node with returned `assetId`, storage metadata, stable URL, local snapshot, and canvas save.
-6. Added `scripts/trace-creator-city-data-flow.ts` and `scripts/export-current-creator-city-state.ts`.
-
-## Do Not Touch
-
-- Do not delete CanvasNode, CanvasEdge, Project, Asset, or GenerationJob rows.
-- Do not clear localStorage, database tables, or storage buckets.
-- Do not replace `/create` or change the product flow.
-- Do not use mock media as a recovery result.
-- Do not treat `blob:`, `/tmp`, `public/generated`, provider signed URLs, or `data:` as durable paid asset storage in production.
-
-## Local Verification
-
-Run:
-
-```bash
-cd /Users/aaron/creator-city && pnpm install
-cd /Users/aaron/creator-city && pnpm lint
-cd /Users/aaron/creator-city && pnpm typecheck
-cd /Users/aaron/creator-city && pnpm build
-cd /Users/aaron/creator-city && pnpm dlx tsx scripts/trace-creator-city-data-flow.ts
-cd /Users/aaron/creator-city && pnpm dlx tsx scripts/audit-assets.ts
-cd /Users/aaron/creator-city && pnpm dlx tsx scripts/recover-assets.ts
-cd /Users/aaron/creator-city && pnpm dlx tsx scripts/backfill-canvas-asset-ids.ts
+```
+页面加载 → assetResolveKey (useMemo) 变化
+→ useEffect → POST /api/assets/resolve-batch { assetIds }
+→ resolveAssetById() → resolveAssetRecord()
+→ 返回 { status, resolvedUrl }
+→ applyResolvedAssetToNode() → 更新 node.resultImageUrl
+→ CanvasNodeCard 显示媒体
 ```
 
-Note: the local database visible during this audit was empty, so production verification must run against Vercel/Supabase environment variables.
+无 assetId 的旧节点 → POST /api/media/resync（尝试重新持久化旧 URL）
 
-## Vercel Verification
+---
 
-After deploying the latest commit:
+## 7. 修复方案（已实施，2026-05-10）
 
-1. Confirm the Production deployment commit equals the pushed commit.
-2. Open `https://creator-city-vert.vercel.app/create`.
-3. Confirm old canvas nodes still exist.
-4. Confirm old nodes with valid `assetId` render through `resolve-batch`.
-5. Confirm unrecoverable nodes show a concrete reason.
-6. Generate a new image and verify it creates an Asset with `storageKey`.
-7. Generate a new video and verify it creates a GenerationJob and Asset with `storageKey`.
-8. Refresh, close/reopen, and redeploy; media should still render by `assetId`.
+### Fix 1: aliyun-oss.ts
+让 `getAliyunOssSignedDownloadUrl` 返回 `ALIYUN_OSS_PUBLIC_BASE_URL` 构建的公开 URL，而不是 stub。
 
-## Prevention Rules
+### Fix 2: asset-resolver.ts
+在 `checkObjectExists()` 失败后，先尝试 `resolveAssetUrl()` fallback，如果返回有效 HTTP URL 则标记为 READY，不进入 UNRECOVERABLE 流程。
 
-- Every media generation route must either return an `assetId` or a concrete persistence failure.
-- Every media Asset must prefer durable `storageKey` over provider URL.
-- Every generated media CanvasNode must save `metadataJson.assetId`.
-- Every page load must resolve media by `assetId` before using legacy URLs.
-- Any recovery UI must be backed by a real storage/Asset/Canvas mutation or remain read-only diagnostics.
+---
+
+## 8. 不可动范围
+
+- CanvasNode.resultImageUrl / resultVideoUrl
+- metadataJson.assetId
+- Prisma schema / 数据库
+- localStorage key 命名
+- MEDIA_PERSISTENCE_ENABLED（保持开启）
+
+---
+
+## 9. 验证步骤
+
+**本地**: `pnpm --filter web exec tsc --noEmit && pnpm --filter web build`
+
+**线上**: 
+1. Push → Vercel 部署
+2. 打开 /create，旧节点图片/视频恢复显示
+3. 生成新图片/视频，刷新仍显示
+4. Vercel 日志无 exists:false 循环
+
+---
+
+## 10. 后续防止再发
+
+1. 任何存储后端的 `getSignedDownloadUrl()` 不允许是纯 STUB（至少返回 publicUrl）
+2. `resolveAssetRecord()` 不能把"签名URL生成失败"等价于"对象不存在"
+3. 每次修复媒体显示问题前必须先检查 `checkObjectExists()` 返回值
