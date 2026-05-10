@@ -10,6 +10,7 @@ type ResyncBody = {
   url?: unknown
   type?: unknown
   projectId?: unknown
+  workflowId?: unknown
   nodeId?: unknown
   filenameHint?: unknown
   metadata?: unknown
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
     url,
     type,
     projectId: optionalString(body.projectId),
+    workflowId: optionalString(body.workflowId),
     nodeId: optionalString(body.nodeId),
     filenameHint: stringValue(body.filenameHint) || `resynced-${type}.${type === 'image' ? 'png' : 'mp4'}`,
     sourceProvider,

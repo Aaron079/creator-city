@@ -93,6 +93,43 @@ function jsonMetadata(input: PersistGeneratedMediaInput, uploaded: {
   } satisfies Prisma.InputJsonObject
 }
 
+async function linkGenerationJob(input: PersistGeneratedMediaInput, assetId: string, stableUrl: string) {
+  const generationJobId = typeof input.metadata?.generationJobId === 'string' ? input.metadata.generationJobId : ''
+  if (!generationJobId) return
+
+  const providerJobId = typeof input.metadata?.providerJobId === 'string'
+    ? input.metadata.providerJobId
+    : typeof input.metadata?.taskId === 'string'
+      ? input.metadata.taskId
+      : undefined
+
+  await db.generationJob.update({
+    where: { id: generationJobId },
+    data: {
+      projectId: input.projectId ?? undefined,
+      providerJobId,
+      provider: input.sourceProvider ?? undefined,
+      kind: input.type,
+      status: 'SUCCEEDED',
+      outputAssetId: assetId,
+      output: {
+        assetId,
+        url: stableUrl,
+        type: input.type,
+        providerJobId,
+        completedAt: new Date().toISOString(),
+      },
+      completedAt: new Date(),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[assets] failed to link GenerationJob to Asset', {
+      generationJobId,
+      assetId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
+}
+
 export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): Promise<PersistGeneratedMediaResult> {
   try {
     const url = input.url?.trim()
@@ -183,6 +220,7 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
           tags: ['generated', input.type, 'persisted'],
         },
       })
+      await linkGenerationJob(input, asset.id, stableUrl)
 
       return {
         ok: true,

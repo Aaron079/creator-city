@@ -2100,7 +2100,7 @@ export function VisualCanvasWorkspace({
   }) => {
     if (!projectId || !workflowId) return
     try {
-      await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`, {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -2116,10 +2116,63 @@ export function VisualCanvasWorkspace({
           metadataJson: args.metadataJson ?? {},
         }),
       })
+      const data = await response.json().catch(() => ({})) as {
+        asset?: {
+          id?: string
+          url?: string | null
+          thumbnailUrl?: string | null
+          storageProvider?: string | null
+          bucket?: string | null
+          storageKey?: string | null
+          mediaPersistence?: unknown
+          generationJobId?: string | null
+        }
+      }
+      if (!response.ok || !data.asset?.id || (args.type !== 'image' && args.type !== 'video')) return
+
+      const stableUrl = typeof data.asset.url === 'string' ? data.asset.url : ''
+      const nextNodes = latestNodesRef.current.map((node) => {
+        if (node.id !== args.nodeId) return node
+        const metadata = metadataRecord(node.metadataJson)
+        const mediaPersistence = mediaPersistenceRecord(metadata)
+        return {
+          ...node,
+          assetId: data.asset?.id,
+          ...(args.type === 'image' && stableUrl ? { resultImageUrl: stableUrl } : {}),
+          ...(args.type === 'video' && stableUrl ? {
+            resultVideoUrl: stableUrl,
+            preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: stableUrl, poster: data.asset?.thumbnailUrl ?? node.preview?.poster },
+          } : {}),
+          metadataJson: {
+            ...metadata,
+            assetId: data.asset?.id,
+            ...(stableUrl ? { assetUrl: stableUrl, resolvedUrl: stableUrl } : {}),
+            assetResolveStatus: stableUrl ? 'ready' : metadata.assetResolveStatus,
+            recoveryStatus: stableUrl ? 'resolved_from_storage_key' : metadata.recoveryStatus,
+            storageProvider: data.asset?.storageProvider ?? metadata.storageProvider,
+            bucket: data.asset?.bucket ?? metadata.bucket,
+            storageKey: data.asset?.storageKey ?? metadata.storageKey,
+            generationJobId: data.asset?.generationJobId ?? args.generationJobId ?? metadata.generationJobId,
+            mediaPersistence: {
+              ...mediaPersistence,
+              ...(data.asset?.mediaPersistence && typeof data.asset.mediaPersistence === 'object' ? data.asset.mediaPersistence as Record<string, unknown> : {}),
+              status: stableUrl ? 'persisted' : mediaPersistence.status,
+              assetId: data.asset?.id,
+              storageProvider: data.asset?.storageProvider ?? mediaPersistence.storageProvider,
+              bucket: data.asset?.bucket ?? mediaPersistence.bucket,
+              storageKey: data.asset?.storageKey ?? mediaPersistence.storageKey,
+              persistedAt: new Date().toISOString(),
+            },
+          },
+        }
+      })
+      commitNodes(nextNodes)
+      flushLocalSnapshot()
+      void saveCanvas()
     } catch (error) {
       console.warn('[canvas] failed to record generated asset', error)
     }
-  }, [projectId, workflowId])
+  }, [commitNodes, flushLocalSnapshot, projectId, saveCanvas, workflowId])
 
   useEffect(() => {
     let cancelled = false
@@ -3386,6 +3439,7 @@ export function VisualCanvasWorkspace({
               url,
               type: current.kind,
               projectId,
+              workflowId,
               nodeId: current.id,
               filenameHint: `${current.title || current.id}-${current.kind}.${current.kind === 'image' ? 'png' : 'mp4'}`,
               metadata,
@@ -3453,7 +3507,7 @@ export function VisualCanvasWorkspace({
     return () => {
       cancelled = true
     }
-  }, [assetResolveKey, commitNodes, projectId, scheduleCanvasSave, writeUnifiedLocalSnapshot])
+  }, [assetResolveKey, commitNodes, projectId, scheduleCanvasSave, workflowId, writeUnifiedLocalSnapshot])
 
   const handleRecoverCanvasAssets = useCallback(async () => {
     const mediaNodes = latestNodesRef.current.filter((node) => node.kind === 'image' || node.kind === 'video')

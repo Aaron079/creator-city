@@ -6,6 +6,9 @@ import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { generateSeedanceVideo } from '@/lib/providers/china/volcengine'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { db } from '@/lib/db'
+import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
+import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +52,140 @@ function providerNotConfiguredResponse(providerId: string, missingEnv: string[] 
 function firstImageInput(body: VideoGenerateBody) {
   return body.imageUrl
     ?? body.inputAssets?.find((asset) => asset.type === 'image' && asset.url)?.url
+}
+
+function failedMediaPersistence(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
+  return {
+    status: 'failed',
+    errorCode: result.errorCode,
+    message: result.message,
+  }
+}
+
+async function createVideoGenerationJob(args: {
+  userId: string
+  providerId: string
+  prompt: string
+  body: VideoGenerateBody
+  imageUrl?: string
+}) {
+  return db.generationJob.create({
+    data: {
+      userId: args.userId,
+      projectId: args.body.projectId ?? null,
+      providerId: args.providerId,
+      provider: args.providerId,
+      nodeType: 'video',
+      kind: 'video',
+      status: 'PROCESSING',
+      prompt: args.prompt.slice(0, 2000),
+      input: {
+        prompt: args.prompt,
+        imageUrl: args.imageUrl,
+        params: args.body.params ?? {},
+        workflowId: args.body.workflowId,
+        nodeId: args.body.nodeId,
+      },
+    },
+  })
+}
+
+async function markVideoGenerationJobFailed(jobId: string | undefined, message: string) {
+  if (!jobId) return
+  await db.generationJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'FAILED',
+      error: message,
+      errorMessage: message.slice(0, 1000),
+      completedAt: new Date(),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[api/generate/video] failed to mark GenerationJob failed', error)
+  })
+}
+
+async function attachPersistedVideo(args: {
+  videoUrl: string
+  providerId: string
+  model?: string
+  prompt: string
+  body: VideoGenerateBody
+  userId: string
+  generationJobId?: string
+  providerJobId?: string
+}) {
+  const assetIntelligence = analyzeAssetIntelligence({
+    mediaType: 'video',
+    prompt: args.body.prompt,
+    compiledPrompt: args.body.compiledPrompt || args.prompt,
+    providerId: args.providerId,
+    metadata: { model: args.model, providerJobId: args.providerJobId },
+  })
+  if (process.env.MEDIA_PERSISTENCE_ENABLED === 'false') {
+    return {
+      videoUrl: args.videoUrl,
+      mediaPersistence: { status: 'disabled' },
+      assetIntelligence,
+      warning: undefined,
+      assetId: undefined,
+      asset: undefined,
+    }
+  }
+
+  const persistence = await persistGeneratedMedia({
+    url: args.videoUrl,
+    type: 'video',
+    projectId: args.body.projectId,
+    workflowId: args.body.workflowId,
+    nodeId: args.body.nodeId,
+    filenameHint: 'generated-video.mp4',
+    sourceProvider: args.providerId,
+    userId: args.userId,
+    metadata: {
+      model: args.model,
+      prompt: args.prompt,
+      generationJobId: args.generationJobId,
+      providerJobId: args.providerJobId,
+      assetIntelligence,
+    },
+  }).catch((error: unknown): PersistGeneratedMediaResult => ({
+    ok: false,
+    errorCode: 'MEDIA_PERSIST_FAILED',
+    message: error instanceof Error ? error.message : '生成视频转存失败。',
+  }))
+
+  if (!persistence.ok) {
+    return {
+      videoUrl: args.videoUrl,
+      mediaPersistence: failedMediaPersistence(persistence),
+      assetIntelligence,
+      warning: '视频生成成功，但媒体转存失败，该链接可能会过期。',
+      assetId: undefined,
+      asset: undefined,
+    }
+  }
+
+  return {
+    videoUrl: persistence.stableUrl,
+    mediaPersistence: { status: 'persisted', ...persistence },
+    assetIntelligence,
+    warning: undefined,
+    assetId: persistence.assetId,
+    asset: persistence.assetId ? {
+      id: persistence.assetId,
+      type: 'VIDEO',
+      url: persistence.stableUrl,
+      dataUrl: null,
+      thumbnailUrl: null,
+      providerId: 'generated-media-persistence',
+      generationJobId: args.generationJobId,
+      projectId: args.body.projectId,
+      workflowId: args.body.workflowId,
+      nodeId: args.body.nodeId,
+    } : undefined,
+    originalProviderVideoUrl: args.videoUrl,
+  }
 }
 
 export async function GET() {
@@ -122,6 +259,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (providerId === 'volcengine-seedance-video') {
+    const generationJob = await createVideoGenerationJob({
+      userId: currentUser.id,
+      providerId,
+      prompt,
+      body,
+      imageUrl,
+    })
     const params = body.params ?? {}
     const duration = body.duration
       ?? (typeof params.duration === 'number' ? params.duration : 5)
@@ -141,6 +285,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!raw.success) {
+      await markVideoGenerationJobFailed(generationJob.id, raw.message)
       return NextResponse.json({
         success: false,
         providerId,
@@ -158,11 +303,25 @@ export async function POST(request: NextRequest) {
 
     if (raw.async) {
       const submittedAt = new Date().toISOString()
+      await db.generationJob.update({
+        where: { id: generationJob.id },
+        data: {
+          providerJobId: raw.taskId,
+          status: 'PROCESSING',
+          output: {
+            taskId: raw.taskId,
+            status: 'running',
+            submittedAt,
+          },
+        },
+      }).catch((error: unknown) => {
+        console.warn('[api/generate/video] failed to store provider task id', error)
+      })
       return NextResponse.json({
         success: true,
         async: true,
         taskId: raw.taskId,
-        jobId: raw.taskId,
+        jobId: generationJob.id,
         providerId,
         model: raw.model,
         mode: 'real',
@@ -174,7 +333,8 @@ export async function POST(request: NextRequest) {
             providerId,
             model: raw.model,
             taskId: raw.taskId,
-            generationJobId: raw.taskId,
+            providerJobId: raw.taskId,
+            generationJobId: generationJob.id,
             submittedAt,
           },
         },
@@ -182,10 +342,27 @@ export async function POST(request: NextRequest) {
     }
 
     const completedAt = new Date().toISOString()
+    const persisted = await attachPersistedVideo({
+      videoUrl: raw.videoUrl,
+      providerId,
+      model: raw.model,
+      prompt,
+      body,
+      userId: currentUser.id,
+      generationJobId: generationJob.id,
+    })
     return NextResponse.json({
       success: true,
       async: false,
-      videoUrl: raw.videoUrl,
+      videoUrl: persisted.videoUrl,
+      resultVideoUrl: persisted.videoUrl,
+      assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
+      assetId: persisted.assetId,
+      asset: persisted.asset,
+      originalProviderVideoUrl: raw.videoUrl,
+      mediaPersistence: persisted.mediaPersistence,
+      assetIntelligence: persisted.assetIntelligence,
+      warning: persisted.warning,
       providerId,
       model: raw.model,
       mode: 'real',
@@ -193,12 +370,17 @@ export async function POST(request: NextRequest) {
       message: `视频生成成功（${raw.model}）`,
       completedAt,
       result: {
-        videoUrl: raw.videoUrl,
-        previewUrl: raw.videoUrl,
+        videoUrl: persisted.videoUrl,
+        previewUrl: persisted.videoUrl,
         metadata: {
           providerId,
           model: raw.model,
           completedAt,
+          generationJobId: generationJob.id,
+          ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          originalProviderVideoUrl: raw.videoUrl,
+          mediaPersistence: persisted.mediaPersistence,
+          assetIntelligence: persisted.assetIntelligence,
         },
       },
     }, { status: 200 })
@@ -220,5 +402,45 @@ export async function POST(request: NextRequest) {
   })
 
   const result = await finalizeBilling(raw, billing.ctx.billingJobId)
+  const resultWithMedia = result as typeof result & { resultVideoUrl?: string; videoUrl?: string; model?: string }
+  const providerVideoUrl = result.result?.videoUrl ?? resultWithMedia.resultVideoUrl ?? resultWithMedia.videoUrl
+  if (result.success && providerVideoUrl) {
+    const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object' ? result.result.metadata : {}
+    const resultModel = resultWithMedia.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined)
+    const persisted = await attachPersistedVideo({
+      videoUrl: providerVideoUrl,
+      providerId,
+      model: resultModel,
+      prompt,
+      body,
+      userId: currentUser.id,
+      generationJobId: result.billingJobId ?? result.jobId,
+      providerJobId: result.jobId,
+    })
+    return NextResponse.json({
+      ...result,
+      videoUrl: persisted.videoUrl,
+      resultVideoUrl: persisted.videoUrl,
+      assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
+      assetId: persisted.assetId,
+      asset: persisted.asset,
+      originalProviderVideoUrl: providerVideoUrl,
+      mediaPersistence: persisted.mediaPersistence,
+      assetIntelligence: persisted.assetIntelligence,
+      warning: persisted.warning,
+      result: {
+        ...result.result,
+        videoUrl: persisted.videoUrl,
+        previewUrl: persisted.videoUrl,
+        metadata: {
+          ...(result.result?.metadata ?? {}),
+          ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          originalProviderVideoUrl: providerVideoUrl,
+          mediaPersistence: persisted.mediaPersistence,
+          assetIntelligence: persisted.assetIntelligence,
+        },
+      },
+    })
+  }
   return NextResponse.json(result)
 }

@@ -4,6 +4,7 @@ import { getSeedanceVideoStatus } from '@/lib/providers/china/volcengine'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
+import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,7 +67,27 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await getSeedanceVideoStatus(taskId)
+  const generationJob = await db.generationJob.findFirst({
+    where: {
+      userId: currentUser.id,
+      providerJobId: taskId,
+      providerId,
+    },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => null)
+
   if (!result.success) {
+    if (generationJob) {
+      await db.generationJob.update({
+        where: { id: generationJob.id },
+        data: {
+          status: 'FAILED',
+          error: result.message,
+          errorMessage: result.message.slice(0, 1000),
+          completedAt: new Date(),
+        },
+      }).catch(() => undefined)
+    }
     return NextResponse.json({
       success: false,
       providerId,
@@ -100,7 +121,13 @@ export async function GET(request: NextRequest) {
         filenameHint: 'generated-video.mp4',
         sourceProvider: providerId,
         userId: currentUser.id,
-        metadata: { model: result.model, taskId, assetIntelligence },
+        metadata: {
+          model: result.model,
+          taskId,
+          providerJobId: taskId,
+          generationJobId: generationJob?.id,
+          assetIntelligence,
+        },
       }).catch((error: unknown) => ({
         ok: false as const,
         errorCode: 'MEDIA_PERSIST_FAILED',
@@ -119,11 +146,38 @@ export async function GET(request: NextRequest) {
         videoUrl: persistence.stableUrl,
         assetUrl: persistence.stableUrl,
         assetId: persistence.assetId,
+        asset: persistence.assetId ? {
+          id: persistence.assetId,
+          type: 'VIDEO',
+          url: persistence.stableUrl,
+          dataUrl: null,
+          thumbnailUrl: null,
+          providerId: 'generated-media-persistence',
+          generationJobId: generationJob?.id,
+          projectId,
+          workflowId,
+          nodeId,
+        } : undefined,
         originalProviderVideoUrl: result.videoUrl,
         mediaPersistence: persistence,
         assetIntelligence,
         model: result.model,
         message: result.message,
+        result: {
+          videoUrl: persistence.stableUrl,
+          previewUrl: persistence.stableUrl,
+          metadata: {
+            model: result.model,
+            taskId,
+            providerJobId: taskId,
+            generationJobId: generationJob?.id,
+            assetId: persistence.assetId,
+            assetUrl: persistence.stableUrl,
+            originalProviderVideoUrl: result.videoUrl,
+            mediaPersistence: persistence,
+            assetIntelligence,
+          },
+        },
       }, { status: 200 })
     }
 

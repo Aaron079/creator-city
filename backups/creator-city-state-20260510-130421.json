@@ -1,0 +1,51 @@
+{
+  "exportedAt": "2026-05-10T05:04:21.872Z",
+  "ok": true,
+  "limits": {
+    "assets": 10000,
+    "generationJobs": 10000,
+    "projects": 1000,
+    "canvasWorkflows": 2000,
+    "canvasNodes": 20000,
+    "canvasEdges": 20000
+  },
+  "localStorageKeys": [
+    {
+      "key": "creator-city:canvas-snapshot:<projectId>",
+      "role": "full local canvas fallback snapshot written by VisualCanvasWorkspace"
+    },
+    {
+      "key": "creator-city:canvas-cache:<projectId>",
+      "role": "cached server canvas for fast open"
+    },
+    {
+      "key": "creator-city:draft:<projectId>",
+      "role": "local draft fallback before/after server save"
+    },
+    {
+      "key": "creator-city:last-project-id",
+      "role": "route hint for /create without query string"
+    },
+    {
+      "key": "creator-city:last-workflow-id",
+      "role": "route/session hint for the last workflow"
+    }
+  ],
+  "assets": [],
+  "generationJobs": [],
+  "projects": [],
+  "canvas": {
+    "workflows": [],
+    "nodes": [],
+    "edges": []
+  },
+  "currentUnrecoverableAssets": [],
+  "currentUnrecoverableCanvasNodes": [],
+  "cannotRecoverReasons": {
+    "unrecoverable_blob_url": "Only a browser blob URL was saved; it is gone after refresh.",
+    "unrecoverable_expired_signed_url_without_storage_key": "Only an expired provider/object-store signed URL was saved; no durable storageKey exists.",
+    "unrecoverable_provider_expired": "Provider URL cannot be downloaded and no retrievable provider job result is available.",
+    "unrecoverable_provider_retrieve_not_implemented": "Provider job id exists but the adapter cannot retrieve historical output.",
+    "unrecoverable_no_record": "No assetId, storageKey, usable URL, dataUrl, or providerJobId was saved."
+  }
+}
