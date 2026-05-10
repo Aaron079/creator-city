@@ -6,6 +6,12 @@ import { checkObjectExists, classifyAssetUrl, downloadExternalAsset, resolveAsse
 export type AssetResolveStatus =
   | 'ready'
   | 'missing'
+  | 'needs_signed_url'
+  | 'proxy_required'
+  | 'missing_env'
+  | 'storage_permission_error'
+  | 'object_missing'
+  | 'provider_error'
   | 'unrecoverable_blob_url'
   | 'unrecoverable_data_url_without_file'
   | 'unrecoverable_expired_signed_url_without_storage_key'
@@ -278,16 +284,28 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
       return resultFromAsset(updated, 'unrecoverable_expired_signed_url_without_storage_key', null, 'unrecoverable_expired_signed_url_without_storage_key', updated.error, 'marked_unrecoverable')
     }
     const isGone = downloaded.status === 404
-    const updated = await markAsset(asset, isGone ? 'UNRECOVERABLE' : 'MISSING', isGone ? 'unrecoverable_provider_expired' : (downloaded.status === 403 ? 'possible_oss_private_url' : 'old_url_unreadable'), downloaded.message)
-    return resultFromAsset(updated, isGone ? 'unrecoverable_provider_expired' : 'missing', null, updated.recoveryStatus, updated.error, isGone ? 'marked_unrecoverable' : 'marked_missing')
+    const recoveryStatus = isGone
+      ? 'unrecoverable_provider_expired'
+      : downloaded.status === 403
+        ? 'storage_permission_error'
+        : 'provider_error'
+    const updated = await markAsset(asset, isGone ? 'UNRECOVERABLE' : 'MISSING', recoveryStatus, downloaded.message)
+    return resultFromAsset(updated, isGone ? 'unrecoverable_provider_expired' : recoveryStatus, null, updated.recoveryStatus, updated.error, isGone ? 'marked_unrecoverable' : 'marked_missing')
   }
 
   const providerJobId = providerJobIdFor(asset)
   if (providerJobId) return recoverFromProviderJob(asset, providerJobId)
 
   if (storageKey) {
-    const updated = await markAsset(asset, 'MISSING', 'storage_key_unreadable_without_recovery_source', storageMissMessage || 'Storage key exists but no originalUrl or providerJobId can recover it.')
-    return resultFromAsset(updated, 'missing', null, updated.recoveryStatus, updated.error, 'marked_missing')
+    const recoveryStatus = /not configured|未配置/i.test(storageMissMessage)
+      ? 'missing_env'
+      : /403|permission|forbidden|accessdenied|denied/i.test(storageMissMessage)
+        ? 'storage_permission_error'
+        : /404|not found|missing/i.test(storageMissMessage)
+          ? 'object_missing'
+          : 'needs_signed_url'
+    const updated = await markAsset(asset, 'MISSING', recoveryStatus, storageMissMessage || 'Storage key exists but no signed URL or proxy fallback could read it.')
+    return resultFromAsset(updated, recoveryStatus, null, updated.recoveryStatus, updated.error, 'marked_missing')
   }
 
   const updated = await markAsset(asset, 'UNRECOVERABLE', 'unrecoverable_no_record', '当前资产没有 storageKey、可恢复原始 URL 或可查询的 providerJobId。')

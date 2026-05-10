@@ -6,7 +6,15 @@
  * Usage: P0_DEBUG_TOKEN=xxx pnpm dlx tsx scripts/test-real-canvas-node-debug.ts
  */
 
-const BASE_URL = process.env.DEBUG_BASE_URL || 'https://creator-city-vert.vercel.app'
+function argValue(name: string) {
+  const index = process.argv.indexOf(name)
+  if (index >= 0) return process.argv[index + 1]
+  const prefix = `${name}=`
+  const item = process.argv.find((arg) => arg.startsWith(prefix))
+  return item ? item.slice(prefix.length) : undefined
+}
+
+const BASE_URL = argValue('--base-url') || process.env.DEBUG_BASE_URL || 'https://creator-city-vert.vercel.app'
 const TOKEN = process.env.P0_DEBUG_TOKEN || ''
 
 async function main() {
@@ -14,10 +22,12 @@ async function main() {
   console.log(`Target: ${BASE_URL}`)
 
   if (!TOKEN) {
-    console.log('[SKIP] P0_DEBUG_TOKEN not set. Set it as env var to run against production.')
-    console.log('  export P0_DEBUG_TOKEN=<your-token>')
-    console.log('  Also set it as Vercel env var: P0_DEBUG_TOKEN=<same-token>')
-    process.exit(0)
+    console.log('[FAIL] P0_DEBUG_TOKEN not set.')
+    console.log('  This script cannot verify real production canvas nodes without the protected debug token.')
+    console.log('  Required local run:')
+    console.log(`  cd /Users/aaron/creator-city && P0_DEBUG_TOKEN=<token configured in Vercel Production> pnpm dlx tsx scripts/test-real-canvas-node-debug.ts --base-url ${BASE_URL}`)
+    console.log('  Required Vercel Production env: P0_DEBUG_TOKEN=<same-token>')
+    process.exit(1)
   }
 
   try {
@@ -36,50 +46,42 @@ async function main() {
         status: string
         position: { x: number; y: number }
         assetId: string | null
-        storageKeyInMetadata: string | null
+        storageKeyExists: boolean
         recoveryStatus: string | null
-        legacyUrl: string | null
-        asset: {
-          id: string
-          storageKey: string | null
-          storageProvider: string | null
-          status: string
-          resolvedUrl?: string
-          resolvedUrlError?: string
-        } | null
-        assetByNodeId: { id: string; status: string } | null
-        diagnosis: string
+        resolveBatchStatus: string
+        resolvedUrlExists: boolean
+        canvasNodeCardShouldUse: { source: string; url: { host: string; exists: boolean } | null } | null
+        assetExists: boolean
+        assetStatus: string | null
+        assetRecoveryStatus: string | null
+        objectExists?: { exists: boolean; status: number; message: string | null } | null
       }>
       ossConfigured: boolean
-      publicBaseUrl: string
+      env?: { ossConfigured: boolean; publicBaseUrlConfigured: boolean; p0DebugTokenConfigured: boolean }
+      summary?: Record<string, number>
     }
 
-    console.log(`\nOSS configured: ${data.ossConfigured ? '✓ YES' : '✗ NO'}`)
-    console.log(`Public base URL: ${data.publicBaseUrl}`)
+    console.log(`\nOSS configured: ${(data.env?.ossConfigured ?? data.ossConfigured) ? '✓ YES' : '✗ NO'}`)
+    console.log(`Public base URL configured: ${data.env?.publicBaseUrlConfigured ? '✓ YES' : '✗ NO'}`)
     console.log(`\n--- ${data.count} recent image/video nodes ---\n`)
 
     const diagSummary: Record<string, number> = {}
     for (const node of data.nodes) {
-      diagSummary[node.diagnosis] = (diagSummary[node.diagnosis] || 0) + 1
-      const icon = node.diagnosis === 'RESOLVED_OK' ? '✓' : '✗'
+      diagSummary[node.resolveBatchStatus] = (diagSummary[node.resolveBatchStatus] || 0) + 1
+      const icon = node.resolvedUrlExists ? '✓' : '✗'
       console.log(`${icon} [${node.kind}] nodeId=${node.nodeId.slice(0, 12)}`)
       console.log(`    assetId: ${node.assetId || '(none)'}`)
-      console.log(`    storageKey: ${node.storageKeyInMetadata || '(none)'}`)
+      console.log(`    storageKey exists: ${node.storageKeyExists ? 'yes' : 'no'}`)
       console.log(`    recoveryStatus: ${node.recoveryStatus || '(none)'}`)
-      console.log(`    diagnosis: ${node.diagnosis}`)
-      if (node.asset) {
-        console.log(`    asset.storageKey: ${node.asset.storageKey || '(none)'}`)
-        console.log(`    asset.status: ${node.asset.status}`)
-        console.log(`    asset.resolvedUrl: ${node.asset.resolvedUrl ? node.asset.resolvedUrl.slice(0, 80) + '...' : '(none)'}`)
-        if (node.asset.resolvedUrlError) {
-          console.log(`    asset.resolvedUrlError: ${node.asset.resolvedUrlError}`)
+      console.log(`    resolveBatchStatus: ${node.resolveBatchStatus}`)
+      console.log(`    CanvasNodeCard src: ${node.canvasNodeCardShouldUse?.source || '(none)'}`)
+      if (node.assetExists) {
+        console.log(`    asset.status: ${node.assetStatus || '(none)'}`)
+        console.log(`    asset.recoveryStatus: ${node.assetRecoveryStatus || '(none)'}`)
+        if (node.objectExists) {
+          console.log(`    object.exists: ${node.objectExists.exists ? 'yes' : 'no'} (HTTP ${node.objectExists.status})`)
+          if (node.objectExists.message) console.log(`    object.message: ${node.objectExists.message}`)
         }
-      }
-      if (node.assetByNodeId && !node.assetId) {
-        console.log(`    assetByNodeId: ${node.assetByNodeId.id} (${node.assetByNodeId.status})`)
-      }
-      if (node.legacyUrl) {
-        console.log(`    legacyUrl: ${node.legacyUrl}`)
       }
       console.log('')
     }

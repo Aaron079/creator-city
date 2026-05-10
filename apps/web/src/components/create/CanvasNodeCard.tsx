@@ -157,6 +157,45 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
+function nestedRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function mediaPersistenceRecord(metadata: Record<string, unknown>) {
+  return nestedRecord(metadata.mediaPersistence)
+}
+
+function getNodeAssetId(node: VisualCanvasNode) {
+  const metadata = metadataRecord(node.metadataJson)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  const assetRecord = nestedRecord(metadata.asset)
+  const nodeData = nestedRecord((node as unknown as Record<string, unknown>).data)
+  const generationJob = nestedRecord(metadata.generationJob)
+  const generationResult = nestedRecord(metadata.generationResult)
+  const pluginResult = nestedRecord(metadata.pluginResult)
+  return (
+    stringValue(node.assetId) ||
+    stringValue(nodeData.assetId) ||
+    stringValue((node as unknown as Record<string, unknown>).resultAssetId) ||
+    stringValue((node as unknown as Record<string, unknown>).mediaAssetId) ||
+    stringValue(metadata.assetId) ||
+    stringValue(assetRecord.id) ||
+    stringValue(metadata.asset_id) ||
+    stringValue(metadata.mediaAssetId) ||
+    stringValue(metadata.resultAssetId) ||
+    stringValue(metadata.result_asset_id) ||
+    stringValue(metadata.media_asset_id) ||
+    stringValue(metadata.outputAssetId) ||
+    stringValue(generationJob.outputAssetId) ||
+    stringValue(generationResult.outputAssetId) ||
+    stringValue(pluginResult.outputAssetId) ||
+    stringValue(mediaPersistence.assetId) ||
+    stringValue(mediaPersistence.outputAssetId)
+  )
+}
+
 type MediaState = {
   url: string
   source: string
@@ -265,8 +304,14 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'unrecoverable_provider_expired') return '原始生成平台链接已过期，且没有可用 providerJobId。'
   if (reason === 'unrecoverable_provider_retrieve_not_implemented') return '该资产有 providerJobId，但当前 provider 尚未接入历史结果取回接口。'
   if (reason === 'unrecoverable_no_record') return '当前画布节点没有 assetId，也没有可恢复的原始 URL。'
-  if (reason === 'storage_key_unreadable') return '数据库有资产记录，但对象存储暂时无法读取。'
-  if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有资产记录，但对象存储不可读，且没有 originalUrl 或 providerJobId 可恢复。'
+  if (reason === 'needs_signed_url') return '对象存储是私有桶，需要签名 URL 才能读取。'
+  if (reason === 'proxy_required') return '浏览器不能直接读取该媒体，正在使用代理读取。'
+  if (reason === 'missing_env') return '对象存储环境变量缺失，无法生成签名 URL。'
+  if (reason === 'storage_permission_error') return '对象存储返回权限错误，需要签名 URL 或代理读取。'
+  if (reason === 'object_missing') return '对象存储中没有找到该文件。'
+  if (reason === 'provider_error') return 'Provider 历史结果取回失败。'
+  if (reason === 'storage_key_unreadable') return '数据库有 storageKey，但对象存储暂时无法读取。'
+  if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有 storageKey，但签名 URL、代理和历史来源都未能读取。'
   if (reason === 'provider_retrieve_not_implemented') return '该资产有 providerJobId，但当前 provider 尚未接入历史结果取回接口。'
   if (reason === 'needs_recovery') return '正在尝试恢复历史资产。'
   if (!hasAssetId) return '当前画布节点缺少 assetId；可尝试用历史 URL 创建可持久化 Asset。'
@@ -454,7 +499,7 @@ export function CanvasNodeCard({
   const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? videoSource : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)
-  const nodeAssetId = stringValue(node.assetId) || stringValue(nodeMetadata.assetId)
+  const nodeAssetId = getNodeAssetId(node)
   const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
   const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
   const assetUrl = stringValue(nodeMetadata.assetUrl)
@@ -596,6 +641,8 @@ export function CanvasNodeCard({
           body: JSON.stringify({
             url: currentUrl,
             type: mediaKind,
+            projectId: stringValue(nodeMetadata.projectId),
+            workflowId: stringValue(nodeMetadata.workflowId),
             nodeId: node.id,
             filenameHint: `${node.title || node.id || 'recovered'}-${mediaKind}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
             metadata: nodeMetadata,

@@ -17,9 +17,6 @@ function uniqueAssetIds(value: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
-
     let body: ResolveBatchBody
     try {
       body = await request.json() as ResolveBatchBody
@@ -29,6 +26,9 @@ export async function POST(request: NextRequest) {
 
     const assetIds = uniqueAssetIds(body.assetIds)
     if (!assetIds.length) return jsonOk({ assets: [] })
+
+    const user = await getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
     const assets: AssetResolveResult[] = []
     for (const assetId of assetIds) {

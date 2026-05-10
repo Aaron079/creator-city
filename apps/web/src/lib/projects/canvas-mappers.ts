@@ -45,11 +45,23 @@ export function mapCanvasNode(row: DbCanvasNode) {
   const mediaPersistence = metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
     ? metadata.mediaPersistence as Record<string, unknown>
     : {}
-  const assetId = typeof metadata.assetId === 'string' && metadata.assetId.trim()
-    ? metadata.assetId.trim()
-    : typeof mediaPersistence.assetId === 'string' && mediaPersistence.assetId.trim()
-      ? mediaPersistence.assetId.trim()
-      : undefined
+  const assetRecord = metadata.asset && typeof metadata.asset === 'object' && !Array.isArray(metadata.asset)
+    ? metadata.asset as Record<string, unknown>
+    : {}
+  const generationJob = metadata.generationJob && typeof metadata.generationJob === 'object' && !Array.isArray(metadata.generationJob)
+    ? metadata.generationJob as Record<string, unknown>
+    : {}
+  const assetId = [
+    metadata.assetId,
+    assetRecord.id,
+    metadata.asset_id,
+    metadata.mediaAssetId,
+    metadata.resultAssetId,
+    metadata.outputAssetId,
+    generationJob.outputAssetId,
+    mediaPersistence.assetId,
+    mediaPersistence.outputAssetId,
+  ].find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim()
 
   return {
     id: row.nodeId,

@@ -28,6 +28,10 @@ function firstVideoUrl(value: unknown) {
   return stringValue(recordValue(videos[0]).url)
 }
 
+function nestedUrl(value: unknown, key = 'url') {
+  return stringValue(recordValue(value)[key])
+}
+
 export type MediaUrlSource = {
   url: string
   source: string
@@ -49,12 +53,25 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
   const pluginResult = recordValue(metadata.pluginResult)
   const pluginData = recordValue(pluginResult.data)
   const pluginOutput = recordValue(pluginResult.output)
+  const asset = recordValue(metadata.asset)
 
   const candidates: Array<[string, string]> = [
-    ['resultImageUrl', stringValue(node.resultImageUrl)],
-    ['metadata.resultImageUrl', stringValue(metadata.resultImageUrl)],
+    ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['metadata.stableUrl', stringValue(metadata.stableUrl)],
+    ['metadata.asset.url', nestedUrl(metadata.asset)],
+    ['metadata.mediaPersistence.stableUrl', stringValue(recordValue(metadata.mediaPersistence).stableUrl)],
+    ['metadata.mediaPersistence.resolvedUrl', stringValue(recordValue(metadata.mediaPersistence).resolvedUrl)],
+    ['metadata.mediaPersistence.url', stringValue(recordValue(metadata.mediaPersistence).url)],
+    ['metadata.mediaPersistence.assetUrl', stringValue(recordValue(metadata.mediaPersistence).assetUrl)],
+    ['metadata.asset.publicUrl', stringValue(asset.publicUrl)],
+    ['metadata.asset.signedUrl', stringValue(asset.signedUrl)],
+    ['metadata.resultImageUrl', stringValue(metadata.resultImageUrl)],
+    ['resultImageUrl', stringValue(node.resultImageUrl)],
     ['metadata.imageUrl', stringValue(metadata.imageUrl)],
+    ['metadata.currentUrl', stringValue(metadata.currentUrl)],
+    ['metadata.providerUrl', stringValue(metadata.providerUrl)],
+    ['metadata.originalUrl', stringValue(metadata.originalUrl)],
     ['metadata.originalProviderImageUrl', stringValue(metadata.originalProviderImageUrl)],
     ['metadata.originalProviderUrl', stringValue(metadata.originalProviderUrl)],
     ['metadata.sourceImageUrl', stringValue(metadata.sourceImageUrl)],
@@ -87,12 +104,25 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
   const pluginResult = recordValue(metadata.pluginResult)
   const pluginData = recordValue(pluginResult.data)
   const pluginOutput = recordValue(pluginResult.output)
+  const asset = recordValue(metadata.asset)
 
   const candidates: Array<[string, string]> = [
-    ['resultVideoUrl', stringValue(node.resultVideoUrl)],
-    ['metadata.resultVideoUrl', stringValue(metadata.resultVideoUrl)],
+    ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['metadata.stableUrl', stringValue(metadata.stableUrl)],
+    ['metadata.asset.url', nestedUrl(metadata.asset)],
+    ['metadata.mediaPersistence.stableUrl', stringValue(recordValue(metadata.mediaPersistence).stableUrl)],
+    ['metadata.mediaPersistence.resolvedUrl', stringValue(recordValue(metadata.mediaPersistence).resolvedUrl)],
+    ['metadata.mediaPersistence.url', stringValue(recordValue(metadata.mediaPersistence).url)],
+    ['metadata.mediaPersistence.assetUrl', stringValue(recordValue(metadata.mediaPersistence).assetUrl)],
+    ['metadata.asset.publicUrl', stringValue(asset.publicUrl)],
+    ['metadata.asset.signedUrl', stringValue(asset.signedUrl)],
+    ['metadata.resultVideoUrl', stringValue(metadata.resultVideoUrl)],
+    ['resultVideoUrl', stringValue(node.resultVideoUrl)],
     ['metadata.videoUrl', stringValue(metadata.videoUrl)],
+    ['metadata.currentUrl', stringValue(metadata.currentUrl)],
+    ['metadata.providerUrl', stringValue(metadata.providerUrl)],
+    ['metadata.originalUrl', stringValue(metadata.originalUrl)],
     ['metadata.originalProviderVideoUrl', stringValue(metadata.originalProviderVideoUrl)],
     ['metadata.originalProviderUrl', stringValue(metadata.originalProviderUrl)],
     ['metadata.sourceVideoUrl', stringValue(metadata.sourceVideoUrl)],

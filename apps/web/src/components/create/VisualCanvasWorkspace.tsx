@@ -226,7 +226,7 @@ type VisualCanvasNode = CanvasNodeCardNode & {
 
 type CanvasAssetResolveResult = {
   assetId: string
-  status: 'ready' | 'missing' | 'unrecoverable_blob_url' | 'unrecoverable_data_url_without_file' | 'unrecoverable_expired_signed_url_without_storage_key' | 'unrecoverable_provider_expired' | 'unrecoverable_provider_retrieve_not_implemented' | 'unrecoverable_no_record'
+  status: 'ready' | 'missing' | 'needs_signed_url' | 'proxy_required' | 'missing_env' | 'storage_permission_error' | 'object_missing' | 'provider_error' | 'unrecoverable_blob_url' | 'unrecoverable_data_url_without_file' | 'unrecoverable_expired_signed_url_without_storage_key' | 'unrecoverable_provider_expired' | 'unrecoverable_provider_retrieve_not_implemented' | 'unrecoverable_no_record'
   resolvedUrl?: string | null
   thumbnailUrl?: string | null
   storageKey?: string | null
@@ -580,20 +580,38 @@ function mediaPersistenceRecord(metadata: Record<string, unknown>) {
     : {}
 }
 
+function nestedRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 function getNodeAssetId(node: VisualCanvasNode) {
   const metadata = metadataRecord(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
-  const assetRecord = metadata.asset && typeof metadata.asset === 'object' && !Array.isArray(metadata.asset)
-    ? metadata.asset as Record<string, unknown>
-    : {}
+  const assetRecord = nestedRecord(metadata.asset)
+  const nodeData = nestedRecord((node as unknown as Record<string, unknown>).data)
+  const generationJob = nestedRecord(metadata.generationJob)
+  const generationResult = nestedRecord(metadata.generationResult)
+  const pluginResult = nestedRecord(metadata.pluginResult)
   return (
     stringValue(node.assetId) ||
+    stringValue(nodeData.assetId) ||
     stringValue((node as unknown as Record<string, unknown>).resultAssetId) ||
     stringValue((node as unknown as Record<string, unknown>).mediaAssetId) ||
     stringValue(metadata.assetId) ||
     stringValue(assetRecord.id) ||
+    stringValue(metadata.asset_id) ||
+    stringValue(metadata.mediaAssetId) ||
+    stringValue(metadata.resultAssetId) ||
+    stringValue(metadata.result_asset_id) ||
+    stringValue(metadata.media_asset_id) ||
+    stringValue(metadata.outputAssetId) ||
+    stringValue(generationJob.outputAssetId) ||
+    stringValue(generationResult.outputAssetId) ||
+    stringValue(pluginResult.outputAssetId) ||
     stringValue(mediaPersistence.assetId) ||
-    stringValue(metadata.outputAssetId)
+    stringValue(mediaPersistence.outputAssetId)
   )
 }
 
@@ -4984,6 +5002,14 @@ export function VisualCanvasWorkspace({
             resultPreview: jobResultText?.slice(0, 200) ?? jobFallback,
             outputLabel: jobFallback,
             resultVideoUrl: jobResult.result?.videoUrl ?? nodeSnapshot.resultVideoUrl,
+            ...(nodeSnapshot.kind === 'video'
+              ? {
+                  assetId: jobResult.asset?.id ?? jobResult.assetId ?? getNodeAssetId({
+                    ...generationNodeSnapshot,
+                    metadataJson: videoSuccessMetadata(generationNodeSnapshot, jobResult, generationProviderId),
+                  }),
+                }
+              : {}),
             errorMessage: undefined,
             ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(generationNodeSnapshot, jobResult, normalizedPromptModel) } : {}),
             preview: jobResult.result?.videoUrl
@@ -5047,6 +5073,12 @@ export function VisualCanvasWorkspace({
       const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
       const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
       const resultPreview = resultText?.slice(0, 200) ?? (resultImageUrl ? '图片已生成' : fallbackPreview)
+      const successMetadata = nodeSnapshot.kind === 'image'
+        ? imageSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel)
+        : nodeSnapshot.kind === 'video'
+          ? videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId)
+          : undefined
+      const generatedAssetId = successMetadata ? getNodeAssetId({ ...generationNodeSnapshot, metadataJson: successMetadata }) : undefined
       handleNodePatch(nodeSnapshot.id, {
         status: 'done',
         resultText,
@@ -5054,10 +5086,11 @@ export function VisualCanvasWorkspace({
         outputLabel: resultText?.slice(0, 80) ?? fallbackPreview,
         resultImageUrl: resultImageUrl ?? nodeSnapshot.resultImageUrl,
         resultVideoUrl: resultVideoUrl ?? nodeSnapshot.resultVideoUrl,
+        ...(generatedAssetId ? { assetId: generatedAssetId } : {}),
         errorMessage: undefined,
         ...(nodeSnapshot.kind === 'text' ? { metadataJson: textSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
-        ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageSuccessMetadata(generationNodeSnapshot, result, normalizedPromptModel) } : {}),
-        ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
+        ...(nodeSnapshot.kind === 'image' && successMetadata ? { metadataJson: successMetadata } : {}),
+        ...(nodeSnapshot.kind === 'video' && successMetadata ? { metadataJson: successMetadata } : {}),
         preview: resultVideoUrl
           ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
           : nodeSnapshot.preview,

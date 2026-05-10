@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 import { persistGeneratedMedia, type PersistGeneratedMediaInput } from '@/lib/assets/persist-generated-media'
+import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,28 @@ function optionalString(value: unknown) {
   return trimmed || undefined
 }
 
+async function writeAssetIdToCanvasNode(nodeId: string, assetId: string, patch: Record<string, unknown>) {
+  if (!nodeId || !assetId) return
+  const nodes = await db.canvasNode.findMany({
+    where: { nodeId },
+    select: { id: true, metadataJson: true },
+    take: 10,
+  })
+  await Promise.all(nodes.map((node) => {
+    const metadata = recordValue(node.metadataJson)
+    return db.canvasNode.update({
+      where: { id: node.id },
+      data: {
+        metadataJson: {
+          ...metadata,
+          assetId,
+          ...patch,
+        },
+      },
+    })
+  }))
+}
+
 export async function POST(request: NextRequest) {
   const currentUser = await getCurrentUser()
   if (!currentUser) return jsonError('UNAUTHORIZED', '请先登录后再同步媒体。', 401)
@@ -60,7 +83,6 @@ export async function POST(request: NextRequest) {
   const metadataAssetId = stringValue(metadata.assetId)
   if (nodeId && !metadataAssetId) {
     try {
-      const { db } = await import('@/lib/db')
       const { resolveAssetById } = await import('@/lib/assets/asset-resolver')
       const existingAsset = await db.asset.findFirst({
         where: { nodeId, ownerId: currentUser.id },
@@ -70,6 +92,15 @@ export async function POST(request: NextRequest) {
       if (existingAsset) {
         const resolved = await resolveAssetById(existingAsset.id, currentUser.id)
         if (resolved && resolved.status === 'ready' && resolved.resolvedUrl) {
+          await writeAssetIdToCanvasNode(nodeId, resolved.assetId, {
+            assetUrl: resolved.resolvedUrl,
+            resolvedUrl: resolved.resolvedUrl,
+            storageKey: resolved.storageKey,
+            storageProvider: resolved.storageProvider,
+            bucket: resolved.bucket,
+            recoveryStatus: resolved.recoveryStatus ?? 'resolved_by_node_id',
+            assetResolveStatus: 'ready',
+          })
           return NextResponse.json({
             success: true,
             stableUrl: resolved.resolvedUrl,
@@ -126,6 +157,19 @@ export async function POST(request: NextRequest) {
       return jsonError('MEDIA_SOURCE_EXPIRED', '源媒体链接已过期，无法重新同步。', 410, { diagnostic })
     }
     return jsonError(persistence.errorCode, persistence.message, 500, { diagnostic })
+  }
+
+  if (persistence.assetId) {
+    await writeAssetIdToCanvasNode(optionalString(body.nodeId) ?? '', persistence.assetId, {
+      assetUrl: persistence.stableUrl,
+      resolvedUrl: persistence.stableUrl,
+      storageKey: persistence.storageKey,
+      storageProvider: persistence.storageProvider,
+      bucket: persistence.bucket,
+      recoveryStatus: 'recovered_from_old_url',
+      assetResolveStatus: 'ready',
+      mediaPersistence: persistence,
+    })
   }
 
   return NextResponse.json({

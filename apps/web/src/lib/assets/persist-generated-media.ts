@@ -130,6 +130,61 @@ async function linkGenerationJob(input: PersistGeneratedMediaInput, assetId: str
   })
 }
 
+async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string, stableUrl: string, uploaded: {
+  storageProvider: CanonicalStorageProvider
+  bucket?: string | null
+  storageKey?: string | null
+}) {
+  if (!input.nodeId) return
+  const where: Prisma.CanvasNodeWhereInput = input.workflowId
+    ? { nodeId: input.nodeId, workflowId: input.workflowId }
+    : input.projectId
+      ? { nodeId: input.nodeId, workflow: { projectId: input.projectId } }
+      : { nodeId: input.nodeId }
+  const nodes = await db.canvasNode.findMany({
+    where,
+    select: { id: true, metadataJson: true },
+    take: 10,
+  }).catch(() => [])
+  await Promise.all(nodes.map((node) => {
+    const metadata = node.metadataJson && typeof node.metadataJson === 'object' && !Array.isArray(node.metadataJson)
+      ? node.metadataJson as Record<string, unknown>
+      : {}
+    const mediaPersistence = metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
+      ? metadata.mediaPersistence as Record<string, unknown>
+      : {}
+    return db.canvasNode.update({
+      where: { id: node.id },
+      data: {
+        ...(input.type === 'image' ? { resultImageUrl: stableUrl } : {}),
+        ...(input.type === 'video' ? { resultVideoUrl: stableUrl } : {}),
+        metadataJson: {
+          ...metadata,
+          assetId,
+          assetUrl: stableUrl,
+          resolvedUrl: stableUrl,
+          stableUrl,
+          assetResolveStatus: 'ready',
+          recoveryStatus: 'persisted_generated_media',
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket,
+          storageKey: uploaded.storageKey,
+          mediaPersistence: {
+            ...mediaPersistence,
+            status: 'persisted',
+            assetId,
+            stableUrl,
+            storageProvider: uploaded.storageProvider,
+            bucket: uploaded.bucket,
+            storageKey: uploaded.storageKey,
+            persistedAt: new Date().toISOString(),
+          },
+        },
+      },
+    })
+  }))
+}
+
 export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): Promise<PersistGeneratedMediaResult> {
   try {
     const url = input.url?.trim()
@@ -221,6 +276,13 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         },
       })
       await linkGenerationJob(input, asset.id, stableUrl)
+      await linkCanvasNode(input, asset.id, stableUrl, uploaded).catch((error: unknown) => {
+        console.warn('[assets] failed to link CanvasNode to Asset', {
+          nodeId: input.nodeId,
+          assetId: asset.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
 
       return {
         ok: true,
