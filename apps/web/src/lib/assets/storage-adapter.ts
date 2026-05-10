@@ -372,7 +372,7 @@ export async function checkObjectExists(asset: AssetUrlLike): Promise<ObjectExis
   if (!storageKey) return { exists: false, status: 0, storageProvider: provider || null, bucket: bucket || null, storageKey: null, message: 'Asset has no storageKey.' }
   if (provider === 'supabase' && bucket) return checkSupabaseObjectExists(bucket, storageKey)
   if (provider === 'local_dev') return checkLocalDevObjectExists(bucket || 'public/generated', storageKey)
-  if ((provider === 'aliyun-oss' || provider === 'tencent-cos') && bucket) return checkSignedObjectExists(provider, bucket, storageKey)
+  if (provider === 'aliyun-oss' || provider === 'tencent-cos') return checkSignedObjectExists(provider, bucket || '', storageKey)
   return {
     exists: false,
     status: 0,

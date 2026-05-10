@@ -244,7 +244,7 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
     // Try it before giving up and marking the asset as UNRECOVERABLE.
     if (!object.exists) {
       const resolved = await resolveAssetUrl(asset)
-      if (resolved.url && /^https?:\/\//i.test(resolved.url) && resolved.url !== asset.originalUrl) {
+      if (resolved.url && /^https?:\/\//i.test(resolved.url)) {
         const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_asset_url', null)
         return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
       }
@@ -277,8 +277,9 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
       const updated = await markAsset(asset, 'UNRECOVERABLE', 'unrecoverable_expired_signed_url_without_storage_key', '该资产只保存了过期临时签名链接，没有保存永久 storageKey。')
       return resultFromAsset(updated, 'unrecoverable_expired_signed_url_without_storage_key', null, 'unrecoverable_expired_signed_url_without_storage_key', updated.error, 'marked_unrecoverable')
     }
-    const updated = await markAsset(asset, downloaded.status === 403 || downloaded.status === 404 ? 'UNRECOVERABLE' : 'MISSING', downloaded.status === 403 || downloaded.status === 404 ? 'unrecoverable_provider_expired' : 'old_url_unreadable', downloaded.message)
-    return resultFromAsset(updated, downloaded.status === 403 || downloaded.status === 404 ? 'unrecoverable_provider_expired' : 'missing', null, updated.recoveryStatus, updated.error, downloaded.status === 403 || downloaded.status === 404 ? 'marked_unrecoverable' : 'marked_missing')
+    const isGone = downloaded.status === 404
+    const updated = await markAsset(asset, isGone ? 'UNRECOVERABLE' : 'MISSING', isGone ? 'unrecoverable_provider_expired' : (downloaded.status === 403 ? 'possible_oss_private_url' : 'old_url_unreadable'), downloaded.message)
+    return resultFromAsset(updated, isGone ? 'unrecoverable_provider_expired' : 'missing', null, updated.recoveryStatus, updated.error, isGone ? 'marked_unrecoverable' : 'marked_missing')
   }
 
   const providerJobId = providerJobIdFor(asset)

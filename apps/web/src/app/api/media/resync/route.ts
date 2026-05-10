@@ -52,6 +52,43 @@ export async function POST(request: NextRequest) {
   }
 
   const url = typeof body.url === 'string' ? body.url.trim() : ''
+
+  // If nodeId provided, check if an Asset already exists for this node in the DB.
+  // This handles legacy nodes that have a nodeId->Asset link but lost assetId from metadataJson.
+  const nodeId = typeof body.nodeId === 'string' ? body.nodeId.trim() : ''
+  const metadata = recordValue(body.metadata)
+  const metadataAssetId = stringValue(metadata.assetId)
+  if (nodeId && !metadataAssetId) {
+    try {
+      const { db } = await import('@/lib/db')
+      const { resolveAssetById } = await import('@/lib/assets/asset-resolver')
+      const existingAsset = await db.asset.findFirst({
+        where: { nodeId, ownerId: currentUser.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      })
+      if (existingAsset) {
+        const resolved = await resolveAssetById(existingAsset.id, currentUser.id)
+        if (resolved && resolved.status === 'ready' && resolved.resolvedUrl) {
+          return NextResponse.json({
+            success: true,
+            stableUrl: resolved.resolvedUrl,
+            assetId: resolved.assetId,
+            mediaPersistence: {
+              status: 'persisted',
+              assetId: resolved.assetId,
+              storageKey: resolved.storageKey,
+              storageProvider: resolved.storageProvider,
+              recoveredAt: new Date().toISOString(),
+            },
+          }, { status: 200 })
+        }
+      }
+    } catch {
+      // Fall through to URL download
+    }
+  }
+
   if (!url) return jsonError('MEDIA_URL_EMPTY', '当前节点没有可同步的媒体 URL。')
 
   const type = body.type === 'video' ? 'video' : body.type === 'image' ? 'image' : null
@@ -62,7 +99,6 @@ export async function POST(request: NextRequest) {
     return jsonError('MEDIA_SOURCE_EXPIRED', '源媒体链接已过期，无法重新同步。', 410, { diagnostic })
   }
 
-  const metadata = recordValue(body.metadata)
   const sourceProvider = stringValue(metadata.sourceProvider)
     || stringValue(metadata.providerId)
     || stringValue(metadata.generationSource)

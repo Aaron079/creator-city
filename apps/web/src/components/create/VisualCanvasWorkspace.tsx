@@ -3422,7 +3422,11 @@ export function VisualCanvasWorkspace({
         if (!current || getNodeAssetId(current)) continue
         const url = legacyMediaUrlForNode(current)
         const metadata = metadataRecord(current.metadataJson)
-        if (stringValue(metadata.recoveryStatus).startsWith('unrecoverable_')) continue
+        const recoveryStatus = stringValue(metadata.recoveryStatus)
+        // Only permanently skip truly unrecoverable blobs/data URLs with no hope of recovery.
+        // OSS 403/network errors might be fixable with a proper signed URL, so allow retry.
+        const isTrulyUnrecoverable = recoveryStatus === 'unrecoverable_blob_url' || recoveryStatus === 'unrecoverable_data_url_without_file'
+        if (isTrulyUnrecoverable) continue
 
         if (!url || url.startsWith('blob:') || (!/^https?:\/\//i.test(url) && !url.startsWith('data:'))) {
           const recoveryStatus = unresolvedLegacyStatus(url)
