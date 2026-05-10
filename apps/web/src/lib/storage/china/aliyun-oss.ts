@@ -49,6 +49,20 @@ function getAliyunClient() {
   })
 }
 
+// Signing client uses the public region endpoint so generated URLs are browser-accessible.
+// ALIYUN_OSS_ENDPOINT may be an internal endpoint (for server-to-server uploads);
+// signed download URLs must always use the public internet endpoint.
+function getAliyunSigningClient() {
+  requireAliyunOss()
+  return new OSS({
+    accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID!,
+    accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET!,
+    bucket: process.env.ALIYUN_OSS_BUCKET!,
+    region: process.env.ALIYUN_OSS_REGION!,
+    // No custom endpoint — falls back to public oss-{region}.aliyuncs.com
+  })
+}
+
 function getSizeBytes(body: PutChinaObjectInput['body']) {
   if (typeof body === 'string') return Buffer.byteLength(body)
   if (body instanceof ArrayBuffer) return body.byteLength
@@ -116,16 +130,34 @@ export async function getAliyunOssSignedUploadUrl(input: SignedChinaObjectInput)
 
 export async function getAliyunOssSignedDownloadUrl(input: SignedChinaObjectInput): Promise<ChinaStorageSignedUrlResult> {
   requireAliyunOss()
-  // When ALIYUN_OSS_PUBLIC_BASE_URL is configured, return the stable public URL.
-  // This makes checkObjectExists() able to verify the object and resolveAssetUrl()
-  // return a working URL instead of falling back to expired provider URLs.
   const publicUrl = buildPublicUrl(input.key)
-  return {
-    provider: 'aliyun-oss',
-    bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
-    key: input.key,
-    ...(publicUrl ? { signedUrl: publicUrl, publicUrl, url: publicUrl } : {}),
-    raw: { mode: publicUrl ? 'public' : 'stub', expiresInSeconds: input.expiresInSeconds },
+  const expiresInSeconds = input.expiresInSeconds || 3600
+  try {
+    // Generate a real pre-signed URL using OSS AccessKey credentials.
+    // This works for private buckets — the signature allows read access without exposing keys.
+    const signingClient = getAliyunSigningClient()
+    const signedUrl = signingClient.signatureUrl(input.key, {
+      expires: expiresInSeconds,
+      method: 'GET',
+    })
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key: input.key,
+      signedUrl,
+      publicUrl: publicUrl ?? signedUrl,
+      url: signedUrl,
+      raw: { mode: 'signed', expiresInSeconds },
+    }
+  } catch {
+    // Fallback: if signing fails (e.g., missing key), use publicUrl if available.
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key: input.key,
+      ...(publicUrl ? { signedUrl: publicUrl, publicUrl, url: publicUrl } : {}),
+      raw: { mode: publicUrl ? 'public-fallback' : 'stub', expiresInSeconds },
+    }
   }
 }
 

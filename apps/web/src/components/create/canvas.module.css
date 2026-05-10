@@ -543,6 +543,7 @@
   background: rgba(18, 20, 24, 0.76);
   backdrop-filter: blur(28px);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  cursor: grab;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
@@ -715,6 +716,7 @@
 .scope :global(.canvas-node-empty),
 .scope :global(.canvas-node-preview) {
   display: flex;
+  position: relative;
   min-height: 100%;
   width: 100%;
   flex-direction: column;

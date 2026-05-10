@@ -583,7 +583,18 @@ function mediaPersistenceRecord(metadata: Record<string, unknown>) {
 function getNodeAssetId(node: VisualCanvasNode) {
   const metadata = metadataRecord(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
-  return stringValue(node.assetId) || stringValue(metadata.assetId) || stringValue(mediaPersistence.assetId)
+  const assetRecord = metadata.asset && typeof metadata.asset === 'object' && !Array.isArray(metadata.asset)
+    ? metadata.asset as Record<string, unknown>
+    : {}
+  return (
+    stringValue(node.assetId) ||
+    stringValue((node as unknown as Record<string, unknown>).resultAssetId) ||
+    stringValue((node as unknown as Record<string, unknown>).mediaAssetId) ||
+    stringValue(metadata.assetId) ||
+    stringValue(assetRecord.id) ||
+    stringValue(mediaPersistence.assetId) ||
+    stringValue(metadata.outputAssetId)
+  )
 }
 
 function legacyMediaUrlForNode(node: VisualCanvasNode) {
