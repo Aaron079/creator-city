@@ -16,7 +16,7 @@ export class ChatService {
       createdAt: Date
       author: {
         id: string
-        username: string
+        username: string | null
         displayName: string
         profile: { avatarUrl: string | null } | null
       }
@@ -26,13 +26,13 @@ export class ChatService {
       id: post.id,
       channelId: post.communityId,
       senderId: post.authorId,
-      senderName: post.author.displayName || post.author.username,
+      senderName: post.author.displayName || post.author.username || 'Creator',
       content: post.content,
       type: post.type === 'TEXT' ? 'TEXT' : 'MEDIA',
       timestamp: post.createdAt,
       sender: {
         id: post.author.id,
-        username: post.author.username,
+        username: post.author.username ?? '',
         displayName: post.author.displayName,
         avatarUrl: post.author.profile?.avatarUrl ?? null,
       },

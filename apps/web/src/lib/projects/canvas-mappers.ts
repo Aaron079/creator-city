@@ -42,6 +42,14 @@ export function mapCanvasNode(row: DbCanvasNode) {
   const metadata = row.metadataJson && typeof row.metadataJson === 'object'
     ? row.metadataJson as Record<string, unknown>
     : {}
+  const mediaPersistence = metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
+    ? metadata.mediaPersistence as Record<string, unknown>
+    : {}
+  const assetId = typeof metadata.assetId === 'string' && metadata.assetId.trim()
+    ? metadata.assetId.trim()
+    : typeof mediaPersistence.assetId === 'string' && mediaPersistence.assetId.trim()
+      ? mediaPersistence.assetId.trim()
+      : undefined
 
   return {
     id: row.nodeId,
@@ -62,6 +70,7 @@ export function mapCanvasNode(row: DbCanvasNode) {
     resultPreview: row.resultPreview ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
     outputLabel: typeof metadata.outputLabel === 'string' ? metadata.outputLabel : undefined,
+    assetId,
     preview: metadata.preview,
     metadataJson: metadata,
     x: row.x,

@@ -12,7 +12,7 @@ type UserProfileSelect = {
 
 type UserWithProfile = {
   id: string
-  username: string
+  username: string | null
   displayName: string
   email?: string
   role: string
@@ -31,6 +31,7 @@ export class UserService {
   private mapUser<T extends UserWithProfile>(user: T) {
     return {
       ...user,
+      username: user.username ?? '',
       avatarUrl: user.profile?.avatarUrl ?? null,
       bio: user.profile?.bio ?? null,
       skills: user.profile?.skills ?? [],
@@ -128,7 +129,8 @@ export class UserService {
       },
     })
 
-    const { passwordHash: _, ...result } = user
+    const { passwordHash, ...result } = user
+    void passwordHash
     return result
   }
 

@@ -3,8 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { serializeAsset, toAssetType } from '@/lib/projects/canvas-mappers'
-import { isChinaStorageError } from '@/lib/storage/china/errors'
-import { getConfiguredChinaStorageProvider, putChinaObject } from '@/lib/storage/china/gateway'
+import { uploadAsset } from '@/lib/assets/storage-adapter'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,14 +33,15 @@ function inferAssetType(input: string | null, contentType: string) {
 
 function getMetadataJson(args: {
   storageProvider: string
-  bucket: string
-  key: string
+  bucket?: string | null
+  key?: string | null
   originalName: string
 }) {
   return {
     storageProvider: args.storageProvider,
     bucket: args.bucket,
     key: args.key,
+    storageKey: args.key,
     originalName: args.originalName,
     source: 'assets-upload',
   } satisfies Prisma.InputJsonObject
@@ -69,12 +69,7 @@ export async function POST(request: NextRequest) {
   const contentType = file.type || 'application/octet-stream'
   const assetType = inferAssetType(requestedType, contentType)
   const title = String(formData.get('title') ?? '').trim() || file.name || 'Uploaded asset'
-  const provider = getConfiguredChinaStorageProvider()
   const assetId = crypto.randomUUID()
-  const now = new Date()
-  const year = String(now.getUTCFullYear())
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const key = `assets/${user.id}/${year}/${month}/${assetId}-${safeFileName(file.name)}`
 
   try {
     if (projectId) {
@@ -87,20 +82,17 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const uploaded = await putChinaObject({
-      provider,
-      key,
-      body: buffer,
-      contentType,
-      metadata: {
-        ownerId: user.id,
-        assetId,
-      },
+    const uploaded = await uploadAsset(buffer, {
+      filename: `${assetId}-${safeFileName(file.name)}`,
+      mimeType: contentType,
+      projectId,
+      userId: user.id,
+      type: assetType,
     })
     const metadataJson = getMetadataJson({
-      storageProvider: uploaded.provider,
+      storageProvider: uploaded.storageProvider,
       bucket: uploaded.bucket,
-      key: uploaded.key,
+      key: uploaded.storageKey,
       originalName: file.name,
     })
     const asset = await db.asset.create({
@@ -114,32 +106,28 @@ export async function POST(request: NextRequest) {
         projectId,
         workflowId,
         nodeId,
-        url: uploaded.publicUrl ?? uploaded.url ?? '',
+        source: 'uploaded',
+        storageProvider: uploaded.storageProvider,
+        bucket: uploaded.bucket ?? null,
+        storageKey: uploaded.storageKey ?? null,
+        url: uploaded.url,
         dataUrl: null,
-        thumbnailUrl: assetType === 'image' ? uploaded.publicUrl ?? uploaded.url ?? null : null,
+        thumbnailUrl: assetType === 'image' ? uploaded.url : null,
+        originalUrl: null,
+        filename: file.name || null,
         mimeType: contentType,
-        sizeBytes: BigInt(uploaded.sizeBytes ?? file.size),
+        size: BigInt(uploaded.size),
+        sizeBytes: BigInt(uploaded.size),
         metadata: metadataJson,
         metadataJson,
-        providerId: uploaded.provider,
+        providerId: uploaded.storageProvider,
         tags: ['upload', assetType],
       },
     })
 
     return NextResponse.json({ success: true, asset: serializeAsset(asset) }, { status: 201 })
   } catch (error) {
-    if (isChinaStorageError(error)) {
-      const details = error.details && typeof error.details === 'object'
-        ? error.details as Record<string, unknown>
-        : undefined
-      return jsonError(
-        error.code,
-        error.code === 'STORAGE_NOT_CONFIGURED' ? '中国对象存储未配置' : error.message,
-        error.status,
-        details,
-      )
-    }
     console.error('[assets/upload] failed', error)
-    return jsonError('ASSET_UPLOAD_FAILED', '上传素材失败', 500)
+    return jsonError('ASSET_UPLOAD_FAILED', error instanceof Error ? error.message : '上传素材失败', 500)
   }
 }

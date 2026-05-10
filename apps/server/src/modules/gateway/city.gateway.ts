@@ -115,10 +115,8 @@ export class CityGateway
     event: E,
     data: Parameters<ServerToClientEvents[E]>[0],
   ) {
-    ;(this.server.to(`user:${userId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void)(
-      event,
-      data,
-    )
+    const emit = this.server.to(`user:${userId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void
+    emit(event, data)
   }
 
   emitToProject<E extends keyof ServerToClientEvents>(
@@ -126,9 +124,7 @@ export class CityGateway
     event: E,
     data: Parameters<ServerToClientEvents[E]>[0],
   ) {
-    ;(this.server.to(`project:${projectId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void)(
-      event,
-      data,
-    )
+    const emit = this.server.to(`project:${projectId}`).emit as (...args: [E, Parameters<ServerToClientEvents[E]>[0]]) => void
+    emit(event, data)
   }
 }

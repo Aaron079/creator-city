@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { normalizeAssetType as normalizeAssetTypeValue } from '@/lib/assets/normalize'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
+import { classifyAssetUrl, resolveAssetUrl } from '@/lib/assets/storage-adapter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -32,14 +33,33 @@ const ASSET_LIST_SELECT = {
   projectId: true,
   workflowId: true,
   nodeId: true,
+  source: true,
+  provider: true,
+  providerJobId: true,
+  providerAssetId: true,
+  storageProvider: true,
+  bucket: true,
+  storageKey: true,
   type: true,
+  status: true,
   url: true,
   dataUrl: true,
   thumbnailUrl: true,
+  originalUrl: true,
+  filename: true,
   mimeType: true,
+  size: true,
   sizeBytes: true,
+  width: true,
+  height: true,
+  duration: true,
+  prompt: true,
+  negativePrompt: true,
   providerId: true,
   metadataJson: true,
+  generationJobId: true,
+  recoveryStatus: true,
+  error: true,
   createdAt: true,
   updatedAt: true,
   project: { select: { id: true, title: true } },
@@ -47,9 +67,17 @@ const ASSET_LIST_SELECT = {
 
 type AssetListRow = Prisma.AssetGetPayload<{ select: typeof ASSET_LIST_SELECT }>
 
-function serializeAssetForList(asset: AssetListRow) {
+async function serializeAssetForList(asset: AssetListRow) {
+  const resolved = await resolveAssetUrl(asset)
+  const urlFlags = classifyAssetUrl(asset.url || asset.dataUrl)
   return {
     ...asset,
+    resolvedUrl: resolved.url || null,
+    resolvedUrlSource: resolved.source,
+    resolvedUrlExpiresAt: resolved.expiresAt,
+    urlFlags,
+    recoverySource: asset.storageKey ? 'storageKey' : asset.providerJobId ? 'providerJobId' : asset.url ? 'oldUrl' : 'none',
+    size: typeof asset.size === 'bigint' ? Number(asset.size) : asset.size,
     sizeBytes: typeof asset.sizeBytes === 'bigint' ? Number(asset.sizeBytes) : asset.sizeBytes,
     normalizedType: normalizeAssetTypeValue(asset.type),
   }
@@ -67,6 +95,10 @@ export async function GET(request: NextRequest) {
     const includeUnbound = searchParams.get('includeUnbound') === '1'
     const type = normalizeAssetTypeParam(searchParams.get('type'))
     const limit = normalizeLimit(searchParams.get('limit'))
+    const ids = (searchParams.get('ids') ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
     const projectFilter: Prisma.AssetWhereInput = projectId
       ? {
         OR: [
@@ -77,6 +109,7 @@ export async function GET(request: NextRequest) {
       : {}
     const where: Prisma.AssetWhereInput = {
       ownerId: user.id,
+      ...(ids.length ? { id: { in: ids } } : {}),
       ...(type ? { type } : {}),
       ...projectFilter,
     }
@@ -88,7 +121,7 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return jsonOk({ assets: assets.map(serializeAssetForList) })
+    return jsonOk({ assets: await Promise.all(assets.map(serializeAssetForList)) })
   } catch (error) {
     console.error('[assets] failed to list assets', error)
     return jsonError('ASSETS_LOAD_FAILED', safeErrorMessage(error, '加载素材失败。'), 500)

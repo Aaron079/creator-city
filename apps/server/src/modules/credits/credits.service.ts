@@ -2,10 +2,8 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service'
 import type {
   UserCreditWallet,
-  CreditLedger,
   CreditPackage,
   PaymentOrder,
-  GenerationJob,
   Prisma,
 } from '@prisma/client'
 

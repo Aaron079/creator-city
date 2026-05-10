@@ -5,7 +5,7 @@ import { CreateProjectDto } from './dto/create-project.dto'
 
 type ProjectOwnerWithProfile = {
   id: string
-  username: string
+  username: string | null
   displayName: string
   profile: { avatarUrl: string | null } | null
 }
@@ -49,7 +49,7 @@ export class ProjectService {
   private mapUser(user: ProjectOwnerWithProfile) {
     return {
       id: user.id,
-      username: user.username,
+      username: user.username ?? '',
       displayName: user.displayName,
       avatarUrl: user.profile?.avatarUrl ?? null,
     }

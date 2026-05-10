@@ -216,11 +216,26 @@ function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
 }
 
 type VisualCanvasNode = CanvasNodeCardNode & {
+  assetId?: string
   resultImageUrl?: string
   resultVideoUrl?: string
   resultAudioUrl?: string
   resultText?: string
   metadataJson?: unknown
+}
+
+type CanvasAssetResolveResult = {
+  assetId: string
+  status: 'ready' | 'missing' | 'unrecoverable_blob_url' | 'unrecoverable_data_url_without_file' | 'unrecoverable_expired_signed_url_without_storage_key' | 'unrecoverable_provider_expired' | 'unrecoverable_provider_retrieve_not_implemented' | 'unrecoverable_no_record'
+  resolvedUrl?: string | null
+  thumbnailUrl?: string | null
+  storageKey?: string | null
+  storageProvider?: string | null
+  bucket?: string | null
+  providerJobId?: string | null
+  recoveryStatus?: string | null
+  error?: string | null
+  actionTaken?: string | null
 }
 
 type CanvasEdgeStatus = 'idle' | 'active' | 'done'
@@ -553,6 +568,84 @@ function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
     : {}
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function mediaPersistenceRecord(metadata: Record<string, unknown>) {
+  return metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
+    ? metadata.mediaPersistence as Record<string, unknown>
+    : {}
+}
+
+function getNodeAssetId(node: VisualCanvasNode) {
+  const metadata = metadataRecord(node.metadataJson)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  return stringValue(node.assetId) || stringValue(metadata.assetId) || stringValue(mediaPersistence.assetId)
+}
+
+function legacyMediaUrlForNode(node: VisualCanvasNode) {
+  if (node.kind === 'image') return getNodeImageUrl(node)
+  if (node.kind === 'video') return getNodeVideoUrl(node)
+  return ''
+}
+
+function unresolvedLegacyStatus(url: string) {
+  const lower = url.toLowerCase()
+  if (!url) return 'unrecoverable_no_record'
+  if (lower.startsWith('blob:')) return 'unrecoverable_blob_url'
+  if (!/^https?:\/\//i.test(url) && !lower.startsWith('data:')) return 'unrecoverable_no_record'
+  if (/x-tos-signature|x-tos-expires|x-amz-signature|x-amz-expires|x-oss-signature|x-oss-expires|signature=|expires=|security-token=/i.test(url)) {
+    return 'unrecoverable_expired_signed_url_without_storage_key'
+  }
+  return 'unrecoverable_provider_expired'
+}
+
+function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetResolveResult): VisualCanvasNode {
+  const metadata = metadataRecord(node.metadataJson)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  const nextMetadata = {
+    ...metadata,
+    assetId: result.assetId,
+    assetResolveStatus: result.status,
+    recoveryStatus: result.recoveryStatus ?? result.status,
+    ...(result.storageKey ? { storageKey: result.storageKey } : {}),
+    ...(result.storageProvider ? { storageProvider: result.storageProvider } : {}),
+    ...(result.bucket ? { bucket: result.bucket } : {}),
+    ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
+    ...(result.error ? { error: result.error } : {}),
+    mediaPersistence: {
+      ...mediaPersistence,
+      status: result.status === 'ready' ? 'persisted' : result.status,
+      assetId: result.assetId,
+      storageKey: result.storageKey ?? mediaPersistence.storageKey,
+      storageProvider: result.storageProvider ?? mediaPersistence.storageProvider,
+      bucket: result.bucket ?? mediaPersistence.bucket,
+      providerJobId: result.providerJobId ?? mediaPersistence.providerJobId,
+      resolvedAt: new Date().toISOString(),
+    },
+  }
+  if (result.status !== 'ready' || !result.resolvedUrl) {
+    return {
+      ...node,
+      assetId: result.assetId,
+      errorMessage: result.error ?? node.errorMessage,
+      metadataJson: nextMetadata,
+    }
+  }
+  return {
+    ...node,
+    assetId: result.assetId,
+    ...(node.kind === 'image' ? { resultImageUrl: result.resolvedUrl } : {}),
+    ...(node.kind === 'video' ? { resultVideoUrl: result.resolvedUrl, preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: result.resolvedUrl, poster: result.thumbnailUrl ?? node.preview?.poster } } : {}),
+    metadataJson: {
+      ...nextMetadata,
+      assetUrl: result.resolvedUrl,
+      resolvedUrl: result.resolvedUrl,
+    },
+  }
 }
 
 function isPromptCompilerNodeKind(kind: VisualCanvasNodeKind): kind is 'text' | 'image' | 'video' {
@@ -1370,6 +1463,7 @@ export function VisualCanvasWorkspace({
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
+  const [assetRecoverBatchStatus, setAssetRecoverBatchStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle')
   const [styleBible, setStyleBible] = useState<ProjectStyleBible>({})
   const [characterBible, setCharacterBible] = useState<CharacterBible>({ characters: [] })
   const [sceneBible, setSceneBible] = useState<SceneBible>({ scenes: [] })
@@ -1427,6 +1521,7 @@ export function VisualCanvasWorkspace({
   const latestViewportRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } })
   const latestCommentsRef = useRef<CanvasComment[]>([])
   const mediaReviewZRef = useRef(1)
+  const assetResolveRunKeyRef = useRef('')
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -3198,6 +3293,220 @@ export function VisualCanvasWorkspace({
     flushLocalSnapshot()
     scheduleCanvasSave(0)
   }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+
+  const assetResolveKey = useMemo(() => nodes
+    .filter((node) => node.kind === 'image' || node.kind === 'video')
+    .map((node) => {
+      const assetId = getNodeAssetId(node)
+      const legacyUrl = assetId ? '' : legacyMediaUrlForNode(node)
+      const metadata = metadataRecord(node.metadataJson)
+      return [
+        node.id,
+        node.kind,
+        assetId,
+        legacyUrl,
+        stringValue(metadata.assetResolveStatus),
+        stringValue(metadata.recoveryStatus),
+      ].join(':')
+    })
+    .join('|'), [nodes])
+
+  useEffect(() => {
+    if (!projectId || !hasHydratedCanvasRef.current) return
+    const mediaNodes = latestNodesRef.current.filter((node) => node.kind === 'image' || node.kind === 'video')
+    if (!mediaNodes.length) return
+
+    const assetIds = [...new Set(mediaNodes.map(getNodeAssetId).filter((assetId): assetId is string => Boolean(assetId)))]
+    const legacyNodes = mediaNodes.filter((node) => !getNodeAssetId(node))
+    const runKey = `${projectId}:${assetResolveKey}`
+    if (assetResolveRunKeyRef.current === runKey) return
+    assetResolveRunKeyRef.current = runKey
+
+    let cancelled = false
+    void (async () => {
+      let nextNodes = latestNodesRef.current
+      let changed = false
+
+      if (assetIds.length) {
+        const response = await fetch('/api/assets/resolve-batch', {
+          method: 'POST',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ assetIds }),
+        })
+        const data = await response.json().catch(() => ({})) as { assets?: CanvasAssetResolveResult[] }
+        if (!cancelled && response.ok && Array.isArray(data.assets)) {
+          const byId = new Map(data.assets.map((asset) => [asset.assetId, asset]))
+          nextNodes = nextNodes.map((node) => {
+            const assetId = getNodeAssetId(node)
+            const resolved = assetId ? byId.get(assetId) : undefined
+            if (!resolved || (node.kind !== 'image' && node.kind !== 'video')) return node
+            const patched = applyResolvedAssetToNode(node, resolved)
+            changed = changed || patched !== node
+            return patched
+          })
+        }
+      }
+
+      for (const legacyNode of legacyNodes) {
+        if (cancelled) return
+        const current = nextNodes.find((node) => node.id === legacyNode.id)
+        if (!current || getNodeAssetId(current)) continue
+        const url = legacyMediaUrlForNode(current)
+        const metadata = metadataRecord(current.metadataJson)
+        if (stringValue(metadata.recoveryStatus).startsWith('unrecoverable_')) continue
+
+        if (!url || url.startsWith('blob:') || (!/^https?:\/\//i.test(url) && !url.startsWith('data:'))) {
+          const recoveryStatus = unresolvedLegacyStatus(url)
+          nextNodes = nextNodes.map((node) => node.id === current.id
+            ? {
+                ...node,
+                metadataJson: {
+                  ...metadataRecord(node.metadataJson),
+                  assetResolveStatus: recoveryStatus,
+                  recoveryStatus,
+                  error: recoveryStatus === 'unrecoverable_blob_url'
+                    ? '该资产当时只保存为浏览器临时 blob URL，刷新后无法恢复。'
+                    : '当前画布节点没有 assetId，也没有可恢复的原始 URL。',
+                },
+              }
+            : node)
+          changed = true
+          continue
+        }
+
+        try {
+          const response = await fetch('/api/media/resync', {
+            method: 'POST',
+            cache: 'no-store',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+              url,
+              type: current.kind,
+              projectId,
+              nodeId: current.id,
+              filenameHint: `${current.title || current.id}-${current.kind}.${current.kind === 'image' ? 'png' : 'mp4'}`,
+              metadata,
+            }),
+          })
+          const data = await response.json().catch(() => ({})) as {
+            success?: boolean
+            stableUrl?: string
+            assetId?: string
+            mediaPersistence?: unknown
+            message?: string
+            errorCode?: string
+          }
+          if (cancelled) return
+          if (response.ok && data.success && data.assetId && data.stableUrl) {
+            nextNodes = nextNodes.map((node) => node.id === current.id
+              ? {
+                  ...node,
+                  assetId: data.assetId,
+                  ...(node.kind === 'image' ? { resultImageUrl: data.stableUrl } : {}),
+                  ...(node.kind === 'video' ? { resultVideoUrl: data.stableUrl, preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: data.stableUrl } } : {}),
+                  metadataJson: {
+                    ...metadataRecord(node.metadataJson),
+                    assetId: data.assetId,
+                    assetUrl: data.stableUrl,
+                    resolvedUrl: data.stableUrl,
+                    assetResolveStatus: 'ready',
+                    recoveryStatus: 'recovered_from_old_url',
+                    mediaPersistence: data.mediaPersistence ?? {
+                      status: 'persisted',
+                      assetId: data.assetId,
+                      recoveredAt: new Date().toISOString(),
+                    },
+                  },
+                }
+              : node)
+            changed = true
+            continue
+          }
+          const recoveryStatus = unresolvedLegacyStatus(url)
+          nextNodes = nextNodes.map((node) => node.id === current.id
+            ? {
+                ...node,
+                metadataJson: {
+                  ...metadataRecord(node.metadataJson),
+                  assetResolveStatus: recoveryStatus,
+                  recoveryStatus,
+                  error: data.message || data.errorCode || '旧媒体 URL 已不可读取。',
+                },
+              }
+            : node)
+          changed = true
+        } catch {
+          // Keep the current node visible; the next page load can retry this queue.
+        }
+      }
+
+      if (!cancelled && changed) {
+        commitNodes(nextNodes)
+        writeUnifiedLocalSnapshot({ nodes: nextNodes })
+        scheduleCanvasSave(0)
+      }
+    })().catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [assetResolveKey, commitNodes, projectId, scheduleCanvasSave, writeUnifiedLocalSnapshot])
+
+  const handleRecoverCanvasAssets = useCallback(async () => {
+    const mediaNodes = latestNodesRef.current.filter((node) => node.kind === 'image' || node.kind === 'video')
+    const assetIds = [...new Set(mediaNodes.map(getNodeAssetId).filter((assetId): assetId is string => Boolean(assetId)))]
+    if (!assetIds.length) {
+      showCanvasFeedback('当前画布没有可按 assetId 恢复的媒体节点。')
+      return
+    }
+
+    setAssetRecoverBatchStatus('running')
+    try {
+      const response = await fetch('/api/assets/recover-batch', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ assetIds }),
+      })
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean
+        summary?: { total?: number; ready?: number; recovered?: number; unrecoverable?: number }
+        assets?: CanvasAssetResolveResult[]
+        message?: string
+        errorCode?: string
+      }
+      if (!response.ok || !Array.isArray(data.assets)) {
+        throw new Error(data.message || data.errorCode || '批量恢复资产失败。')
+      }
+
+      const byId = new Map(data.assets.map((asset) => [asset.assetId, asset]))
+      let changed = false
+      const nextNodes = latestNodesRef.current.map((node) => {
+        if (node.kind !== 'image' && node.kind !== 'video') return node
+        const assetId = getNodeAssetId(node)
+        const result = assetId ? byId.get(assetId) : undefined
+        if (!result) return node
+        const patched = applyResolvedAssetToNode(node, result)
+        changed = changed || patched !== node
+        return patched
+      })
+
+      if (changed) {
+        commitNodes(nextNodes)
+        writeUnifiedLocalSnapshot({ nodes: nextNodes })
+        scheduleCanvasSave(0)
+      }
+      setAssetRecoverBatchStatus('done')
+      showCanvasFeedback(`资产恢复完成：ready ${data.summary?.ready ?? 0}，重新上传 ${data.summary?.recovered ?? 0}，不可恢复 ${data.summary?.unrecoverable ?? 0}。`)
+    } catch (error) {
+      setAssetRecoverBatchStatus('failed')
+      showCanvasFeedback(error instanceof Error ? error.message : '批量恢复资产失败。')
+    }
+  }, [commitNodes, scheduleCanvasSave, showCanvasFeedback, writeUnifiedLocalSnapshot])
 
   const handleEdgePatch = useCallback((edgeId: string, patch: Partial<CanvasEdge>) => {
     commitEdges((current) => current.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)))
@@ -5412,11 +5721,26 @@ export function VisualCanvasWorkspace({
                 ? '已保存'
                 : saveStatus === 'failed'
                   ? '保存失败，重试'
-                  : '保存'}
-          </button>
-          <button
-            type="button"
-            className="canvas-secondary-button"
+                    : '保存'}
+            </button>
+            <button
+              type="button"
+              className="canvas-secondary-button"
+              title="扫描当前画布并按 assetId 恢复历史图片/视频资产"
+              disabled={assetRecoverBatchStatus === 'running' || !projectId || nodes.length === 0}
+              onClick={() => { void handleRecoverCanvasAssets() }}
+            >
+              {assetRecoverBatchStatus === 'running'
+                ? '恢复中...'
+                : assetRecoverBatchStatus === 'done'
+                  ? '已扫描恢复'
+                  : assetRecoverBatchStatus === 'failed'
+                    ? '恢复失败，重试'
+                    : '扫描并恢复历史资产'}
+            </button>
+            <button
+              type="button"
+              className="canvas-secondary-button"
             title={workflowRunMessage || (activeNode ? `从「${activeNode.title}」开始运行` : '从所有无入边节点开始运行')}
             disabled={saveStatus === 'opening' || workflowRunStatus === 'running' || !projectId || nodes.length === 0}
             onClick={() => { void handleRunWorkflow() }}

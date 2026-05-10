@@ -23,15 +23,24 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE TYPE "AssetType" AS ENUM ('VIDEO', 'AUDIO', 'IMAGE', 'SCRIPT', 'DOCUMENT', 'MODEL_3D', 'PRESET', 'TEMPLATE');
+  CREATE TYPE "AssetType" AS ENUM ('VIDEO', 'AUDIO', 'IMAGE', 'CHARACTER', 'STORYBOARD', 'REFERENCE', 'SCRIPT', 'DOCUMENT', 'MODEL_3D', 'PRESET', 'TEMPLATE', 'OTHER');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$
 BEGIN
-  CREATE TYPE "AssetStatus" AS ENUM ('UPLOADING', 'PROCESSING', 'READY', 'FAILED', 'ARCHIVED');
+  CREATE TYPE "AssetStatus" AS ENUM ('PENDING', 'UPLOADING', 'PROCESSING', 'READY', 'FAILED', 'MISSING', 'NEEDS_RECOVERY', 'UNRECOVERABLE', 'ARCHIVED');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+ALTER TYPE "AssetType" ADD VALUE IF NOT EXISTS 'CHARACTER';
+ALTER TYPE "AssetType" ADD VALUE IF NOT EXISTS 'STORYBOARD';
+ALTER TYPE "AssetType" ADD VALUE IF NOT EXISTS 'REFERENCE';
+ALTER TYPE "AssetType" ADD VALUE IF NOT EXISTS 'OTHER';
+ALTER TYPE "AssetStatus" ADD VALUE IF NOT EXISTS 'PENDING';
+ALTER TYPE "AssetStatus" ADD VALUE IF NOT EXISTS 'MISSING';
+ALTER TYPE "AssetStatus" ADD VALUE IF NOT EXISTS 'NEEDS_RECOVERY';
+ALTER TYPE "AssetStatus" ADD VALUE IF NOT EXISTS 'UNRECOVERABLE';
 
 CREATE TABLE IF NOT EXISTS "Project" (
   "id" text primary key DEFAULT gen_random_uuid()::text,
@@ -178,15 +187,32 @@ CREATE TABLE IF NOT EXISTS "Asset" (
   "projectId" text,
   "workflowId" text,
   "nodeId" text,
+  "source" text NOT NULL DEFAULT 'uploaded',
+  "provider" text,
+  "providerJobId" text,
+  "providerAssetId" text,
+  "storageProvider" text,
+  "bucket" text,
+  "storageKey" text,
   "url" text NOT NULL DEFAULT '',
   "dataUrl" text,
   "thumbnailUrl" text,
+  "originalUrl" text,
+  "filename" text,
   "mimeType" text NOT NULL DEFAULT 'application/octet-stream',
+  "size" bigint,
   "sizeBytes" bigint NOT NULL DEFAULT 0,
+  "width" integer,
+  "height" integer,
+  "duration" double precision,
+  "prompt" text,
+  "negativePrompt" text,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "metadataJson" jsonb,
   "providerId" text,
   "generationJobId" text,
+  "recoveryStatus" text,
+  "error" text,
   "tags" text[] NOT NULL DEFAULT ARRAY[]::text[],
   "isPublic" boolean NOT NULL DEFAULT false,
   "createdAt" timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -197,15 +223,35 @@ ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "title" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "projectId" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "workflowId" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "nodeId" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "source" text NOT NULL DEFAULT 'uploaded';
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "provider" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "providerJobId" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "providerAssetId" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "storageProvider" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "bucket" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "storageKey" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "dataUrl" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "originalUrl" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "filename" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "size" bigint;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "width" integer;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "height" integer;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "duration" double precision;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "prompt" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "negativePrompt" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "metadataJson" jsonb;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "providerId" text;
 ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "generationJobId" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "recoveryStatus" text;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "error" text;
 
 CREATE INDEX IF NOT EXISTS "Asset_ownerId_idx" ON "Asset"("ownerId");
 CREATE INDEX IF NOT EXISTS "Asset_projectId_idx" ON "Asset"("projectId");
 CREATE INDEX IF NOT EXISTS "Asset_workflowId_idx" ON "Asset"("workflowId");
 CREATE INDEX IF NOT EXISTS "Asset_nodeId_idx" ON "Asset"("nodeId");
+CREATE INDEX IF NOT EXISTS "Asset_storageKey_idx" ON "Asset"("storageKey");
+CREATE INDEX IF NOT EXISTS "Asset_providerJobId_idx" ON "Asset"("providerJobId");
+CREATE INDEX IF NOT EXISTS "Asset_generationJobId_idx" ON "Asset"("generationJobId");
 CREATE INDEX IF NOT EXISTS "Asset_type_idx" ON "Asset"("type");
 CREATE INDEX IF NOT EXISTS "Asset_status_idx" ON "Asset"("status");
 

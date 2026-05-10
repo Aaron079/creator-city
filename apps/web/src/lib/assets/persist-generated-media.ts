@@ -2,8 +2,7 @@ import { randomUUID } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { toAssetType } from '@/lib/projects/canvas-mappers'
-import { isChinaStorageError } from '@/lib/storage/china/errors'
-import { getConfiguredChinaStorageProvider, isChinaStorageConfigured, putChinaObject } from '@/lib/storage/china/gateway'
+import { downloadExternalAsset, uploadAsset, type CanonicalStorageProvider } from '@/lib/assets/storage-adapter'
 
 export type PersistGeneratedMediaInput = {
   url?: string
@@ -22,7 +21,11 @@ export type PersistGeneratedMediaResult =
       ok: true
       assetId?: string
       stableUrl: string
-      storageProvider: 'aliyun-oss' | 'asset' | 'external'
+      storageProvider: CanonicalStorageProvider
+      bucket?: string | null
+      storageKey?: string | null
+      mimeType?: string
+      size?: number
       persistedAt: string
     }
   | {
@@ -50,38 +53,40 @@ function safeFileName(name: string) {
   return cleaned.slice(0, 120) || 'generated-media'
 }
 
-function extensionForMimeType(mimeType: string, type: PersistGeneratedMediaInput['type']) {
-  if (mimeType.includes('jpeg')) return 'jpg'
-  if (mimeType.includes('webp')) return 'webp'
-  if (mimeType.includes('png')) return 'png'
-  if (mimeType.includes('mp4')) return 'mp4'
-  if (mimeType.includes('quicktime')) return 'mov'
-  return type === 'image' ? 'png' : 'mp4'
-}
-
-function fallbackMimeType(type: PersistGeneratedMediaInput['type']) {
-  return type === 'image' ? 'image/png' : 'video/mp4'
-}
-
 function jsonMetadata(input: PersistGeneratedMediaInput, uploaded: {
   provider: string
-  bucket: string
-  key: string
+  bucket?: string | null
+  key?: string | null
   sizeBytes?: number
+  mimeType?: string
 }, originalUrl: string) {
   return {
     source: 'generated-media-persistence',
     originalProviderUrl: originalUrl,
+    originalUrl,
     sourceProvider: input.sourceProvider,
+    provider: input.sourceProvider,
+    providerJobId: typeof input.metadata?.providerJobId === 'string'
+      ? input.metadata.providerJobId
+      : typeof input.metadata?.taskId === 'string'
+        ? input.metadata.taskId
+        : typeof input.metadata?.generationJobId === 'string'
+          ? input.metadata.generationJobId
+          : undefined,
     nodeId: input.nodeId,
     projectId: input.projectId,
     mediaType: input.type,
+    storageProvider: uploaded.provider,
+    bucket: uploaded.bucket,
+    storageKey: uploaded.key,
     mediaPersistence: {
       status: 'persisted',
       storageProvider: uploaded.provider,
       bucket: uploaded.bucket,
       key: uploaded.key,
+      storageKey: uploaded.key,
       sizeBytes: uploaded.sizeBytes,
+      mimeType: uploaded.mimeType,
       persistedAt: new Date().toISOString(),
     },
     ...(input.metadata ?? {}),
@@ -97,56 +102,32 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
     if (!input.userId) {
       return persistError('MEDIA_UPLOAD_FAILED', '缺少媒体归属用户，无法保存 Asset。')
     }
-    if (!isChinaStorageConfigured()) {
-      return persistError('MEDIA_UPLOAD_NOT_CONFIGURED', '对象存储未配置，无法转存生成媒体。')
+    const downloaded = await downloadExternalAsset(url)
+    if (!downloaded.ok) {
+      return persistError(downloaded.errorCode || 'MEDIA_FETCH_FAILED', downloaded.message, downloaded.status || undefined)
     }
-
-    let response: Response
-    try {
-      response = await fetch(url, { cache: 'no-store' })
-    } catch (error) {
-      return persistError(
-        'MEDIA_FETCH_FAILED',
-        error instanceof Error ? error.message : '拉取生成媒体失败。',
-      )
-    }
-
-    if (!response.ok) {
-      return persistError('MEDIA_FETCH_FAILED', `拉取生成媒体失败（HTTP ${response.status}）。`, response.status)
-    }
-
-    const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || fallbackMimeType(input.type)
-    let body: Buffer
-    try {
-      body = Buffer.from(await response.arrayBuffer())
-    } catch (error) {
-      return persistError(
-        'MEDIA_FETCH_FAILED',
-        error instanceof Error ? error.message : '读取生成媒体内容失败。',
-      )
-    }
+    const contentType = downloaded.mimeType
+    const body = downloaded.buffer
     const assetId = randomUUID()
     const now = new Date()
-    const year = String(now.getUTCFullYear())
-    const month = String(now.getUTCMonth() + 1).padStart(2, '0')
-    const fileName = safeFileName(input.filenameHint || `${input.type}-${assetId}.${extensionForMimeType(contentType, input.type)}`)
-    const key = `assets/${input.userId}/${year}/${month}/${assetId}-${fileName}`
+    const fileName = safeFileName(input.filenameHint || `${input.type}-${assetId}`)
 
     try {
-      const provider = getConfiguredChinaStorageProvider()
-      const uploaded = await putChinaObject({
-        provider,
-        key,
-        body,
-        contentType,
-        metadata: {
-          ownerId: input.userId,
-          assetId,
-          source: 'generated-media',
-        },
+      const uploaded = await uploadAsset(body, {
+        filename: fileName,
+        mimeType: contentType,
+        projectId: input.projectId,
+        userId: input.userId,
+        type: input.type,
       })
-      const metadataJson = jsonMetadata(input, uploaded, url)
-      const stableUrl = uploaded.publicUrl ?? uploaded.url ?? ''
+      const metadataJson = jsonMetadata(input, {
+        provider: uploaded.storageProvider,
+        bucket: uploaded.bucket,
+        key: uploaded.storageKey,
+        sizeBytes: uploaded.size,
+        mimeType: uploaded.mimeType,
+      }, url)
+      const stableUrl = uploaded.url
       if (!stableUrl) return persistError('MEDIA_UPLOAD_FAILED', '媒体已上传，但没有返回稳定 URL。')
       const workflow = input.workflowId
         ? await db.canvasWorkflow.findFirst({
@@ -174,14 +155,31 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
           projectId: input.projectId ?? null,
           workflowId: workflow?.id ?? null,
           nodeId: input.nodeId ?? null,
+          source: 'generated',
+          provider: input.sourceProvider ?? null,
+          providerJobId: typeof input.metadata?.providerJobId === 'string'
+            ? input.metadata.providerJobId
+            : typeof input.metadata?.taskId === 'string'
+              ? input.metadata.taskId
+              : typeof input.metadata?.generationJobId === 'string'
+                ? input.metadata.generationJobId
+                : null,
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket ?? null,
+          storageKey: uploaded.storageKey ?? null,
           url: stableUrl,
           dataUrl: null,
           thumbnailUrl: input.type === 'image' ? stableUrl : null,
+          originalUrl: url,
+          filename: fileName,
           mimeType: contentType,
-          sizeBytes: BigInt(uploaded.sizeBytes ?? body.byteLength),
+          size: BigInt(uploaded.size),
+          sizeBytes: BigInt(uploaded.size),
+          prompt: typeof input.metadata?.prompt === 'string' ? input.metadata.prompt : null,
           metadata: metadataJson,
           metadataJson,
-          providerId: uploaded.provider,
+          providerId: input.sourceProvider ?? uploaded.storageProvider,
+          generationJobId: typeof input.metadata?.generationJobId === 'string' ? input.metadata.generationJobId : null,
           tags: ['generated', input.type, 'persisted'],
         },
       })
@@ -190,13 +188,14 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         ok: true,
         assetId: asset.id,
         stableUrl,
-        storageProvider: uploaded.provider === 'aliyun-oss' ? 'aliyun-oss' : 'asset',
+        storageProvider: uploaded.storageProvider,
+        bucket: uploaded.bucket,
+        storageKey: uploaded.storageKey,
+        mimeType: uploaded.mimeType,
+        size: uploaded.size,
         persistedAt: now.toISOString(),
       }
     } catch (error) {
-      if (isChinaStorageError(error) && error.code === 'STORAGE_NOT_CONFIGURED') {
-        return persistError('MEDIA_UPLOAD_NOT_CONFIGURED', error.message)
-      }
       return persistError(
         'MEDIA_UPLOAD_FAILED',
         error instanceof Error ? error.message : '生成媒体转存失败。',

@@ -305,7 +305,7 @@ export function MediaDiagnosticsPanel({
         className="max-h-[86vh] w-[min(560px,100%)] overflow-hidden rounded-xl border border-white/12 bg-[#101214]/96 text-white shadow-2xl backdrop-blur-xl"
         role="dialog"
         aria-modal="true"
-        aria-label="媒体诊断"
+        aria-label="资产恢复详情"
         data-no-node-drag="true"
         data-media-diagnostics="true"
         onPointerDown={(event) => event.stopPropagation()}
@@ -315,13 +315,13 @@ export function MediaDiagnosticsPanel({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Media Diagnostics</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">媒体诊断</h2>
+              <h2 className="mt-1 text-lg font-semibold text-white">资产恢复详情</h2>
               <p className="mt-1 text-sm text-white/52">{node.title} / {mediaType === 'image' ? 'Image' : 'Video'}</p>
             </div>
             <button
               type="button"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-lg leading-none text-white/66 hover:bg-white/10 hover:text-white"
-              aria-label="关闭媒体诊断"
+              aria-label="关闭资产恢复详情"
               onClick={onClose}
             >
               ×

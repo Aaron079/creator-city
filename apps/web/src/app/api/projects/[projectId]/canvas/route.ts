@@ -35,6 +35,7 @@ type CanvasSaveNode = {
   resultAudioUrl?: string
   resultPreview?: string
   errorMessage?: string
+  assetId?: string
   stage?: string
   ratio?: string
   outputLabel?: string
@@ -319,6 +320,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
         : {}
       const metadataJson = {
         ...nodeMetadata,
+        ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
         outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
         preview: node.preview ?? nodeMetadata.preview ?? null,
       }

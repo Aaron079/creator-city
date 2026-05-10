@@ -31,7 +31,8 @@ export class AuthService {
 
     if (user.status === 'BANNED') throw new UnauthorizedException('Account is banned')
 
-    const { passwordHash: _, ...safe } = user
+    const { passwordHash, ...safe } = user
+    void passwordHash
     return safe
   }
 

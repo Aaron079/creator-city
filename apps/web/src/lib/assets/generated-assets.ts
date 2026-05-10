@@ -3,8 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import type { GenerateResponse, GenerateResult, GenerateNodeType } from '@/lib/providers/types'
 import { toAssetType } from '@/lib/projects/canvas-mappers'
-import { isChinaStorageError } from '@/lib/storage/china/errors'
-import { isChinaStorageConfigured, putChinaObject } from '@/lib/storage/china/gateway'
+import { uploadAsset } from '@/lib/assets/storage-adapter'
 import { persistGeneratedMedia } from './persist-generated-media'
 
 type SaveGeneratedAssetInput = {
@@ -65,47 +64,24 @@ function parseDataUrl(dataUrl: string) {
   return { mimeType, body }
 }
 
-function extensionForMimeType(mimeType: string) {
-  if (mimeType === 'image/jpeg') return 'jpg'
-  if (mimeType === 'image/webp') return 'webp'
-  if (mimeType === 'image/gif') return 'gif'
-  if (mimeType === 'image/png') return 'png'
-  return 'bin'
-}
-
 async function uploadGeneratedDataUrl(args: {
   assetId: string
   userId: string
   dataUrl: string
   mimeType: string
 }) {
-  if (!isChinaStorageConfigured()) return null
   const parsed = parseDataUrl(args.dataUrl)
   if (!parsed) return null
-  const now = new Date()
-  const key = [
-    'assets',
-    args.userId,
-    String(now.getUTCFullYear()),
-    String(now.getUTCMonth() + 1).padStart(2, '0'),
-    `${args.assetId}-generated.${extensionForMimeType(parsed.mimeType || args.mimeType)}`,
-  ].join('/')
 
   try {
-    return await putChinaObject({
-      key,
-      body: parsed.body,
-      contentType: parsed.mimeType || args.mimeType,
-      metadata: {
-        ownerId: args.userId,
-        assetId: args.assetId,
-        source: 'generated-asset',
-      },
+    return await uploadAsset(parsed.body, {
+      filename: `${args.assetId}-generated`,
+      mimeType: parsed.mimeType || args.mimeType,
+      userId: args.userId,
+      type: 'image',
     })
   } catch (error) {
-    if (!isChinaStorageError(error) || error.code !== 'STORAGE_NOT_CONFIGURED') {
-      console.warn('[assets] generated asset storage upload skipped', error instanceof Error ? error.message : String(error))
-    }
+    console.warn('[assets] generated asset storage upload skipped', error instanceof Error ? error.message : String(error))
     return null
   }
 }
@@ -148,9 +124,10 @@ export async function saveGeneratedAsset(input: SaveGeneratedAssetInput) {
     contentText: payload.contentText,
     previewUrl: input.result.previewUrl ?? input.result.imageUrl ?? input.result.videoUrl ?? input.result.audioUrl ?? null,
     ...(uploaded ? {
-      storageProvider: uploaded.provider,
+      storageProvider: uploaded.storageProvider,
       storageBucket: uploaded.bucket,
-      storageKey: uploaded.key,
+      bucket: uploaded.bucket,
+      storageKey: uploaded.storageKey,
     } : {}),
     providerMetadata,
   } satisfies Prisma.InputJsonObject
@@ -166,14 +143,24 @@ export async function saveGeneratedAsset(input: SaveGeneratedAssetInput) {
       projectId: input.projectId ?? null,
       workflowId: workflow?.id ?? null,
       nodeId: input.nodeId ?? null,
-      url: uploaded?.publicUrl ?? uploaded?.url ?? payload.url,
+      source: 'generated',
+      provider: input.providerId,
+      providerJobId: input.generationJobId ?? null,
+      storageProvider: uploaded?.storageProvider ?? null,
+      bucket: uploaded?.bucket ?? null,
+      storageKey: uploaded?.storageKey ?? null,
+      url: uploaded?.url ?? payload.url,
       dataUrl: payload.dataUrl,
-      thumbnailUrl: uploaded?.publicUrl ?? uploaded?.url ?? input.result.previewUrl ?? input.result.imageUrl ?? null,
+      thumbnailUrl: uploaded?.url ?? input.result.previewUrl ?? input.result.imageUrl ?? null,
+      originalUrl: payload.url || null,
+      filename: `${input.nodeType} generation`,
       mimeType: payload.mimeType,
-      sizeBytes: uploaded?.sizeBytes ? BigInt(uploaded.sizeBytes) : undefined,
+      size: uploaded?.size ? BigInt(uploaded.size) : undefined,
+      sizeBytes: uploaded?.size ? BigInt(uploaded.size) : undefined,
+      prompt: input.prompt,
       metadata,
       metadataJson: metadata,
-      providerId: uploaded?.provider ?? input.providerId,
+      providerId: input.providerId,
       generationJobId: input.generationJobId ?? null,
       tags: ['generated', input.nodeType],
     },

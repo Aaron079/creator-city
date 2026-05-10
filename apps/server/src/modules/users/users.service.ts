@@ -33,7 +33,8 @@ export class UsersService {
       include: { profile: true },
     })
     if (!user) throw new NotFoundException(`User @${username} not found`)
-    const { passwordHash: _, ...safe } = user
+    const { passwordHash: removedPasswordHash, ...safe } = user
+    void removedPasswordHash
     return safe
   }
 
@@ -79,7 +80,8 @@ export class UsersService {
       data: { userId: user.id, balance: 1000, totalEarned: 1000 },
     })
 
-    const { passwordHash: __, ...safe } = user
+    const { passwordHash: createdPasswordHash, ...safe } = user
+    void createdPasswordHash
     return safe
   }
 
@@ -125,7 +127,8 @@ export class UsersService {
       },
     })
     if (!user) throw new NotFoundException()
-    const { passwordHash: _, ...safe } = user
+    const { passwordHash, ...safe } = user
+    void passwordHash
     return safe
   }
 

@@ -128,19 +128,35 @@ enum AssetType {
   VIDEO
   AUDIO
   IMAGE
+  CHARACTER
+  STORYBOARD
+  REFERENCE
   SCRIPT
   DOCUMENT
   MODEL_3D
   PRESET
   TEMPLATE
+  OTHER
 }
 
 enum AssetStatus {
+  PENDING
   UPLOADING
   PROCESSING
   READY
   FAILED
+  MISSING
+  NEEDS_RECOVERY
+  UNRECOVERABLE
   ARCHIVED
+}
+
+enum GenerationJobStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
 }
 
 enum CommunityType {
@@ -568,15 +584,32 @@ model Asset {
   projectId    String?
   workflowId   String?
   nodeId       String?
+  source       String      @default("uploaded")
+  provider     String?
+  providerJobId String?
+  providerAssetId String?
+  storageProvider String?
+  bucket       String?
+  storageKey   String?
   url          String
   dataUrl      String?
   thumbnailUrl String?
+  originalUrl  String?     @db.Text
+  filename     String?
   mimeType     String
+  size         BigInt?
   sizeBytes    BigInt      @default(0)
+  width        Int?
+  height       Int?
+  duration     Float?
+  prompt       String?     @db.Text
+  negativePrompt String?   @db.Text
   metadata     Json        @default("{}")
   metadataJson Json?
   providerId   String?
   generationJobId String?
+  recoveryStatus String?
+  error        String?     @db.Text
   tags         String[]
   isPublic     Boolean     @default(false)
   createdAt    DateTime    @default(now())
@@ -592,6 +625,9 @@ model Asset {
   @@index([projectId])
   @@index([workflowId])
   @@index([nodeId])
+  @@index([storageKey])
+  @@index([providerJobId])
+  @@index([generationJobId])
   @@index([type])
   @@index([status])
 }
@@ -1130,26 +1166,40 @@ model PaymentOrder {
 model GenerationJob {
   id            String                     @id @default(uuid())
   userId        String
+  projectId     String?
   walletId      String?
   externalJobId String?
+  providerJobId String?
   providerId    String
+  provider      String?
   nodeType      String
+  kind          String?
+  status        GenerationJobStatus        @default(QUEUED)
   prompt        String                     @db.Text
+  input         Json?
+  output        Json?
+  outputAssetId String?
   estimatedCost Int                        @default(0)
   actualCost    Int?
   billingStatus GenerationJobBillingStatus @default(PENDING)
   errorMessage  String?
+  error         String?                    @db.Text
   frozenAt      DateTime?
   settledAt     DateTime?
+  completedAt   DateTime?
   createdAt     DateTime                   @default(now())
   updatedAt     DateTime                   @updatedAt
 
   wallet UserCreditWallet? @relation(fields: [walletId], references: [id])
 
   @@index([userId])
+  @@index([projectId])
   @@index([walletId])
+  @@index([status])
   @@index([billingStatus])
   @@index([providerId])
+  @@index([providerJobId])
+  @@index([outputAssetId])
   @@index([createdAt])
 }
 
