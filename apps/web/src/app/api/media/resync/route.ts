@@ -41,10 +41,25 @@ function optionalString(value: unknown) {
   return trimmed || undefined
 }
 
-async function writeAssetIdToCanvasNode(nodeId: string, assetId: string, patch: Record<string, unknown>) {
+async function writeAssetIdToCanvasNode(args: {
+  nodeId: string
+  assetId: string
+  userId: string
+  projectId?: string
+  workflowId?: string
+  patch: Record<string, unknown>
+}) {
+  const { nodeId, assetId, userId, projectId, workflowId, patch } = args
   if (!nodeId || !assetId) return
   const nodes = await db.canvasNode.findMany({
-    where: { nodeId },
+    where: {
+      nodeId,
+      ...(workflowId ? { workflowId } : {}),
+      workflow: {
+        ...(projectId ? { projectId } : {}),
+        project: { ownerId: userId },
+      },
+    },
     select: { id: true, metadataJson: true },
     take: 10,
   })
@@ -53,14 +68,14 @@ async function writeAssetIdToCanvasNode(nodeId: string, assetId: string, patch: 
     return db.canvasNode.update({
       where: { id: node.id },
       data: {
-        metadataJson: {
-          ...metadata,
-          assetId,
-          ...patch,
+          metadataJson: {
+            ...metadata,
+            assetId,
+            ...patch,
+          },
         },
-      },
-    })
-  }))
+      })
+    }))
 }
 
 export async function POST(request: NextRequest) {
@@ -85,14 +100,25 @@ export async function POST(request: NextRequest) {
     try {
       const { resolveAssetById } = await import('@/lib/assets/asset-resolver')
       const existingAsset = await db.asset.findFirst({
-        where: { nodeId, ownerId: currentUser.id },
+        where: {
+          nodeId,
+          ownerId: currentUser.id,
+          ...(optionalString(body.projectId) ? { projectId: optionalString(body.projectId) } : {}),
+          ...(optionalString(body.workflowId) ? { workflowId: optionalString(body.workflowId) } : {}),
+        },
         orderBy: { createdAt: 'desc' },
         select: { id: true },
       })
       if (existingAsset) {
         const resolved = await resolveAssetById(existingAsset.id, currentUser.id)
         if (resolved && resolved.status === 'ready' && resolved.resolvedUrl) {
-          await writeAssetIdToCanvasNode(nodeId, resolved.assetId, {
+          await writeAssetIdToCanvasNode({
+            nodeId,
+            assetId: resolved.assetId,
+            userId: currentUser.id,
+            projectId: optionalString(body.projectId),
+            workflowId: optionalString(body.workflowId),
+            patch: {
             assetUrl: resolved.resolvedUrl,
             resolvedUrl: resolved.resolvedUrl,
             storageKey: resolved.storageKey,
@@ -100,6 +126,7 @@ export async function POST(request: NextRequest) {
             bucket: resolved.bucket,
             recoveryStatus: resolved.recoveryStatus ?? 'resolved_by_node_id',
             assetResolveStatus: 'ready',
+            },
           })
           return NextResponse.json({
             success: true,
@@ -160,7 +187,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (persistence.assetId) {
-    await writeAssetIdToCanvasNode(optionalString(body.nodeId) ?? '', persistence.assetId, {
+    await writeAssetIdToCanvasNode({
+      nodeId: optionalString(body.nodeId) ?? '',
+      assetId: persistence.assetId,
+      userId: currentUser.id,
+      projectId: optionalString(body.projectId),
+      workflowId: optionalString(body.workflowId),
+      patch: {
       assetUrl: persistence.stableUrl,
       resolvedUrl: persistence.stableUrl,
       storageKey: persistence.storageKey,
@@ -169,6 +202,7 @@ export async function POST(request: NextRequest) {
       recoveryStatus: 'recovered_from_old_url',
       assetResolveStatus: 'ready',
       mediaPersistence: persistence,
+      },
     })
   }
 

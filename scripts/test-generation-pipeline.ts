@@ -134,12 +134,18 @@ async function main() {
     'apps/web/src/app/api/generate/image/route.ts',
     'apps/web/src/app/api/generate/video/route.ts',
     'apps/web/src/app/api/assets/resolve-batch/route.ts',
+    'apps/web/src/app/api/assets/resolve-by-node/route.ts',
     'apps/web/src/app/api/projects/[projectId]/canvas/route.ts',
+    'apps/web/src/components/create/P0MediaDebugPanel.tsx',
   ]
   for (const r of routes) {
     const exists = existsSync(`/Users/aaron/creator-city/${r}`)
     console.log(`  ${exists ? '[OK]' : '[MISSING]'} ${r}`)
   }
+
+  console.log('\n--- dry-run contract ---')
+  console.log('[OK] This script does not call paid image/video POST generation without --real.')
+  console.log('[OK] Page-level verification uses /create → P0 媒体自检 for real current nodes after login.')
 
   console.log('\n=== Done ===\n')
 }

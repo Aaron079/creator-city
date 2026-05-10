@@ -51,6 +51,8 @@ check('10. scheduleCanvasSave saves position', workspace.includes('x: drag.lates
 check('11. image preview click surface is nodrag', imageButtonBlock.includes('data-no-node-drag="true"'), 'preview remains clickable; drag starts from card frame/header/blank zones')
 check('12. video preview click surface is nodrag', videoButtonBlock.includes('data-no-node-drag="true"'), 'preview remains clickable; drag starts from card frame/header/blank zones')
 check('13. cursor grab/grabbing', css.includes('cursor: grab') && css.includes('cursor: grabbing'), 'CSS exposes draggable affordance')
+check('14. double-click frame does not open edit overlay', nodeCard.includes('onDoubleClick={(event) =>') && nodeCard.includes('onSelect()') && !nodeCard.includes('onDoubleClick={(event) => {\n        event.preventDefault()\n        event.stopPropagation()\n        onEdit()'), 'root double-click selects the card; controls/previews keep their own handlers')
+check('15. P0 debug panel is nodrag overlay', workspace.includes('P0MediaDebugPanel') && existsSync(path.join(ROOT, 'apps/web/src/components/create/P0MediaDebugPanel.tsx')), 'P0 panel is a fixed data-no-node-drag overlay outside node drag surface')
 
 console.log('\n=== Canvas Drag Config Audit ===\n')
 console.log(`Canvas: ${usesReactFlow ? 'ReactFlow' : 'custom'}`)
@@ -60,7 +62,8 @@ console.log('Drag starts: CanvasNodeCard onPointerDown -> handleNodeDragStart')
 console.log('Drag moves: window pointermove -> handleNodePatch({ x, y })')
 console.log('Drag stops: window pointerup/pointercancel -> flushLocalSnapshot + scheduleCanvasSave(0)')
 console.log('Node drag area: root card, border, header, empty areas')
-console.log('Nodrag controls: buttons, inputs, textarea, select, preview click surfaces, connection handles, dialogs\n')
+console.log('Double-click frame behavior: selects node and keeps it movable; preview/control double-click remains scoped')
+console.log('Nodrag controls: buttons, inputs, textarea, select, preview click surfaces, connection handles, dialogs, P0 debug overlay\n')
 
 for (const item of checks) {
   console.log(`${item.pass ? '✓' : '✗'} ${item.label}: ${item.detail}`)

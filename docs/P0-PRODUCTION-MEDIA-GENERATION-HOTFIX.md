@@ -1,81 +1,131 @@
 # P0 Production Media, Generation, And Drag Hotfix
 
-Date: 2026-05-10
+Date: 2026-05-11
 
-## Why `cf81fd9` Was Not Enough
+## Why Previous Fixes Did Not Close P0
 
-`cf81fd9` shipped code that could pass local scripts with zero local assets, but the real production page still depended on legacy CanvasNode shapes and production-only media URLs. The visible page still showed recovery copy because `CanvasNodeCard` could choose stale `resultImageUrl` / `resultVideoUrl` before a resolved storage URL, and some legacy nodes did not expose `assetId` through the narrow fields the UI was reading.
+`cf81fd9` and `5b9c209` improved local resolver code, but they did not remove the real acceptance blocker: the production `/create` page still had no logged-in, current-canvas diagnostic surface. Local scripts could report zero local assets or pass route checks while the real browser still rendered legacy CanvasNode data that the scripts never saw.
 
-The previous reports were misleading because local scripts saw `0` assets and `0` canvas nodes. That proves the scripts ran, not that production nodes rendered. The acceptance standard is the real `/create` page after login and deployment.
+Earlier success reports were misleading because they mixed server/script reachability with page acceptance. The correct standard is: latest Vercel Production commit deployed, logged-in `/create` opened, current real image/video nodes diagnosed from the page, recoverable nodes fixed in-place, and drag verified in the browser.
 
-## Old Media Root Cause
+## Old Image/Video Display Root Cause
 
-Legacy image/video nodes can have `assetId` in several historical locations: `node.assetId`, `node.data.assetId`, `metadataJson.assetId`, `metadataJson.asset.id`, `asset_id`, `mediaAssetId`, `resultAssetId`, `outputAssetId`, and `generationJob.outputAssetId`. The old UI only read a subset, so good assets could look unrecoverable.
+Legacy CanvasNodes were not consistent about where `assetId` lived. The page must read all historical fields: `node.assetId`, `node.data.assetId`, `node.metadataJson.assetId`, `node.metadataJson.asset.id`, `asset_id`, `mediaAssetId`, `resultAssetId`, `outputAssetId`, `generationJob.outputAssetId`, `generationResult.outputAssetId`, `pluginResult.outputAssetId`, and `mediaPersistence.assetId/outputAssetId`.
 
-`CanvasNodeCard` now uses `resolvedUrl` / `assetUrl` / `stableUrl` before old provider URLs. `resolve-batch` returns `ready` with `resolvedUrl` when storage can be signed or otherwise resolved. Storage failures are classified as `needs_signed_url`, `proxy_required`, `missing_env`, `storage_permission_error`, `object_missing`, or `provider_error` before using truly unrecoverable states.
+Some nodes also had `storageKey` but stale provider URLs or expired signed URLs. A failed old URL does not prove the object is unrecoverable when `storageKey` exists. The resolver now avoids marking signed URL failures as `unrecoverable_expired_signed_url_without_storage_key` when a storage key is present.
 
-Assets are truly unrecoverable only when there is no usable `assetId`, no `storageKey`, no original/provider URL, no `providerJobId`, and the only saved source is an expired `blob:` URL or unusable data URL.
+`CanvasNodeCard` should display `metadataJson.resolvedUrl` / `assetUrl` / `stableUrl` before old `resultImageUrl` / `resultVideoUrl`. If a resolved URL exists, it must not show “不可恢复”.
 
 ## Recovery Strategy
 
-When a node has no visible `assetId`, `/api/media/resync` first looks up an existing `Asset` by `nodeId`. If found and resolvable, it writes `assetId`, `resolvedUrl`, storage fields, and recovery status back to `CanvasNode.metadataJson`.
+For nodes with `assetId`, `/api/assets/resolve-batch` and `/api/assets/{assetId}/recover` resolve the Asset and return:
 
-If no existing Asset is found but an old URL exists, resync downloads the URL, uploads the bytes to configured storage, creates an Asset, updates CanvasNode metadata, and returns a stable URL for immediate display.
+```json
+{
+  "assetId": "...",
+  "status": "ready | missing | needs_signed_url | proxy_required | missing_env | storage_permission_error | object_missing | provider_error | unrecoverable_*",
+  "resolvedUrl": "...",
+  "storageKey": "...",
+  "storageProvider": "aliyun-oss",
+  "bucket": "...",
+  "recoveryStatus": "...",
+  "error": null,
+  "actionTaken": "resolved_existing_storage"
+}
+```
 
-For Aliyun OSS, storage resolution attempts object existence through a signed URL, then returns a signed/public URL through `resolveAssetUrl`. A 403 is treated as a permission/signing problem, not automatically unrecoverable.
+For nodes without `assetId`, the page now first calls `/api/assets/resolve-by-node` to find an existing Asset owned by the current user for that `nodeId`. If found, it writes `assetId`, `resolvedUrl`, storage fields, and recovery status back into the current node.
+
+If no Asset is found but an old URL exists, `/api/media/resync` downloads that URL, uploads the bytes to Aliyun OSS or the configured storage provider, creates an Asset, writes `CanvasNode.metadataJson.assetId`, writes `resolvedUrl/stableUrl/storageKey`, and saves the canvas. This is not a mock recovery path.
+
+## Aliyun OSS Resolution
+
+Storage resolution attempts object existence and then signed/public URL resolution. For private buckets, `403` means permission/signing is required, not automatic unrecoverability. Valid non-final classifications include:
+
+- `needs_signed_url`
+- `proxy_required`
+- `missing_env`
+- `storage_permission_error`
+- `object_missing`
+- `provider_error`
+
+Truly unrecoverable is reserved for no Asset ID, no storage key, no original/provider URL, no provider job, expired `blob:` URL, or unusable data URL without file bytes.
+
+## Page-Level P0 Panel
+
+`/create` now has a logged-in page panel named `P0 媒体自检`. It reads the current in-memory canvas nodes, not local mock data and not the admin debug route.
+
+The panel shows:
+
+- current project id and workflow id
+- total node count
+- image/video node count
+- per-node `nodeId`, kind, position, prompt, provider, `assetId`, assetId source field, generation job id, provider job id
+- URL existence for `resultImageUrl`, `resultVideoUrl`, `stableUrl`, `originalUrl`, `currentUrl`, `storageKey`, and `resolvedUrl`
+- the inferred `CanvasNodeCard` media `src`
+- `recoveryStatus`, `error`, unrecoverable flag, storage-key failure reason, and whether the node has any recoverable source
+- full diagnostic JSON for screenshot/copy
+
+Per node actions:
+
+- `重新 resolve 该节点`
+- `立即恢复资产`
+- `从 nodeId 查找已有 Asset`
+- `从旧 URL 重新导入到 OSS`
+- `用原 Prompt 重新生成`
+- `复制该节点诊断 JSON`
+
+The regenerate button first runs provider health (`GET /api/generate/image` or `GET /api/generate/video`) and requires user confirmation before any real paid generation call.
 
 ## New Generation Chain
 
-Image generation submits to `/api/generate/image`; video generation submits to `/api/generate/video`. Provider/env errors are returned to the UI with `errorCode`, missing env keys, upstream status/message, raw code, and request id when available.
+Image generation calls `/api/generate/image`; video generation calls `/api/generate/video`. Provider/env/API errors are returned with `errorCode`, missing env keys, upstream status/message, raw code, and request id when available.
 
-On provider success, `persistGeneratedMedia` downloads the provider file, uploads it to storage, creates an Asset, links the GenerationJob `outputAssetId`, and writes the Asset ID plus stable URL back to CanvasNode. Refresh can then recover through `getNodeAssetId`, `resolve-batch`, and `CanvasNodeCard`.
+On provider success, `persistGeneratedMedia` downloads the provider file, uploads it to storage, creates an Asset, links `GenerationJob.outputAssetId`, writes `assetId` and stable URL to CanvasNode metadata, and allows refresh recovery through `getNodeAssetId` plus `resolve-batch`.
 
-The dry-run health path does not call paid providers. Real generation still requires production provider env and user credits.
+Production env checklist:
 
-## Drag Interaction
+- `DATABASE_URL`
+- `MEDIA_PERSISTENCE_ENABLED` not `false`
+- `ALIYUN_ACCESS_KEY_ID`
+- `ALIYUN_ACCESS_KEY_SECRET`
+- `ALIYUN_OSS_BUCKET`
+- `ALIYUN_OSS_REGION`
+- `ALIYUN_OSS_ENDPOINT`
+- `ALIYUN_OSS_PUBLIC_BASE_URL`
+- image provider env, for example `VOLCENGINE_ARK_API_KEY`, `VOLCENGINE_SEEDREAM_MODEL`, `VOLCENGINE_ARK_BASE_URL`
+- video provider env, for example `VOLCENGINE_SEEDANCE_MODEL`
+- optional admin automation env `P0_DEBUG_TOKEN`
 
-The create canvas is custom pointer-based canvas, not ReactFlow. Dragging is owned by:
+## Drag Regression
 
-- `apps/web/src/components/create/CanvasNodeCard.tsx`: root `onPointerDown` starts node drag unless the target is interactive.
-- `apps/web/src/components/create/VisualCanvasWorkspace.tsx`: `handleNodeDragStart`, window `pointermove`, and window `pointerup` update `x/y`, flush local snapshot, and call `scheduleCanvasSave(0)`.
+The `/create` canvas is custom pointer-based canvas, not ReactFlow. There are no `nodesDraggable` or `nodeDragHandle` ReactFlow settings.
 
-Draggable areas: node root, border, header, and empty zones.
+Drag wiring:
 
-Nodrag areas: buttons, inputs, textarea, select, preview click surfaces, connection handles, dialogs, context menus, and side panels.
+- `CanvasNodeCard.tsx`: root `onPointerDown` starts drag unless the target is interactive.
+- `VisualCanvasWorkspace.tsx`: `handleNodeDragStart` records pointer/start position.
+- window `pointermove` updates `node.x/node.y`.
+- window `pointerup/pointercancel` flushes local snapshot and calls `scheduleCanvasSave(0)`.
 
-Error overlays are scoped to `.canvas-node-preview`, so they do not cover the header or drag handle. Dragging uses `cursor: grab` and `cursor: grabbing`.
+Draggable areas are the node root frame, border, header, and blank zones. Buttons, inputs, textareas, selects, connection handles, dialogs, preview click surfaces, and the P0 panel are `nodrag`.
 
-## Debug API
+The root double-click behavior no longer opens the prompt editor through the frame; it selects the node and leaves it movable. Preview double-click remains scoped to preview.
 
-`GET /api/admin/p0-media-debug` is protected by `P0_DEBUG_TOKEN`. Missing or wrong token returns 404. The route does not return secrets or full URLs; URL fields are summarized as existence/host/type.
+## Real Browser Acceptance
 
-The response includes node id, kind, project id, position, metadata keys, asset ID source, generation job id, URL existence booleans, storage key existence, Asset existence/status, resolve status, resolved URL existence/source, CanvasNodeCard source choice, recovery status, error, object check result, and drag wiring.
+After latest Vercel Production deploy is green and points to the newest commit:
 
-Required production invocation:
+1. Open `https://creator-city-vert.vercel.app/create`.
+2. Log in.
+3. Click `P0 媒体自检`.
+4. Copy full diagnostics JSON.
+5. For an old image node, click `立即恢复资产`.
+6. For an old video node, click `立即恢复资产`.
+7. Confirm old image/video render in the node card.
+8. Generate a new image; confirm it renders and still renders after refresh.
+9. Generate a new video, or confirm the displayed provider/env/API error is concrete.
+10. Double-click/select the node frame, drag from frame/header/blank area, refresh, and confirm position persists.
+11. Confirm node buttons still click normally.
 
-```bash
-cd /Users/aaron/creator-city && \
-P0_DEBUG_TOKEN=<token configured in Vercel Production> pnpm dlx tsx scripts/test-real-canvas-node-debug.ts --base-url https://creator-city-vert.vercel.app
-```
-
-## Vercel Production Checklist
-
-- `P0_DEBUG_TOKEN` configured.
-- `DATABASE_URL` configured.
-- Aliyun OSS env configured: `ALIYUN_ACCESS_KEY_ID`, `ALIYUN_ACCESS_KEY_SECRET`, `ALIYUN_OSS_BUCKET`, `ALIYUN_OSS_REGION`, `ALIYUN_OSS_ENDPOINT`, `ALIYUN_OSS_PUBLIC_BASE_URL`.
-- Image provider env configured: `VOLCENGINE_ARK_API_KEY`, `VOLCENGINE_SEEDREAM_MODEL`, `VOLCENGINE_ARK_BASE_URL`.
-- Video provider env configured: `VOLCENGINE_ARK_API_KEY`, `VOLCENGINE_SEEDANCE_MODEL`, `VOLCENGINE_ARK_BASE_URL`.
-- `MEDIA_PERSISTENCE_ENABLED` is not `false`.
-
-## Real Browser Acceptance Steps
-
-1. Open `https://creator-city-vert.vercel.app/create` in a real logged-in browser.
-2. Confirm old image/video nodes show media, or show a specific classified reason.
-3. Click `立即恢复资产` on failed nodes and confirm recoverable nodes render media.
-4. Generate a new image and confirm it renders after refresh.
-5. Generate a new video or confirm a concrete provider/env/API error is visible.
-6. Double-click/select a node frame, drag it from frame/header/blank area, and confirm buttons still click.
-7. Refresh and confirm the dragged position persists.
-8. Use `/api/admin/p0-media-debug` with `P0_DEBUG_TOKEN` to compare the rendered node with DB/Asset/OSS state.
-
-Passing scripts is not equivalent to passing the page. Completion requires latest Vercel Production deployed commit plus real browser verification after login.
+Scripts passing is not page acceptance. The P0 rule is: no “代码已修复” claim until production deploy is current and the logged-in real page can diagnose and repair the current canvas.

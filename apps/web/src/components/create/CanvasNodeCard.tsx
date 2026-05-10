@@ -168,18 +168,21 @@ function mediaPersistenceRecord(metadata: Record<string, unknown>) {
 }
 
 function getNodeAssetId(node: VisualCanvasNode) {
+  const nodeRecord = node as unknown as Record<string, unknown>
   const metadata = metadataRecord(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
+  const topMediaPersistence = nestedRecord(nodeRecord.mediaPersistence)
   const assetRecord = nestedRecord(metadata.asset)
-  const nodeData = nestedRecord((node as unknown as Record<string, unknown>).data)
+  const nodeData = nestedRecord(nodeRecord.data)
   const generationJob = nestedRecord(metadata.generationJob)
+  const topGenerationJob = nestedRecord(nodeRecord.generationJob)
   const generationResult = nestedRecord(metadata.generationResult)
   const pluginResult = nestedRecord(metadata.pluginResult)
   return (
     stringValue(node.assetId) ||
     stringValue(nodeData.assetId) ||
-    stringValue((node as unknown as Record<string, unknown>).resultAssetId) ||
-    stringValue((node as unknown as Record<string, unknown>).mediaAssetId) ||
+    stringValue(nodeRecord.resultAssetId) ||
+    stringValue(nodeRecord.mediaAssetId) ||
     stringValue(metadata.assetId) ||
     stringValue(assetRecord.id) ||
     stringValue(metadata.asset_id) ||
@@ -189,10 +192,13 @@ function getNodeAssetId(node: VisualCanvasNode) {
     stringValue(metadata.media_asset_id) ||
     stringValue(metadata.outputAssetId) ||
     stringValue(generationJob.outputAssetId) ||
+    stringValue(topGenerationJob.outputAssetId) ||
     stringValue(generationResult.outputAssetId) ||
     stringValue(pluginResult.outputAssetId) ||
     stringValue(mediaPersistence.assetId) ||
-    stringValue(mediaPersistence.outputAssetId)
+    stringValue(mediaPersistence.outputAssetId) ||
+    stringValue(topMediaPersistence.assetId) ||
+    stringValue(topMediaPersistence.outputAssetId)
   )
 }
 
@@ -503,14 +509,15 @@ export function CanvasNodeCard({
   const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
   const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
   const assetUrl = stringValue(nodeMetadata.assetUrl)
+  const resolvedUrl = stringValue(nodeMetadata.resolvedUrl) || assetUrl
   const recoveryReason = mediaRecoveryReason(nodeMetadata)
   const activeMedia = node.kind === 'image' ? imageMedia : node.kind === 'video' ? videoMedia : null
   const mediaVaultStatus = activeMedia?.hasUrl
-    ? persistenceStatus === 'persisted'
+    ? persistenceStatus === 'persisted' || (resolvedUrl && activeMedia.url === resolvedUrl)
       ? { label: '已保存', tone: 'persisted' }
       : persistenceStatus === 'failed'
         ? { label: '临时链接', tone: 'temporary' }
-        : recoveryReason.startsWith('unrecoverable_')
+        : recoveryReason.startsWith('unrecoverable_') && !resolvedUrl
           ? { label: '不可恢复', tone: 'expired' }
           : !assetUrl && activeMedia.isExpiredLikely
             ? { label: '需恢复', tone: 'expired' }
@@ -630,6 +637,28 @@ export function CanvasNodeCard({
         patchRecoveredAsset(mediaKind, data)
         setMediaRecoveryStatus(data.status === 'ready' && data.resolvedUrl ? 'recovered' : 'unrecoverable')
         return
+      }
+
+      try {
+        const lookupResponse = await fetch('/api/assets/resolve-by-node', {
+          method: 'POST',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            nodeId: node.id,
+            projectId: stringValue(nodeMetadata.projectId),
+            workflowId: stringValue(nodeMetadata.workflowId),
+          }),
+        })
+        const lookupData = await lookupResponse.json().catch(() => ({})) as AssetRecoverResponse
+        if (lookupResponse.ok && lookupData.assetId) {
+          patchRecoveredAsset(mediaKind, lookupData)
+          setMediaRecoveryStatus(lookupData.status === 'ready' && lookupData.resolvedUrl ? 'recovered' : 'unrecoverable')
+          return
+        }
+      } catch {
+        // Fall through to old URL resync.
       }
 
       if (currentUrl) {
@@ -1003,7 +1032,8 @@ export function CanvasNodeCard({
       onDoubleClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        onEdit()
+        if (isInteractiveTarget(event.target)) return
+        onSelect()
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

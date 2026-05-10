@@ -134,6 +134,7 @@ async function main() {
   const { db } = await import('../apps/web/src/lib/db')
   const { resolveAssetRecord } = await import('../apps/web/src/lib/assets/asset-resolver')
   const { persistGeneratedMedia } = await import('../apps/web/src/lib/assets/persist-generated-media')
+  const apply = process.argv.includes('--apply')
   const nodes = await db.canvasNode.findMany({
     where: { kind: { in: ['image', 'video'] } },
     include: { workflow: { select: { id: true, projectId: true, project: { select: { ownerId: true } } } } },
@@ -145,6 +146,7 @@ async function main() {
     alreadyHadAssetId: 0,
     boundExistingAssets: 0,
     recoveredFromOldUrl: 0,
+    wouldRecoverFromOldUrl: 0,
     unrecoverable: 0,
     unrecoverableReasons: {} as Record<string, number>,
   }
@@ -159,6 +161,10 @@ async function main() {
     const url = firstMediaUrl(node)
     const existing = await findMatchingAsset(db, node, url)
     if (existing) {
+      if (!apply) {
+        report.boundExistingAssets += 1
+        continue
+      }
       const resolved = await resolveAssetRecord(existing)
       await patchNode(db, node, {
         assetId: existing.id,
@@ -186,6 +192,10 @@ async function main() {
     }
 
     if (url && /^https?:\/\//i.test(url)) {
+      if (!apply) {
+        report.wouldRecoverFromOldUrl += 1
+        continue
+      }
       const persistence = await persistGeneratedMedia({
         url,
         type: node.kind === 'video' ? 'video' : 'image',
@@ -218,21 +228,28 @@ async function main() {
     }
 
     const reason = classifyUnrecoverable(url)
-    await patchNode(db, node, {
-      assetResolveStatus: reason,
-      recoveryStatus: reason,
-      error: reason === 'unrecoverable_blob_url'
-        ? '该资产当时只保存为浏览器临时 blob URL，刷新后无法恢复。'
-        : reason === 'unrecoverable_expired_signed_url_without_storage_key'
-          ? '该资产只保存了过期临时签名链接，没有保存永久 storageKey。'
-          : '当前画布节点没有 assetId，也没有可恢复的原始 URL。',
-    })
+    if (apply) {
+      await patchNode(db, node, {
+        assetResolveStatus: reason,
+        recoveryStatus: reason,
+        error: reason === 'unrecoverable_blob_url'
+          ? '该资产当时只保存为浏览器临时 blob URL，刷新后无法恢复。'
+          : reason === 'unrecoverable_expired_signed_url_without_storage_key'
+            ? '该资产只保存了过期临时签名链接，没有保存永久 storageKey。'
+            : '当前画布节点没有 assetId，也没有可恢复的原始 URL。',
+      })
+    }
     report.unrecoverable += 1
     report.unrecoverableReasons[reason] = (report.unrecoverableReasons[reason] ?? 0) + 1
   }
 
   console.log(JSON.stringify({
     script: 'backfill-canvas-asset-ids',
+    mode: apply ? 'apply' : 'dry-run',
+    writes: apply,
+    message: apply
+      ? 'DB/storage writes were enabled with --apply.'
+      : 'No DB/storage writes were performed. Re-run with --apply only after explicitly approving bulk backfill risk.',
     ...report,
   }, null, 2))
   await db.$disconnect()

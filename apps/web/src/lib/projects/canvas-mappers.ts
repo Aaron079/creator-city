@@ -51,14 +51,24 @@ export function mapCanvasNode(row: DbCanvasNode) {
   const generationJob = metadata.generationJob && typeof metadata.generationJob === 'object' && !Array.isArray(metadata.generationJob)
     ? metadata.generationJob as Record<string, unknown>
     : {}
+  const generationResult = metadata.generationResult && typeof metadata.generationResult === 'object' && !Array.isArray(metadata.generationResult)
+    ? metadata.generationResult as Record<string, unknown>
+    : {}
+  const pluginResult = metadata.pluginResult && typeof metadata.pluginResult === 'object' && !Array.isArray(metadata.pluginResult)
+    ? metadata.pluginResult as Record<string, unknown>
+    : {}
   const assetId = [
     metadata.assetId,
     assetRecord.id,
     metadata.asset_id,
     metadata.mediaAssetId,
     metadata.resultAssetId,
+    metadata.result_asset_id,
+    metadata.media_asset_id,
     metadata.outputAssetId,
     generationJob.outputAssetId,
+    generationResult.outputAssetId,
+    pluginResult.outputAssetId,
     mediaPersistence.assetId,
     mediaPersistence.outputAssetId,
   ].find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim()

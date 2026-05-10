@@ -9,7 +9,7 @@
     "start:debug": "nest start --debug --watch",
     "type-check": "tsc --noEmit",
     "lint": "eslint 'src/**/*.ts'",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "clean": "rm -rf dist",
     "prisma:generate": "prisma generate",

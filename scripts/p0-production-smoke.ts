@@ -114,11 +114,17 @@ async function main() {
     }
   }
 
-  // 3. generate/image API — POST-only route; 401/405 = Lambda alive
-  console.log('\n--- 3. /api/generate/image (Lambda alive check) ---')
+  // 3. generate/image API — GET is a provider health check and does not spend credits.
+  console.log('\n--- 3. /api/generate/image (health check, no paid generation) ---')
   const imageStatus = await get(`${baseUrl}/api/generate/image`)
   if (imageStatus.ok && isJsonResponse(imageStatus.json)) {
     pass('generate/image GET OK', `latency ${imageStatus.latencyMs}ms`)
+    const json = imageStatus.json as Record<string, unknown>
+    const providers = Array.isArray(json.providers) ? json.providers as Array<Record<string, unknown>> : []
+    const missing = providers.flatMap((provider) => Array.isArray(provider.missingEnvKeys) ? provider.missingEnvKeys as string[] : [])
+    console.log(`    defaultProviderId: ${json.defaultProviderId ?? '(none)'}`)
+    console.log(`    configured providers: ${providers.filter((provider) => provider.available === true).length}/${providers.length}`)
+    if (missing.length) console.log(`    missing env keys: ${[...new Set(missing)].join(', ')}`)
   } else if (imageStatus.status === 401 || imageStatus.status === 405 || imageStatus.status === 404) {
     // Route exists and Lambda responds — just needs auth or POST method
     pass(`generate/image Lambda alive (HTTP ${imageStatus.status} expected for unauthenticated GET)`, `latency ${imageStatus.latencyMs}ms`)
@@ -132,11 +138,17 @@ async function main() {
     fail(`generate/image HTTP ${imageStatus.status}`, imageStatus.body.slice(0, 200))
   }
 
-  // 4. generate/video API — POST-only route; 401/405 = Lambda alive
-  console.log('\n--- 4. /api/generate/video (Lambda alive check) ---')
+  // 4. generate/video API — GET is a provider health check and does not spend credits.
+  console.log('\n--- 4. /api/generate/video (health check, no paid generation) ---')
   const videoStatus = await get(`${baseUrl}/api/generate/video`)
   if (videoStatus.ok && isJsonResponse(videoStatus.json)) {
     pass('generate/video GET OK', `latency ${videoStatus.latencyMs}ms`)
+    const json = videoStatus.json as Record<string, unknown>
+    const providers = Array.isArray(json.providers) ? json.providers as Array<Record<string, unknown>> : []
+    const missing = providers.flatMap((provider) => Array.isArray(provider.missingEnvKeys) ? provider.missingEnvKeys as string[] : [])
+    console.log(`    defaultProviderId: ${json.defaultProviderId ?? '(none)'}`)
+    console.log(`    configured providers: ${providers.filter((provider) => provider.available === true).length}/${providers.length}`)
+    if (missing.length) console.log(`    missing env keys: ${[...new Set(missing)].join(', ')}`)
   } else if (videoStatus.status === 401 || videoStatus.status === 405 || videoStatus.status === 404) {
     pass(`generate/video Lambda alive (HTTP ${videoStatus.status} expected for unauthenticated GET)`, `latency ${videoStatus.latencyMs}ms`)
   } else if (videoStatus.status === 0) {
@@ -148,8 +160,31 @@ async function main() {
     fail(`generate/video HTTP ${videoStatus.status}`, videoStatus.body.slice(0, 200))
   }
 
-  // 5. skills API (was 500 before fix)
-  console.log('\n--- 5. /api/skills ---')
+  // 5. /create should be reachable and enter the app/auth flow.
+  console.log('\n--- 5. /create login/app flow ---')
+  const createPage = await get(`${baseUrl}/create`)
+  if (createPage.status === 200 || createPage.status === 302 || createPage.status === 307) {
+    pass('/create reachable', `HTTP ${createPage.status} in ${createPage.latencyMs}ms`)
+    if (/auth\/login|登录|Sign in|Create|canvas|__NEXT_DATA__/i.test(createPage.body)) {
+      pass('/create returns login protection or app shell')
+    } else {
+      fail('/create body did not look like login/app flow', createPage.body.slice(0, 200))
+    }
+  } else {
+    fail(`/create HTTP ${createPage.status}`, createPage.body.slice(0, 200))
+  }
+
+  // 6. P0 admin debug must be protected without a token.
+  console.log('\n--- 6. /api/admin/p0-media-debug protection ---')
+  const debug = await get(`${baseUrl}/api/admin/p0-media-debug`)
+  if (debug.status === 401 || debug.status === 403 || debug.status === 404) {
+    pass('p0-media-debug protected without token', `HTTP ${debug.status}`)
+  } else {
+    fail(`p0-media-debug should be protected, got HTTP ${debug.status}`, debug.body.slice(0, 200))
+  }
+
+  // 7. skills API (was 500 before fix)
+  console.log('\n--- 7. /api/skills ---')
   const skills = await get(`${baseUrl}/api/skills`)
   if (skills.ok && isJsonResponse(skills.json)) {
     pass('skills API OK', `latency ${skills.latencyMs}ms`)
@@ -157,10 +192,10 @@ async function main() {
     fail(`skills API HTTP ${skills.status}`)
   }
 
-  // 6. resolve known assetIds (if any provided via env)
+  // 8. resolve known assetIds (if any provided via env)
   const testAssetId = process.env.SMOKE_TEST_ASSET_ID
   if (testAssetId) {
-    console.log(`\n--- 6. Resolve test asset ${testAssetId} ---`)
+    console.log(`\n--- 8. Resolve test asset ${testAssetId} ---`)
     const resolve = await post(`${baseUrl}/api/assets/resolve-batch`, { assetIds: [testAssetId] })
     if (resolve.ok && isJsonResponse(resolve.json)) {
       const assets = Array.isArray((resolve.json as Record<string, unknown>).assets)
@@ -188,9 +223,12 @@ async function main() {
       fail(`resolve-batch HTTP ${resolve.status}`)
     }
   } else {
-    console.log('\n--- 6. Resolve test asset [SKIP] ---')
+    console.log('\n--- 8. Resolve test asset [SKIP] ---')
     console.log('    Set SMOKE_TEST_ASSET_ID=<id> env var to test specific asset resolution.')
   }
+
+  console.log('\n--- P0 page-level verification note ---')
+  console.log('    Authenticated users can open /create → P0 媒体自检 to diagnose current real canvas nodes without P0_DEBUG_TOKEN.')
 
   // Summary
   console.log(`\n${'='.repeat(50)}`)

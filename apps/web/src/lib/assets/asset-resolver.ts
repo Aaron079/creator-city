@@ -279,18 +279,21 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
     }
     const providerJobId = providerJobIdFor(asset)
     if (providerJobId) return recoverFromProviderJob(asset, providerJobId)
-    if (flags.isSigned) {
+    if (storageKey) {
+      storageMissMessage = storageMissMessage || downloaded.message
+    } else if (flags.isSigned) {
       const updated = await markAsset(asset, 'UNRECOVERABLE', 'unrecoverable_expired_signed_url_without_storage_key', '该资产只保存了过期临时签名链接，没有保存永久 storageKey。')
       return resultFromAsset(updated, 'unrecoverable_expired_signed_url_without_storage_key', null, 'unrecoverable_expired_signed_url_without_storage_key', updated.error, 'marked_unrecoverable')
+    } else {
+      const isGone = downloaded.status === 404
+      const recoveryStatus = isGone
+        ? 'unrecoverable_provider_expired'
+        : downloaded.status === 403
+          ? 'storage_permission_error'
+          : 'provider_error'
+      const updated = await markAsset(asset, isGone ? 'UNRECOVERABLE' : 'MISSING', recoveryStatus, downloaded.message)
+      return resultFromAsset(updated, isGone ? 'unrecoverable_provider_expired' : recoveryStatus, null, updated.recoveryStatus, updated.error, isGone ? 'marked_unrecoverable' : 'marked_missing')
     }
-    const isGone = downloaded.status === 404
-    const recoveryStatus = isGone
-      ? 'unrecoverable_provider_expired'
-      : downloaded.status === 403
-        ? 'storage_permission_error'
-        : 'provider_error'
-    const updated = await markAsset(asset, isGone ? 'UNRECOVERABLE' : 'MISSING', recoveryStatus, downloaded.message)
-    return resultFromAsset(updated, isGone ? 'unrecoverable_provider_expired' : recoveryStatus, null, updated.recoveryStatus, updated.error, isGone ? 'marked_unrecoverable' : 'marked_missing')
   }
 
   const providerJobId = providerJobIdFor(asset)

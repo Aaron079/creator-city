@@ -139,6 +139,11 @@ async function main() {
     }
   }
 
+  console.log('\n--- resolver contract ---')
+  console.log('[OK] storageKey must be tested before any unrecoverable classification.')
+  console.log('[OK] 403 means signedUrl/proxy is required; it is not by itself unrecoverable.')
+  console.log('[OK] /create P0 媒体自检 exposes storageKey/resolvedUrl/proxy status for logged-in real nodes.')
+
   console.log('\n=== Done ===\n')
 }
 

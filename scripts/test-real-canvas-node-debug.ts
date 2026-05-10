@@ -24,6 +24,7 @@ async function main() {
   if (!TOKEN) {
     console.log('[FAIL] P0_DEBUG_TOKEN not set.')
     console.log('  This script cannot verify real production canvas nodes without the protected debug token.')
+    console.log('  This does NOT block logged-in page verification: open /create and use the P0 媒体自检 panel to inspect current real nodes without P0_DEBUG_TOKEN.')
     console.log('  Required local run:')
     console.log(`  cd /Users/aaron/creator-city && P0_DEBUG_TOKEN=<token configured in Vercel Production> pnpm dlx tsx scripts/test-real-canvas-node-debug.ts --base-url ${BASE_URL}`)
     console.log('  Required Vercel Production env: P0_DEBUG_TOKEN=<same-token>')

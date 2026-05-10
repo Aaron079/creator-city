@@ -16,6 +16,7 @@ import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
+import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
@@ -551,9 +552,11 @@ function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCod
 
 function formatGenerateError(result: GenerateApiResult) {
   const message = normalizeGenerateErrorMessage(result)
+  const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
   return [
     result.errorCode,
     message,
+    missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
     result.model ? `model: ${result.model}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
     result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
@@ -587,18 +590,21 @@ function nestedRecord(value: unknown) {
 }
 
 function getNodeAssetId(node: VisualCanvasNode) {
+  const nodeRecord = node as unknown as Record<string, unknown>
   const metadata = metadataRecord(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
+  const topMediaPersistence = nestedRecord(nodeRecord.mediaPersistence)
   const assetRecord = nestedRecord(metadata.asset)
-  const nodeData = nestedRecord((node as unknown as Record<string, unknown>).data)
+  const nodeData = nestedRecord(nodeRecord.data)
   const generationJob = nestedRecord(metadata.generationJob)
+  const topGenerationJob = nestedRecord(nodeRecord.generationJob)
   const generationResult = nestedRecord(metadata.generationResult)
   const pluginResult = nestedRecord(metadata.pluginResult)
   return (
     stringValue(node.assetId) ||
     stringValue(nodeData.assetId) ||
-    stringValue((node as unknown as Record<string, unknown>).resultAssetId) ||
-    stringValue((node as unknown as Record<string, unknown>).mediaAssetId) ||
+    stringValue(nodeRecord.resultAssetId) ||
+    stringValue(nodeRecord.mediaAssetId) ||
     stringValue(metadata.assetId) ||
     stringValue(assetRecord.id) ||
     stringValue(metadata.asset_id) ||
@@ -608,10 +614,13 @@ function getNodeAssetId(node: VisualCanvasNode) {
     stringValue(metadata.media_asset_id) ||
     stringValue(metadata.outputAssetId) ||
     stringValue(generationJob.outputAssetId) ||
+    stringValue(topGenerationJob.outputAssetId) ||
     stringValue(generationResult.outputAssetId) ||
     stringValue(pluginResult.outputAssetId) ||
     stringValue(mediaPersistence.assetId) ||
-    stringValue(mediaPersistence.outputAssetId)
+    stringValue(mediaPersistence.outputAssetId) ||
+    stringValue(topMediaPersistence.assetId) ||
+    stringValue(topMediaPersistence.outputAssetId)
   )
 }
 
@@ -1483,6 +1492,7 @@ export function VisualCanvasWorkspace({
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
   const [storyboardPreviewOpen, setStoryboardPreviewOpen] = useState(false)
   const [storyboardDirectorOpen, setStoryboardDirectorOpen] = useState(false)
+  const [p0MediaDebugOpen, setP0MediaDebugOpen] = useState(false)
   const [directorState, setDirectorState] = useState<StoryboardState>({ version: '1', shots: [], updatedAt: '' })
   const [directorActiveShotId, setDirectorActiveShotId] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
@@ -3829,6 +3839,18 @@ export function VisualCanvasWorkspace({
     }, 0)
   }, [activePreviewNodeId, closeActivePreview, syncPromptPreset])
 
+  const selectNodeForMove = useCallback((node: VisualCanvasNode) => {
+    if (activePreviewNodeId && activePreviewNodeId !== node.id) {
+      closeActivePreview({ closeReviewWindows: false })
+    }
+    setActiveNodeId(node.id)
+    setActiveEdgeId(null)
+    setEditingNodeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setNodeCreateMenu(null)
+  }, [activePreviewNodeId, closeActivePreview])
+
   const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
     if (type !== 'text' && type !== node.kind) return
     if (type === 'text' && node.kind !== 'text') return
@@ -5846,6 +5868,15 @@ export function VisualCanvasWorkspace({
             <button
               type="button"
               className="canvas-secondary-button"
+              title="诊断当前画布真实图片/视频节点，并逐节点 resolve、恢复、重新导入或导出诊断 JSON"
+              disabled={!projectId}
+              onClick={() => setP0MediaDebugOpen(true)}
+            >
+              P0 媒体自检
+            </button>
+            <button
+              type="button"
+              className="canvas-secondary-button"
             title={workflowRunMessage || (activeNode ? `从「${activeNode.title}」开始运行` : '从所有无入边节点开始运行')}
             disabled={saveStatus === 'opening' || workflowRunStatus === 'running' || !projectId || nodes.length === 0}
             onClick={() => { void handleRunWorkflow() }}
@@ -6242,7 +6273,7 @@ export function VisualCanvasWorkspace({
                 active={node.id === activeNode?.id}
                 dragging={draggingNodeId === node.id}
                 onSelect={() => {
-                  focusPromptForNode(node)
+                  selectNodeForMove(node)
                 }}
                 onAddPrev={(event) => startConnectionDrag(node.id, 'in', event)}
                 onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
@@ -6330,6 +6361,15 @@ export function VisualCanvasWorkspace({
         projectId={projectId}
         onClose={closeMediaDiagnostics}
         onPatchNode={handleMediaDiagnosticsPatch}
+      />
+
+      <P0MediaDebugPanel
+        open={p0MediaDebugOpen}
+        projectId={projectId}
+        workflowId={workflowId}
+        nodes={nodes}
+        onClose={() => setP0MediaDebugOpen(false)}
+        onPatchNode={handleMediaRecoveryPatch}
       />
 
       {activeCreativeAssetsNode ? (

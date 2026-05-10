@@ -25,6 +25,7 @@ async function main() {
   const { db } = await import('../apps/web/src/lib/db')
   const { resolveAssetRecord } = await import('../apps/web/src/lib/assets/asset-resolver')
   const userId = process.env.CREATOR_CITY_USER_ID || process.env.USER_ID
+  const apply = process.argv.includes('--apply')
   const assets = await db.asset.findMany({
     where: userId ? { ownerId: userId } : {},
     orderBy: { createdAt: 'asc' },
@@ -44,6 +45,28 @@ async function main() {
     unrecoverableAssets: 0,
     unrecoverableReasons: {} as Record<string, number>,
     recoveredAssetIds: [] as string[],
+  }
+
+  if (!apply) {
+    for (const asset of assets) {
+      if (String(asset.status) === 'READY') summary.readyAssets += 1
+      if (asset.storageKey) summary.storageKeyAssets += 1
+      else summary.missingStorageKeyAssets += 1
+      if (String(asset.status) === 'UNRECOVERABLE' || String(asset.recoveryStatus ?? '').startsWith('unrecoverable_')) {
+        summary.unrecoverableAssets += 1
+        const reason = asset.recoveryStatus || String(asset.status)
+        summary.unrecoverableReasons[reason] = (summary.unrecoverableReasons[reason] ?? 0) + 1
+      }
+    }
+    console.log(JSON.stringify({
+      script: 'recover-assets',
+      mode: 'dry-run',
+      writes: false,
+      message: 'No DB/storage writes were performed. Re-run with --apply only after explicitly approving bulk recovery risk.',
+      ...summary,
+    }, null, 2))
+    await db.$disconnect()
+    return
   }
 
   for (const asset of assets) {
