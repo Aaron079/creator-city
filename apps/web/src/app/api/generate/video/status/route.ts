@@ -27,7 +27,14 @@ function mediaPersistenceTimeout() {
 }
 
 function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  return errorCode
+}
+
+function visibleProviderErrorCode(errorCode: string | undefined) {
+  if (errorCode === 'PROVIDER_INVALID_PARAMETER') return 'provider_invalid_parameter'
+  if (errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'PROVIDER_NO_DOWNLOAD_URL') return 'provider_no_download_url'
   return errorCode
 }
 
@@ -98,7 +105,7 @@ export async function GET(request: NextRequest) {
       providerId,
       taskId,
       status: 'error',
-      errorCode: result.errorCode,
+      errorCode: visibleProviderErrorCode(result.errorCode),
       message: result.message,
       model: result.model,
       upstreamStatus: result.upstreamStatus,
@@ -152,6 +159,10 @@ export async function GET(request: NextRequest) {
         resultVideoUrl: persistence.stableUrl,
         videoUrl: persistence.stableUrl,
         assetUrl: persistence.stableUrl,
+        resolvedUrl: persistence.resolvedUrl ?? undefined,
+        proxyUrl: persistence.proxyUrl ?? undefined,
+        signedUrlAvailable: persistence.signedUrlAvailable,
+        proxyAvailable: persistence.proxyAvailable,
         assetId: persistence.assetId,
         asset: persistence.assetId ? {
           id: persistence.assetId,
@@ -180,6 +191,10 @@ export async function GET(request: NextRequest) {
             generationJobId: generationJob?.id,
             assetId: persistence.assetId,
             assetUrl: persistence.stableUrl,
+            ...(persistence.resolvedUrl ? { resolvedUrl: persistence.resolvedUrl, stableUrl: persistence.resolvedUrl } : {}),
+            ...(persistence.proxyUrl ? { proxyUrl: persistence.proxyUrl } : {}),
+            signedUrlAvailable: persistence.signedUrlAvailable,
+            proxyAvailable: persistence.proxyAvailable,
             originalProviderVideoUrl: result.videoUrl,
             mediaPersistence: persistence,
             assetIntelligence,

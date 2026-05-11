@@ -1,7 +1,7 @@
 import type { Asset, Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getSeedanceVideoStatus } from '@/lib/providers/china/volcengine'
-import { checkObjectExists, classifyAssetUrl, downloadExternalAsset, resolveAssetUrl, uploadAsset } from '@/lib/assets/storage-adapter'
+import { checkObjectExists, classifyAssetUrl, downloadExternalAsset, resolveAssetUrl, uploadAsset, type ResolvedAssetUrl } from '@/lib/assets/storage-adapter'
 
 export type AssetResolveStatus =
   | 'ready'
@@ -32,7 +32,11 @@ export type AssetResolveAction =
 export type AssetResolveResult = {
   assetId: string
   status: AssetResolveStatus
+  ok: boolean
   resolvedUrl: string | null
+  proxyUrl: string | null
+  signedUrlAvailable: boolean
+  proxyAvailable: boolean
   thumbnailUrl: string | null
   storageKey: string | null
   storageProvider: string | null
@@ -42,6 +46,8 @@ export type AssetResolveResult = {
   currentUrl: string | null
   stableUrl: string | null
   recoveryStatus: string | null
+  errorCode: string | null
+  errorMessage: string | null
   error: string | null
   actionTaken: AssetResolveAction
   storageKeyFailureReason: string | null
@@ -139,19 +145,30 @@ function resultFromAsset(
   recoveryStatus: string | null | undefined,
   error: string | null | undefined,
   actionTaken: AssetResolveAction,
+  resolveInfo?: ResolvedAssetUrl | null,
 ): AssetResolveResult {
   const storageKey = storageKeyFor(asset) || null
   const originalUrl = originalUrlFor(asset) || null
   const currentUrl = resolvedUrl || asset.url || asset.dataUrl || originalUrl
-  const proxyFallbackUrl = currentUrl && /^https?:\/\//i.test(currentUrl)
-    ? `/api/media/proxy?url=${encodeURIComponent(currentUrl)}`
-    : null
+  const assetFileProxyUrl = storageKey ? `/api/assets/${encodeURIComponent(asset.id)}/file` : null
+  const proxyFallbackUrl = assetFileProxyUrl
+    || (currentUrl && /^https?:\/\//i.test(currentUrl)
+      ? `/api/media/proxy?url=${encodeURIComponent(currentUrl)}`
+      : null)
   const statusText = recoveryStatus ?? status
-  const isSignedUrlError = Boolean(storageKey && !resolvedUrl && /sign|signed|signature|url is empty/i.test(error || statusText || ''))
+  const signedUrlError = resolveInfo?.errorCode === 'signing_error'
+    ? (resolveInfo.message ?? 'signed URL generation failed')
+    : null
+  const isSignedUrlError = Boolean(storageKey && !resolvedUrl && (signedUrlError || /sign|signed|signature|url is empty/i.test(error || statusText || '')))
+  const ok = status === 'ready' && Boolean(resolvedUrl || proxyFallbackUrl)
   return {
     assetId: asset.id,
     status,
+    ok,
     resolvedUrl,
+    proxyUrl: proxyFallbackUrl,
+    signedUrlAvailable: Boolean(storageKey && (resolveInfo?.signedUrlAvailable ?? resolvedUrl)),
+    proxyAvailable: Boolean(proxyFallbackUrl),
     thumbnailUrl: asset.thumbnailUrl || null,
     stableUrl: resolvedUrl,
     storageKey,
@@ -161,11 +178,13 @@ function resultFromAsset(
     originalUrl,
     currentUrl,
     recoveryStatus: recoveryStatus ?? asset.recoveryStatus ?? null,
+    errorCode: ok ? null : status,
+    errorMessage: error ?? asset.error ?? null,
     error: error ?? asset.error ?? null,
     actionTaken,
-    storageKeyFailureReason: storageKey && !resolvedUrl ? (error ?? asset.error ?? statusText ?? 'storageKey exists but no readable URL was produced.') : null,
-    signedUrlGenerated: Boolean(storageKey && resolvedUrl),
-    signedUrlError: isSignedUrlError ? (error ?? statusText ?? 'signed URL generation failed') : null,
+    storageKeyFailureReason: storageKey && !resolvedUrl && !proxyFallbackUrl ? (error ?? asset.error ?? statusText ?? 'storageKey exists but no readable URL was produced.') : null,
+    signedUrlGenerated: Boolean(storageKey && (resolveInfo?.signedUrlAvailable ?? resolvedUrl)),
+    signedUrlError: isSignedUrlError ? (signedUrlError ?? error ?? statusText ?? 'signed URL generation failed') : null,
     proxyFallbackUrl,
     proxyFallbackStatus: null,
     whyUnrecoverable: status.startsWith('unrecoverable_') || status === 'no_recovery_source'
@@ -292,11 +311,8 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
     const object = await checkObjectExists(asset)
     if (object.exists) {
       const resolved = await resolveAssetUrl(asset)
-      if (resolved.url) {
-        const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_storage_key', null)
-        return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
-      }
-      storageMissMessage = 'Object exists, but signed URL generation returned an empty URL.'
+      const updated = await markAsset(asset, 'READY', 'resolved_from_storage_key', resolved.errorCode === 'signing_error' ? resolved.message ?? null : null)
+      return resultFromAsset(updated, 'ready', resolved.url || null, updated.recoveryStatus, updated.error, 'resolved_existing_storage', resolved)
     }
     storageMissMessage = storageMissMessage || object.message || 'Storage key exists but object storage could not be read.'
 
@@ -309,8 +325,8 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
       if (resolved.url && /^https?:\/\//i.test(resolved.url)) {
         const fallbackProbe = await probeReadableUrl(resolved.url)
         if (fallbackProbe.ok) {
-          const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_asset_url', null)
-          return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
+          const updated = await markAsset(asset, 'READY', 'resolved_from_asset_url', null)
+          return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage', resolved)
         }
         storageMissMessage = fallbackProbe.message || storageMissMessage
       }

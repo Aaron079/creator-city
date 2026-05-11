@@ -340,9 +340,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const persistedMedia = mediaPersistence && typeof mediaPersistence === 'object' && !Array.isArray(mediaPersistence)
+      ? mediaPersistence as { resolvedUrl?: string | null; proxyUrl?: string | null; signedUrlAvailable?: boolean; proxyAvailable?: boolean }
+      : {}
     const finalMetadata = {
       ...resultMetadata,
       ...(assetId ? { assetId, assetUrl: finalImageUrl } : {}),
+      ...(persistedMedia.resolvedUrl ? { resolvedUrl: persistedMedia.resolvedUrl, stableUrl: persistedMedia.resolvedUrl } : {}),
+      ...(persistedMedia.proxyUrl ? { proxyUrl: persistedMedia.proxyUrl } : {}),
+      signedUrlAvailable: persistedMedia.signedUrlAvailable,
+      proxyAvailable: persistedMedia.proxyAvailable,
       originalProviderImageUrl: providerImageUrl,
       mediaPersistence,
       assetIntelligence,
@@ -354,6 +361,10 @@ export async function POST(request: NextRequest) {
       resultImageUrl: finalImageUrl,
       imageUrl: finalImageUrl,
       assetUrl: assetId ? finalImageUrl : undefined,
+      resolvedUrl: persistedMedia.resolvedUrl ?? undefined,
+      proxyUrl: persistedMedia.proxyUrl ?? undefined,
+      signedUrlAvailable: persistedMedia.signedUrlAvailable,
+      proxyAvailable: persistedMedia.proxyAvailable,
       dataUrl: finalImageUrl.startsWith('data:image/') ? finalImageUrl : undefined,
       assetId,
       originalProviderImageUrl: providerImageUrl,

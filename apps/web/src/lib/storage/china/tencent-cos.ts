@@ -1,6 +1,8 @@
 import { ChinaStorageError } from './errors'
 import type {
   ChinaStorageConfiguration,
+  ChinaStorageObjectMetadataResult,
+  ChinaStorageReadObjectResult,
   ChinaStorageObjectResult,
   ChinaStorageSignedUrlResult,
   PutChinaObjectInput,
@@ -39,6 +41,20 @@ function requireTencentCos() {
 export async function putTencentCosObject(_input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
   requireTencentCos()
   throw new ChinaStorageError('STORAGE_PROVIDER_NOT_IMPLEMENTED', '腾讯云 COS adapter 已预留，暂未接入真实上传。', 501, {
+    provider: 'tencent-cos',
+  })
+}
+
+export async function headTencentCosObject(_key: string): Promise<ChinaStorageObjectMetadataResult> {
+  requireTencentCos()
+  throw new ChinaStorageError('STORAGE_PROVIDER_NOT_IMPLEMENTED', '腾讯云 COS adapter 已预留，暂未接入真实读取。', 501, {
+    provider: 'tencent-cos',
+  })
+}
+
+export async function getTencentCosObject(_key: string): Promise<ChinaStorageReadObjectResult> {
+  requireTencentCos()
+  throw new ChinaStorageError('STORAGE_PROVIDER_NOT_IMPLEMENTED', '腾讯云 COS adapter 已预留，暂未接入真实读取。', 501, {
     provider: 'tencent-cos',
   })
 }

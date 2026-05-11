@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { toAssetType } from '@/lib/projects/canvas-mappers'
-import { downloadExternalAsset, uploadAsset, type CanonicalStorageProvider } from '@/lib/assets/storage-adapter'
+import { downloadExternalAsset, resolveAssetUrl, uploadAsset, type CanonicalStorageProvider } from '@/lib/assets/storage-adapter'
 
 export type PersistGeneratedMediaInput = {
   url?: string
@@ -24,6 +24,10 @@ export type PersistGeneratedMediaResult =
       storageProvider: CanonicalStorageProvider
       bucket?: string | null
       storageKey?: string | null
+      proxyUrl?: string | null
+      resolvedUrl?: string | null
+      signedUrlAvailable?: boolean
+      proxyAvailable?: boolean
       mimeType?: string
       size?: number
       persistedAt: string
@@ -151,6 +155,10 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
   storageProvider: CanonicalStorageProvider
   bucket?: string | null
   storageKey?: string | null
+  resolvedUrl?: string | null
+  proxyUrl?: string | null
+  signedUrlAvailable?: boolean
+  proxyAvailable?: boolean
 }) {
   if (!input.nodeId) return
   const where: Prisma.CanvasNodeWhereInput = input.workflowId
@@ -178,9 +186,10 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
         metadataJson: {
           ...metadata,
           assetId,
-          assetUrl: stableUrl,
-          resolvedUrl: stableUrl,
-          stableUrl,
+          ...(uploaded.resolvedUrl ? { assetUrl: uploaded.resolvedUrl, resolvedUrl: uploaded.resolvedUrl, stableUrl: uploaded.resolvedUrl } : {}),
+          ...(uploaded.proxyUrl ? { proxyUrl: uploaded.proxyUrl } : {}),
+          signedUrlAvailable: uploaded.signedUrlAvailable ?? null,
+          proxyAvailable: uploaded.proxyAvailable ?? Boolean(uploaded.proxyUrl),
           assetResolveStatus: 'ready',
           recoveryStatus: 'ready',
           storageProvider: uploaded.storageProvider,
@@ -191,6 +200,8 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
             status: 'persisted',
             assetId,
             stableUrl,
+            ...(uploaded.resolvedUrl ? { resolvedUrl: uploaded.resolvedUrl } : {}),
+            ...(uploaded.proxyUrl ? { proxyUrl: uploaded.proxyUrl } : {}),
             storageProvider: uploaded.storageProvider,
             bucket: uploaded.bucket,
             storageKey: uploaded.storageKey,
@@ -247,8 +258,17 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         sizeBytes: uploaded.size,
         mimeType: uploaded.mimeType,
       }, url)
-      const stableUrl = uploaded.url
-      if (!stableUrl) return persistError('MEDIA_UPLOAD_FAILED', '媒体已上传，但没有返回稳定 URL。')
+      const proxyUrl = uploaded.storageKey ? `/api/assets/${encodeURIComponent(assetId)}/file` : null
+      const resolved = await resolveAssetUrl({
+        id: assetId,
+        url: uploaded.url,
+        storageProvider: uploaded.storageProvider,
+        bucket: uploaded.bucket,
+        storageKey: uploaded.storageKey,
+        metadataJson,
+      }).catch(() => ({ url: '', source: 'missing' as const, signedUrlAvailable: false }))
+      const stableUrl = resolved.url || proxyUrl || uploaded.url
+      if (!stableUrl) return persistError('MEDIA_UPLOAD_FAILED', '媒体已上传，但没有返回稳定 URL 或 proxy URL。')
       const workflow = input.workflowId
         ? await db.canvasWorkflow.findFirst({
             where: {
@@ -298,8 +318,20 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
           size: BigInt(uploaded.size),
           sizeBytes: BigInt(uploaded.size),
           prompt: typeof input.metadata?.prompt === 'string' ? input.metadata.prompt : null,
-          metadata: metadataJson,
-          metadataJson,
+          metadata: {
+            ...metadataJson,
+            ...(resolved.url ? { resolvedUrl: resolved.url, assetUrl: resolved.url, stableUrl: resolved.url } : {}),
+            ...(proxyUrl ? { proxyUrl } : {}),
+            signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
+            proxyAvailable: Boolean(proxyUrl),
+          },
+          metadataJson: {
+            ...metadataJson,
+            ...(resolved.url ? { resolvedUrl: resolved.url, assetUrl: resolved.url, stableUrl: resolved.url } : {}),
+            ...(proxyUrl ? { proxyUrl } : {}),
+            signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
+            proxyAvailable: Boolean(proxyUrl),
+          },
           providerId: input.sourceProvider ?? uploaded.storageProvider,
           generationJobId: typeof input.metadata?.generationJobId === 'string' ? input.metadata.generationJobId : null,
           tags: ['generated', input.type, 'persisted'],
@@ -312,7 +344,13 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         )
       }
       await linkGenerationJob(input, asset.id, stableUrl)
-      await linkCanvasNode(input, asset.id, stableUrl, uploaded).catch((error: unknown) => {
+      await linkCanvasNode(input, asset.id, stableUrl, {
+        ...uploaded,
+        resolvedUrl: resolved.url || null,
+        proxyUrl,
+        signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
+        proxyAvailable: Boolean(proxyUrl),
+      }).catch((error: unknown) => {
         console.warn('[assets] failed to link CanvasNode to Asset', {
           nodeId: input.nodeId,
           assetId: asset.id,
@@ -324,6 +362,10 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         ok: true,
         assetId: asset.id,
         stableUrl,
+        resolvedUrl: resolved.url || null,
+        proxyUrl,
+        signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
+        proxyAvailable: Boolean(proxyUrl),
         storageProvider: uploaded.storageProvider,
         bucket: uploaded.bucket,
         storageKey: uploaded.storageKey,

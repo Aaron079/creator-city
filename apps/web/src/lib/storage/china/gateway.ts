@@ -1,20 +1,26 @@
 import {
   deleteAliyunOssObject,
   getAliyunOssConfiguration,
+  getAliyunOssObject,
   getAliyunOssSignedDownloadUrl,
   getAliyunOssSignedUploadUrl,
+  headAliyunOssObject,
   putAliyunOssObject,
 } from './aliyun-oss'
 import { ChinaStorageError } from './errors'
 import {
   deleteTencentCosObject,
   getTencentCosConfiguration,
+  getTencentCosObject,
   getTencentCosSignedDownloadUrl,
   getTencentCosSignedUploadUrl,
+  headTencentCosObject,
   putTencentCosObject,
 } from './tencent-cos'
 import type {
   ChinaStorageConfiguration,
+  ChinaStorageObjectMetadataResult,
+  ChinaStorageReadObjectResult,
   ChinaStorageObjectResult,
   ChinaStorageProvider,
   ChinaStorageSignedUrlResult,
@@ -55,6 +61,22 @@ export async function putObject(input: PutChinaObjectInput & { provider?: ChinaS
 }
 
 export const putChinaObject = putObject
+
+export async function headObject(input: { key: string; provider?: ChinaStorageProvider }): Promise<ChinaStorageObjectMetadataResult> {
+  return resolveProvider(input.provider) === 'aliyun-oss'
+    ? headAliyunOssObject(input.key)
+    : headTencentCosObject(input.key)
+}
+
+export const headChinaObject = headObject
+
+export async function getObject(input: { key: string; provider?: ChinaStorageProvider }): Promise<ChinaStorageReadObjectResult> {
+  return resolveProvider(input.provider) === 'aliyun-oss'
+    ? getAliyunOssObject(input.key)
+    : getTencentCosObject(input.key)
+}
+
+export const getChinaObject = getObject
 
 export async function getSignedUploadUrl(
   input: SignedChinaObjectInput & { provider?: ChinaStorageProvider },

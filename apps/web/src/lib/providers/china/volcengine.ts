@@ -201,7 +201,7 @@ function normalizeSeedanceRatio(value?: string) {
 function normalizeSeedanceDuration(value?: number) {
   if (!Number.isFinite(value)) return 5
   const rounded = Math.round(Number(value))
-  return Math.min(10, Math.max(1, rounded))
+  return Math.min(12, Math.max(2, rounded))
 }
 
 function normalizeSeedanceResolution(value?: string) {
@@ -406,7 +406,8 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
 
   const ratio = normalizeSeedanceRatio(input.aspectRatio)
   const duration = normalizeSeedanceDuration(input.duration)
-  const resolution = normalizeSeedanceResolution(input.resolution)
+  const normalizedResolution = normalizeSeedanceResolution(input.resolution)
+  const resolution = input.imageUrl && normalizedResolution === '1080p' ? '720p' : normalizedResolution
   const body: Record<string, unknown> = {
     model,
     content,
@@ -433,6 +434,8 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     ratio,
     duration,
     resolution: resolution ?? null,
+    requestedResolution: input.resolution ?? null,
+    resolutionAdjustedForImageInput: Boolean(input.imageUrl && normalizedResolution === '1080p'),
     watermark: false,
   }
 

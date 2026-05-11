@@ -73,6 +73,21 @@ function candidateLooksProviderOwned(candidate: { url: string; source: string })
   return /provider|seedance|seedream|jimeng|volc|runway|luma|pika|kling/i.test(`${candidate.source} ${candidate.url}`)
 }
 
+function attemptedProviderDownloadFailed(attemptedUrls: Array<Record<string, unknown>>) {
+  return attemptedUrls.some((attempt) => {
+    const errorCode = stringValue(attempt.errorCode)
+    const message = stringValue(attempt.message)
+    const diagnostic = recordValue(attempt.diagnostic)
+    const diagnosticMessage = stringValue(diagnostic.message)
+    const haystack = `${errorCode} ${message} ${diagnosticMessage}`.toLowerCase()
+    return errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+      || errorCode === 'MEDIA_FETCH_FAILED'
+      || errorCode === 'ASSET_DOWNLOAD_FAILED'
+      || errorCode === 'ASSET_DOWNLOAD_ERROR'
+      || /media download failed|failed to download|download failed|external asset/.test(haystack)
+  })
+}
+
 async function writeAssetIdToCanvasNode(args: {
   nodeId: string
   assetId: string
@@ -282,7 +297,7 @@ export async function POST(request: NextRequest) {
     }), { status: 200 })
   }
 
-  const providerOwned = urlCandidates.some(candidateLooksProviderOwned)
+  const providerOwned = urlCandidates.some(candidateLooksProviderOwned) || attemptedProviderDownloadFailed(attemptedUrls)
   const errorCode = providerOwned ? 'provider_media_download_failed' : 'old_url_expired'
   return jsonError(
     errorCode,

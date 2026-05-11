@@ -93,6 +93,7 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
 
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
+    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
     ['metadata.stableUrl', stringValue(metadata.stableUrl)],
     ['metadata.resultImageUrl', stringValue(metadata.resultImageUrl)],
@@ -103,6 +104,7 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.imageUrl', stringValue(metadata.imageUrl)],
     ['metadata.mediaPersistence.stableUrl', stringValue(recordValue(metadata.mediaPersistence).stableUrl)],
     ['metadata.mediaPersistence.resolvedUrl', stringValue(recordValue(metadata.mediaPersistence).resolvedUrl)],
+    ['metadata.mediaPersistence.proxyUrl', stringValue(recordValue(metadata.mediaPersistence).proxyUrl)],
     ['metadata.mediaPersistence.assetUrl', stringValue(recordValue(metadata.mediaPersistence).assetUrl)],
     ['metadata.mediaPersistence.url', stringValue(recordValue(metadata.mediaPersistence).url)],
     ['metadata.asset.url', nestedUrl(metadata.asset)],
@@ -145,6 +147,7 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
 
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
+    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
     ['metadata.stableUrl', stringValue(metadata.stableUrl)],
     ['metadata.resultVideoUrl', stringValue(metadata.resultVideoUrl)],
@@ -155,6 +158,7 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.videoUrl', stringValue(metadata.videoUrl)],
     ['metadata.mediaPersistence.stableUrl', stringValue(recordValue(metadata.mediaPersistence).stableUrl)],
     ['metadata.mediaPersistence.resolvedUrl', stringValue(recordValue(metadata.mediaPersistence).resolvedUrl)],
+    ['metadata.mediaPersistence.proxyUrl', stringValue(recordValue(metadata.mediaPersistence).proxyUrl)],
     ['metadata.mediaPersistence.assetUrl', stringValue(recordValue(metadata.mediaPersistence).assetUrl)],
     ['metadata.mediaPersistence.url', stringValue(recordValue(metadata.mediaPersistence).url)],
     ['metadata.asset.url', nestedUrl(metadata.asset)],

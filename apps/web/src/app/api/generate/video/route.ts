@@ -66,7 +66,14 @@ function failedMediaPersistence(result: Extract<PersistGeneratedMediaResult, { o
 }
 
 function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  return errorCode
+}
+
+function visibleProviderErrorCode(errorCode: string | undefined) {
+  if (errorCode === 'PROVIDER_INVALID_PARAMETER') return 'provider_invalid_parameter'
+  if (errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'PROVIDER_NO_DOWNLOAD_URL') return 'provider_no_download_url'
   return errorCode
 }
 
@@ -230,6 +237,10 @@ async function attachPersistedVideo(args: {
       nodeId: args.body.nodeId,
     } : undefined,
     originalProviderVideoUrl: args.videoUrl,
+    resolvedUrl: persistence.resolvedUrl,
+    proxyUrl: persistence.proxyUrl,
+    signedUrlAvailable: persistence.signedUrlAvailable,
+    proxyAvailable: persistence.proxyAvailable,
     persistenceError: undefined,
   }
 }
@@ -333,7 +344,7 @@ export async function POST(request: NextRequest) {
         mode: 'real',
         status: 'failed',
         message: imageReadable.message,
-        errorCode: imageReadable.errorCode,
+        errorCode: visibleProviderErrorCode(imageReadable.errorCode),
         model: providerRow.model,
         upstreamStatus: imageReadable.upstreamStatus,
         upstreamMessage: imageReadable.upstreamMessage,
@@ -370,7 +381,7 @@ export async function POST(request: NextRequest) {
         mode: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'unavailable' : 'real',
         status: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
         message: raw.message,
-        errorCode: raw.errorCode,
+        errorCode: visibleProviderErrorCode(raw.errorCode),
         model: raw.model,
         upstreamStatus: raw.upstreamStatus,
         upstreamMessage: raw.upstreamMessage,
@@ -460,6 +471,10 @@ export async function POST(request: NextRequest) {
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
+      resolvedUrl: persisted.resolvedUrl ?? undefined,
+      proxyUrl: persisted.proxyUrl ?? undefined,
+      signedUrlAvailable: persisted.signedUrlAvailable,
+      proxyAvailable: persisted.proxyAvailable,
       assetId: persisted.assetId,
       asset: persisted.asset,
       originalProviderVideoUrl: raw.videoUrl,
@@ -481,6 +496,10 @@ export async function POST(request: NextRequest) {
           completedAt,
           generationJobId: generationJob.id,
           ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          ...(persisted.resolvedUrl ? { resolvedUrl: persisted.resolvedUrl, stableUrl: persisted.resolvedUrl } : {}),
+          ...(persisted.proxyUrl ? { proxyUrl: persisted.proxyUrl } : {}),
+          signedUrlAvailable: persisted.signedUrlAvailable,
+          proxyAvailable: persisted.proxyAvailable,
           originalProviderVideoUrl: raw.videoUrl,
           mediaPersistence: persisted.mediaPersistence,
           assetIntelligence: persisted.assetIntelligence,
@@ -516,7 +535,7 @@ export async function POST(request: NextRequest) {
       mode: 'real',
       status: 'failed',
       message: '视频生成成功，但 Provider 未返回可下载视频 URL。',
-      errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+      errorCode: 'provider_no_download_url',
       model: resultWithMedia.model,
       result,
     }, { status: 200 })
@@ -553,6 +572,10 @@ export async function POST(request: NextRequest) {
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
+      resolvedUrl: persisted.resolvedUrl ?? undefined,
+      proxyUrl: persisted.proxyUrl ?? undefined,
+      signedUrlAvailable: persisted.signedUrlAvailable,
+      proxyAvailable: persisted.proxyAvailable,
       assetId: persisted.assetId,
       asset: persisted.asset,
       originalProviderVideoUrl: providerVideoUrl,
@@ -566,6 +589,10 @@ export async function POST(request: NextRequest) {
         metadata: {
           ...(result.result?.metadata ?? {}),
           ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          ...(persisted.resolvedUrl ? { resolvedUrl: persisted.resolvedUrl, stableUrl: persisted.resolvedUrl } : {}),
+          ...(persisted.proxyUrl ? { proxyUrl: persisted.proxyUrl } : {}),
+          signedUrlAvailable: persisted.signedUrlAvailable,
+          proxyAvailable: persisted.proxyAvailable,
           originalProviderVideoUrl: providerVideoUrl,
           mediaPersistence: persisted.mediaPersistence,
           assetIntelligence: persisted.assetIntelligence,

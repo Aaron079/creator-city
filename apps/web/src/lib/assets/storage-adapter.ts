@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
 import { promises as fs } from 'fs'
 import path from 'path'
-import { getConfiguredChinaStorageProvider, getSignedDownloadUrl, isChinaStorageConfigured, putChinaObject } from '@/lib/storage/china/gateway'
+import { getChinaObject, getConfiguredChinaStorageProvider, getSignedDownloadUrl, headChinaObject, isChinaStorageConfigured, putChinaObject } from '@/lib/storage/china/gateway'
+import { isChinaStorageError } from '@/lib/storage/china/errors'
 
 export type CanonicalStorageProvider = 'supabase' | 'vercel_blob' | 's3' | 'local_dev' | 'aliyun-oss' | 'tencent-cos' | 'external'
 
@@ -26,6 +27,9 @@ export type ResolvedAssetUrl = {
   url: string
   expiresAt?: string
   source: 'storageKey' | 'url' | 'dataUrl' | 'missing'
+  signedUrlAvailable?: boolean
+  errorCode?: string
+  message?: string
 }
 
 export type ObjectExistsResult = {
@@ -62,6 +66,27 @@ export type DownloadExternalAssetResult =
       errorCode: string
       message: string
       bodySnippet?: string
+    }
+
+export type ReadStoredAssetObjectResult =
+  | {
+      ok: true
+      buffer: Buffer
+      mimeType: string
+      size: number
+      status: number
+      storageProvider: CanonicalStorageProvider
+      bucket?: string | null
+      storageKey: string
+    }
+  | {
+      ok: false
+      status: number
+      errorCode: 'object_missing' | 'storage_permission_error' | 'signing_error' | 'proxy_error'
+      message: string
+      storageProvider?: CanonicalStorageProvider | null
+      bucket?: string | null
+      storageKey?: string | null
     }
 
 function recordValue(value: unknown) {
@@ -105,6 +130,43 @@ function bucketFromMetadata(asset: AssetUrlLike) {
     || stringValue(metadata.storageBucket)
     || stringValue(recordValue(metadata.storage).bucket)
     || stringValue(mediaPersistence.bucket)
+}
+
+function normalizedStorageReadError(args: {
+  error: unknown
+  provider?: CanonicalStorageProvider | null
+  bucket?: string | null
+  storageKey?: string | null
+  fallbackMessage: string
+}): Extract<ReadStoredAssetObjectResult, { ok: false }> {
+  const { error, provider, bucket, storageKey, fallbackMessage } = args
+  const message = error instanceof Error ? error.message : fallbackMessage
+  const status = isChinaStorageError(error)
+    ? error.status
+    : typeof (error as { status?: unknown })?.status === 'number'
+      ? (error as { status: number }).status
+      : 0
+  const details = isChinaStorageError(error) && error.details && typeof error.details === 'object'
+    ? error.details as Record<string, unknown>
+    : {}
+  const codeText = `${isChinaStorageError(error) ? error.code : ''} ${String(details.code ?? '')} ${message}`.toLowerCase()
+  const errorCode: Extract<ReadStoredAssetObjectResult, { ok: false }>['errorCode'] =
+    status === 404 || /no such key|nosuchkey|not found|missing|404/.test(codeText)
+      ? 'object_missing'
+      : status === 401 || status === 403 || /accessdenied|forbidden|permission|signature|unauthori/.test(codeText)
+        ? 'storage_permission_error'
+        : /not configured|credential|access_key|secret|storage_not_configured/.test(codeText)
+          ? 'signing_error'
+          : 'proxy_error'
+  return {
+    ok: false,
+    status,
+    errorCode,
+    message,
+    storageProvider: provider,
+    bucket,
+    storageKey,
+  }
 }
 
 function safeFileName(name: string) {
@@ -327,40 +389,27 @@ async function checkLocalDevObjectExists(bucket: string, storageKey: string): Pr
 }
 
 async function checkSignedObjectExists(provider: CanonicalStorageProvider, bucket: string, storageKey: string): Promise<ObjectExistsResult> {
-  const signed = await getSignedDownloadUrl({
-    provider: provider === 'aliyun-oss' || provider === 'tencent-cos' ? provider : 'aliyun-oss',
-    key: storageKey,
-    expiresInSeconds: 120,
-  }).catch((error: unknown) => ({
-    error: error instanceof Error ? error.message : 'Could not sign object URL.',
-  }))
-  if ('error' in signed) {
-    return { exists: false, status: 0, storageProvider: provider, bucket, storageKey, message: signed.error }
-  }
-  const url = signed.signedUrl || signed.publicUrl || signed.url
-  if (!url) return { exists: false, status: 0, storageProvider: provider, bucket, storageKey, message: 'Signed object URL is empty.' }
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: { Range: 'bytes=0-0' },
+    const object = await headChinaObject({
+      provider: provider === 'aliyun-oss' || provider === 'tencent-cos' ? provider : 'aliyun-oss',
+      key: storageKey,
     })
     return {
-      exists: response.ok || response.status === 206,
-      status: response.status,
+      exists: true,
+      status: 200,
       storageProvider: provider,
-      bucket,
+      bucket: object.bucket || bucket,
       storageKey,
-      message: response.ok || response.status === 206 ? undefined : `Object returned HTTP ${response.status}.`,
     }
   } catch (error) {
+    const normalized = normalizedStorageReadError({ error, provider, bucket, storageKey, fallbackMessage: 'Object check failed.' })
     return {
       exists: false,
-      status: 0,
+      status: normalized.status,
       storageProvider: provider,
       bucket,
       storageKey,
-      message: error instanceof Error ? error.message : 'Object check failed.',
+      message: normalized.message,
     }
   }
 }
@@ -390,18 +439,167 @@ export async function resolveAssetUrl(asset: AssetUrlLike): Promise<ResolvedAsse
   if (storageKey && provider === 'supabase' && bucket) return resolveSupabaseUrl(bucket, storageKey)
   if (storageKey && (provider === 'aliyun-oss' || provider === 'tencent-cos')) {
     const signed = await getSignedDownloadUrl({ provider, key: storageKey, contentType: undefined, expiresInSeconds: Number(process.env.ASSET_SIGNED_URL_TTL_SECONDS || 3600) })
-      .catch(() => null)
-    const url = signed?.signedUrl || signed?.publicUrl || signed?.url || asset.url || ''
+      .catch((error: unknown) => ({
+        error: error instanceof Error ? error.message : 'Could not sign object URL.',
+      }))
+    if ('error' in signed) {
+      return {
+        url: '',
+        source: 'missing',
+        signedUrlAvailable: false,
+        errorCode: 'signing_error',
+        message: signed.error,
+      }
+    }
+    const url = signed.signedUrl || signed.url || ''
     return {
       url,
-      expiresAt: signed?.expiresAt,
+      expiresAt: signed.expiresAt,
       source: url ? 'storageKey' : 'missing',
+      signedUrlAvailable: Boolean(url),
+      ...(url ? {} : { errorCode: 'signing_error', message: 'Signed object URL is empty.' }),
     }
   }
   if (storageKey && provider === 'local_dev') return { url: asset.url || `/generated/${storageKey}`, source: 'storageKey' }
   if (asset.dataUrl?.startsWith('data:')) return { url: asset.dataUrl, source: 'dataUrl' }
   if (asset.url) return { url: asset.url, source: 'url' }
   return { url: '', source: 'missing' }
+}
+
+export async function readStoredAssetObject(asset: AssetUrlLike): Promise<ReadStoredAssetObjectResult> {
+  const storageKey = storageKeyFromMetadata(asset)
+  const provider = storageProviderFromMetadata(asset)
+  const bucket = bucketFromMetadata(asset)
+  if (!storageKey) {
+    return {
+      ok: false,
+      status: 404,
+      errorCode: 'object_missing',
+      message: 'Asset has no storageKey.',
+      storageProvider: provider || null,
+      bucket: bucket || null,
+      storageKey: null,
+    }
+  }
+
+  if (provider === 'aliyun-oss' || provider === 'tencent-cos') {
+    try {
+      const object = await getChinaObject({ provider, key: storageKey })
+      return {
+        ok: true,
+        buffer: object.body,
+        mimeType: object.contentType || 'application/octet-stream',
+        size: object.sizeBytes ?? object.body.byteLength,
+        status: 200,
+        storageProvider: object.provider,
+        bucket: object.bucket || bucket,
+        storageKey,
+      }
+    } catch (error) {
+      return normalizedStorageReadError({
+        error,
+        provider,
+        bucket,
+        storageKey,
+        fallbackMessage: 'Object proxy read failed.',
+      })
+    }
+  }
+
+  if (provider === 'supabase' && bucket) {
+    const config = supabaseConfig()
+    if (!config.configured || !config.url || !config.serviceRoleKey) {
+      return {
+        ok: false,
+        status: 0,
+        errorCode: 'signing_error',
+        message: 'Supabase Storage is not configured.',
+        storageProvider: 'supabase',
+        bucket,
+        storageKey,
+      }
+    }
+    try {
+      const response = await fetch(`${config.url}/storage/v1/object/${bucket}/${storageKey}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${config.serviceRoleKey}`,
+          apikey: config.serviceRoleKey,
+        },
+      })
+      if (!response.ok) {
+        const errorCode = response.status === 404
+          ? 'object_missing'
+          : response.status === 401 || response.status === 403
+            ? 'storage_permission_error'
+            : 'proxy_error'
+        return {
+          ok: false,
+          status: response.status,
+          errorCode,
+          message: `Supabase object returned HTTP ${response.status}.`,
+          storageProvider: 'supabase',
+          bucket,
+          storageKey,
+        }
+      }
+      const buffer = Buffer.from(await response.arrayBuffer())
+      return {
+        ok: true,
+        buffer,
+        mimeType: response.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream',
+        size: buffer.byteLength,
+        status: response.status,
+        storageProvider: 'supabase',
+        bucket,
+        storageKey,
+      }
+    } catch (error) {
+      return normalizedStorageReadError({
+        error,
+        provider: 'supabase',
+        bucket,
+        storageKey,
+        fallbackMessage: 'Supabase object proxy read failed.',
+      })
+    }
+  }
+
+  if (provider === 'local_dev') {
+    try {
+      const filePath = path.join(process.cwd(), bucket || 'public/generated', storageKey)
+      const buffer = await fs.readFile(filePath)
+      return {
+        ok: true,
+        buffer,
+        mimeType: asset.url?.endsWith('.mp4') ? 'video/mp4' : asset.url?.endsWith('.jpg') || asset.url?.endsWith('.jpeg') ? 'image/jpeg' : asset.url?.endsWith('.webp') ? 'image/webp' : 'application/octet-stream',
+        size: buffer.byteLength,
+        status: 200,
+        storageProvider: 'local_dev',
+        bucket: bucket || 'public/generated',
+        storageKey,
+      }
+    } catch (error) {
+      return normalizedStorageReadError({
+        error,
+        provider: 'local_dev',
+        bucket: bucket || 'public/generated',
+        storageKey,
+        fallbackMessage: 'local_dev object proxy read failed.',
+      })
+    }
+  }
+
+  return {
+    ok: false,
+    status: 400,
+    errorCode: 'proxy_error',
+    message: `Storage provider ${provider || 'unknown'} is not supported by asset file proxy.`,
+    storageProvider: provider || null,
+    bucket: bucket || null,
+    storageKey,
+  }
 }
 
 async function readTextSnippet(response: Response) {

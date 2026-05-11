@@ -5,6 +5,9 @@ export type MediaRecoveryAction =
   | 'no_recovery_source'
   | 'old_url_expired'
   | 'provider_media_download_failed'
+  | 'storage_permission_error'
+  | 'signing_error'
+  | 'proxy_error'
   | 'error'
 
 export type MediaRecoveryNextAction = 'show_media' | 'regenerate_from_prompt' | 'manual_debug'
@@ -20,6 +23,9 @@ export type MediaRecoveryResponse = {
   action: MediaRecoveryAction
   assetId: string | null
   resolvedUrl: string | null
+  proxyUrl: string | null
+  signedUrlAvailable: boolean | null
+  proxyAvailable: boolean | null
   assetUrl: string | null
   stableUrl: string | null
   storageKey: string | null
@@ -45,6 +51,11 @@ export type MediaRecoveryResponse = {
 type RecoveryLike = {
   assetId?: unknown
   resolvedUrl?: unknown
+  proxyUrl?: unknown
+  proxyFallbackUrl?: unknown
+  signedUrlAvailable?: unknown
+  signedUrlGenerated?: unknown
+  proxyAvailable?: unknown
   assetUrl?: unknown
   stableUrl?: unknown
   storageKey?: unknown
@@ -131,6 +142,9 @@ export function terminalRecoveryAction(code: string, attemptedUrls: string[] = [
   if (normalized === 'no_recovery_source') return 'no_recovery_source'
   if (normalized === 'provider_media_download_failed') return 'provider_media_download_failed'
   if (normalized === 'old_url_expired') return 'old_url_expired'
+  if (normalized === 'storage_permission_error') return 'storage_permission_error'
+  if (normalized === 'signing_error') return 'signing_error'
+  if (normalized === 'proxy_error') return 'proxy_error'
   if (attemptedUrls.length) return 'old_url_expired'
   return 'error'
 }
@@ -148,8 +162,9 @@ export function recoveryResponse(
   },
 ): MediaRecoveryResponse {
   const resolvedUrl = stringValue(input.resolvedUrl) || stringValue(input.assetUrl) || stringValue(input.stableUrl)
+  const proxyUrl = stringValue(input.proxyUrl) || stringValue(input.proxyFallbackUrl)
   const action = options.action
-  const ok = options.ok && Boolean(resolvedUrl || input.assetId)
+  const ok = options.ok && Boolean(resolvedUrl || proxyUrl || input.assetId)
   const rawFailureCode = options.errorCode
     || options.recoveryStatus
     || stringValue(input.errorCode)
@@ -180,6 +195,17 @@ export function recoveryResponse(
     action,
     assetId: stringValue(input.assetId) || null,
     resolvedUrl: resolvedUrl || null,
+    proxyUrl: proxyUrl || null,
+    signedUrlAvailable: typeof input.signedUrlAvailable === 'boolean'
+      ? input.signedUrlAvailable
+      : typeof input.signedUrlGenerated === 'boolean'
+        ? input.signedUrlGenerated
+        : null,
+    proxyAvailable: typeof input.proxyAvailable === 'boolean'
+      ? input.proxyAvailable
+      : proxyUrl
+        ? true
+        : null,
     assetUrl: resolvedUrl || null,
     stableUrl: resolvedUrl || null,
     storageKey: stringValue(input.storageKey) || null,

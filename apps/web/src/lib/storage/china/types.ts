@@ -25,6 +25,12 @@ export type ChinaStorageObjectResult = {
   raw?: unknown
 }
 
+export type ChinaStorageObjectMetadataResult = ChinaStorageObjectResult
+
+export type ChinaStorageReadObjectResult = ChinaStorageObjectResult & {
+  body: Buffer
+}
+
 export type ChinaStorageSignedUrlResult = ChinaStorageObjectResult & {
   signedUrl?: string
   expiresAt?: string

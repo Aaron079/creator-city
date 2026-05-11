@@ -7,5 +7,6 @@
 export function getProxiedMediaUrl(url?: string | null): string {
   if (!url?.trim()) return ''
   if (url.startsWith('data:')) return url
+  if (url.startsWith('/')) return url
   return `/api/media/proxy?url=${encodeURIComponent(url)}`
 }

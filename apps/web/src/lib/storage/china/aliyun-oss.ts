@@ -2,6 +2,8 @@ import { ChinaStorageError } from './errors'
 import OSS from 'ali-oss'
 import type {
   ChinaStorageConfiguration,
+  ChinaStorageObjectMetadataResult,
+  ChinaStorageReadObjectResult,
   ChinaStorageObjectResult,
   ChinaStorageSignedUrlResult,
   PutChinaObjectInput,
@@ -74,6 +76,37 @@ function normalizeBody(body: PutChinaObjectInput['body']) {
   return body
 }
 
+function headerValue(headers: unknown, key: string) {
+  if (!headers || typeof headers !== 'object') return undefined
+  const record = headers as Record<string, unknown>
+  const direct = record[key] ?? record[key.toLowerCase()]
+  return typeof direct === 'string' ? direct : undefined
+}
+
+function objectErrorDetails(error: unknown) {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : {}
+  const status = typeof record.status === 'number'
+    ? record.status
+    : typeof record.statusCode === 'number'
+      ? record.statusCode
+      : undefined
+  const code = typeof record.code === 'string' ? record.code : undefined
+  const requestId = typeof record.requestId === 'string'
+    ? record.requestId
+    : typeof record.requestid === 'string'
+      ? record.requestid
+      : undefined
+  return { status, code, requestId }
+}
+
+function bufferFromObjectContent(content: unknown) {
+  if (Buffer.isBuffer(content)) return content
+  if (content instanceof ArrayBuffer) return Buffer.from(content)
+  if (content instanceof Uint8Array) return Buffer.from(content.buffer, content.byteOffset, content.byteLength)
+  if (typeof content === 'string') return Buffer.from(content)
+  return Buffer.alloc(0)
+}
+
 function buildPublicUrl(key: string, fallback?: string) {
   const baseUrl = process.env.ALIYUN_OSS_PUBLIC_BASE_URL?.trim()
   if (!baseUrl) return fallback
@@ -112,6 +145,66 @@ export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<Ch
       error instanceof Error ? error.message : '阿里云 OSS 上传失败。',
       502,
       { provider: 'aliyun-oss' },
+    )
+  }
+}
+
+export async function headAliyunOssObject(key: string): Promise<ChinaStorageObjectMetadataResult> {
+  const client = getAliyunClient()
+  try {
+    const result = await client.head(key)
+    const headers = result.res?.headers
+    const contentLength = Number(headerValue(headers, 'content-length') || 0)
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key,
+      publicUrl: buildPublicUrl(key),
+      sizeBytes: Number.isFinite(contentLength) && contentLength > 0 ? contentLength : undefined,
+      contentType: headerValue(headers, 'content-type'),
+      raw: {
+        requestId: headerValue(headers, 'x-oss-request-id'),
+        status: result.res?.status,
+      },
+    }
+  } catch (error) {
+    const details = objectErrorDetails(error)
+    throw new ChinaStorageError(
+      'STORAGE_OPERATION_FAILED',
+      error instanceof Error ? error.message : '阿里云 OSS 对象检查失败。',
+      details.status ?? 502,
+      { provider: 'aliyun-oss', key, ...details },
+    )
+  }
+}
+
+export async function getAliyunOssObject(key: string): Promise<ChinaStorageReadObjectResult> {
+  const client = getAliyunClient()
+  try {
+    const result = await client.get(key)
+    const headers = result.res?.headers
+    const body = bufferFromObjectContent(result.content)
+    const contentLength = Number(headerValue(headers, 'content-length') || body.byteLength)
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key,
+      publicUrl: buildPublicUrl(key),
+      body,
+      sizeBytes: Number.isFinite(contentLength) && contentLength > 0 ? contentLength : body.byteLength,
+      contentType: headerValue(headers, 'content-type') || 'application/octet-stream',
+      raw: {
+        requestId: headerValue(headers, 'x-oss-request-id'),
+        status: result.res?.status,
+      },
+    }
+  } catch (error) {
+    const details = objectErrorDetails(error)
+    throw new ChinaStorageError(
+      'STORAGE_OPERATION_FAILED',
+      error instanceof Error ? error.message : '阿里云 OSS 对象读取失败。',
+      details.status ?? 502,
+      { provider: 'aliyun-oss', key, ...details },
     )
   }
 }
