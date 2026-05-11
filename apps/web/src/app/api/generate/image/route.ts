@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic'
 
 type ImageGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
+  model?: string
   aspectRatio?: string
   size?: string
   system?: string
@@ -156,6 +157,30 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
+    const params = body.params ?? {}
+    const aspectRatio = body.aspectRatio
+      ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
+      ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
+    const size = body.size ?? (typeof params.size === 'string' ? params.size : undefined)
+    const referenceImages = body.inputAssets
+      ?.filter((asset) => asset.type === 'image' && asset.url)
+      .map((asset) => asset.url as string)
+    const requestModel = typeof body.model === 'string' && body.model.trim()
+      ? body.model.trim()
+      : providerRow?.model ?? null
+    const submittedInput = {
+      providerId,
+      model: requestModel,
+      promptChars: prompt.length,
+      aspectRatio: aspectRatio ?? null,
+      size: size ?? null,
+      referenceImageCount: referenceImages?.length ?? 0,
+      hasReferenceImages: Boolean(referenceImages?.length),
+      nodeId: body.nodeId ?? null,
+      projectId: body.projectId ?? null,
+      workflowId: body.workflowId ?? null,
+    }
+
     const billing = await setupBilling(request, providerId, 'image', prompt)
     if (!billing.ok) {
       if (providerId === 'openai-image' && billing.errorResponse.errorCode === 'BILLING_ERROR') {
@@ -166,9 +191,10 @@ export async function POST(request: NextRequest) {
           providerId,
           mode: 'unavailable',
           status: 'failed',
+          submittedInput,
         }, { status: 200 })
       }
-      return NextResponse.json(billing.errorResponse, { status: billing.status })
+      return NextResponse.json({ ...billing.errorResponse, submittedInput }, { status: billing.status })
     }
 
     const currentUser = await getCurrentUser()
@@ -178,16 +204,10 @@ export async function POST(request: NextRequest) {
       upstreamMessage?: string
       rawCode?: string
       requestId?: string
+      submittedInput?: unknown
+      providerResponse?: unknown
     }
     if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
-      const params = body.params ?? {}
-      const aspectRatio = body.aspectRatio
-        ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
-        ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
-      const size = body.size ?? (typeof params.size === 'string' ? params.size : undefined)
-      const referenceImages = body.inputAssets
-        ?.filter((asset) => asset.type === 'image' && asset.url)
-        .map((asset) => asset.url as string)
       const chinaResult = providerId === 'volcengine-seedream-image'
         ? await generateSeedreamImage({ prompt, aspectRatio, size, referenceImages })
         : await generateJimengImage({ prompt, aspectRatio, size, referenceImages })
@@ -210,6 +230,8 @@ export async function POST(request: NextRequest) {
             },
             message: `图片生成成功（${chinaResult.model}）`,
             model: chinaResult.model,
+            submittedInput: chinaResult.submittedInput ?? submittedInput,
+            providerResponse: chinaResult.providerResponse,
           }
         : {
             success: false,
@@ -223,6 +245,11 @@ export async function POST(request: NextRequest) {
             upstreamMessage: chinaResult.upstreamMessage,
             rawCode: chinaResult.rawCode,
             requestId: chinaResult.requestId,
+            submittedInput: {
+              ...(chinaResult.submittedInput ?? submittedInput),
+              model: chinaResult.model ?? submittedInput.model,
+            },
+            providerResponse: chinaResult.providerResponse,
           }
     } else {
       raw = await gatewayGenerate({
@@ -245,6 +272,8 @@ export async function POST(request: NextRequest) {
         upstreamMessage: raw.upstreamMessage,
         rawCode: raw.rawCode,
         requestId: raw.requestId,
+        submittedInput: raw.submittedInput ?? submittedInput,
+        providerResponse: raw.providerResponse,
       }, { status: 200 })
     }
 
@@ -256,6 +285,8 @@ export async function POST(request: NextRequest) {
         errorCode: 'IMAGE_URL_EMPTY',
         message: finalized.message || '图片生成成功，但 Provider 未返回图片 URL。',
         model: raw.model,
+        submittedInput: raw.submittedInput ?? submittedInput,
+        providerResponse: raw.providerResponse,
       }, { status: 200 })
     }
 
@@ -314,6 +345,8 @@ export async function POST(request: NextRequest) {
             upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
             upstreamMessage: raw.upstreamMessage,
             requestId: raw.requestId,
+            submittedInput: raw.submittedInput ?? submittedInput,
+            providerResponse: raw.providerResponse,
             originalProviderImageUrl: providerImageUrl,
             mediaPersistence,
           }, { status: 200 })
@@ -334,6 +367,8 @@ export async function POST(request: NextRequest) {
           upstreamStatus: raw.upstreamStatus,
           upstreamMessage: raw.upstreamMessage,
           requestId: raw.requestId,
+          submittedInput: raw.submittedInput ?? submittedInput,
+          providerResponse: raw.providerResponse,
           originalProviderImageUrl: providerImageUrl,
           mediaPersistence,
         }, { status: 200 })
@@ -351,6 +386,8 @@ export async function POST(request: NextRequest) {
       signedUrlAvailable: persistedMedia.signedUrlAvailable,
       proxyAvailable: persistedMedia.proxyAvailable,
       originalProviderImageUrl: providerImageUrl,
+      submittedInput: raw.submittedInput ?? submittedInput,
+      providerResponse: raw.providerResponse,
       mediaPersistence,
       assetIntelligence,
       ...(warning ? { mediaPersistenceWarning: warning } : {}),

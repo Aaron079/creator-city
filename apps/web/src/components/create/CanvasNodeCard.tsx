@@ -398,6 +398,7 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
 ] as const
 
 const TERMINAL_RECOVERY_REASONS = new Set([
+  'ready',
   'old_url_expired',
   'provider_media_download_failed',
   'no_recovery_source',
@@ -406,11 +407,7 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'storage_permission_error',
   'signing_error',
   'proxy_error',
-  'recovery_timeout',
   'generation_failed',
-  'provider_retrieve_not_available',
-  'unrecoverable_provider_retrieve_not_implemented',
-  'unrecoverable_provider_expired',
 ])
 
 const EMPTY_MEDIA_URL_SOURCES: MediaUrlSource[] = []
@@ -503,9 +500,14 @@ function mediaPersistenceStatus(value: unknown) {
 }
 
 function mediaRecoveryReason(metadata: Record<string, unknown>) {
-  return stringValue(metadata.recoveryStatus)
+  const raw = stringValue(metadata.recoveryStatus)
     || stringValue(metadata.assetResolveStatus)
     || stringValue(metadata.mediaRecoveryStatus)
+  if (raw === 'recovery_timeout') return 'generation_failed'
+  if (raw === 'provider_retrieve_not_available' || raw === 'provider_retrieve_not_implemented' || raw === 'unrecoverable_provider_retrieve_not_implemented') return 'no_recovery_source'
+  if (raw === 'unrecoverable_provider_expired' || raw === 'unrecoverable_expired_signed_url_without_storage_key') return 'old_url_expired'
+  if (raw === 'unrecoverable_no_record' || raw === 'unrecoverable_blob_url' || raw === 'unrecoverable_data_url_without_file') return 'no_recovery_source'
+  return raw
 }
 
 function nullableString(value: unknown) {
@@ -588,7 +590,10 @@ function regenerateInputPreviewFor(node: VisualCanvasNode, metadata: Record<stri
     || stringValue(paramValue(metadata, node, 'quality'))
     || null
   const referenceImageUrl = mediaKind === 'video'
-    ? stringValue(paramValue(metadata, node, 'imageUrl')) || stringValue(paramValue(metadata, node, 'sourceImageUrl')) || null
+    ? stringValue(paramValue(metadata, node, 'imageUrl'))
+      || stringValue(paramValue(metadata, node, 'sourceImageUrl'))
+      || stringValue(paramValue(metadata, node, 'firstFrameUrl'))
+      || null
     : null
   return {
     prompt: nullableString(node.prompt),
@@ -674,7 +679,8 @@ function normalizedRecoveryCode(result: AssetRecoverResponse, fallback = 'old_ur
   const code = stringValue(result.errorCode) || stringValue(result.recoveryStatus) || stringValue(result.status)
   if (code === 'MEDIA_SOURCE_EXPIRED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || code === 'MEDIA_FETCH_FAILED') return 'old_url_expired'
   if (code === 'unrecoverable_provider_expired' || code === 'unrecoverable_expired_signed_url_without_storage_key') return 'old_url_expired'
-  if (code === 'PROVIDER_RETRIEVE_NOT_AVAILABLE' || code === 'provider_retrieve_not_implemented' || code === 'unrecoverable_provider_retrieve_not_implemented') return 'provider_retrieve_not_available'
+  if (code === 'PROVIDER_RETRIEVE_NOT_AVAILABLE' || code === 'provider_retrieve_not_implemented' || code === 'unrecoverable_provider_retrieve_not_implemented') return 'no_recovery_source'
+  if (code === 'recovery_timeout') return 'generation_failed'
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
   if (code === 'PROVIDER_INVALID_PARAMETER') return 'provider_invalid_parameter'
   if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'missing_env') return 'provider_env_missing'
@@ -689,8 +695,7 @@ function candidateLooksProviderOwned(candidate: MediaUrlSource) {
 function terminalRecoveryCodeFromAttempts(candidates: MediaUrlSource[], result?: AssetRecoverResponse) {
   const code = result ? normalizedRecoveryCode(result, '') : ''
   if (
-    code === 'provider_retrieve_not_available'
-    || code === 'no_recovery_source'
+    code === 'no_recovery_source'
     || code === 'old_url_expired'
     || code === 'provider_media_download_failed'
     || code === 'provider_invalid_parameter'
@@ -698,11 +703,11 @@ function terminalRecoveryCodeFromAttempts(candidates: MediaUrlSource[], result?:
     || code === 'storage_permission_error'
     || code === 'signing_error'
     || code === 'proxy_error'
-    || code === 'recovery_timeout'
     || code === 'generation_failed'
   ) return code
   const message = `${result?.message ?? ''} ${result?.errorMessage ?? ''} ${result?.error ?? ''} ${result?.upstreamMessage ?? ''}`.toLowerCase()
-  if (message.includes('media download failed') || message.includes('invalid parameter')) return 'provider_media_download_failed'
+  if (message.includes('invalid parameter')) return 'provider_invalid_parameter'
+  if (message.includes('media download failed')) return 'provider_media_download_failed'
   if (candidates.some(candidateLooksProviderOwned)) return 'provider_media_download_failed'
   return candidates.length ? 'old_url_expired' : 'no_recovery_source'
 }
@@ -732,11 +737,12 @@ async function fetchRecoveryJson(
         ok: false,
         success: false,
         action: 'error',
-        status: aborted ? 'recovery_timeout' : 'generation_failed',
-        recoveryStatus: aborted ? 'recovery_timeout' : 'generation_failed',
-        errorCode: aborted ? 'recovery_timeout' : 'generation_failed',
+        status: 'generation_failed',
+        recoveryStatus: 'generation_failed',
+        errorCode: 'generation_failed',
         errorMessage: aborted ? `恢复接口超时（${Math.round(timeoutMs / 1000)}s）。` : error instanceof Error ? error.message : '恢复接口请求失败。',
         message: aborted ? `恢复接口超时（${Math.round(timeoutMs / 1000)}s）。` : error instanceof Error ? error.message : '恢复接口请求失败。',
+        actionTaken: aborted ? 'recovery_timeout' : 'request_failed',
         nextAction: aborted ? 'regenerate_from_prompt' : 'manual_debug',
       } satisfies AssetRecoverResponse,
     }
@@ -772,21 +778,23 @@ function generationFailureMessage(error: Record<string, unknown>) {
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const upstreamMessage = stringValue(error.upstreamMessage)
   const message = stringValue(error.message)
-  if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}`
+  const requestId = stringValue(error.requestId)
+  const requestSuffix = requestId ? ` · requestId=${requestId}` : ''
+  if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}${requestSuffix}`
   if (normalized === 'missing_generation_input') {
     const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
-    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}`
+    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}${requestSuffix}`
   }
-  if (normalized === 'provider_auth_error') return `provider_auth_error：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}`
-  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}`
-  if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}`
-  if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}`
-  if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}`
-  if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}`
-  if (normalized === 'oss_upload_error') return `oss_upload_error：生成成功后上传到 OSS 失败。${message || code}`
-  if (normalized === 'asset_persistence_error') return `asset_persistence_error：媒体持久化或 Asset 写入失败。${message || code}`
-  if (normalized === 'canvas_save_error') return `canvas_save_error：Canvas 保存失败。${message || code}`
-  if (normalized === 'generation_failed') return `generation_failed：${[code, message, upstreamStatus ? `upstreamStatus=${upstreamStatus}` : '', upstreamMessage].filter(Boolean).join(' · ')}`
+  if (normalized === 'provider_auth_error') return `provider_auth_error：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
+  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
+  if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
+  if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${requestSuffix}`
+  if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}${requestSuffix}`
+  if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}${requestSuffix}`
+  if (normalized === 'oss_upload_error') return `oss_upload_error：生成成功后上传到 OSS 失败。${message || code}${requestSuffix}`
+  if (normalized === 'asset_persistence_error') return `asset_persistence_error：媒体持久化或 Asset 写入失败。${message || code}${requestSuffix}`
+  if (normalized === 'canvas_save_error') return `canvas_save_error：Canvas 保存失败。${message || code}${requestSuffix}`
+  if (normalized === 'generation_failed') return `generation_failed：${[code, message, upstreamStatus ? `upstreamStatus=${upstreamStatus}` : '', upstreamMessage, requestId ? `requestId=${requestId}` : ''].filter(Boolean).join(' · ')}`
   return ''
 }
 
@@ -871,7 +879,7 @@ function failureDiagnosis(args: {
   })
 
   if (isTerminalRecoveryReason(reason)) {
-    const code = reason === 'unrecoverable_provider_retrieve_not_implemented' ? 'provider_retrieve_not_available' : reason
+    const code = reason
     return {
       code,
       title: code,
@@ -891,7 +899,7 @@ function failureDiagnosis(args: {
     return withAction('old_url_expired', 'old_url_expired', failedRenderUrl ? '当前渲染 URL 已失败；点击“立即恢复资产”会尝试下一个候选或重新导入旧 URL。' : '旧 URL 可能过期；尝试 resync 或重新生成。', Boolean(candidates.length))
   }
   if (providerJobId && (reason === 'unrecoverable_provider_retrieve_not_implemented' || reason === 'provider_retrieve_not_implemented')) {
-    return withAction('provider_retrieve_not_available', 'provider_retrieve_not_available', '有 providerJobId 但未接入 retrieve；需要用原 Prompt 重新生成。', false)
+    return withAction('no_recovery_source', 'no_recovery_source', '有 providerJobId 但未接入 retrieve；需要用原 Prompt 重新生成。', false)
   }
   if (reason === 'missing_env') return withAction('provider_env_missing', 'provider_env_missing', '缺少对象存储或 provider 环境变量；配置后重新 resolve。', false)
   if (hasStorageKey && !candidates.some((candidate) => candidate.source.includes('resolvedUrl') || candidate.source.includes('assetUrl'))) {
@@ -1420,6 +1428,7 @@ export function CanvasNodeCard({
       mediaRecoveryStatus: terminalMediaRecoveryStatus,
       isRecovering: false,
       recovering: false,
+      loading: false,
       isRegenerating: false,
       regenerating: false,
       ...(result.storageKey ? { storageKey: result.storageKey } : {}),
@@ -1482,6 +1491,7 @@ export function CanvasNodeCard({
         ...metadataRecord(node.metadataJson),
         isRecovering: true,
         recovering: true,
+        loading: true,
         isRegenerating: false,
         regenerating: false,
         mediaRecoveryStatus: status,
@@ -1636,12 +1646,12 @@ export function CanvasNodeCard({
       ok: false,
       success: false,
       action: 'error',
-      status: 'recovery_timeout',
-      recoveryStatus: 'recovery_timeout',
-      errorCode: 'recovery_timeout',
+      status: 'generation_failed',
+      recoveryStatus: 'generation_failed',
+      errorCode: 'generation_failed',
       errorMessage: recoveryErrorMessage(result ?? {}) || `资产恢复在 ${step} 阶段超时，已停止本次恢复。`,
       message: recoveryErrorMessage(result ?? {}) || `资产恢复在 ${step} 阶段超时，已停止本次恢复。`,
-      actionTaken: 'marked_unrecoverable',
+      actionTaken: 'recovery_timeout',
       attemptedUrls: [...recoveryAttempts],
       failedUrls: [...recoveryAttempts],
       nextAction: failedNextAction,
@@ -1659,9 +1669,8 @@ export function CanvasNodeCard({
       return fetchRecoveryJson(url, init, timeoutMs)
     }
     const finishIfTimedOut = (step: string, result: AssetRecoverResponse) => {
-      if (result.errorCode !== 'recovery_timeout' && result.recoveryStatus !== 'recovery_timeout') return false
+      if (result.actionTaken !== 'recovery_timeout') return false
       finalResult = timeoutResult(step, result)
-      patchRecoveredAsset(mediaKind, finalResult)
       return true
     }
     setMediaRecoveryStatus('checking')
@@ -1678,7 +1687,6 @@ export function CanvasNodeCard({
         if (finishIfTimedOut('assetId', data)) return
         if (response?.ok && isSuccessfulRecovery(data)) {
           finalResult = data
-          patchRecoveredAsset(mediaKind, data)
           return
         }
       }
@@ -1709,7 +1717,6 @@ export function CanvasNodeCard({
         if (finishIfTimedOut('resolve-batch', resolved)) return
         if (isSuccessfulRecovery(merged)) {
           finalResult = merged
-          patchRecoveredAsset(mediaKind, merged)
           return
         }
       }
@@ -1738,7 +1745,6 @@ export function CanvasNodeCard({
         if (finishIfTimedOut('media-resync', data)) return
         if (response?.ok && isSuccessfulRecovery(data)) {
           finalResult = data
-          patchRecoveredAsset(mediaKind, data)
           return
         }
         const terminalCode = terminalRecoveryCodeFromAttempts(recoveryCandidates, data)
@@ -1760,7 +1766,6 @@ export function CanvasNodeCard({
           requestId: data.requestId,
           nextAction: failedNextAction,
         }
-        patchRecoveredAsset(mediaKind, finalResult)
       } else {
         finalResult = {
           ok: false,
@@ -1775,7 +1780,6 @@ export function CanvasNodeCard({
           failedUrls: recoveryAttempts,
           nextAction: failedNextAction,
         }
-        patchRecoveredAsset(mediaKind, finalResult)
       }
     } catch (error) {
       finalResult = {
@@ -1791,10 +1795,22 @@ export function CanvasNodeCard({
         failedUrls: recoveryAttempts,
         nextAction: 'manual_debug',
       }
-      patchRecoveredAsset(mediaKind, finalResult)
     } finally {
-      if (finalResult) setRecoveryStatusFromResult(finalResult)
-      else setMediaRecoveryStatus('idle')
+      const finishedResult = finalResult ?? {
+        ok: false,
+        success: false,
+        status: 'generation_failed',
+        recoveryStatus: 'generation_failed',
+        errorCode: 'generation_failed',
+        errorMessage: '资产恢复流程没有返回终态，已停止本次恢复。',
+        message: '资产恢复流程没有返回终态，已停止本次恢复。',
+        actionTaken: 'marked_unrecoverable',
+        attemptedUrls: recoveryAttempts,
+        failedUrls: recoveryAttempts,
+        nextAction: failedNextAction,
+      } satisfies AssetRecoverResponse
+      patchRecoveredAsset(mediaKind, finishedResult)
+      setRecoveryStatusFromResult(finishedResult)
     }
   }
 
@@ -2223,6 +2239,11 @@ export function CanvasNodeCard({
       {mediaFailureDiagnosis?.nextAction ? (
         <span className="mt-1 block text-left text-[11px] leading-snug text-cyan-100/86">
           下一步：{mediaFailureDiagnosis.nextAction}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.requestId ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          requestId: {mediaDiagnosticPayload.requestId}
         </span>
       ) : null}
       {failedRenderUrl ? (

@@ -78,6 +78,8 @@ export type ChinaImageGenerationResult =
       imageUrl?: string
       dataUrl?: string
       metadata?: Record<string, unknown>
+      submittedInput?: Record<string, unknown>
+      providerResponse?: Record<string, unknown>
     }
   | {
       success: false
@@ -89,6 +91,8 @@ export type ChinaImageGenerationResult =
       upstreamMessage?: string
       rawCode?: string
       requestId?: string
+      submittedInput?: Record<string, unknown>
+      providerResponse?: Record<string, unknown>
     }
 
 export function getChinaProviderStatus(config: ChinaProviderConfig): ChinaProviderStatus {

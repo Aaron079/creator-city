@@ -124,13 +124,27 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
     }
   }
 
+  const size = imageSize(input)
+  const submittedInput = {
+    providerId,
+    model,
+    endpoint: '/images/generations',
+    promptChars: input.prompt.trim().length,
+    aspectRatio: input.aspectRatio ?? null,
+    size,
+    referenceImageCount: input.referenceImages?.length ?? 0,
+    hasReferenceImages: Boolean(input.referenceImages?.length),
+    responseFormat: 'url',
+    watermark: false,
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 90000)
   try {
     const body: Record<string, unknown> = {
       model,
       prompt: input.prompt,
-      size: imageSize(input),
+      size,
       response_format: 'url',
       n: 1,
       watermark: false,
@@ -166,22 +180,27 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
           message: 'Jimeng 返回了无效 JSON 响应。',
           upstreamStatus: response.status,
           upstreamMessage: raw.slice(0, 500),
+          submittedInput,
+          providerResponse: { parseError: 'invalid_json', rawSnippet: raw.slice(0, 500) },
         }
       }
     }
 
     if (!response.ok) {
-      const error = data && typeof data === 'object' ? data as { error?: { message?: string; code?: string }; message?: string; code?: string } : {}
+      const error = data && typeof data === 'object' ? data as { error?: { message?: string; code?: string; request_id?: string }; message?: string; code?: string; request_id?: string } : {}
       const upstreamMessage = error.error?.message || error.message || `Jimeng HTTP ${response.status}`
+      const haystack = `${error.error?.code || error.code || ''} ${upstreamMessage}`.toLowerCase()
       return {
         success: false,
         providerId,
         model,
-        errorCode: 'JIMENG_IMAGE_FAILED',
+        errorCode: /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack) ? 'PROVIDER_INVALID_PARAMETER' : 'JIMENG_IMAGE_FAILED',
         message: upstreamMessage,
         upstreamStatus: response.status,
         upstreamMessage,
         rawCode: error.error?.code || error.code,
+        requestId: error.error?.request_id || error.request_id,
+        submittedInput,
       }
     }
 
@@ -196,6 +215,7 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
         imageUrl: finalUrl ?? dataUrl,
         dataUrl,
         metadata: { responseFormat: finalUrl ? 'url' : 'b64_json' },
+        submittedInput,
       }
     }
 
@@ -209,6 +229,7 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
         message: '该 Provider 返回异步任务，下一轮接入轮询。',
         upstreamStatus: response.status,
         upstreamMessage: JSON.stringify({ taskId }).slice(0, 500),
+        submittedInput,
       }
     }
 
@@ -220,6 +241,7 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
       message: 'Jimeng 未返回图片 URL 或 base64。',
       upstreamStatus: response.status,
       upstreamMessage: raw.slice(0, 500),
+      submittedInput,
     }
   } catch (error) {
     const aborted = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
@@ -230,6 +252,7 @@ export async function generateJimengImage(input: ChinaImageGenerationInput): Pro
       errorCode: aborted ? 'JIMENG_IMAGE_TIMEOUT' : 'JIMENG_IMAGE_FAILED',
       message: aborted ? 'Jimeng 请求超时或被中断，请重试。' : error instanceof Error ? error.message : 'Jimeng 调用失败。',
       upstreamMessage: error instanceof Error ? error.message : undefined,
+      submittedInput,
     }
   } finally {
     clearTimeout(timer)

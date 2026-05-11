@@ -674,6 +674,35 @@ function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: strin
   return [{ id: `${node.id}-reference-image`, type: 'image', url: imageUrl }]
 }
 
+function providerForRegenerationNode(node: VisualCanvasNode) {
+  const metadata = metadataRecord(node.metadataJson)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  const submittedInput = nestedRecord(metadata.submittedInput)
+  const lastGenerationError = nestedRecord(metadata.lastGenerationError)
+  return stringValue(metadata.providerId)
+    || stringValue(metadata.provider)
+    || stringValue(metadata.sourceProvider)
+    || stringValue(metadata.generationSource)
+    || stringValue(mediaPersistence.providerId)
+    || stringValue(mediaPersistence.provider)
+    || stringValue(mediaPersistence.sourceProvider)
+    || stringValue(submittedInput.providerId)
+    || stringValue(lastGenerationError.providerId)
+    || stringValue(node.providerId)
+    || stringValue(node.model)
+}
+
+function modelForRegenerationNode(node: VisualCanvasNode) {
+  const metadata = metadataRecord(node.metadataJson)
+  const submittedInput = nestedRecord(metadata.submittedInput)
+  const lastGenerationError = nestedRecord(metadata.lastGenerationError)
+  return stringValue(metadata.model)
+    || stringValue(nodeParamValue(node, 'model'))
+    || stringValue(submittedInput.model)
+    || stringValue(lastGenerationError.model)
+    || stringValue(node.model)
+}
+
 function getNodeAssetId(node: VisualCanvasNode) {
   const nodeRecord = node as unknown as Record<string, unknown>
   const metadata = metadataRecord(node.metadataJson)
@@ -1069,6 +1098,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     nextAction: 'show_media',
     isRecovering: false,
     recovering: false,
+    loading: false,
     isRegenerating: false,
     regenerating: false,
     errorCode: null,
@@ -1114,6 +1144,7 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' ? 'manual_debug' : 'regenerate_from_prompt',
     isRecovering: false,
     recovering: false,
+    loading: false,
     isRegenerating: false,
     regenerating: false,
     errorCode: visibleErrorCode,
@@ -1149,6 +1180,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     nextAction: result.async ? 'show_media' : 'show_media',
     isRecovering: false,
     recovering: false,
+    loading: false,
     isRegenerating: Boolean(result.async),
     regenerating: Boolean(result.async),
     errorCode: null,
@@ -1200,6 +1232,7 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' ? 'manual_debug' : 'regenerate_from_prompt',
     isRecovering: false,
     recovering: false,
+    loading: false,
     isRegenerating: false,
     regenerating: false,
     errorCode: visibleErrorCode,
@@ -1223,6 +1256,7 @@ async function callGenerationApi(
   projectId?: string,
   workflowId?: string,
   system?: string,
+  model?: string,
 ): Promise<GenerateApiResult> {
   const endpoint =
     nodeType === 'image' ? '/api/generate/image'
@@ -1238,11 +1272,15 @@ async function callGenerationApi(
   const firstImageUrl = inputAssets?.find((asset) => asset.type === 'image' && asset.url)?.url
   const requestBody = {
     providerId,
+    model,
     nodeType,
     prompt,
     compiledPrompt: prompt,
     system,
-    params,
+    params: {
+      ...(params ?? {}),
+      ...(model ? { model } : {}),
+    },
     maxTokens,
     nodeId,
     inputAssets,
@@ -3647,17 +3685,23 @@ export function VisualCanvasWorkspace({
     if (node.kind !== 'image' && node.kind !== 'video') return
     const prompt = node.prompt?.trim()
     const providerStatusEndpoint = `/api/generate/${node.kind}`
-    const fallbackProviderId = node.providerId || node.model
+    const fallbackProviderId = providerForRegenerationNode(node)
+    const fallbackModel = modelForRegenerationNode(node)
     const failNode = (result: GenerateApiResult, providerId: string) => {
-      const errMsg = formatGenerateError(result)
+      const failureResult = {
+        ...result,
+        providerId: result.providerId || providerId,
+        model: result.model || fallbackModel || providerId,
+      }
+      const errMsg = formatGenerateError(failureResult)
       handleNodePatch(node.id, {
         status: 'error',
         errorMessage: errMsg,
         resultPreview: node.kind === 'image' ? '图片生成失败' : '视频生成失败',
         outputLabel: node.kind === 'image' ? '图片生成失败' : '视频生成失败',
         metadataJson: node.kind === 'image'
-          ? imageErrorMetadata(node, result, providerId)
-          : videoErrorMetadata(node, result, providerId),
+          ? imageErrorMetadata(node, failureResult, providerId)
+          : videoErrorMetadata(node, failureResult, providerId),
       })
       flushLocalSnapshot()
       scheduleCanvasSave(0)
@@ -3678,6 +3722,7 @@ export function VisualCanvasWorkspace({
           kind: node.kind,
           hasPrompt: false,
           providerId: fallbackProviderId || null,
+          model: fallbackModel || null,
         },
       }, fallbackProviderId)
       return
@@ -3698,10 +3743,17 @@ export function VisualCanvasWorkspace({
           defaultProviderId?: string
           providers?: Array<ImageProviderStatusInfo>
         }
-        const providerId = fallbackProviderId || statusData.defaultProviderId || ''
+        const providerId = fallbackProviderId
         const provider = statusData.providers?.find((item) => item.providerId === providerId)
-          ?? statusData.providers?.find((item) => item.providerId === statusData.defaultProviderId)
         const selectedProviderId = provider?.providerId || providerId
+        const selectedModel = provider?.model || fallbackModel || selectedProviderId
+        const submittedInputBase = {
+          nodeId: node.id,
+          kind: node.kind,
+          promptChars: prompt.length,
+          providerId: selectedProviderId || null,
+          model: selectedModel || null,
+        }
         if (!selectedProviderId) {
           failNode({
             success: false,
@@ -3711,13 +3763,7 @@ export function VisualCanvasWorkspace({
             errorCode: 'MISSING_GENERATION_INPUT',
             message: '该节点缺少重新生成所需字段：provider/model。',
             missingFields: ['provider', 'model'],
-            submittedInput: {
-              nodeId: node.id,
-              kind: node.kind,
-              promptChars: prompt.length,
-              providerId: null,
-              model: null,
-            },
+            submittedInput: submittedInputBase,
           }, '')
           return
         }
@@ -3729,6 +3775,35 @@ export function VisualCanvasWorkspace({
             status: 'failed',
             errorCode: statusData.errorCode || 'PROVIDER_STATUS_FAILED',
             message: statusData.message || 'Provider health check 失败。',
+            model: selectedModel,
+            submittedInput: submittedInputBase,
+          }, selectedProviderId)
+          return
+        }
+        if (!provider) {
+          failNode({
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'unavailable',
+            status: 'failed',
+            errorCode: 'PROVIDER_INVALID_PARAMETER',
+            message: '节点记录的 provider/model 当前不被该生成接口支持。',
+            model: selectedModel,
+            upstreamMessage: `providerId not found in ${node.kind} providers: ${selectedProviderId}`,
+            submittedInput: submittedInputBase,
+          }, selectedProviderId)
+          return
+        }
+        if (!selectedModel) {
+          failNode({
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'unavailable',
+            status: 'failed',
+            errorCode: 'MISSING_GENERATION_INPUT',
+            message: '该节点缺少重新生成所需字段：model。',
+            missingFields: ['model'],
+            submittedInput: submittedInputBase,
           }, selectedProviderId)
           return
         }
@@ -3741,8 +3816,10 @@ export function VisualCanvasWorkspace({
             status: 'not-configured',
             errorCode: 'PROVIDER_NOT_CONFIGURED',
             message: provider?.reason || provider?.status || 'Provider 不可用。',
+            model: selectedModel,
             missingEnv,
             missingEnvKeys: missingEnv,
+            submittedInput: submittedInputBase,
           }, selectedProviderId)
           return
         }
@@ -3753,23 +3830,25 @@ export function VisualCanvasWorkspace({
           errorMessage: undefined,
           resultPreview: node.kind === 'image' ? '图片生成中...' : '视频生成中...',
           outputLabel: node.kind === 'image' ? '图片生成中' : '视频生成中',
-        metadataJson: {
-          ...metadataRecord(node.metadataJson),
-          providerId: selectedProviderId,
-          model: selectedProviderId,
-          recoveryStatus: 'regenerating',
-          mediaRecoveryStatus: 'regenerating',
-          isRecovering: false,
-          recovering: false,
-          isRegenerating: true,
-          regenerating: true,
-          error: null,
-          errorCode: null,
-          errorMessage: null,
-          nextAction: 'show_media',
-          regenerationInputPreview: {
-            prompt,
+          metadataJson: {
+            ...metadataRecord(node.metadataJson),
             providerId: selectedProviderId,
+            model: selectedModel,
+            recoveryStatus: 'regenerating',
+            mediaRecoveryStatus: 'regenerating',
+            isRecovering: false,
+            recovering: false,
+            loading: true,
+            isRegenerating: true,
+            regenerating: true,
+            error: null,
+            errorCode: null,
+            errorMessage: null,
+            nextAction: 'show_media',
+            regenerationInputPreview: {
+              prompt,
+              providerId: selectedProviderId,
+              model: selectedModel,
               params: regenerationParams,
               inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: asset.url })),
               nodeId: node.id,
@@ -3787,6 +3866,8 @@ export function VisualCanvasWorkspace({
           regenerationInputAssets,
           projectId,
           workflowId,
+          undefined,
+          selectedModel,
         )
 
         if (node.kind === 'video' && result.async && result.taskId) {
@@ -3984,7 +4065,7 @@ export function VisualCanvasWorkspace({
                     assetUrl: data.stableUrl,
                     resolvedUrl: data.stableUrl,
                     assetResolveStatus: 'ready',
-                    recoveryStatus: 'recovered_from_old_url',
+                    recoveryStatus: 'ready',
                     mediaPersistence: data.mediaPersistence ?? {
                       status: 'persisted',
                       assetId: data.assetId,

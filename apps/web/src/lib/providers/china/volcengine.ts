@@ -726,11 +726,25 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
     }
   }
 
+  const seedreamInput = input as ChinaImageGenerationInput & { resolution?: string; quality?: string }
+  const seedreamSize = normalizeSeedreamSize(seedreamInput.size || seedreamInput.resolution || seedreamInput.quality || seedreamInput.aspectRatio)
+  const submittedInput = {
+    providerId,
+    model,
+    endpoint: '/images/generations',
+    promptChars: input.prompt.trim().length,
+    aspectRatio: input.aspectRatio ?? null,
+    size: seedreamSize || '2K',
+    referenceImageCount: input.referenceImages?.length ?? 0,
+    hasReferenceImages: Boolean(input.referenceImages?.length),
+    responseFormat: 'url',
+    outputFormat: 'png',
+    watermark: false,
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 90000)
   try {
-    const seedreamInput = input as ChinaImageGenerationInput & { resolution?: string; quality?: string }
-    const seedreamSize = normalizeSeedreamSize(seedreamInput.size || seedreamInput.resolution || seedreamInput.quality || seedreamInput.aspectRatio)
     const body: Record<string, unknown> = {
       model,
       prompt: input.prompt,
@@ -767,6 +781,8 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
           message: 'Volcengine Seedream 返回了无效 JSON 响应。',
           upstreamStatus: response.status,
           upstreamMessage: raw.slice(0, 500),
+          submittedInput,
+          providerResponse: { parseError: 'invalid_json', rawSnippet: raw.slice(0, 500) },
         }
       }
     }
@@ -775,29 +791,34 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       const rawError = getRawError(data, `Volcengine Seedream HTTP ${response.status}`)
       const upstreamMessage = rawError.message
       const requestId = rawError.requestId ?? response.headers.get('x-request-id') ?? undefined
+      const errorCode = normalizeProviderErrorCode(response.status, upstreamMessage, rawError.code)
       if (isModelNotFoundError(response.status, upstreamMessage)) {
         return {
           success: false,
           providerId,
           model,
-          errorCode: 'VOLCENGINE_MODEL_NOT_FOUND',
+          errorCode: 'PROVIDER_INVALID_PARAMETER',
           message: 'Seedream 模型或接入点不存在/未开通。请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
           upstreamStatus: response.status,
           upstreamMessage,
           rawCode: rawError.code,
           requestId,
+          submittedInput,
+          providerResponse: providerResponseSummary(data),
         }
       }
       return {
         success: false,
         providerId,
         model,
-        errorCode: 'VOLCENGINE_IMAGE_FAILED',
+        errorCode,
         message: upstreamMessage,
         upstreamStatus: response.status,
         upstreamMessage,
         rawCode: rawError.code,
         requestId,
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -812,6 +833,8 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
         imageUrl: finalUrl ?? dataUrl,
         dataUrl,
         metadata: { responseFormat: finalUrl ? 'url' : 'b64_json' },
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -825,6 +848,8 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
         message: '该 Provider 返回异步任务，下一轮接入轮询。',
         upstreamStatus: response.status,
         upstreamMessage: JSON.stringify({ taskId }).slice(0, 500),
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -836,6 +861,8 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       message: 'Volcengine Seedream 未返回图片 URL 或 base64。',
       upstreamStatus: response.status,
       upstreamMessage: raw.slice(0, 500),
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
     }
   } catch (error) {
     const aborted = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
@@ -846,6 +873,7 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       errorCode: aborted ? 'VOLCENGINE_IMAGE_TIMEOUT' : 'VOLCENGINE_IMAGE_FAILED',
       message: aborted ? 'Volcengine Seedream 请求超时或被中断，请重试。' : error instanceof Error ? error.message : 'Volcengine Seedream 调用失败。',
       upstreamMessage: error instanceof Error ? error.message : undefined,
+      submittedInput,
     }
   } finally {
     clearTimeout(timer)
