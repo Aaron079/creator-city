@@ -26,6 +26,11 @@ function mediaPersistenceTimeout() {
   })
 }
 
+function visiblePersistenceErrorCode(errorCode: string) {
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  return errorCode
+}
+
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser()
   if (!currentUser) {
@@ -100,6 +105,8 @@ export async function GET(request: NextRequest) {
       upstreamMessage: result.upstreamMessage,
       rawCode: result.rawCode,
       requestId: result.requestId,
+      submittedInput: result.submittedInput,
+      providerResponse: result.providerResponse,
     }, { status: 200 })
   }
 
@@ -181,23 +188,25 @@ export async function GET(request: NextRequest) {
       }, { status: 200 })
     }
 
+    const errorCode = visiblePersistenceErrorCode(persistence.errorCode)
     return NextResponse.json({
-      success: true,
+      success: false,
       providerId,
       taskId,
-      status: 'done',
-      resultVideoUrl: result.videoUrl,
-      videoUrl: result.videoUrl,
+      status: 'failed',
+      errorCode,
+      message: `视频生成成功，但媒体转存失败：${persistence.message}`,
       originalProviderVideoUrl: result.videoUrl,
       mediaPersistence: {
         status: 'failed',
-        errorCode: persistence.errorCode,
+        errorCode,
         message: persistence.message,
       },
       assetIntelligence,
-      warning: '生成成功，但媒体转存失败，链接可能会过期。',
       model: result.model,
-      message: result.message,
+      requestId: result.requestId,
+      submittedInput: result.submittedInput,
+      providerResponse: result.providerResponse,
     }, { status: 200 })
   }
 

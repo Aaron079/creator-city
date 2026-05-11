@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic'
 
 type ResyncBody = {
   url?: unknown
+  urls?: unknown
   type?: unknown
   projectId?: unknown
   workflowId?: unknown
@@ -39,6 +40,29 @@ function stringValue(value: unknown) {
 function optionalString(value: unknown) {
   const trimmed = stringValue(value)
   return trimmed || undefined
+}
+
+function normalizeUrlCandidates(body: ResyncBody) {
+  const rawCandidates = Array.isArray(body.urls) ? body.urls : []
+  const candidates = rawCandidates.flatMap((item): Array<{ url: string; source: string }> => {
+    if (typeof item === 'string') return [{ url: item.trim(), source: 'request.urls' }]
+    const record = recordValue(item)
+    const url = stringValue(record.url)
+    if (!url) return []
+    return [{ url, source: stringValue(record.source) || 'request.urls' }]
+  })
+  const singleUrl = typeof body.url === 'string' ? body.url.trim() : ''
+  if (singleUrl) candidates.unshift({ url: singleUrl, source: 'request.url' })
+  const seen = new Set<string>()
+  return candidates.filter((candidate) => {
+    if (!candidate.url || seen.has(candidate.url)) return false
+    seen.add(candidate.url)
+    return true
+  })
+}
+
+function candidateLooksProviderOwned(candidate: { url: string; source: string }) {
+  return /provider|seedance|seedream|jimeng|volc|runway|luma|pika|kling/i.test(`${candidate.source} ${candidate.url}`)
 }
 
 async function writeAssetIdToCanvasNode(args: {
@@ -89,7 +113,7 @@ export async function POST(request: NextRequest) {
     return jsonError('INVALID_JSON', '请求体不是合法 JSON。')
   }
 
-  const url = typeof body.url === 'string' ? body.url.trim() : ''
+  const urlCandidates = normalizeUrlCandidates(body)
 
   // If nodeId provided, check if an Asset already exists for this node in the DB.
   // This handles legacy nodes that have a nodeId->Asset link but lost assetId from metadataJson.
@@ -147,69 +171,101 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!url) return jsonError('MEDIA_URL_EMPTY', '当前节点没有可同步的媒体 URL。')
+  if (!urlCandidates.length) return jsonError('no_recovery_source', '当前节点没有可同步的媒体 URL。')
 
   const type = body.type === 'video' ? 'video' : body.type === 'image' ? 'image' : null
   if (!type) return jsonError('MEDIA_TYPE_INVALID', '媒体类型必须是 image 或 video。')
-
-  const diagnostic = await diagnoseMediaUrl(url)
-  if (!diagnostic.reachable) {
-    return jsonError('MEDIA_SOURCE_EXPIRED', '源媒体链接已过期，无法重新同步。', 410, { diagnostic })
-  }
 
   const sourceProvider = stringValue(metadata.sourceProvider)
     || stringValue(metadata.providerId)
     || stringValue(metadata.generationSource)
     || 'legacy-provider-url'
-  const persistInput: PersistGeneratedMediaInput = {
-    url,
-    type,
-    projectId: optionalString(body.projectId),
-    workflowId: optionalString(body.workflowId),
-    nodeId: optionalString(body.nodeId),
-    filenameHint: stringValue(body.filenameHint) || `resynced-${type}.${type === 'image' ? 'png' : 'mp4'}`,
-    sourceProvider,
-    userId: currentUser.id,
-    metadata: {
-      ...metadata,
-      resyncedFrom: url,
-      resyncedAt: new Date().toISOString(),
-      mediaResyncDiagnostic: diagnostic,
-    },
-  }
+  const attemptedUrls: Array<Record<string, unknown>> = []
 
-  const persistence = await persistGeneratedMedia(persistInput)
-  if (!persistence.ok) {
-    if (persistence.errorCode === 'MEDIA_FETCH_FAILED' && (persistence.upstreamStatus === 403 || persistence.upstreamStatus === 404)) {
-      return jsonError('MEDIA_SOURCE_EXPIRED', '源媒体链接已过期，无法重新同步。', 410, { diagnostic })
+  for (const candidate of urlCandidates) {
+    const diagnostic = candidate.url.startsWith('data:')
+      ? {
+          reachable: true,
+          status: 200,
+          upstreamStatus: 200,
+          corsBlocked: false,
+          expiredLikely: false,
+          message: 'Data URL 可直接转存。',
+        }
+      : await diagnoseMediaUrl(candidate.url)
+    if (!diagnostic.reachable) {
+      attemptedUrls.push({ ...candidate, ok: false, errorCode: 'MEDIA_SOURCE_EXPIRED', diagnostic })
+      continue
     }
-    return jsonError(persistence.errorCode, persistence.message, 500, { diagnostic })
-  }
 
-  if (persistence.assetId) {
-    await writeAssetIdToCanvasNode({
-      nodeId: optionalString(body.nodeId) ?? '',
-      assetId: persistence.assetId,
-      userId: currentUser.id,
+    const persistInput: PersistGeneratedMediaInput = {
+      url: candidate.url,
+      type,
       projectId: optionalString(body.projectId),
       workflowId: optionalString(body.workflowId),
-      patch: {
-      assetUrl: persistence.stableUrl,
-      resolvedUrl: persistence.stableUrl,
-      storageKey: persistence.storageKey,
-      storageProvider: persistence.storageProvider,
-      bucket: persistence.bucket,
-      recoveryStatus: 'recovered_from_old_url',
-      assetResolveStatus: 'ready',
-      mediaPersistence: persistence,
+      nodeId: optionalString(body.nodeId),
+      filenameHint: stringValue(body.filenameHint) || `resynced-${type}.${type === 'image' ? 'png' : 'mp4'}`,
+      sourceProvider,
+      userId: currentUser.id,
+      metadata: {
+        ...metadata,
+        resyncedFrom: candidate.url,
+        resyncedFromSource: candidate.source,
+        resyncedAt: new Date().toISOString(),
+        mediaResyncDiagnostic: diagnostic,
       },
-    })
+    }
+
+    const persistence = await persistGeneratedMedia(persistInput)
+    if (!persistence.ok) {
+      attemptedUrls.push({
+        ...candidate,
+        ok: false,
+        errorCode: persistence.errorCode,
+        message: persistence.message,
+        upstreamStatus: persistence.upstreamStatus,
+        diagnostic,
+      })
+      continue
+    }
+
+    if (persistence.assetId) {
+      await writeAssetIdToCanvasNode({
+        nodeId: optionalString(body.nodeId) ?? '',
+        assetId: persistence.assetId,
+        userId: currentUser.id,
+        projectId: optionalString(body.projectId),
+        workflowId: optionalString(body.workflowId),
+        patch: {
+        assetUrl: persistence.stableUrl,
+        resolvedUrl: persistence.stableUrl,
+        storageKey: persistence.storageKey,
+        storageProvider: persistence.storageProvider,
+        bucket: persistence.bucket,
+        recoveryStatus: 'recovered_from_old_url',
+        assetResolveStatus: 'ready',
+        mediaPersistence: persistence,
+        attemptedUrls: [...attemptedUrls, { ...candidate, ok: true, diagnostic }],
+        },
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      stableUrl: persistence.stableUrl,
+      assetId: persistence.assetId,
+      mediaPersistence: persistence,
+      attemptedUrls: [...attemptedUrls, { ...candidate, ok: true, diagnostic }],
+    }, { status: 200 })
   }
 
-  return NextResponse.json({
-    success: true,
-    stableUrl: persistence.stableUrl,
-    assetId: persistence.assetId,
-    mediaPersistence: persistence,
-  }, { status: 200 })
+  const providerOwned = urlCandidates.some(candidateLooksProviderOwned)
+  return jsonError(
+    providerOwned ? 'provider_media_download_failed' : 'old_url_expired',
+    providerOwned
+      ? 'Provider URL 或参考媒体 URL 已不可下载，无法重新同步。'
+      : '旧媒体 URL 候选已全部过期或不可下载，无法重新同步。',
+    410,
+    { attemptedUrls },
+  )
 }

@@ -9,6 +9,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
+import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,7 @@ type VideoGenerateBody = Partial<GenerateRequest> & {
   imageUrl?: string
   duration?: number
   aspectRatio?: string
+  resolution?: string
   system?: string
   compiledPrompt?: string
 }
@@ -60,6 +62,46 @@ function failedMediaPersistence(result: Extract<PersistGeneratedMediaResult, { o
     errorCode: result.errorCode,
     message: result.message,
     upstreamStatus: result.upstreamStatus,
+  }
+}
+
+function visiblePersistenceErrorCode(errorCode: string) {
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  return errorCode
+}
+
+function numberParam(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.replace(/s$/i, ''))
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function stringParam(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+async function assertProviderReadableImageUrl(imageUrl: string | undefined) {
+  if (!imageUrl) return { ok: true as const }
+  if (!/^https?:\/\//i.test(imageUrl)) {
+    return {
+      ok: false as const,
+      errorCode: 'PROVIDER_INVALID_PARAMETER',
+      message: 'Seedance 首帧 imageUrl 必须是可公网访问的 http/https URL。',
+      upstreamMessage: `imageUrl is not http(s): ${imageUrl.slice(0, 160)}`,
+    }
+  }
+  const diagnostic = await diagnoseMediaUrl(imageUrl)
+  if (diagnostic.reachable) return { ok: true as const, diagnostic }
+  return {
+    ok: false as const,
+    errorCode: 'PROVIDER_MEDIA_DOWNLOAD_FAILED',
+    message: 'Seedance 首帧 imageUrl 当前不可下载，Provider 会返回 media download failed。',
+    upstreamStatus: diagnostic.upstreamStatus || diagnostic.status,
+    upstreamMessage: diagnostic.message,
+    diagnostic,
   }
 }
 
@@ -272,17 +314,49 @@ export async function POST(request: NextRequest) {
     })
     const params = body.params ?? {}
     const duration = body.duration
-      ?? (typeof params.duration === 'number' ? params.duration : 5)
+      ?? numberParam(params.duration)
+      ?? 5
     const aspectRatio = body.aspectRatio
       ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
       ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
       ?? '16:9'
+    const resolution = stringParam(params.resolution)
+      ?? body.resolution
+      ?? stringParam(params.quality)
+      ?? stringParam(params.size)
+    const imageReadable = await assertProviderReadableImageUrl(imageUrl)
+    if (!imageReadable.ok) {
+      await markVideoGenerationJobFailed(generationJob.id, imageReadable.message)
+      return NextResponse.json({
+        success: false,
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        message: imageReadable.message,
+        errorCode: imageReadable.errorCode,
+        model: providerRow.model,
+        upstreamStatus: imageReadable.upstreamStatus,
+        upstreamMessage: imageReadable.upstreamMessage,
+        submittedInput: {
+          providerId,
+          model: providerRow.model,
+          promptChars: prompt.length,
+          hasImageUrl: Boolean(imageUrl),
+          imageUrl,
+          duration,
+          aspectRatio,
+          resolution,
+        },
+        providerResponse: imageReadable.diagnostic,
+      }, { status: 200 })
+    }
     const raw = await generateSeedanceVideo({
       prompt,
       imageUrl,
       providerId,
       duration,
       aspectRatio,
+      resolution,
       projectId: body.projectId,
       workflowId: body.workflowId,
       nodeId: body.nodeId,
@@ -302,6 +376,8 @@ export async function POST(request: NextRequest) {
         upstreamMessage: raw.upstreamMessage,
         rawCode: raw.rawCode,
         requestId: raw.requestId,
+        submittedInput: raw.submittedInput,
+        providerResponse: raw.providerResponse,
       }, { status: 200 })
     }
 
@@ -340,6 +416,8 @@ export async function POST(request: NextRequest) {
             providerJobId: raw.taskId,
             generationJobId: generationJob.id,
             submittedAt,
+            submittedInput: raw.submittedInput,
+            providerResponse: raw.providerResponse,
           },
         },
       }, { status: 200 })
@@ -357,13 +435,14 @@ export async function POST(request: NextRequest) {
     })
     if (persisted.persistenceError) {
       await markVideoGenerationJobFailed(generationJob.id, persisted.persistenceError.message)
+      const errorCode = visiblePersistenceErrorCode(persisted.persistenceError.errorCode)
       return NextResponse.json({
         success: false,
         providerId,
         mode: 'real',
         status: 'failed',
         message: `视频生成成功，但媒体转存失败：${persisted.persistenceError.message}`,
-        errorCode: persisted.persistenceError.errorCode,
+        errorCode,
         model: raw.model,
         upstreamStatus: persisted.persistenceError.upstreamStatus ?? ('upstreamStatus' in raw ? raw.upstreamStatus : undefined),
         upstreamMessage: 'upstreamMessage' in raw ? raw.upstreamMessage : undefined,
@@ -371,6 +450,8 @@ export async function POST(request: NextRequest) {
         requestId: 'requestId' in raw ? raw.requestId : undefined,
         originalProviderVideoUrl: raw.videoUrl,
         mediaPersistence: persisted.mediaPersistence,
+        submittedInput: 'submittedInput' in raw ? raw.submittedInput : undefined,
+        providerResponse: 'providerResponse' in raw ? raw.providerResponse : undefined,
       }, { status: 200 })
     }
     return NextResponse.json({
@@ -403,6 +484,8 @@ export async function POST(request: NextRequest) {
           originalProviderVideoUrl: raw.videoUrl,
           mediaPersistence: persisted.mediaPersistence,
           assetIntelligence: persisted.assetIntelligence,
+          submittedInput: 'submittedInput' in raw ? raw.submittedInput : undefined,
+          providerResponse: 'providerResponse' in raw ? raw.providerResponse : undefined,
         },
       },
     }, { status: 200 })
@@ -426,6 +509,18 @@ export async function POST(request: NextRequest) {
   const result = await finalizeBilling(raw, billing.ctx.billingJobId)
   const resultWithMedia = result as typeof result & { resultVideoUrl?: string; videoUrl?: string; model?: string }
   const providerVideoUrl = result.result?.videoUrl ?? resultWithMedia.resultVideoUrl ?? resultWithMedia.videoUrl
+  if (result.success && !providerVideoUrl) {
+    return NextResponse.json({
+      success: false,
+      providerId,
+      mode: 'real',
+      status: 'failed',
+      message: '视频生成成功，但 Provider 未返回可下载视频 URL。',
+      errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+      model: resultWithMedia.model,
+      result,
+    }, { status: 200 })
+  }
   if (result.success && providerVideoUrl) {
     const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object' ? result.result.metadata : {}
     const resultModel = resultWithMedia.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined)
@@ -440,13 +535,14 @@ export async function POST(request: NextRequest) {
       providerJobId: result.jobId,
     })
     if (persisted.persistenceError) {
+      const errorCode = visiblePersistenceErrorCode(persisted.persistenceError.errorCode)
       return NextResponse.json({
         success: false,
         providerId,
         mode: 'real',
         status: 'failed',
         message: `视频生成成功，但媒体转存失败：${persisted.persistenceError.message}`,
-        errorCode: persisted.persistenceError.errorCode,
+        errorCode,
         upstreamStatus: persisted.persistenceError.upstreamStatus,
         originalProviderVideoUrl: providerVideoUrl,
         mediaPersistence: persisted.mediaPersistence,

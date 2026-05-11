@@ -53,6 +53,23 @@ function safeFileName(name: string) {
   return cleaned.slice(0, 120) || 'generated-media'
 }
 
+function dataUrlToDownloadedAsset(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/)
+  if (!match) return null
+  const mimeType = match[1] || 'application/octet-stream'
+  const isBase64 = Boolean(match[2])
+  const body = match[3] || ''
+  const buffer = isBase64 ? Buffer.from(body, 'base64') : Buffer.from(decodeURIComponent(body))
+  if (!buffer.byteLength) return null
+  return {
+    ok: true as const,
+    buffer,
+    mimeType,
+    size: buffer.byteLength,
+    status: 200,
+  }
+}
+
 function jsonMetadata(input: PersistGeneratedMediaInput, uploaded: {
   provider: string
   bucket?: string | null
@@ -194,7 +211,9 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
     if (!input.userId) {
       return persistError('MEDIA_UPLOAD_FAILED', '缺少媒体归属用户，无法保存 Asset。')
     }
-    const downloaded = await downloadExternalAsset(url)
+    const downloaded = url.startsWith('data:')
+      ? dataUrlToDownloadedAsset(url) ?? { ok: false as const, status: 0, errorCode: 'MEDIA_FETCH_FAILED', message: 'Data URL 无法解析为媒体文件。' }
+      : await downloadExternalAsset(url)
     if (!downloaded.ok) {
       return persistError(downloaded.errorCode || 'MEDIA_FETCH_FAILED', downloaded.message, downloaded.status || undefined)
     }

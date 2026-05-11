@@ -517,6 +517,8 @@ type GenerateApiResult = GenerateResponse & {
   upstreamMessage?: string
   rawCode?: string
   requestId?: string
+  submittedInput?: unknown
+  providerResponse?: unknown
   missingEnv?: string[]
   missingEnvKeys?: string[]
   async?: boolean
@@ -560,6 +562,10 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
   if (result.upstreamStatus === 402 || result.upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
+  if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
+  if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
+  if (errorCode === 'PROVIDER_NO_DOWNLOAD_URL' || errorCode === 'VIDEO_URL_EMPTY' || errorCode === 'IMAGE_URL_EMPTY' || errorCode.includes('URL_MISSING') || errorCode.includes('URL_EMPTY')) return 'provider_no_download_url'
+  if (errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed|external asset/.test(haystack)) return 'provider_media_download_failed'
   if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
   if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
@@ -607,6 +613,55 @@ function nestedRecord(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.replace(/s$/i, ''))
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function nodeParamValue(node: VisualCanvasNode, key: string) {
+  const nodeRecord = node as unknown as Record<string, unknown>
+  const metadata = metadataRecord(node.metadataJson)
+  const params = nestedRecord(metadata.params)
+  const generationParams = nestedRecord(metadata.generationParams)
+  const requestParams = nestedRecord(metadata.submittedInput)
+  const nodeParams = nestedRecord(nodeRecord.params)
+  return metadata[key]
+    ?? params[key]
+    ?? generationParams[key]
+    ?? requestParams[key]
+    ?? nodeParams[key]
+    ?? nodeRecord[key]
+}
+
+function buildRegenerationParams(node: VisualCanvasNode) {
+  const aspectRatio = stringValue(nodeParamValue(node, 'aspectRatio'))
+    || stringValue(nodeParamValue(node, 'ratio'))
+    || stringValue(node.ratio)
+    || '16:9'
+  const duration = numberValue(nodeParamValue(node, 'duration'))
+  const resolution = stringValue(nodeParamValue(node, 'resolution'))
+    || stringValue(nodeParamValue(node, 'quality'))
+    || stringValue(nodeParamValue(node, 'size'))
+  return {
+    ratio: aspectRatio,
+    aspectRatio,
+    ...(duration ? { duration } : {}),
+    ...(resolution ? { resolution, size: resolution } : {}),
+  } satisfies Record<string, string | number | boolean | undefined>
+}
+
+function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: string; type: string; url?: string }> | undefined {
+  const imageUrl = stringValue(nodeParamValue(node, 'imageUrl'))
+    || stringValue(nodeParamValue(node, 'sourceImageUrl'))
+    || stringValue(nodeParamValue(node, 'firstFrameUrl'))
+  if (!imageUrl) return undefined
+  return [{ id: `${node.id}-reference-image`, type: 'image', url: imageUrl }]
 }
 
 function getNodeAssetId(node: VisualCanvasNode) {
@@ -935,6 +990,8 @@ function textErrorMetadata(node: VisualCanvasNode, result: GenerateApiResult) {
       upstreamMessage: result.upstreamMessage,
       rawCode: result.rawCode,
       requestId: result.requestId,
+      submittedInput: result.submittedInput,
+      providerResponse: result.providerResponse,
       at: new Date().toISOString(),
     },
   }
@@ -956,13 +1013,15 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     assetUrl,
     ...(assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
+    submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
+    providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
   }
 }
 
-function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys'>, providerId: string) {
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -976,6 +1035,8 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
       rawCode: result.rawCode,
       requestId: result.requestId,
       missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
+      submittedInput: result.submittedInput,
+      providerResponse: result.providerResponse,
       at: new Date().toISOString(),
     },
   }
@@ -1004,6 +1065,8 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     assetUrl,
     ...(assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
+    submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
+    providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
@@ -1012,7 +1075,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1028,6 +1091,8 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
       rawCode: result.rawCode,
       requestId: result.requestId,
       missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
+      submittedInput: result.submittedInput,
+      providerResponse: result.providerResponse,
       at: new Date().toISOString(),
     },
   }
@@ -1077,6 +1142,13 @@ async function callGenerationApi(
             : typeof params?.ratio === 'string'
               ? params.ratio
               : '16:9',
+          resolution: typeof params?.resolution === 'string'
+            ? params.resolution
+            : typeof params?.size === 'string'
+              ? params.size
+              : typeof params?.quality === 'string'
+                ? params.quality
+                : undefined,
         }
       : {}),
   }
@@ -3528,26 +3600,35 @@ export function VisualCanvasWorkspace({
           }, selectedProviderId)
           return
         }
-        const confirmed = window.confirm(`Provider health check 已通过。继续会真实调用 ${node.kind} 生成接口并可能消耗额度，是否继续？`)
-        if (!confirmed) {
-          showCanvasFeedback('已完成 health check；用户取消真实生成。')
-          return
-        }
-
+        const regenerationParams = buildRegenerationParams(node)
+        const regenerationInputAssets = node.kind === 'video' ? buildRegenerationInputAssets(node) : undefined
         handleNodePatch(node.id, {
           status: 'generating',
           errorMessage: undefined,
           resultPreview: node.kind === 'image' ? '图片生成中...' : '视频生成中...',
           outputLabel: node.kind === 'image' ? '图片生成中' : '视频生成中',
+          metadataJson: {
+            ...metadataRecord(node.metadataJson),
+            providerId: selectedProviderId,
+            model: selectedProviderId,
+            regenerationInputPreview: {
+              prompt,
+              providerId: selectedProviderId,
+              params: regenerationParams,
+              inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: asset.url })),
+              nodeId: node.id,
+              requestedAt: new Date().toISOString(),
+            },
+          },
         })
         const nodeType = node.kind === 'image' ? 'image' : 'video'
         const result = await callGenerationApi(
           nodeType,
           selectedProviderId,
           prompt,
-          { ratio: node.ratio, aspectRatio: node.ratio },
+          regenerationParams,
           node.id,
-          undefined,
+          regenerationInputAssets,
           projectId,
           workflowId,
         )
@@ -3574,6 +3655,18 @@ export function VisualCanvasWorkspace({
         const resultText = getGeneratedText(result)
         const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
         const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
+        if (!resultImageUrl && !resultVideoUrl) {
+          failNode({
+            ...result,
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'real',
+            status: 'failed',
+            errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+            message: node.kind === 'image' ? '图片生成接口未返回可下载图片 URL。' : '视频生成接口未返回可下载视频 URL。',
+          }, selectedProviderId)
+          return
+        }
         const successMetadata = node.kind === 'image'
           ? imageSuccessMetadata(node, result, selectedProviderId)
           : videoSuccessMetadata(node, result, selectedProviderId)

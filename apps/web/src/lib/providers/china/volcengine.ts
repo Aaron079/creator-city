@@ -182,6 +182,53 @@ function getRawError(data: unknown, fallback: string) {
   return { message, code, requestId }
 }
 
+function normalizeProviderErrorCode(status: number, message: string, rawCode?: string) {
+  const haystack = `${rawCode ?? ''} ${message}`.toLowerCase()
+  if (/media download failed|download.*failed|failed to download|image.*download/.test(haystack)) return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'PROVIDER_INVALID_PARAMETER'
+  if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'PROMPT_REJECTED_OR_INVALID'
+  if (status === 401 || status === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'PROVIDER_AUTH_ERROR'
+  if (status === 402 || status === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'PROVIDER_QUOTA_OR_BILLING_ERROR'
+  return 'SEEDANCE_TASK_CREATE_FAILED'
+}
+
+function normalizeSeedanceRatio(value?: string) {
+  const ratio = String(value || '').trim().toLowerCase()
+  if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1' || ratio === '4:3' || ratio === '3:4' || ratio === '21:9' || ratio === 'adaptive') return ratio
+  return '16:9'
+}
+
+function normalizeSeedanceDuration(value?: number) {
+  if (!Number.isFinite(value)) return 5
+  const rounded = Math.round(Number(value))
+  return Math.min(10, Math.max(1, rounded))
+}
+
+function normalizeSeedanceResolution(value?: string) {
+  const resolution = String(value || '').trim().toLowerCase()
+  if (!resolution) return undefined
+  if (resolution === '480p' || resolution === '720p' || resolution === '1080p') return resolution
+  if (resolution.includes('1080')) return '1080p'
+  if (resolution.includes('720')) return '720p'
+  if (resolution.includes('480')) return '480p'
+  return undefined
+}
+
+function providerResponseSummary(data: unknown) {
+  const record = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {}
+  const error = record.error && typeof record.error === 'object' && !Array.isArray(record.error) ? record.error as Record<string, unknown> : {}
+  const content = record.content && typeof record.content === 'object' && !Array.isArray(record.content) ? record.content as Record<string, unknown> : {}
+  return {
+    id: typeof record.id === 'string' ? record.id : undefined,
+    status: typeof record.status === 'string' ? record.status : undefined,
+    code: typeof record.code === 'string' ? record.code : typeof error.code === 'string' ? error.code : undefined,
+    message: typeof record.message === 'string' ? record.message : typeof error.message === 'string' ? error.message : undefined,
+    requestId: typeof record.request_id === 'string' ? record.request_id : typeof error.request_id === 'string' ? error.request_id : undefined,
+    contentKeys: Object.keys(content).slice(0, 12),
+    topLevelKeys: Object.keys(record).slice(0, 20),
+  }
+}
+
 function upstreamMessage(data: unknown, raw: string, limit = 1000) {
   if (raw.trim()) return raw.slice(0, limit)
   try {
@@ -232,6 +279,7 @@ export type SeedanceVideoInput = {
   model?: string
   duration?: number
   aspectRatio?: string
+  resolution?: string
   projectId?: string
   workflowId?: string
   nodeId?: string
@@ -247,6 +295,8 @@ export type SeedanceVideoResult =
       status: 'running'
       message: string
       upstream?: string
+      submittedInput?: Record<string, unknown>
+      providerResponse?: Record<string, unknown>
     }
   | {
       success: true
@@ -254,6 +304,8 @@ export type SeedanceVideoResult =
       providerId: typeof VOLCENGINE_SEEDANCE_PROVIDER_ID
       model: string
       videoUrl: string
+      submittedInput?: Record<string, unknown>
+      providerResponse?: Record<string, unknown>
     }
   | {
       success: false
@@ -265,6 +317,8 @@ export type SeedanceVideoResult =
       upstreamMessage?: string
       rawCode?: string
       requestId?: string
+      submittedInput?: Record<string, unknown>
+      providerResponse?: Record<string, unknown>
     }
 
 export type SeedanceVideoStatusResult =
@@ -275,6 +329,9 @@ export type SeedanceVideoStatusResult =
       taskId: string
       status: 'running'
       message: string
+      requestId?: string
+      providerResponse?: Record<string, unknown>
+      submittedInput?: Record<string, unknown>
     }
   | {
       success: true
@@ -284,6 +341,9 @@ export type SeedanceVideoStatusResult =
       status: 'done'
       videoUrl: string
       message: string
+      requestId?: string
+      providerResponse?: Record<string, unknown>
+      submittedInput?: Record<string, unknown>
     }
   | {
       success: false
@@ -297,6 +357,8 @@ export type SeedanceVideoStatusResult =
       upstreamMessage?: string
       rawCode?: string
       requestId?: string
+      providerResponse?: Record<string, unknown>
+      submittedInput?: Record<string, unknown>
     }
 
 export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<SeedanceVideoResult> {
@@ -325,11 +387,11 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
   }
 
   const content: Array<Record<string, unknown>> = []
-  if (input.imageUrl) {
-    content.push({ type: 'image_url', image_url: { url: input.imageUrl } })
-  }
   if (input.prompt.trim()) {
     content.push({ type: 'text', text: input.prompt.trim() })
+  }
+  if (input.imageUrl) {
+    content.push({ type: 'image_url', image_url: { url: input.imageUrl } })
   }
 
   if (!content.length) {
@@ -342,20 +404,36 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     }
   }
 
+  const ratio = normalizeSeedanceRatio(input.aspectRatio)
+  const duration = normalizeSeedanceDuration(input.duration)
+  const resolution = normalizeSeedanceResolution(input.resolution)
   const body: Record<string, unknown> = {
     model,
     content,
-    parameters: {
-      ...(input.duration ? { duration: input.duration } : {}),
-      aspect_ratio: input.aspectRatio || '16:9',
-    },
+    ratio,
+    duration,
+    watermark: false,
   }
+  if (resolution) body.resolution = resolution
   if (input.projectId || input.workflowId || input.nodeId) {
     body.metadata = {
       projectId: input.projectId,
       workflowId: input.workflowId,
       nodeId: input.nodeId,
     }
+  }
+  const submittedInput = {
+    providerId,
+    model,
+    endpoint: '/contents/generations/tasks',
+    contentTypes: content.map((item) => item.type),
+    promptChars: input.prompt.trim().length,
+    hasImageUrl: Boolean(input.imageUrl),
+    imageUrl: input.imageUrl,
+    ratio,
+    duration,
+    resolution: resolution ?? null,
+    watermark: false,
   }
 
   const controller = new AbortController()
@@ -384,22 +462,27 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
           message: 'Volcengine Seedance 返回了无效 JSON 响应。',
           upstreamStatus: response.status,
           upstreamMessage: raw.slice(0, 500),
+          submittedInput,
+          providerResponse: { parseError: 'invalid_json', rawSnippet: raw.slice(0, 500) },
         }
       }
     }
 
     if (!response.ok) {
       const rawError = getRawError(data, `Volcengine Seedance HTTP ${response.status}`)
+      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
       return {
         success: false,
         providerId,
         model,
-        errorCode: 'SEEDANCE_TASK_CREATE_FAILED',
+        errorCode,
         message: rawError.message,
         upstreamStatus: response.status,
         upstreamMessage: upstreamMessage(data, raw) || rawError.message,
         rawCode: rawError.code,
         requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -411,6 +494,8 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
         providerId,
         model,
         videoUrl,
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -425,6 +510,8 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
         status: 'running',
         message: '视频任务已提交',
         upstream: upstreamMessage(data, raw),
+        submittedInput,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -436,6 +523,8 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       message: 'Seedance 创建任务返回结构无法识别，请查看 upstreamMessage。',
       upstreamStatus: response.status,
       upstreamMessage: upstreamMessage(data, raw),
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
     }
   } catch (error) {
     const aborted = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
@@ -446,6 +535,7 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       errorCode: aborted ? 'VOLCENGINE_SEEDANCE_TIMEOUT' : 'VOLCENGINE_SEEDANCE_FAILED',
       message: aborted ? 'Volcengine Seedance 请求超时或被中断，请稍后查询任务或重试。' : error instanceof Error ? error.message : 'Volcengine Seedance 调用失败。',
       upstreamMessage: error instanceof Error ? error.message : undefined,
+      submittedInput,
     }
   } finally {
     clearTimeout(timer)
@@ -514,18 +604,20 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
 
     if (!response.ok) {
       const rawError = getRawError(data, `Volcengine Seedance status HTTP ${response.status}`)
+      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
       return {
         success: false,
         providerId,
         model,
         taskId,
         status: 'error',
-        errorCode: 'SEEDANCE_TASK_STATUS_FAILED',
+        errorCode,
         message: rawError.message,
         upstreamStatus: response.status,
         upstreamMessage: upstreamMessage(data, raw) || rawError.message,
         rawCode: rawError.code,
         requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -537,13 +629,15 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
           success: false,
           providerId,
           model,
-          taskId,
-          status: 'error',
-          errorCode: 'SEEDANCE_VIDEO_URL_MISSING',
-          message: '任务完成但未找到 videoUrl，请查看 upstreamMessage。',
-          upstreamStatus: response.status,
-          upstreamMessage: upstreamMessage(data, raw),
-        }
+        taskId,
+        status: 'error',
+        errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+        message: '任务完成但未找到 videoUrl，请查看 upstreamMessage。',
+        upstreamStatus: response.status,
+        upstreamMessage: upstreamMessage(data, raw),
+        requestId: response.headers.get('x-request-id') ?? undefined,
+        providerResponse: providerResponseSummary(data),
+      }
       }
       return {
         success: true,
@@ -553,23 +647,27 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
         status: 'done',
         videoUrl,
         message: '视频生成完成',
+        requestId: response.headers.get('x-request-id') ?? undefined,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
     if (status === 'error') {
       const rawError = getRawError(data, 'Seedance 视频任务失败。')
+      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
       return {
         success: false,
         providerId,
         model,
         taskId,
         status: 'error',
-        errorCode: 'SEEDANCE_TASK_FAILED',
+        errorCode,
         message: rawError.message,
         upstreamStatus: response.status,
         upstreamMessage: upstreamMessage(data, raw),
         rawCode: rawError.code,
         requestId: rawError.requestId,
+        providerResponse: providerResponseSummary(data),
       }
     }
 
@@ -580,6 +678,8 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
       taskId,
       status: 'running',
       message: '视频任务已提交，正在生成中',
+      requestId: response.headers.get('x-request-id') ?? undefined,
+      providerResponse: providerResponseSummary(data),
     }
   } catch (error) {
     const aborted = error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))

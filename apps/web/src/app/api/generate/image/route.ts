@@ -62,6 +62,11 @@ function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { 
   return failedMediaPersistence(result.errorCode, result.message, result.upstreamStatus)
 }
 
+function visiblePersistenceErrorCode(errorCode: string) {
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  return errorCode
+}
+
 function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string }) {
   return response.result?.imageUrl
     ?? response.resultImageUrl
@@ -267,14 +272,10 @@ export async function POST(request: NextRequest) {
     const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
     let finalImageUrl = providerImageUrl
     let assetId: string | undefined
-    let mediaPersistence: unknown = providerImageUrl.startsWith('data:')
-      ? { status: 'skipped' }
-      : mediaPersistenceEnabled
-        ? { status: 'pending' }
-        : { status: 'disabled' }
+    let mediaPersistence: unknown = mediaPersistenceEnabled ? { status: 'pending' } : { status: 'disabled' }
     let warning: string | undefined
 
-    if (mediaPersistenceEnabled && !providerImageUrl.startsWith('data:')) {
+    if (mediaPersistenceEnabled) {
       try {
         const persistence = await persistGeneratedMedia({
           url: providerImageUrl,
@@ -301,9 +302,10 @@ export async function POST(request: NextRequest) {
           }
         } else {
           mediaPersistence = normalizePersistFailure(persistence)
+          const errorCode = visiblePersistenceErrorCode(persistence.errorCode)
           return NextResponse.json({
             success: false,
-            errorCode: persistence.errorCode,
+            errorCode,
             message: `图片生成成功，但媒体转存失败：${persistence.message}`,
             providerId,
             model: raw.model,

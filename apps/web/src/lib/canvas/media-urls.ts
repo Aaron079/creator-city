@@ -37,6 +37,42 @@ export type MediaUrlSource = {
   source: string
 }
 
+function looksLikeMediaUrlKey(key: string, kind: 'image' | 'video') {
+  const normalized = key.toLowerCase()
+  if (!/(url|uri|href)$/i.test(key)) return false
+  if (kind === 'image') return /(image|asset|media|provider|original|stable|resolved|result|output|thumbnail|preview|source|url|uri|href)/.test(normalized)
+  return /(video|asset|media|provider|original|stable|resolved|result|output|preview|source|url|uri|href)/.test(normalized)
+}
+
+function collectMetadataMediaUrls(
+  value: unknown,
+  kind: 'image' | 'video',
+  path = 'metadataJson',
+  depth = 0,
+): Array<[string, string]> {
+  if (!value || depth > 5) return []
+  if (typeof value === 'string') {
+    if (/^https?:\/\//i.test(value) || value.startsWith('data:')) return [[path, value]]
+    return []
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectMetadataMediaUrls(item, kind, `${path}[${index}]`, depth + 1))
+  }
+  if (typeof value !== 'object') return []
+  const record = value as Record<string, unknown>
+  const items: Array<[string, string]> = []
+  for (const [key, nested] of Object.entries(record)) {
+    const nextPath = `${path}.${key}`
+    if (typeof nested === 'string' && looksLikeMediaUrlKey(key, kind)) {
+      const url = stringValue(nested)
+      if (/^https?:\/\//i.test(url) || url.startsWith('data:')) items.push([nextPath, url])
+      continue
+    }
+    items.push(...collectMetadataMediaUrls(nested, kind, nextPath, depth + 1))
+  }
+  return items
+}
+
 function uniqueSources(candidates: Array<[string, string]>): MediaUrlSource[] {
   const seen = new Set<string>()
   return candidates.reduce<MediaUrlSource[]>((items, [source, url]) => {
@@ -86,6 +122,7 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.pluginResult.output.resultImageUrl', stringValue(pluginOutput.resultImageUrl)],
     ['metadata.pluginResult.output.assetUrl', stringValue(pluginOutput.assetUrl)],
     ['metadata.pluginResult.images[0].url', firstImageUrl(pluginResult.images)],
+    ...collectMetadataMediaUrls(metadata, 'image'),
   ]
   return uniqueSources(candidates)
 }
@@ -138,6 +175,7 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.pluginResult.output.assetUrl', stringValue(pluginOutput.assetUrl)],
     ['metadata.pluginResult.videos[0].url', firstVideoUrl(pluginResult.videos)],
     ['preview.url', node.preview?.type === 'remote-video' ? stringValue(node.preview.url) : ''],
+    ...collectMetadataMediaUrls(metadata, 'video'),
   ]
   return uniqueSources(candidates)
 }
