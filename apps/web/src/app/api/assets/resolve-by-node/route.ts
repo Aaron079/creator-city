@@ -47,6 +47,50 @@ function assetIdFromMetadata(metadataJson: unknown) {
   ].find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() ?? ''
 }
 
+async function writeResolvedAssetToCanvasNode(args: {
+  nodeId: string
+  projectId?: string
+  workflowId?: string
+  userId: string
+  resolved: Awaited<ReturnType<typeof resolveAssetById>>
+}) {
+  const { nodeId, projectId, workflowId, userId, resolved } = args
+  if (!resolved?.assetId) return
+  const nodes = await db.canvasNode.findMany({
+    where: {
+      nodeId,
+      ...(workflowId ? { workflowId } : {}),
+      workflow: {
+        ...(projectId ? { projectId } : {}),
+        project: { ownerId: userId },
+      },
+    },
+    select: { id: true, metadataJson: true },
+    take: 10,
+  })
+  await Promise.all(nodes.map((node) => {
+    const metadata = recordValue(node.metadataJson)
+    return db.canvasNode.update({
+      where: { id: node.id },
+      data: {
+        metadataJson: {
+          ...metadata,
+          assetId: resolved.assetId,
+          ...(resolved.resolvedUrl ? { assetUrl: resolved.resolvedUrl, resolvedUrl: resolved.resolvedUrl, stableUrl: resolved.resolvedUrl } : {}),
+          assetResolveStatus: resolved.status,
+          recoveryStatus: resolved.recoveryStatus ?? resolved.status,
+          ...(resolved.storageKey ? { storageKey: resolved.storageKey } : {}),
+          ...(resolved.storageProvider ? { storageProvider: resolved.storageProvider } : {}),
+          ...(resolved.bucket ? { bucket: resolved.bucket } : {}),
+          ...(resolved.providerJobId ? { providerJobId: resolved.providerJobId } : {}),
+          p0LastResolveResult: resolved,
+          p0LastResolveAt: new Date().toISOString(),
+        },
+      },
+    })
+  }))
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -78,6 +122,7 @@ export async function POST(request: NextRequest) {
     if (directAsset) {
       const resolved = await resolveAssetById(directAsset.id, user.id)
       if (!resolved) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
+      await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
       return jsonOk(resolved)
     }
 
@@ -96,7 +141,10 @@ export async function POST(request: NextRequest) {
     const metadataAssetId = assetIdFromMetadata(canvasNode?.metadataJson)
     if (metadataAssetId) {
       const resolved = await resolveAssetById(metadataAssetId, user.id)
-      if (resolved) return jsonOk(resolved)
+      if (resolved) {
+        await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
+        return jsonOk(resolved)
+      }
     }
 
     const candidateJobs = await db.generationJob.findMany({
@@ -116,7 +164,10 @@ export async function POST(request: NextRequest) {
     })
     if (job?.outputAssetId) {
       const resolved = await resolveAssetById(job.outputAssetId, user.id)
-      if (resolved) return jsonOk(resolved)
+      if (resolved) {
+        await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
+        return jsonOk(resolved)
+      }
     }
 
     return jsonError('ASSET_NOT_FOUND_FOR_NODE', '没有从当前 nodeId 找到已存在 Asset。', 404, { nodeId })

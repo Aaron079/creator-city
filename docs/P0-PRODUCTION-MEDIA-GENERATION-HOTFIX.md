@@ -8,6 +8,8 @@ Date: 2026-05-11
 
 Earlier success reports were misleading because they mixed server/script reachability with page acceptance. The correct standard is: latest Vercel Production commit deployed, logged-in `/create` opened, current real image/video nodes diagnosed from the page, recoverable nodes fixed in-place, and drag verified in the browser.
 
+The last production deploy still did not show old assets because it changed parts of the resolver but left two real-browser gaps: media preview/error surfaces were marked as node drag exclusions, and failed media nodes still collapsed storage failures into vague `storageKey，无法恢复` / `不可恢复` UI without recording signed URL, proxy fallback, or resolve-batch evidence on the current CanvasNode.
+
 ## Old Image/Video Display Root Cause
 
 Legacy CanvasNodes were not consistent about where `assetId` lived. The page must read all historical fields: `node.assetId`, `node.data.assetId`, `node.metadataJson.assetId`, `node.metadataJson.asset.id`, `asset_id`, `mediaAssetId`, `resultAssetId`, `outputAssetId`, `generationJob.outputAssetId`, `generationResult.outputAssetId`, `pluginResult.outputAssetId`, and `mediaPersistence.assetId/outputAssetId`.
@@ -23,11 +25,15 @@ For nodes with `assetId`, `/api/assets/resolve-batch` and `/api/assets/{assetId}
 ```json
 {
   "assetId": "...",
-  "status": "ready | missing | needs_signed_url | proxy_required | missing_env | storage_permission_error | object_missing | provider_error | unrecoverable_*",
+  "status": "ready | missing | needs_signed_url | proxy_required | missing_env | storage_permission_error | object_missing | signing_error | proxy_error | provider_error | no_recovery_source | unrecoverable_*",
   "resolvedUrl": "...",
   "storageKey": "...",
   "storageProvider": "aliyun-oss",
   "bucket": "...",
+  "signedUrlGenerated": true,
+  "proxyFallbackUrl": "/api/media/proxy?...",
+  "storageKeyFailureReason": null,
+  "whyUnrecoverable": null,
   "recoveryStatus": "...",
   "error": null,
   "actionTaken": "resolved_existing_storage"
@@ -38,6 +44,15 @@ For nodes without `assetId`, the page now first calls `/api/assets/resolve-by-no
 
 If no Asset is found but an old URL exists, `/api/media/resync` downloads that URL, uploads the bytes to Aliyun OSS or the configured storage provider, creates an Asset, writes `CanvasNode.metadataJson.assetId`, writes `resolvedUrl/stableUrl/storageKey`, and saves the canvas. This is not a mock recovery path.
 
+The card-level `立即恢复资产` order is now:
+
+1. `assetId` present: POST `/api/assets/{assetId}/recover`.
+2. No `assetId`: POST `/api/assets/resolve-by-node`.
+3. If node lookup finds an Asset, write `metadataJson.assetId`, resolved/storage fields, and the full resolve result back to the node.
+4. If no Asset exists but an old URL exists, POST `/api/media/resync`.
+5. On success, immediately render `resolvedUrl` and schedule canvas save.
+6. On failure, write the specific error code/status into node metadata instead of a generic unrecoverable message.
+
 ## Aliyun OSS Resolution
 
 Storage resolution attempts object existence and then signed/public URL resolution. For private buckets, `403` means permission/signing is required, not automatic unrecoverability. Valid non-final classifications include:
@@ -46,14 +61,28 @@ Storage resolution attempts object existence and then signed/public URL resoluti
 - `proxy_required`
 - `missing_env`
 - `storage_permission_error`
+- `signing_error`
+- `proxy_error`
 - `object_missing`
 - `provider_error`
+- `no_recovery_source`
 
-Truly unrecoverable is reserved for no Asset ID, no storage key, no original/provider URL, no provider job, expired `blob:` URL, or unusable data URL without file bytes.
+Classification rules:
+
+- `object_missing`: object storage check returns a real missing/not-found result for the saved `storageKey`.
+- `storage_permission_error`: storage or public URL returns permission/403; this is not automatically unrecoverable.
+- `needs_signed_url`: a private object has a `storageKey` but no readable URL was produced yet.
+- `signing_error`: object exists or should be signable, but signed URL generation failed or returned an empty URL.
+- `proxy_error`: a fallback URL exists, but the proxy/readability probe failed.
+- `no_recovery_source`: no Asset, no storage key, no original/provider URL, no provider job id, and no old URL candidate remain.
+
+Only `object_missing` with no other source, `no_recovery_source`, expired `blob:` URLs, or unusable data URLs without bytes should be treated as final unrecoverable evidence.
+
+The old `storageKey，无法恢复` state is now interpreted as a diagnostic question, not proof. With `storageKey`, the page must show whether signed URL generation succeeded, whether proxy fallback exists, which resolve status came back, and why the final card is still not rendering.
 
 ## Page-Level P0 Panel
 
-`/create` now has a logged-in page panel named `P0 媒体自检`. It reads the current in-memory canvas nodes, not local mock data and not the admin debug route.
+`/create` now has a logged-in page panel named `P0 媒体自检`. Open it from the top toolbar. It reads the current in-memory canvas nodes, not local mock data and not the admin debug route.
 
 The panel shows:
 
@@ -62,8 +91,10 @@ The panel shows:
 - image/video node count
 - per-node `nodeId`, kind, position, prompt, provider, `assetId`, assetId source field, generation job id, provider job id
 - URL existence for `resultImageUrl`, `resultVideoUrl`, `stableUrl`, `originalUrl`, `currentUrl`, `storageKey`, and `resolvedUrl`
-- the inferred `CanvasNodeCard` media `src`
-- `recoveryStatus`, `error`, unrecoverable flag, storage-key failure reason, and whether the node has any recoverable source
+- resolve-batch/recover result status and raw result
+- signed URL success/error, proxy fallback URL/status, selected URL/source, and the inferred `CanvasNodeCard` media `src`
+- `recoveryStatus`, `error`, unrecoverable flag, storage-key failure reason, final unrecoverable reason, and whether the node has any recoverable source
+- latest generation `lastError` with `errorCode`, missing env, HTTP/upstream status/message, raw code, and request id
 - full diagnostic JSON for screenshot/copy
 
 Per node actions:
@@ -75,13 +106,26 @@ Per node actions:
 - `用原 Prompt 重新生成`
 - `复制该节点诊断 JSON`
 
+For any failed node, copy either `复制全部诊断 JSON` or that node's `复制该节点诊断 JSON`. The JSON includes `nodeId`, `kind`, `assetId`, `assetIdSource`, `storageKey`, `bucket`, `provider`, `providerJobId`, `originalUrl`, `currentUrl`, `resultImageUrl`, `resultVideoUrl`, `stableUrl`, `urlCandidates`, resolve result, signed URL status, proxy fallback, actual card src, and final failure reason.
+
 The regenerate button first runs provider health (`GET /api/generate/image` or `GET /api/generate/video`) and requires user confirmation before any real paid generation call.
 
 ## New Generation Chain
 
-Image generation calls `/api/generate/image`; video generation calls `/api/generate/video`. Provider/env/API errors are returned with `errorCode`, missing env keys, upstream status/message, raw code, and request id when available.
+Image generation calls `/api/generate/image`; video generation calls `/api/generate/video`. Provider/env/API errors are returned with `errorCode`, missing env keys, HTTP status, upstream status/message, raw code, and request id when available. `callGenerationApi` preserves these fields and writes them into `metadataJson.lastError` for image/video nodes.
 
 On provider success, `persistGeneratedMedia` downloads the provider file, uploads it to storage, creates an Asset, links `GenerationJob.outputAssetId`, writes `assetId` and stable URL to CanvasNode metadata, and allows refresh recovery through `getNodeAssetId` plus `resolve-batch`.
+
+Generation must no longer return only `生成失败`. Concrete surfaced failures include:
+
+- provider env missing: `PROVIDER_NOT_CONFIGURED` plus missing env keys
+- provider auth/permission/credits/parameter failures: provider `errorCode`, `upstreamStatus`, and `upstreamMessage`
+- provider file download failure: `ASSET_DOWNLOAD_FAILED` / `ASSET_DOWNLOAD_ERROR`
+- OSS upload failure: `MEDIA_UPLOAD_FAILED`
+- Asset row creation failure: `MEDIA_ASSET_CREATE_FAILED`
+- Canvas save failure: save API `errorCode` / message from `/api/projects/{projectId}/canvas`
+
+If media persistence is enabled and provider media cannot be downloaded, uploaded, or recorded as an Asset, the image/video generation API returns `success:false` with the concrete persistence error rather than silently accepting a soon-to-expire provider URL.
 
 Production env checklist:
 
@@ -108,9 +152,9 @@ Drag wiring:
 - window `pointermove` updates `node.x/node.y`.
 - window `pointerup/pointercancel` flushes local snapshot and calls `scheduleCanvasSave(0)`.
 
-Draggable areas are the node root frame, border, header, and blank zones. Buttons, inputs, textareas, selects, connection handles, dialogs, preview click surfaces, and the P0 panel are `nodrag`.
+Draggable areas are now the node root frame, border, title/header, blank body, media preview surface, and media error/placeholder surface.
 
-The root double-click behavior no longer opens the prompt editor through the frame; it selects the node and leaves it movable. Preview double-click remains scoped to preview.
+Buttons, inputs, textareas, selects, links, connection handles, recovery buttons, copy buttons, `查看恢复详情`, `查看生成依据`, `创作资产`, `加入分镜`, Skills, dialogs, and the P0 panel remain excluded through `button/input/textarea/select/a/[data-no-node-drag]/.nodrag` style targeting. A button click still fires normally; a button press moved beyond the drag threshold suppresses the accidental click. The root double-click behavior no longer opens the prompt editor through the frame; it selects the node and leaves it movable.
 
 ## Real Browser Acceptance
 
@@ -122,10 +166,11 @@ After latest Vercel Production deploy is green and points to the newest commit:
 4. Copy full diagnostics JSON.
 5. For an old image node, click `立即恢复资产`.
 6. For an old video node, click `立即恢复资产`.
-7. Confirm old image/video render in the node card.
-8. Generate a new image; confirm it renders and still renders after refresh.
-9. Generate a new video, or confirm the displayed provider/env/API error is concrete.
-10. Double-click/select the node frame, drag from frame/header/blank area, refresh, and confirm position persists.
-11. Confirm node buttons still click normally.
+7. If either still does not render, copy that node's diagnostic JSON.
+8. Drag from node title, border, blank area, preview, and error area.
+9. Confirm recovery/copy/details/generation/storyboard/Skills buttons still click normally.
+10. Refresh and confirm the node position persists.
+11. Generate a new image; confirm it renders and still renders after refresh, or copy the concrete error.
+12. Generate a new video; confirm it renders after completion, or copy the concrete provider/API/persistence error.
 
 Scripts passing is not page acceptance. The P0 rule is: no “代码已修复” claim until production deploy is current and the logged-in real page can diagnose and repair the current canvas.

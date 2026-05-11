@@ -59,6 +59,7 @@ function failedMediaPersistence(result: Extract<PersistGeneratedMediaResult, { o
     status: 'failed',
     errorCode: result.errorCode,
     message: result.message,
+    upstreamStatus: result.upstreamStatus,
   }
 }
 
@@ -130,6 +131,7 @@ async function attachPersistedVideo(args: {
       warning: undefined,
       assetId: undefined,
       asset: undefined,
+      persistenceError: undefined,
     }
   }
 
@@ -163,6 +165,7 @@ async function attachPersistedVideo(args: {
       warning: '视频生成成功，但媒体转存失败，该链接可能会过期。',
       assetId: undefined,
       asset: undefined,
+      persistenceError: persistence,
     }
   }
 
@@ -185,6 +188,7 @@ async function attachPersistedVideo(args: {
       nodeId: args.body.nodeId,
     } : undefined,
     originalProviderVideoUrl: args.videoUrl,
+    persistenceError: undefined,
   }
 }
 
@@ -351,6 +355,24 @@ export async function POST(request: NextRequest) {
       userId: currentUser.id,
       generationJobId: generationJob.id,
     })
+    if (persisted.persistenceError) {
+      await markVideoGenerationJobFailed(generationJob.id, persisted.persistenceError.message)
+      return NextResponse.json({
+        success: false,
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        message: `视频生成成功，但媒体转存失败：${persisted.persistenceError.message}`,
+        errorCode: persisted.persistenceError.errorCode,
+        model: raw.model,
+        upstreamStatus: persisted.persistenceError.upstreamStatus ?? ('upstreamStatus' in raw ? raw.upstreamStatus : undefined),
+        upstreamMessage: 'upstreamMessage' in raw ? raw.upstreamMessage : undefined,
+        rawCode: 'rawCode' in raw ? raw.rawCode : undefined,
+        requestId: 'requestId' in raw ? raw.requestId : undefined,
+        originalProviderVideoUrl: raw.videoUrl,
+        mediaPersistence: persisted.mediaPersistence,
+      }, { status: 200 })
+    }
     return NextResponse.json({
       success: true,
       async: false,
@@ -417,6 +439,19 @@ export async function POST(request: NextRequest) {
       generationJobId: result.billingJobId ?? result.jobId,
       providerJobId: result.jobId,
     })
+    if (persisted.persistenceError) {
+      return NextResponse.json({
+        success: false,
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        message: `视频生成成功，但媒体转存失败：${persisted.persistenceError.message}`,
+        errorCode: persisted.persistenceError.errorCode,
+        upstreamStatus: persisted.persistenceError.upstreamStatus,
+        originalProviderVideoUrl: providerVideoUrl,
+        mediaPersistence: persisted.mediaPersistence,
+      }, { status: 200 })
+    }
     return NextResponse.json({
       ...result,
       videoUrl: persisted.videoUrl,

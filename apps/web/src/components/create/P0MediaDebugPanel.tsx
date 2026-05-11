@@ -15,12 +15,22 @@ type AssetResolveResult = {
   storageKey?: string | null
   storageProvider?: string | null
   bucket?: string | null
+  provider?: string | null
   providerJobId?: string | null
   recoveryStatus?: string | null
   error?: string | null
   message?: string
   actionTaken?: string | null
   mediaPersistence?: unknown
+  errorCode?: string
+  originalUrl?: string | null
+  currentUrl?: string | null
+  signedUrlGenerated?: boolean
+  signedUrlError?: string | null
+  proxyFallbackUrl?: string | null
+  proxyFallbackStatus?: number | null
+  storageKeyFailureReason?: string | null
+  whyUnrecoverable?: string | null
 }
 
 type ProviderStatusResponse = {
@@ -192,7 +202,6 @@ function hasAnyRecoverableSource(node: VisualCanvasNode) {
   const sources = mediaSourcesForNode(node)
   return Boolean(
     getNodeAssetIdWithSource(node).value ||
-    node.id ||
     stringValue(metadata.storageKey) ||
     stringValue(metadata.originalUrl) ||
     stringValue(metadata.originalProviderUrl) ||
@@ -205,7 +214,7 @@ function hasAnyRecoverableSource(node: VisualCanvasNode) {
 }
 
 function isUnrecoverableStatus(status: string) {
-  return status.startsWith('unrecoverable_') || status === 'UNRECOVERABLE'
+  return status.startsWith('unrecoverable_') || status === 'UNRECOVERABLE' || status === 'no_recovery_source'
 }
 
 function storageKeyFailureReason(node: VisualCanvasNode) {
@@ -217,6 +226,8 @@ function storageKeyFailureReason(node: VisualCanvasNode) {
   if (resolvedUrl) return '已有 resolvedUrl；CanvasNodeCard 应优先使用该 URL。'
   if (status === 'storage_permission_error') return 'storageKey 存在但对象存储返回权限错误；这需要 signedUrl 或 proxy fallback，不应判定不可恢复。'
   if (status === 'missing_env') return 'storageKey 存在但生产环境缺少对象存储签名配置。'
+  if (status === 'signing_error') return 'storageKey 存在，对象可能存在，但签名 URL 生成失败。'
+  if (status === 'proxy_error') return 'storageKey 存在，但 proxy fallback 也无法读取。'
   if (status === 'object_missing') return 'storageKey 存在，但对象存储检查没有找到对象。'
   if (isUnrecoverableStatus(status)) return `storageKey 存在但 recoveryStatus=${status}，需要重新 resolve 确认是否被误标不可恢复。`
   return status ? `storageKey 存在，当前状态为 ${status}。` : 'storageKey 存在，但当前节点没有 resolvedUrl。'
@@ -225,6 +236,9 @@ function storageKeyFailureReason(node: VisualCanvasNode) {
 function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: string) {
   const metadata = recordValue(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
+  const lastResolveResult = recordValue(metadata.p0LastResolveResult || metadata.p0LastRecoveryResult || metadata.assetResolveResult)
+  const mediaRecoveryAudit = recordValue(metadata.mediaRecoveryAudit)
+  const lastGenerationError = recordValue(metadata.lastError)
   const asset = getNodeAssetIdWithSource(node)
   const generationJob = getGenerationJobId(node)
   const current = currentDisplaySource(node)
@@ -237,9 +251,35 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     || stringValue(metadata.originalProviderVideoUrl)
     || stringValue(mediaPersistence.originalUrl)
   const storageKey = stringValue(metadata.storageKey) || stringValue(mediaPersistence.storageKey)
+  const bucket = stringValue(metadata.bucket) || stringValue(mediaPersistence.bucket) || stringValue(lastResolveResult.bucket)
+  const storageProvider = stringValue(metadata.storageProvider) || stringValue(mediaPersistence.storageProvider) || stringValue(lastResolveResult.storageProvider)
+  const provider = stringValue(metadata.provider)
+    || stringValue(metadata.sourceProvider)
+    || stringValue(metadata.providerId)
+    || stringValue(mediaPersistence.provider)
+    || stringValue(lastResolveResult.provider)
+    || node.providerId
+    || node.model
   const resolvedUrl = stringValue(metadata.resolvedUrl) || stringValue(metadata.assetUrl) || stringValue(mediaPersistence.resolvedUrl)
   const recoveryStatus = stringValue(metadata.recoveryStatus) || stringValue(metadata.assetResolveStatus) || stringValue(mediaPersistence.status)
   const error = stringValue(metadata.error) || stringValue(node.errorMessage) || stringValue(mediaPersistence.message) || stringValue(mediaPersistence.errorCode)
+  const resolveBatchStatus = stringValue(lastResolveResult.status) || stringValue(lastResolveResult.recoveryStatus) || recoveryStatus
+  const proxyFallbackUrl = stringValue(lastResolveResult.proxyFallbackUrl) || getProxiedMediaUrl(current.url)
+  const proxyFallbackStatus = typeof lastResolveResult.proxyFallbackStatus === 'number'
+    ? lastResolveResult.proxyFallbackStatus
+    : typeof mediaRecoveryAudit.proxyStatus === 'number'
+      ? mediaRecoveryAudit.proxyStatus
+      : null
+  const signedUrlGenerated = typeof lastResolveResult.signedUrlGenerated === 'boolean'
+    ? lastResolveResult.signedUrlGenerated
+    : Boolean(storageKey && resolvedUrl && current.source.includes('resolvedUrl'))
+  const reason = storageKeyFailureReason(node)
+  const unrecoverable = isUnrecoverableStatus(recoveryStatus)
+  const whyUnrecoverable = resolvedUrl
+    ? '已有 resolvedUrl，当前不应显示不可恢复。'
+    : stringValue(lastResolveResult.whyUnrecoverable)
+      || stringValue(lastResolveResult.storageKeyFailureReason)
+      || (unrecoverable ? error || reason : reason)
   return {
     projectId,
     workflowId,
@@ -248,6 +288,7 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     position: { x: node.x, y: node.y, width: node.width, height: node.height },
     prompt: node.prompt,
     providerId: node.providerId || node.model,
+    provider,
     assetId: asset.value || null,
     assetIdSource: asset.source || null,
     generationJobId: generationJob.value || null,
@@ -267,14 +308,27 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     currentUrl: current.url,
     currentUrlSource: current.source,
     storageKey,
+    bucket,
+    storageProvider,
     resolvedUrl,
     canvasNodeCardSrc: current.proxiedSrc || current.url,
+    selectedUrl: current.url,
+    selectedUrlSource: current.source,
     recoveryStatus: recoveryStatus || null,
     error: error || null,
-    unrecoverable: isUnrecoverableStatus(recoveryStatus),
-    storageKeyFailureReason: storageKeyFailureReason(node),
+    unrecoverable,
+    resolveBatchStatus: resolveBatchStatus || null,
+    resolveBatchResult: Object.keys(lastResolveResult).length ? lastResolveResult : null,
+    storageKeyFailureReason: reason,
+    signedUrlGenerated,
+    signedUrlError: stringValue(lastResolveResult.signedUrlError) || null,
+    proxyFallbackUrl,
+    proxyFallbackStatus,
+    proxyFallbackOk: typeof proxyFallbackStatus === 'number' ? proxyFallbackStatus >= 200 && proxyFallbackStatus < 300 : null,
+    whyUnrecoverable,
     hasRecoverableSource: hasAnyRecoverableSource(node),
     urlCandidates: mediaSourcesForNode(node),
+    lastGenerationError: Object.keys(lastGenerationError).length ? lastGenerationError : null,
     metadataJson: node.metadataJson,
   }
 }
@@ -295,6 +349,8 @@ function patchFromResolved(node: VisualCanvasNode, result: AssetResolveResult): 
     ...(result.bucket ? { bucket: result.bucket } : {}),
     ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
     ...(result.error || result.message ? { error: result.error || result.message } : {}),
+    p0LastResolveResult: result,
+    p0LastResolveAt: new Date().toISOString(),
     mediaPersistence: {
       ...mediaPersistence,
       status: resolvedUrl ? 'persisted' : stringValue(result.status) || recoveryStatus,
@@ -706,20 +762,32 @@ export function P0MediaDebugPanel({
                         ['prompt', item.prompt || '(empty)'],
                         ['assetId', item.assetId || '(none)'],
                         ['assetId 来源字段', item.assetIdSource || '(none)'],
+                        ['provider', item.provider || '(none)'],
                         ['generationJobId', item.generationJobId || '(none)'],
+                        ['providerJobId', item.providerJobId || '(none)'],
                         ['resultImageUrl 是否存在', item.resultImageUrlExists ? 'yes' : 'no'],
                         ['resultVideoUrl 是否存在', item.resultVideoUrlExists ? 'yes' : 'no'],
                         ['stableUrl 是否存在', item.stableUrlExists ? 'yes' : 'no'],
                         ['originalUrl 是否存在', item.originalUrlExists ? 'yes' : 'no'],
                         ['currentUrl 是否存在', item.currentUrlExists ? 'yes' : 'no'],
                         ['storageKey 是否存在', item.storageKeyExists ? 'yes' : 'no'],
+                        ['bucket', item.bucket || '(none)'],
+                        ['storageProvider', item.storageProvider || '(none)'],
                         ['resolvedUrl 是否存在', item.resolvedUrlExists ? 'yes' : 'no'],
                         ['CanvasNodeCard 实际使用 src', item.canvasNodeCardSrc || '(none)'],
+                        ['selectedUrl', item.selectedUrl || '(none)'],
+                        ['resolve-batch 返回状态', item.resolveBatchStatus || '(none)'],
+                        ['signedUrl 是否生成成功', item.signedUrlGenerated ? 'yes' : 'no'],
+                        ['signedUrl 错误', item.signedUrlError || '(none)'],
+                        ['proxy fallback URL', item.proxyFallbackUrl || '(none)'],
+                        ['proxy fallback status', item.proxyFallbackStatus ?? '(none)'],
                         ['recoveryStatus', item.recoveryStatus || '(none)'],
                         ['error', item.error || '(none)'],
                         ['是否 unrecoverable', item.unrecoverable ? 'yes' : 'no'],
                         ['是否有可恢复来源', item.hasRecoverableSource ? 'yes' : 'no'],
                         ['为什么显示 storageKey，无法恢复', item.storageKeyFailureReason],
+                        ['为什么最终显示不可恢复', item.whyUnrecoverable],
+                        ['最近一次生成错误', item.lastGenerationError ? formatJson(item.lastGenerationError) : '(none)'],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-lg border border-white/10 bg-black/18 p-3">
                           <div className="text-white/38">{label}</div>

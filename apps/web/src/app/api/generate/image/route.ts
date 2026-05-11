@@ -49,16 +49,17 @@ function providerNotConfiguredResponse(providerId: string, missingEnv: string[] 
   }, { status: 200 })
 }
 
-function failedMediaPersistence(errorCode: string, message: string) {
+function failedMediaPersistence(errorCode: string, message: string, upstreamStatus?: number) {
   return {
     status: 'failed',
     errorCode,
     message,
+    upstreamStatus,
   }
 }
 
 function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
-  return failedMediaPersistence(result.errorCode, result.message)
+  return failedMediaPersistence(result.errorCode, result.message, result.upstreamStatus)
 }
 
 function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string }) {
@@ -300,14 +301,40 @@ export async function POST(request: NextRequest) {
           }
         } else {
           mediaPersistence = normalizePersistFailure(persistence)
-          warning = '图片生成成功，但媒体转存失败，该链接可能会过期。'
+          return NextResponse.json({
+            success: false,
+            errorCode: persistence.errorCode,
+            message: `图片生成成功，但媒体转存失败：${persistence.message}`,
+            providerId,
+            model: raw.model,
+            mode: 'real',
+            status: 'failed',
+            upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
+            upstreamMessage: raw.upstreamMessage,
+            requestId: raw.requestId,
+            originalProviderImageUrl: providerImageUrl,
+            mediaPersistence,
+          }, { status: 200 })
         }
       } catch (error) {
         mediaPersistence = failedMediaPersistence(
           'MEDIA_PERSISTENCE_FAILED',
           error instanceof Error ? error.message : '图片媒体转存失败。',
         )
-        warning = '图片生成成功，但媒体转存失败，该链接可能会过期。'
+        return NextResponse.json({
+          success: false,
+          errorCode: 'MEDIA_PERSISTENCE_FAILED',
+          message: `图片生成成功，但媒体转存失败：${error instanceof Error ? error.message : '图片媒体转存失败。'}`,
+          providerId,
+          model: raw.model,
+          mode: 'real',
+          status: 'failed',
+          upstreamStatus: raw.upstreamStatus,
+          upstreamMessage: raw.upstreamMessage,
+          requestId: raw.requestId,
+          originalProviderImageUrl: providerImageUrl,
+          mediaPersistence,
+        }, { status: 200 })
       }
     }
 

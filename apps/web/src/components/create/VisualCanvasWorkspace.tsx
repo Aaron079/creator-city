@@ -227,7 +227,7 @@ type VisualCanvasNode = CanvasNodeCardNode & {
 
 type CanvasAssetResolveResult = {
   assetId: string
-  status: 'ready' | 'missing' | 'needs_signed_url' | 'proxy_required' | 'missing_env' | 'storage_permission_error' | 'object_missing' | 'provider_error' | 'unrecoverable_blob_url' | 'unrecoverable_data_url_without_file' | 'unrecoverable_expired_signed_url_without_storage_key' | 'unrecoverable_provider_expired' | 'unrecoverable_provider_retrieve_not_implemented' | 'unrecoverable_no_record'
+  status: 'ready' | 'missing' | 'needs_signed_url' | 'proxy_required' | 'missing_env' | 'storage_permission_error' | 'object_missing' | 'signing_error' | 'proxy_error' | 'provider_error' | 'no_recovery_source' | 'unrecoverable_blob_url' | 'unrecoverable_data_url_without_file' | 'unrecoverable_expired_signed_url_without_storage_key' | 'unrecoverable_provider_expired' | 'unrecoverable_provider_retrieve_not_implemented' | 'unrecoverable_no_record'
   resolvedUrl?: string | null
   thumbnailUrl?: string | null
   storageKey?: string | null
@@ -512,6 +512,7 @@ type GenerateApiResult = GenerateResponse & {
   mediaPersistence?: unknown
   assetIntelligence?: unknown
   warning?: string
+  httpStatus?: number
   upstreamStatus?: number
   upstreamMessage?: string
   rawCode?: string
@@ -558,8 +559,10 @@ function formatGenerateError(result: GenerateApiResult) {
     message,
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
     result.model ? `model: ${result.model}` : '',
+    typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
     result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
+    result.requestId ? `requestId: ${result.requestId}` : '',
   ].filter(Boolean).join(' · ') || '生成失败'
 }
 
@@ -632,13 +635,13 @@ function legacyMediaUrlForNode(node: VisualCanvasNode) {
 
 function unresolvedLegacyStatus(url: string) {
   const lower = url.toLowerCase()
-  if (!url) return 'unrecoverable_no_record'
+  if (!url) return 'no_recovery_source'
   if (lower.startsWith('blob:')) return 'unrecoverable_blob_url'
-  if (!/^https?:\/\//i.test(url) && !lower.startsWith('data:')) return 'unrecoverable_no_record'
+  if (!/^https?:\/\//i.test(url) && !lower.startsWith('data:')) return 'no_recovery_source'
   if (/x-tos-signature|x-tos-expires|x-amz-signature|x-amz-expires|x-oss-signature|x-oss-expires|signature=|expires=|security-token=/i.test(url)) {
-    return 'unrecoverable_expired_signed_url_without_storage_key'
+    return 'needs_signed_url'
   }
-  return 'unrecoverable_provider_expired'
+  return 'provider_error'
 }
 
 function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetResolveResult): VisualCanvasNode {
@@ -654,6 +657,8 @@ function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetRes
     ...(result.bucket ? { bucket: result.bucket } : {}),
     ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    p0LastResolveResult: result,
+    p0LastResolveAt: new Date().toISOString(),
     mediaPersistence: {
       ...mediaPersistence,
       status: result.status === 'ready' ? 'persisted' : result.status,
@@ -682,6 +687,7 @@ function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetRes
       ...nextMetadata,
       assetUrl: result.resolvedUrl,
       resolvedUrl: result.resolvedUrl,
+      stableUrl: result.resolvedUrl,
     },
   }
 }
@@ -931,10 +937,30 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     generationSource: result.providerId || providerId,
     assetId: result.asset?.id ?? result.assetId ?? resultMetadata.assetId,
     assetUrl,
+    ...(assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
+  }
+}
+
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys'>, providerId: string) {
+  return {
+    ...metadataRecord(node.metadataJson),
+    providerId: result.providerId || providerId,
+    model: result.model,
+    lastError: {
+      errorCode: result.errorCode,
+      message: normalizeGenerateErrorMessage(result),
+      httpStatus: result.httpStatus,
+      upstreamStatus: result.upstreamStatus,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
+      missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
+      at: new Date().toISOString(),
+    },
   }
 }
 
@@ -959,6 +985,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     generationJobId,
     assetId: result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined),
     assetUrl,
+    ...(assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
     mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
@@ -968,7 +995,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys'>, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -978,10 +1005,12 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     lastError: {
       errorCode: result.errorCode,
       message: normalizeGenerateErrorMessage(result),
+      httpStatus: result.httpStatus,
       upstreamStatus: result.upstreamStatus,
       upstreamMessage: result.upstreamMessage,
       rawCode: result.rawCode,
       requestId: result.requestId,
+      missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
       at: new Date().toISOString(),
     },
   }
@@ -1045,17 +1074,33 @@ async function callGenerationApi(
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '网络请求失败'
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, errorCode: 'PROVIDER_REQUEST_FAILED' }
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, errorCode: 'PROVIDER_REQUEST_FAILED', upstreamMessage: message }
   }
 
   const raw = await response.text().catch(() => '')
   if (!raw.trim()) {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回空响应（HTTP ${response.status}）`, errorCode: 'EMPTY_RESPONSE' }
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回空响应（HTTP ${response.status}）`, errorCode: 'EMPTY_RESPONSE', httpStatus: response.status }
   }
   try {
-    return JSON.parse(raw) as GenerateApiResult
+    const parsed = JSON.parse(raw) as GenerateApiResult
+    if (!response.ok || parsed.success === false) {
+      return {
+        ...parsed,
+        success: false,
+        providerId: parsed.providerId || providerId,
+        mode: parsed.mode || 'unavailable',
+        status: parsed.status || 'failed',
+        httpStatus: response.status,
+        errorCode: parsed.errorCode || `HTTP_${response.status}`,
+        message: parsed.message || `生成接口返回 HTTP ${response.status}`,
+      }
+    }
+    return {
+      ...parsed,
+      httpStatus: response.status,
+    }
   } catch {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回非 JSON 响应（HTTP ${response.status}）`, errorCode: 'NON_JSON_RESPONSE' }
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回非 JSON 响应（HTTP ${response.status}）`, errorCode: 'NON_JSON_RESPONSE', httpStatus: response.status, upstreamMessage: raw.slice(0, 500) }
   }
 }
 
@@ -1253,7 +1298,7 @@ function workflowErrorFromGenerateResult(node: VisualCanvasNode, result: Generat
   if (node.kind === 'video' && (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED')) {
     return `VIDEO_PROVIDER_NOT_CONFIGURED: ${result.message || '视频 provider 未配置'}`
   }
-  return result.errorCode ? `${result.errorCode}: ${result.message}` : result.message || '节点运行失败。'
+  return formatGenerateError(result)
 }
 
 function workflowResultFromGenerateResult(node: VisualCanvasNode, result: GenerateApiResult, fallbackPrompt: string): CanvasWorkflowRunNodeResult {
@@ -5005,6 +5050,7 @@ export function VisualCanvasWorkspace({
               resultPreview: jobFallback,
               outputLabel: jobFallback,
               ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, jobResult) } : {}),
+              ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageErrorMetadata(generationNodeSnapshot, jobResult, generationProviderId) } : {}),
               ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, jobResult, generationProviderId) } : {}),
             })
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
@@ -5078,6 +5124,7 @@ export function VisualCanvasWorkspace({
           resultPreview: fallbackPreview,
           outputLabel: fallbackPreview,
           ...(nodeSnapshot.kind === 'text' ? { metadataJson: textErrorMetadata(generationNodeSnapshot, result) } : {}),
+          ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
           ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         })
         setDialogError(errMsg)
@@ -6271,6 +6318,8 @@ export function VisualCanvasWorkspace({
               <CanvasNodeCard
                 node={node}
                 active={node.id === activeNode?.id}
+                projectId={projectId}
+                workflowId={workflowId}
                 dragging={draggingNodeId === node.id}
                 onSelect={() => {
                   selectNodeForMove(node)
@@ -6279,7 +6328,6 @@ export function VisualCanvasWorkspace({
                 onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
-                onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
                 onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}

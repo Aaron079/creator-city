@@ -207,6 +207,31 @@ export function MediaDiagnosticsPanel({
     }
   }
 
+  const copyDiagnosticJson = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(JSON.stringify({
+        nodeId: node.id,
+        kind: node.kind,
+        title: node.title,
+        mediaType,
+        mediaUrl,
+        proxiedUrl: getProxiedMediaUrl(mediaUrl),
+        urlSource,
+        diagnostic,
+        metadataJson: node.metadataJson,
+        resultImageUrl: node.resultImageUrl,
+        resultVideoUrl: node.resultVideoUrl,
+        selectedUrl: diagnostic?.selectedWorkingUrl || mediaUrl,
+        copiedAt: new Date().toISOString(),
+      }, null, 2))
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState(''), 1400)
+    } catch {
+      setCopyState('failed')
+    }
+  }
+
   const resyncMedia = async () => {
     if (!mediaUrl || !diagnostic?.reachable) return
     setSyncing(true)
@@ -434,6 +459,13 @@ export function MediaDiagnosticsPanel({
               onClick={() => { void copyLink() }}
             >
               {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制当前链接'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-semibold text-cyan-50 hover:bg-cyan-200/16"
+              onClick={() => { void copyDiagnosticJson() }}
+            >
+              {copyState === 'copied' ? '已复制 JSON' : '复制诊断 JSON'}
             </button>
             <button
               type="button"

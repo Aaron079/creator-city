@@ -143,6 +143,29 @@ async function main() {
     console.log(`  ${exists ? '[OK]' : '[MISSING]'} ${r}`)
   }
 
+  // 5. Frontend/API error transparency contract
+  console.log('\n--- error transparency contract ---')
+  const { readFileSync } = await import('fs')
+  const workspace = readFileSync('/Users/aaron/creator-city/apps/web/src/components/create/VisualCanvasWorkspace.tsx', 'utf8')
+  const imageRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/image/route.ts', 'utf8')
+  const videoRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/video/route.ts', 'utf8')
+  const persistLib = readFileSync('/Users/aaron/creator-city/apps/web/src/lib/assets/persist-generated-media.ts', 'utf8')
+  const contracts = [
+    ['callGenerationApi preserves HTTP status', workspace.includes('httpStatus: response.status')],
+    ['callGenerationApi preserves upstreamMessage on non-JSON', workspace.includes('upstreamMessage: raw.slice(0, 500)')],
+    ['image generation stores lastError metadata', workspace.includes('imageErrorMetadata')],
+    ['video generation stores lastError metadata', workspace.includes('videoErrorMetadata')],
+    ['image API fails loudly on media persistence failure', imageRoute.includes('图片生成成功，但媒体转存失败')],
+    ['video API fails loudly on media persistence failure', videoRoute.includes('视频生成成功，但媒体转存失败')],
+    ['provider download failure keeps upstream status', persistLib.includes('downloaded.status || undefined')],
+    ['OSS upload failure has explicit code', persistLib.includes('MEDIA_UPLOAD_FAILED')],
+    ['Asset create failure has explicit code', persistLib.includes('MEDIA_ASSET_CREATE_FAILED')],
+  ] as const
+  for (const [label, ok] of contracts) {
+    console.log(`  ${ok ? '[OK]' : '[FAIL]'} ${label}`)
+    if (!ok) process.exitCode = 1
+  }
+
   console.log('\n--- dry-run contract ---')
   console.log('[OK] This script does not call paid image/video POST generation without --real.')
   console.log('[OK] Page-level verification uses /create → P0 媒体自检 for real current nodes after login.')

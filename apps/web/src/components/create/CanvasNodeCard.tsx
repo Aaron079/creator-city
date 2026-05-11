@@ -53,12 +53,13 @@ export interface VisualCanvasNode {
 interface CanvasNodeCardProps {
   node: VisualCanvasNode
   active: boolean
+  projectId?: string
+  workflowId?: string
   onSelect: () => void
   onAddPrev: (event: React.PointerEvent<HTMLButtonElement>) => void
   onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
-  onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
   onOpenPromptInspector?: () => void
   onOpenMediaDiagnostics?: (type: 'image' | 'video') => void
@@ -216,6 +217,7 @@ type AssetRecoverResponse = {
   assetId?: string
   status?: string
   resolvedUrl?: string | null
+  stableUrl?: string | null
   storageKey?: string | null
   storageProvider?: string | null
   bucket?: string | null
@@ -223,7 +225,9 @@ type AssetRecoverResponse = {
   recoveryStatus?: string | null
   error?: string | null
   message?: string
+  errorCode?: string
   actionTaken?: string
+  mediaPersistence?: unknown
 }
 
 type CandidateProbe = MediaUrlSource & {
@@ -315,7 +319,14 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'missing_env') return '对象存储环境变量缺失，无法生成签名 URL。'
   if (reason === 'storage_permission_error') return '对象存储返回权限错误，需要签名 URL 或代理读取。'
   if (reason === 'object_missing') return '对象存储中没有找到该文件。'
+  if (reason === 'signing_error') return '对象存在，但签名 URL 生成失败。'
+  if (reason === 'proxy_error') return '代理 fallback 读取失败，请查看恢复详情。'
   if (reason === 'provider_error') return 'Provider 历史结果取回失败。'
+  if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED') return '旧媒体源当前不可读取，可能已过期或需要权限。'
+  if (reason === 'MEDIA_UPLOAD_FAILED') return '媒体下载成功后转存到对象存储失败。'
+  if (reason === 'MEDIA_ASSET_CREATE_FAILED') return '媒体已上传，但 Asset 记录创建失败。'
+  if (reason === 'recovery_request_failed') return '资产恢复请求失败，请复制诊断 JSON。'
+  if (reason === 'no_recovery_source') return '没有 assetId、storageKey、originalUrl、providerJobId 或旧 URL 可用于恢复。'
   if (reason === 'storage_key_unreadable') return '数据库有 storageKey，但对象存储暂时无法读取。'
   if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有 storageKey，但签名 URL、代理和历史来源都未能读取。'
   if (reason === 'provider_retrieve_not_implemented') return '该资产有 providerJobId，但当前 provider 尚未接入历史结果取回接口。'
@@ -364,6 +375,11 @@ function isInteractiveTarget(target: EventTarget | null) {
     '.canvas-node-create-menu',
     '.canvas-side-panel',
   ].join(',')))
+}
+
+function movedBeyondClickThreshold(start: { x: number; y: number } | null, event: { clientX: number; clientY: number }) {
+  if (!start) return false
+  return Math.abs(event.clientX - start.x) > 6 || Math.abs(event.clientY - start.y) > 6
 }
 
 function aspectRatioFromValue(value: unknown): number | null {
@@ -446,12 +462,13 @@ function resolveVideoAspectRatio(node: VisualCanvasNode) {
 export function CanvasNodeCard({
   node,
   active,
+  projectId,
+  workflowId,
   onSelect,
   onAddPrev,
   onAddNext,
   onDragStart,
   onOpenContextMenu,
-  onEdit,
   onOpenPreview,
   onOpenPromptInspector,
   onOpenMediaDiagnostics,
@@ -467,6 +484,8 @@ export function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const pointerDownInteractiveRef = useRef(false)
+  const suppressInteractiveClickRef = useRef(false)
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
@@ -517,7 +536,7 @@ export function CanvasNodeCard({
       ? { label: '已保存', tone: 'persisted' }
       : persistenceStatus === 'failed'
         ? { label: '临时链接', tone: 'temporary' }
-        : recoveryReason.startsWith('unrecoverable_') && !resolvedUrl
+        : (recoveryReason.startsWith('unrecoverable_') || recoveryReason === 'no_recovery_source') && !resolvedUrl
           ? { label: '不可恢复', tone: 'expired' }
           : !assetUrl && activeMedia.isExpiredLikely
             ? { label: '需恢复', tone: 'expired' }
@@ -585,26 +604,33 @@ export function CanvasNodeCard({
 
   const patchRecoveredAsset = (mediaKind: 'image' | 'video', result: AssetRecoverResponse) => {
     if (!onRecoverMedia) return
-    const resolvedUrl = typeof result.resolvedUrl === 'string' ? result.resolvedUrl : ''
-    const recoveryStatus = result.recoveryStatus || result.status || 'unrecoverable_no_record'
+    const resolvedUrl = typeof result.resolvedUrl === 'string' && result.resolvedUrl.trim()
+      ? result.resolvedUrl.trim()
+      : typeof result.stableUrl === 'string' && result.stableUrl.trim()
+        ? result.stableUrl.trim()
+        : ''
+    const recoveryStatus = result.recoveryStatus || result.status || result.errorCode || 'no_recovery_source'
     const nextMetadata = {
       ...metadataRecord(node.metadataJson),
       ...(result.assetId ? { assetId: result.assetId } : {}),
-      ...(resolvedUrl ? { assetUrl: resolvedUrl, resolvedUrl } : {}),
+      ...(resolvedUrl ? { assetUrl: resolvedUrl, resolvedUrl, stableUrl: resolvedUrl } : {}),
       assetResolveStatus: result.status || recoveryStatus,
       recoveryStatus,
       ...(result.storageKey ? { storageKey: result.storageKey } : {}),
       ...(result.storageProvider ? { storageProvider: result.storageProvider } : {}),
       ...(result.bucket ? { bucket: result.bucket } : {}),
       ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
-      ...(result.error || result.message ? { error: result.error || result.message } : {}),
+      ...(result.error || result.message || result.errorCode ? { error: result.error || result.message || result.errorCode } : {}),
+      p0LastRecoveryResult: result,
       mediaPersistence: {
         ...metadataRecord(metadataRecord(node.metadataJson).mediaPersistence),
-        status: result.status === 'ready' ? 'persisted' : result.status || recoveryStatus,
+        status: resolvedUrl || result.status === 'ready' ? 'persisted' : result.status || recoveryStatus,
         ...(result.assetId ? { assetId: result.assetId } : {}),
+        ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : {}),
         ...(result.storageKey ? { storageKey: result.storageKey } : {}),
         ...(result.storageProvider ? { storageProvider: result.storageProvider } : {}),
         ...(result.bucket ? { bucket: result.bucket } : {}),
+        ...(result.mediaPersistence && typeof result.mediaPersistence === 'object' ? metadataRecord(result.mediaPersistence) : {}),
         recoveredAt: new Date().toISOString(),
         actionTaken: result.actionTaken,
       },
@@ -616,14 +642,22 @@ export function CanvasNodeCard({
         resultVideoUrl: resolvedUrl,
         preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: resolvedUrl },
       } : {}),
-      errorMessage: result.status === 'ready' ? undefined : result.error || result.message || node.errorMessage,
+      errorMessage: resolvedUrl || result.status === 'ready' ? undefined : result.error || result.message || result.errorCode || node.errorMessage,
       metadataJson: nextMetadata,
     })
+  }
+
+  const setRecoveryStatusFromResult = (result: AssetRecoverResponse) => {
+    const resolvedUrl = stringValue(result.resolvedUrl) || stringValue(result.stableUrl)
+    const status = result.recoveryStatus || result.status || result.errorCode || ''
+    setMediaRecoveryStatus(resolvedUrl ? 'recovered' : status.startsWith('unrecoverable_') || status === 'UNRECOVERABLE' || status === 'no_recovery_source' ? 'unrecoverable' : 'idle')
   }
 
   const recoverCurrentAsset = async (mediaKind: 'image' | 'video') => {
     if (!onRecoverMedia) return
     const currentUrl = mediaKind === 'image' ? imagePreviewUrl : videoPreviewUrl
+    const recoveryProjectId = projectId || stringValue(nodeMetadata.projectId)
+    const recoveryWorkflowId = workflowId || stringValue(nodeMetadata.workflowId)
     setMediaRecoveryStatus('checking')
     try {
       if (nodeAssetId) {
@@ -635,7 +669,7 @@ export function CanvasNodeCard({
         })
         const data = await response.json().catch(() => ({})) as AssetRecoverResponse
         patchRecoveredAsset(mediaKind, data)
-        setMediaRecoveryStatus(data.status === 'ready' && data.resolvedUrl ? 'recovered' : 'unrecoverable')
+        setRecoveryStatusFromResult(data)
         return
       }
 
@@ -647,14 +681,14 @@ export function CanvasNodeCard({
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
             nodeId: node.id,
-            projectId: stringValue(nodeMetadata.projectId),
-            workflowId: stringValue(nodeMetadata.workflowId),
+            projectId: recoveryProjectId,
+            workflowId: recoveryWorkflowId,
           }),
         })
         const lookupData = await lookupResponse.json().catch(() => ({})) as AssetRecoverResponse
         if (lookupResponse.ok && lookupData.assetId) {
           patchRecoveredAsset(mediaKind, lookupData)
-          setMediaRecoveryStatus(lookupData.status === 'ready' && lookupData.resolvedUrl ? 'recovered' : 'unrecoverable')
+          setRecoveryStatusFromResult(lookupData)
           return
         }
       } catch {
@@ -670,21 +704,14 @@ export function CanvasNodeCard({
           body: JSON.stringify({
             url: currentUrl,
             type: mediaKind,
-            projectId: stringValue(nodeMetadata.projectId),
-            workflowId: stringValue(nodeMetadata.workflowId),
+            projectId: recoveryProjectId,
+            workflowId: recoveryWorkflowId,
             nodeId: node.id,
             filenameHint: `${node.title || node.id || 'recovered'}-${mediaKind}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
             metadata: nodeMetadata,
           }),
         })
-        const data = await response.json().catch(() => ({})) as {
-          success?: boolean
-          stableUrl?: string
-          assetId?: string
-          mediaPersistence?: unknown
-          message?: string
-          errorCode?: string
-        }
+        const data = await response.json().catch(() => ({})) as AssetRecoverResponse
         if (response.ok && data.success && data.stableUrl && data.assetId) {
           patchRecoveredAsset(mediaKind, {
             success: true,
@@ -693,15 +720,24 @@ export function CanvasNodeCard({
             resolvedUrl: data.stableUrl,
             recoveryStatus: 'recovered_from_old_url',
             actionTaken: 'reuploaded_from_original_url',
+            mediaPersistence: data.mediaPersistence,
           })
           setMediaRecoveryStatus('recovered')
           return
         }
         patchRecoveredAsset(mediaKind, {
           success: false,
-          status: 'unrecoverable_no_record',
-          recoveryStatus: 'unrecoverable_no_record',
+          status: data.errorCode || 'provider_error',
+          recoveryStatus: data.errorCode || 'provider_error',
           error: data.message || data.errorCode || '旧媒体 URL 已不可读取。',
+          actionTaken: 'marked_unrecoverable',
+        })
+      } else {
+        patchRecoveredAsset(mediaKind, {
+          success: false,
+          status: 'no_recovery_source',
+          recoveryStatus: 'no_recovery_source',
+          error: '当前节点没有 assetId、nodeId 可解析 Asset，也没有可重新导入的旧 URL。',
           actionTaken: 'marked_unrecoverable',
         })
       }
@@ -709,8 +745,8 @@ export function CanvasNodeCard({
     } catch (error) {
       patchRecoveredAsset(mediaKind, {
         success: false,
-        status: 'unrecoverable_no_record',
-        recoveryStatus: 'unrecoverable_no_record',
+        status: 'recovery_request_failed',
+        recoveryStatus: 'recovery_request_failed',
         error: error instanceof Error ? error.message : '资产恢复请求失败。',
         actionTaken: 'marked_unrecoverable',
       })
@@ -1006,12 +1042,19 @@ export function CanvasNodeCard({
     <motion.div
       role="button"
       tabIndex={0}
+      data-node-drag-root="true"
       layout
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      onPointerDown={(event) => {
+      onPointerDownCapture={(event) => {
         if (event.button !== 0) return
         pointerDownPos.current = { x: event.clientX, y: event.clientY }
+        pointerDownInteractiveRef.current = isInteractiveTarget(event.target)
+        suppressInteractiveClickRef.current = false
+      }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        pointerDownPos.current ??= { x: event.clientX, y: event.clientY }
         if (isInteractiveTarget(event.target)) return
         event.preventDefault()
         event.stopPropagation()
@@ -1022,12 +1065,22 @@ export function CanvasNodeCard({
         }
         onDragStart(event)
       }}
+      onPointerMoveCapture={(event) => {
+        if (pointerDownInteractiveRef.current && movedBeyondClickThreshold(pointerDownPos.current, event)) {
+          suppressInteractiveClickRef.current = true
+        }
+      }}
+      onClickCapture={(event) => {
+        if (!suppressInteractiveClickRef.current || !isInteractiveTarget(event.target)) return
+        event.preventDefault()
+        event.stopPropagation()
+        suppressInteractiveClickRef.current = false
+      }}
       onClick={(event) => {
         if (isInteractiveTarget(event.target)) return
         const down = pointerDownPos.current
-        if (down && (Math.abs(event.clientX - down.x) > 6 || Math.abs(event.clientY - down.y) > 6)) return
+        if (movedBeyondClickThreshold(down, event)) return
         onSelect()
-        onEdit()
       }}
       onDoubleClick={(event) => {
         event.preventDefault()
@@ -1223,43 +1276,9 @@ export function CanvasNodeCard({
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div
                   className="canvas-node-video-button"
-                  role="button"
-                  tabIndex={0}
-                  data-no-node-drag="true"
-                  onPointerDown={(event) => {
-                    event.stopPropagation()
-                  }}
-                  onMouseDown={(event) => {
-                    event.stopPropagation()
-                  }}
-                  onDoubleClickCapture={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!videoPreviewUrl) return
-                    onOpenPreview('video')
-                  }}
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
-                  onWheel={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    onSelect()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!videoPreviewUrl) return
-                    onOpenPreview('video')
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!videoPreviewUrl) return
-                    onOpenPreview('video')
-                  }}
-                  aria-label="预览视频"
+                  aria-label="视频预览拖动区域"
                 >
                   {videoMedia.loadFailed ? (
                     <span className="canvas-node-video-error">
@@ -1285,7 +1304,7 @@ export function CanvasNodeCard({
                         onClick={(event) => {
                           event.preventDefault()
                           event.stopPropagation()
-                          void copyMediaUrl('video', videoPreviewUrl)
+                          void copyMediaUrl('video', videoProxiedSrc || videoPreviewUrl)
                         }}
                       >
                           {copiedMediaUrl === 'video' ? '已复制' : '复制当前视频 URL'}
@@ -1353,40 +1372,7 @@ export function CanvasNodeCard({
               {node.kind === 'image' && imagePreviewUrl ? (
                 <div
                   className="canvas-node-image-button"
-                  role="button"
-                  tabIndex={0}
-                  data-no-node-drag="true"
-                  onPointerDown={(event) => {
-                    event.stopPropagation()
-                  }}
-                  onMouseDown={(event) => {
-                    event.stopPropagation()
-                  }}
-                  onDoubleClickCapture={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!imagePreviewUrl) return
-                    onOpenPreview('image')
-                  }}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    onSelect()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!imagePreviewUrl) return
-                    onOpenPreview('image')
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!imagePreviewUrl) return
-                    onOpenPreview('image')
-                  }}
-                  aria-label="预览图片"
+                  aria-label="图片预览拖动区域"
                 >
                   {imageMedia.loadFailed ? (
                     <span className="canvas-node-image-error">
@@ -1412,7 +1398,7 @@ export function CanvasNodeCard({
                         onClick={(event) => {
                           event.preventDefault()
                           event.stopPropagation()
-                          void copyMediaUrl('image', imagePreviewUrl)
+                          void copyMediaUrl('image', imageProxiedSrc || imagePreviewUrl)
                         }}
                       >
                           {copiedMediaUrl === 'image' ? '已复制' : '复制当前图片 URL'}

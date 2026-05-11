@@ -11,7 +11,10 @@ export type AssetResolveStatus =
   | 'missing_env'
   | 'storage_permission_error'
   | 'object_missing'
+  | 'signing_error'
+  | 'proxy_error'
   | 'provider_error'
+  | 'no_recovery_source'
   | 'unrecoverable_blob_url'
   | 'unrecoverable_data_url_without_file'
   | 'unrecoverable_expired_signed_url_without_storage_key'
@@ -35,9 +38,18 @@ export type AssetResolveResult = {
   storageProvider: string | null
   bucket: string | null
   providerJobId: string | null
+  originalUrl: string | null
+  currentUrl: string | null
+  stableUrl: string | null
   recoveryStatus: string | null
   error: string | null
   actionTaken: AssetResolveAction
+  storageKeyFailureReason: string | null
+  signedUrlGenerated: boolean
+  signedUrlError: string | null
+  proxyFallbackUrl: string | null
+  proxyFallbackStatus: number | null
+  whyUnrecoverable: string | null
 }
 
 type AssetForResolve = Asset & {
@@ -128,18 +140,37 @@ function resultFromAsset(
   error: string | null | undefined,
   actionTaken: AssetResolveAction,
 ): AssetResolveResult {
+  const storageKey = storageKeyFor(asset) || null
+  const originalUrl = originalUrlFor(asset) || null
+  const currentUrl = resolvedUrl || asset.url || asset.dataUrl || originalUrl
+  const proxyFallbackUrl = currentUrl && /^https?:\/\//i.test(currentUrl)
+    ? `/api/media/proxy?url=${encodeURIComponent(currentUrl)}`
+    : null
+  const statusText = recoveryStatus ?? status
+  const isSignedUrlError = Boolean(storageKey && !resolvedUrl && /sign|signed|signature|url is empty/i.test(error || statusText || ''))
   return {
     assetId: asset.id,
     status,
     resolvedUrl,
     thumbnailUrl: asset.thumbnailUrl || null,
-    storageKey: storageKeyFor(asset) || null,
+    stableUrl: resolvedUrl,
+    storageKey,
     storageProvider: storageProviderFor(asset) || null,
     bucket: bucketFor(asset) || null,
     providerJobId: providerJobIdFor(asset) || null,
+    originalUrl,
+    currentUrl,
     recoveryStatus: recoveryStatus ?? asset.recoveryStatus ?? null,
     error: error ?? asset.error ?? null,
     actionTaken,
+    storageKeyFailureReason: storageKey && !resolvedUrl ? (error ?? asset.error ?? statusText ?? 'storageKey exists but no readable URL was produced.') : null,
+    signedUrlGenerated: Boolean(storageKey && resolvedUrl),
+    signedUrlError: isSignedUrlError ? (error ?? statusText ?? 'signed URL generation failed') : null,
+    proxyFallbackUrl,
+    proxyFallbackStatus: null,
+    whyUnrecoverable: status.startsWith('unrecoverable_') || status === 'no_recovery_source'
+      ? (error ?? asset.error ?? statusText ?? 'No recovery source was available.')
+      : null,
   }
 }
 
@@ -208,6 +239,30 @@ async function persistRecoveredBuffer(asset: AssetForResolve, buffer: Buffer, mi
   )
 }
 
+async function probeReadableUrl(url: string) {
+  if (!url) return { ok: false, status: 0, message: 'URL is empty.' }
+  if (url.startsWith('data:') || url.startsWith('/')) return { ok: true, status: 200, message: '' }
+  if (!/^https?:\/\//i.test(url)) return { ok: false, status: 0, message: 'URL is not HTTP.' }
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { Range: 'bytes=0-0', Accept: 'image/*,video/*,audio/*,*/*;q=0.5' },
+    })
+    return {
+      ok: response.ok || response.status === 206,
+      status: response.status,
+      message: response.ok || response.status === 206 ? '' : `Proxy fallback URL returned HTTP ${response.status}.`,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      message: error instanceof Error ? `Proxy fallback URL failed: ${error.message}` : 'Proxy fallback URL failed.',
+    }
+  }
+}
+
 async function recoverFromProviderJob(asset: AssetForResolve, providerJobId: string) {
   const provider = asset.provider || asset.providerId || ''
   if (provider === 'volcengine-seedance-video' || String(asset.type) === 'VIDEO') {
@@ -241,8 +296,9 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
         const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_storage_key', null)
         return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
       }
+      storageMissMessage = 'Object exists, but signed URL generation returned an empty URL.'
     }
-    storageMissMessage = object.message || 'Storage key exists but object storage could not be read.'
+    storageMissMessage = storageMissMessage || object.message || 'Storage key exists but object storage could not be read.'
 
     // checkObjectExists() may fail when the storage provider's signed-URL implementation
     // is not yet fully wired (e.g. Aliyun OSS without private signing keys). In that case,
@@ -251,8 +307,12 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
     if (!object.exists) {
       const resolved = await resolveAssetUrl(asset)
       if (resolved.url && /^https?:\/\//i.test(resolved.url)) {
-        const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_asset_url', null)
-        return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
+        const fallbackProbe = await probeReadableUrl(resolved.url)
+        if (fallbackProbe.ok) {
+          const updated = await markAsset(asset, 'READY', asset.recoveryStatus || 'resolved_from_asset_url', null)
+          return resultFromAsset(updated, 'ready', resolved.url, updated.recoveryStatus, null, 'resolved_existing_storage')
+        }
+        storageMissMessage = fallbackProbe.message || storageMissMessage
       }
     }
   }
@@ -302,6 +362,10 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
   if (storageKey) {
     const recoveryStatus = /not configured|未配置/i.test(storageMissMessage)
       ? 'missing_env'
+      : /sign|signed|signature|empty url/i.test(storageMissMessage)
+        ? 'signing_error'
+      : /proxy fallback/i.test(storageMissMessage)
+        ? 'proxy_error'
       : /403|permission|forbidden|accessdenied|denied/i.test(storageMissMessage)
         ? 'storage_permission_error'
         : /404|not found|missing/i.test(storageMissMessage)
@@ -311,8 +375,8 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
     return resultFromAsset(updated, recoveryStatus, null, updated.recoveryStatus, updated.error, 'marked_missing')
   }
 
-  const updated = await markAsset(asset, 'UNRECOVERABLE', 'unrecoverable_no_record', '当前资产没有 storageKey、可恢复原始 URL 或可查询的 providerJobId。')
-  return resultFromAsset(updated, 'unrecoverable_no_record', null, 'unrecoverable_no_record', updated.error, 'marked_unrecoverable')
+  const updated = await markAsset(asset, 'UNRECOVERABLE', 'no_recovery_source', '当前资产没有 storageKey、可恢复原始 URL 或可查询的 providerJobId。')
+  return resultFromAsset(updated, 'no_recovery_source', null, 'no_recovery_source', updated.error, 'marked_unrecoverable')
 }
 
 export async function resolveAssetById(assetId: string, ownerId: string) {

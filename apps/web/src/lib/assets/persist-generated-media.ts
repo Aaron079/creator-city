@@ -204,14 +204,23 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
     const now = new Date()
     const fileName = safeFileName(input.filenameHint || `${input.type}-${assetId}`)
 
+    let uploaded: Awaited<ReturnType<typeof uploadAsset>>
     try {
-      const uploaded = await uploadAsset(body, {
+      uploaded = await uploadAsset(body, {
         filename: fileName,
         mimeType: contentType,
         projectId: input.projectId,
         userId: input.userId,
         type: input.type,
       })
+    } catch (error) {
+      return persistError(
+        'MEDIA_UPLOAD_FAILED',
+        error instanceof Error ? error.message : '生成媒体上传到对象存储失败。',
+      )
+    }
+
+    try {
       const metadataJson = jsonMetadata(input, {
         provider: uploaded.storageProvider,
         bucket: uploaded.bucket,
@@ -236,7 +245,9 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
               select: { id: true },
             })
           : null
-      const asset = await db.asset.create({
+      let asset: Awaited<ReturnType<typeof db.asset.create>>
+      try {
+        asset = await db.asset.create({
         data: {
           id: assetId,
           name: input.filenameHint || `${input.type} generation ${now.toISOString()}`,
@@ -274,7 +285,13 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
           generationJobId: typeof input.metadata?.generationJobId === 'string' ? input.metadata.generationJobId : null,
           tags: ['generated', input.type, 'persisted'],
         },
-      })
+        })
+      } catch (error) {
+        return persistError(
+          'MEDIA_ASSET_CREATE_FAILED',
+          error instanceof Error ? error.message : '媒体已上传，但 Asset 记录创建失败。',
+        )
+      }
       await linkGenerationJob(input, asset.id, stableUrl)
       await linkCanvasNode(input, asset.id, stableUrl, uploaded).catch((error: unknown) => {
         console.warn('[assets] failed to link CanvasNode to Asset', {
