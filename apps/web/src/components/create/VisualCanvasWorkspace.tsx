@@ -551,10 +551,27 @@ function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCod
   return message
 }
 
+function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'errorCode' | 'upstreamStatus' | 'upstreamMessage' | 'message' | 'missingEnv' | 'missingEnvKeys'>) {
+  const errorCode = result.errorCode ?? ''
+  const upstreamMessage = result.upstreamMessage ?? ''
+  const message = result.message ?? ''
+  const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
+  const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
+  if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
+  if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+  if (result.upstreamStatus === 402 || result.upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
+  if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
+  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED') return 'asset_persistence_error'
+  if (/canvas|save/.test(haystack)) return 'canvas_save_error'
+  return errorCode ? 'generation_failed' : ''
+}
+
 function formatGenerateError(result: GenerateApiResult) {
   const message = normalizeGenerateErrorMessage(result)
   const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
+  const visibleCode = normalizeVisibleGenerateErrorCode(result)
   return [
+    visibleCode,
     result.errorCode,
     message,
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
@@ -3434,6 +3451,166 @@ export function VisualCanvasWorkspace({
     scheduleCanvasSave(0)
   }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
 
+  const handleRegenerateNodeFromPrompt = useCallback((node: VisualCanvasNode) => {
+    if (node.kind !== 'image' && node.kind !== 'video') return
+    const prompt = node.prompt?.trim()
+    const providerStatusEndpoint = `/api/generate/${node.kind}`
+    const fallbackProviderId = node.providerId || node.model
+    const failNode = (result: GenerateApiResult, providerId: string) => {
+      const errMsg = formatGenerateError(result)
+      handleNodePatch(node.id, {
+        status: 'error',
+        errorMessage: errMsg,
+        resultPreview: node.kind === 'image' ? '图片生成失败' : '视频生成失败',
+        outputLabel: node.kind === 'image' ? '图片生成失败' : '视频生成失败',
+        metadataJson: node.kind === 'image'
+          ? imageErrorMetadata(node, result, providerId)
+          : videoErrorMetadata(node, result, providerId),
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
+      showCanvasFeedback(errMsg)
+    }
+
+    if (!prompt) {
+      failNode({
+        success: false,
+        providerId: fallbackProviderId,
+        mode: 'unavailable',
+        status: 'failed',
+        errorCode: 'PROMPT_REQUIRED',
+        message: '该节点没有原 Prompt，不能重新生成。',
+      }, fallbackProviderId)
+      return
+    }
+
+    void (async () => {
+      try {
+        const statusResponse = await fetch(providerStatusEndpoint, {
+          method: 'GET',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        })
+        const statusData = await statusResponse.json().catch(() => ({})) as {
+          success?: boolean
+          message?: string
+          errorCode?: string
+          defaultProviderId?: string
+          providers?: Array<ImageProviderStatusInfo>
+        }
+        const providerId = fallbackProviderId || statusData.defaultProviderId || ''
+        const provider = statusData.providers?.find((item) => item.providerId === providerId)
+          ?? statusData.providers?.find((item) => item.providerId === statusData.defaultProviderId)
+        const selectedProviderId = provider?.providerId || providerId
+        if (!statusResponse.ok || statusData.success === false) {
+          failNode({
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'unavailable',
+            status: 'failed',
+            errorCode: statusData.errorCode || 'PROVIDER_STATUS_FAILED',
+            message: statusData.message || 'Provider health check 失败。',
+          }, selectedProviderId)
+          return
+        }
+        if (!provider?.available) {
+          const missingEnv = provider?.missingEnvKeys?.length ? provider.missingEnvKeys : provider?.missingEnv
+          failNode({
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'unavailable',
+            status: 'not-configured',
+            errorCode: 'PROVIDER_NOT_CONFIGURED',
+            message: provider?.reason || provider?.status || 'Provider 不可用。',
+            missingEnv,
+            missingEnvKeys: missingEnv,
+          }, selectedProviderId)
+          return
+        }
+        const confirmed = window.confirm(`Provider health check 已通过。继续会真实调用 ${node.kind} 生成接口并可能消耗额度，是否继续？`)
+        if (!confirmed) {
+          showCanvasFeedback('已完成 health check；用户取消真实生成。')
+          return
+        }
+
+        handleNodePatch(node.id, {
+          status: 'generating',
+          errorMessage: undefined,
+          resultPreview: node.kind === 'image' ? '图片生成中...' : '视频生成中...',
+          outputLabel: node.kind === 'image' ? '图片生成中' : '视频生成中',
+        })
+        const nodeType = node.kind === 'image' ? 'image' : 'video'
+        const result = await callGenerationApi(
+          nodeType,
+          selectedProviderId,
+          prompt,
+          { ratio: node.ratio, aspectRatio: node.ratio },
+          node.id,
+          undefined,
+          projectId,
+          workflowId,
+        )
+
+        if (node.kind === 'video' && result.async && result.taskId) {
+          handleNodePatch(node.id, {
+            status: 'running',
+            resultPreview: '视频任务已提交，正在生成中',
+            outputLabel: '视频生成中',
+            errorMessage: undefined,
+            metadataJson: videoSuccessMetadata(node, result, selectedProviderId),
+          })
+          flushLocalSnapshot()
+          scheduleCanvasSave(0)
+          showCanvasFeedback(`已提交异步生成任务：${result.taskId}`)
+          return
+        }
+
+        if (!result.success) {
+          failNode(result, selectedProviderId)
+          return
+        }
+
+        const resultText = getGeneratedText(result)
+        const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
+        const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
+        const successMetadata = node.kind === 'image'
+          ? imageSuccessMetadata(node, result, selectedProviderId)
+          : videoSuccessMetadata(node, result, selectedProviderId)
+        const generatedAssetId = getNodeAssetId({ ...node, metadataJson: successMetadata })
+        handleNodePatch(node.id, {
+          status: 'done',
+          resultText,
+          resultPreview: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultText?.slice(0, 200) ?? '生成完成',
+          outputLabel: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : '生成完成',
+          resultImageUrl: resultImageUrl ?? node.resultImageUrl,
+          resultVideoUrl: resultVideoUrl ?? node.resultVideoUrl,
+          ...(generatedAssetId ? { assetId: generatedAssetId } : {}),
+          errorMessage: undefined,
+          metadataJson: {
+            ...successMetadata,
+            regeneratedFromPromptAt: new Date().toISOString(),
+          },
+          preview: resultVideoUrl
+            ? { type: 'remote-video', url: resultVideoUrl, poster: result.result?.previewUrl, licenseType: 'original', attribution: 'Generated by configured video provider' }
+            : node.preview,
+        })
+        flushLocalSnapshot()
+        scheduleCanvasSave(0)
+        showCanvasFeedback(resultImageUrl || resultVideoUrl ? '已用原 Prompt 重新生成并写回节点。' : '重新生成完成。')
+      } catch (error) {
+        failNode({
+          success: false,
+          providerId: fallbackProviderId,
+          mode: 'unavailable',
+          status: 'failed',
+          errorCode: 'CARD_REGENERATE_FAILED',
+          message: error instanceof Error ? error.message : '节点卡片重新生成失败。',
+        }, fallbackProviderId)
+      }
+    })()
+  }, [flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+
   const assetResolveKey = useMemo(() => nodes
     .filter((node) => node.kind === 'image' || node.kind === 'video')
     .map((node) => {
@@ -4910,12 +5087,24 @@ export function VisualCanvasWorkspace({
       const definitivelyUnavailable = (selectedProviderStatus === 'not-configured' || selectedProviderStatus === 'coming-soon' || selectedProviderStatus === 'disabled') && imageProviderStatusMap.size > 0
       if (definitivelyUnavailable) {
         const errMsg = imageProviderUnavailableMessage(normalizedPromptModel, selectedProviderInfo)
+        const missingEnv = selectedProviderInfo?.missingEnvKeys?.length ? selectedProviderInfo.missingEnvKeys : selectedProviderInfo?.missingEnv
+        const result: GenerateApiResult = {
+          success: false,
+          providerId: normalizedPromptModel,
+          mode: 'unavailable',
+          status: 'not-configured',
+          errorCode: 'PROVIDER_NOT_CONFIGURED',
+          message: errMsg,
+          missingEnv,
+          missingEnvKeys: missingEnv,
+        }
         setDialogError(errMsg)
         handleNodePatch(nodeSnapshot.id, {
           status: 'error',
           errorMessage: errMsg,
           resultPreview: '请先选择并配置可用图片 Provider。',
           outputLabel: '图片 Provider 未配置',
+          metadataJson: imageErrorMetadata(nodeSnapshot, result, normalizedPromptModel),
         })
         showCanvasFeedback(errMsg)
         return
@@ -4929,12 +5118,24 @@ export function VisualCanvasWorkspace({
       const definitivelyUnavailable = (selectedProviderStatus === 'not-configured' || selectedProviderStatus === 'coming-soon' || selectedProviderStatus === 'disabled') && videoProviderStatusMap.size > 0
       if (definitivelyUnavailable) {
         const errMsg = videoProviderUnavailableMessage(selectedProviderInfo)
+        const missingEnv = selectedProviderInfo?.missingEnvKeys?.length ? selectedProviderInfo.missingEnvKeys : selectedProviderInfo?.missingEnv
+        const result: GenerateApiResult = {
+          success: false,
+          providerId: generationProviderId,
+          mode: 'unavailable',
+          status: 'not-configured',
+          errorCode: 'PROVIDER_NOT_CONFIGURED',
+          message: errMsg,
+          missingEnv,
+          missingEnvKeys: missingEnv,
+        }
         setDialogError(errMsg)
         handleNodePatch(nodeSnapshot.id, {
           status: 'error',
           errorMessage: errMsg,
           resultPreview: '请先选择并配置可用视频 Provider。',
           outputLabel: '视频 Provider 未配置',
+          metadataJson: videoErrorMetadata(nodeSnapshot, result, generationProviderId),
         })
         showCanvasFeedback(errMsg)
         return
@@ -6333,6 +6534,7 @@ export function VisualCanvasWorkspace({
                 onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
                 onCreateStableCopy={() => createStableCopyFromExpiredNode(node)}
                 onRecoverMedia={handleMediaRecoveryPatch}
+                onRegenerateFromPrompt={() => handleRegenerateNodeFromPrompt(node)}
                 enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
                 onOpenSkillPanel={handleOpenSkillPanel}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}

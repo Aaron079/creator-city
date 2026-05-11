@@ -59,6 +59,9 @@ check('10. node position is refresh-persistent', workspace.includes('writeUnifie
 
 check('11. cursor grab/grabbing', css.includes('cursor: grab') && css.includes('cursor: grabbing'), 'CSS exposes draggable affordance')
 check('12. button move threshold suppresses accidental click', nodeCard.includes('suppressInteractiveClickRef') && nodeCard.includes('movedBeyondClickThreshold'), 'button press/move beyond threshold suppresses click')
+check('13. failed node card exposes direct diagnostics', nodeCard.includes('复制该节点诊断 JSON') && nodeCard.includes('复制全部 URL 候选') && nodeCard.includes('failedRenderUrl') && nodeCard.includes('attemptedUrls'), 'node card exposes copyable per-node diagnostic JSON and URL candidates')
+check('14. failed node card exposes recovery actions', nodeCard.includes('立即恢复资产') && nodeCard.includes('重新 resolve') && nodeCard.includes('用原 Prompt 重新生成') && workspace.includes('handleRegenerateNodeFromPrompt'), 'failed cards can recover, re-resolve, or regenerate without using the P0 panel')
+check('15. media tag onError records attempted URL', nodeCard.includes('appendRenderFailure') && nodeCard.includes('failedRenderReason') && nodeCard.includes('lastRenderFailureAt'), 'img/video onError writes failed render URL metadata and tries the next candidate')
 
 console.log('\n=== Canvas Drag Config Audit ===\n')
 console.log(`Canvas: ${usesReactFlow ? 'ReactFlow' : 'custom'}`)
@@ -68,7 +71,8 @@ console.log('Drag starts: CanvasNodeCard root onPointerDown -> handleNodeDragSta
 console.log('Drag moves: window pointermove -> handleNodePatch({ x, y })')
 console.log('Drag stops: window pointerup/pointercancel -> flushLocalSnapshot + scheduleCanvasSave(0)')
 console.log('Node drag area: card root, border, header, blank, preview, and error surfaces')
-console.log('Nodrag controls: buttons, inputs, textarea, select, links, connection handles, dialogs, and data-no-node-drag overlays\n')
+console.log('Nodrag controls: buttons, inputs, textarea, select, links, connection handles, dialogs, and data-no-node-drag overlays')
+console.log('Failed card actions: copy node diagnostics, copy URL candidates, recover, re-resolve, regenerate\n')
 
 for (const item of checks) {
   console.log(`${item.pass ? '✓' : '✗'} ${item.label}: ${item.detail}`)

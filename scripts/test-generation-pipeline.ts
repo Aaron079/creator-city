@@ -147,6 +147,7 @@ async function main() {
   console.log('\n--- error transparency contract ---')
   const { readFileSync } = await import('fs')
   const workspace = readFileSync('/Users/aaron/creator-city/apps/web/src/components/create/VisualCanvasWorkspace.tsx', 'utf8')
+  const nodeCard = readFileSync('/Users/aaron/creator-city/apps/web/src/components/create/CanvasNodeCard.tsx', 'utf8')
   const imageRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/image/route.ts', 'utf8')
   const videoRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/video/route.ts', 'utf8')
   const persistLib = readFileSync('/Users/aaron/creator-city/apps/web/src/lib/assets/persist-generated-media.ts', 'utf8')
@@ -160,6 +161,13 @@ async function main() {
     ['provider download failure keeps upstream status', persistLib.includes('downloaded.status || undefined')],
     ['OSS upload failure has explicit code', persistLib.includes('MEDIA_UPLOAD_FAILED')],
     ['Asset create failure has explicit code', persistLib.includes('MEDIA_ASSET_CREATE_FAILED')],
+    ['frontend normalizes provider auth errors', workspace.includes('provider_auth_error') && nodeCard.includes('provider_auth_error')],
+    ['frontend normalizes provider quota/billing errors', workspace.includes('provider_quota_or_billing_error') && nodeCard.includes('provider_quota_or_billing_error')],
+    ['frontend normalizes OSS upload errors', workspace.includes('oss_upload_error') && nodeCard.includes('oss_upload_error')],
+    ['frontend normalizes Asset persistence errors', workspace.includes('asset_persistence_error') && nodeCard.includes('asset_persistence_error')],
+    ['frontend normalizes Canvas save errors', workspace.includes('canvas_save_error') && nodeCard.includes('canvas_save_error')],
+    ['failed media cards expose direct diagnostic JSON copy', nodeCard.includes('复制该节点诊断 JSON') && nodeCard.includes('MediaDiagnosticPayload')],
+    ['failed media cards expose regenerate action', nodeCard.includes('用原 Prompt 重新生成') && workspace.includes('handleRegenerateNodeFromPrompt')],
   ] as const
   for (const [label, ok] of contracts) {
     console.log(`  ${ok ? '[OK]' : '[FAIL]'} ${label}`)
