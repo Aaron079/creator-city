@@ -98,11 +98,33 @@ function stringParam(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+function summarizeInputUrl(url?: string) {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    return {
+      protocol: parsed.protocol.replace(':', ''),
+      host: parsed.host,
+      pathnameTail: pathParts.slice(-2).join('/'),
+      hasQuery: Boolean(parsed.search),
+    }
+  } catch {
+    return { kind: url.startsWith('data:') ? 'data-url' : 'non-url', length: url.length }
+  }
+}
+
 function normalizeSeedanceRouteAspectRatio(value?: string) {
   const ratio = String(value || '').trim().toLowerCase()
   if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1') return ratio
   if (ratio === '3:4' || ratio === '4:5') return '9:16'
+  if (ratio === '4:3' || ratio === '21:9' || ratio === 'adaptive') return '16:9'
   return '16:9'
+}
+
+function isSeedanceRouteAspectRatioValid(value?: string) {
+  if (!value) return true
+  return ['16:9', '9:16', '1:1', '3:4', '4:5', '4:3', '21:9', 'adaptive'].includes(value.trim().toLowerCase())
 }
 
 function normalizeSeedanceRouteDuration(value?: number) {
@@ -123,6 +145,7 @@ function normalizeSeedanceRouteResolution(value?: string) {
 function validateVideoInput(args: {
   prompt: string
   model?: string | null
+  requestedAspectRatio?: string
   requestedDuration?: number
   requestedResolution?: string
 }) {
@@ -130,6 +153,7 @@ function validateVideoInput(args: {
   const invalidFields: string[] = []
   if (!args.prompt.trim()) missingFields.push('prompt')
   if (!args.model?.trim()) missingFields.push('model')
+  if (args.requestedAspectRatio && !isSeedanceRouteAspectRatioValid(args.requestedAspectRatio)) invalidFields.push('aspectRatio')
   if (args.requestedDuration !== undefined && (!Number.isFinite(args.requestedDuration) || args.requestedDuration < 1 || args.requestedDuration > 60)) invalidFields.push('duration')
   if (args.requestedResolution && !normalizeSeedanceRouteResolution(args.requestedResolution)) invalidFields.push('resolution')
   if (!missingFields.length && !invalidFields.length) return { ok: true as const }
@@ -403,6 +427,7 @@ export async function POST(request: NextRequest) {
     const videoInputValidation = validateVideoInput({
       prompt,
       model: providerRow.model,
+      requestedAspectRatio,
       requestedDuration,
       requestedResolution,
     })
@@ -423,7 +448,7 @@ export async function POST(request: NextRequest) {
           model: providerRow.model,
           promptChars: prompt.length,
           hasImageUrl: Boolean(imageUrl),
-          imageUrl,
+          imageUrl: summarizeInputUrl(imageUrl),
           requestedDuration,
           duration,
           requestedAspectRatio,
@@ -451,7 +476,7 @@ export async function POST(request: NextRequest) {
           model: providerRow.model,
           promptChars: prompt.length,
           hasImageUrl: Boolean(imageUrl),
-          imageUrl,
+          imageUrl: summarizeInputUrl(imageUrl),
           requestedDuration,
           duration,
           requestedAspectRatio,

@@ -521,10 +521,11 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       success: false,
       providerId,
       model,
-      errorCode: 'SEEDANCE_RESPONSE_UNRECOGNIZED',
-      message: 'Seedance 创建任务返回结构无法识别，请查看 upstreamMessage。',
+      errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+      message: 'Seedance 创建任务成功返回，但未找到 videoUrl 或 taskId，请查看 upstreamMessage。',
       upstreamStatus: response.status,
       upstreamMessage: upstreamMessage(data, raw),
+      requestId: response.headers.get('x-request-id') ?? undefined,
       submittedInput,
       providerResponse: providerResponseSummary(data),
     }

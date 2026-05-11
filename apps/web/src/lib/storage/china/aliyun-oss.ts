@@ -11,15 +11,33 @@ import type {
 } from './types'
 
 const REQUIRED = [
-  'ALIYUN_ACCESS_KEY_ID',
-  'ALIYUN_ACCESS_KEY_SECRET',
-  'ALIYUN_OSS_BUCKET',
-  'ALIYUN_OSS_REGION',
-  'ALIYUN_OSS_ENDPOINT',
+  { name: 'ALIYUN_OSS_ACCESS_KEY_ID', aliases: ['ALIYUN_OSS_ACCESS_KEY_ID', 'ALIYUN_ACCESS_KEY_ID'] },
+  { name: 'ALIYUN_OSS_ACCESS_KEY_SECRET', aliases: ['ALIYUN_OSS_ACCESS_KEY_SECRET', 'ALIYUN_ACCESS_KEY_SECRET'] },
+  { name: 'ALIYUN_OSS_BUCKET', aliases: ['ALIYUN_OSS_BUCKET'] },
+  { name: 'ALIYUN_OSS_REGION', aliases: ['ALIYUN_OSS_REGION'] },
+  { name: 'ALIYUN_OSS_ENDPOINT', aliases: ['ALIYUN_OSS_ENDPOINT'] },
 ] as const
 
+function hasEnv(name: string) {
+  return Boolean(process.env[name]?.trim())
+}
+
+function envValue(...names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim()
+    if (value) return value
+  }
+  return ''
+}
+
+function missingRequiredAliyunEnv() {
+  return REQUIRED
+    .filter((entry) => !entry.aliases.some(hasEnv))
+    .map((entry) => entry.name)
+}
+
 export function getAliyunOssConfiguration(): ChinaStorageConfiguration {
-  const missing = REQUIRED.filter((key) => !process.env[key])
+  const missing = missingRequiredAliyunEnv()
   return {
     provider: 'aliyun-oss',
     configured: missing.length === 0,
@@ -43,8 +61,8 @@ function requireAliyunOss() {
 function getAliyunClient() {
   requireAliyunOss()
   return new OSS({
-    accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID!,
-    accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET!,
+    accessKeyId: envValue('ALIYUN_OSS_ACCESS_KEY_ID', 'ALIYUN_ACCESS_KEY_ID'),
+    accessKeySecret: envValue('ALIYUN_OSS_ACCESS_KEY_SECRET', 'ALIYUN_ACCESS_KEY_SECRET'),
     bucket: process.env.ALIYUN_OSS_BUCKET!,
     region: process.env.ALIYUN_OSS_REGION!,
     endpoint: process.env.ALIYUN_OSS_ENDPOINT,
@@ -57,8 +75,8 @@ function getAliyunClient() {
 function getAliyunSigningClient() {
   requireAliyunOss()
   return new OSS({
-    accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID!,
-    accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET!,
+    accessKeyId: envValue('ALIYUN_OSS_ACCESS_KEY_ID', 'ALIYUN_ACCESS_KEY_ID'),
+    accessKeySecret: envValue('ALIYUN_OSS_ACCESS_KEY_SECRET', 'ALIYUN_ACCESS_KEY_SECRET'),
     bucket: process.env.ALIYUN_OSS_BUCKET!,
     region: process.env.ALIYUN_OSS_REGION!,
     // No custom endpoint — falls back to public oss-{region}.aliyuncs.com

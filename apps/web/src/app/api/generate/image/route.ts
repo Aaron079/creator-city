@@ -214,6 +214,8 @@ export async function POST(request: NextRequest) {
         model: '',
         mode: 'unavailable',
         status: 'not-configured',
+        missingEnv: ['VOLCENGINE_SEEDREAM_MODEL'],
+        missingEnvKeys: ['VOLCENGINE_SEEDREAM_MODEL'],
       }, { status: 200 })
     }
 

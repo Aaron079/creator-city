@@ -53,6 +53,7 @@ import {
 import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
+import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
 import { buildStoryboardFromCanvas } from '@/lib/storyboard'
@@ -613,6 +614,22 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
+function summarizeUrlForDiagnostics(url?: string) {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    return {
+      protocol: parsed.protocol.replace(':', ''),
+      host: parsed.host,
+      pathnameTail: pathParts.slice(-2).join('/'),
+      hasQuery: Boolean(parsed.search),
+    }
+  } catch {
+    return { kind: url.startsWith('data:') ? 'data-url' : 'non-url', length: url.length }
+  }
+}
+
 function mediaPersistenceRecord(metadata: Record<string, unknown>) {
   return metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
     ? metadata.mediaPersistence as Record<string, unknown>
@@ -656,6 +673,8 @@ function nodeParamValue(node: VisualCanvasNode, key: string) {
 }
 
 function buildRegenerationParams(node: VisualCanvasNode) {
+  const negativePrompt = stringValue(nodeParamValue(node, 'negativePrompt'))
+    || stringValue(nodeParamValue(node, 'negative_prompt'))
   const aspectRatio = stringValue(nodeParamValue(node, 'aspectRatio'))
     || stringValue(nodeParamValue(node, 'ratio'))
     || stringValue(node.ratio)
@@ -669,13 +688,26 @@ function buildRegenerationParams(node: VisualCanvasNode) {
     aspectRatio,
     ...(node.kind === 'video' ? { duration: duration ?? 5 } : duration ? { duration } : {}),
     ...(resolution ? { resolution, size: resolution } : {}),
+    ...(negativePrompt ? { negativePrompt } : {}),
   } satisfies Record<string, string | number | boolean | undefined>
 }
 
+function isProviderAccessibleUrl(url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false
+  // Private OSS URLs without signing params can't be read by third-party providers
+  if (/aliyuncs\.com|oss-cn-/i.test(url) && !url.includes('Expires=') && !url.includes('x-oss-signature')) return false
+  return true
+}
+
 function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: string; type: string; url?: string }> | undefined {
-  const imageUrl = stringValue(nodeParamValue(node, 'imageUrl'))
-    || stringValue(nodeParamValue(node, 'sourceImageUrl'))
-    || stringValue(nodeParamValue(node, 'firstFrameUrl'))
+  const candidates = [
+    stringValue(nodeParamValue(node, 'imageUrl')),
+    stringValue(nodeParamValue(node, 'sourceImageUrl')),
+    stringValue(nodeParamValue(node, 'firstFrameUrl')),
+    stringValue(nodeParamValue(node, 'referenceImageUrl')),
+    stringValue(nodeParamValue(node, 'referenceUrl')),
+  ].filter((url): url is string => Boolean(url) && isProviderAccessibleUrl(url))
+  const imageUrl = candidates[0]
   if (!imageUrl) return undefined
   return [{ id: `${node.id}-reference-image`, type: 'image', url: imageUrl }]
 }
@@ -1843,6 +1875,7 @@ export function VisualCanvasWorkspace({
   const [sceneEditInstructionsCopied, setSceneEditInstructionsCopied] = useState(false)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
+  const [generationHealth, setGenerationHealth] = useState<GenerationHealthResponse | null>(null)
   const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -1972,6 +2005,20 @@ export function VisualCanvasWorkspace({
       devPerf('providers', 'end')
     }
   }, [liveStatusLoading])
+
+  useEffect(() => {
+    let disposed = false
+    fetch('/api/generation/health', { credentials: 'include', cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: GenerationHealthResponse | null) => {
+        if (disposed || !data) return
+        setGenerationHealth(data)
+      })
+      .catch(() => undefined)
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   useEffect(() => {
     let disposed = false
@@ -3714,7 +3761,7 @@ export function VisualCanvasWorkspace({
     const fallbackProviderId = providerForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
     const initialRegenerationParams = buildRegenerationParams(node)
-    const initialRegenerationInputAssets = node.kind === 'video' ? buildRegenerationInputAssets(node) : undefined
+    const initialRegenerationInputAssets = buildRegenerationInputAssets(node)
     const failNode = (result: GenerateApiResult, providerId: string) => {
       const failureResult = {
         ...result,
@@ -3772,10 +3819,16 @@ export function VisualCanvasWorkspace({
           defaultProviderId?: string
           providers?: Array<ImageProviderStatusInfo>
         }
-        const providerId = fallbackProviderId
+        const defaultProviderId = statusData.defaultProviderId
+          || statusData.providers?.find((item) => item.available)?.providerId
+          || ''
+        const providerId = fallbackProviderId || defaultProviderId
         const provider = statusData.providers?.find((item) => item.providerId === providerId)
+          ?? statusData.providers?.find((item) => item.providerId === defaultProviderId)
         const selectedProviderId = provider?.providerId || providerId
         const selectedModel = provider?.model || fallbackModel || selectedProviderId
+        const providerMissingEnv = provider?.missingEnvKeys?.length ? provider.missingEnvKeys : provider?.missingEnv
+        const defaultMissingEnv = statusData.providers?.flatMap((item) => item.missingEnvKeys?.length ? item.missingEnvKeys : item.missingEnv ?? []) ?? []
         const submittedInputBase = {
           nodeId: node.id,
           kind: node.kind,
@@ -3785,7 +3838,7 @@ export function VisualCanvasWorkspace({
           aspectRatio: typeof initialRegenerationParams.aspectRatio === 'string' ? initialRegenerationParams.aspectRatio : null,
           duration: typeof initialRegenerationParams.duration === 'number' ? initialRegenerationParams.duration : null,
           resolution: typeof initialRegenerationParams.resolution === 'string' ? initialRegenerationParams.resolution : null,
-          inputAssets: initialRegenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: asset.url })) ?? null,
+          inputAssets: initialRegenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })) ?? null,
         }
         if (!selectedProviderId) {
           failNode({
@@ -3793,9 +3846,10 @@ export function VisualCanvasWorkspace({
             providerId: '',
             mode: 'unavailable',
             status: 'failed',
-            errorCode: 'MISSING_GENERATION_INPUT',
-            message: '该节点缺少重新生成所需字段：provider/model。',
-            missingFields: ['provider', 'model'],
+            errorCode: 'PROVIDER_NOT_CONFIGURED',
+            message: '当前类型没有可用默认 Provider，请先配置生成环境变量。',
+            missingEnv: defaultMissingEnv,
+            missingEnvKeys: defaultMissingEnv,
             submittedInput: submittedInputBase,
           }, '')
           return
@@ -3828,20 +3882,25 @@ export function VisualCanvasWorkspace({
           return
         }
         if (!selectedModel) {
+          const modelMissingEnv = selectedProviderId === 'volcengine-seedream-image'
+            ? ['VOLCENGINE_SEEDREAM_MODEL']
+            : selectedProviderId === 'volcengine-seedance-video'
+              ? ['VOLCENGINE_SEEDANCE_MODEL']
+              : providerMissingEnv
           failNode({
             success: false,
             providerId: selectedProviderId,
             mode: 'unavailable',
             status: 'failed',
-            errorCode: 'MISSING_GENERATION_INPUT',
-            message: '该节点缺少重新生成所需字段：model。',
-            missingFields: ['model'],
+            errorCode: 'PROVIDER_NOT_CONFIGURED',
+            message: 'Provider 模型环境变量未配置。',
+            missingEnv: modelMissingEnv,
+            missingEnvKeys: modelMissingEnv,
             submittedInput: submittedInputBase,
           }, selectedProviderId)
           return
         }
         if (!provider?.available) {
-          const missingEnv = provider?.missingEnvKeys?.length ? provider.missingEnvKeys : provider?.missingEnv
           failNode({
             success: false,
             providerId: selectedProviderId,
@@ -3850,8 +3909,8 @@ export function VisualCanvasWorkspace({
             errorCode: 'PROVIDER_NOT_CONFIGURED',
             message: provider?.reason || provider?.status || 'Provider 不可用。',
             model: selectedModel,
-            missingEnv,
-            missingEnvKeys: missingEnv,
+            missingEnv: providerMissingEnv,
+            missingEnvKeys: providerMissingEnv,
             submittedInput: submittedInputBase,
           }, selectedProviderId)
           return
@@ -3883,7 +3942,7 @@ export function VisualCanvasWorkspace({
               providerId: selectedProviderId,
               model: selectedModel,
               params: regenerationParams,
-              inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: asset.url })),
+              inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })),
               nodeId: node.id,
               requestedAt: new Date().toISOString(),
             },
@@ -6941,6 +7000,7 @@ export function VisualCanvasWorkspace({
                 onOpenCreativeAssets={() => openCreativeAssets(node.id)}
                 onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
                 onAddToStoryboard={() => handleAddNodeToDirector(node)}
+                generationHealth={generationHealth}
               />
             </div>
           ))}
@@ -7018,6 +7078,7 @@ export function VisualCanvasWorkspace({
         projectId={projectId}
         workflowId={workflowId}
         nodes={nodes}
+        generationHealth={generationHealth}
         onClose={() => setP0MediaDebugOpen(false)}
         onPatchNode={handleMediaRecoveryPatch}
       />

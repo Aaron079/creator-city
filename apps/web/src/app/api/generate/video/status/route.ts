@@ -86,6 +86,15 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await getSeedanceVideoStatus(taskId)
+  const submittedInput = result.submittedInput ?? {
+    providerId,
+    taskId,
+    projectId: projectId ?? null,
+    workflowId: workflowId ?? null,
+    nodeId: nodeId ?? null,
+    promptChars: prompt?.length ?? 0,
+    compiledPromptChars: compiledPrompt?.length ?? 0,
+  }
   const generationJob = await db.generationJob.findFirst({
     where: {
       userId: currentUser.id,
@@ -119,7 +128,7 @@ export async function GET(request: NextRequest) {
       upstreamMessage: result.upstreamMessage,
       rawCode: result.rawCode,
       requestId: result.requestId,
-      submittedInput: result.submittedInput,
+      submittedInput,
       providerResponse: result.providerResponse,
     }, { status: 200 })
   }
@@ -191,6 +200,9 @@ export async function GET(request: NextRequest) {
         assetIntelligence,
         model: result.model,
         message: result.message,
+        requestId: result.requestId,
+        submittedInput,
+        providerResponse: result.providerResponse,
         result: {
           videoUrl: persistence.stableUrl,
           previewUrl: persistence.stableUrl,
@@ -209,6 +221,8 @@ export async function GET(request: NextRequest) {
             signedUrlAvailable: persistence.signedUrlAvailable,
             proxyAvailable: persistence.proxyAvailable,
             originalProviderVideoUrl: result.videoUrl,
+            submittedInput,
+            providerResponse: result.providerResponse,
             mediaPersistence: persistence,
             assetIntelligence,
           },
@@ -233,7 +247,7 @@ export async function GET(request: NextRequest) {
       assetIntelligence,
       model: result.model,
       requestId: result.requestId,
-      submittedInput: result.submittedInput,
+      submittedInput,
       providerResponse: result.providerResponse,
     }, { status: 200 })
   }

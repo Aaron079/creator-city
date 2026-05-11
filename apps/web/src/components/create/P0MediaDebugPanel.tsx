@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
 import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
+import type { GenerationHealthResponse, GenerationHealthSection } from '@/lib/generation/health-types'
 
 type AssetResolveResult = {
   success?: boolean
@@ -43,6 +44,7 @@ type ProviderStatusResponse = {
     missingEnvKeys?: string[]
     reason?: string
     status?: string
+    model?: string
   }>
   defaultProviderId?: string | null
   message?: string
@@ -63,6 +65,11 @@ type GenerateResponseShape = {
   upstreamMessage?: string
   rawCode?: string
   requestId?: string
+  missingEnv?: string[]
+  missingEnvKeys?: string[]
+  missingFields?: string[]
+  submittedInput?: unknown
+  providerResponse?: unknown
   resultImageUrl?: string
   resultVideoUrl?: string
   imageUrl?: string
@@ -86,6 +93,7 @@ interface P0MediaDebugPanelProps {
   projectId: string
   workflowId: string
   nodes: VisualCanvasNode[]
+  generationHealth?: GenerationHealthResponse | null
   onClose: () => void
   onPatchNode: (nodeId: string, patch: Partial<VisualCanvasNode>) => void
 }
@@ -100,6 +108,48 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
+function nullableString(value: unknown) {
+  const text = stringValue(value)
+  return text || null
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.replace(/s$/i, ''))
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function stringArrayValue(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : []
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))]
+}
+
+function summarizeUrlForDiagnostics(url?: string) {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    return {
+      protocol: parsed.protocol.replace(':', ''),
+      host: parsed.host,
+      pathnameTail: pathParts.slice(-2).join('/'),
+      hasQuery: Boolean(parsed.search),
+    }
+  } catch {
+    return { kind: url.startsWith('data:') ? 'data-url' : 'non-url', length: url.length }
+  }
+}
+
 function nestedRecord(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -108,6 +158,90 @@ function nestedRecord(value: unknown) {
 
 function mediaPersistenceRecord(metadata: Record<string, unknown>) {
   return nestedRecord(metadata.mediaPersistence)
+}
+
+function nodeParamValue(node: VisualCanvasNode, key: string) {
+  const nodeRecord = node as unknown as Record<string, unknown>
+  const metadata = recordValue(node.metadataJson)
+  const params = nestedRecord(metadata.params)
+  const generationParams = nestedRecord(metadata.generationParams)
+  const submittedInput = nestedRecord(metadata.submittedInput)
+  return metadata[key]
+    ?? params[key]
+    ?? generationParams[key]
+    ?? submittedInput[key]
+    ?? nodeRecord[key]
+}
+
+function buildRegenerationParams(node: VisualCanvasNode) {
+  const aspectRatio = stringValue(nodeParamValue(node, 'aspectRatio'))
+    || stringValue(nodeParamValue(node, 'ratio'))
+    || stringValue(node.ratio)
+    || '16:9'
+  const duration = numberValue(nodeParamValue(node, 'duration'))
+  const resolution = stringValue(nodeParamValue(node, 'resolution'))
+    || stringValue(nodeParamValue(node, 'quality'))
+    || stringValue(nodeParamValue(node, 'size'))
+  const negativePrompt = stringValue(nodeParamValue(node, 'negativePrompt'))
+    || stringValue(nodeParamValue(node, 'negative_prompt'))
+  return {
+    ratio: aspectRatio,
+    aspectRatio,
+    ...(node.kind === 'video' ? { duration: duration ?? 5 } : duration ? { duration } : {}),
+    ...(resolution ? { resolution, size: resolution } : {}),
+    ...(negativePrompt ? { negativePrompt } : {}),
+  } satisfies Record<string, string | number | boolean | undefined>
+}
+
+function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: string; type: string; url?: string }> | undefined {
+  const imageUrl = stringValue(nodeParamValue(node, 'imageUrl'))
+    || stringValue(nodeParamValue(node, 'sourceImageUrl'))
+    || stringValue(nodeParamValue(node, 'firstFrameUrl'))
+    || stringValue(nodeParamValue(node, 'referenceImageUrl'))
+    || stringValue(nodeParamValue(node, 'referenceUrl'))
+  if (!imageUrl) return undefined
+  return [{ id: `${node.id}-reference-image`, type: 'image', url: imageUrl }]
+}
+
+function providerForRegenerationNode(node: VisualCanvasNode) {
+  const metadata = recordValue(node.metadataJson)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  const submittedInput = nestedRecord(metadata.submittedInput)
+  const lastGenerationError = nestedRecord(metadata.lastGenerationError)
+  return stringValue(metadata.providerId)
+    || stringValue(metadata.provider)
+    || stringValue(metadata.sourceProvider)
+    || stringValue(mediaPersistence.providerId)
+    || stringValue(mediaPersistence.provider)
+    || stringValue(submittedInput.providerId)
+    || stringValue(lastGenerationError.providerId)
+    || stringValue(node.providerId)
+    || stringValue(node.model)
+}
+
+function modelForRegenerationNode(node: VisualCanvasNode) {
+  const metadata = recordValue(node.metadataJson)
+  const submittedInput = nestedRecord(metadata.submittedInput)
+  const lastGenerationError = nestedRecord(metadata.lastGenerationError)
+  return stringValue(metadata.model)
+    || stringValue(nodeParamValue(node, 'model'))
+    || stringValue(submittedInput.model)
+    || stringValue(lastGenerationError.model)
+    || stringValue(node.model)
+}
+
+function sanitizeDiagnosticValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeDiagnosticValue)
+  if (!value || typeof value !== 'object') return value
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (/secret|token|api[_-]?key|authorization|password|credential/i.test(key)) {
+      sanitized[key] = '[redacted]'
+      continue
+    }
+    sanitized[key] = sanitizeDiagnosticValue(nested)
+  }
+  return sanitized
 }
 
 function firstString(candidates: Array<[string, unknown]>) {
@@ -233,15 +367,17 @@ function storageKeyFailureReason(node: VisualCanvasNode) {
   return status ? `storageKey 存在，当前状态为 ${status}。` : 'storageKey 存在，但当前节点没有 resolvedUrl。'
 }
 
-function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: string) {
+function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: string, generationHealth: GenerationHealthResponse | null) {
   const metadata = recordValue(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
   const lastResolveResult = recordValue(metadata.p0LastResolveResult || metadata.p0LastRecoveryResult || metadata.assetResolveResult)
   const mediaRecoveryAudit = recordValue(metadata.mediaRecoveryAudit)
-  const lastGenerationError = recordValue(metadata.lastError)
+  const lastGenerationError = recordValue(metadata.lastGenerationError || metadata.lastError)
   const asset = getNodeAssetIdWithSource(node)
   const generationJob = getGenerationJobId(node)
   const current = currentDisplaySource(node)
+  const params = nestedRecord(metadata.params)
+  const generationParams = nestedRecord(metadata.generationParams)
   const resultImageUrl = stringValue(node.resultImageUrl) || stringValue(metadata.resultImageUrl)
   const resultVideoUrl = stringValue(node.resultVideoUrl) || stringValue(metadata.resultVideoUrl)
   const stableUrl = stringValue(metadata.stableUrl) || stringValue(mediaPersistence.stableUrl)
@@ -253,6 +389,22 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
   const storageKey = stringValue(metadata.storageKey) || stringValue(mediaPersistence.storageKey)
   const bucket = stringValue(metadata.bucket) || stringValue(mediaPersistence.bucket) || stringValue(lastResolveResult.bucket)
   const storageProvider = stringValue(metadata.storageProvider) || stringValue(mediaPersistence.storageProvider) || stringValue(lastResolveResult.storageProvider)
+  const model = stringValue(metadata.model) || stringValue(node.model)
+  const aspectRatio = stringValue(metadata.aspectRatio)
+    || stringValue(metadata.ratio)
+    || stringValue(params.aspectRatio)
+    || stringValue(params.ratio)
+    || stringValue(generationParams.aspectRatio)
+    || stringValue(generationParams.ratio)
+    || stringValue(node.ratio)
+  const duration = numberValue(metadata.duration) ?? numberValue(params.duration) ?? numberValue(generationParams.duration)
+  const resolution = stringValue(metadata.resolution)
+    || stringValue(params.resolution)
+    || stringValue(params.size)
+    || stringValue(params.quality)
+    || stringValue(generationParams.resolution)
+    || stringValue(generationParams.size)
+    || stringValue(generationParams.quality)
   const provider = stringValue(metadata.provider)
     || stringValue(metadata.sourceProvider)
     || stringValue(metadata.providerId)
@@ -261,10 +413,19 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     || node.providerId
     || node.model
   const resolvedUrl = stringValue(metadata.resolvedUrl) || stringValue(metadata.assetUrl) || stringValue(mediaPersistence.resolvedUrl)
+  const assetUrl = stringValue(metadata.assetUrl) || resolvedUrl
   const recoveryStatus = stringValue(metadata.recoveryStatus) || stringValue(metadata.assetResolveStatus) || stringValue(mediaPersistence.status)
-  const error = stringValue(metadata.error) || stringValue(node.errorMessage) || stringValue(mediaPersistence.message) || stringValue(mediaPersistence.errorCode)
+  const errorCode = stringValue(metadata.errorCode) || stringValue(lastGenerationError.errorCode) || stringValue(lastResolveResult.errorCode) || null
+  const errorMessage = stringValue(metadata.errorMessage)
+    || stringValue(lastGenerationError.message)
+    || stringValue(lastResolveResult.errorMessage)
+    || stringValue(lastResolveResult.message)
+    || stringValue(node.errorMessage)
+    || stringValue(mediaPersistence.message)
+  const error = stringValue(metadata.error) || errorMessage || stringValue(mediaPersistence.errorCode)
   const resolveBatchStatus = stringValue(lastResolveResult.status) || stringValue(lastResolveResult.recoveryStatus) || recoveryStatus
   const proxyFallbackUrl = stringValue(lastResolveResult.proxyFallbackUrl) || getProxiedMediaUrl(current.url)
+  const proxyUrl = stringValue(metadata.proxyUrl) || proxyFallbackUrl
   const proxyFallbackStatus = typeof lastResolveResult.proxyFallbackStatus === 'number'
     ? lastResolveResult.proxyFallbackStatus
     : typeof mediaRecoveryAudit.proxyStatus === 'number'
@@ -280,15 +441,38 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     : stringValue(lastResolveResult.whyUnrecoverable)
       || stringValue(lastResolveResult.storageKeyFailureReason)
       || (unrecoverable ? error || reason : reason)
+  const attemptedUrls = [
+    ...arrayValue(metadata.attemptedUrls),
+    ...arrayValue(lastResolveResult.attemptedUrls),
+  ]
+  const failedUrls = [
+    ...arrayValue(metadata.failedUrls),
+    ...arrayValue(lastResolveResult.failedUrls),
+    ...arrayValue(lastResolveResult.attemptedUrls),
+  ]
+  const missingEnv = uniqueStrings([
+    ...(generationHealth?.missingEnv ?? []),
+    ...stringArrayValue(lastGenerationError.missingEnv),
+    ...stringArrayValue(lastGenerationError.missingEnvKeys),
+    ...stringArrayValue(metadata.missingEnv),
+    ...stringArrayValue(metadata.missingEnvKeys),
+    ...stringArrayValue(lastResolveResult.missingEnv),
+    ...stringArrayValue(lastResolveResult.missingEnvKeys),
+  ])
   return {
     projectId,
     workflowId,
     nodeId: node.id,
     kind: node.kind,
+    title: nullableString(node.title),
     position: { x: node.x, y: node.y, width: node.width, height: node.height },
-    prompt: node.prompt,
+    prompt: nullableString(node.prompt),
     providerId: node.providerId || node.model,
     provider,
+    model: nullableString(model),
+    aspectRatio: nullableString(aspectRatio),
+    duration,
+    resolution: nullableString(resolution),
     assetId: asset.value || null,
     assetIdSource: asset.source || null,
     generationJobId: generationJob.value || null,
@@ -306,6 +490,9 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     stableUrl,
     originalUrl,
     currentUrl: current.url,
+    assetUrl: nullableString(assetUrl),
+    proxyUrl: nullableString(proxyUrl),
+    selectedRenderUrl: nullableString(current.url),
     currentUrlSource: current.source,
     storageKey,
     bucket,
@@ -320,17 +507,57 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     resolveBatchStatus: resolveBatchStatus || null,
     resolveBatchResult: Object.keys(lastResolveResult).length ? lastResolveResult : null,
     storageKeyFailureReason: reason,
+    attemptedUrls,
+    failedUrls,
     signedUrlGenerated,
     signedUrlError: stringValue(lastResolveResult.signedUrlError) || null,
     proxyFallbackUrl,
     proxyFallbackStatus,
     proxyFallbackOk: typeof proxyFallbackStatus === 'number' ? proxyFallbackStatus >= 200 && proxyFallbackStatus < 300 : null,
     whyUnrecoverable,
+    whyNotRecoverable: whyUnrecoverable,
+    canRecover: hasAnyRecoverableSource(node),
+    nextAction: stringValue(metadata.nextAction) || (unrecoverable ? 'regenerate_from_prompt' : 'manual_debug'),
+    isRecovering: metadata.isRecovering === true || metadata.recovering === true,
+    isRegenerating: metadata.isRegenerating === true || metadata.regenerating === true,
+    errorCode,
+    errorMessage: nullableString(errorMessage),
+    upstreamStatus: typeof lastGenerationError.upstreamStatus === 'number'
+      ? lastGenerationError.upstreamStatus
+      : typeof lastResolveResult.upstreamStatus === 'number'
+        ? lastResolveResult.upstreamStatus
+        : null,
+    upstreamMessage: nullableString(stringValue(lastGenerationError.upstreamMessage) || stringValue(lastResolveResult.upstreamMessage)),
+    requestId: nullableString(stringValue(lastGenerationError.requestId) || stringValue(lastResolveResult.requestId)),
+    regenerateInputPreview: sanitizeDiagnosticValue(metadata.regenerationInputPreview ?? null),
+    submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? metadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
+    generationHealth,
+    missingEnv,
     hasRecoverableSource: hasAnyRecoverableSource(node),
     urlCandidates: mediaSourcesForNode(node),
     lastGenerationError: Object.keys(lastGenerationError).length ? lastGenerationError : null,
     metadataJson: node.metadataJson,
   }
+}
+
+function shouldPromotePromptRegeneration(item: ReturnType<typeof buildDiagnostic>) {
+  const terminal = new Set([
+    'ASSET_NOT_FOUND_BY_NODE',
+    'asset_not_found_by_node',
+    'no_recovery_source',
+    'old_url_expired',
+    'provider_media_download_failed',
+  ])
+  const status = item.recoveryStatus || item.errorCode || item.resolveBatchStatus || ''
+  return Boolean(
+    item.prompt
+    && (
+      item.unrecoverable
+      || terminal.has(status)
+      || (!item.assetId && item.urlCandidates.length === 0)
+      || item.nextAction === 'regenerate_from_prompt'
+    ),
+  )
 }
 
 function patchFromResolved(node: VisualCanvasNode, result: AssetResolveResult): Partial<VisualCanvasNode> {
@@ -404,11 +631,40 @@ async function readJson(response: Response) {
   return await response.json().catch(() => ({})) as Record<string, unknown>
 }
 
+function healthTone(section?: GenerationHealthSection) {
+  if (!section) return 'border-white/10 bg-white/[0.04] text-white/60'
+  return section.ok
+    ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-50'
+    : 'border-amber-300/25 bg-amber-300/10 text-amber-50'
+}
+
+function HealthStatusItem({
+  label,
+  section,
+}: {
+  label: string
+  section?: GenerationHealthSection
+}) {
+  return (
+    <div className={`rounded-lg border p-3 ${healthTone(section)}`}>
+      <div className="text-white/48">{label}</div>
+      <div className="mt-1 font-mono text-xs">{section ? (section.ok ? 'ok' : 'missing_env') : 'not_loaded'}</div>
+      {section?.provider ? <div className="mt-1 break-all text-[11px] text-white/54">{section.provider}</div> : null}
+      {section && section.missingEnv.length > 0 ? (
+        <div className="mt-2 break-words text-[11px] leading-snug">
+          缺少：{section.missingEnv.join(', ')}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function P0MediaDebugPanel({
   open,
   projectId,
   workflowId,
   nodes,
+  generationHealth = null,
   onClose,
   onPatchNode,
 }: P0MediaDebugPanelProps) {
@@ -418,8 +674,8 @@ export function P0MediaDebugPanel({
 
   const mediaNodes = useMemo(() => nodes.filter((node) => node.kind === 'image' || node.kind === 'video'), [nodes])
   const diagnostics = useMemo(
-    () => mediaNodes.map((node) => buildDiagnostic(node, projectId, workflowId)),
-    [mediaNodes, projectId, workflowId],
+    () => mediaNodes.map((node) => buildDiagnostic(node, projectId, workflowId, generationHealth)),
+    [mediaNodes, projectId, workflowId, generationHealth],
   )
 
   if (!open) return null
@@ -530,7 +786,63 @@ export function P0MediaDebugPanel({
   async function regenerateFromPrompt(node: VisualCanvasNode) {
     if (node.kind !== 'image' && node.kind !== 'video') return
     const prompt = node.prompt?.trim()
-    if (!prompt) throw new Error('该节点没有原 Prompt，不能重新生成。')
+    const failGeneration = (result: Partial<GenerateResponseShape> & { message?: string; errorCode?: string }) => {
+      const code = result.errorCode || 'generation_failed'
+      const message = result.message || code
+      const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
+      const metadata = recordValue(node.metadataJson)
+      onPatchNode(node.id, {
+        status: 'error',
+        errorMessage: [
+          code,
+          message,
+          missingEnv?.length ? `missingEnv=${missingEnv.join(', ')}` : '',
+          result.upstreamStatus ? `upstreamStatus=${result.upstreamStatus}` : '',
+          result.upstreamMessage ? `upstreamMessage=${result.upstreamMessage}` : '',
+          result.requestId ? `requestId=${result.requestId}` : '',
+        ].filter(Boolean).join(' · '),
+        metadataJson: {
+          ...metadata,
+          recoveryStatus: code,
+          mediaRecoveryStatus: 'generation_failed',
+          nextAction: code === 'provider_env_missing' || code === 'missing_generation_input' ? 'manual_debug' : 'regenerate_from_prompt',
+          isRecovering: false,
+          recovering: false,
+          isRegenerating: false,
+          regenerating: false,
+          loading: false,
+          errorCode: code,
+          errorMessage: message,
+          upstreamStatus: result.upstreamStatus,
+          upstreamMessage: result.upstreamMessage,
+          requestId: result.requestId,
+          submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
+          lastGenerationError: {
+            errorCode: code,
+            rawErrorCode: result.rawCode || result.errorCode,
+            message,
+            upstreamStatus: result.upstreamStatus,
+            upstreamMessage: result.upstreamMessage,
+            requestId: result.requestId,
+            missingEnv,
+            missingFields: result.missingFields,
+            submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
+            providerResponse: sanitizeDiagnosticValue(result.providerResponse ?? null),
+            at: new Date().toISOString(),
+          },
+        },
+      })
+    }
+    if (!prompt) {
+      const result = {
+        errorCode: 'missing_generation_input',
+        message: 'missing_generation_input：缺少 prompt。',
+        missingFields: ['prompt'],
+        submittedInput: { nodeId: node.id, kind: node.kind, hasPrompt: false },
+      }
+      failGeneration(result)
+      throw new Error(result.message)
+    }
     const statusResponse = await fetch(`/api/generate/${node.kind}`, {
       method: 'GET',
       cache: 'no-store',
@@ -538,20 +850,50 @@ export function P0MediaDebugPanel({
       headers: { Accept: 'application/json' },
     })
     const statusData = await statusResponse.json().catch(() => ({})) as ProviderStatusResponse
-    const providerId = node.providerId || node.model || statusData.defaultProviderId || ''
+    const defaultProviderId = statusData.defaultProviderId
+      || statusData.providers?.find((item) => item.available)?.providerId
+      || ''
+    const providerId = providerForRegenerationNode(node) || defaultProviderId
     const provider = statusData.providers?.find((item) => item.providerId === providerId)
-      ?? statusData.providers?.find((item) => item.providerId === statusData.defaultProviderId)
+      ?? statusData.providers?.find((item) => item.providerId === defaultProviderId)
+    const selectedProviderId = provider?.providerId || providerId
+    const model = provider && 'model' in provider && typeof provider.model === 'string' && provider.model.trim()
+      ? provider.model.trim()
+      : modelForRegenerationNode(node)
+    const selectedModel = model || selectedProviderId
+    const params = buildRegenerationParams(node)
+    const inputAssets = buildRegenerationInputAssets(node)
+    const submittedInputBase = {
+      nodeId: node.id,
+      kind: node.kind,
+      promptChars: prompt.length,
+      providerId: selectedProviderId || null,
+      model: model || selectedModel || null,
+      aspectRatio: params.aspectRatio ?? null,
+      duration: params.duration ?? null,
+      resolution: params.resolution ?? null,
+      inputAssets: inputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })) ?? null,
+    }
     if (!statusResponse.ok || statusData.success === false) {
-      throw new Error(statusData.message || statusData.errorCode || 'Provider health check 失败。')
+      const result = {
+        errorCode: statusData.errorCode || 'provider_env_missing',
+        message: statusData.message || 'Provider health check 失败。',
+        submittedInput: submittedInputBase,
+      }
+      failGeneration(result)
+      throw new Error(result.message)
     }
-    if (!provider?.available) {
+    if (!selectedProviderId || !provider?.available) {
       const missing = provider?.missingEnvKeys?.length ? provider.missingEnvKeys : provider?.missingEnv
-      throw new Error(`Provider 不可用：${provider?.reason || provider?.status || 'not configured'}${missing?.length ? `；缺少 ${missing.join(', ')}` : ''}`)
-    }
-    const confirmed = window.confirm(`Provider health check 已通过。继续会真实调用 ${node.kind} 生成接口并可能消耗额度，是否继续？`)
-    if (!confirmed) {
-      setNodeMessage(node.id, '已完成 health check；用户取消真实生成，未产生费用。')
-      return
+      const result = {
+        errorCode: 'provider_env_missing',
+        message: `Provider 不可用：${provider?.reason || provider?.status || 'not configured'}${missing?.length ? `；缺少 ${missing.join(', ')}` : ''}`,
+        missingEnv: missing,
+        missingEnvKeys: missing,
+        submittedInput: submittedInputBase,
+      }
+      failGeneration(result)
+      throw new Error(result.message)
     }
     const response = await fetch(`/api/generate/${node.kind}`, {
       method: 'POST',
@@ -560,22 +902,32 @@ export function P0MediaDebugPanel({
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         prompt,
+        compiledPrompt: prompt,
         providerId: provider.providerId,
+        model,
         projectId,
         workflowId,
         nodeId: node.id,
-        aspectRatio: node.ratio,
-        params: { ratio: node.ratio },
+        inputAssets,
+        aspectRatio: typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined,
+        duration: typeof params.duration === 'number' ? params.duration : undefined,
+        resolution: typeof params.resolution === 'string' ? params.resolution : undefined,
+        params,
       }),
     })
     const data = await response.json().catch(() => ({})) as GenerateResponseShape
     if (!response.ok || data.success === false) {
-      throw new Error([
+      failGeneration({
+        ...data,
+        submittedInput: data.submittedInput ?? submittedInputBase,
+      })
+      const message = [
         data.message || data.errorCode || `HTTP ${response.status}`,
         data.upstreamStatus ? `upstream=${data.upstreamStatus}` : '',
         data.upstreamMessage ? `upstreamMessage=${data.upstreamMessage}` : '',
         data.requestId ? `requestId=${data.requestId}` : '',
-      ].filter(Boolean).join(' · '))
+      ].filter(Boolean).join(' · ')
+      throw new Error(message)
     }
     if (data.async && data.taskId) {
       onPatchNode(node.id, {
@@ -681,6 +1033,24 @@ export function P0MediaDebugPanel({
           </div>
         </header>
 
+        <div className="border-b border-white/10 px-5 py-4 text-xs">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-semibold text-white/82">生产生成环境</div>
+              <div className="mt-1 text-white/46">只显示变量名，不显示值。缺失项需要到 Vercel Production Environment Variables 配置。</div>
+            </div>
+            <div className={`rounded border px-2 py-1 font-mono ${generationHealth?.ok ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-50' : 'border-amber-300/25 bg-amber-300/10 text-amber-50'}`}>
+              {generationHealth ? (generationHealth.ok ? 'ok' : 'missing_env') : 'not_loaded'}
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <HealthStatusItem label="数据库" section={generationHealth?.database} />
+            <HealthStatusItem label="OSS" section={generationHealth?.storage} />
+            <HealthStatusItem label="图片生成 Provider" section={generationHealth?.imageGeneration} />
+            <HealthStatusItem label="视频生成 Provider" section={generationHealth?.videoGeneration} />
+          </div>
+        </div>
+
         <div className="grid gap-3 border-b border-white/10 px-5 py-4 text-xs sm:grid-cols-4">
           <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
             <div className="text-white/42">当前项目 id</div>
@@ -711,6 +1081,7 @@ export function P0MediaDebugPanel({
                 const node = mediaNodes.find((candidate) => candidate.id === item.nodeId)
                 if (!node) return null
                 const busy = busyNodeId === node.id
+                const regeneratePrimary = shouldPromotePromptRegeneration(item)
                 return (
                   <section key={node.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -725,6 +1096,11 @@ export function P0MediaDebugPanel({
                         <div className="mt-2 break-all font-mono text-xs text-white/48">{node.id}</div>
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
+                        {regeneratePrimary ? (
+                          <button type="button" className="rounded-md border border-amber-200/25 bg-amber-200/10 px-2.5 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-200/16" disabled={busy} onClick={() => { void runNodeAction(node, 'Provider health check / 原 Prompt 重新生成', () => regenerateFromPrompt(node)) }}>
+                            用原 Prompt 重新生成并重建 Asset
+                          </button>
+                        ) : null}
                         <button type="button" className="rounded-md border border-white/12 bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-white/72 hover:bg-white/10" disabled={busy} onClick={() => { void runNodeAction(node, '重新 resolve', async () => {
                           const assetId = getNodeAssetIdWithSource(node).value
                           if (assetId) await resolveByAssetId(node, assetId)
@@ -732,7 +1108,7 @@ export function P0MediaDebugPanel({
                         }) }}>
                           重新 resolve 该节点
                         </button>
-                        <button type="button" className="rounded-md border border-emerald-200/25 bg-emerald-200/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-50 hover:bg-emerald-200/16" disabled={busy} onClick={() => { void runNodeAction(node, '立即恢复资产', () => recoverAsset(node)) }}>
+                        <button type="button" className={regeneratePrimary ? 'rounded-md border border-white/12 bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-white/62 hover:bg-white/10' : 'rounded-md border border-emerald-200/25 bg-emerald-200/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-50 hover:bg-emerald-200/16'} disabled={busy} onClick={() => { void runNodeAction(node, '立即恢复资产', () => recoverAsset(node)) }}>
                           立即恢复资产
                         </button>
                         <button type="button" className="rounded-md border border-white/12 bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-white/72 hover:bg-white/10" disabled={busy} onClick={() => { void runNodeAction(node, '从 nodeId 查找 Asset', () => lookupByNodeId(node)) }}>
@@ -741,9 +1117,11 @@ export function P0MediaDebugPanel({
                         <button type="button" className="rounded-md border border-white/12 bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-white/72 hover:bg-white/10" disabled={busy} onClick={() => { void runNodeAction(node, '从旧 URL 重新导入 OSS', () => resyncOldUrl(node)) }}>
                           从旧 URL 重新导入到 OSS
                         </button>
-                        <button type="button" className="rounded-md border border-amber-200/25 bg-amber-200/10 px-2.5 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-200/16" disabled={busy} onClick={() => { void runNodeAction(node, 'Provider health check / 原 Prompt 重新生成', () => regenerateFromPrompt(node)) }}>
-                          用原 Prompt 重新生成
-                        </button>
+                        {!regeneratePrimary ? (
+                          <button type="button" className="rounded-md border border-amber-200/25 bg-amber-200/10 px-2.5 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-200/16" disabled={busy} onClick={() => { void runNodeAction(node, 'Provider health check / 原 Prompt 重新生成', () => regenerateFromPrompt(node)) }}>
+                            用原 Prompt 重新生成并重建 Asset
+                          </button>
+                        ) : null}
                         <button type="button" className="rounded-md border border-cyan-200/25 bg-cyan-200/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-50 hover:bg-cyan-200/16" onClick={() => { void copyDiagnostic(node.id) }}>
                           {copyState === `copied:${node.id}` ? '已复制 JSON' : '复制该节点诊断 JSON'}
                         </button>
@@ -753,6 +1131,12 @@ export function P0MediaDebugPanel({
                     {messages[node.id] ? (
                       <div className="mt-3 rounded-md border border-white/10 bg-black/25 px-3 py-2 text-xs text-white/70">
                         {busy ? '处理中：' : ''}{messages[node.id]}
+                      </div>
+                    ) : null}
+
+                    {regeneratePrimary ? (
+                      <div className="mt-3 rounded-md border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs leading-5 text-amber-50">
+                        历史资产源已不可读取。可以用原 Prompt 重新生成并重新写入资产库。
                       </div>
                     ) : null}
 

@@ -7,6 +7,7 @@ import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } f
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { auditNodeMedia, type MediaRecoveryAudit } from '@/lib/media/recovery-audit'
+import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
@@ -73,6 +74,7 @@ interface CanvasNodeCardProps {
   onOpenAssetIntelligence?: () => void
   onAddToStoryboard?: () => void
   dragging?: boolean
+  generationHealth?: GenerationHealthResponse | null
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -157,6 +159,14 @@ function metadataRecord(metadataJson: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function stringArrayValue(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : []
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))]
 }
 
 function nestedRecord(value: unknown) {
@@ -342,6 +352,8 @@ type MediaDiagnosticPayload = {
   regenerateInputPreview: Record<string, unknown> | null
   submittedInput?: unknown
   providerResponse?: unknown
+  generationHealth: GenerationHealthResponse | null
+  missingEnv: string[]
   missingFields: string[]
   metadataJson: unknown
   copiedAt?: string
@@ -401,6 +413,8 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'nextAction',
   'regenerateInputPreview',
   'submittedInput',
+  'generationHealth',
+  'missingEnv',
 ] as const
 
 const TERMINAL_RECOVERY_REASONS = new Set([
@@ -415,6 +429,7 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'proxy_error',
   'generation_failed',
 ])
+const PROMPT_REBUILD_DETAIL = '历史资产源已不可读取。可以用原 Prompt 重新生成并重新写入资产库。'
 
 const EMPTY_MEDIA_URL_SOURCES: MediaUrlSource[] = []
 const EMPTY_RENDER_FAILURES: RenderFailure[] = []
@@ -891,7 +906,7 @@ function failureDiagnosis(args: {
   loadFailed: boolean
   failedRenderUrl: string
 }): MediaFailureDiagnosis {
-  const { node, metadata, assetId, candidates, loadFailed, failedRenderUrl } = args
+  const { node, metadata, assetId, candidates, loadFailed } = args
   const lastError = metadataRecord(metadata.lastGenerationError || metadata.lastError)
   const generationMessage = generationFailureMessage(lastError)
   if (generationMessage) {
@@ -938,17 +953,20 @@ function failureDiagnosis(args: {
 
   if (isTerminalRecoveryReason(reason)) {
     const code = reason
+    const detailText = code === 'no_recovery_source' || code === 'old_url_expired' || code === 'provider_media_download_failed'
+      ? PROMPT_REBUILD_DETAIL
+      : detail
     return {
       code,
       title: code,
-      detail,
+      detail: detailText,
       nextAction: hasPrompt ? '用原 Prompt 重新生成并重建 Asset。' : '复制诊断 JSON 后手动排查。',
       canRecover: false,
     }
   }
-  if (!assetId && !candidates.length) return withAction('no_recovery_source', 'no_recovery_source', hasPrompt ? '当前节点没有 assetId，也没有可用 URL；需要用原 Prompt 重新生成。' : '当前节点没有 assetId、可用 URL 或 prompt；需要复制诊断 JSON 手动排查。', false)
+  if (!assetId && !candidates.length) return withAction('no_recovery_source', 'no_recovery_source', hasPrompt ? PROMPT_REBUILD_DETAIL : '当前节点没有 assetId、可用 URL 或 prompt；需要复制诊断 JSON 手动排查。', false)
   if (!assetId && node.id && hasPrompt && (reason === 'no_recovery_source' || stringValue(metadata.errorCode) === 'ASSET_NOT_FOUND_BY_NODE')) {
-    return withAction('no_recovery_source', 'no_recovery_source', '当前节点按 nodeId 找不到可恢复 Asset；需要用原 Prompt 重新生成并重建 Asset。', false)
+    return withAction('no_recovery_source', 'no_recovery_source', PROMPT_REBUILD_DETAIL, false)
   }
   if (!assetId && node.id) return withAction('asset_not_found_by_node', 'asset_not_found_by_node', hasPrompt ? '先尝试按 nodeId 找 Asset；若找不到，将用原 Prompt 重新生成并重建 Asset。' : '复制诊断 JSON 后手动排查。')
   if (reason === 'object_missing') return withAction('object_missing', 'object_missing', 'OSS 对象不存在；如有旧 URL 会尝试重新导入，否则需要重新生成。', Boolean(candidates.length))
@@ -957,16 +975,17 @@ function failureDiagnosis(args: {
   if (reason === 'proxy_error') return withAction('proxy_error', 'proxy_error', 'proxy fallback 失败；复制诊断 JSON 查看 upstream 状态。', Boolean(candidates.length))
   if (!candidates.length) return withAction('no_recovery_source', 'no_recovery_source', '没有 result/stable/current/original/provider URL；需要重新生成。', false)
   if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED' || reason === 'unrecoverable_expired_signed_url_without_storage_key' || loadFailed) {
-    return withAction('old_url_expired', 'old_url_expired', failedRenderUrl ? '当前渲染 URL 已失败；点击“立即恢复资产”会尝试下一个候选或重新导入旧 URL。' : '旧 URL 可能过期；尝试 resync 或重新生成。', Boolean(candidates.length))
+    return withAction('old_url_expired', 'old_url_expired', PROMPT_REBUILD_DETAIL, Boolean(candidates.length))
   }
   if (providerJobId && (reason === 'unrecoverable_provider_retrieve_not_implemented' || reason === 'provider_retrieve_not_implemented')) {
     return withAction('no_recovery_source', 'no_recovery_source', '有 providerJobId 但未接入 retrieve；需要用原 Prompt 重新生成。', false)
   }
   if (reason === 'missing_env') return withAction('provider_env_missing', 'provider_env_missing', '缺少对象存储或 provider 环境变量；配置后重新 resolve。', false)
+  if (reason === 'no_recovery_source') return withAction('no_recovery_source', 'no_recovery_source', hasPrompt ? PROMPT_REBUILD_DETAIL : '历史资产已不可恢复，没有可用 prompt；复制诊断 JSON 手动排查。', false)
   if (hasStorageKey && !candidates.some((candidate) => candidate.source.includes('resolvedUrl') || candidate.source.includes('assetUrl'))) {
-    return withAction('storage_permission_error', 'storage_permission_error', 'storageKey 存在但没有可读 URL；点击“重新 resolve”生成可读 URL。')
+    return withAction('storage_permission_error', 'storage_permission_error', 'storageKey 存在但没有可读 URL；点击”重新 resolve”生成可读 URL。')
   }
-  return withAction(assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? '点击“重新 resolve”刷新 Asset 可读 URL。' : '点击“立即恢复资产”先按 nodeId 找 Asset。', Boolean(node.id || candidates.length))
+  return withAction(assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? '用原 Prompt 重新生成并重建 Asset。' : '点击”立即恢复资产”先按 nodeId 找 Asset。', false)
 }
 
 function persistedRecoveryMetadata(value: unknown, recoveredAt: string) {
@@ -1109,6 +1128,7 @@ export function CanvasNodeCard({
   onOpenAssetIntelligence,
   onAddToStoryboard,
   dragging = false,
+  generationHealth = null,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -1336,6 +1356,15 @@ export function CanvasNodeCard({
     const requestId = stringValue(lastResolveResult.requestId)
       || stringValue(lastGenerationError.requestId)
       || null
+    const missingEnv = uniqueStrings([
+      ...(generationHealth?.missingEnv ?? []),
+      ...stringArrayValue(lastGenerationError.missingEnv),
+      ...stringArrayValue(lastGenerationError.missingEnvKeys),
+      ...stringArrayValue(nodeMetadata.missingEnv),
+      ...stringArrayValue(nodeMetadata.missingEnvKeys),
+      ...stringArrayValue(lastResolveResult.missingEnv),
+      ...stringArrayValue(lastResolveResult.missingEnvKeys),
+    ])
     const regenerateInputPreview = regenerateInputPreviewFor(node, nodeMetadata, node.kind)
     const diagnostic: MediaDiagnosticPayload = {
       nodeId: node.id,
@@ -1396,6 +1425,8 @@ export function CanvasNodeCard({
       regenerateInputPreview,
       submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? nodeMetadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
       providerResponse: sanitizeDiagnosticValue(lastGenerationError.providerResponse ?? nodeMetadata.providerResponse ?? lastResolveResult.providerResponse ?? null),
+      generationHealth,
+      missingEnv,
       missingFields: missingGenerationFieldsFor(node, nodeMetadata, node.kind),
       metadataJson: node.metadataJson,
     }
@@ -1408,6 +1439,7 @@ export function CanvasNodeCard({
     assetUrl,
     failedRenderReason,
     failedRenderUrl,
+    generationHealth,
     lastGenerationError,
     lastResolveResult,
     mediaFailureDiagnosis,
@@ -2218,12 +2250,15 @@ export function CanvasNodeCard({
         || mediaFailureDiagnosis?.canRecover === false
         || mediaFailureDiagnosis?.code === 'old_url_expired'
         || mediaFailureDiagnosis?.code === 'no_recovery_source'
+        || mediaFailureDiagnosis?.code === 'asset_not_found_by_node'
         || mediaFailureDiagnosis?.code === 'provider_media_download_failed'
         || nodeMetadata.nextAction === 'regenerate_from_prompt'
+        || nodeMetadata.errorCode === 'ASSET_NOT_FOUND_BY_NODE'
+        || nodeMetadata.recoveryStatus === 'ASSET_NOT_FOUND_BY_NODE'
       ),
     )
     const failedUnrecoverable = mediaRecoveryStatus === 'failed_unrecoverable' || nodeMetadata.nextAction === 'manual_debug'
-    const showRecoverButtons = Boolean(onRecoverMedia && !regenerateIsPrimary && !failedUnrecoverable && !recoveringNow)
+    const showRecoverButtons = Boolean(onRecoverMedia && !failedUnrecoverable && !recoveringNow)
     return (
       <div className="mt-2 flex w-full flex-wrap gap-1.5" data-no-node-drag="true">
         <button
@@ -2256,7 +2291,9 @@ export function CanvasNodeCard({
           <button
             type="button"
             data-no-node-drag="true"
-            className="rounded border border-emerald-200/25 bg-emerald-200/10 px-2 py-1 text-xs font-semibold text-emerald-50"
+            className={regenerateIsPrimary
+              ? 'rounded border border-white/15 bg-white/[0.06] px-2 py-1 text-xs font-semibold text-white/68'
+              : 'rounded border border-emerald-200/25 bg-emerald-200/10 px-2 py-1 text-xs font-semibold text-emerald-50'}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
