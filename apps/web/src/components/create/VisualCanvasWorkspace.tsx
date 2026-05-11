@@ -566,7 +566,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   const upstreamMessage = result.upstreamMessage ?? ''
   const message = result.message ?? ''
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
-  if (errorCode === 'MISSING_GENERATION_INPUT') return 'missing_generation_input'
+  if (errorCode === 'MISSING_GENERATION_INPUT' || errorCode === 'missing_generation_input' || errorCode === 'missing_or_invalid_video_input') return 'missing_generation_input'
   const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
   if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode === 'provider_env_missing' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
@@ -575,8 +575,8 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
   if (errorCode === 'PROVIDER_NO_DOWNLOAD_URL' || errorCode === 'provider_no_download_url' || errorCode === 'VIDEO_URL_EMPTY' || errorCode === 'IMAGE_URL_EMPTY' || errorCode.includes('URL_MISSING') || errorCode.includes('URL_EMPTY')) return 'provider_no_download_url'
   if (errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || errorCode === 'provider_media_download_failed' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed|external asset/.test(haystack)) return 'provider_media_download_failed'
-  if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
-  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED') return 'asset_persistence_error'
+  if (errorCode === 'MEDIA_UPLOAD_FAILED' || errorCode === 'oss_upload_error') return 'oss_upload_error'
+  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'asset_persistence_error') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
   return errorCode ? 'generation_failed' : ''
 }
@@ -616,6 +616,12 @@ function stringValue(value: unknown) {
 function mediaPersistenceRecord(metadata: Record<string, unknown>) {
   return metadata.mediaPersistence && typeof metadata.mediaPersistence === 'object' && !Array.isArray(metadata.mediaPersistence)
     ? metadata.mediaPersistence as Record<string, unknown>
+    : {}
+}
+
+function persistenceFromGenerateResult(result: GenerateApiResult) {
+  return result.mediaPersistence && typeof result.mediaPersistence === 'object' && !Array.isArray(result.mediaPersistence)
+    ? result.mediaPersistence as Record<string, unknown>
     : {}
 }
 
@@ -1085,9 +1091,16 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
     ? result.result.metadata as Record<string, unknown>
     : {}
+  const persistedMedia = persistenceFromGenerateResult(result)
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
     : result.assetUrl || result.asset?.url || undefined
+  const resolvedUrl = result.resolvedUrl
+    || (typeof resultMetadata.resolvedUrl === 'string' ? resultMetadata.resolvedUrl : undefined)
+    || (typeof persistedMedia.resolvedUrl === 'string' ? persistedMedia.resolvedUrl : undefined)
+  const proxyUrl = result.proxyUrl
+    || (typeof resultMetadata.proxyUrl === 'string' ? resultMetadata.proxyUrl : undefined)
+    || (typeof persistedMedia.proxyUrl === 'string' ? persistedMedia.proxyUrl : undefined)
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1105,10 +1118,13 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     errorMessage: null,
     assetId: result.asset?.id ?? result.assetId ?? resultMetadata.assetId,
     assetUrl,
-    ...(result.resolvedUrl ? { resolvedUrl: result.resolvedUrl, stableUrl: result.resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
-    ...(result.proxyUrl ? { proxyUrl: result.proxyUrl } : {}),
+    ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
+    ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
-    proxyAvailable: result.proxyAvailable ?? Boolean(result.proxyUrl),
+    proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
+    storageProvider: typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider,
+    bucket: typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket,
+    storageKey: typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey,
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
@@ -1162,6 +1178,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
     ? result.result.metadata as Record<string, unknown>
     : {}
+  const persistedMedia = persistenceFromGenerateResult(result)
   const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
   const generationJobId = result.jobId
     ?? (typeof resultMetadata.generationJobId === 'string' ? resultMetadata.generationJobId : undefined)
@@ -1171,6 +1188,12 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
     : result.assetUrl || result.asset?.url || undefined
+  const resolvedUrl = result.resolvedUrl
+    || (typeof resultMetadata.resolvedUrl === 'string' ? resultMetadata.resolvedUrl : undefined)
+    || (typeof persistedMedia.resolvedUrl === 'string' ? persistedMedia.resolvedUrl : undefined)
+  const proxyUrl = result.proxyUrl
+    || (typeof resultMetadata.proxyUrl === 'string' ? resultMetadata.proxyUrl : undefined)
+    || (typeof persistedMedia.proxyUrl === 'string' ? persistedMedia.proxyUrl : undefined)
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1189,10 +1212,13 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     generationJobId,
     assetId: result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined),
     assetUrl,
-    ...(result.resolvedUrl ? { resolvedUrl: result.resolvedUrl, stableUrl: result.resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
-    ...(result.proxyUrl ? { proxyUrl: result.proxyUrl } : {}),
+    ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
+    ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
-    proxyAvailable: result.proxyAvailable ?? Boolean(result.proxyUrl),
+    proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
+    storageProvider: typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider,
+    bucket: typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket,
+    storageKey: typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey,
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
@@ -3687,6 +3713,8 @@ export function VisualCanvasWorkspace({
     const providerStatusEndpoint = `/api/generate/${node.kind}`
     const fallbackProviderId = providerForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
+    const initialRegenerationParams = buildRegenerationParams(node)
+    const initialRegenerationInputAssets = node.kind === 'video' ? buildRegenerationInputAssets(node) : undefined
     const failNode = (result: GenerateApiResult, providerId: string) => {
       const failureResult = {
         ...result,
@@ -3723,6 +3751,7 @@ export function VisualCanvasWorkspace({
           hasPrompt: false,
           providerId: fallbackProviderId || null,
           model: fallbackModel || null,
+          params: initialRegenerationParams,
         },
       }, fallbackProviderId)
       return
@@ -3753,6 +3782,10 @@ export function VisualCanvasWorkspace({
           promptChars: prompt.length,
           providerId: selectedProviderId || null,
           model: selectedModel || null,
+          aspectRatio: typeof initialRegenerationParams.aspectRatio === 'string' ? initialRegenerationParams.aspectRatio : null,
+          duration: typeof initialRegenerationParams.duration === 'number' ? initialRegenerationParams.duration : null,
+          resolution: typeof initialRegenerationParams.resolution === 'string' ? initialRegenerationParams.resolution : null,
+          inputAssets: initialRegenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: asset.url })) ?? null,
         }
         if (!selectedProviderId) {
           failNode({
@@ -3823,8 +3856,8 @@ export function VisualCanvasWorkspace({
           }, selectedProviderId)
           return
         }
-        const regenerationParams = buildRegenerationParams(node)
-        const regenerationInputAssets = node.kind === 'video' ? buildRegenerationInputAssets(node) : undefined
+        const regenerationParams = initialRegenerationParams
+        const regenerationInputAssets = initialRegenerationInputAssets
         handleNodePatch(node.id, {
           status: 'generating',
           errorMessage: undefined,
@@ -3857,7 +3890,7 @@ export function VisualCanvasWorkspace({
           },
         })
         const nodeType = node.kind === 'image' ? 'image' : 'video'
-        const result = await callGenerationApi(
+        let result = await callGenerationApi(
           nodeType,
           selectedProviderId,
           prompt,
@@ -3871,6 +3904,7 @@ export function VisualCanvasWorkspace({
         )
 
         if (node.kind === 'video' && result.async && result.taskId) {
+          const taskId = result.taskId
           handleNodePatch(node.id, {
             status: 'running',
             resultPreview: '视频任务已提交，正在生成中',
@@ -3880,8 +3914,44 @@ export function VisualCanvasWorkspace({
           })
           flushLocalSnapshot()
           scheduleCanvasSave(0)
-          showCanvasFeedback(`已提交异步生成任务：${result.taskId}`)
-          return
+          showCanvasFeedback(`已提交异步生成任务：${taskId}，正在等待生成结果。`)
+          let polls = 0
+          while (polls < 60) {
+            await delay(5000)
+            const statusResult = await pollSeedanceVideoTask(selectedProviderId, taskId, {
+              projectId,
+              workflowId,
+              nodeId: node.id,
+              prompt,
+              compiledPrompt: prompt,
+            })
+            result = {
+              ...statusResult,
+              taskId,
+              jobId: statusResult.jobId ?? result.jobId,
+            }
+            if (!statusResult.success || statusResult.status !== 'running') break
+            handleNodePatch(node.id, {
+              status: 'running',
+              resultPreview: `视频生成中，已查询 ${polls + 1} 次`,
+              outputLabel: '视频生成中',
+              metadataJson: videoSuccessMetadata(node, result, selectedProviderId),
+            })
+            polls += 1
+          }
+          if (result.success && result.status === 'running') {
+            failNode({
+              ...result,
+              success: false,
+              providerId: selectedProviderId,
+              mode: 'real',
+              status: 'failed',
+              errorCode: 'generation_failed',
+              message: `视频任务 ${taskId} 在等待窗口内仍未完成，请稍后查询任务状态。`,
+              taskId,
+            }, selectedProviderId)
+            return
+          }
         }
 
         if (!result.success) {

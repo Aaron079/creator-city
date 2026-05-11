@@ -293,6 +293,9 @@ type MediaDiagnosticPayload = {
   prompt: string | null
   provider: string | null
   model: string | null
+  aspectRatio: string | null
+  duration: number | null
+  resolution: string | null
   projectId: string | null
   workflowId: string | null
   position: { x: number; y: number; width: number; height: number }
@@ -351,6 +354,9 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'prompt',
   'provider',
   'model',
+  'aspectRatio',
+  'duration',
+  'resolution',
   'projectId',
   'workflowId',
   'position',
@@ -503,7 +509,9 @@ function mediaRecoveryReason(metadata: Record<string, unknown>) {
   const raw = stringValue(metadata.recoveryStatus)
     || stringValue(metadata.assetResolveStatus)
     || stringValue(metadata.mediaRecoveryStatus)
+    || stringValue(metadata.errorCode)
   if (raw === 'recovery_timeout') return 'generation_failed'
+  if (raw === 'ASSET_NOT_FOUND_BY_NODE' || raw === 'ASSET_NOT_FOUND_FOR_NODE' || raw === 'asset_not_found_by_node') return 'no_recovery_source'
   if (raw === 'provider_retrieve_not_available' || raw === 'provider_retrieve_not_implemented' || raw === 'unrecoverable_provider_retrieve_not_implemented') return 'no_recovery_source'
   if (raw === 'unrecoverable_provider_expired' || raw === 'unrecoverable_expired_signed_url_without_storage_key') return 'old_url_expired'
   if (raw === 'unrecoverable_no_record' || raw === 'unrecoverable_blob_url' || raw === 'unrecoverable_data_url_without_file') return 'no_recovery_source'
@@ -605,6 +613,38 @@ function regenerateInputPreviewFor(node: VisualCanvasNode, metadata: Record<stri
     referenceImageUrl,
     nodeId: node.id,
   }
+}
+
+function missingGenerationFieldsFor(node: VisualCanvasNode, metadata: Record<string, unknown>, mediaKind: 'image' | 'video') {
+  const missing: string[] = []
+  const provider = providerForNode(node, metadata)
+  const model = modelForNode(node, metadata)
+  if (!node.prompt?.trim()) missing.push('prompt')
+  if (!provider) missing.push('provider')
+  if (!model) missing.push('model')
+  if (mediaKind === 'video') {
+    const duration = numberValue(paramValue(metadata, node, 'duration'))
+    const aspectRatio = stringValue(paramValue(metadata, node, 'aspectRatio'))
+      || stringValue(paramValue(metadata, node, 'ratio'))
+      || stringValue(node.ratio)
+    if (!aspectRatio) missing.push('aspectRatio')
+    if (duration !== undefined && !Number.isFinite(duration)) missing.push('duration')
+  }
+  return [...new Set(missing)]
+}
+
+function sanitizeDiagnosticValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeDiagnosticValue)
+  if (!value || typeof value !== 'object') return value
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (/secret|token|api[_-]?key|authorization|password|credential/i.test(key)) {
+      sanitized[key] = '[redacted]'
+      continue
+    }
+    sanitized[key] = sanitizeDiagnosticValue(nested)
+  }
+  return sanitized
 }
 
 function isTerminalRecoveryReason(reason: string) {
@@ -756,7 +796,7 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const message = stringValue(error.message)
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
-  if (code === 'MISSING_GENERATION_INPUT') return 'missing_generation_input'
+  if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
   if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
   if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
   if (upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
@@ -765,8 +805,8 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
   if (code === 'provider_no_download_url' || code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'VIDEO_URL_EMPTY' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_MISSING') || code.includes('URL_EMPTY')) return 'provider_no_download_url'
   if (code === 'provider_media_download_failed' || code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed|external asset/i.test(haystack)) return 'provider_media_download_failed'
-  if (code === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
-  if (code === 'MEDIA_ASSET_CREATE_FAILED' || code === 'MEDIA_PERSISTENCE_FAILED' || code === 'MEDIA_PERSIST_FAILED') return 'asset_persistence_error'
+  if (code === 'MEDIA_UPLOAD_FAILED' || code === 'oss_upload_error') return 'oss_upload_error'
+  if (code === 'MEDIA_ASSET_CREATE_FAILED' || code === 'MEDIA_PERSISTENCE_FAILED' || code === 'MEDIA_PERSIST_FAILED' || code === 'asset_persistence_error') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
   return code ? 'generation_failed' : ''
 }
@@ -868,6 +908,7 @@ function failureDiagnosis(args: {
   const reason = mediaRecoveryReason(metadata)
   const hasStorageKey = Boolean(stringValue(metadata.storageKey) || stringValue(nestedRecord(metadata.mediaPersistence).storageKey))
   const hasPrompt = Boolean(node.prompt?.trim())
+  const missingGenerationFields = missingGenerationFieldsFor(node, metadata, args.mediaKind)
   const providerJobId = providerJobIdFor(metadata)
   const detail = mediaFailureMessage(metadata, Boolean(assetId))
   const withAction = (code: string, title: string, nextAction: string, canRecover = true): MediaFailureDiagnosis => ({
@@ -877,6 +918,23 @@ function failureDiagnosis(args: {
     nextAction,
     canRecover,
   })
+
+  if (!hasPrompt && (
+    isTerminalRecoveryReason(reason)
+    || !assetId
+    || reason === 'old_url_expired'
+    || reason === 'provider_media_download_failed'
+    || reason === 'provider_invalid_parameter'
+    || loadFailed
+  )) {
+    return {
+      code: 'missing_generation_input',
+      title: 'missing_generation_input',
+      detail: `missing_generation_input：缺少重新生成所需字段：${missingGenerationFields.length ? missingGenerationFields.join(', ') : 'prompt'}。`,
+      nextAction: '复制诊断 JSON 后手动排查。',
+      canRecover: false,
+    }
+  }
 
   if (isTerminalRecoveryReason(reason)) {
     const code = reason
@@ -889,7 +947,10 @@ function failureDiagnosis(args: {
     }
   }
   if (!assetId && !candidates.length) return withAction('no_recovery_source', 'no_recovery_source', hasPrompt ? '当前节点没有 assetId，也没有可用 URL；需要用原 Prompt 重新生成。' : '当前节点没有 assetId、可用 URL 或 prompt；需要复制诊断 JSON 手动排查。', false)
-  if (!assetId && node.id) return withAction('asset_not_found_by_node', 'asset_not_found_by_node', '点击“立即恢复资产”会先按 nodeId 查找 Asset，找不到再尝试旧 URL resync。')
+  if (!assetId && node.id && hasPrompt && (reason === 'no_recovery_source' || stringValue(metadata.errorCode) === 'ASSET_NOT_FOUND_BY_NODE')) {
+    return withAction('no_recovery_source', 'no_recovery_source', '当前节点按 nodeId 找不到可恢复 Asset；需要用原 Prompt 重新生成并重建 Asset。', false)
+  }
+  if (!assetId && node.id) return withAction('asset_not_found_by_node', 'asset_not_found_by_node', hasPrompt ? '先尝试按 nodeId 找 Asset；若找不到，将用原 Prompt 重新生成并重建 Asset。' : '复制诊断 JSON 后手动排查。')
   if (reason === 'object_missing') return withAction('object_missing', 'object_missing', 'OSS 对象不存在；如有旧 URL 会尝试重新导入，否则需要重新生成。', Boolean(candidates.length))
   if (reason === 'storage_permission_error' || reason === 'needs_signed_url') return withAction('storage_permission_error', 'storage_permission_error', '点击“重新 resolve”重新生成 signed URL 或使用 proxy fallback。')
   if (reason === 'signing_error') return withAction('signing_error', 'signing_error', 'signed URL 生成失败；需要检查对象存储签名配置。', false)
@@ -1199,6 +1260,13 @@ export function CanvasNodeCard({
     const currentUrl = stringValue(nodeMetadata.currentUrl) || selectedRenderUrl
     const provider = providerForNode(node, nodeMetadata)
     const model = modelForNode(node, nodeMetadata)
+    const aspectRatio = stringValue(paramValue(nodeMetadata, node, 'aspectRatio'))
+      || stringValue(paramValue(nodeMetadata, node, 'ratio'))
+      || stringValue(node.ratio)
+    const duration = numberValue(paramValue(nodeMetadata, node, 'duration')) ?? null
+    const resolution = stringValue(paramValue(nodeMetadata, node, 'resolution'))
+      || stringValue(paramValue(nodeMetadata, node, 'size'))
+      || stringValue(paramValue(nodeMetadata, node, 'quality'))
     const storageKey = stringValue(nodeMetadata.storageKey) || stringValue(mediaPersistence.storageKey) || stringValue(lastResolveResult.storageKey)
     const bucket = stringValue(nodeMetadata.bucket) || stringValue(mediaPersistence.bucket) || stringValue(lastResolveResult.bucket)
     const storageProvider = stringValue(nodeMetadata.storageProvider) || stringValue(mediaPersistence.storageProvider) || stringValue(lastResolveResult.storageProvider)
@@ -1276,6 +1344,9 @@ export function CanvasNodeCard({
       prompt: nullableString(node.prompt),
       provider: nullableString(provider),
       model: nullableString(model),
+      aspectRatio: nullableString(aspectRatio),
+      duration,
+      resolution: nullableString(resolution),
       projectId: nullableString(projectId || nodeMetadata.projectId),
       workflowId: nullableString(workflowId || nodeMetadata.workflowId),
       position: { x: node.x, y: node.y, width: node.width, height: node.height },
@@ -1323,12 +1394,13 @@ export function CanvasNodeCard({
       whyNotRecoverable: mediaFailureDiagnosis?.canRecover ? null : mediaFailureDiagnosis?.detail ?? '没有可恢复来源。',
       nextAction: mediaFailureDiagnosis?.nextAction ?? '复制诊断 JSON 后排查。',
       regenerateInputPreview,
-      submittedInput: lastGenerationError.submittedInput ?? lastResolveResult.submittedInput ?? null,
-      providerResponse: lastGenerationError.providerResponse ?? lastResolveResult.providerResponse ?? null,
-      missingFields: [],
+      submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? nodeMetadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
+      providerResponse: sanitizeDiagnosticValue(lastGenerationError.providerResponse ?? nodeMetadata.providerResponse ?? lastResolveResult.providerResponse ?? null),
+      missingFields: missingGenerationFieldsFor(node, nodeMetadata, node.kind),
       metadataJson: node.metadataJson,
     }
-    diagnostic.missingFields = REQUIRED_MEDIA_DIAGNOSTIC_FIELDS.filter((field) => diagnostic[field] === null)
+    const omittedFields = REQUIRED_MEDIA_DIAGNOSTIC_FIELDS.filter((field) => !(field in diagnostic))
+    if (omittedFields.length) diagnostic.missingFields = [...new Set([...diagnostic.missingFields, ...omittedFields])]
     return diagnostic
   }, [
     activeCandidates,
@@ -1524,12 +1596,14 @@ export function CanvasNodeCard({
     else setVideoRenderFailures(append)
     if (onRecoverMedia) {
       const existing = Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []
+      const existingFailed = Array.isArray(nodeMetadata.failedUrls) ? nodeMetadata.failedUrls : []
       onRecoverMedia(node.id, {
         metadataJson: {
           ...metadataRecord(node.metadataJson),
           failedRenderUrl: failure.url,
           failedRenderReason: failure.reason,
           attemptedUrls: [...existing, failure].slice(-12),
+          failedUrls: [...existingFailed, { url: failure.url, reason: failure.reason, at: failure.at }].slice(-12),
           lastRenderFailureAt: failure.at,
         },
       })

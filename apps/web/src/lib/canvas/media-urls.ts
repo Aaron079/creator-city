@@ -93,8 +93,8 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
 
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
-    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.stableUrl', stringValue(metadata.stableUrl)],
     ['metadata.resultImageUrl', stringValue(metadata.resultImageUrl)],
     ['resultImageUrl', stringValue(node.resultImageUrl)],
@@ -147,8 +147,8 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
 
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
-    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
+    ['metadata.proxyUrl', stringValue(metadata.proxyUrl)],
     ['metadata.stableUrl', stringValue(metadata.stableUrl)],
     ['metadata.resultVideoUrl', stringValue(metadata.resultVideoUrl)],
     ['resultVideoUrl', stringValue(node.resultVideoUrl)],

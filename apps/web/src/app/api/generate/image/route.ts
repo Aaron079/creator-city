@@ -10,6 +10,7 @@ import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
+import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +41,7 @@ function defaultImageProviderId(rows: Awaited<ReturnType<typeof getImageProvider
 function providerNotConfiguredResponse(providerId: string, missingEnv: string[] = []) {
   return NextResponse.json({
     success: false,
-    errorCode: 'PROVIDER_NOT_CONFIGURED',
+    errorCode: 'provider_env_missing',
     message: '图片 Provider 未配置，请先在 /admin/providers 配置环境变量。',
     providerId,
     missingEnv,
@@ -64,8 +65,23 @@ function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { 
 }
 
 function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR') return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
+  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
+  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
   return errorCode
+}
+
+function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?: number, message = '') {
+  const code = errorCode ?? ''
+  const haystack = `${code} ${message}`.toLowerCase()
+  if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'VOLCENGINE_MODEL_REQUIRED' || code === 'provider_env_missing' || code.includes('MODEL_REQUIRED')) return 'provider_env_missing'
+  if (code === 'PROMPT_REQUIRED' || code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input') return 'missing_generation_input'
+  if (code === 'PROVIDER_AUTH_ERROR' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+  if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'INSUFFICIENT_CREDITS' || code === 'BILLING_ERROR' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
+  if (code === 'PROVIDER_INVALID_PARAMETER' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
+  if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
+  if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
+  return code || 'generation_failed'
 }
 
 function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string }) {
@@ -74,6 +90,49 @@ function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; 
     ?? response.imageUrl
     ?? response.dataUrl
     ?? ''
+}
+
+async function createImageGenerationJob(args: {
+  userId: string
+  providerId: string
+  prompt: string
+  body: ImageGenerateBody
+  model?: string | null
+}) {
+  return db.generationJob.create({
+    data: {
+      userId: args.userId,
+      projectId: args.body.projectId ?? null,
+      providerId: args.providerId,
+      provider: args.providerId,
+      nodeType: 'image',
+      kind: 'image',
+      status: 'PROCESSING',
+      prompt: args.prompt.slice(0, 2000),
+      input: {
+        prompt: args.prompt,
+        params: args.body.params ?? {},
+        model: args.model ?? null,
+        workflowId: args.body.workflowId,
+        nodeId: args.body.nodeId,
+      },
+    },
+  })
+}
+
+async function markImageGenerationJobFailed(jobId: string | undefined, message: string) {
+  if (!jobId) return
+  await db.generationJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'FAILED',
+      error: message,
+      errorMessage: message.slice(0, 1000),
+      completedAt: new Date(),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[api/generate/image] failed to mark GenerationJob failed', error)
+  })
 }
 
 export async function GET() {
@@ -123,7 +182,7 @@ export async function POST(request: NextRequest) {
       if (providerId === 'openai-image' && providerRow && !providerRow.available) {
         return NextResponse.json({
           success: false,
-          errorCode: 'OPENAI_IMAGE_UNAVAILABLE',
+          errorCode: 'provider_env_missing',
           message: 'OpenAI Image 暂不可用。当前环境建议使用 Volcengine Seedream 或 Jimeng 图片模型。',
           providerId,
           missingEnv: providerRow.missingEnv,
@@ -138,17 +197,18 @@ export async function POST(request: NextRequest) {
     if (!prompt) {
       return NextResponse.json({
         success: false,
-        errorCode: 'PROMPT_REQUIRED',
+        errorCode: 'missing_generation_input',
         message: '请输入图片提示词',
         providerId,
         mode: 'unavailable',
         status: 'failed',
+        missingFields: ['prompt'],
       }, { status: 200 })
     }
     if (providerId === 'volcengine-seedream-image' && !process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()) {
       return NextResponse.json({
         success: false,
-        errorCode: 'VOLCENGINE_MODEL_REQUIRED',
+        errorCode: 'provider_env_missing',
         message: '请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
         providerId,
         model: '',
@@ -186,7 +246,7 @@ export async function POST(request: NextRequest) {
       if (providerId === 'openai-image' && billing.errorResponse.errorCode === 'BILLING_ERROR') {
         return NextResponse.json({
           success: false,
-          errorCode: 'OPENAI_IMAGE_UNAVAILABLE',
+          errorCode: 'provider_env_missing',
           message: 'OpenAI Image 暂不可用。当前环境建议使用 Volcengine Seedream 或 Jimeng 图片模型。',
           providerId,
           mode: 'unavailable',
@@ -194,7 +254,11 @@ export async function POST(request: NextRequest) {
           submittedInput,
         }, { status: 200 })
       }
-      return NextResponse.json({ ...billing.errorResponse, submittedInput }, { status: billing.status })
+      return NextResponse.json({
+        ...billing.errorResponse,
+        errorCode: visibleProviderErrorCode(billing.errorResponse.errorCode, billing.status, billing.errorResponse.message),
+        submittedInput,
+      }, { status: billing.status })
     }
 
     const currentUser = await getCurrentUser()
@@ -239,7 +303,7 @@ export async function POST(request: NextRequest) {
             mode: 'unavailable',
             status: chinaResult.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
             message: chinaResult.message,
-            errorCode: chinaResult.errorCode,
+            errorCode: visibleProviderErrorCode(chinaResult.errorCode, chinaResult.upstreamStatus, chinaResult.message),
             model: chinaResult.model,
             upstreamStatus: chinaResult.upstreamStatus,
             upstreamMessage: chinaResult.upstreamMessage,
@@ -267,6 +331,7 @@ export async function POST(request: NextRequest) {
     if (!finalized.success || !finalized.result) {
       return NextResponse.json({
         ...finalized,
+        errorCode: visibleProviderErrorCode(finalized.errorCode, raw.upstreamStatus, finalized.message),
         model: raw.model,
         upstreamStatus: raw.upstreamStatus,
         upstreamMessage: raw.upstreamMessage,
@@ -282,7 +347,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ...finalized,
         success: false,
-        errorCode: 'IMAGE_URL_EMPTY',
+        errorCode: 'provider_no_download_url',
         message: finalized.message || '图片生成成功，但 Provider 未返回图片 URL。',
         model: raw.model,
         submittedInput: raw.submittedInput ?? submittedInput,
@@ -305,6 +370,21 @@ export async function POST(request: NextRequest) {
     let assetId: string | undefined
     let mediaPersistence: unknown = mediaPersistenceEnabled ? { status: 'pending' } : { status: 'disabled' }
     let warning: string | undefined
+    let generationJobId = finalized.billingJobId ?? finalized.jobId
+
+    if (!generationJobId) {
+      const imageGenerationJob = await createImageGenerationJob({
+        userId: billing.ctx.userId,
+        providerId,
+        prompt,
+        body,
+        model: raw.model,
+      }).catch((error: unknown) => {
+        console.warn('[api/generate/image] failed to create GenerationJob', error)
+        return null
+      })
+      generationJobId = imageGenerationJob?.id
+    }
 
     if (mediaPersistenceEnabled) {
       try {
@@ -320,7 +400,7 @@ export async function POST(request: NextRequest) {
           metadata: {
             model: resultMetadata.model ?? raw.model,
             prompt,
-            generationJobId: finalized.billingJobId ?? finalized.jobId,
+            generationJobId,
             assetIntelligence,
           },
         })
@@ -334,6 +414,7 @@ export async function POST(request: NextRequest) {
         } else {
           mediaPersistence = normalizePersistFailure(persistence)
           const errorCode = visiblePersistenceErrorCode(persistence.errorCode)
+          await markImageGenerationJobFailed(generationJobId, persistence.message)
           return NextResponse.json({
             success: false,
             errorCode,
@@ -353,12 +434,13 @@ export async function POST(request: NextRequest) {
         }
       } catch (error) {
         mediaPersistence = failedMediaPersistence(
-          'MEDIA_PERSISTENCE_FAILED',
+          'asset_persistence_error',
           error instanceof Error ? error.message : '图片媒体转存失败。',
         )
+        await markImageGenerationJobFailed(generationJobId, error instanceof Error ? error.message : '图片媒体转存失败。')
         return NextResponse.json({
           success: false,
-          errorCode: 'MEDIA_PERSISTENCE_FAILED',
+          errorCode: 'asset_persistence_error',
           message: `图片生成成功，但媒体转存失败：${error instanceof Error ? error.message : '图片媒体转存失败。'}`,
           providerId,
           model: raw.model,
@@ -378,6 +460,9 @@ export async function POST(request: NextRequest) {
     const persistedMedia = mediaPersistence && typeof mediaPersistence === 'object' && !Array.isArray(mediaPersistence)
       ? mediaPersistence as { resolvedUrl?: string | null; proxyUrl?: string | null; signedUrlAvailable?: boolean; proxyAvailable?: boolean }
       : {}
+    const persistedStorage = mediaPersistence && typeof mediaPersistence === 'object' && !Array.isArray(mediaPersistence)
+      ? mediaPersistence as { storageProvider?: string | null; bucket?: string | null; storageKey?: string | null }
+      : {}
     const finalMetadata = {
       ...resultMetadata,
       ...(assetId ? { assetId, assetUrl: finalImageUrl } : {}),
@@ -385,6 +470,10 @@ export async function POST(request: NextRequest) {
       ...(persistedMedia.proxyUrl ? { proxyUrl: persistedMedia.proxyUrl } : {}),
       signedUrlAvailable: persistedMedia.signedUrlAvailable,
       proxyAvailable: persistedMedia.proxyAvailable,
+      storageProvider: persistedStorage.storageProvider,
+      bucket: persistedStorage.bucket,
+      storageKey: persistedStorage.storageKey,
+      generationJobId,
       originalProviderImageUrl: providerImageUrl,
       submittedInput: raw.submittedInput ?? submittedInput,
       providerResponse: raw.providerResponse,
@@ -405,6 +494,9 @@ export async function POST(request: NextRequest) {
       dataUrl: finalImageUrl.startsWith('data:image/') ? finalImageUrl : undefined,
       assetId,
       originalProviderImageUrl: providerImageUrl,
+      storageProvider: persistedStorage.storageProvider ?? undefined,
+      bucket: persistedStorage.bucket ?? undefined,
+      storageKey: persistedStorage.storageKey ?? undefined,
       mediaPersistence,
       assetIntelligence,
       warning,
@@ -415,7 +507,7 @@ export async function POST(request: NextRequest) {
         dataUrl: null,
         thumbnailUrl: finalImageUrl,
         providerId: 'generated-media-persistence',
-        generationJobId: finalized.billingJobId ?? finalized.jobId,
+        generationJobId,
         projectId: body.projectId,
         workflowId: body.workflowId,
         nodeId: body.nodeId,
@@ -435,6 +527,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/image]', err)
-    return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 200 })
+    return NextResponse.json({ success: false, message, errorCode: 'generation_failed' }, { status: 200 })
   }
 }

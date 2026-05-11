@@ -184,24 +184,26 @@ function getRawError(data: unknown, fallback: string) {
 
 function normalizeProviderErrorCode(status: number, message: string, rawCode?: string) {
   const haystack = `${rawCode ?? ''} ${message}`.toLowerCase()
-  if (/media download failed|download.*failed|failed to download|image.*download/.test(haystack)) return 'PROVIDER_MEDIA_DOWNLOAD_FAILED'
-  if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'PROVIDER_INVALID_PARAMETER'
+  if (/media download failed|download.*failed|failed to download|image.*download/.test(haystack)) return 'provider_media_download_failed'
+  if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'PROMPT_REJECTED_OR_INVALID'
-  if (status === 401 || status === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'PROVIDER_AUTH_ERROR'
-  if (status === 402 || status === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'PROVIDER_QUOTA_OR_BILLING_ERROR'
+  if (status === 401 || status === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+  if (status === 402 || status === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   return 'SEEDANCE_TASK_CREATE_FAILED'
 }
 
 function normalizeSeedanceRatio(value?: string) {
   const ratio = String(value || '').trim().toLowerCase()
-  if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1' || ratio === '4:3' || ratio === '3:4' || ratio === '21:9' || ratio === 'adaptive') return ratio
+  if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1') return ratio
+  if (ratio === '3:4' || ratio === '4:5') return '9:16'
+  if (ratio === '4:3' || ratio === '21:9' || ratio === 'adaptive') return '16:9'
   return '16:9'
 }
 
 function normalizeSeedanceDuration(value?: number) {
   if (!Number.isFinite(value)) return 5
   const rounded = Math.round(Number(value))
-  return Math.min(12, Math.max(2, rounded))
+  return rounded <= 5 ? 5 : 10
 }
 
 function normalizeSeedanceResolution(value?: string) {
@@ -416,13 +418,6 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     watermark: false,
   }
   if (resolution) body.resolution = resolution
-  if (input.projectId || input.workflowId || input.nodeId) {
-    body.metadata = {
-      projectId: input.projectId,
-      workflowId: input.workflowId,
-      nodeId: input.nodeId,
-    }
-  }
   const submittedInput = {
     providerId,
     model,
@@ -433,10 +428,14 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     imageUrl: input.imageUrl,
     ratio,
     duration,
+    requestedDuration: input.duration ?? null,
     resolution: resolution ?? null,
     requestedResolution: input.resolution ?? null,
     resolutionAdjustedForImageInput: Boolean(input.imageUrl && normalizedResolution === '1080p'),
     watermark: false,
+    projectId: input.projectId ?? null,
+    workflowId: input.workflowId ?? null,
+    nodeId: input.nodeId ?? null,
   }
 
   const controller = new AbortController()
