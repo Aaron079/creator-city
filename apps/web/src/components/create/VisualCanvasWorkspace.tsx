@@ -521,6 +521,7 @@ type GenerateApiResult = GenerateResponse & {
   providerResponse?: unknown
   missingEnv?: string[]
   missingEnvKeys?: string[]
+  missingFields?: string[]
   async?: boolean
   taskId?: string
   videoUrl?: string
@@ -558,6 +559,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   const upstreamMessage = result.upstreamMessage ?? ''
   const message = result.message ?? ''
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
+  if (errorCode === 'MISSING_GENERATION_INPUT') return 'missing_generation_input'
   const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
   if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
@@ -581,6 +583,7 @@ function formatGenerateError(result: GenerateApiResult) {
     result.errorCode,
     message,
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
+    result.missingFields?.length ? `missingFields: ${result.missingFields.join(', ')}` : '',
     result.model ? `model: ${result.model}` : '',
     typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
@@ -651,7 +654,7 @@ function buildRegenerationParams(node: VisualCanvasNode) {
   return {
     ratio: aspectRatio,
     aspectRatio,
-    ...(duration ? { duration } : {}),
+    ...(node.kind === 'video' ? { duration: duration ?? 5 } : duration ? { duration } : {}),
     ...(resolution ? { resolution, size: resolution } : {}),
   } satisfies Record<string, string | number | boolean | undefined>
 }
@@ -761,6 +764,37 @@ function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetRes
       resolvedUrl: result.resolvedUrl,
       stableUrl: result.resolvedUrl,
     },
+  }
+}
+
+function recoveryResolveResultFromPatch(patch: Partial<VisualCanvasNode>): CanvasAssetResolveResult | null {
+  const metadata = metadataRecord(patch.metadataJson)
+  const recovery = metadataRecord(metadata.p0LastRecoveryResult)
+  const assetId = stringValue(patch.assetId)
+    || stringValue(metadata.assetId)
+    || stringValue(recovery.assetId)
+  const resolvedUrl = stringValue(patch.resultImageUrl)
+    || stringValue(patch.resultVideoUrl)
+    || stringValue(metadata.resolvedUrl)
+    || stringValue(metadata.assetUrl)
+    || stringValue(metadata.stableUrl)
+    || stringValue(recovery.resolvedUrl)
+    || stringValue(recovery.assetUrl)
+    || stringValue(recovery.stableUrl)
+  const recoveryStatus = stringValue(metadata.recoveryStatus) || stringValue(recovery.recoveryStatus)
+  if (!assetId || !resolvedUrl || recoveryStatus !== 'ready') return null
+  return {
+    assetId,
+    status: 'ready',
+    resolvedUrl,
+    thumbnailUrl: null,
+    storageKey: stringValue(metadata.storageKey) || stringValue(recovery.storageKey) || null,
+    storageProvider: stringValue(metadata.storageProvider) || stringValue(recovery.storageProvider) || null,
+    bucket: stringValue(metadata.bucket) || stringValue(recovery.bucket) || null,
+    providerJobId: stringValue(metadata.providerJobId) || stringValue(recovery.providerJobId) || null,
+    recoveryStatus: 'ready',
+    error: null,
+    actionTaken: stringValue(recovery.actionTaken) || stringValue(recovery.action) || null,
   }
 }
 
@@ -1021,7 +1055,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1035,6 +1069,7 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
       rawCode: result.rawCode,
       requestId: result.requestId,
       missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
+      missingFields: result.missingFields,
       submittedInput: result.submittedInput,
       providerResponse: result.providerResponse,
       at: new Date().toISOString(),
@@ -1075,7 +1110,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1091,6 +1126,7 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
       rawCode: result.rawCode,
       requestId: result.requestId,
       missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
+      missingFields: result.missingFields,
       submittedInput: result.submittedInput,
       providerResponse: result.providerResponse,
       at: new Date().toISOString(),
@@ -3518,10 +3554,15 @@ export function VisualCanvasWorkspace({
   }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
   const handleMediaRecoveryPatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
-    handleNodePatch(nodeId, patch)
+    const resolved = recoveryResolveResultFromPatch(patch)
+    commitNodes((current) => current.map((node) => {
+      if (node.id !== nodeId) return node
+      const patched = { ...node, ...patch }
+      return resolved ? applyResolvedAssetToNode(patched, resolved) : patched
+    }))
     flushLocalSnapshot()
     scheduleCanvasSave(0)
-  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+  }, [commitNodes, flushLocalSnapshot, scheduleCanvasSave])
 
   const handleRegenerateNodeFromPrompt = useCallback((node: VisualCanvasNode) => {
     if (node.kind !== 'image' && node.kind !== 'video') return
@@ -3550,8 +3591,15 @@ export function VisualCanvasWorkspace({
         providerId: fallbackProviderId,
         mode: 'unavailable',
         status: 'failed',
-        errorCode: 'PROMPT_REQUIRED',
-        message: '该节点没有原 Prompt，不能重新生成。',
+        errorCode: 'MISSING_GENERATION_INPUT',
+        message: '该节点缺少重新生成所需字段：prompt。',
+        missingFields: ['prompt'],
+        submittedInput: {
+          nodeId: node.id,
+          kind: node.kind,
+          hasPrompt: false,
+          providerId: fallbackProviderId || null,
+        },
       }, fallbackProviderId)
       return
     }
@@ -3575,6 +3623,25 @@ export function VisualCanvasWorkspace({
         const provider = statusData.providers?.find((item) => item.providerId === providerId)
           ?? statusData.providers?.find((item) => item.providerId === statusData.defaultProviderId)
         const selectedProviderId = provider?.providerId || providerId
+        if (!selectedProviderId) {
+          failNode({
+            success: false,
+            providerId: '',
+            mode: 'unavailable',
+            status: 'failed',
+            errorCode: 'MISSING_GENERATION_INPUT',
+            message: '该节点缺少重新生成所需字段：provider/model。',
+            missingFields: ['provider', 'model'],
+            submittedInput: {
+              nodeId: node.id,
+              kind: node.kind,
+              promptChars: prompt.length,
+              providerId: null,
+              model: null,
+            },
+          }, '')
+          return
+        }
         if (!statusResponse.ok || statusData.success === false) {
           failNode({
             success: false,

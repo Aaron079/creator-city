@@ -219,10 +219,13 @@ type MediaState = {
 
 type MediaRecoveryStatus = 'idle' | 'checking' | 'recovered' | 'unrecoverable'
 type AssetRecoverResponse = {
+  ok?: boolean
   success?: boolean
+  action?: string
   assetId?: string
   status?: string
   resolvedUrl?: string | null
+  assetUrl?: string | null
   stableUrl?: string | null
   storageKey?: string | null
   storageProvider?: string | null
@@ -230,11 +233,14 @@ type AssetRecoverResponse = {
   providerJobId?: string | null
   recoveryStatus?: string | null
   error?: string | null
+  errorMessage?: string | null
   message?: string
   errorCode?: string
   actionTaken?: string
+  nextAction?: 'show_media' | 'regenerate_from_prompt' | 'manual_debug' | string
   mediaPersistence?: unknown
   attemptedUrls?: unknown
+  failedUrls?: unknown
   failedUrl?: string | null
   upstreamStatus?: number
   upstreamMessage?: string | null
@@ -292,9 +298,11 @@ type MediaDiagnosticPayload = {
   failedRenderUrl: string | null
   failedRenderReason: string | null
   attemptedUrls: RenderFailure[]
+  failedUrls: Array<{ url: string | null; reason: string | null }>
   urlCandidates: Array<MediaUrlSource & { proxiedUrl: string }>
   resolveBatchStatus: string | null
   recoveryStatus: string | null
+  isRecovering: boolean
   storageKeyFailureReason: string | null
   mediaVaultStatus: string | null
   mediaFailureMessage: string | null
@@ -341,9 +349,11 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'failedRenderUrl',
   'failedRenderReason',
   'attemptedUrls',
+  'failedUrls',
   'urlCandidates',
   'resolveBatchStatus',
   'recoveryStatus',
+  'isRecovering',
   'storageKeyFailureReason',
   'mediaVaultStatus',
   'mediaFailureMessage',
@@ -362,6 +372,10 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'old_url_expired',
   'provider_media_download_failed',
   'no_recovery_source',
+  'provider_invalid_parameter',
+  'provider_env_missing',
+  'storage_permission_error',
+  'generation_failed',
   'provider_retrieve_not_available',
   'unrecoverable_provider_retrieve_not_implemented',
   'unrecoverable_provider_expired',
@@ -538,17 +552,74 @@ function isTerminalRecoveryReason(reason: string) {
 }
 
 function responseHasResolvedUrl(result: AssetRecoverResponse) {
-  return Boolean(stringValue(result.resolvedUrl) || stringValue(result.stableUrl))
+  return Boolean(stringValue(result.resolvedUrl) || stringValue(result.assetUrl) || stringValue(result.stableUrl))
 }
 
 function isSuccessfulRecovery(result: AssetRecoverResponse) {
-  return result.success !== false && (responseHasResolvedUrl(result) || result.status === 'ready')
+  return result.ok === true || (result.success !== false && (responseHasResolvedUrl(result) || result.status === 'ready' || result.recoveryStatus === 'ready'))
+}
+
+function recoveryResolvedUrl(result: AssetRecoverResponse) {
+  return stringValue(result.resolvedUrl) || stringValue(result.assetUrl) || stringValue(result.stableUrl)
+}
+
+function recoveryErrorMessage(result: AssetRecoverResponse) {
+  return stringValue(result.errorMessage) || stringValue(result.message) || stringValue(result.error) || stringValue(result.errorCode)
+}
+
+function normalizeFailedUrls(value: unknown): Array<{ url: string | null; reason: string | null }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (typeof item === 'string' && item.trim()) return [{ url: item.trim(), reason: 'failed' }]
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>
+      const url = nullableString(record.url)
+      if (!url) return []
+      return [{
+        url,
+        reason: nullableString(record.reason)
+          || nullableString(record.errorCode)
+          || nullableString(record.message)
+          || nullableString(record.error)
+          || 'failed',
+      }]
+    }
+    return []
+  })
+}
+
+function normalizeAttemptedUrls(value: unknown): RenderFailure[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>
+      const url = stringValue(record.url)
+      if (!url) return []
+      return [{
+        url,
+        source: stringValue(record.source) || 'api',
+        proxiedUrl: stringValue(record.proxiedUrl) || getProxiedMediaUrl(url),
+        reason: stringValue(record.reason) || stringValue(record.errorCode) || stringValue(record.message) || stringValue(record.error) || 'attempted',
+        at: stringValue(record.at) || new Date().toISOString(),
+      }]
+    }
+    if (typeof item === 'string' && item.trim()) {
+      const url = item.trim()
+      return [{ url, source: 'api', proxiedUrl: getProxiedMediaUrl(url), reason: 'attempted', at: new Date().toISOString() }]
+    }
+    return []
+  })
 }
 
 function normalizedRecoveryCode(result: AssetRecoverResponse, fallback = 'old_url_expired') {
   const code = stringValue(result.errorCode) || stringValue(result.recoveryStatus) || stringValue(result.status)
   if (code === 'MEDIA_SOURCE_EXPIRED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || code === 'MEDIA_FETCH_FAILED') return 'old_url_expired'
+  if (code === 'unrecoverable_provider_expired' || code === 'unrecoverable_expired_signed_url_without_storage_key') return 'old_url_expired'
   if (code === 'PROVIDER_RETRIEVE_NOT_AVAILABLE' || code === 'provider_retrieve_not_implemented' || code === 'unrecoverable_provider_retrieve_not_implemented') return 'provider_retrieve_not_available'
+  if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (code === 'PROVIDER_INVALID_PARAMETER') return 'provider_invalid_parameter'
+  if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'missing_env') return 'provider_env_missing'
+  if (code === 'provider_error') return 'generation_failed'
   return code || fallback
 }
 
@@ -558,11 +629,57 @@ function candidateLooksProviderOwned(candidate: MediaUrlSource) {
 
 function terminalRecoveryCodeFromAttempts(candidates: MediaUrlSource[], result?: AssetRecoverResponse) {
   const code = result ? normalizedRecoveryCode(result, '') : ''
-  if (code === 'provider_retrieve_not_available' || code === 'no_recovery_source') return code
-  const message = `${result?.message ?? ''} ${result?.error ?? ''} ${result?.upstreamMessage ?? ''}`.toLowerCase()
+  if (
+    code === 'provider_retrieve_not_available'
+    || code === 'no_recovery_source'
+    || code === 'old_url_expired'
+    || code === 'provider_media_download_failed'
+    || code === 'provider_invalid_parameter'
+    || code === 'provider_env_missing'
+    || code === 'storage_permission_error'
+    || code === 'generation_failed'
+  ) return code
+  const message = `${result?.message ?? ''} ${result?.errorMessage ?? ''} ${result?.error ?? ''} ${result?.upstreamMessage ?? ''}`.toLowerCase()
   if (message.includes('media download failed') || message.includes('invalid parameter')) return 'provider_media_download_failed'
   if (candidates.some(candidateLooksProviderOwned)) return 'provider_media_download_failed'
   return candidates.length ? 'old_url_expired' : 'no_recovery_source'
+}
+
+const RECOVERY_API_TIMEOUT_MS = 45000
+
+async function fetchRecoveryJson(
+  url: string,
+  init: RequestInit,
+  timeoutMs = RECOVERY_API_TIMEOUT_MS,
+): Promise<{ response: Response | null; data: AssetRecoverResponse }> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+    const data = await response.json().catch(() => ({})) as AssetRecoverResponse
+    return { response, data }
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === 'AbortError'
+    return {
+      response: null,
+      data: {
+        ok: false,
+        success: false,
+        action: 'error',
+        status: 'generation_failed',
+        recoveryStatus: 'generation_failed',
+        errorCode: 'generation_failed',
+        errorMessage: aborted ? `恢复接口超时（${Math.round(timeoutMs / 1000)}s）。` : error instanceof Error ? error.message : '恢复接口请求失败。',
+        message: aborted ? `恢复接口超时（${Math.round(timeoutMs / 1000)}s）。` : error instanceof Error ? error.message : '恢复接口请求失败。',
+        nextAction: 'manual_debug',
+      } satisfies AssetRecoverResponse,
+    }
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 function normalizeGenerationFailureCode(error: Record<string, unknown>) {
@@ -570,6 +687,7 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const message = stringValue(error.message)
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
+  if (code === 'MISSING_GENERATION_INPUT') return 'missing_generation_input'
   if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
   if (code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
   if (upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
@@ -592,6 +710,10 @@ function generationFailureMessage(error: Record<string, unknown>) {
   const upstreamMessage = stringValue(error.upstreamMessage)
   const message = stringValue(error.message)
   if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}`
+  if (normalized === 'missing_generation_input') {
+    const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
+    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}`
+  }
   if (normalized === 'provider_auth_error') return `provider_auth_error：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}`
   if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}`
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}`
@@ -624,10 +746,13 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED') return '旧媒体源当前不可读取，可能已过期或需要权限。'
   if (reason === 'old_url_expired') return '旧媒体 URL 候选已全部尝试，当前不可下载。'
   if (reason === 'provider_media_download_failed') return 'Provider 返回的媒体链接不可下载，或传给 Provider 的首帧/参考图 URL 不可读取。'
+  if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请复制诊断 JSON 查看 requestId 和 submittedInput。'
+  if (reason === 'provider_env_missing') return 'Provider 或对象存储环境变量缺失，配置后再重新生成或恢复。'
   if (reason === 'provider_retrieve_not_available') return 'Provider 历史结果取回不可用，需要用原 Prompt 重新生成。'
   if (reason === 'MEDIA_UPLOAD_FAILED') return '媒体下载成功后转存到对象存储失败。'
   if (reason === 'MEDIA_ASSET_CREATE_FAILED') return '媒体已上传，但 Asset 记录创建失败。'
   if (reason === 'recovery_request_failed') return '资产恢复请求失败，请复制诊断 JSON。'
+  if (reason === 'generation_failed') return '恢复或重新生成链路失败，请复制诊断 JSON 查看真实 API 错误。'
   if (reason === 'no_recovery_source') return '没有 assetId、storageKey、originalUrl、providerJobId 或旧 URL 可用于恢复。'
   if (reason === 'storage_key_unreadable') return '数据库有 storageKey，但对象存储暂时无法读取。'
   if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有 storageKey，但签名 URL、代理和历史来源都未能读取。'
@@ -1006,23 +1131,34 @@ export function CanvasNodeCard({
     const recoveryStatus = recoveryReason || stringValue(mediaPersistence.status) || null
     const attemptedUrls = [
       ...activeRenderFailures,
-      ...(Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []),
-      ...(Array.isArray(lastResolveResult.attemptedUrls) ? lastResolveResult.attemptedUrls : []),
+      ...normalizeAttemptedUrls(nodeMetadata.attemptedUrls),
+      ...normalizeAttemptedUrls(lastResolveResult.attemptedUrls),
     ]
-    const upstreamStatus = typeof lastGenerationError.upstreamStatus === 'number'
-      ? lastGenerationError.upstreamStatus
-      : typeof lastResolveResult.upstreamStatus === 'number'
-        ? lastResolveResult.upstreamStatus
+    const failedUrls = [
+      ...activeRenderFailures.map((failure) => ({ url: nullableString(failure.url), reason: nullableString(failure.reason) })),
+      ...normalizeFailedUrls(nodeMetadata.failedUrls),
+      ...normalizeFailedUrls(lastResolveResult.failedUrls),
+      ...normalizeFailedUrls(nodeMetadata.attemptedUrls),
+      ...normalizeFailedUrls(lastResolveResult.attemptedUrls),
+    ]
+    const isRecovering = mediaRecoveryStatus === 'checking'
+      || nodeMetadata.isRecovering === true
+      || nodeMetadata.recovering === true
+    const upstreamStatus = typeof lastResolveResult.upstreamStatus === 'number'
+      ? lastResolveResult.upstreamStatus
+      : typeof lastGenerationError.upstreamStatus === 'number'
+        ? lastGenerationError.upstreamStatus
         : null
-    const upstreamMessage = stringValue(lastGenerationError.upstreamMessage)
-      || stringValue(lastResolveResult.upstreamMessage)
+    const upstreamMessage = stringValue(lastResolveResult.upstreamMessage)
+      || stringValue(lastGenerationError.upstreamMessage)
       || null
-    const errorCode = stringValue(lastGenerationError.errorCode)
+    const errorCode = stringValue(nodeMetadata.errorCode)
       || stringValue(lastResolveResult.errorCode)
+      || stringValue(lastGenerationError.errorCode)
       || mediaFailureDiagnosis?.code
       || null
-    const requestId = stringValue(lastGenerationError.requestId)
-      || stringValue(lastResolveResult.requestId)
+    const requestId = stringValue(lastResolveResult.requestId)
+      || stringValue(lastGenerationError.requestId)
       || null
     const regenerateInputPreview = regenerateInputPreviewFor(node, nodeMetadata, node.kind)
     const diagnostic: MediaDiagnosticPayload = {
@@ -1053,9 +1189,11 @@ export function CanvasNodeCard({
       failedRenderUrl: nullableString(failedRenderUrl),
       failedRenderReason: nullableString(failedRenderReason),
       attemptedUrls: attemptedUrls as RenderFailure[],
+      failedUrls,
       urlCandidates: activeCandidates.map((candidate) => ({ ...candidate, proxiedUrl: getProxiedMediaUrl(candidate.url) })),
       resolveBatchStatus: nullableString(resolveBatchStatus),
       recoveryStatus: nullableString(recoveryStatus),
+      isRecovering,
       storageKeyFailureReason: nullableString(
         stringValue(lastResolveResult.storageKeyFailureReason)
         || (storageKey && !selectedRenderUrl ? 'storageKey exists but no selected render URL was available.' : ''),
@@ -1089,6 +1227,7 @@ export function CanvasNodeCard({
     mediaFailureDiagnosis,
     mediaFailureText,
     mediaPersistence,
+    mediaRecoveryStatus,
     mediaVaultStatus?.label,
     node,
     nodeAsset.source,
@@ -1136,27 +1275,44 @@ export function CanvasNodeCard({
 
   const patchRecoveredAsset = (mediaKind: 'image' | 'video', result: AssetRecoverResponse) => {
     if (!onRecoverMedia) return
-    const resolvedUrl = typeof result.resolvedUrl === 'string' && result.resolvedUrl.trim()
-      ? result.resolvedUrl.trim()
-      : typeof result.stableUrl === 'string' && result.stableUrl.trim()
-        ? result.stableUrl.trim()
-        : ''
-    const recoveryStatus = result.recoveryStatus || result.status || result.errorCode || 'no_recovery_source'
+    const resolvedUrl = recoveryResolvedUrl(result)
+    const success = isSuccessfulRecovery(result) && Boolean(resolvedUrl)
+    const rawRecoveryStatus = result.recoveryStatus || result.status || result.errorCode || 'no_recovery_source'
+    const recoveryStatus = success ? 'ready' : normalizedRecoveryCode({ ...result, recoveryStatus: rawRecoveryStatus }, rawRecoveryStatus)
+    const errorMessage = success ? '' : recoveryErrorMessage(result)
+    const nextAction = result.nextAction || (success ? 'show_media' : 'regenerate_from_prompt')
+    const attemptedUrls = [
+      ...normalizeAttemptedUrls(nodeMetadata.attemptedUrls),
+      ...normalizeAttemptedUrls(result.attemptedUrls),
+    ].slice(-20)
+    const failedUrls = [
+      ...normalizeFailedUrls(nodeMetadata.failedUrls),
+      ...normalizeFailedUrls(result.failedUrls),
+      ...normalizeFailedUrls(result.attemptedUrls),
+    ].slice(-20)
     const nextMetadata = {
       ...metadataRecord(node.metadataJson),
       ...(result.assetId ? { assetId: result.assetId } : {}),
       ...(resolvedUrl ? { assetUrl: resolvedUrl, resolvedUrl, stableUrl: resolvedUrl } : {}),
-      assetResolveStatus: result.status || recoveryStatus,
+      assetResolveStatus: recoveryStatus,
       recoveryStatus,
+      isRecovering: false,
+      recovering: false,
       ...(result.storageKey ? { storageKey: result.storageKey } : {}),
       ...(result.storageProvider ? { storageProvider: result.storageProvider } : {}),
       ...(result.bucket ? { bucket: result.bucket } : {}),
       ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
-      ...(result.error || result.message || result.errorCode ? { error: result.error || result.message || result.errorCode } : {}),
+      error: success ? null : errorMessage,
+      errorCode: success ? null : result.errorCode || recoveryStatus,
+      errorMessage: success ? null : errorMessage,
+      nextAction,
+      attemptedUrls,
+      failedUrls,
       p0LastRecoveryResult: result,
+      p0LastRecoveryAt: new Date().toISOString(),
       mediaPersistence: {
         ...metadataRecord(metadataRecord(node.metadataJson).mediaPersistence),
-        status: resolvedUrl || result.status === 'ready' ? 'persisted' : result.status || recoveryStatus,
+        status: success ? 'persisted' : recoveryStatus,
         ...(result.assetId ? { assetId: result.assetId } : {}),
         ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : {}),
         ...(result.storageKey ? { storageKey: result.storageKey } : {}),
@@ -1174,15 +1330,33 @@ export function CanvasNodeCard({
         resultVideoUrl: resolvedUrl,
         preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: resolvedUrl },
       } : {}),
-      errorMessage: resolvedUrl || result.status === 'ready' ? undefined : result.error || result.message || result.errorCode || node.errorMessage,
+      errorMessage: success ? undefined : errorMessage || result.errorCode || node.errorMessage,
       metadataJson: nextMetadata,
     })
   }
 
   const setRecoveryStatusFromResult = (result: AssetRecoverResponse) => {
-    const resolvedUrl = stringValue(result.resolvedUrl) || stringValue(result.stableUrl)
+    const resolvedUrl = recoveryResolvedUrl(result)
     const status = result.recoveryStatus || result.status || result.errorCode || ''
-    setMediaRecoveryStatus(resolvedUrl ? 'recovered' : status.startsWith('unrecoverable_') || status === 'UNRECOVERABLE' || isTerminalRecoveryReason(status) ? 'unrecoverable' : 'idle')
+    setMediaRecoveryStatus(resolvedUrl || result.ok === true ? 'recovered' : status.startsWith('unrecoverable_') || status === 'UNRECOVERABLE' || isTerminalRecoveryReason(status) || result.nextAction === 'regenerate_from_prompt' ? 'unrecoverable' : 'idle')
+  }
+
+  const patchRecoveryStarted = () => {
+    if (!onRecoverMedia) return
+    onRecoverMedia(node.id, {
+      errorMessage: undefined,
+      metadataJson: {
+        ...metadataRecord(node.metadataJson),
+        isRecovering: true,
+        recovering: true,
+        recoveryStatus: 'recovering',
+        error: null,
+        errorCode: null,
+        errorMessage: null,
+        nextAction: 'manual_debug',
+        p0LastRecoveryStartedAt: new Date().toISOString(),
+      },
+    })
   }
 
   const appendRenderFailure = (mediaKind: 'image' | 'video', source: MediaUrlSource, reason: string) => {
@@ -1216,22 +1390,24 @@ export function CanvasNodeCard({
   }
 
   async function resolveAssetBatch(assetId: string) {
-    const response = await fetch('/api/assets/resolve-batch', {
+    const { response, data } = await fetchRecoveryJson('/api/assets/resolve-batch', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ assetIds: [assetId] }),
     })
-    const data = await response.json().catch(() => ({})) as { assets?: AssetRecoverResponse[]; message?: string; errorCode?: string }
-    const result = Array.isArray(data.assets) ? data.assets[0] : undefined
-    if (!response.ok || !result) {
+    const batchData = data as AssetRecoverResponse & { assets?: AssetRecoverResponse[]; message?: string; errorCode?: string }
+    const result = Array.isArray(batchData.assets) ? batchData.assets[0] : undefined
+    if (!response?.ok || !result) {
       return {
+        ok: false,
         success: false,
-        status: data.errorCode || 'asset_not_found_by_node',
-        recoveryStatus: data.errorCode || 'asset_not_found_by_node',
-        errorCode: data.errorCode || 'asset_not_found_by_node',
-        message: data.message || 'resolve-batch 没有返回该 asset。',
+        status: batchData.errorCode || batchData.recoveryStatus || 'asset_not_found_by_node',
+        recoveryStatus: batchData.errorCode || batchData.recoveryStatus || 'asset_not_found_by_node',
+        errorCode: batchData.errorCode || batchData.recoveryStatus || 'asset_not_found_by_node',
+        message: recoveryErrorMessage(batchData) || 'resolve-batch 没有返回该 asset。',
+        nextAction: batchData.nextAction || 'regenerate_from_prompt',
       } satisfies AssetRecoverResponse
     }
     return result
@@ -1242,14 +1418,16 @@ export function CanvasNodeCard({
     const recoveryProjectId = projectId || stringValue(nodeMetadata.projectId)
     const recoveryWorkflowId = workflowId || stringValue(nodeMetadata.workflowId)
     setMediaRecoveryStatus('checking')
+    patchRecoveryStarted()
+    let finalResult: AssetRecoverResponse | null = null
     try {
       if (nodeAssetId) {
         const result = await resolveAssetBatch(nodeAssetId)
+        finalResult = result
         patchRecoveredAsset(mediaKind, result)
-        setRecoveryStatusFromResult(result)
         return
       }
-      const lookupResponse = await fetch('/api/assets/resolve-by-node', {
+      const { response: lookupResponse, data: lookupData } = await fetchRecoveryJson('/api/assets/resolve-by-node', {
         method: 'POST',
         cache: 'no-store',
         credentials: 'include',
@@ -1260,36 +1438,47 @@ export function CanvasNodeCard({
           workflowId: recoveryWorkflowId,
         }),
       })
-      const lookupData = await lookupResponse.json().catch(() => ({})) as AssetRecoverResponse
-      if (!lookupResponse.ok || !lookupData.assetId) {
+      if (!lookupResponse?.ok || !lookupData.assetId) {
         const failed = {
+          ok: false,
           success: false,
           status: lookupData.errorCode || 'asset_not_found_by_node',
           recoveryStatus: lookupData.errorCode || 'asset_not_found_by_node',
           errorCode: lookupData.errorCode || 'asset_not_found_by_node',
-          message: lookupData.message || '按 nodeId 没查到已存在 Asset。',
+          errorMessage: recoveryErrorMessage(lookupData) || '按 nodeId 没查到已存在 Asset。',
+          message: recoveryErrorMessage(lookupData) || '按 nodeId 没查到已存在 Asset。',
+          nextAction: lookupData.nextAction || 'regenerate_from_prompt',
         } satisfies AssetRecoverResponse
+        finalResult = failed
         patchRecoveredAsset(mediaKind, failed)
-        setRecoveryStatusFromResult(failed)
         return
       }
       const resolved = await resolveAssetBatch(lookupData.assetId)
+      finalResult = {
+        ...lookupData,
+        ...resolved,
+        assetId: resolved.assetId || lookupData.assetId,
+      }
       patchRecoveredAsset(mediaKind, {
         ...lookupData,
         ...resolved,
         assetId: resolved.assetId || lookupData.assetId,
       })
-      setRecoveryStatusFromResult(resolved)
     } catch (error) {
       const failed = {
+        ok: false,
         success: false,
-        status: 'recovery_request_failed',
-        recoveryStatus: 'recovery_request_failed',
-        errorCode: 'recovery_request_failed',
+        status: 'generation_failed',
+        recoveryStatus: 'generation_failed',
+        errorCode: 'generation_failed',
+        nextAction: 'manual_debug',
         message: error instanceof Error ? error.message : '重新 resolve 失败。',
       } satisfies AssetRecoverResponse
+      finalResult = failed
       patchRecoveredAsset(mediaKind, failed)
-      setRecoveryStatusFromResult(failed)
+    } finally {
+      if (finalResult) setRecoveryStatusFromResult(finalResult)
+      else setMediaRecoveryStatus('idle')
     }
   }
 
@@ -1301,56 +1490,53 @@ export function CanvasNodeCard({
       .filter((candidate) => candidate.url && (/^https?:\/\//i.test(candidate.url) || candidate.url.startsWith('data:')))
     const recoveryAttempts: Array<Record<string, unknown>> = []
     setMediaRecoveryStatus('checking')
+    patchRecoveryStarted()
+    let finalResult: AssetRecoverResponse | null = null
     try {
       if (nodeAssetId) {
-        const response = await fetch(`/api/assets/${encodeURIComponent(nodeAssetId)}/recover`, {
+        const { response, data } = await fetchRecoveryJson(`/api/assets/${encodeURIComponent(nodeAssetId)}/recover`, {
           method: 'POST',
           cache: 'no-store',
           credentials: 'include',
           headers: { Accept: 'application/json' },
         })
-        const data = await response.json().catch(() => ({})) as AssetRecoverResponse
-        recoveryAttempts.push({ step: 'assetId', assetId: nodeAssetId, ok: response.ok, result: data })
-        if (response.ok && isSuccessfulRecovery(data)) {
+        recoveryAttempts.push({ step: 'assetId', assetId: nodeAssetId, ok: Boolean(response?.ok), result: data })
+        if (response?.ok && isSuccessfulRecovery(data)) {
+          finalResult = data
           patchRecoveredAsset(mediaKind, data)
-          setRecoveryStatusFromResult(data)
           return
         }
       }
 
-      try {
-        const lookupResponse = await fetch('/api/assets/resolve-by-node', {
-          method: 'POST',
-          cache: 'no-store',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            nodeId: node.id,
-            projectId: recoveryProjectId,
-            workflowId: recoveryWorkflowId,
-          }),
-        })
-        const lookupData = await lookupResponse.json().catch(() => ({})) as AssetRecoverResponse
-        recoveryAttempts.push({ step: 'resolve-by-node', nodeId: node.id, ok: lookupResponse.ok, result: lookupData })
-        if (lookupResponse.ok && lookupData.assetId) {
-          const resolved = await resolveAssetBatch(lookupData.assetId)
-          recoveryAttempts.push({ step: 'resolve-batch', assetId: lookupData.assetId, result: resolved })
-          patchRecoveredAsset(mediaKind, {
-            ...lookupData,
-            ...resolved,
-            assetId: resolved.assetId || lookupData.assetId,
-          })
-          if (isSuccessfulRecovery(resolved)) {
-            setRecoveryStatusFromResult(resolved)
-            return
-          }
+      const { response: lookupResponse, data: lookupData } = await fetchRecoveryJson('/api/assets/resolve-by-node', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          nodeId: node.id,
+          projectId: recoveryProjectId,
+          workflowId: recoveryWorkflowId,
+        }),
+      })
+      recoveryAttempts.push({ step: 'resolve-by-node', nodeId: node.id, ok: Boolean(lookupResponse?.ok), result: lookupData })
+      if (lookupResponse?.ok && lookupData.assetId) {
+        const resolved = await resolveAssetBatch(lookupData.assetId)
+        const merged = {
+          ...lookupData,
+          ...resolved,
+          assetId: resolved.assetId || lookupData.assetId,
+        } satisfies AssetRecoverResponse
+        recoveryAttempts.push({ step: 'resolve-batch', assetId: lookupData.assetId, result: resolved })
+        if (isSuccessfulRecovery(merged)) {
+          finalResult = merged
+          patchRecoveredAsset(mediaKind, merged)
+          return
         }
-      } catch {
-        recoveryAttempts.push({ step: 'resolve-by-node', ok: false, error: 'request_failed' })
       }
 
       if (recoveryCandidates.length) {
-        const response = await fetch('/api/media/resync', {
+        const { response, data } = await fetchRecoveryJson('/api/media/resync', {
           method: 'POST',
           cache: 'no-store',
           credentials: 'include',
@@ -1369,55 +1555,64 @@ export function CanvasNodeCard({
             },
           }),
         })
-        const data = await response.json().catch(() => ({})) as AssetRecoverResponse
-        recoveryAttempts.push({ step: 'media-resync', ok: response.ok, result: data })
-        if (response.ok && data.success && data.stableUrl && data.assetId) {
-          patchRecoveredAsset(mediaKind, {
-            success: true,
-            assetId: data.assetId,
-            status: 'ready',
-            resolvedUrl: data.stableUrl,
-            recoveryStatus: 'recovered_from_old_url',
-            actionTaken: 'reuploaded_from_original_url',
-            mediaPersistence: data.mediaPersistence,
-          })
-          setMediaRecoveryStatus('recovered')
+        recoveryAttempts.push({ step: 'media-resync', ok: Boolean(response?.ok), result: data })
+        if (response?.ok && isSuccessfulRecovery(data)) {
+          finalResult = data
+          patchRecoveredAsset(mediaKind, data)
           return
         }
         const terminalCode = terminalRecoveryCodeFromAttempts(recoveryCandidates, data)
-        patchRecoveredAsset(mediaKind, {
+        finalResult = {
+          ok: false,
           success: false,
           status: terminalCode,
           recoveryStatus: terminalCode,
           errorCode: terminalCode,
-          error: data.message || data.errorCode || '旧媒体 URL 候选已全部不可下载。',
+          errorMessage: recoveryErrorMessage(data) || '旧媒体 URL 候选已全部不可下载。',
+          message: recoveryErrorMessage(data) || '旧媒体 URL 候选已全部不可下载。',
           actionTaken: 'marked_unrecoverable',
           attemptedUrls: data.attemptedUrls || recoveryAttempts,
+          failedUrls: data.failedUrls || data.attemptedUrls || recoveryAttempts,
           upstreamStatus: data.upstreamStatus,
           upstreamMessage: data.upstreamMessage,
           requestId: data.requestId,
-        })
+          nextAction: 'regenerate_from_prompt',
+        }
+        patchRecoveredAsset(mediaKind, finalResult)
       } else {
-        patchRecoveredAsset(mediaKind, {
+        finalResult = {
+          ok: false,
           success: false,
           status: 'no_recovery_source',
           recoveryStatus: 'no_recovery_source',
           errorCode: 'no_recovery_source',
-          error: '当前节点没有 assetId、nodeId 可解析 Asset，也没有可重新导入的旧 URL。',
+          errorMessage: '当前节点没有 assetId、nodeId 可解析 Asset，也没有可重新导入的旧 URL。',
+          message: '当前节点没有 assetId、nodeId 可解析 Asset，也没有可重新导入的旧 URL。',
           actionTaken: 'marked_unrecoverable',
           attemptedUrls: recoveryAttempts,
-        })
+          failedUrls: recoveryAttempts,
+          nextAction: 'regenerate_from_prompt',
+        }
+        patchRecoveredAsset(mediaKind, finalResult)
       }
-      setMediaRecoveryStatus('unrecoverable')
     } catch (error) {
-      patchRecoveredAsset(mediaKind, {
+      finalResult = {
+        ok: false,
         success: false,
-        status: 'recovery_request_failed',
-        recoveryStatus: 'recovery_request_failed',
-        error: error instanceof Error ? error.message : '资产恢复请求失败。',
+        status: 'generation_failed',
+        recoveryStatus: 'generation_failed',
+        errorCode: 'generation_failed',
+        errorMessage: error instanceof Error ? error.message : '资产恢复请求失败。',
+        message: error instanceof Error ? error.message : '资产恢复请求失败。',
         actionTaken: 'marked_unrecoverable',
-      })
-      setMediaRecoveryStatus('unrecoverable')
+        attemptedUrls: recoveryAttempts,
+        failedUrls: recoveryAttempts,
+        nextAction: 'manual_debug',
+      }
+      patchRecoveredAsset(mediaKind, finalResult)
+    } finally {
+      if (finalResult) setRecoveryStatusFromResult(finalResult)
+      else setMediaRecoveryStatus('idle')
     }
   }
 
@@ -1613,7 +1808,6 @@ export function CanvasNodeCard({
     recoveryAttemptKeyRef.current = attemptKey
 
     let cancelled = false
-    setMediaRecoveryStatus('checking')
 
     const patchRecoveredNode = (workingUrl: string, audit: MediaRecoveryAudit, extraMetadata?: Record<string, unknown>) => {
       const recoveredAt = new Date().toISOString()
@@ -1725,9 +1919,37 @@ export function CanvasNodeCard({
     setMediaRecoveryStatus('idle')
   }, [videoPreviewUrl])
 
-  const renderMediaRecoveryActions = (mediaKind: 'image' | 'video') => (
-    <div className="mt-2 flex w-full flex-wrap gap-1.5" data-no-node-drag="true">
-      <button
+  const renderRegenerateButton = () => onRegenerateFromPrompt ? (
+    <button
+      type="button"
+      data-no-node-drag="true"
+      className="rounded border border-amber-200/25 bg-amber-200/10 px-2 py-1 text-xs font-semibold text-amber-50"
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onRegenerateFromPrompt()
+      }}
+    >
+      用原 Prompt 重新生成并重建 Asset
+    </button>
+  ) : null
+
+  const renderMediaRecoveryActions = (mediaKind: 'image' | 'video') => {
+    const regenerateIsPrimary = Boolean(
+      onRegenerateFromPrompt &&
+      (
+        mediaFailureDiagnosis?.nextAction === '用原 Prompt 重新生成并重建 Asset。'
+        || mediaFailureDiagnosis?.canRecover === false
+        || mediaFailureDiagnosis?.code === 'old_url_expired'
+        || mediaFailureDiagnosis?.code === 'no_recovery_source'
+        || mediaFailureDiagnosis?.code === 'provider_media_download_failed'
+        || nodeMetadata.nextAction === 'regenerate_from_prompt'
+      ),
+    )
+    const showRecoverButtons = Boolean(onRecoverMedia && !regenerateIsPrimary)
+    return (
+      <div className="mt-2 flex w-full flex-wrap gap-1.5" data-no-node-drag="true">
+        <button
         type="button"
         data-no-node-drag="true"
         className="rounded border border-cyan-200/25 bg-cyan-200/10 px-2 py-1 text-xs font-semibold text-cyan-50"
@@ -1751,7 +1973,8 @@ export function CanvasNodeCard({
       >
         {copiedDiagnostic === 'urls' ? '已复制 URL 候选' : '复制全部 URL 候选'}
       </button>
-      {onRecoverMedia ? (
+      {regenerateIsPrimary ? renderRegenerateButton() : null}
+      {showRecoverButtons ? (
         <>
           <button
             type="button"
@@ -1779,20 +2002,7 @@ export function CanvasNodeCard({
           </button>
         </>
       ) : null}
-      {onRegenerateFromPrompt ? (
-        <button
-          type="button"
-          data-no-node-drag="true"
-          className="rounded border border-amber-200/25 bg-amber-200/10 px-2 py-1 text-xs font-semibold text-amber-50"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            onRegenerateFromPrompt()
-          }}
-        >
-          用原 Prompt 重新生成并重建 Asset
-        </button>
-      ) : null}
+      {!regenerateIsPrimary ? renderRegenerateButton() : null}
       {onOpenMediaDiagnostics ? (
         <button
           type="button"
@@ -1808,7 +2018,8 @@ export function CanvasNodeCard({
         </button>
       ) : null}
     </div>
-  )
+    )
+  }
 
   const renderMediaFailurePanel = (mediaKind: 'image' | 'video') => (
     <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 import { persistGeneratedMedia, type PersistGeneratedMediaInput } from '@/lib/assets/persist-generated-media'
+import { recoveryResponse, terminalRecoveryAction } from '@/lib/assets/recovery-response'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -19,12 +20,19 @@ type ResyncBody = {
 }
 
 function jsonError(errorCode: string, message: string, status = 400, details?: Record<string, unknown>) {
-  return NextResponse.json({
-    success: false,
+  return NextResponse.json(recoveryResponse({
     errorCode,
     message,
     ...(details ? details : {}),
-  }, { status })
+  }, {
+    ok: false,
+    action: terminalRecoveryAction(errorCode),
+    recoveryStatus: errorCode,
+    errorCode,
+    errorMessage: message,
+    attemptedUrls: details?.attemptedUrls,
+    failedUrls: details?.failedUrls ?? details?.attemptedUrls,
+  }), { status })
 }
 
 function recordValue(value: unknown) {
@@ -148,21 +156,27 @@ export async function POST(request: NextRequest) {
             storageKey: resolved.storageKey,
             storageProvider: resolved.storageProvider,
             bucket: resolved.bucket,
-            recoveryStatus: resolved.recoveryStatus ?? 'resolved_by_node_id',
+            recoveryStatus: 'ready',
             assetResolveStatus: 'ready',
             },
           })
           return NextResponse.json({
-            success: true,
-            stableUrl: resolved.resolvedUrl,
-            assetId: resolved.assetId,
-            mediaPersistence: {
+            ...recoveryResponse({
+              ...resolved,
+              stableUrl: resolved.resolvedUrl,
+              resolvedUrl: resolved.resolvedUrl,
+              mediaPersistence: {
               status: 'persisted',
               assetId: resolved.assetId,
               storageKey: resolved.storageKey,
               storageProvider: resolved.storageProvider,
               recoveredAt: new Date().toISOString(),
             },
+            }, {
+              ok: true,
+              action: 'asset_found_by_node',
+              recoveryStatus: 'ready',
+            }),
           }, { status: 200 })
         }
       }
@@ -242,7 +256,7 @@ export async function POST(request: NextRequest) {
         storageKey: persistence.storageKey,
         storageProvider: persistence.storageProvider,
         bucket: persistence.bucket,
-        recoveryStatus: 'recovered_from_old_url',
+        recoveryStatus: 'ready',
         assetResolveStatus: 'ready',
         mediaPersistence: persistence,
         attemptedUrls: [...attemptedUrls, { ...candidate, ok: true, diagnostic }],
@@ -250,22 +264,32 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
-      success: true,
-      stableUrl: persistence.stableUrl,
+    return NextResponse.json(recoveryResponse({
       assetId: persistence.assetId,
+      resolvedUrl: persistence.stableUrl,
+      assetUrl: persistence.stableUrl,
+      stableUrl: persistence.stableUrl,
+      storageKey: persistence.storageKey,
+      storageProvider: persistence.storageProvider,
+      bucket: persistence.bucket,
       mediaPersistence: persistence,
       attemptedUrls: [...attemptedUrls, { ...candidate, ok: true, diagnostic }],
-    }, { status: 200 })
+    }, {
+      ok: true,
+      action: 'resynced_from_old_url',
+      recoveryStatus: 'ready',
+      attemptedUrls: [...attemptedUrls, { ...candidate, ok: true, diagnostic }],
+    }), { status: 200 })
   }
 
   const providerOwned = urlCandidates.some(candidateLooksProviderOwned)
+  const errorCode = providerOwned ? 'provider_media_download_failed' : 'old_url_expired'
   return jsonError(
-    providerOwned ? 'provider_media_download_failed' : 'old_url_expired',
+    errorCode,
     providerOwned
       ? 'Provider URL 或参考媒体 URL 已不可下载，无法重新同步。'
       : '旧媒体 URL 候选已全部过期或不可下载，无法重新同步。',
     410,
-    { attemptedUrls },
+    { attemptedUrls, failedUrls: attemptedUrls },
   )
 }

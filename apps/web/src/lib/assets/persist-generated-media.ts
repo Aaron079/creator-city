@@ -182,7 +182,7 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
           resolvedUrl: stableUrl,
           stableUrl,
           assetResolveStatus: 'ready',
-          recoveryStatus: 'persisted_generated_media',
+          recoveryStatus: 'ready',
           storageProvider: uploaded.storageProvider,
           bucket: uploaded.bucket,
           storageKey: uploaded.storageKey,

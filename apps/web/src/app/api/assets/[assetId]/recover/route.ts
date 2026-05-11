@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { resolveAssetById } from '@/lib/assets/asset-resolver'
+import { recoveryResponse, terminalRecoveryAction } from '@/lib/assets/recovery-response'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -16,14 +17,34 @@ export async function POST(_request: NextRequest, { params }: RouteContext) {
     if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
     const assetId = params.assetId?.trim()
-    if (!assetId) return jsonError('VALIDATION_FAILED', 'assetId is required.', 400)
+    if (!assetId) {
+      return jsonOk(recoveryResponse(
+        { errorCode: 'no_recovery_source', message: 'assetId is required.' },
+        { ok: false, action: 'no_recovery_source', recoveryStatus: 'no_recovery_source' },
+      ), { status: 400 })
+    }
 
     const recovered = await resolveAssetById(assetId, user.id)
-    if (!recovered) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
+    if (!recovered) {
+      return jsonOk(recoveryResponse(
+        { assetId, errorCode: 'no_recovery_source', message: '素材不存在。' },
+        { ok: false, action: 'no_recovery_source', recoveryStatus: 'no_recovery_source' },
+      ), { status: 404 })
+    }
 
-    return jsonOk(recovered)
+    const isReady = recovered.status === 'ready' && Boolean(recovered.resolvedUrl)
+    return jsonOk(recoveryResponse(recovered, {
+      ok: isReady,
+      action: isReady ? 'asset_recovered' : terminalRecoveryAction(recovered.recoveryStatus || recovered.status),
+      recoveryStatus: isReady ? 'ready' : recovered.recoveryStatus || recovered.status,
+      errorCode: isReady ? null : recovered.recoveryStatus || recovered.status,
+      errorMessage: recovered.error,
+    }), { status: isReady ? 200 : 200 })
   } catch (error) {
     console.error('[assets/recover] failed', { assetId: params.assetId, error })
-    return jsonError('ASSET_RECOVER_FAILED', safeErrorMessage(error, '恢复素材失败。'), 500)
+    return jsonOk(recoveryResponse(
+      { errorCode: 'generation_failed', message: safeErrorMessage(error, '恢复素材失败。') },
+      { ok: false, action: 'error', recoveryStatus: 'generation_failed' },
+    ), { status: 500 })
   }
 }

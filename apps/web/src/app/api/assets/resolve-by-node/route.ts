@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { resolveAssetById } from '@/lib/assets/asset-resolver'
+import { recoveryResponse, terminalRecoveryAction } from '@/lib/assets/recovery-response'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -47,6 +48,23 @@ function assetIdFromMetadata(metadataJson: unknown) {
   ].find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() ?? ''
 }
 
+function resolvedByNodeResponse(resolved: Awaited<ReturnType<typeof resolveAssetById>>) {
+  if (!resolved) {
+    return recoveryResponse(
+      { errorCode: 'no_recovery_source', message: '素材不存在。' },
+      { ok: false, action: 'no_recovery_source', recoveryStatus: 'no_recovery_source' },
+    )
+  }
+  const isReady = resolved.status === 'ready' && Boolean(resolved.resolvedUrl)
+  return recoveryResponse(resolved, {
+    ok: isReady,
+    action: isReady ? 'asset_found_by_node' : terminalRecoveryAction(resolved.recoveryStatus || resolved.status),
+    recoveryStatus: isReady ? 'ready' : resolved.recoveryStatus || resolved.status,
+    errorCode: isReady ? null : resolved.recoveryStatus || resolved.status,
+    errorMessage: resolved.error,
+  })
+}
+
 async function writeResolvedAssetToCanvasNode(args: {
   nodeId: string
   projectId?: string
@@ -83,6 +101,7 @@ async function writeResolvedAssetToCanvasNode(args: {
           ...(resolved.storageProvider ? { storageProvider: resolved.storageProvider } : {}),
           ...(resolved.bucket ? { bucket: resolved.bucket } : {}),
           ...(resolved.providerJobId ? { providerJobId: resolved.providerJobId } : {}),
+          ...(resolved.status === 'ready' && resolved.resolvedUrl ? { recoveryStatus: 'ready', assetResolveStatus: 'ready', error: null, errorCode: null, errorMessage: null } : {}),
           p0LastResolveResult: resolved,
           p0LastResolveAt: new Date().toISOString(),
         },
@@ -121,9 +140,8 @@ export async function POST(request: NextRequest) {
 
     if (directAsset) {
       const resolved = await resolveAssetById(directAsset.id, user.id)
-      if (!resolved) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
-      await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
-      return jsonOk(resolved)
+      if (resolved) await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
+      return jsonOk(resolvedByNodeResponse(resolved), { status: resolved ? 200 : 404 })
     }
 
     const canvasNode = await db.canvasNode.findFirst({
@@ -143,7 +161,7 @@ export async function POST(request: NextRequest) {
       const resolved = await resolveAssetById(metadataAssetId, user.id)
       if (resolved) {
         await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
-        return jsonOk(resolved)
+        return jsonOk(resolvedByNodeResponse(resolved))
       }
     }
 
@@ -166,13 +184,19 @@ export async function POST(request: NextRequest) {
       const resolved = await resolveAssetById(job.outputAssetId, user.id)
       if (resolved) {
         await writeResolvedAssetToCanvasNode({ nodeId, projectId, workflowId, userId: user.id, resolved })
-        return jsonOk(resolved)
+        return jsonOk(resolvedByNodeResponse(resolved))
       }
     }
 
-    return jsonError('ASSET_NOT_FOUND_FOR_NODE', '没有从当前 nodeId 找到已存在 Asset。', 404, { nodeId })
+    return jsonOk(recoveryResponse(
+      { errorCode: 'no_recovery_source', message: '没有从当前 nodeId 找到已存在 Asset。' },
+      { ok: false, action: 'no_recovery_source', recoveryStatus: 'no_recovery_source' },
+    ), { status: 404 })
   } catch (error) {
     console.error('[assets/resolve-by-node] failed', error)
-    return jsonError('ASSET_RESOLVE_BY_NODE_FAILED', safeErrorMessage(error, '按 nodeId 解析素材失败。'), 500)
+    return jsonOk(recoveryResponse(
+      { errorCode: 'generation_failed', message: safeErrorMessage(error, '按 nodeId 解析素材失败。') },
+      { ok: false, action: 'error', recoveryStatus: 'generation_failed' },
+    ), { status: 500 })
   }
 }
