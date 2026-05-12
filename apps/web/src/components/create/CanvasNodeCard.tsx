@@ -61,6 +61,7 @@ interface CanvasNodeCardProps {
   onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
+  onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
   onOpenPromptInspector?: () => void
   onOpenMediaDiagnostics?: (type: 'image' | 'video') => void
@@ -1116,6 +1117,7 @@ export function CanvasNodeCard({
   onAddNext,
   onDragStart,
   onOpenContextMenu,
+  onEdit,
   onOpenPreview,
   onOpenPromptInspector,
   onOpenMediaDiagnostics,
@@ -2410,12 +2412,13 @@ export function CanvasNodeCard({
         const down = pointerDownPos.current
         if (movedBeyondClickThreshold(down, event)) return
         onSelect()
+        onEdit()
       }}
       onDoubleClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
         if (isInteractiveTarget(event.target)) return
-        onSelect()
+        onEdit()
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

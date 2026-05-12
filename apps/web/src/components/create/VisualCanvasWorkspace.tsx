@@ -6988,6 +6988,7 @@ export function VisualCanvasWorkspace({
                 onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
                 onDragStart={(event) => handleNodeDragStart(node.id, event)}
                 onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
+                onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
                 onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
