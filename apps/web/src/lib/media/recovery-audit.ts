@@ -1,5 +1,6 @@
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
 export type MediaRecoveryAuditNode = {
   id?: string
@@ -74,14 +75,16 @@ function getCurrentMediaUrl(node: MediaRecoveryAuditNode, kind: MediaKind) {
 }
 
 function getProviderUrl(metadata: Record<string, unknown>, kind: MediaKind, currentUrl: string) {
-  const providerSpecific = kind === 'video'
-    ? stringValue(metadata.originalProviderVideoUrl)
-    : stringValue(metadata.originalProviderImageUrl)
-  return providerSpecific
-    || stringValue(metadata.originalProviderUrl)
-    || stringValue(metadata.providerUrl)
-    || stringValue(metadata.sourceProviderUrl)
-    || currentUrl
+  const candidates: Array<[string, string]> = [
+    kind === 'video'
+      ? ['metadata.originalProviderVideoUrl', stringValue(metadata.originalProviderVideoUrl)]
+      : ['metadata.originalProviderImageUrl', stringValue(metadata.originalProviderImageUrl)],
+    ['metadata.originalProviderUrl', stringValue(metadata.originalProviderUrl)],
+    ['metadata.providerUrl', stringValue(metadata.providerUrl)],
+    ['metadata.sourceProviderUrl', stringValue(metadata.sourceProviderUrl)],
+    ['currentUrl', currentUrl],
+  ]
+  return candidates.find(([source, url]) => url && isRenderableMediaUrl(url, { source }).ok)?.[1] ?? ''
 }
 
 async function diagnoseUrl(url: string) {
@@ -136,6 +139,18 @@ async function checkProxy(url: string): Promise<MediaRecoveryCandidateAudit> {
       proxyReachable: false,
       proxyStatus: 0,
       upstreamStatus: 0,
+    }
+  }
+  const mediaCandidate = isRenderableMediaUrl(url)
+  if (!mediaCandidate.ok) {
+    return {
+      source: '',
+      url,
+      proxiedUrl,
+      proxyReachable: false,
+      proxyStatus: 0,
+      upstreamStatus: 0,
+      message: mediaCandidate.reason,
     }
   }
   try {

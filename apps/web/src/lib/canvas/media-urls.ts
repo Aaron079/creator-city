@@ -1,3 +1,5 @@
+import { filterRenderableMediaUrlSources, isRenderableMediaUrl } from '@/lib/media/renderable-url'
+
 type MediaNodeLike = {
   resultImageUrl?: string | null
   resultVideoUrl?: string | null
@@ -52,7 +54,7 @@ function collectMetadataMediaUrls(
 ): Array<[string, string]> {
   if (!value || depth > 5) return []
   if (typeof value === 'string') {
-    if (/^https?:\/\//i.test(value) || value.startsWith('data:')) return [[path, value]]
+    if (isRenderableMediaUrl(value, { source: path }).ok) return [[path, value]]
     return []
   }
   if (Array.isArray(value)) {
@@ -65,7 +67,7 @@ function collectMetadataMediaUrls(
     const nextPath = `${path}.${key}`
     if (typeof nested === 'string' && looksLikeMediaUrlKey(key, kind)) {
       const url = stringValue(nested)
-      if (/^https?:\/\//i.test(url) || url.startsWith('data:')) items.push([nextPath, url])
+      if (isRenderableMediaUrl(url, { source: nextPath }).ok) items.push([nextPath, url])
       continue
     }
     items.push(...collectMetadataMediaUrls(nested, kind, nextPath, depth + 1))
@@ -130,7 +132,7 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.pluginResult.images[0].url', firstImageUrl(pluginResult.images)],
     ...collectMetadataMediaUrls(metadata, 'image'),
   ]
-  return uniqueSources(candidates)
+  return filterRenderableMediaUrlSources(uniqueSources(candidates))
 }
 
 export function getNodeImageUrlSource(node?: MediaNodeLike | null): MediaUrlSource {
@@ -189,7 +191,7 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['preview.url', node.preview?.type === 'remote-video' ? stringValue(node.preview.url) : ''],
     ...collectMetadataMediaUrls(metadata, 'video'),
   ]
-  return uniqueSources(candidates)
+  return filterRenderableMediaUrlSources(uniqueSources(candidates))
 }
 
 export function getNodeVideoUrlSource(node?: MediaNodeLike | null): MediaUrlSource {

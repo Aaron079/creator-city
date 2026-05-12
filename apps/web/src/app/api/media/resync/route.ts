@@ -5,6 +5,7 @@ import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 import { persistGeneratedMedia, type PersistGeneratedMediaInput } from '@/lib/assets/persist-generated-media'
 import { recoveryResponse, terminalRecoveryAction } from '@/lib/assets/recovery-response'
 import { db } from '@/lib/db'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ type ResyncBody = {
 }
 
 function jsonError(errorCode: string, message: string, status = 400, details?: Record<string, unknown>) {
-  return NextResponse.json(recoveryResponse({
+  const response = recoveryResponse({
     errorCode,
     message,
     ...(details ? details : {}),
@@ -32,7 +33,14 @@ function jsonError(errorCode: string, message: string, status = 400, details?: R
     errorMessage: message,
     attemptedUrls: details?.attemptedUrls,
     failedUrls: details?.failedUrls ?? details?.attemptedUrls,
-  }), { status })
+  })
+  return NextResponse.json({
+    ...response,
+    ...(details ? details : {}),
+    attemptedUrls: details?.attemptedUrls ?? response.attemptedUrls,
+    failedUrls: details?.failedUrls ?? response.failedUrls,
+    nextAction: response.nextAction,
+  }, { status })
 }
 
 function recordValue(value: unknown) {
@@ -62,11 +70,25 @@ function normalizeUrlCandidates(body: ResyncBody) {
   const singleUrl = typeof body.url === 'string' ? body.url.trim() : ''
   if (singleUrl) candidates.unshift({ url: singleUrl, source: 'request.url' })
   const seen = new Set<string>()
-  return candidates.filter((candidate) => {
+  const rejectedUrls: Array<Record<string, unknown>> = []
+  const urlCandidates = candidates.filter((candidate) => {
     if (!candidate.url || seen.has(candidate.url)) return false
     seen.add(candidate.url)
+    const mediaCandidate = isRenderableMediaUrl(candidate.url, { source: candidate.source })
+    if (!mediaCandidate.ok) {
+      rejectedUrls.push({
+        ...candidate,
+        ok: false,
+        errorCode: 'proxy_url_not_media_candidate',
+        rejectedReason: mediaCandidate.reason,
+        proxyRejectedHost: mediaCandidate.hostname,
+        providerEndpoint: mediaCandidate.providerEndpoint,
+      })
+      return false
+    }
     return true
   })
+  return { urlCandidates, rejectedUrls }
 }
 
 function candidateLooksProviderOwned(candidate: { url: string; source: string }) {
@@ -136,7 +158,7 @@ export async function POST(request: NextRequest) {
     return jsonError('INVALID_JSON', '请求体不是合法 JSON。')
   }
 
-  const urlCandidates = normalizeUrlCandidates(body)
+  const { urlCandidates, rejectedUrls } = normalizeUrlCandidates(body)
 
   // If nodeId provided, check if an Asset already exists for this node in the DB.
   // This handles legacy nodes that have a nodeId->Asset link but lost assetId from metadataJson.
@@ -200,7 +222,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!urlCandidates.length) return jsonError('no_recovery_source', '当前节点没有可同步的媒体 URL。')
+  if (!urlCandidates.length) {
+    return jsonError(
+      'no_recovery_source',
+      rejectedUrls.length
+        ? '当前节点没有可同步的媒体 URL；provider API endpoint 不能作为媒体恢复来源。'
+        : '当前节点没有可同步的媒体 URL。',
+      rejectedUrls.length ? 410 : 400,
+      rejectedUrls.length ? {
+        attemptedUrls: rejectedUrls,
+        failedUrls: rejectedUrls,
+        providerEndpoint: stringValue(rejectedUrls.find((item) => stringValue(item.providerEndpoint))?.providerEndpoint),
+      } : undefined,
+    )
+  }
 
   const type = body.type === 'video' ? 'video' : body.type === 'image' ? 'image' : null
   if (!type) return jsonError('MEDIA_TYPE_INVALID', '媒体类型必须是 image 或 video。')
@@ -209,7 +244,7 @@ export async function POST(request: NextRequest) {
     || stringValue(metadata.providerId)
     || stringValue(metadata.generationSource)
     || 'legacy-provider-url'
-  const attemptedUrls: Array<Record<string, unknown>> = []
+  const attemptedUrls: Array<Record<string, unknown>> = [...rejectedUrls]
 
   for (const candidate of urlCandidates) {
     const diagnostic = candidate.url.startsWith('data:')

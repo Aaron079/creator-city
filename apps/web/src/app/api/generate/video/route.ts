@@ -11,6 +11,7 @@ import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/a
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,17 +41,20 @@ function defaultVideoProviderId(rows: Awaited<ReturnType<typeof getVideoProvider
     ?? null
 }
 
-function providerNotConfiguredResponse(providerId: string, missingEnv: string[] = []) {
-  return NextResponse.json({
-    success: false,
+function providerNotConfiguredResponse(providerId: string, missingEnv: string[] = [], requestId?: string, submittedInput?: unknown) {
+  return videoErrorResponse({
     errorCode: 'provider_env_missing',
-    message: '视频 Provider 未配置，请先在 /admin/providers 配置环境变量。',
+    errorMessage: '视频 Provider 未配置，请先在 /admin/providers 配置环境变量。',
+    requestId,
     providerId,
-    missingEnv,
-    missingEnvKeys: missingEnv,
     mode: 'unavailable',
     status: 'not-configured',
-  }, { status: 200 })
+    submittedInput,
+    details: {
+      missingEnv,
+      missingEnvKeys: missingEnv,
+    },
+  })
 }
 
 function firstImageInput(body: VideoGenerateBody) {
@@ -93,6 +97,66 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'provider_media_download_failed' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
   if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'provider_no_download_url' || code === 'VIDEO_URL_EMPTY' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
   return code || 'generation_failed'
+}
+
+function createVideoRequestId() {
+  return globalThis.crypto?.randomUUID?.() ?? `video_${Date.now()}_${Math.random().toString(36).slice(2)}`
+}
+
+function safeVideoSubmittedInput(body?: VideoGenerateBody, overrides: Record<string, unknown> = {}) {
+  const imageUrl = body ? firstImageInput(body) : undefined
+  return {
+    providerId: stringParam(overrides.providerId) ?? stringParam(body?.providerId) ?? null,
+    model: stringParam(overrides.model) ?? stringParam(body?.model) ?? null,
+    projectId: stringInput(body?.projectId) || null,
+    workflowId: stringInput(body?.workflowId) || null,
+    nodeId: stringInput(body?.nodeId) || null,
+    promptChars: body?.prompt?.trim().length ?? 0,
+    compiledPromptChars: body?.compiledPrompt?.trim().length ?? 0,
+    hasImageUrl: Boolean(imageUrl),
+    imageUrl: summarizeInputUrl(imageUrl),
+    ...overrides,
+  }
+}
+
+function videoErrorResponse(args: {
+  errorCode: string
+  errorMessage: string
+  requestId?: string | null
+  upstreamStatus?: number | null
+  upstreamMessage?: string | null
+  submittedInput?: unknown
+  statusCode?: number
+  providerId?: string | null
+  mode?: string
+  status?: string
+  details?: Record<string, unknown>
+}) {
+  return NextResponse.json({
+    success: false,
+    providerId: args.providerId ?? undefined,
+    mode: args.mode ?? 'real',
+    status: args.status ?? 'failed',
+    errorCode: args.errorCode,
+    errorMessage: args.errorMessage,
+    message: args.errorMessage,
+    requestId: args.requestId || createVideoRequestId(),
+    upstreamStatus: args.upstreamStatus ?? null,
+    upstreamMessage: args.upstreamMessage ?? null,
+    submittedInput: args.submittedInput ?? null,
+    ...(args.details ?? {}),
+  }, { status: args.statusCode ?? 200 })
+}
+
+function classifyVideoException(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '生成请求失败')
+  const haystack = message.toLowerCase()
+  if (/invalid[_ -]?param|invalid parameter|bad request|parameter|参数/.test(haystack)) return { errorCode: 'provider_invalid_parameter', message }
+  if (/no .*download|download .*url|url .*missing|video.*url.*empty|provider_no_download_url/.test(haystack)) return { errorCode: 'provider_no_download_url', message }
+  if (/(oss|upload|aliyun|bucket|storage).*(timeout|timed out)|timeout.*(oss|upload|aliyun|bucket|storage)/.test(haystack)) return { errorCode: 'oss_upload_timeout', message }
+  if (/oss|upload|aliyun|bucket|storage|putobject/.test(haystack)) return { errorCode: 'oss_upload_error', message }
+  if (/fetch failed|failed to fetch|network|econn|enotfound|dns|socket|connection/.test(haystack)) return { errorCode: 'provider_network_failed', message }
+  return { errorCode: 'generation_failed', message }
 }
 
 function isMissingGenerationJobNodeIdColumn(error: unknown) {
@@ -190,6 +254,15 @@ async function assertProviderReadableImageUrl(imageUrl: string | undefined) {
       errorCode: 'PROVIDER_INVALID_PARAMETER',
       message: 'Seedance 首帧 imageUrl 必须是可公网访问的 http/https URL。',
       upstreamMessage: `imageUrl is not http(s): ${imageUrl.slice(0, 160)}`,
+    }
+  }
+  const mediaCandidate = isRenderableMediaUrl(imageUrl, { source: 'imageUrl' })
+  if (!mediaCandidate.ok) {
+    return {
+      ok: false as const,
+      errorCode: 'PROVIDER_INVALID_PARAMETER',
+      message: 'Seedance 首帧 imageUrl 必须是真实图片 URL，不能是 Provider API endpoint。',
+      upstreamMessage: `${mediaCandidate.reason}: ${imageUrl.slice(0, 160)}`,
     }
   }
   const diagnostic = await diagnoseMediaUrl(imageUrl)
@@ -442,24 +515,43 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const routeRequestId = createVideoRequestId()
+  let body: VideoGenerateBody | undefined
   try {
-    let body: VideoGenerateBody
     try {
       body = await request.json() as VideoGenerateBody
     } catch {
-      return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
+      return videoErrorResponse({
+        errorCode: 'provider_invalid_parameter',
+        errorMessage: 'Invalid JSON',
+        requestId: routeRequestId,
+        statusCode: 400,
+        submittedInput: safeVideoSubmittedInput(undefined),
+      })
     }
 
     const currentUser = await getCurrentUser()
     if (!currentUser) {
-      return NextResponse.json({
-        success: false,
+      return videoErrorResponse({
         errorCode: 'UNAUTHORIZED',
-        message: '请先登录后再生成视频。',
+        errorMessage: '请先登录后再生成视频。',
+        requestId: routeRequestId,
         mode: 'unavailable',
         status: 'failed',
-      }, { status: 401 })
+        statusCode: 401,
+        submittedInput: safeVideoSubmittedInput(body),
+      })
     }
+
+  if (!body) {
+    return videoErrorResponse({
+      errorCode: 'provider_invalid_parameter',
+      errorMessage: 'Invalid JSON',
+      requestId: routeRequestId,
+      statusCode: 400,
+      submittedInput: safeVideoSubmittedInput(undefined),
+    })
+  }
 
   const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
   const projectId = stringInput(body.projectId)
@@ -467,15 +559,19 @@ export async function POST(request: NextRequest) {
   const workflowId = stringInput(body.workflowId)
   const missing = missingGenerationInput({ projectId, nodeId, prompt })
   if (missing.length) {
-    return NextResponse.json({
-      success: false,
+    return videoErrorResponse({
       errorCode: 'missing_generation_input',
-      message: `缺少生成必要字段：${missing.join(', ')}。`,
-      missing,
-      missingFields: missing,
+      errorMessage: `缺少生成必要字段：${missing.join(', ')}。`,
+      requestId: routeRequestId,
       mode: 'unavailable',
       status: 'failed',
-    }, { status: 400 })
+      statusCode: 400,
+      submittedInput: safeVideoSubmittedInput(body),
+      details: {
+        missing,
+        missingFields: missing,
+      },
+    })
   }
 
   const providers = await getVideoProviderRows()
@@ -485,7 +581,9 @@ export async function POST(request: NextRequest) {
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
   if (!providerRow?.available) {
-    return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [])
+    return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [], routeRequestId, safeVideoSubmittedInput(body, {
+      providerId,
+    }))
   }
 
   const requestModel = typeof body.model === 'string' && body.model.trim()
@@ -502,13 +600,19 @@ export async function POST(request: NextRequest) {
     model: requestModel,
   })
   if (!generationContext.ok) {
-    return NextResponse.json({
-      success: false,
+    return videoErrorResponse({
       errorCode: generationContext.errorCode,
-      message: generationContext.message,
+      errorMessage: generationContext.message,
+      requestId: routeRequestId,
+      providerId,
       mode: 'unavailable',
       status: 'failed',
-    }, { status: generationContext.status })
+      statusCode: generationContext.status,
+      submittedInput: safeVideoSubmittedInput(body, {
+        providerId,
+        model: requestModel,
+      }),
+    })
   }
   body.projectId = generationContext.projectId
   body.workflowId = generationContext.workflowId
@@ -546,16 +650,13 @@ export async function POST(request: NextRequest) {
     })
     if (!videoInputValidation.ok) {
       await markVideoGenerationJobFailed(generationJob.id, videoInputValidation.message)
-      return NextResponse.json({
-        success: false,
+      return videoErrorResponse({
         providerId,
         mode: 'real',
         status: 'failed',
-        message: videoInputValidation.message,
+        errorMessage: videoInputValidation.message,
         errorCode: videoInputValidation.errorCode,
-        model: providerRow.model,
-        missingFields: videoInputValidation.missingFields,
-        invalidFields: videoInputValidation.invalidFields,
+        requestId: routeRequestId,
         submittedInput: {
           providerId,
           model: providerRow.model,
@@ -569,19 +670,23 @@ export async function POST(request: NextRequest) {
           requestedResolution,
           resolution: resolution ?? null,
         },
-      }, { status: 200 })
+        details: {
+          model: providerRow.model,
+          missingFields: videoInputValidation.missingFields,
+          invalidFields: videoInputValidation.invalidFields,
+        },
+      })
     }
     const imageReadable = await assertProviderReadableImageUrl(imageUrl)
     if (!imageReadable.ok) {
       await markVideoGenerationJobFailed(generationJob.id, imageReadable.message)
-      return NextResponse.json({
-        success: false,
+      return videoErrorResponse({
         providerId,
         mode: 'real',
         status: 'failed',
-        message: imageReadable.message,
+        errorMessage: imageReadable.message,
         errorCode: visibleProviderErrorCode(imageReadable.errorCode, imageReadable.upstreamStatus, imageReadable.message),
-        model: providerRow.model,
+        requestId: routeRequestId,
         upstreamStatus: imageReadable.upstreamStatus,
         upstreamMessage: imageReadable.upstreamMessage,
         submittedInput: {
@@ -597,8 +702,11 @@ export async function POST(request: NextRequest) {
           requestedResolution,
           resolution,
         },
-        providerResponse: imageReadable.diagnostic,
-      }, { status: 200 })
+        details: {
+          model: providerRow.model,
+          providerResponse: imageReadable.diagnostic,
+        },
+      })
     }
     const raw = await generateSeedanceVideo({
       prompt,
@@ -614,26 +722,30 @@ export async function POST(request: NextRequest) {
 
     if (!raw.success) {
       await markVideoGenerationJobFailed(generationJob.id, raw.message)
-      return NextResponse.json({
-        success: false,
+      return videoErrorResponse({
         providerId,
         mode: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'unavailable' : 'real',
         status: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
-        message: raw.message,
+        errorMessage: raw.message,
         errorCode: visibleProviderErrorCode(raw.errorCode, raw.upstreamStatus, raw.message),
-        model: raw.model,
+        requestId: raw.requestId || routeRequestId,
         upstreamStatus: raw.upstreamStatus,
-          upstreamMessage: raw.upstreamMessage,
+        upstreamMessage: raw.upstreamMessage,
+        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
+          providerId,
+          model: raw.model,
+        }),
+        details: {
+          model: raw.model,
           rawCode: raw.rawCode,
-          requestId: raw.requestId,
           providerEndpoint: raw.providerEndpoint,
           providerRequestMethod: raw.providerRequestMethod,
           providerHttpStatus: raw.providerHttpStatus,
           providerFetchError: raw.providerFetchError,
           providerFetchCause: raw.providerFetchCause,
-          submittedInput: raw.submittedInput,
           providerResponse: raw.providerResponse,
-        }, { status: 200 })
+        },
+      })
     }
 
     if (raw.async) {
@@ -688,6 +800,30 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
+    if (!raw.videoUrl) {
+      await markVideoGenerationJobFailed(generationJob.id, 'Provider 未返回可下载视频 URL。')
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        errorCode: 'provider_no_download_url',
+        errorMessage: '视频生成成功，但 Provider 未返回可下载视频 URL。',
+        requestId: raw.requestId || routeRequestId,
+        upstreamMessage: raw.upstreamMessage,
+        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
+          providerId,
+          model: raw.model,
+        }),
+        details: {
+          model: raw.model,
+          providerEndpoint: raw.providerEndpoint,
+          providerRequestMethod: raw.providerRequestMethod,
+          providerHttpStatus: raw.providerHttpStatus,
+          providerResponse: raw.providerResponse,
+        },
+      })
+    }
+
     const completedAt = new Date().toISOString()
     const persisted = await attachPersistedVideo({
       videoUrl: raw.videoUrl,
@@ -705,6 +841,32 @@ export async function POST(request: NextRequest) {
     })
     const persistencePending = persisted.persistenceStatus === 'pending_persistence'
     const persistenceErrorCode = persisted.persistenceError ? visiblePersistenceErrorCode(persisted.persistenceError.errorCode) : undefined
+    if (persistenceErrorCode) {
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: persisted.persistenceStatus ?? 'failed',
+        errorCode: persistenceErrorCode,
+        errorMessage: persisted.persistenceError?.message || persisted.warning || '视频生成成功，但 OSS 上传失败。',
+        requestId: raw.requestId || routeRequestId,
+        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
+          providerId,
+          model: raw.model,
+        }),
+        details: {
+          model: raw.model,
+          mediaDownloadUrl: raw.videoUrl,
+          sourceUrl: raw.videoUrl,
+          storageProvider: persisted.storageProvider,
+          bucket: persisted.bucket,
+          storageKey: persisted.storageKey,
+          attemptedUploadKey: persisted.attemptedUploadKey,
+          ossRequestId: persisted.ossRequestId,
+          mediaPersistence: persisted.mediaPersistence,
+          assetIntelligence: persisted.assetIntelligence,
+        },
+      })
+    }
     return NextResponse.json({
       success: true,
       async: false,
@@ -805,16 +967,22 @@ export async function POST(request: NextRequest) {
   const resultWithMedia = result as typeof result & { resultVideoUrl?: string; videoUrl?: string; model?: string }
   const providerVideoUrl = result.result?.videoUrl ?? resultWithMedia.resultVideoUrl ?? resultWithMedia.videoUrl
   if (result.success && !providerVideoUrl) {
-    return NextResponse.json({
-      success: false,
+    return videoErrorResponse({
       providerId,
       mode: 'real',
       status: 'failed',
-      message: '视频生成成功，但 Provider 未返回可下载视频 URL。',
+      errorMessage: '视频生成成功，但 Provider 未返回可下载视频 URL。',
       errorCode: 'provider_no_download_url',
-      model: resultWithMedia.model,
-      result,
-    }, { status: 200 })
+      requestId: routeRequestId,
+      submittedInput: safeVideoSubmittedInput(body, {
+        providerId,
+        model: resultWithMedia.model,
+      }),
+      details: {
+        model: resultWithMedia.model,
+        result,
+      },
+    })
   }
   if (result.success && providerVideoUrl) {
     const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object' ? result.result.metadata : {}
@@ -831,6 +999,33 @@ export async function POST(request: NextRequest) {
     })
     const persistencePending = persisted.persistenceStatus === 'pending_persistence'
     const persistenceErrorCode = persisted.persistenceError ? visiblePersistenceErrorCode(persisted.persistenceError.errorCode) : undefined
+    if (persistenceErrorCode) {
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: persisted.persistenceStatus ?? 'failed',
+        errorCode: persistenceErrorCode,
+        errorMessage: persisted.persistenceError?.message || persisted.warning || '视频生成成功，但 OSS 上传失败。',
+        requestId: routeRequestId,
+        submittedInput: safeVideoSubmittedInput(body, {
+          providerId,
+          model: resultModel,
+        }),
+        details: {
+          model: resultModel,
+          mediaDownloadUrl: providerVideoUrl,
+          sourceUrl: providerVideoUrl,
+          storageProvider: persisted.storageProvider,
+          bucket: persisted.bucket,
+          storageKey: persisted.storageKey,
+          attemptedUploadKey: persisted.attemptedUploadKey,
+          ossRequestId: persisted.ossRequestId,
+          mediaPersistence: persisted.mediaPersistence,
+          assetIntelligence: persisted.assetIntelligence,
+          result,
+        },
+      })
+    }
     return NextResponse.json({
       ...result,
       success: true,
@@ -903,16 +1098,52 @@ export async function POST(request: NextRequest) {
       },
     })
   }
-    return NextResponse.json(result)
+    const failedResult = result as typeof result & {
+      errorCode?: string
+      message?: string
+      errorMessage?: string
+      upstreamStatus?: number
+      upstreamMessage?: string
+      requestId?: string
+      rawCode?: string
+      providerEndpoint?: string
+      providerResponse?: unknown
+      submittedInput?: unknown
+      model?: string
+    }
+    const failedMessage = failedResult.errorMessage || failedResult.message || '视频生成失败。'
+    return videoErrorResponse({
+      providerId,
+      mode: 'real',
+      status: 'failed',
+      errorCode: visibleProviderErrorCode(failedResult.errorCode, failedResult.upstreamStatus, failedMessage),
+      errorMessage: failedMessage,
+      requestId: failedResult.requestId || routeRequestId,
+      upstreamStatus: failedResult.upstreamStatus,
+      upstreamMessage: failedResult.upstreamMessage,
+      submittedInput: failedResult.submittedInput ?? safeVideoSubmittedInput(body, {
+        providerId,
+        model: failedResult.model ?? resultWithMedia.model,
+      }),
+      details: {
+        model: failedResult.model ?? resultWithMedia.model,
+        rawCode: failedResult.rawCode,
+        providerEndpoint: failedResult.providerEndpoint,
+        providerResponse: failedResult.providerResponse,
+        result,
+      },
+    })
   } catch (err) {
-    const message = err instanceof Error ? err.message : '生成请求失败'
+    const classified = classifyVideoException(err)
     console.error('[api/generate/video]', err)
-    return NextResponse.json({
-      success: false,
-      message,
-      errorCode: 'generation_failed',
+    return videoErrorResponse({
+      errorCode: classified.errorCode,
+      errorMessage: classified.message,
+      requestId: routeRequestId,
       mode: 'unavailable',
       status: 'failed',
-    }, { status: 500 })
+      upstreamMessage: classified.message,
+      submittedInput: safeVideoSubmittedInput(body),
+    })
   }
 }

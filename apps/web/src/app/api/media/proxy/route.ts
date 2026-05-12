@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -17,6 +18,7 @@ const DEFAULT_ALLOWED_HOST_SUFFIXES = [
 type ProxyErrorCode =
   | 'proxy_url_missing'
   | 'proxy_url_not_allowed'
+  | 'proxy_url_not_media_candidate'
   | 'proxy_auth_required'
   | 'proxy_upstream_403'
   | 'proxy_upstream_404'
@@ -137,6 +139,18 @@ export async function GET(request: NextRequest) {
       receivedUrl: rawUrl,
       hostname: target.hostname,
       proxyRejectedHost: target.hostname,
+      proxyUrl: proxyRequestUrl,
+    })
+  }
+
+  const mediaCandidate = isRenderableMediaUrl(rawUrl)
+  if (!mediaCandidate.ok) {
+    return proxyError('proxy_url_not_media_candidate', 400, 'Proxy target is not a renderable media URL.', {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyRejectedHost: target.hostname,
+      rejectedReason: mediaCandidate.reason,
+      providerEndpoint: mediaCandidate.providerEndpoint,
       proxyUrl: proxyRequestUrl,
     })
   }

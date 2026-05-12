@@ -7,6 +7,7 @@ import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } f
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { auditNodeMedia, type MediaRecoveryAudit } from '@/lib/media/recovery-audit'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
@@ -2244,7 +2245,7 @@ export function CanvasNodeCard({
     const hasPrompt = Boolean(node.prompt?.trim())
     const failedNextAction: AssetRecoverResponse['nextAction'] = hasPrompt ? 'regenerate_from_prompt' : 'manual_debug'
     const recoveryCandidates = (mediaKind === 'image' ? imageCandidateUrls : videoCandidateUrls)
-      .filter((candidate) => candidate.url && (/^https?:\/\//i.test(candidate.url) || candidate.url.startsWith('data:')))
+      .filter((candidate) => candidate.url && isRenderableMediaUrl(candidate.url, { source: candidate.source }).ok)
     const recoveryAttempts: Array<Record<string, unknown>> = []
     let finalResult: AssetRecoverResponse | null = null
     const startedAt = Date.now()

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
 import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse, GenerationHealthSection } from '@/lib/generation/health-types'
 
 type AssetResolveResult = {
@@ -791,7 +792,7 @@ function oldUrlCandidate(node: VisualCanvasNode) {
   const metadata = recordValue(node.metadataJson)
   const mediaPersistence = mediaPersistenceRecord(metadata)
   const sources = mediaSourcesForNode(node)
-  const source = firstString([
+  const candidates: Array<[string, unknown]> = [
     ['metadata.originalUrl', metadata.originalUrl],
     ['metadata.originalProviderUrl', metadata.originalProviderUrl],
     ['metadata.originalProviderImageUrl', metadata.originalProviderImageUrl],
@@ -803,7 +804,11 @@ function oldUrlCandidate(node: VisualCanvasNode) {
     ['node.resultImageUrl', node.resultImageUrl],
     ['node.resultVideoUrl', node.resultVideoUrl],
     [sources[0]?.source ?? 'canvas-current-source', sources[0]?.url],
-  ])
+  ]
+  const source = firstString(candidates.filter(([source, value]) => {
+    const url = stringValue(value)
+    return Boolean(url && isRenderableMediaUrl(url, { source }).ok)
+  }))
   return source.value ? source : { source: '', value: '' }
 }
 
