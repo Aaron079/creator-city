@@ -950,7 +950,23 @@ export async function POST(request: NextRequest) {
 
   const billing = await setupBilling(request, providerId, 'video', prompt, { projectId, nodeId })
   if (!billing.ok) {
-    return NextResponse.json(billing.errorResponse, { status: billing.status })
+    const billingError = billing.errorResponse as Record<string, unknown>
+    const billingMessage = stringParam(billingError.errorMessage)
+      ?? stringParam(billingError.message)
+      ?? '视频生成扣费检查失败。'
+    return videoErrorResponse({
+      providerId,
+      mode: 'unavailable',
+      status: 'failed',
+      statusCode: billing.status,
+      errorCode: stringParam(billingError.errorCode) ?? 'billing_error',
+      errorMessage: billingMessage,
+      requestId: routeRequestId,
+      submittedInput: safeVideoSubmittedInput(body, {
+        providerId,
+      }),
+      details: billingError,
+    })
   }
 
   const raw = await runGenerate({
