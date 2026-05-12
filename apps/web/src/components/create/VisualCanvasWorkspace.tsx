@@ -567,6 +567,7 @@ type VideoProviderStatusInfo = ImageProviderStatusInfo
 
 function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage'>) {
   const message = result.errorMessage || result.message || ''
+  if (result.errorCode === 'auth_required') return '登录状态失效，请刷新并重新登录'
   if (
     result.errorCode === 'KIMI_REQUEST_TIMEOUT'
     || (result.errorCode === 'KIMI_TEXT_FAILED' && message.toLowerCase().includes('abort'))
@@ -576,11 +577,14 @@ function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCod
   return message
 }
 
-function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'errorCode' | 'upstreamStatus' | 'upstreamMessage' | 'message' | 'missingEnv' | 'missingEnvKeys'>) {
+function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'errorCode' | 'httpStatus' | 'generationHttpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'message' | 'missingEnv' | 'missingEnvKeys'>) {
   const errorCode = result.errorCode ?? ''
   const upstreamMessage = result.upstreamMessage ?? ''
   const message = result.message ?? ''
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
+  const generationHttpStatus = result.generationHttpStatus ?? result.httpStatus
+  if (errorCode === 'auth_required' || errorCode === 'UNAUTHORIZED' || errorCode === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
+  if (errorCode === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
   if (errorCode === 'client_fetch_failed') return 'client_fetch_failed'
   if (errorCode === 'MISSING_GENERATION_INPUT' || errorCode === 'missing_generation_input' || errorCode === 'missing_or_invalid_video_input') return 'missing_generation_input'
   const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
@@ -603,10 +607,13 @@ function formatGenerateError(result: GenerateApiResult) {
   const visibleCode = normalizeVisibleGenerateErrorCode(result)
   const requestUrl = result.generationRequestUrl || result.requestUrl
   const requestMethod = result.generationRequestMethod || result.method
+  const visibleMessage = visibleCode === 'auth_required'
+    ? '登录状态失效，请刷新并重新登录'
+    : message
   return [
     visibleCode,
     result.errorCode,
-    message,
+    visibleMessage,
     requestUrl ? `requestUrl: ${requestUrl}` : '',
     requestMethod ? `method: ${requestMethod}` : '',
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
@@ -1262,7 +1269,7 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     model: result.model,
     recoveryStatus: visibleErrorCode,
     mediaRecoveryStatus: 'generation_failed',
-    nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' ? 'manual_debug' : 'regenerate_from_prompt',
+    nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' || visibleErrorCode === 'auth_required' || visibleErrorCode === 'api_error' ? 'manual_debug' : 'regenerate_from_prompt',
     isRecovering: false,
     recovering: false,
     loading: false,
@@ -1400,7 +1407,7 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     generationJobId: result.taskId,
     recoveryStatus: visibleErrorCode,
     mediaRecoveryStatus: 'generation_failed',
-    nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' ? 'manual_debug' : 'regenerate_from_prompt',
+    nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' || visibleErrorCode === 'auth_required' || visibleErrorCode === 'api_error' ? 'manual_debug' : 'regenerate_from_prompt',
     isRecovering: false,
     recovering: false,
     loading: false,
@@ -1526,7 +1533,9 @@ async function callGenerationApi(
     generationResponseTextPreview: responseTextPreview,
   }
   if (!raw.trim()) {
-    const errorMessage = `生成接口返回空响应（HTTP ${response.status}）`
+    const errorMessage = response.status === 401
+      ? '登录状态失效，请刷新并重新登录'
+      : `生成接口返回空响应（HTTP ${response.status}）`
     return {
       success: false,
       providerId,
@@ -1534,7 +1543,7 @@ async function callGenerationApi(
       status: 'failed',
       message: errorMessage,
       errorMessage,
-      errorCode: 'EMPTY_RESPONSE',
+      errorCode: response.status === 401 ? 'auth_required' : response.status >= 500 ? 'api_error' : 'EMPTY_RESPONSE',
       upstreamMessage: '',
       ...responseMeta,
     }
@@ -1548,7 +1557,15 @@ async function callGenerationApi(
       const parsedMode = typeof parsedRecord.mode === 'string' ? parsedRecord.mode as GenerateApiResult['mode'] : 'unavailable'
       const upstreamStatus = typeof parsedRecord.upstreamStatus === 'number' ? parsedRecord.upstreamStatus : undefined
       const upstreamMessage = stringValue(parsedRecord.upstreamMessage) || responseTextPreview
-      const errorMessage = stringValue(parsedRecord.errorMessage)
+      const responseErrorCode = stringValue(parsedRecord.errorCode)
+      const apiErrorCode = response.status === 401
+        ? 'auth_required'
+        : response.status >= 500
+          ? 'api_error'
+          : responseErrorCode || `HTTP_${response.status}`
+      const errorMessage = response.status === 401
+        ? '登录状态失效，请刷新并重新登录'
+        : stringValue(parsedRecord.errorMessage)
         || stringValue(parsedRecord.message)
         || `生成接口返回 HTTP ${response.status}`
       return {
@@ -1557,11 +1574,12 @@ async function callGenerationApi(
         providerId: parsed.providerId || providerId,
         mode: parsedMode,
         status: parsedStatus,
-        errorCode: stringValue(parsedRecord.errorCode) || `HTTP_${response.status}`,
+        errorCode: apiErrorCode,
         message: errorMessage,
         errorMessage,
         upstreamStatus,
         upstreamMessage,
+        rawCode: responseErrorCode || parsed.rawCode,
         requestId: stringValue(parsedRecord.requestId) || undefined,
         ...responseMeta,
       }
@@ -1579,7 +1597,7 @@ async function callGenerationApi(
       status: 'failed',
       message: errorMessage,
       errorMessage,
-      errorCode: response.ok ? 'NON_JSON_RESPONSE' : `HTTP_${response.status}`,
+      errorCode: response.status === 401 ? 'auth_required' : response.status >= 500 ? 'api_error' : response.ok ? 'NON_JSON_RESPONSE' : `HTTP_${response.status}`,
       upstreamMessage: responseTextPreview,
       ...responseMeta,
     }
@@ -4164,6 +4182,20 @@ export function VisualCanvasWorkspace({
           ? imageSuccessMetadata(node, result, selectedProviderId)
           : videoSuccessMetadata(node, result, selectedProviderId)
         const generatedAssetId = getNodeAssetId({ ...node, metadataJson: successMetadata })
+        if (!generatedAssetId) {
+          failNode({
+            ...result,
+            success: false,
+            providerId: selectedProviderId,
+            mode: 'real',
+            status: 'failed',
+            errorCode: 'asset_persistence_error',
+            message: node.kind === 'image'
+              ? '图片生成接口已返回媒体 URL，但没有返回可写回的 assetId。'
+              : '视频生成接口已返回媒体 URL，但没有返回可写回的 assetId。',
+          }, selectedProviderId)
+          return
+        }
         handleNodePatch(node.id, {
           status: 'done',
           resultText,

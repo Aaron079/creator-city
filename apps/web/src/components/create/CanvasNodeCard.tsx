@@ -435,6 +435,8 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'no_recovery_source',
   'provider_invalid_parameter',
   'provider_env_missing',
+  'auth_required',
+  'api_error',
   'client_fetch_failed',
   'storage_permission_error',
   'signing_error',
@@ -847,8 +849,15 @@ async function fetchRecoveryJson(
 function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const code = stringValue(error.errorCode)
   const message = stringValue(error.message)
+  const generationHttpStatus = typeof error.generationHttpStatus === 'number'
+    ? error.generationHttpStatus
+    : typeof error.httpStatus === 'number'
+      ? error.httpStatus
+      : undefined
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
+  if (code === 'auth_required' || code === 'UNAUTHORIZED' || code === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
+  if (code === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
   if (code === 'client_fetch_failed') return 'client_fetch_failed'
   if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
   if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
@@ -872,8 +881,16 @@ function generationFailureMessage(error: Record<string, unknown>) {
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const upstreamMessage = stringValue(error.upstreamMessage)
   const message = stringValue(error.message)
+  const generationHttpStatus = typeof error.generationHttpStatus === 'number'
+    ? error.generationHttpStatus
+    : typeof error.httpStatus === 'number'
+      ? error.httpStatus
+      : undefined
+  const responsePreview = stringValue(error.generationResponseTextPreview)
   const requestId = stringValue(error.requestId)
   const requestSuffix = requestId ? ` · requestId=${requestId}` : ''
+  if (normalized === 'auth_required') return `auth_required：登录状态失效，请刷新并重新登录${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${requestSuffix}`
+  if (normalized === 'api_error') return `api_error：生成 API 返回服务器错误${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${responsePreview ? `：${responsePreview}` : message ? `：${message}` : ''}${requestSuffix}`
   if (normalized === 'client_fetch_failed') {
     const requestUrl = stringValue(error.generationRequestUrl) || stringValue(error.requestUrl)
     const method = stringValue(error.generationRequestMethod) || stringValue(error.method)
@@ -917,6 +934,12 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED') return '旧媒体源当前不可读取，可能已过期或需要权限。'
   if (reason === 'old_url_expired') return '旧媒体 URL 候选已全部尝试，当前不可下载。'
   if (reason === 'provider_media_download_failed') return 'Provider 返回的媒体链接不可下载，或传给 Provider 的首帧/参考图 URL 不可读取。'
+  if (reason === 'auth_required') {
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'auth_required：登录状态失效，请刷新并重新登录。'
+  }
+  if (reason === 'api_error') {
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'api_error：生成 API 返回服务器错误，请复制诊断 JSON。'
+  }
   if (reason === 'client_fetch_failed') {
     return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'client_fetch_failed：浏览器未能完成生成接口请求。'
   }
@@ -963,7 +986,13 @@ function failureDiagnosis(args: {
       code,
       title: code,
       detail: generationMessage,
-      nextAction: code === 'provider_env_missing' ? '配置缺失的环境变量后再用原 Prompt 重新生成。' : '用原 Prompt 重新生成，或复制诊断 JSON 排查 provider 返回。',
+      nextAction: code === 'auth_required'
+        ? '刷新页面并重新登录后再用原 Prompt 重新生成。'
+        : code === 'api_error'
+          ? '复制诊断 JSON，查看 generationResponseTextPreview 后再重试。'
+          : code === 'provider_env_missing'
+            ? '配置缺失的环境变量后再用原 Prompt 重新生成。'
+            : '用原 Prompt 重新生成，或复制诊断 JSON 排查 provider 返回。',
       canRecover: false,
     }
   }
@@ -2491,6 +2520,26 @@ export function CanvasNodeCard({
       {mediaDiagnosticPayload?.requestId ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
           requestId: {mediaDiagnosticPayload.requestId}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.generationRequestUrl ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          generationRequestUrl: {mediaDiagnosticPayload.generationRequestUrl}
+        </span>
+      ) : null}
+      {typeof mediaDiagnosticPayload?.generationHttpStatus === 'number' ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          generationHttpStatus: {mediaDiagnosticPayload.generationHttpStatus}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.generationFetchError ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          generationFetchError: {mediaDiagnosticPayload.generationFetchError}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.generationResponseTextPreview ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          generationResponseTextPreview: {mediaDiagnosticPayload.generationResponseTextPreview}
         </span>
       ) : null}
       {failedRenderUrl ? (
