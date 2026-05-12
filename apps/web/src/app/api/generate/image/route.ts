@@ -93,11 +93,14 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   return code || 'generation_failed'
 }
 
-function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string }) {
+function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; resultImageUrl?: string; dataUrl?: string; displayUrl?: string; providerOriginalUrl?: string; temporaryUrl?: string }) {
   return response.result?.imageUrl
+    ?? response.displayUrl
     ?? response.resultImageUrl
     ?? response.imageUrl
     ?? response.dataUrl
+    ?? response.providerOriginalUrl
+    ?? response.temporaryUrl
     ?? ''
 }
 
@@ -563,6 +566,7 @@ export async function POST(request: NextRequest) {
       success: true,
       status: persistencePending ? 'succeeded_with_persistence_pending' : persistenceFailed ? 'succeeded_with_persistence_failed' : 'succeeded',
       message: warning ?? finalized.message,
+      displayUrl: finalImageUrl,
       resultImageUrl: finalImageUrl,
       imageUrl: finalImageUrl,
       assetUrl: assetId && !persistencePending ? finalImageUrl : undefined,
@@ -583,6 +587,8 @@ export async function POST(request: NextRequest) {
       assetStatus: responseAssetStatus,
       persistenceError,
       retryPersistenceAvailable: persistencePending ? (persistedMedia.retryPersistenceAvailable ?? Boolean(assetId)) : false,
+      generationStage: persistencePending ? 'oss_upload' : undefined,
+      nextAction: persistencePending ? 'retry_persistence' : 'show_media',
       storageProvider: persistedStorage.storageProvider ?? undefined,
       bucket: persistedStorage.bucket ?? undefined,
       storageKey: persistedStorage.storageKey ?? undefined,

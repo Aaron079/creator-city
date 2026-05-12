@@ -332,6 +332,7 @@ async function attachPersistedVideo(args: {
     const displayUrl = persistence.providerOriginalUrl || persistence.temporaryUrl || args.videoUrl
     const pending = persistence.persistenceStatus === 'pending_persistence'
     return {
+      displayUrl: displayUrl,
       videoUrl: displayUrl,
       stableUrl: displayUrl,
       mediaPersistence: failedMediaPersistence(persistence),
@@ -358,6 +359,8 @@ async function attachPersistedVideo(args: {
       persistenceStatus: pending ? 'pending_persistence' : 'persistence_failed',
       assetStatus: pending ? 'pending_persistence' : 'failed',
       persistenceError: persistence,
+      generationStage: pending ? 'oss_upload' : persistence.generationStage,
+      nextAction: pending ? 'retry_persistence' : undefined,
       resolvedUrl: undefined,
       proxyUrl: undefined,
       storageProvider: persistence.storageProvider,
@@ -705,6 +708,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       async: false,
+      displayUrl: persisted.videoUrl,
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId && !persistencePending ? persisted.videoUrl : undefined,
@@ -728,6 +732,8 @@ export async function POST(request: NextRequest) {
       assetStatus: persisted.assetStatus,
       persistenceError: persistenceErrorCode,
       retryPersistenceAvailable: persisted.retryPersistenceAvailable,
+      generationStage: persistencePending ? 'oss_upload' : undefined,
+      nextAction: persistencePending ? 'retry_persistence' : 'show_media',
       attemptedUploadKey: persisted.attemptedUploadKey,
       ossRequestId: persisted.ossRequestId,
       mediaPersistence: persisted.mediaPersistence,
@@ -830,6 +836,7 @@ export async function POST(request: NextRequest) {
       success: true,
       status: persistencePending ? 'succeeded_with_persistence_pending' : result.status,
       message: persisted.warning ?? result.message,
+      displayUrl: persisted.videoUrl,
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId && !persistencePending ? persisted.videoUrl : undefined,
@@ -853,6 +860,8 @@ export async function POST(request: NextRequest) {
       assetStatus: persisted.assetStatus,
       persistenceError: persistenceErrorCode,
       retryPersistenceAvailable: persisted.retryPersistenceAvailable,
+      generationStage: persistencePending ? 'oss_upload' : undefined,
+      nextAction: persistencePending ? 'retry_persistence' : 'show_media',
       attemptedUploadKey: persisted.attemptedUploadKey,
       ossRequestId: persisted.ossRequestId,
       mediaPersistence: persisted.mediaPersistence,
