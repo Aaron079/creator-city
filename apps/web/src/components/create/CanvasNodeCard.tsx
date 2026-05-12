@@ -282,7 +282,14 @@ type AssetRecoverResponse = {
     providerFetchCause?: unknown
     attemptedUploadKey?: string | null
     mediaDownloadUrl?: string | null
-    sourceUrl?: string | null
+  sourceUrl?: string | null
+  providerOriginalUrl?: string | null
+  temporaryUrl?: string | null
+  persistenceStatus?: string | null
+  generationStatus?: string | null
+  assetStatus?: string | null
+  persistenceError?: string | null
+  retryPersistenceAvailable?: boolean | null
   }
 
 type CandidateProbe = MediaUrlSource & {
@@ -354,6 +361,12 @@ type MediaDiagnosticPayload = {
   mediaVaultStatus: string | null
   mediaFailureMessage: string | null
   lastGenerationError: Record<string, unknown> | null
+  generationStatus: string | null
+  persistenceStatus: string | null
+  providerOriginalUrl: string | null
+  temporaryUrl: string | null
+  assetStatus: string | null
+  persistenceError: string | null
   upstreamStatus: number | null
   upstreamMessage: string | null
   generationStage: string | null
@@ -374,6 +387,7 @@ type MediaDiagnosticPayload = {
     attemptedUploadKey: string | null
     mediaDownloadUrl: string | null
     sourceUrl: string | null
+    retryPersistenceAvailable: boolean
     canRecover: boolean
   whyNotRecoverable: string | null
   nextAction: string
@@ -432,6 +446,12 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'mediaVaultStatus',
   'mediaFailureMessage',
   'lastGenerationError',
+  'generationStatus',
+  'persistenceStatus',
+  'providerOriginalUrl',
+  'temporaryUrl',
+  'assetStatus',
+  'persistenceError',
   'upstreamStatus',
   'upstreamMessage',
   'generationStage',
@@ -452,6 +472,7 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
     'attemptedUploadKey',
     'mediaDownloadUrl',
     'sourceUrl',
+    'retryPersistenceAvailable',
     'canRecover',
   'whyNotRecoverable',
   'nextAction',
@@ -599,6 +620,7 @@ async function probeMediaCandidate(candidate: MediaUrlSource): Promise<Candidate
 function mediaPersistenceStatus(value: unknown) {
   const record = metadataRecord(value)
   if (record.status === 'persisted' || record.ok === true) return 'persisted'
+  if (record.status === 'pending_persistence' || record.persistenceStatus === 'pending_persistence') return 'pending_persistence'
   if (record.status === 'needs_recovery') return 'needs_recovery'
   if (record.status === 'failed' || record.ok === false || record.errorCode) return 'failed'
   if (record.status === 'disabled') return 'disabled'
@@ -1005,6 +1027,7 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED') return '旧媒体源当前不可读取，可能已过期或需要权限。'
   if (reason === 'old_url_expired') return '旧媒体 URL 候选已全部尝试，当前不可下载。'
   if (reason === 'provider_media_download_failed') return 'Provider 返回的媒体链接不可下载，或传给 Provider 的首帧/参考图 URL 不可读取。'
+  if (stringValue(metadata.persistenceStatus) === 'pending_persistence' || stringValue(nestedRecord(metadata.mediaPersistence).status) === 'pending_persistence') return '媒体已生成，资产库上传待重试。'
   if (reason === 'auth_required') {
     return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'auth_required：登录状态失效，请刷新并重新登录。'
   }
@@ -1043,9 +1066,14 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
 }
 
 function getOriginalProviderUrl(metadata: Record<string, unknown>, kind: 'image' | 'video') {
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  const genericProviderUrl = stringValue(metadata.providerOriginalUrl)
+    || stringValue(metadata.temporaryUrl)
+    || stringValue(mediaPersistence.providerOriginalUrl)
+    || stringValue(mediaPersistence.temporaryUrl)
   return kind === 'image'
-    ? stringValue(metadata.originalProviderImageUrl) || stringValue(metadata.originalProviderUrl)
-    : stringValue(metadata.originalProviderVideoUrl) || stringValue(metadata.originalProviderUrl)
+    ? genericProviderUrl || stringValue(metadata.originalProviderImageUrl) || stringValue(metadata.originalProviderUrl)
+    : genericProviderUrl || stringValue(metadata.originalProviderVideoUrl) || stringValue(metadata.originalProviderUrl)
 }
 
 function failureDiagnosis(args: {
@@ -1059,6 +1087,21 @@ function failureDiagnosis(args: {
 }): MediaFailureDiagnosis {
   const { node, metadata, assetId, candidates, loadFailed } = args
   const lastError = metadataRecord(metadata.lastGenerationError || metadata.lastError)
+  const mediaPersistence = mediaPersistenceRecord(metadata)
+  if (
+    stringValue(metadata.persistenceStatus) === 'pending_persistence'
+    || stringValue(metadata.assetStatus) === 'pending_persistence'
+    || stringValue(mediaPersistence.status) === 'pending_persistence'
+    || stringValue(mediaPersistence.persistenceStatus) === 'pending_persistence'
+  ) {
+    return {
+      code: 'generated_but_persistence_pending',
+      title: 'generated_but_persistence_pending',
+      detail: '媒体已生成，资产库上传待重试。',
+      nextAction: assetId ? '点击“重试上传到资产库”。' : '复制诊断 JSON 后排查 pending Asset。',
+      canRecover: Boolean(assetId),
+    }
+  }
   const generationMessage = generationFailureMessage(lastError)
   if (generationMessage) {
     const code = normalizeGenerationFailureCode(lastError)
@@ -1301,6 +1344,7 @@ export function CanvasNodeCard({
   const [imageRenderFailures, setImageRenderFailures] = useState<RenderFailure[]>([])
   const [videoRenderFailures, setVideoRenderFailures] = useState<RenderFailure[]>([])
   const [mediaRecoveryStatus, setMediaRecoveryStatus] = useState<MediaRecoveryStatus>('idle')
+  const [retryPersistenceStatus, setRetryPersistenceStatus] = useState<'idle' | 'running' | 'succeeded' | 'failed'>('idle')
   const [selectedImageSource, setSelectedImageSource] = useState<MediaUrlSource | null>(null)
   const [selectedVideoSource, setSelectedVideoSource] = useState<MediaUrlSource | null>(null)
   const recoveryAttemptKeyRef = useRef('')
@@ -1336,6 +1380,23 @@ export function CanvasNodeCard({
   const nodeAssetId = nodeAsset.value
   const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
   const persistenceStatus = mediaPersistenceStatus(nodeMetadata.mediaPersistence)
+  const explicitPersistenceStatus = stringValue(nodeMetadata.persistenceStatus) || stringValue(mediaPersistenceRecord(nodeMetadata).persistenceStatus)
+  const persistenceErrorCode = stringValue(nodeMetadata.persistenceError)
+    || stringValue(mediaPersistenceRecord(nodeMetadata).persistenceError)
+    || stringValue(mediaPersistenceRecord(nodeMetadata).errorCode)
+  const persistencePending = persistenceStatus === 'pending_persistence'
+    || explicitPersistenceStatus === 'pending_persistence'
+    || stringValue(nodeMetadata.assetStatus) === 'pending_persistence'
+  const retryPersistenceAvailable = Boolean(
+    nodeAssetId
+    && (
+      persistencePending
+      || persistenceErrorCode === 'oss_upload_timeout'
+      || persistenceErrorCode === 'oss_upload_error'
+      || nodeMetadata.retryPersistenceAvailable === true
+      || mediaPersistenceRecord(nodeMetadata).retryPersistenceAvailable === true
+    ),
+  )
   const assetUrl = stringValue(nodeMetadata.assetUrl)
   const resolvedUrl = stringValue(nodeMetadata.resolvedUrl)
   const proxyUrl = stringValue(nodeMetadata.proxyUrl)
@@ -1349,6 +1410,8 @@ export function CanvasNodeCard({
   const mediaVaultStatus = activeMedia?.hasUrl
     ? persistenceStatus === 'persisted' || (resolvedUrl && activeMedia.url === resolvedUrl) || (proxyUrl && activeMedia.url === proxyUrl) || (assetUrl && activeMedia.url === assetUrl) || (stableUrl && activeMedia.url === stableUrl)
       ? { label: '已保存', tone: 'persisted' }
+      : persistencePending
+        ? { label: '待入库', tone: 'temporary' }
       : persistenceStatus === 'failed'
         ? { label: '转存失败', tone: 'temporary' }
         : (recoveryReason.startsWith('unrecoverable_') || recoveryReason === 'no_recovery_source') && !resolvedUrl && !proxyUrl && !assetUrl && !stableUrl
@@ -1435,7 +1498,23 @@ export function CanvasNodeCard({
     const originalUrl = stringValue(nodeMetadata.originalUrl)
       || getOriginalProviderUrl(nodeMetadata, node.kind)
       || stringValue(mediaPersistence.originalUrl)
+    const providerOriginalUrl = stringValue(nodeMetadata.providerOriginalUrl)
+      || stringValue(mediaPersistence.providerOriginalUrl)
+      || getOriginalProviderUrl(nodeMetadata, node.kind)
+    const temporaryUrl = stringValue(nodeMetadata.temporaryUrl)
+      || stringValue(mediaPersistence.temporaryUrl)
+      || providerOriginalUrl
     const currentUrl = stringValue(nodeMetadata.currentUrl) || selectedRenderUrl
+    const diagnosticPersistenceStatus = stringValue(nodeMetadata.persistenceStatus)
+      || stringValue(mediaPersistence.persistenceStatus)
+      || persistenceStatus
+    const diagnosticGenerationStatus = stringValue(nodeMetadata.generationStatus)
+      || stringValue(mediaPersistence.generationStatus)
+      || (selectedRenderUrl ? 'generation_success' : node.status === 'error' ? 'provider_failed' : null)
+    const diagnosticAssetStatus = stringValue(nodeMetadata.assetStatus)
+      || stringValue(mediaPersistence.assetStatus)
+      || (persistenceStatus === 'persisted' ? 'ready' : persistencePending ? 'pending_persistence' : null)
+    const diagnosticPersistenceError = persistenceErrorCode || null
     const provider = providerForNode(node, nodeMetadata)
     const model = modelForNode(node, nodeMetadata)
     const aspectRatio = stringValue(paramValue(nodeMetadata, node, 'aspectRatio'))
@@ -1667,6 +1746,12 @@ export function CanvasNodeCard({
       mediaVaultStatus: mediaVaultStatus?.label ?? null,
       mediaFailureMessage: mediaFailureDiagnosis?.detail ?? mediaFailureText,
       lastGenerationError: Object.keys(lastGenerationError).length ? lastGenerationError : null,
+      generationStatus: nullableString(diagnosticGenerationStatus),
+      persistenceStatus: nullableString(diagnosticPersistenceStatus),
+      providerOriginalUrl: nullableString(providerOriginalUrl),
+      temporaryUrl: nullableString(temporaryUrl),
+      assetStatus: nullableString(diagnosticAssetStatus),
+      persistenceError: nullableString(diagnosticPersistenceError),
       upstreamStatus,
       upstreamMessage,
       generationStage,
@@ -1687,6 +1772,7 @@ export function CanvasNodeCard({
         attemptedUploadKey,
         mediaDownloadUrl,
         sourceUrl,
+        retryPersistenceAvailable,
         canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
       whyNotRecoverable: mediaFailureDiagnosis?.canRecover && !storageKeyReadProblem && !assetRecordMissing && !missingEnv.length ? null : whyNotRecoverable,
       nextAction,
@@ -1719,10 +1805,14 @@ export function CanvasNodeCard({
     nodeAsset.source,
     nodeAssetId,
     nodeMetadata,
+    persistenceErrorCode,
+    persistencePending,
+    persistenceStatus,
     projectId,
     proxyUrl,
     recoveryReason,
     resolvedUrl,
+    retryPersistenceAvailable,
     selectedRenderSrc,
     selectedRenderUrl,
     stableUrl,
@@ -1839,6 +1929,82 @@ export function CanvasNodeCard({
       errorMessage: success ? undefined : errorMessage || result.errorCode || node.errorMessage,
       metadataJson: nextMetadata,
     })
+  }
+
+  const retryAssetPersistence = async (mediaKind: 'image' | 'video') => {
+    if (!nodeAssetId || !onRecoverMedia) return
+    setRetryPersistenceStatus('running')
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(nodeAssetId)}/retry-persistence`, {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      const data = await response.json().catch(() => ({})) as AssetRecoverResponse
+      if (response.ok && (data.success === true || data.ok === true) && recoveryDisplayUrl(data)) {
+        patchRecoveredAsset(mediaKind, {
+          ...data,
+          status: 'ready',
+          recoveryStatus: 'ready',
+          actionTaken: 'retry_persistence',
+        })
+        setRetryPersistenceStatus('succeeded')
+        window.setTimeout(() => setRetryPersistenceStatus('idle'), 1600)
+        return
+      }
+      const errorCode = stringValue(data.errorCode) || 'oss_upload_error'
+      const errorMessage = recoveryErrorMessage(data) || '重试上传到资产库失败。'
+      onRecoverMedia(node.id, {
+        errorMessage: undefined,
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          persistenceStatus: 'pending_persistence',
+          assetStatus: 'pending_persistence',
+          persistenceError: errorCode,
+          retryPersistenceAvailable: true,
+          nextAction: 'retry_persistence',
+          attemptedUploadKey: data.attemptedUploadKey ?? nodeMetadata.attemptedUploadKey,
+          ossRequestId: data.ossRequestId ?? nodeMetadata.ossRequestId,
+          mediaPersistence: {
+            ...metadataRecord(nodeMetadata.mediaPersistence),
+            ...(data.mediaPersistence && typeof data.mediaPersistence === 'object' ? metadataRecord(data.mediaPersistence) : {}),
+            status: 'pending_persistence',
+            persistenceStatus: 'pending_persistence',
+            errorCode,
+            errorMessage,
+            retryPersistenceAvailable: true,
+            attemptedUploadKey: data.attemptedUploadKey ?? metadataRecord(nodeMetadata.mediaPersistence).attemptedUploadKey,
+            ossRequestId: data.ossRequestId ?? metadataRecord(nodeMetadata.mediaPersistence).ossRequestId,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      })
+      setRetryPersistenceStatus('failed')
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '重试上传到资产库失败。'
+      onRecoverMedia(node.id, {
+        errorMessage: undefined,
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          persistenceStatus: 'pending_persistence',
+          assetStatus: 'pending_persistence',
+          persistenceError: 'oss_upload_error',
+          retryPersistenceAvailable: true,
+          nextAction: 'retry_persistence',
+          mediaPersistence: {
+            ...metadataRecord(nodeMetadata.mediaPersistence),
+            status: 'pending_persistence',
+            persistenceStatus: 'pending_persistence',
+            errorCode: 'oss_upload_error',
+            errorMessage,
+            retryPersistenceAvailable: true,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      })
+      setRetryPersistenceStatus('failed')
+    }
   }
 
   const setRecoveryStatusFromResult = (result: AssetRecoverResponse) => {
@@ -2487,11 +2653,35 @@ export function CanvasNodeCard({
   useEffect(() => {
     setImageNaturalRatio(null)
     setMediaRecoveryStatus('idle')
+    setRetryPersistenceStatus('idle')
   }, [imagePreviewUrl])
 
   useEffect(() => {
     setMediaRecoveryStatus('idle')
+    setRetryPersistenceStatus('idle')
   }, [videoPreviewUrl])
+
+  const renderRetryPersistenceButton = (mediaKind: 'image' | 'video', compact = false) => retryPersistenceAvailable ? (
+    <button
+      type="button"
+      data-no-node-drag="true"
+      className={compact
+        ? 'rounded border border-amber-200/35 bg-black/65 px-2 py-1 text-[10px] font-bold text-amber-50 shadow-sm'
+        : 'rounded border border-amber-200/30 bg-amber-200/12 px-2 py-1 text-xs font-semibold text-amber-50'}
+      disabled={retryPersistenceStatus === 'running'}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        void retryAssetPersistence(mediaKind)
+      }}
+    >
+      {retryPersistenceStatus === 'running'
+        ? '上传中...'
+        : retryPersistenceStatus === 'succeeded'
+          ? '已写入资产库'
+          : '重试上传到资产库'}
+    </button>
+  ) : null
 
   const renderRegenerateButton = () => onRegenerateFromPrompt ? (
     <button
@@ -2553,8 +2743,9 @@ export function CanvasNodeCard({
           void copyUrlCandidates()
         }}
       >
-        {copiedDiagnostic === 'urls' ? '已复制 URL 候选' : '复制全部 URL 候选'}
+      {copiedDiagnostic === 'urls' ? '已复制 URL 候选' : '复制全部 URL 候选'}
       </button>
+      {renderRetryPersistenceButton(mediaKind)}
       {regenerateIsPrimary ? renderRegenerateButton() : null}
       {showRecoverButtons ? (
         <>
@@ -2969,6 +3160,15 @@ export function CanvasNodeCard({
                 >
                   {mediaVaultStatus.label}
                 </span>
+              ) : null}
+              {persistencePending ? (
+                <div
+                  className="absolute left-2.5 top-2.5 z-[6] flex max-w-[calc(100%-88px)] flex-wrap items-center gap-1.5 rounded border border-amber-200/30 bg-black/68 px-2 py-1 text-[10px] font-semibold leading-tight text-amber-50 shadow-sm backdrop-blur"
+                  data-no-node-drag="true"
+                >
+                  <span className="min-w-0">媒体已生成，资产库上传待重试</span>
+                  {renderRetryPersistenceButton(node.kind === 'video' ? 'video' : 'image', true)}
+                </div>
               ) : null}
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div

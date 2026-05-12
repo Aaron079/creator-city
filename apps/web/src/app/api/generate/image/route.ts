@@ -66,20 +66,13 @@ function failedMediaPersistence(errorCode: string, message: string, upstreamStat
 }
 
 function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
+  const pending = result.persistenceStatus === 'pending_persistence'
   return {
-    status: 'failed',
+    status: pending ? 'pending_persistence' : 'failed',
     ...result,
     errorMessage: result.errorMessage || result.message,
+    retryPersistenceAvailable: result.retryPersistenceAvailable ?? Boolean(result.assetId),
   }
-}
-
-function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'provider_media_download_failed' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'ASSET_DOWNLOAD_TIMEOUT' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
-  if (errorCode === 'oss_upload_timeout' || errorCode === 'oss_upload_error' || errorCode === 'oss_auth_error' || errorCode === 'oss_permission_error' || errorCode === 'oss_config_error') return errorCode
-  if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
-  if (errorCode === 'canvas_save_error') return 'canvas_save_error'
-  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
-  return errorCode
 }
 
 function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?: number, message = '') {
@@ -147,21 +140,6 @@ async function createImageGenerationJob(args: {
     delete (fallbackData as { nodeId?: string | null }).nodeId
     return db.generationJob.create({ data: fallbackData })
   }
-}
-
-async function markImageGenerationJobFailed(jobId: string | undefined, message: string) {
-  if (!jobId) return
-  await db.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: 'FAILED',
-      error: message,
-      errorMessage: message.slice(0, 1000),
-      completedAt: new Date(),
-    },
-  }).catch((error: unknown) => {
-    console.warn('[api/generate/image] failed to mark GenerationJob failed', error)
-  })
 }
 
 export async function GET() {
@@ -517,84 +495,44 @@ export async function POST(request: NextRequest) {
           }
         } else {
           mediaPersistence = normalizePersistFailure(persistence)
-          const errorCode = visiblePersistenceErrorCode(persistence.errorCode)
-          await markImageGenerationJobFailed(generationJobId, persistence.message)
-          return NextResponse.json({
-            success: false,
-            errorCode,
-            errorMessage: persistence.errorMessage || persistence.message,
-            message: `图片生成成功，但媒体转存失败：${persistence.errorMessage || persistence.message}`,
-            providerId,
-            model: raw.model,
-            mode: 'real',
-            status: 'failed',
-              generationStage: persistence.generationStage,
-              stage: persistence.stage,
-              upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
-              upstreamMessage: persistence.upstreamMessage ?? raw.upstreamMessage,
-              requestId: persistence.requestId ?? raw.requestId,
-              providerEndpoint: persistence.providerEndpoint ?? raw.providerEndpoint,
-              providerRequestMethod: persistence.providerRequestMethod ?? raw.providerRequestMethod,
-              providerHttpStatus: persistence.providerHttpStatus ?? raw.providerHttpStatus,
-              providerFetchError: raw.providerFetchError ?? persistence.providerFetchError,
-              providerFetchCause: raw.providerFetchCause ?? persistence.providerFetchCause,
-              storageProvider: persistence.storageProvider,
-              bucket: persistence.bucket,
-              storageKey: persistence.storageKey,
-              attemptedUploadKey: persistence.attemptedUploadKey,
-              ossRequestId: persistence.ossRequestId,
-              sourceUrl: persistence.sourceUrl,
-              mediaDownloadUrl: persistence.mediaDownloadUrl,
-              submittedInput: raw.submittedInput ?? submittedInput,
-              providerResponse: raw.providerResponse,
-              originalProviderImageUrl: persistence.sourceUrl ?? undefined,
-            mediaPersistence,
-          }, { status: 200 })
+          finalImageUrl = persistence.providerOriginalUrl || persistence.temporaryUrl || providerImageUrl
+          assetId = persistence.assetId
+          warning = '媒体已生成，资产库上传待重试。'
         }
       } catch (error) {
         mediaPersistence = failedMediaPersistence(
           'asset_persistence_error',
           error instanceof Error ? error.message : '图片媒体转存失败。',
         )
-        await markImageGenerationJobFailed(generationJobId, error instanceof Error ? error.message : '图片媒体转存失败。')
-        return NextResponse.json({
-          success: false,
-          errorCode: 'asset_persistence_error',
-          errorMessage: error instanceof Error ? error.message : '图片媒体转存失败。',
-          message: `图片生成成功，但媒体转存失败：${error instanceof Error ? error.message : '图片媒体转存失败。'}`,
-          providerId,
-          model: raw.model,
-          mode: 'real',
-          status: 'failed',
-            generationStage: 'asset_create',
-            stage: 'asset_create',
-            upstreamStatus: raw.upstreamStatus,
-            upstreamMessage: raw.upstreamMessage,
-            requestId: raw.requestId,
-            providerEndpoint: raw.providerEndpoint,
-            providerRequestMethod: raw.providerRequestMethod,
-            providerHttpStatus: raw.providerHttpStatus,
-            providerFetchError: raw.providerFetchError,
-            providerFetchCause: raw.providerFetchCause,
-            submittedInput: raw.submittedInput ?? submittedInput,
-            providerResponse: raw.providerResponse,
-            originalProviderImageUrl: providerImageUrl,
-          mediaPersistence,
-        }, { status: 200 })
+        finalImageUrl = providerImageUrl
+        warning = '媒体已生成，资产库上传待重试。'
       }
     }
 
     const persistedMedia = mediaPersistence && typeof mediaPersistence === 'object' && !Array.isArray(mediaPersistence)
-      ? mediaPersistence as { resolvedUrl?: string | null; proxyUrl?: string | null; signedUrlAvailable?: boolean; proxyAvailable?: boolean }
+      ? mediaPersistence as { status?: string | null; resolvedUrl?: string | null; proxyUrl?: string | null; signedUrlAvailable?: boolean; proxyAvailable?: boolean; errorCode?: string | null; errorMessage?: string | null; message?: string | null; persistenceStatus?: string | null; generationStatus?: string | null; assetStatus?: string | null; retryPersistenceAvailable?: boolean | null; attemptedUploadKey?: string | null; ossRequestId?: string | null; sourceUrl?: string | null; mediaDownloadUrl?: string | null }
       : {}
     const persistedStorage = mediaPersistence && typeof mediaPersistence === 'object' && !Array.isArray(mediaPersistence)
       ? mediaPersistence as { storageProvider?: string | null; bucket?: string | null; storageKey?: string | null }
       : {}
+    const persistencePending = persistedMedia.status === 'pending_persistence' || persistedMedia.persistenceStatus === 'pending_persistence'
+    const persistenceError = typeof persistedMedia.errorCode === 'string' ? persistedMedia.errorCode : undefined
+    const persistenceFailed = !persistencePending && Boolean(persistenceError || persistedMedia.status === 'failed' || persistedMedia.persistenceStatus === 'persistence_failed')
+    const responsePersistenceStatus = persistencePending ? 'pending_persistence' : persistenceFailed ? 'persistence_failed' : mediaPersistenceEnabled ? 'persistence_success' : 'disabled'
+    const responseAssetStatus = persistencePending ? 'pending_persistence' : persistenceFailed ? 'failed' : assetId ? 'ready' : undefined
+    const resolvedResultUrl = persistencePending ? finalImageUrl : (persistedMedia.resolvedUrl ?? finalImageUrl)
     const finalMetadata = {
       ...resultMetadata,
-      ...(assetId ? { assetId, outputAssetId: assetId, assetUrl: finalImageUrl } : {}),
-      resolvedUrl: persistedMedia.resolvedUrl ?? finalImageUrl,
-      stableUrl: persistedMedia.resolvedUrl ?? finalImageUrl,
+      generationStatus: 'generation_success',
+      persistenceStatus: responsePersistenceStatus,
+      assetStatus: responseAssetStatus,
+      providerOriginalUrl: providerImageUrl,
+      temporaryUrl: providerImageUrl,
+      ...(assetId ? { assetId, outputAssetId: assetId } : {}),
+      ...(assetId && !persistencePending ? { assetUrl: finalImageUrl } : {}),
+      ...(persistencePending ? {} : { resolvedUrl: resolvedResultUrl }),
+      stableUrl: resolvedResultUrl,
+      resultImageUrl: finalImageUrl,
       ...(persistedMedia.proxyUrl ? { proxyUrl: persistedMedia.proxyUrl } : {}),
       signedUrlAvailable: persistedMedia.signedUrlAvailable,
       proxyAvailable: persistedMedia.proxyAvailable,
@@ -606,17 +544,30 @@ export async function POST(request: NextRequest) {
       submittedInput: raw.submittedInput ?? submittedInput,
       providerResponse: raw.providerResponse,
       mediaPersistence,
+      lastGenerationError: null,
+      ...(persistenceError ? {
+        persistenceError,
+        attemptedUploadKey: persistedMedia.attemptedUploadKey,
+        ossRequestId: persistedMedia.ossRequestId,
+        sourceUrl: persistedMedia.sourceUrl,
+        mediaDownloadUrl: persistedMedia.mediaDownloadUrl,
+        retryPersistenceAvailable: persistedMedia.retryPersistenceAvailable ?? Boolean(assetId),
+        nextAction: 'retry_persistence',
+      } : {}),
       assetIntelligence,
       ...(warning ? { mediaPersistenceWarning: warning } : {}),
     }
 
     return NextResponse.json({
       ...finalized,
+      success: true,
+      status: persistencePending ? 'succeeded_with_persistence_pending' : persistenceFailed ? 'succeeded_with_persistence_failed' : 'succeeded',
+      message: warning ?? finalized.message,
       resultImageUrl: finalImageUrl,
       imageUrl: finalImageUrl,
-      assetUrl: assetId ? finalImageUrl : undefined,
-      resolvedUrl: persistedMedia.resolvedUrl ?? finalImageUrl,
-      stableUrl: persistedMedia.resolvedUrl ?? finalImageUrl,
+      assetUrl: assetId && !persistencePending ? finalImageUrl : undefined,
+      resolvedUrl: persistencePending ? undefined : resolvedResultUrl,
+      stableUrl: resolvedResultUrl,
       proxyUrl: persistedMedia.proxyUrl ?? undefined,
       signedUrlAvailable: persistedMedia.signedUrlAvailable,
       proxyAvailable: persistedMedia.proxyAvailable,
@@ -625,6 +576,13 @@ export async function POST(request: NextRequest) {
       outputAssetId: assetId,
       generationJobId,
       originalProviderImageUrl: providerImageUrl,
+      providerOriginalUrl: providerImageUrl,
+      temporaryUrl: providerImageUrl,
+      generationStatus: 'generation_success',
+      persistenceStatus: responsePersistenceStatus,
+      assetStatus: responseAssetStatus,
+      persistenceError,
+      retryPersistenceAvailable: persistencePending ? (persistedMedia.retryPersistenceAvailable ?? Boolean(assetId)) : false,
       storageProvider: persistedStorage.storageProvider ?? undefined,
       bucket: persistedStorage.bucket ?? undefined,
       storageKey: persistedStorage.storageKey ?? undefined,
@@ -642,6 +600,7 @@ export async function POST(request: NextRequest) {
         projectId: body.projectId,
         workflowId: body.workflowId,
         nodeId: body.nodeId,
+        status: persistencePending ? 'pending_persistence' : 'ready',
       } : undefined,
       result: {
         ...finalized.result,

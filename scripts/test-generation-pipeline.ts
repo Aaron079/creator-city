@@ -59,7 +59,7 @@ async function testPersistWithPublicMedia(): Promise<void> {
     buffer = Buffer.from(await res.arrayBuffer())
     console.log(`[OK] Downloaded ${buffer.length} bytes (${mimeType})`)
   } catch (e) {
-    console.log(`[FAIL] Download error: ${e instanceof Error ? e.message : e}`)
+    console.log(`[WARN] Download error: ${e instanceof Error ? e.message : e} — skipping public media dry-run.`)
     return
   }
 
@@ -135,6 +135,7 @@ async function main() {
     'apps/web/src/app/api/generate/video/route.ts',
     'apps/web/src/app/api/assets/resolve-batch/route.ts',
     'apps/web/src/app/api/assets/resolve-by-node/route.ts',
+    'apps/web/src/app/api/assets/[assetId]/retry-persistence/route.ts',
     'apps/web/src/app/api/projects/[projectId]/canvas/route.ts',
     'apps/web/src/components/create/P0MediaDebugPanel.tsx',
   ]
@@ -150,14 +151,20 @@ async function main() {
   const nodeCard = readFileSync('/Users/aaron/creator-city/apps/web/src/components/create/CanvasNodeCard.tsx', 'utf8')
   const imageRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/image/route.ts', 'utf8')
   const videoRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/video/route.ts', 'utf8')
+  const videoStatusRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/generate/video/status/route.ts', 'utf8')
   const persistLib = readFileSync('/Users/aaron/creator-city/apps/web/src/lib/assets/persist-generated-media.ts', 'utf8')
+  const retryRoute = readFileSync('/Users/aaron/creator-city/apps/web/src/app/api/assets/[assetId]/retry-persistence/route.ts', 'utf8')
   const contracts = [
     ['callGenerationApi preserves HTTP status', workspace.includes('httpStatus: response.status')],
     ['callGenerationApi preserves upstreamMessage on non-JSON', workspace.includes('upstreamMessage: raw.slice(0, 500)') || (workspace.includes('responseTextPreview = raw.slice(0, 500)') && workspace.includes('upstreamMessage: responseTextPreview'))],
     ['image generation stores lastError metadata', workspace.includes('imageErrorMetadata')],
     ['video generation stores lastError metadata', workspace.includes('videoErrorMetadata')],
-    ['image API fails loudly on media persistence failure', imageRoute.includes('图片生成成功，但媒体转存失败')],
-    ['video API fails loudly on media persistence failure', videoRoute.includes('视频生成成功，但媒体转存失败')],
+    ['image API decouples generation success from persistence pending', imageRoute.includes('succeeded_with_persistence_pending') && imageRoute.includes('providerOriginalUrl')],
+    ['video API decouples generation success from persistence pending', videoRoute.includes('succeeded_with_persistence_pending') && videoRoute.includes('providerOriginalUrl')],
+    ['video status API decouples generation success from persistence pending', videoStatusRoute.includes('succeeded_with_persistence_pending') && videoStatusRoute.includes('providerOriginalUrl')],
+    ['pending persistence creates retryable records', persistLib.includes('createPendingPersistenceRecord') && persistLib.includes('pending_persistence') && persistLib.includes('retryPersistenceAvailable')],
+    ['retry persistence API uploads and writes storageKey', retryRoute.includes('retry-persistence') && retryRoute.includes('uploadAsset') && retryRoute.includes('storageKey') && retryRoute.includes('persistence_success')],
+    ['node card exposes retry persistence action', nodeCard.includes('重试上传到资产库') && nodeCard.includes('/retry-persistence')],
     ['provider download failure keeps upstream status', persistLib.includes('downloaded.status || undefined')],
     ['OSS upload failure has explicit code', persistLib.includes('MEDIA_UPLOAD_FAILED')],
     ['Asset create failure has explicit code', persistLib.includes('MEDIA_ASSET_CREATE_FAILED')],

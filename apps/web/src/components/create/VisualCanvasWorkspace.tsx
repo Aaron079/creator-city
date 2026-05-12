@@ -522,6 +522,13 @@ type GenerateApiResult = GenerateResponse & {
   resultVideoUrl?: string
   originalProviderImageUrl?: string
   originalProviderVideoUrl?: string
+  providerOriginalUrl?: string
+  temporaryUrl?: string
+  generationStatus?: string
+  persistenceStatus?: string
+  assetStatus?: string
+  persistenceError?: string
+  retryPersistenceAvailable?: boolean
   mediaPersistence?: unknown
   assetIntelligence?: unknown
   warning?: string
@@ -695,6 +702,14 @@ function persistenceFromGenerateResult(result: GenerateApiResult) {
   return result.mediaPersistence && typeof result.mediaPersistence === 'object' && !Array.isArray(result.mediaPersistence)
     ? result.mediaPersistence as Record<string, unknown>
     : {}
+}
+
+function isPersistencePendingResult(result: GenerateApiResult) {
+  const mediaPersistence = persistenceFromGenerateResult(result)
+  return result.persistenceStatus === 'pending_persistence'
+    || result.assetStatus === 'pending_persistence'
+    || stringValue(mediaPersistence.status) === 'pending_persistence'
+    || stringValue(mediaPersistence.persistenceStatus) === 'pending_persistence'
 }
 
 function nestedRecord(value: unknown) {
@@ -1191,6 +1206,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ? result.result.metadata as Record<string, unknown>
     : {}
   const persistedMedia = persistenceFromGenerateResult(result)
+  const persistencePending = isPersistencePendingResult(result)
   const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
@@ -1217,9 +1233,12 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     providerId: result.providerId || providerId,
     model: result.model ?? resultMetadata.model,
     generationSource: result.providerId || providerId,
-    recoveryStatus: 'ready',
+    generationStatus: result.generationStatus ?? 'generation_success',
+    persistenceStatus: persistencePending ? 'pending_persistence' : result.persistenceStatus ?? 'persistence_success',
+    assetStatus: persistencePending ? 'pending_persistence' : result.assetStatus ?? (assetId ? 'ready' : undefined),
+    recoveryStatus: persistencePending ? 'pending_persistence' : 'ready',
     mediaRecoveryStatus: 'regenerated',
-    nextAction: 'show_media',
+    nextAction: persistencePending ? 'retry_persistence' : 'show_media',
     isRecovering: false,
     recovering: false,
     loading: false,
@@ -1238,8 +1257,8 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
       ...(assetId ? { outputAssetId: assetId } : {}),
     },
     resultImageUrl: stableUrl || resultImageUrl,
-    assetUrl: stableUrl || assetUrl,
-    ...(stableUrl ? { resolvedUrl: stableUrl, stableUrl } : {}),
+    ...(persistencePending ? {} : { assetUrl: stableUrl || assetUrl }),
+    ...(stableUrl ? (persistencePending ? { stableUrl } : { resolvedUrl: stableUrl, stableUrl }) : {}),
     ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
     proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
@@ -1247,11 +1266,19 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     bucket: result.bucket ?? (typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket),
     storageKey: result.storageKey ?? (typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey),
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
+    providerOriginalUrl: result.providerOriginalUrl ?? (typeof resultMetadata.providerOriginalUrl === 'string' ? resultMetadata.providerOriginalUrl : result.originalProviderImageUrl),
+    temporaryUrl: result.temporaryUrl ?? (typeof resultMetadata.temporaryUrl === 'string' ? resultMetadata.temporaryUrl : result.providerOriginalUrl ?? result.originalProviderImageUrl),
+    persistenceError: result.persistenceError ?? (typeof resultMetadata.persistenceError === 'string' ? resultMetadata.persistenceError : undefined),
+    retryPersistenceAvailable: result.retryPersistenceAvailable ?? (typeof resultMetadata.retryPersistenceAvailable === 'boolean' ? resultMetadata.retryPersistenceAvailable : persistencePending && Boolean(assetId)),
+    attemptedUploadKey: result.attemptedUploadKey ?? (typeof resultMetadata.attemptedUploadKey === 'string' ? resultMetadata.attemptedUploadKey : undefined),
+    ossRequestId: result.ossRequestId ?? (typeof resultMetadata.ossRequestId === 'string' ? resultMetadata.ossRequestId : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
     mediaPersistence: {
       ...metadataRecord(resultMetadata.mediaPersistence),
       ...metadataRecord(result.mediaPersistence),
+      status: persistencePending ? 'pending_persistence' : stringValue(persistedMedia.status) || 'persisted',
+      persistenceStatus: persistencePending ? 'pending_persistence' : stringValue(persistedMedia.persistenceStatus) || 'persistence_success',
       ...(assetId ? { assetId, outputAssetId: assetId } : {}),
       ...(stableUrl ? { stableUrl, resolvedUrl: stableUrl } : {}),
     },
@@ -1350,6 +1377,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ? result.result.metadata as Record<string, unknown>
     : {}
   const persistedMedia = persistenceFromGenerateResult(result)
+  const persistencePending = isPersistencePendingResult(result)
   const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
   const generationJobId = result.jobId
     ?? result.generationJobId
@@ -1378,9 +1406,12 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
     model: result.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined),
-    recoveryStatus: result.async ? 'regenerating' : 'ready',
+    generationStatus: result.generationStatus ?? 'generation_success',
+    persistenceStatus: persistencePending ? 'pending_persistence' : result.persistenceStatus ?? 'persistence_success',
+    assetStatus: persistencePending ? 'pending_persistence' : result.assetStatus ?? (assetId ? 'ready' : undefined),
+    recoveryStatus: result.async ? 'regenerating' : persistencePending ? 'pending_persistence' : 'ready',
     mediaRecoveryStatus: result.async ? 'regenerating' : 'regenerated',
-    nextAction: result.async ? 'show_media' : 'show_media',
+    nextAction: persistencePending ? 'retry_persistence' : 'show_media',
     isRecovering: false,
     recovering: false,
     loading: false,
@@ -1400,8 +1431,8 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
       ...(assetId ? { outputAssetId: assetId } : {}),
     },
     resultVideoUrl: stableUrl || resultVideoUrl,
-    assetUrl: stableUrl || assetUrl,
-    ...(stableUrl ? { resolvedUrl: stableUrl, stableUrl } : {}),
+    ...(persistencePending ? {} : { assetUrl: stableUrl || assetUrl }),
+    ...(stableUrl ? (persistencePending ? { stableUrl } : { resolvedUrl: stableUrl, stableUrl }) : {}),
     ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
     proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
@@ -1409,11 +1440,19 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     bucket: result.bucket ?? (typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket),
     storageKey: result.storageKey ?? (typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey),
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
+    providerOriginalUrl: result.providerOriginalUrl ?? (typeof resultMetadata.providerOriginalUrl === 'string' ? resultMetadata.providerOriginalUrl : result.originalProviderVideoUrl),
+    temporaryUrl: result.temporaryUrl ?? (typeof resultMetadata.temporaryUrl === 'string' ? resultMetadata.temporaryUrl : result.providerOriginalUrl ?? result.originalProviderVideoUrl),
+    persistenceError: result.persistenceError ?? (typeof resultMetadata.persistenceError === 'string' ? resultMetadata.persistenceError : undefined),
+    retryPersistenceAvailable: result.retryPersistenceAvailable ?? (typeof resultMetadata.retryPersistenceAvailable === 'boolean' ? resultMetadata.retryPersistenceAvailable : persistencePending && Boolean(assetId)),
+    attemptedUploadKey: result.attemptedUploadKey ?? (typeof resultMetadata.attemptedUploadKey === 'string' ? resultMetadata.attemptedUploadKey : undefined),
+    ossRequestId: result.ossRequestId ?? (typeof resultMetadata.ossRequestId === 'string' ? resultMetadata.ossRequestId : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
     mediaPersistence: {
       ...metadataRecord(resultMetadata.mediaPersistence),
       ...metadataRecord(result.mediaPersistence),
+      status: persistencePending ? 'pending_persistence' : stringValue(persistedMedia.status) || 'persisted',
+      persistenceStatus: persistencePending ? 'pending_persistence' : stringValue(persistedMedia.persistenceStatus) || 'persistence_success',
       ...(assetId ? { assetId, outputAssetId: assetId } : {}),
       ...(stableUrl ? { stableUrl, resolvedUrl: stableUrl } : {}),
     },
@@ -4282,7 +4321,8 @@ export function VisualCanvasWorkspace({
           ? imageSuccessMetadata(node, result, selectedProviderId)
           : videoSuccessMetadata(node, result, selectedProviderId)
         const generatedAssetId = getNodeAssetId({ ...node, metadataJson: successMetadata })
-        if (!generatedAssetId) {
+        const generatedButPersistencePending = isPersistencePendingResult(result)
+        if (!generatedAssetId && !generatedButPersistencePending) {
           failNode({
             ...result,
             success: false,
@@ -4299,8 +4339,8 @@ export function VisualCanvasWorkspace({
         handleNodePatch(node.id, {
           status: 'done',
           resultText,
-          resultPreview: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultText?.slice(0, 200) ?? '生成完成',
-          outputLabel: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : '生成完成',
+          resultPreview: generatedButPersistencePending ? '已生成，资产持久化待重试' : resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultText?.slice(0, 200) ?? '生成完成',
+          outputLabel: generatedButPersistencePending ? '已生成，资产持久化待重试' : resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : '生成完成',
           resultImageUrl: node.kind === 'image' ? resultImageUrl : node.resultImageUrl,
           resultVideoUrl: node.kind === 'video' ? resultVideoUrl : node.resultVideoUrl,
           ...(generatedAssetId ? { assetId: generatedAssetId } : {}),
@@ -4315,7 +4355,7 @@ export function VisualCanvasWorkspace({
         })
         flushLocalSnapshot()
         scheduleCanvasSave(0)
-        showCanvasFeedback(resultImageUrl || resultVideoUrl ? '已用原 Prompt 重新生成并写回节点。' : '重新生成完成。')
+        showCanvasFeedback(generatedButPersistencePending ? '媒体已生成，资产库上传待重试。' : resultImageUrl || resultVideoUrl ? '已用原 Prompt 重新生成并写回节点。' : '重新生成完成。')
       } catch (error) {
         failNode({
           success: false,
