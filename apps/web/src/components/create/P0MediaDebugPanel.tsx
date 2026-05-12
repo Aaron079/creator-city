@@ -134,6 +134,33 @@ function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))]
 }
 
+const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
+const STORAGE_SIGNED_PROXY_MESSAGE = '对象存在但需要 signed URL/proxy 读取。'
+
+function productionMissingEnvMessage(missingEnv: string[]) {
+  return missingEnv.length ? `生产环境缺少：${missingEnv.join(', ')}，请先在 Vercel 配置后重新部署。` : ''
+}
+
+function isAssetRecordMissingCode(code?: string | null) {
+  return code === 'ASSET_NOT_FOUND_BY_NODE'
+    || code === 'ASSET_NOT_FOUND_FOR_NODE'
+    || code === 'asset_not_found_by_node'
+    || code === 'no_recovery_source'
+}
+
+function diagnosticNextAction(args: {
+  missingEnv: string[]
+  storageKeyReadProblem: boolean
+  assetRecordMissing: boolean
+  fallback: string
+}) {
+  const missingEnvMessage = productionMissingEnvMessage(args.missingEnv)
+  if (missingEnvMessage) return missingEnvMessage
+  if (args.storageKeyReadProblem) return STORAGE_SIGNED_PROXY_MESSAGE
+  if (args.assetRecordMissing) return ASSET_RECORD_MISSING_MESSAGE
+  return args.fallback
+}
+
 function summarizeUrlForDiagnostics(url?: string) {
   if (!url) return null
   try {
@@ -434,9 +461,22 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
   const signedUrlGenerated = typeof lastResolveResult.signedUrlGenerated === 'boolean'
     ? lastResolveResult.signedUrlGenerated
     : Boolean(storageKey && resolvedUrl && current.source.includes('resolvedUrl'))
+  const signedUrlAvailable = typeof lastResolveResult.signedUrlAvailable === 'boolean'
+    ? lastResolveResult.signedUrlAvailable
+    : typeof lastResolveResult.signedUrlGenerated === 'boolean'
+      ? lastResolveResult.signedUrlGenerated
+      : signedUrlGenerated
+  const proxyAvailable = typeof lastResolveResult.proxyAvailable === 'boolean'
+    ? lastResolveResult.proxyAvailable
+    : Boolean(proxyUrl)
+  const isPrivateBucket = typeof metadata.isPrivateBucket === 'boolean'
+    ? metadata.isPrivateBucket
+    : storageKey && /aliyun-oss|tencent-cos|supabase/i.test(storageProvider)
+      ? true
+      : null
   const reason = storageKeyFailureReason(node)
   const unrecoverable = isUnrecoverableStatus(recoveryStatus)
-  const whyUnrecoverable = resolvedUrl
+  const rawWhyUnrecoverable = resolvedUrl
     ? '已有 resolvedUrl，当前不应显示不可恢复。'
     : stringValue(lastResolveResult.whyUnrecoverable)
       || stringValue(lastResolveResult.storageKeyFailureReason)
@@ -459,6 +499,37 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     ...stringArrayValue(lastResolveResult.missingEnv),
     ...stringArrayValue(lastResolveResult.missingEnvKeys),
   ])
+  const storageKeyReadProblem = Boolean(
+    storageKey
+    && !resolvedUrl
+    && (
+      errorCode === 'storage_permission_error'
+      || errorCode === 'needs_signed_url'
+      || errorCode === 'signing_error'
+      || errorCode === 'proxy_error'
+      || recoveryStatus === 'storage_permission_error'
+      || recoveryStatus === 'needs_signed_url'
+      || recoveryStatus === 'signing_error'
+      || recoveryStatus === 'proxy_error'
+      || !current.url
+    ),
+  )
+  const assetRecordMissing = Boolean(
+    isAssetRecordMissingCode(errorCode)
+    || isAssetRecordMissingCode(recoveryStatus)
+    || isAssetRecordMissingCode(resolveBatchStatus)
+    || (!asset.value && !resolvedUrl && !storageKey && mediaSourcesForNode(node).length === 0),
+  )
+  const nextAction = diagnosticNextAction({
+    missingEnv,
+    storageKeyReadProblem,
+    assetRecordMissing,
+    fallback: stringValue(metadata.nextAction) || (unrecoverable ? 'regenerate_from_prompt' : 'manual_debug'),
+  })
+  const whyUnrecoverable = productionMissingEnvMessage(missingEnv)
+    || (storageKeyReadProblem ? STORAGE_SIGNED_PROXY_MESSAGE : '')
+    || (assetRecordMissing ? ASSET_RECORD_MISSING_MESSAGE : '')
+    || rawWhyUnrecoverable
   return {
     projectId,
     workflowId,
@@ -497,6 +568,7 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     storageKey,
     bucket,
     storageProvider,
+    isPrivateBucket,
     resolvedUrl,
     canvasNodeCardSrc: current.proxiedSrc || current.url,
     selectedUrl: current.url,
@@ -509,15 +581,17 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     storageKeyFailureReason: reason,
     attemptedUrls,
     failedUrls,
+    signedUrlAvailable,
     signedUrlGenerated,
     signedUrlError: stringValue(lastResolveResult.signedUrlError) || null,
+    proxyAvailable,
     proxyFallbackUrl,
     proxyFallbackStatus,
     proxyFallbackOk: typeof proxyFallbackStatus === 'number' ? proxyFallbackStatus >= 200 && proxyFallbackStatus < 300 : null,
     whyUnrecoverable,
     whyNotRecoverable: whyUnrecoverable,
     canRecover: hasAnyRecoverableSource(node),
-    nextAction: stringValue(metadata.nextAction) || (unrecoverable ? 'regenerate_from_prompt' : 'manual_debug'),
+    nextAction,
     isRecovering: metadata.isRecovering === true || metadata.recovering === true,
     isRegenerating: metadata.isRegenerating === true || metadata.regenerating === true,
     errorCode,
@@ -534,7 +608,7 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     generationHealth,
     missingEnv,
     hasRecoverableSource: hasAnyRecoverableSource(node),
-    urlCandidates: mediaSourcesForNode(node),
+    urlCandidates: mediaSourcesForNode(node).map((candidate) => ({ ...candidate, proxiedUrl: getProxiedMediaUrl(candidate.url) })),
     lastGenerationError: Object.keys(lastGenerationError).length ? lastGenerationError : null,
     metadataJson: node.metadataJson,
   }

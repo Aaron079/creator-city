@@ -431,6 +431,32 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'generation_failed',
 ])
 const PROMPT_REBUILD_DETAIL = '历史资产源已不可读取。可以用原 Prompt 重新生成并重新写入资产库。'
+const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
+const STORAGE_SIGNED_PROXY_MESSAGE = '对象存在但需要 signed URL/proxy 读取。'
+
+function productionMissingEnvMessage(missingEnv: string[]) {
+  return missingEnv.length ? `生产环境缺少：${missingEnv.join(', ')}，请先在 Vercel 配置后重新部署。` : ''
+}
+
+function isAssetRecordMissingCode(code?: string | null) {
+  return code === 'ASSET_NOT_FOUND_BY_NODE'
+    || code === 'ASSET_NOT_FOUND_FOR_NODE'
+    || code === 'asset_not_found_by_node'
+    || code === 'no_recovery_source'
+}
+
+function diagnosticNextAction(args: {
+  missingEnv: string[]
+  storageKeyReadProblem: boolean
+  assetRecordMissing: boolean
+  fallback: string
+}) {
+  const missingEnvMessage = productionMissingEnvMessage(args.missingEnv)
+  if (missingEnvMessage) return missingEnvMessage
+  if (args.storageKeyReadProblem) return STORAGE_SIGNED_PROXY_MESSAGE
+  if (args.assetRecordMissing) return ASSET_RECORD_MISSING_MESSAGE
+  return args.fallback
+}
 
 const EMPTY_MEDIA_URL_SOURCES: MediaUrlSource[] = []
 const EMPTY_RENDER_FAILURES: RenderFailure[] = []
@@ -1367,6 +1393,39 @@ export function CanvasNodeCard({
       ...stringArrayValue(lastResolveResult.missingEnv),
       ...stringArrayValue(lastResolveResult.missingEnvKeys),
     ])
+    const storageKeyReadProblem = Boolean(
+      storageKey
+      && !resolvedUrl
+      && (
+        errorCode === 'storage_permission_error'
+        || errorCode === 'needs_signed_url'
+        || errorCode === 'signing_error'
+        || errorCode === 'proxy_error'
+        || recoveryStatus === 'storage_permission_error'
+        || recoveryStatus === 'needs_signed_url'
+        || recoveryStatus === 'signing_error'
+        || recoveryStatus === 'proxy_error'
+        || failedRenderUrl
+        || !selectedRenderUrl
+      ),
+    )
+    const assetRecordMissing = Boolean(
+      isAssetRecordMissingCode(errorCode)
+      || isAssetRecordMissingCode(recoveryStatus)
+      || isAssetRecordMissingCode(resolveBatchStatus)
+      || (!nodeAssetId && !resolvedUrl && !storageKey && !activeCandidates.length),
+    )
+    const nextAction = diagnosticNextAction({
+      missingEnv,
+      storageKeyReadProblem,
+      assetRecordMissing,
+      fallback: mediaFailureDiagnosis?.nextAction ?? '复制诊断 JSON 后排查。',
+    })
+    const whyNotRecoverable = productionMissingEnvMessage(missingEnv)
+      || (storageKeyReadProblem ? STORAGE_SIGNED_PROXY_MESSAGE : '')
+      || (assetRecordMissing ? ASSET_RECORD_MISSING_MESSAGE : '')
+      || mediaFailureDiagnosis?.detail
+      || '没有可恢复来源。'
     const regenerateInputPreview = regenerateInputPreviewFor(node, nodeMetadata, node.kind)
     const diagnostic: MediaDiagnosticPayload = {
       nodeId: node.id,
@@ -1411,6 +1470,7 @@ export function CanvasNodeCard({
       isRegenerating,
       storageKeyFailureReason: nullableString(
         stringValue(lastResolveResult.storageKeyFailureReason)
+        || (storageKeyReadProblem ? STORAGE_SIGNED_PROXY_MESSAGE : '')
         || (storageKey && !selectedRenderUrl ? 'storageKey exists but no selected render URL was available.' : ''),
       ),
       mediaVaultStatus: mediaVaultStatus?.label ?? null,
@@ -1422,8 +1482,8 @@ export function CanvasNodeCard({
       errorMessage,
       requestId,
       canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
-      whyNotRecoverable: mediaFailureDiagnosis?.canRecover ? null : mediaFailureDiagnosis?.detail ?? '没有可恢复来源。',
-      nextAction: mediaFailureDiagnosis?.nextAction ?? '复制诊断 JSON 后排查。',
+      whyNotRecoverable: mediaFailureDiagnosis?.canRecover && !storageKeyReadProblem && !assetRecordMissing && !missingEnv.length ? null : whyNotRecoverable,
+      nextAction,
       regenerateInputPreview,
       submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? nodeMetadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
       providerResponse: sanitizeDiagnosticValue(lastGenerationError.providerResponse ?? nodeMetadata.providerResponse ?? lastResolveResult.providerResponse ?? null),
@@ -2339,6 +2399,13 @@ export function CanvasNodeCard({
 
   const renderMediaFailurePanel = (mediaKind: 'image' | 'video') => {
     const isRecoveryLoading = isRecoveryLoadingStatus(mediaRecoveryStatus)
+    const payloadNextAction = mediaDiagnosticPayload?.nextAction ?? ''
+    const diagnosticMessage = payloadNextAction === STORAGE_SIGNED_PROXY_MESSAGE
+      || payloadNextAction === ASSET_RECORD_MISSING_MESSAGE
+      || payloadNextAction.startsWith('生产环境缺少：')
+      ? payloadNextAction
+      : ''
+    const nextAction = payloadNextAction || mediaFailureDiagnosis?.nextAction || ''
     return (
     <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>
       <span className="block text-left text-[11px] font-bold uppercase tracking-normal text-red-100">
@@ -2347,11 +2414,11 @@ export function CanvasNodeCard({
       <span className="mt-1 block text-left text-xs leading-snug text-white/82">
         {isRecoveryLoading
           ? '正在按 assetId、nodeId、旧 URL 顺序恢复并写回当前节点。'
-          : mediaFailureDiagnosis?.detail ?? mediaFailureText}
+          : diagnosticMessage || mediaFailureDiagnosis?.detail || mediaFailureText}
       </span>
-      {mediaFailureDiagnosis?.nextAction ? (
+      {nextAction ? (
         <span className="mt-1 block text-left text-[11px] leading-snug text-cyan-100/86">
-          下一步：{mediaFailureDiagnosis.nextAction}
+          下一步：{nextAction}
         </span>
       ) : null}
       {mediaDiagnosticPayload?.requestId ? (

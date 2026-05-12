@@ -35,13 +35,22 @@ function unique(values: string[]) {
 
 export function getGenerationHealth(): GenerationHealthResponse {
   const database = section(undefined, ['DATABASE_URL'])
-  const storage = section('aliyun_oss', [
+  const storageEnv = section('aliyun_oss', [
     { name: 'ALIYUN_OSS_ACCESS_KEY_ID', aliases: ['ALIYUN_OSS_ACCESS_KEY_ID', 'ALIYUN_ACCESS_KEY_ID'] },
     { name: 'ALIYUN_OSS_ACCESS_KEY_SECRET', aliases: ['ALIYUN_OSS_ACCESS_KEY_SECRET', 'ALIYUN_ACCESS_KEY_SECRET'] },
     'ALIYUN_OSS_BUCKET',
     'ALIYUN_OSS_REGION',
     'ALIYUN_OSS_ENDPOINT',
   ])
+  const publicBaseUrlConfigured = hasEnv('ALIYUN_OSS_PUBLIC_BASE_URL')
+  const storage: GenerationHealthSection = {
+    ...storageEnv,
+    accessMode: publicBaseUrlConfigured ? 'public_base_url_or_signed_url' : 'signed_url_or_proxy',
+    publicBaseUrlConfigured,
+    isPrivateBucket: !publicBaseUrlConfigured,
+    signedUrlAvailable: storageEnv.ok,
+    proxyAvailable: storageEnv.ok,
+  }
   const imageGeneration = section('volcengine_seedream', [
     'VOLCENGINE_ARK_API_KEY',
     'VOLCENGINE_SEEDREAM_MODEL',
