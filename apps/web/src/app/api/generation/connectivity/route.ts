@@ -10,16 +10,17 @@ import {
   putChinaObject,
 } from '@/lib/storage/china/gateway'
 import { isChinaStorageError } from '@/lib/storage/china/errors'
+import { providerFetch } from '@/lib/providers/china/provider-fetch'
 
 export const dynamic = 'force-dynamic'
 
 const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
-const CONNECTIVITY_TIMEOUT_MS = 12000
 
 type ConnectivityErrorCode =
   | 'volcengine_network_failed'
   | 'volcengine_auth_failed'
   | 'volcengine_endpoint_invalid'
+  | 'provider_connectivity_requires_manual_generation_test'
   | 'seedream_model_invalid'
   | 'seedance_model_invalid'
   | 'oss_client_init_failed'
@@ -37,6 +38,12 @@ type VolcengineConnectivity = {
   errorCode: ConnectivityErrorCode | null
   errorMessage: string | null
   requestId: string | null
+  providerEndpoint?: string
+  providerRequestMethod?: string
+  providerHttpStatus?: number
+  providerFetchError?: string
+  providerFetchCause?: Record<string, unknown>
+  upstreamMessage?: string
 }
 
 type ModelConnectivity = {
@@ -68,60 +75,10 @@ function modelsEndpoint(baseUrl: string) {
   return /\/models$/i.test(baseUrl) ? baseUrl : `${baseUrl}/models`
 }
 
-function timeoutSignal(ms = CONNECTIVITY_TIMEOUT_MS) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ms)
-  return { signal: controller.signal, cancel: () => clearTimeout(timer) }
-}
-
 function recordValue(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
-}
-
-function parseJson(raw: string) {
-  if (!raw.trim()) return null
-  try {
-    return JSON.parse(raw) as unknown
-  } catch {
-    return null
-  }
-}
-
-function responseRequestId(response: Response, data: unknown) {
-  const record = recordValue(data)
-  const error = recordValue(record.error)
-  return typeof error.request_id === 'string'
-    ? error.request_id
-    : typeof record.request_id === 'string'
-      ? record.request_id
-      : response.headers.get('x-request-id') || response.headers.get('x-tt-logid')
-}
-
-function responseErrorCode(data: unknown) {
-  const record = recordValue(data)
-  const error = recordValue(record.error)
-  return typeof error.code === 'string'
-    ? error.code
-    : typeof record.code === 'string'
-      ? record.code
-      : ''
-}
-
-function responseErrorMessage(data: unknown, fallback: string) {
-  const record = recordValue(data)
-  const error = recordValue(record.error)
-  return typeof error.message === 'string'
-    ? error.message
-    : typeof record.message === 'string'
-      ? record.message
-      : fallback
-}
-
-function fetchErrorMessage(error: unknown) {
-  if (error instanceof Error) return `${error.name}: ${error.message}`
-  return String(error || 'fetch failed')
 }
 
 function extractModelIds(data: unknown) {
@@ -162,56 +119,64 @@ async function checkVolcengine(): Promise<VolcengineConnectivity & { modelIds: S
     }
   }
 
-  const { signal, cancel } = timeoutSignal()
-  try {
-    const response = await fetch(endpoint, {
+  const result = await providerFetch(endpoint, {
+    method: 'GET',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    timeoutMs: 12_000,
+    submittedInput: {
+      endpoint: '/models',
       method: 'GET',
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      signal,
-    })
-    const raw = await response.text().catch(() => '')
-    const data = parseJson(raw)
-    const requestId = responseRequestId(response, data)
-    const upstreamMessage = responseErrorMessage(data, response.statusText || `HTTP ${response.status}`)
-    const rawCode = responseErrorCode(data)
-    const authFailed = response.status === 401 || response.status === 403
-    const endpointInvalid = response.status === 404 || response.status === 405
-    const ok = response.ok
+      purpose: 'connectivity',
+    },
+  })
+  if (result.ok) {
     return {
-      ok,
+      ok: true,
       endpoint,
-      authOk: !authFailed,
+      authOk: true,
       networkOk: true,
-      status: response.status,
-      errorCode: ok
-        ? null
-        : authFailed
-          ? 'volcengine_auth_failed'
-          : endpointInvalid
-            ? 'volcengine_endpoint_invalid'
-            : 'volcengine_endpoint_invalid',
-      errorMessage: ok ? null : [rawCode, upstreamMessage].filter(Boolean).join(': ') || `Volcengine metadata request returned HTTP ${response.status}.`,
-      requestId,
-      modelIds: response.ok ? extractModelIds(data) : null,
+      status: result.providerHttpStatus,
+      errorCode: null,
+      errorMessage: null,
+      requestId: result.requestId ?? null,
+      providerEndpoint: result.providerEndpoint,
+      providerRequestMethod: result.providerRequestMethod,
+      providerHttpStatus: result.providerHttpStatus,
+      upstreamMessage: result.upstreamMessage,
+      modelIds: extractModelIds(result.data),
     }
-  } catch (error) {
-    return {
-      ok: false,
-      endpoint,
-      authOk: false,
-      networkOk: false,
-      status: null,
-      errorCode: 'volcengine_network_failed',
-      errorMessage: fetchErrorMessage(error),
-      requestId: null,
-      modelIds: null,
-    }
-  } finally {
-    cancel()
+  }
+
+  const reachedProvider = typeof result.providerHttpStatus === 'number'
+  const metadataUnavailable = result.providerHttpStatus === 404 || result.providerHttpStatus === 405
+  return {
+    ok: false,
+    endpoint,
+    authOk: result.errorCode !== 'provider_auth_failed',
+    networkOk: reachedProvider,
+    status: result.providerHttpStatus ?? null,
+    errorCode: result.errorCode === 'provider_auth_failed'
+      ? 'volcengine_auth_failed'
+      : metadataUnavailable
+        ? 'provider_connectivity_requires_manual_generation_test'
+        : reachedProvider
+          ? 'volcengine_endpoint_invalid'
+          : 'volcengine_network_failed',
+    errorMessage: metadataUnavailable
+      ? 'Volcengine models metadata endpoint is unavailable; manual generation test is required and was not run automatically.'
+      : result.errorMessage,
+    requestId: result.requestId ?? null,
+    providerEndpoint: result.providerEndpoint,
+    providerRequestMethod: result.providerRequestMethod,
+    providerHttpStatus: result.providerHttpStatus,
+    providerFetchError: result.providerFetchError,
+    providerFetchCause: result.providerFetchCause,
+    upstreamMessage: result.upstreamMessage,
+    modelIds: null,
   }
 }
 
@@ -346,6 +311,12 @@ export async function GET() {
     errorCode: volcengine.errorCode,
     errorMessage: volcengine.errorMessage,
     requestId: volcengine.requestId,
+    providerEndpoint: volcengine.providerEndpoint,
+    providerRequestMethod: volcengine.providerRequestMethod,
+    providerHttpStatus: volcengine.providerHttpStatus,
+    providerFetchError: volcengine.providerFetchError,
+    providerFetchCause: volcengine.providerFetchCause,
+    upstreamMessage: volcengine.upstreamMessage,
   }
 
   return NextResponse.json({

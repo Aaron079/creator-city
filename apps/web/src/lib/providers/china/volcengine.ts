@@ -5,6 +5,7 @@ import {
   type ChinaImageGenerationResult,
   type ChinaProviderConfig,
 } from './types'
+import { providerFetch, type ProviderFetchFailure } from './provider-fetch'
 
 const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const VOLCENGINE_SEEDANCE_PROVIDER_ID = 'volcengine-seedance-video' as const
@@ -185,6 +186,7 @@ function getRawError(data: unknown, fallback: string) {
 function normalizeProviderErrorCode(status: number, message: string, rawCode?: string) {
   const haystack = `${rawCode ?? ''} ${message}`.toLowerCase()
   if (/media download failed|download.*failed|failed to download|image.*download/.test(haystack)) return 'provider_media_download_failed'
+  if (/model.*(not exist|not found|invalid|unavailable|not enabled|does not exist)|endpoint.*(not exist|not found|does not exist)|modelnotfound|model_not_found|invalidmodel|invalid_model/.test(haystack)) return 'provider_model_invalid'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'PROMPT_REJECTED_OR_INVALID'
   if (status === 401 || status === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
@@ -256,11 +258,6 @@ function upstreamMessage(data: unknown, raw: string, limit = 1000) {
   }
 }
 
-function isModelNotFoundError(status: number, message: string) {
-  const normalized = message.toLowerCase()
-  return status === 404 && normalized.includes('model or endpoint') && normalized.includes('does not exist')
-}
-
 function providerRequestDetails(endpoint: string, method: string, status?: number) {
   return {
     providerEndpoint: endpoint,
@@ -269,29 +266,22 @@ function providerRequestDetails(endpoint: string, method: string, status?: numbe
   }
 }
 
-function errorCauseDetails(error: unknown) {
-  if (!(error instanceof Error)) {
-    return { name: 'UnknownError', message: String(error || 'Unknown provider fetch failure') }
-  }
-  const cause = (error as Error & { cause?: unknown }).cause
+function providerFailureDetails(failure: ProviderFetchFailure) {
   return {
-    name: error.name,
-    message: error.message,
-    causeName: cause instanceof Error ? cause.name : undefined,
-    causeMessage: cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : undefined,
+    errorCode: failure.errorCode,
+    message: failure.errorMessage,
+    upstreamStatus: failure.providerHttpStatus,
+    upstreamMessage: failure.upstreamMessage ?? failure.errorMessage,
+    rawCode: failure.rawCode,
+    requestId: failure.requestId,
+    providerEndpoint: failure.providerEndpoint,
+    providerRequestMethod: failure.providerRequestMethod,
+    providerHttpStatus: failure.providerHttpStatus,
+    providerFetchError: failure.providerFetchError,
+    providerFetchCause: failure.providerFetchCause,
+    submittedInput: failure.submittedInput,
+    providerResponse: failure.providerResponse,
   }
-}
-
-function providerFetchDetails(error: unknown) {
-  const details = errorCauseDetails(error)
-  return {
-    providerFetchError: `${details.name}: ${details.message}`,
-    providerFetchCause: details,
-  }
-}
-
-function isAbortError(error: unknown) {
-  return error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort'))
 }
 
 function normalizeTaskStatus(value: unknown): 'running' | 'done' | 'error' | null {
@@ -499,115 +489,67 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     nodeId: input.nodeId ?? null,
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 45000)
-  try {
-      const response = await fetch(endpoint, {
-        method,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-      body: JSON.stringify(body),
-    })
-    const raw = await response.text()
-    let data: unknown = {}
-    if (raw.trim()) {
-      try {
-        data = JSON.parse(raw) as unknown
-      } catch {
-        return {
-          success: false,
-          providerId,
-          model,
-          errorCode: 'VOLCENGINE_SEEDANCE_FAILED',
-          message: 'Volcengine Seedance 返回了无效 JSON 响应。',
-            upstreamStatus: response.status,
-            upstreamMessage: raw.slice(0, 500),
-            ...providerRequestDetails(endpoint, method, response.status),
-            submittedInput,
-            providerResponse: { parseError: 'invalid_json', rawSnippet: raw.slice(0, 500) },
-          }
-      }
-    }
-
-    if (!response.ok) {
-      const rawError = getRawError(data, `Volcengine Seedance HTTP ${response.status}`)
-      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
-      return {
-        success: false,
-        providerId,
-        model,
-        errorCode,
-        message: rawError.message,
-          upstreamStatus: response.status,
-          upstreamMessage: upstreamMessage(data, raw) || rawError.message,
-          rawCode: rawError.code,
-          requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
-          ...providerRequestDetails(endpoint, method, response.status),
-          submittedInput,
-          providerResponse: providerResponseSummary(data),
-        }
-    }
-
-    const videoUrl = findVideoUrl(data)
-    if (videoUrl) {
-      return {
-        success: true,
-        async: false,
-        providerId,
-        model,
-        videoUrl,
-        submittedInput,
-        providerResponse: providerResponseSummary(data),
-      }
-    }
-
-    const taskId = findTaskId(data)
-    if (taskId) {
-      return {
-        success: true,
-        async: true,
-        providerId,
-        model,
-        taskId,
-        status: 'running',
-        message: '视频任务已提交',
-        upstream: upstreamMessage(data, raw),
-        submittedInput,
-        providerResponse: providerResponseSummary(data),
-      }
-    }
-
+  const result = await providerFetch(endpoint, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    timeoutMs: 60_000,
+    submittedInput,
+  })
+  if (!result.ok) {
     return {
       success: false,
       providerId,
       model,
-      errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
-      message: 'Seedance 创建任务成功返回，但未找到 videoUrl 或 taskId，请查看 upstreamMessage。',
-        upstreamStatus: response.status,
-        upstreamMessage: upstreamMessage(data, raw),
-        requestId: response.headers.get('x-request-id') ?? undefined,
-        ...providerRequestDetails(endpoint, method, response.status),
-        submittedInput,
-        providerResponse: providerResponseSummary(data),
-      }
-    } catch (error) {
-      const aborted = isAbortError(error)
-      return {
-        success: false,
-        providerId,
-        model,
-        errorCode: aborted ? 'provider_timeout' : 'provider_network_failed',
-        message: aborted ? 'Volcengine Seedance 请求超时或被中断，请稍后查询任务或重试。' : error instanceof Error ? error.message : 'Volcengine Seedance 调用失败。',
-        upstreamMessage: error instanceof Error ? error.message : undefined,
-        ...providerRequestDetails(endpoint, method),
-        ...providerFetchDetails(error),
-        submittedInput,
-      }
-  } finally {
-    clearTimeout(timer)
+      ...providerFailureDetails(result),
+    }
+  }
+
+  const { data, raw, response } = result
+  const videoUrl = findVideoUrl(data)
+  if (videoUrl) {
+    return {
+      success: true,
+      async: false,
+      providerId,
+      model,
+      videoUrl,
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+    }
+  }
+
+  const taskId = findTaskId(data)
+  if (taskId) {
+    return {
+      success: true,
+      async: true,
+      providerId,
+      model,
+      taskId,
+      status: 'running',
+      message: '视频任务已提交',
+      upstream: upstreamMessage(data, raw),
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+    }
+  }
+
+  return {
+    success: false,
+    providerId,
+    model,
+    errorCode: 'provider_no_download_url',
+    message: 'Seedance 创建任务成功返回，但未找到 videoUrl 或 taskId，请查看 upstreamMessage。',
+    upstreamStatus: response.status,
+    upstreamMessage: upstreamMessage(data, raw),
+    requestId: result.requestId,
+    ...providerRequestDetails(endpoint, method, response.status),
+    submittedInput,
+    providerResponse: providerResponseSummary(data),
   }
 }
 
@@ -642,136 +584,88 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
     }
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 30000)
-  try {
-      const response = await fetch(endpoint, {
-        method,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
-      },
-      signal: controller.signal,
-    })
-    const raw = await response.text()
-    let data: unknown = {}
-    if (raw.trim()) {
-      try {
-        data = JSON.parse(raw) as unknown
-      } catch {
-        return {
-          success: false,
-          providerId,
-          model,
-          taskId,
-          status: 'error',
-            errorCode: 'SEEDANCE_TASK_STATUS_FAILED',
-            message: 'Volcengine Seedance 查询任务返回了无效 JSON 响应。',
-            upstreamStatus: response.status,
-            upstreamMessage: raw.slice(0, 1000),
-            ...providerRequestDetails(endpoint, method, response.status),
-          }
-      }
+  const result = await providerFetch(endpoint, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: 'application/json',
+    },
+    timeoutMs: 60_000,
+    submittedInput: { providerId, model, taskId, endpoint: '/contents/generations/tasks/{taskId}' },
+  })
+  if (!result.ok) {
+    return {
+      success: false,
+      providerId,
+      model,
+      taskId,
+      status: 'error',
+      ...providerFailureDetails(result),
     }
+  }
 
-    if (!response.ok) {
-      const rawError = getRawError(data, `Volcengine Seedance status HTTP ${response.status}`)
-      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
+  const { data, raw, response } = result
+  const videoUrl = findVideoUrl(data)
+  const status = findStatus(data)
+  if (videoUrl || status === 'done') {
+    if (!videoUrl) {
       return {
         success: false,
         providerId,
         model,
         taskId,
         status: 'error',
-        errorCode,
-        message: rawError.message,
-        upstreamStatus: response.status,
-          upstreamMessage: upstreamMessage(data, raw) || rawError.message,
-          rawCode: rawError.code,
-          requestId: rawError.requestId ?? response.headers.get('x-request-id') ?? undefined,
-          ...providerRequestDetails(endpoint, method, response.status),
-          providerResponse: providerResponseSummary(data),
-        }
-    }
-
-    const videoUrl = findVideoUrl(data)
-    const status = findStatus(data)
-    if (videoUrl || status === 'done') {
-      if (!videoUrl) {
-        return {
-          success: false,
-          providerId,
-          model,
-        taskId,
-        status: 'error',
-        errorCode: 'PROVIDER_NO_DOWNLOAD_URL',
+        errorCode: 'provider_no_download_url',
         message: '任务完成但未找到 videoUrl，请查看 upstreamMessage。',
-          upstreamStatus: response.status,
-          upstreamMessage: upstreamMessage(data, raw),
-          requestId: response.headers.get('x-request-id') ?? undefined,
-          ...providerRequestDetails(endpoint, method, response.status),
-          providerResponse: providerResponseSummary(data),
-        }
-      }
-      return {
-        success: true,
-        providerId,
-        model,
-        taskId,
-        status: 'done',
-        videoUrl,
-        message: '视频生成完成',
-        requestId: response.headers.get('x-request-id') ?? undefined,
+        upstreamStatus: response.status,
+        upstreamMessage: upstreamMessage(data, raw),
+        requestId: result.requestId,
+        ...providerRequestDetails(endpoint, method, response.status),
         providerResponse: providerResponseSummary(data),
       }
     }
-
-    if (status === 'error') {
-      const rawError = getRawError(data, 'Seedance 视频任务失败。')
-      const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
-      return {
-        success: false,
-        providerId,
-        model,
-        taskId,
-        status: 'error',
-        errorCode,
-        message: rawError.message,
-        upstreamStatus: response.status,
-          upstreamMessage: upstreamMessage(data, raw),
-          rawCode: rawError.code,
-          requestId: rawError.requestId,
-          ...providerRequestDetails(endpoint, method, response.status),
-          providerResponse: providerResponseSummary(data),
-        }
-    }
-
     return {
       success: true,
       providerId,
       model,
       taskId,
-      status: 'running',
-      message: '视频任务已提交，正在生成中',
-      requestId: response.headers.get('x-request-id') ?? undefined,
+      status: 'done',
+      videoUrl,
+      message: '视频生成完成',
+      requestId: result.requestId,
       providerResponse: providerResponseSummary(data),
     }
-    } catch (error) {
-      const aborted = isAbortError(error)
-      return {
-        success: false,
-        providerId,
-        model,
-        taskId,
-        status: 'error',
-        errorCode: aborted ? 'provider_timeout' : 'provider_network_failed',
-        message: aborted ? 'Seedance 任务状态查询超时，请稍后重试。' : error instanceof Error ? error.message : 'Seedance 任务状态查询失败。',
-        upstreamMessage: error instanceof Error ? error.message : undefined,
-        ...providerRequestDetails(endpoint, method),
-        ...providerFetchDetails(error),
-      }
-  } finally {
-    clearTimeout(timer)
+  }
+
+  if (status === 'error') {
+    const rawError = getRawError(data, 'Seedance 视频任务失败。')
+    const errorCode = normalizeProviderErrorCode(response.status, rawError.message, rawError.code)
+    return {
+      success: false,
+      providerId,
+      model,
+      taskId,
+      status: 'error',
+      errorCode,
+      message: rawError.message,
+      upstreamStatus: response.status,
+      upstreamMessage: upstreamMessage(data, raw),
+      rawCode: rawError.code,
+      requestId: rawError.requestId ?? result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      providerResponse: providerResponseSummary(data),
+    }
+  }
+
+  return {
+    success: true,
+    providerId,
+    model,
+    taskId,
+    status: 'running',
+    message: '视频任务已提交，正在生成中',
+    requestId: result.requestId,
+    providerResponse: providerResponseSummary(data),
   }
 }
 
@@ -814,152 +708,88 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
     referenceImageCount: input.referenceImages?.length ?? 0,
     hasReferenceImages: Boolean(input.referenceImages?.length),
     responseFormat: 'url',
-    outputFormat: 'png',
+    sequentialImageGeneration: 'disabled',
     watermark: false,
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 90000)
-  try {
-    const body: Record<string, unknown> = {
-      model,
-      prompt: input.prompt,
-      size: seedreamSize || '2K',
-      output_format: 'png',
-      response_format: 'url',
-      stream: false,
-      watermark: false,
-    }
-    if (input.referenceImages?.length) {
-      body.image = input.referenceImages.length === 1 ? input.referenceImages[0] : input.referenceImages
-    }
+  const body: Record<string, unknown> = {
+    model,
+    prompt: input.prompt,
+    size: seedreamSize || '2K',
+    response_format: 'url',
+    sequential_image_generation: 'disabled',
+    stream: false,
+    watermark: false,
+  }
+  if (input.referenceImages?.length) {
+    body.image = input.referenceImages.length === 1 ? input.referenceImages[0] : input.referenceImages
+  }
 
-      const response = await fetch(endpoint, {
-        method,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-      body: JSON.stringify(body),
-    })
-    const raw = await response.text()
-    let data: unknown = {}
-    if (raw.trim()) {
-      try {
-        data = JSON.parse(raw) as unknown
-      } catch {
-        return {
-          success: false,
-          providerId,
-          model,
-          errorCode: 'VOLCENGINE_IMAGE_FAILED',
-            message: 'Volcengine Seedream 返回了无效 JSON 响应。',
-            upstreamStatus: response.status,
-            upstreamMessage: raw.slice(0, 500),
-            ...providerRequestDetails(endpoint, method, response.status),
-            submittedInput,
-            providerResponse: { parseError: 'invalid_json', rawSnippet: raw.slice(0, 500) },
-          }
-      }
-    }
-
-    if (!response.ok) {
-      const rawError = getRawError(data, `Volcengine Seedream HTTP ${response.status}`)
-      const upstreamMessage = rawError.message
-      const requestId = rawError.requestId ?? response.headers.get('x-request-id') ?? undefined
-      const errorCode = normalizeProviderErrorCode(response.status, upstreamMessage, rawError.code)
-      if (isModelNotFoundError(response.status, upstreamMessage)) {
-        return {
-          success: false,
-          providerId,
-          model,
-          errorCode: 'PROVIDER_INVALID_PARAMETER',
-          message: 'Seedream 模型或接入点不存在/未开通。请在火山方舟控制台复制真实 Model ID 或 Endpoint ID 到 VOLCENGINE_SEEDREAM_MODEL。',
-          upstreamStatus: response.status,
-            upstreamMessage,
-            rawCode: rawError.code,
-            requestId,
-            ...providerRequestDetails(endpoint, method, response.status),
-            submittedInput,
-            providerResponse: providerResponseSummary(data),
-          }
-      }
-      return {
-        success: false,
-        providerId,
-        model,
-        errorCode,
-        message: upstreamMessage,
-        upstreamStatus: response.status,
-          upstreamMessage,
-          rawCode: rawError.code,
-          requestId,
-          ...providerRequestDetails(endpoint, method, response.status),
-          submittedInput,
-          providerResponse: providerResponseSummary(data),
-        }
-    }
-
-    const imageUrl = findImageUrl(data)
-    const dataUrl = imageUrl?.startsWith('data:image/') ? imageUrl : findBase64Image(data) ?? undefined
-    const finalUrl = imageUrl && !imageUrl.startsWith('data:image/') ? imageUrl : undefined
-    if (finalUrl || dataUrl) {
-      return {
-        success: true,
-        providerId,
-        model,
-        imageUrl: finalUrl ?? dataUrl,
-        dataUrl,
-        metadata: { responseFormat: finalUrl ? 'url' : 'b64_json' },
-        submittedInput,
-        providerResponse: providerResponseSummary(data),
-      }
-    }
-
-    const taskId = findTaskId(data)
-    if (taskId) {
-      return {
-        success: false,
-        providerId,
-        model,
-        errorCode: 'IMAGE_ASYNC_NOT_IMPLEMENTED',
-        message: '该 Provider 返回异步任务，下一轮接入轮询。',
-          upstreamStatus: response.status,
-          upstreamMessage: JSON.stringify({ taskId }).slice(0, 500),
-          ...providerRequestDetails(endpoint, method, response.status),
-          submittedInput,
-          providerResponse: providerResponseSummary(data),
-        }
-    }
-
+  const result = await providerFetch(endpoint, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    timeoutMs: 60_000,
+    submittedInput,
+  })
+  if (!result.ok) {
     return {
       success: false,
       providerId,
       model,
-      errorCode: 'VOLCENGINE_IMAGE_EMPTY',
-        message: 'Volcengine Seedream 未返回图片 URL 或 base64。',
-        upstreamStatus: response.status,
-        upstreamMessage: raw.slice(0, 500),
-        ...providerRequestDetails(endpoint, method, response.status),
-        submittedInput,
-        providerResponse: providerResponseSummary(data),
-      }
-    } catch (error) {
-      const aborted = isAbortError(error)
-      return {
-        success: false,
-        providerId,
-        model,
-        errorCode: aborted ? 'provider_timeout' : 'provider_network_failed',
-        message: aborted ? 'Volcengine Seedream 请求超时或被中断，请重试。' : error instanceof Error ? error.message : 'Volcengine Seedream 调用失败。',
-        upstreamMessage: error instanceof Error ? error.message : undefined,
-        ...providerRequestDetails(endpoint, method),
-        ...providerFetchDetails(error),
-        submittedInput,
-      }
-  } finally {
-    clearTimeout(timer)
+      ...providerFailureDetails(result),
+    }
+  }
+
+  const { data, raw, response } = result
+  const imageUrl = findImageUrl(data)
+  const dataUrl = imageUrl?.startsWith('data:image/') ? imageUrl : findBase64Image(data) ?? undefined
+  const finalUrl = imageUrl && !imageUrl.startsWith('data:image/') ? imageUrl : undefined
+  if (finalUrl || dataUrl) {
+    return {
+      success: true,
+      providerId,
+      model,
+      imageUrl: finalUrl ?? dataUrl,
+      dataUrl,
+      metadata: { responseFormat: finalUrl ? 'url' : 'b64_json' },
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+    }
+  }
+
+  const taskId = findTaskId(data)
+  if (taskId) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'provider_no_download_url',
+      message: 'Seedream 返回异步任务但未返回可下载图片 URL。',
+      upstreamStatus: response.status,
+      upstreamMessage: JSON.stringify({ taskId }).slice(0, 500),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+    }
+  }
+
+  return {
+    success: false,
+    providerId,
+    model,
+    errorCode: 'provider_no_download_url',
+    message: 'Volcengine Seedream 未返回图片 URL 或 base64。',
+    upstreamStatus: response.status,
+    upstreamMessage: raw.slice(0, 500),
+    requestId: result.requestId,
+    ...providerRequestDetails(endpoint, method, response.status),
+    submittedInput,
+    providerResponse: providerResponseSummary(data),
   }
 }
 

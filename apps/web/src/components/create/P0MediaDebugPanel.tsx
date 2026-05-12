@@ -106,6 +106,12 @@ type ExternalConnectivityResponse = {
     errorCode?: string | null
     errorMessage?: string | null
     requestId?: string | null
+    providerEndpoint?: string
+    providerRequestMethod?: string
+    providerHttpStatus?: number
+    providerFetchError?: string
+    providerFetchCause?: unknown
+    upstreamMessage?: string
   }
   seedream?: {
     ok?: boolean
@@ -777,7 +783,9 @@ function visibleGenerationFailureCode(result: Partial<GenerateResponseShape> & {
   const message = `${result.message || ''} ${result.upstreamMessage || ''} ${result.providerFetchError || ''}`.toLowerCase()
   if (rawCode === 'provider_timeout' || /timeout|abort/.test(`${rawCode} ${message}`)) return 'provider_timeout'
   if (rawCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(`${rawCode} ${message}`)) return 'provider_network_failed'
+  if (rawCode === 'provider_response_parse_failed') return 'provider_response_parse_failed'
   if (rawCode === 'provider_auth_failed' || rawCode === 'provider_auth_error' || result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(message)) return 'provider_auth_failed'
+  if (rawCode === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(`${rawCode} ${message}`)) return 'provider_model_invalid'
   if (rawCode === 'provider_invalid_parameter' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(message)) return 'provider_invalid_parameter'
   if (rawCode === 'provider_no_download_url') return 'provider_no_download_url'
   if (rawCode === 'provider_media_download_failed' || rawCode === 'MEDIA_FETCH_FAILED' || rawCode === 'ASSET_DOWNLOAD_FAILED' || rawCode === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(message)) return 'provider_media_download_failed'

@@ -449,6 +449,8 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'provider_media_download_failed',
   'no_recovery_source',
     'provider_invalid_parameter',
+    'provider_model_invalid',
+    'provider_response_parse_failed',
     'provider_network_failed',
     'provider_auth_failed',
     'provider_timeout',
@@ -796,6 +798,7 @@ function normalizedRecoveryCode(result: AssetRecoverResponse, fallback = 'old_ur
   if (code === 'recovery_timeout') return 'generation_failed'
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
   if (code === 'PROVIDER_INVALID_PARAMETER') return 'provider_invalid_parameter'
+  if (code === 'provider_model_invalid') return 'provider_model_invalid'
   if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'missing_env') return 'provider_env_missing'
   if (code === 'provider_error') return 'generation_failed'
   return code || fallback
@@ -812,6 +815,7 @@ function terminalRecoveryCodeFromAttempts(candidates: MediaUrlSource[], result?:
     || code === 'old_url_expired'
     || code === 'provider_media_download_failed'
     || code === 'provider_invalid_parameter'
+    || code === 'provider_model_invalid'
     || code === 'provider_env_missing'
     || code === 'storage_permission_error'
     || code === 'signing_error'
@@ -882,7 +886,9 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
     if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
     if (code === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
     if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/i.test(haystack)) return 'provider_network_failed'
+    if (code === 'provider_response_parse_failed') return 'provider_response_parse_failed'
     if (code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
+  if (code === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(haystack)) return 'provider_model_invalid'
   if (upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/i.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
@@ -925,6 +931,8 @@ function generationFailureMessage(error: Record<string, unknown>) {
     if (normalized === 'provider_network_failed') return `provider_network_failed：Provider 网络请求失败。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
     if (normalized === 'provider_timeout') return `provider_timeout：Provider 请求超时或被中断。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
     if (normalized === 'provider_auth_failed') return `provider_auth_failed：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
+  if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
+  if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
   if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
   if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${requestSuffix}`
@@ -966,6 +974,7 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
     return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'client_fetch_failed：浏览器未能完成生成接口请求。'
   }
   if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请复制诊断 JSON 查看 requestId 和 submittedInput。'
+  if (reason === 'provider_model_invalid') return 'Provider 模型或接入点无效，请复制诊断 JSON 查看 upstreamMessage 和 requestId。'
   if (reason === 'provider_env_missing') return 'Provider 或对象存储环境变量缺失，配置后再重新生成或恢复。'
   if (reason === 'recovery_timeout') return '资产恢复请求超时，已停止本次恢复流程。'
   if (reason === 'provider_retrieve_not_available') return 'Provider 历史结果取回不可用，需要用原 Prompt 重新生成。'
@@ -2584,6 +2593,11 @@ export function CanvasNodeCard({
         {mediaDiagnosticPayload?.providerEndpoint ? (
           <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
             providerEndpoint: {mediaDiagnosticPayload.providerEndpoint}
+          </span>
+        ) : null}
+        {mediaDiagnosticPayload?.providerRequestMethod ? (
+          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+            providerRequestMethod: {mediaDiagnosticPayload.providerRequestMethod}
           </span>
         ) : null}
         {typeof mediaDiagnosticPayload?.providerHttpStatus === 'number' ? (
