@@ -63,13 +63,22 @@ type GenerateResponseShape = {
   errorCode?: string
   upstreamStatus?: number
   upstreamMessage?: string
+    generationStage?: string
+    stage?: string
     rawCode?: string
     requestId?: string
+    ossRequestId?: string
     providerEndpoint?: string
     providerRequestMethod?: string
     providerHttpStatus?: number
     providerFetchError?: string
     providerFetchCause?: unknown
+    storageProvider?: string
+    bucket?: string
+    storageKey?: string
+    attemptedUploadKey?: string
+    mediaDownloadUrl?: string
+    sourceUrl?: string
     missingEnv?: string[]
   missingEnvKeys?: string[]
   missingFields?: string[]
@@ -643,6 +652,7 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     isRegenerating: metadata.isRegenerating === true || metadata.regenerating === true,
     errorCode,
     errorMessage: nullableString(errorMessage),
+    generationStage: nullableString(stringValue(lastGenerationError.generationStage) || stringValue(lastGenerationError.stage) || stringValue(metadata.generationStage)),
     upstreamStatus: typeof lastGenerationError.upstreamStatus === 'number'
       ? lastGenerationError.upstreamStatus
       : typeof lastResolveResult.upstreamStatus === 'number'
@@ -650,6 +660,7 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
         : null,
       upstreamMessage: nullableString(stringValue(lastGenerationError.upstreamMessage) || stringValue(lastResolveResult.upstreamMessage)),
       requestId: nullableString(stringValue(lastGenerationError.requestId) || stringValue(lastResolveResult.requestId)),
+      ossRequestId: nullableString(stringValue(lastGenerationError.ossRequestId) || stringValue(metadata.ossRequestId)),
       providerEndpoint: nullableString(stringValue(lastGenerationError.providerEndpoint) || stringValue(metadata.providerEndpoint)),
       providerRequestMethod: nullableString(stringValue(lastGenerationError.providerRequestMethod) || stringValue(metadata.providerRequestMethod)),
       providerHttpStatus: typeof lastGenerationError.providerHttpStatus === 'number'
@@ -659,6 +670,9 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
           : null,
       providerFetchError: nullableString(stringValue(lastGenerationError.providerFetchError) || stringValue(metadata.providerFetchError)),
       providerFetchCause: sanitizeDiagnosticValue(lastGenerationError.providerFetchCause ?? metadata.providerFetchCause ?? null),
+      attemptedUploadKey: nullableString(stringValue(lastGenerationError.attemptedUploadKey) || stringValue(metadata.attemptedUploadKey)),
+      mediaDownloadUrl: nullableString(stringValue(lastGenerationError.mediaDownloadUrl) || stringValue(metadata.mediaDownloadUrl)),
+      sourceUrl: nullableString(stringValue(lastGenerationError.sourceUrl) || stringValue(metadata.sourceUrl)),
       regenerateInputPreview: sanitizeDiagnosticValue(metadata.regenerationInputPreview ?? null),
     submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? metadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
     generationHealth,
@@ -781,14 +795,17 @@ function errorCauseDetails(error: unknown) {
 function visibleGenerationFailureCode(result: Partial<GenerateResponseShape> & { message?: string; errorCode?: string }) {
   const rawCode = result.errorCode || ''
   const message = `${result.message || ''} ${result.upstreamMessage || ''} ${result.providerFetchError || ''}`.toLowerCase()
+  if (rawCode === 'oss_upload_timeout' || rawCode === 'oss_upload_error' || rawCode === 'oss_auth_error' || rawCode === 'oss_permission_error' || rawCode === 'oss_config_error') return rawCode
+  if (rawCode === 'canvas_save_error') return 'canvas_save_error'
+  if (rawCode === 'provider_media_download_failed' || rawCode === 'MEDIA_FETCH_FAILED' || rawCode === 'ASSET_DOWNLOAD_FAILED' || rawCode === 'ASSET_DOWNLOAD_ERROR' || rawCode === 'ASSET_DOWNLOAD_TIMEOUT' || /media download failed|download failed/.test(message)) return 'provider_media_download_failed'
   if (rawCode === 'provider_timeout' || /timeout|abort/.test(`${rawCode} ${message}`)) return 'provider_timeout'
   if (rawCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(`${rawCode} ${message}`)) return 'provider_network_failed'
   if (rawCode === 'provider_response_parse_failed') return 'provider_response_parse_failed'
+  if (rawCode === 'provider_request_failed') return 'provider_request_failed'
   if (rawCode === 'provider_auth_failed' || rawCode === 'provider_auth_error' || result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(message)) return 'provider_auth_failed'
   if (rawCode === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(`${rawCode} ${message}`)) return 'provider_model_invalid'
   if (rawCode === 'provider_invalid_parameter' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(message)) return 'provider_invalid_parameter'
   if (rawCode === 'provider_no_download_url') return 'provider_no_download_url'
-  if (rawCode === 'provider_media_download_failed' || rawCode === 'MEDIA_FETCH_FAILED' || rawCode === 'ASSET_DOWNLOAD_FAILED' || rawCode === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(message)) return 'provider_media_download_failed'
   return rawCode || 'generation_failed'
 }
 
@@ -988,11 +1005,14 @@ export function P0MediaDebugPanel({
           missingEnv?.length ? `missingEnv=${missingEnv.join(', ')}` : '',
             result.upstreamStatus ? `upstreamStatus=${result.upstreamStatus}` : '',
             result.upstreamMessage ? `upstreamMessage=${result.upstreamMessage}` : '',
+            result.generationStage || result.stage ? `generationStage=${result.generationStage || result.stage}` : '',
             result.requestId ? `requestId=${result.requestId}` : '',
+            result.ossRequestId ? `ossRequestId=${result.ossRequestId}` : '',
             result.providerEndpoint ? `providerEndpoint=${result.providerEndpoint}` : '',
             result.providerRequestMethod ? `providerRequestMethod=${result.providerRequestMethod}` : '',
             result.providerHttpStatus ? `providerHttpStatus=${result.providerHttpStatus}` : '',
             result.providerFetchError ? `providerFetchError=${result.providerFetchError}` : '',
+            result.attemptedUploadKey ? `attemptedUploadKey=${result.attemptedUploadKey}` : '',
           ].filter(Boolean).join(' · '),
           metadataJson: {
             ...metadata,
@@ -1006,27 +1026,44 @@ export function P0MediaDebugPanel({
           loading: false,
           errorCode: code,
           errorMessage: message,
+            generationStage: result.generationStage || result.stage,
             upstreamStatus: result.upstreamStatus,
             upstreamMessage: result.upstreamMessage,
             requestId: result.requestId,
+            ossRequestId: result.ossRequestId,
             providerEndpoint: result.providerEndpoint,
             providerRequestMethod: result.providerRequestMethod,
             providerHttpStatus: result.providerHttpStatus,
             providerFetchError: result.providerFetchError,
             providerFetchCause: sanitizeDiagnosticValue(result.providerFetchCause ?? null),
+            storageProvider: result.storageProvider,
+            bucket: result.bucket,
+            storageKey: result.storageKey,
+            attemptedUploadKey: result.attemptedUploadKey,
+            mediaDownloadUrl: result.mediaDownloadUrl,
+            sourceUrl: result.sourceUrl,
             submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
             lastGenerationError: {
               errorCode: code,
               rawErrorCode: result.rawCode || rawCode,
               message,
+              generationStage: result.generationStage || result.stage,
+              stage: result.stage || result.generationStage,
               upstreamStatus: result.upstreamStatus,
               upstreamMessage: result.upstreamMessage,
               requestId: result.requestId,
+              ossRequestId: result.ossRequestId,
               providerEndpoint: result.providerEndpoint,
               providerRequestMethod: result.providerRequestMethod,
               providerHttpStatus: result.providerHttpStatus,
               providerFetchError: result.providerFetchError,
               providerFetchCause: sanitizeDiagnosticValue(result.providerFetchCause ?? null),
+              storageProvider: result.storageProvider,
+              bucket: result.bucket,
+              storageKey: result.storageKey,
+              attemptedUploadKey: result.attemptedUploadKey,
+              mediaDownloadUrl: result.mediaDownloadUrl,
+              sourceUrl: result.sourceUrl,
               missingEnv,
               missingFields: result.missingFields,
               submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
@@ -1511,11 +1548,15 @@ export function P0MediaDebugPanel({
                         ['proxy fallback status', item.proxyFallbackStatus ?? '(none)'],
                           ['recoveryStatus', item.recoveryStatus || '(none)'],
                           ['error', item.error || '(none)'],
+                          ['generationStage', item.generationStage || '(none)'],
+                          ['ossRequestId', item.ossRequestId || '(none)'],
                           ['providerEndpoint', item.providerEndpoint || '(none)'],
                           ['providerRequestMethod', item.providerRequestMethod || '(none)'],
                           ['providerHttpStatus', item.providerHttpStatus ?? '(none)'],
                           ['providerFetchError', item.providerFetchError || '(none)'],
                           ['providerFetchCause', item.providerFetchCause ? formatJson(item.providerFetchCause) : '(none)'],
+                          ['attemptedUploadKey', item.attemptedUploadKey || '(none)'],
+                          ['mediaDownloadUrl', item.mediaDownloadUrl || '(none)'],
                           ['是否 unrecoverable', item.unrecoverable ? 'yes' : 'no'],
                         ['是否有可恢复来源', item.hasRecoverableSource ? 'yes' : 'no'],
                         ['为什么显示 storageKey，无法恢复', item.storageKeyFailureReason],

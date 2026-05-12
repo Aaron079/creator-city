@@ -56,6 +56,7 @@ function failedMediaPersistence(errorCode: string, message: string, upstreamStat
   return {
     status: 'failed',
     errorCode,
+    errorMessage: message,
     message,
     upstreamStatus,
     upstreamMessage,
@@ -65,13 +66,18 @@ function failedMediaPersistence(errorCode: string, message: string, upstreamStat
 }
 
 function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
-  return failedMediaPersistence(result.errorCode, result.message, result.upstreamStatus, result.upstreamMessage, result.providerFetchError, result.providerFetchCause)
+  return {
+    status: 'failed',
+    ...result,
+    errorMessage: result.errorMessage || result.message,
+  }
 }
 
 function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
-  if (errorCode === 'ASSET_DOWNLOAD_TIMEOUT') return 'provider_timeout'
+  if (errorCode === 'provider_media_download_failed' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'ASSET_DOWNLOAD_TIMEOUT' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'oss_upload_timeout' || errorCode === 'oss_upload_error' || errorCode === 'oss_auth_error' || errorCode === 'oss_permission_error' || errorCode === 'oss_config_error') return errorCode
   if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
+  if (errorCode === 'canvas_save_error') return 'canvas_save_error'
   if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
   return errorCode
 }
@@ -84,9 +90,10 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   if (code === 'provider_timeout' || code.includes('TIMEOUT') || /timeout|abort/.test(haystack)) return 'provider_timeout'
   if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
   if (code === 'provider_response_parse_failed') return 'provider_response_parse_failed'
+  if (code === 'provider_request_failed') return 'provider_request_failed'
   if (code === 'PROVIDER_AUTH_ERROR' || code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (code === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(haystack)) return 'provider_model_invalid'
-  if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'INSUFFICIENT_CREDITS' || code === 'BILLING_ERROR' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
+  if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'provider_quota_or_billing_error' || code === 'INSUFFICIENT_CREDITS' || code === 'BILLING_ERROR' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (code === 'PROVIDER_INVALID_PARAMETER' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
@@ -362,6 +369,11 @@ export async function POST(request: NextRequest) {
             model: chinaResult.model,
             submittedInput: chinaResult.submittedInput ?? submittedInput,
             providerResponse: chinaResult.providerResponse,
+            requestId: chinaResult.requestId,
+            providerEndpoint: chinaResult.providerEndpoint,
+            providerRequestMethod: chinaResult.providerRequestMethod,
+            providerHttpStatus: chinaResult.providerHttpStatus,
+            upstreamMessage: chinaResult.upstreamMessage,
           }
         : {
             success: false,
@@ -487,6 +499,13 @@ export async function POST(request: NextRequest) {
             prompt,
             generationJobId,
             assetIntelligence,
+            requestId: raw.requestId,
+            providerEndpoint: raw.providerEndpoint,
+            providerRequestMethod: raw.providerRequestMethod,
+            providerHttpStatus: raw.providerHttpStatus,
+            providerFetchError: raw.providerFetchError,
+            providerFetchCause: raw.providerFetchCause,
+            submittedInput: raw.submittedInput ?? submittedInput,
           },
         })
         if (persistence.ok) {
@@ -503,22 +522,32 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: false,
             errorCode,
-            message: `图片生成成功，但媒体转存失败：${persistence.message}`,
+            errorMessage: persistence.errorMessage || persistence.message,
+            message: `图片生成成功，但媒体转存失败：${persistence.errorMessage || persistence.message}`,
             providerId,
             model: raw.model,
             mode: 'real',
             status: 'failed',
+              generationStage: persistence.generationStage,
+              stage: persistence.stage,
               upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
               upstreamMessage: persistence.upstreamMessage ?? raw.upstreamMessage,
-              requestId: raw.requestId,
-              providerEndpoint: raw.providerEndpoint,
-              providerRequestMethod: raw.providerRequestMethod,
-              providerHttpStatus: raw.providerHttpStatus,
+              requestId: persistence.requestId ?? raw.requestId,
+              providerEndpoint: persistence.providerEndpoint ?? raw.providerEndpoint,
+              providerRequestMethod: persistence.providerRequestMethod ?? raw.providerRequestMethod,
+              providerHttpStatus: persistence.providerHttpStatus ?? raw.providerHttpStatus,
               providerFetchError: raw.providerFetchError ?? persistence.providerFetchError,
               providerFetchCause: raw.providerFetchCause ?? persistence.providerFetchCause,
+              storageProvider: persistence.storageProvider,
+              bucket: persistence.bucket,
+              storageKey: persistence.storageKey,
+              attemptedUploadKey: persistence.attemptedUploadKey,
+              ossRequestId: persistence.ossRequestId,
+              sourceUrl: persistence.sourceUrl,
+              mediaDownloadUrl: persistence.mediaDownloadUrl,
               submittedInput: raw.submittedInput ?? submittedInput,
               providerResponse: raw.providerResponse,
-              originalProviderImageUrl: providerImageUrl,
+              originalProviderImageUrl: persistence.sourceUrl ?? undefined,
             mediaPersistence,
           }, { status: 200 })
         }
@@ -531,11 +560,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: false,
           errorCode: 'asset_persistence_error',
+          errorMessage: error instanceof Error ? error.message : '图片媒体转存失败。',
           message: `图片生成成功，但媒体转存失败：${error instanceof Error ? error.message : '图片媒体转存失败。'}`,
           providerId,
           model: raw.model,
           mode: 'real',
           status: 'failed',
+            generationStage: 'asset_create',
+            stage: 'asset_create',
             upstreamStatus: raw.upstreamStatus,
             upstreamMessage: raw.upstreamMessage,
             requestId: raw.requestId,

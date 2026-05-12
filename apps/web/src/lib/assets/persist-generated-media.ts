@@ -3,6 +3,15 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { toAssetType } from '@/lib/projects/canvas-mappers'
 import { downloadExternalAsset, resolveAssetUrl, uploadAsset, type CanonicalStorageProvider } from '@/lib/assets/storage-adapter'
+import { isChinaStorageError } from '@/lib/storage/china/errors'
+
+export type PersistGeneratedMediaStage =
+  | 'provider_output_parse'
+  | 'media_download'
+  | 'oss_upload'
+  | 'asset_create'
+  | 'generation_job_update'
+  | 'canvas_node_update'
 
 export type PersistGeneratedMediaInput = {
   url?: string
@@ -34,27 +43,157 @@ export type PersistGeneratedMediaResult =
     }
   | {
       ok: false
-        errorCode: string
-        message: string
-        upstreamStatus?: number
-        upstreamMessage?: string
-        providerFetchError?: string
-        providerFetchCause?: Record<string, unknown>
+      stage: PersistGeneratedMediaStage
+      generationStage: PersistGeneratedMediaStage
+      errorCode: string
+      rawErrorCode?: string
+      errorMessage: string
+      message: string
+      provider?: string
+      requestId?: string
+      upstreamStatus?: number
+      upstreamMessage?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
+      providerFetchError?: string
+      providerFetchCause?: Record<string, unknown>
+      storageProvider?: CanonicalStorageProvider | string | null
+      bucket?: string | null
+      storageKey?: string | null
+      attemptedUploadKey?: string | null
+      sourceUrl?: string | null
+      mediaDownloadUrl?: string | null
+      ossRequestId?: string | null
       }
 
-function persistError(errorCode: string, message: string, upstreamStatus?: number, details?: {
+function recordValue(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function numberValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function sanitizeSourceUrl(url?: string | null) {
+  const value = url?.trim()
+  if (!value) return null
+  if (value.startsWith('data:')) {
+    const match = value.match(/^data:([^;,]+)?/)
+    return `data:${match?.[1] || 'application/octet-stream'};<redacted>`
+  }
+  try {
+    const parsed = new URL(value)
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return value.slice(0, 240)
+  }
+}
+
+function metadataDiagnostics(input?: PersistGeneratedMediaInput) {
+  const metadata = recordValue(input?.metadata)
+  return {
+    provider: input?.sourceProvider,
+    requestId: stringValue(metadata.requestId) || undefined,
+    providerEndpoint: stringValue(metadata.providerEndpoint) || undefined,
+    providerRequestMethod: stringValue(metadata.providerRequestMethod) || undefined,
+    providerHttpStatus: numberValue(metadata.providerHttpStatus),
+    providerFetchError: stringValue(metadata.providerFetchError) || undefined,
+    providerFetchCause: recordValue(metadata.providerFetchCause),
+  }
+}
+
+function storageDetails(error: unknown) {
+  const details = isChinaStorageError(error) ? recordValue(error.details) : recordValue(error)
+  const message = error instanceof Error ? error.message : stringValue(details.message) || 'Object storage upload failed.'
+  const code = isChinaStorageError(error) ? error.code : stringValue(details.code)
+  return {
+    status: isChinaStorageError(error) ? error.status : numberValue(details.status),
+    code,
+    rawCode: stringValue(details.code) || code,
+    name: stringValue(details.name) || (error instanceof Error ? error.name : ''),
+    message,
+    provider: stringValue(details.provider),
+    bucket: stringValue(details.bucket),
+    key: stringValue(details.key),
+    requestId: stringValue(details.ossRequestId) || stringValue(details.requestId),
+  }
+}
+
+function classifyOssUploadError(error: unknown) {
+  const details = storageDetails(error)
+  const haystack = `${details.code} ${details.rawCode} ${details.name} ${details.message}`.toLowerCase()
+  if (/storage_not_configured|storage_config_error|not configured|nosuchbucket|invalidbucket|invalid endpoint|unknown endpoint|enotfound|getaddrinfo/.test(haystack)) {
+    return { errorCode: 'oss_config_error', errorMessage: details.message || 'Aliyun OSS is not configured correctly.' }
+  }
+  if (/storage_upload_timeout|responsetimeouterror|timeout|timedout|etimedout|socket timeout/.test(haystack)) {
+    return { errorCode: 'oss_upload_timeout', errorMessage: 'Aliyun OSS upload timed out' }
+  }
+  if (/storage_auth_failed|invalidaccesskeyid|signaturedoesnotmatch|invalidsecuritytoken|accesskey|credentials?|credential/.test(haystack)) {
+    return { errorCode: 'oss_auth_error', errorMessage: details.message || 'Aliyun OSS authentication failed.' }
+  }
+  if (details.status === 401 || details.status === 403 || /storage_permission_denied|accessdenied|forbidden|permission|not authorized/.test(haystack)) {
+    return { errorCode: 'oss_permission_error', errorMessage: details.message || 'Aliyun OSS permission denied.' }
+  }
+  return { errorCode: 'oss_upload_error', errorMessage: details.message || 'Aliyun OSS upload failed.' }
+}
+
+function persistError(args: {
+  stage: PersistGeneratedMediaStage
+  errorCode: string
+  message: string
+  input?: PersistGeneratedMediaInput
+  rawErrorCode?: string
+  upstreamStatus?: number
   upstreamMessage?: string
   providerFetchError?: string
   providerFetchCause?: Record<string, unknown>
+  storageProvider?: CanonicalStorageProvider | string | null
+  bucket?: string | null
+  storageKey?: string | null
+  attemptedUploadKey?: string | null
+  sourceUrl?: string | null
+  mediaDownloadUrl?: string | null
+  ossRequestId?: string | null
 }): PersistGeneratedMediaResult {
+  const diagnostics = metadataDiagnostics(args.input)
+  const providerFetchCause = args.providerFetchCause && Object.keys(args.providerFetchCause).length
+    ? args.providerFetchCause
+    : Object.keys(diagnostics.providerFetchCause).length
+      ? diagnostics.providerFetchCause
+      : undefined
   return {
     ok: false,
-    errorCode,
-    message,
-    ...(upstreamStatus !== undefined ? { upstreamStatus } : {}),
-    ...(details?.upstreamMessage ? { upstreamMessage: details.upstreamMessage } : {}),
-    ...(details?.providerFetchError ? { providerFetchError: details.providerFetchError } : {}),
-    ...(details?.providerFetchCause ? { providerFetchCause: details.providerFetchCause } : {}),
+    stage: args.stage,
+    generationStage: args.stage,
+    errorCode: args.errorCode,
+    ...(args.rawErrorCode ? { rawErrorCode: args.rawErrorCode } : {}),
+    errorMessage: args.message,
+    message: args.message,
+    ...(diagnostics.provider ? { provider: diagnostics.provider } : {}),
+    ...(diagnostics.requestId ? { requestId: diagnostics.requestId } : {}),
+    ...(args.upstreamStatus !== undefined ? { upstreamStatus: args.upstreamStatus } : {}),
+    ...(args.upstreamMessage ? { upstreamMessage: args.upstreamMessage } : {}),
+    ...(diagnostics.providerEndpoint ? { providerEndpoint: diagnostics.providerEndpoint } : {}),
+    ...(diagnostics.providerRequestMethod ? { providerRequestMethod: diagnostics.providerRequestMethod } : {}),
+    ...(diagnostics.providerHttpStatus !== undefined ? { providerHttpStatus: diagnostics.providerHttpStatus } : {}),
+    ...(args.providerFetchError || diagnostics.providerFetchError ? { providerFetchError: args.providerFetchError || diagnostics.providerFetchError } : {}),
+    ...(providerFetchCause ? { providerFetchCause } : {}),
+    ...(args.storageProvider ? { storageProvider: args.storageProvider } : {}),
+    ...(args.bucket ? { bucket: args.bucket } : {}),
+    ...(args.storageKey ? { storageKey: args.storageKey } : {}),
+    ...(args.attemptedUploadKey ? { attemptedUploadKey: args.attemptedUploadKey } : {}),
+    ...(args.sourceUrl ? { sourceUrl: sanitizeSourceUrl(args.sourceUrl), mediaDownloadUrl: sanitizeSourceUrl(args.mediaDownloadUrl || args.sourceUrl) } : {}),
+    ...(args.mediaDownloadUrl && !args.sourceUrl ? { mediaDownloadUrl: sanitizeSourceUrl(args.mediaDownloadUrl) } : {}),
+    ...(args.ossRequestId ? { ossRequestId: args.ossRequestId } : {}),
   }
 }
 
@@ -164,14 +303,10 @@ async function linkGenerationJob(input: PersistGeneratedMediaInput, assetId: str
       await db.generationJob.update({
         where: { id: generationJobId },
         data: fallbackData,
-      }).catch(() => null)
+      })
       return
     }
-    console.warn('[assets] failed to link GenerationJob to Asset', {
-      generationJobId,
-      assetId,
-      error: message,
-    })
+    throw error
   })
 }
 
@@ -194,7 +329,7 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
     where,
     select: { id: true, metadataJson: true },
     take: 10,
-  }).catch(() => [])
+  })
   await Promise.all(nodes.map((node) => {
     const metadata = node.metadataJson && typeof node.metadataJson === 'object' && !Array.isArray(node.metadataJson)
       ? node.metadataJson as Record<string, unknown>
@@ -250,21 +385,41 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
   try {
     const url = input.url?.trim()
     if (!url) {
-      return persistError('MEDIA_URL_REQUIRED', '媒体 URL 不能为空。')
+      return persistError({
+        stage: 'provider_output_parse',
+        errorCode: 'provider_no_download_url',
+        message: 'Provider did not return a downloadable media URL.',
+        input,
+      })
     }
     if (!input.userId) {
-      return persistError('MEDIA_UPLOAD_FAILED', '缺少媒体归属用户，无法保存 Asset。')
+      return persistError({
+        stage: 'asset_create',
+        errorCode: 'asset_persistence_error',
+        rawErrorCode: 'MEDIA_UPLOAD_FAILED',
+        message: '缺少媒体归属用户，无法保存 Asset。',
+        input,
+        sourceUrl: url,
+      })
     }
-      const downloaded = url.startsWith('data:')
-        ? dataUrlToDownloadedAsset(url) ?? { ok: false as const, status: 0, errorCode: 'MEDIA_FETCH_FAILED', message: 'Data URL 无法解析为媒体文件。' }
-        : await downloadExternalAsset(url)
-      if (!downloaded.ok) {
-        return persistError(downloaded.errorCode || 'MEDIA_FETCH_FAILED', downloaded.message, downloaded.status || undefined, {
-          upstreamMessage: 'bodySnippet' in downloaded ? downloaded.bodySnippet : undefined,
-          providerFetchError: 'fetchError' in downloaded ? downloaded.fetchError : undefined,
-          providerFetchCause: 'fetchCause' in downloaded ? downloaded.fetchCause : undefined,
-        })
-      }
+    const downloaded = url.startsWith('data:')
+      ? dataUrlToDownloadedAsset(url) ?? { ok: false as const, status: 0, errorCode: 'MEDIA_FETCH_FAILED', message: 'Data URL 无法解析为媒体文件。' }
+      : await downloadExternalAsset(url)
+    if (!downloaded.ok) {
+      return persistError({
+        stage: 'media_download',
+        errorCode: 'provider_media_download_failed',
+        rawErrorCode: downloaded.errorCode || 'MEDIA_FETCH_FAILED',
+        message: downloaded.message,
+        input,
+        upstreamStatus: downloaded.status || undefined,
+        upstreamMessage: 'bodySnippet' in downloaded ? downloaded.bodySnippet : undefined,
+        providerFetchError: 'fetchError' in downloaded ? downloaded.fetchError : undefined,
+        providerFetchCause: 'fetchCause' in downloaded ? downloaded.fetchCause : undefined,
+        sourceUrl: url,
+        mediaDownloadUrl: 'requestUrl' in downloaded ? downloaded.requestUrl : url,
+      })
+    }
     const contentType = downloaded.mimeType
     const body = downloaded.buffer
     const assetId = randomUUID()
@@ -281,10 +436,24 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         type: input.type,
       })
     } catch (error) {
-      return persistError(
-        'MEDIA_UPLOAD_FAILED',
-        error instanceof Error ? error.message : '生成媒体上传到对象存储失败。',
-      )
+      const details = storageDetails(error)
+      const classified = classifyOssUploadError(error)
+      return persistError({
+        stage: 'oss_upload',
+        errorCode: classified.errorCode,
+        rawErrorCode: details.rawCode || 'MEDIA_UPLOAD_FAILED',
+        message: classified.errorMessage,
+        input,
+        upstreamStatus: details.status,
+        upstreamMessage: details.message,
+        storageProvider: (details.provider as CanonicalStorageProvider | string) || null,
+        bucket: details.bucket || null,
+        storageKey: details.key || null,
+        attemptedUploadKey: details.key || null,
+        sourceUrl: url,
+        mediaDownloadUrl: url,
+        ossRequestId: details.requestId || null,
+      })
     }
 
     try {
@@ -305,24 +474,38 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         metadataJson,
       }).catch(() => ({ url: '', source: 'missing' as const, signedUrlAvailable: false }))
       const stableUrl = resolved.url || proxyUrl || uploaded.url
-      if (!stableUrl) return persistError('MEDIA_UPLOAD_FAILED', '媒体已上传，但没有返回稳定 URL 或 proxy URL。')
-      const workflow = input.workflowId
-        ? await db.canvasWorkflow.findFirst({
-            where: {
-              id: input.workflowId,
-              ...(input.projectId ? { projectId: input.projectId } : {}),
-            },
-            select: { id: true },
-          })
-        : input.projectId
-          ? await db.canvasWorkflow.findFirst({
-              where: { projectId: input.projectId },
-              orderBy: { createdAt: 'asc' },
-              select: { id: true },
-            })
-          : null
+      if (!stableUrl) {
+        return persistError({
+          stage: 'oss_upload',
+          errorCode: 'oss_upload_error',
+          rawErrorCode: 'MEDIA_UPLOAD_FAILED',
+          message: '媒体已上传，但没有返回稳定 URL 或 proxy URL。',
+          input,
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket,
+          storageKey: uploaded.storageKey,
+          attemptedUploadKey: uploaded.storageKey,
+          sourceUrl: url,
+          mediaDownloadUrl: url,
+        })
+      }
       let asset: Awaited<ReturnType<typeof db.asset.create>>
       try {
+        const workflow = input.workflowId
+          ? await db.canvasWorkflow.findFirst({
+              where: {
+                id: input.workflowId,
+                ...(input.projectId ? { projectId: input.projectId } : {}),
+              },
+              select: { id: true },
+            })
+          : input.projectId
+            ? await db.canvasWorkflow.findFirst({
+                where: { projectId: input.projectId },
+                orderBy: { createdAt: 'asc' },
+                select: { id: true },
+              })
+            : null
         asset = await db.asset.create({
         data: {
           id: assetId,
@@ -379,25 +562,58 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         },
         })
       } catch (error) {
-        return persistError(
-          'MEDIA_ASSET_CREATE_FAILED',
-          error instanceof Error ? error.message : '媒体已上传，但 Asset 记录创建失败。',
-        )
-      }
-      await linkGenerationJob(input, asset.id, stableUrl)
-      await linkCanvasNode(input, asset.id, stableUrl, {
-        ...uploaded,
-        resolvedUrl: resolved.url || null,
-        proxyUrl,
-        signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
-        proxyAvailable: Boolean(proxyUrl),
-      }).catch((error: unknown) => {
-        console.warn('[assets] failed to link CanvasNode to Asset', {
-          nodeId: input.nodeId,
-          assetId: asset.id,
-          error: error instanceof Error ? error.message : String(error),
+        return persistError({
+          stage: 'asset_create',
+          errorCode: 'asset_persistence_error',
+          rawErrorCode: 'MEDIA_ASSET_CREATE_FAILED',
+          message: error instanceof Error ? error.message : '媒体已上传，但 Asset 记录创建失败。',
+          input,
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket,
+          storageKey: uploaded.storageKey,
+          attemptedUploadKey: uploaded.storageKey,
+          sourceUrl: url,
+          mediaDownloadUrl: url,
         })
-      })
+      }
+      try {
+        await linkGenerationJob(input, asset.id, stableUrl)
+      } catch (error) {
+        return persistError({
+          stage: 'generation_job_update',
+          errorCode: 'asset_persistence_error',
+          message: error instanceof Error ? error.message : 'Asset 已创建，但 GenerationJob 写回失败。',
+          input,
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket,
+          storageKey: uploaded.storageKey,
+          attemptedUploadKey: uploaded.storageKey,
+          sourceUrl: url,
+          mediaDownloadUrl: url,
+        })
+      }
+      try {
+        await linkCanvasNode(input, asset.id, stableUrl, {
+          ...uploaded,
+          resolvedUrl: resolved.url || null,
+          proxyUrl,
+          signedUrlAvailable: Boolean(resolved.signedUrlAvailable ?? resolved.url),
+          proxyAvailable: Boolean(proxyUrl),
+        })
+      } catch (error) {
+        return persistError({
+          stage: 'canvas_node_update',
+          errorCode: 'canvas_save_error',
+          message: error instanceof Error ? error.message : 'Asset 已创建，但 Canvas 节点写回失败。',
+          input,
+          storageProvider: uploaded.storageProvider,
+          bucket: uploaded.bucket,
+          storageKey: uploaded.storageKey,
+          attemptedUploadKey: uploaded.storageKey,
+          sourceUrl: url,
+          mediaDownloadUrl: url,
+        })
+      }
 
       return {
         ok: true,
@@ -415,15 +631,29 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
         persistedAt: now.toISOString(),
       }
     } catch (error) {
-      return persistError(
-        'MEDIA_UPLOAD_FAILED',
-        error instanceof Error ? error.message : '生成媒体转存失败。',
-      )
+      return persistError({
+        stage: 'asset_create',
+        errorCode: 'asset_persistence_error',
+        rawErrorCode: 'MEDIA_PERSISTENCE_FAILED',
+        message: error instanceof Error ? error.message : '生成媒体转存失败。',
+        input,
+        storageProvider: uploaded.storageProvider,
+        bucket: uploaded.bucket,
+        storageKey: uploaded.storageKey,
+        attemptedUploadKey: uploaded.storageKey,
+        sourceUrl: url,
+        mediaDownloadUrl: url,
+      })
     }
   } catch (error) {
-    return persistError(
-      'MEDIA_UPLOAD_FAILED',
-      error instanceof Error ? error.message : '生成媒体转存失败。',
-    )
+    return persistError({
+      stage: 'provider_output_parse',
+      errorCode: 'asset_persistence_error',
+      rawErrorCode: 'MEDIA_PERSISTENCE_FAILED',
+      message: error instanceof Error ? error.message : '生成媒体转存失败。',
+      input,
+      sourceUrl: input.url,
+      mediaDownloadUrl: input.url,
+    })
   }
 }

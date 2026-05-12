@@ -80,6 +80,11 @@ export type ChinaImageGenerationResult =
       metadata?: Record<string, unknown>
       submittedInput?: Record<string, unknown>
       providerResponse?: Record<string, unknown>
+      requestId?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
+      upstreamMessage?: string
     }
   | {
       success: false

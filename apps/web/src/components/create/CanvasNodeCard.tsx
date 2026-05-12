@@ -271,12 +271,18 @@ type AssetRecoverResponse = {
   failedUrl?: string | null
   upstreamStatus?: number
   upstreamMessage?: string | null
+    generationStage?: string | null
+    stage?: string | null
     requestId?: string | null
+    ossRequestId?: string | null
     providerEndpoint?: string | null
     providerRequestMethod?: string | null
     providerHttpStatus?: number | null
     providerFetchError?: string | null
     providerFetchCause?: unknown
+    attemptedUploadKey?: string | null
+    mediaDownloadUrl?: string | null
+    sourceUrl?: string | null
   }
 
 type CandidateProbe = MediaUrlSource & {
@@ -321,6 +327,7 @@ type MediaDiagnosticPayload = {
   providerJobId: string | null
   storageKey: string | null
   bucket: string | null
+  storageProvider: string | null
   isPrivateBucket: boolean | null
   originalUrl: string | null
   currentUrl: string | null
@@ -349,9 +356,11 @@ type MediaDiagnosticPayload = {
   lastGenerationError: Record<string, unknown> | null
   upstreamStatus: number | null
   upstreamMessage: string | null
+  generationStage: string | null
   errorCode: string | null
   errorMessage: string | null
   requestId: string | null
+  ossRequestId: string | null
   generationRequestUrl: string | null
   generationRequestMethod: string | null
   generationHttpStatus: number | null
@@ -362,6 +371,9 @@ type MediaDiagnosticPayload = {
     providerHttpStatus: number | null
     providerFetchError: string | null
     providerFetchCause?: unknown
+    attemptedUploadKey: string | null
+    mediaDownloadUrl: string | null
+    sourceUrl: string | null
     canRecover: boolean
   whyNotRecoverable: string | null
   nextAction: string
@@ -394,6 +406,7 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'providerJobId',
   'storageKey',
   'bucket',
+  'storageProvider',
   'isPrivateBucket',
   'originalUrl',
   'currentUrl',
@@ -421,9 +434,11 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'lastGenerationError',
   'upstreamStatus',
   'upstreamMessage',
+  'generationStage',
   'errorCode',
   'errorMessage',
   'requestId',
+  'ossRequestId',
   'generationRequestUrl',
   'generationRequestMethod',
   'generationHttpStatus',
@@ -434,6 +449,9 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
     'providerHttpStatus',
     'providerFetchError',
     'providerFetchCause',
+    'attemptedUploadKey',
+    'mediaDownloadUrl',
+    'sourceUrl',
     'canRecover',
   'whyNotRecoverable',
   'nextAction',
@@ -454,7 +472,15 @@ const TERMINAL_RECOVERY_REASONS = new Set([
     'provider_network_failed',
     'provider_auth_failed',
     'provider_timeout',
+    'provider_request_failed',
     'provider_env_missing',
+    'oss_upload_timeout',
+    'oss_upload_error',
+    'oss_auth_error',
+    'oss_permission_error',
+    'oss_config_error',
+    'asset_persistence_error',
+    'canvas_save_error',
   'auth_required',
   'api_error',
   'client_fetch_failed',
@@ -884,16 +910,19 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
     if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
     if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
     if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
+    if (code === 'oss_upload_timeout' || code === 'oss_upload_error' || code === 'oss_auth_error' || code === 'oss_permission_error' || code === 'oss_config_error') return code
+    if (code === 'canvas_save_error') return 'canvas_save_error'
+    if (code === 'provider_media_download_failed' || code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || code === 'ASSET_DOWNLOAD_TIMEOUT' || /media download failed|download failed|external asset/i.test(haystack)) return 'provider_media_download_failed'
     if (code === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
     if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/i.test(haystack)) return 'provider_network_failed'
     if (code === 'provider_response_parse_failed') return 'provider_response_parse_failed'
+    if (code === 'provider_request_failed') return 'provider_request_failed'
     if (code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (code === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(haystack)) return 'provider_model_invalid'
   if (upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/i.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
   if (code === 'provider_no_download_url' || code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'VIDEO_URL_EMPTY' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_MISSING') || code.includes('URL_EMPTY')) return 'provider_no_download_url'
-  if (code === 'provider_media_download_failed' || code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed|external asset/i.test(haystack)) return 'provider_media_download_failed'
   if (code === 'MEDIA_UPLOAD_FAILED' || code === 'oss_upload_error') return 'oss_upload_error'
   if (code === 'MEDIA_ASSET_CREATE_FAILED' || code === 'MEDIA_PERSISTENCE_FAILED' || code === 'MEDIA_PERSIST_FAILED' || code === 'asset_persistence_error') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
@@ -914,33 +943,45 @@ function generationFailureMessage(error: Record<string, unknown>) {
       : undefined
   const responsePreview = stringValue(error.generationResponseTextPreview)
   const requestId = stringValue(error.requestId)
-  const requestSuffix = requestId ? ` · requestId=${requestId}` : ''
-  if (normalized === 'auth_required') return `auth_required：登录状态失效，请刷新并重新登录${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${requestSuffix}`
-  if (normalized === 'api_error') return `api_error：生成 API 返回服务器错误${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${responsePreview ? `：${responsePreview}` : message ? `：${message}` : ''}${requestSuffix}`
+  const ossRequestId = stringValue(error.ossRequestId)
+  const stage = stringValue(error.generationStage) || stringValue(error.stage)
+  const requestSuffix = [
+    stage ? `stage=${stage}` : '',
+    requestId ? `requestId=${requestId}` : '',
+    ossRequestId ? `ossRequestId=${ossRequestId}` : '',
+  ].filter(Boolean).join(' · ')
+  const diagnosticSuffix = requestSuffix ? ` · ${requestSuffix}` : ''
+  if (normalized === 'auth_required') return `auth_required：登录状态失效，请刷新并重新登录${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${diagnosticSuffix}`
+  if (normalized === 'api_error') return `api_error：生成 API 返回服务器错误${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${responsePreview ? `：${responsePreview}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'client_fetch_failed') {
     const requestUrl = stringValue(error.generationRequestUrl) || stringValue(error.requestUrl)
     const method = stringValue(error.generationRequestMethod) || stringValue(error.method)
     const fetchError = stringValue(error.generationFetchError) || stringValue(error.errorMessage) || message
-    return `client_fetch_failed：${[method, requestUrl, fetchError].filter(Boolean).join(' · ')}${requestSuffix}`
+    return `client_fetch_failed：${[method, requestUrl, fetchError].filter(Boolean).join(' · ')}${diagnosticSuffix}`
   }
-  if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}${requestSuffix}`
+  if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}${diagnosticSuffix}`
   if (normalized === 'missing_generation_input') {
     const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
-    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}${requestSuffix}`
+    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}${diagnosticSuffix}`
   }
-    if (normalized === 'provider_network_failed') return `provider_network_failed：Provider 网络请求失败。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
-    if (normalized === 'provider_timeout') return `provider_timeout：Provider 请求超时或被中断。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
-    if (normalized === 'provider_auth_failed') return `provider_auth_failed：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
-  if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
-  if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
-  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
-  if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
-  if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${requestSuffix}`
-  if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}${requestSuffix}`
-  if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}${requestSuffix}`
-  if (normalized === 'oss_upload_error') return `oss_upload_error：生成成功后上传到 OSS 失败。${message || code}${requestSuffix}`
-  if (normalized === 'asset_persistence_error') return `asset_persistence_error：媒体持久化或 Asset 写入失败。${message || code}${requestSuffix}`
-  if (normalized === 'canvas_save_error') return `canvas_save_error：Canvas 保存失败。${message || code}${requestSuffix}`
+    if (normalized === 'provider_network_failed') return `provider_network_failed：Provider 网络请求失败。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${diagnosticSuffix}`
+    if (normalized === 'provider_timeout') return `provider_timeout：Provider 请求超时或被中断。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${diagnosticSuffix}`
+    if (normalized === 'provider_auth_failed') return `provider_auth_failed：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${diagnosticSuffix}`
+  if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}${diagnosticSuffix}`
+  if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}${diagnosticSuffix}`
+  if (normalized === 'oss_upload_timeout') return `oss_upload_timeout: ${stringValue(error.errorMessage) || message || 'Aliyun OSS upload timed out'}${diagnosticSuffix}`
+  if (normalized === 'oss_auth_error') return `oss_auth_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS authentication failed.'}${diagnosticSuffix}`
+  if (normalized === 'oss_permission_error') return `oss_permission_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS permission denied.'}${diagnosticSuffix}`
+  if (normalized === 'oss_config_error') return `oss_config_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS configuration is invalid.'}${diagnosticSuffix}`
+  if (normalized === 'oss_upload_error') return `oss_upload_error: ${stringValue(error.errorMessage) || message || code}${diagnosticSuffix}`
+  if (normalized === 'asset_persistence_error') return `asset_persistence_error：媒体持久化或 Asset 写入失败。${message || code}${diagnosticSuffix}`
+  if (normalized === 'canvas_save_error') return `canvas_save_error：Canvas 保存失败。${message || code}${diagnosticSuffix}`
   if (normalized === 'generation_failed') return `generation_failed：${[code, message, upstreamStatus ? `upstreamStatus=${upstreamStatus}` : '', upstreamMessage, requestId ? `requestId=${requestId}` : ''].filter(Boolean).join(' · ')}`
   return ''
 }
@@ -976,6 +1017,14 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请复制诊断 JSON 查看 requestId 和 submittedInput。'
   if (reason === 'provider_model_invalid') return 'Provider 模型或接入点无效，请复制诊断 JSON 查看 upstreamMessage 和 requestId。'
   if (reason === 'provider_env_missing') return 'Provider 或对象存储环境变量缺失，配置后再重新生成或恢复。'
+  if (reason === 'provider_request_failed') return 'Provider 返回非成功响应，请复制诊断 JSON 查看 providerHttpStatus 和 upstreamMessage。'
+  if (reason === 'oss_upload_timeout') return 'oss_upload_timeout: Aliyun OSS upload timed out'
+  if (reason === 'oss_upload_error') return 'oss_upload_error: 生成成功后上传到 OSS 失败，请复制诊断 JSON 查看 ossRequestId。'
+  if (reason === 'oss_auth_error') return 'oss_auth_error: Aliyun OSS authentication failed.'
+  if (reason === 'oss_permission_error') return 'oss_permission_error: Aliyun OSS permission denied.'
+  if (reason === 'oss_config_error') return 'oss_config_error: Aliyun OSS configuration is invalid.'
+  if (reason === 'asset_persistence_error') return 'asset_persistence_error：媒体已上传，但 Asset 或 GenerationJob 写入失败。'
+  if (reason === 'canvas_save_error') return 'canvas_save_error：Asset 已创建，但 Canvas 节点写回失败。'
   if (reason === 'recovery_timeout') return '资产恢复请求超时，已停止本次恢复流程。'
   if (reason === 'provider_retrieve_not_available') return 'Provider 历史结果取回不可用，需要用原 Prompt 重新生成。'
   if (reason === 'MEDIA_UPLOAD_FAILED') return '媒体下载成功后转存到对象存储失败。'
@@ -1459,11 +1508,23 @@ export function CanvasNodeCard({
     const errorMessage = stringValue(nodeMetadata.errorMessage)
       || stringValue(lastResolveResult.errorMessage)
       || stringValue(lastResolveResult.message)
+      || stringValue(lastGenerationError.errorMessage)
       || stringValue(lastGenerationError.message)
       || mediaFailureDiagnosis?.detail
       || null
+    const generationStage = stringValue(lastGenerationError.generationStage)
+      || stringValue(lastGenerationError.stage)
+      || stringValue(nodeMetadata.generationStage)
+      || stringValue(nodeMetadata.stage)
+      || stringValue(mediaPersistence.generationStage)
+      || stringValue(mediaPersistence.stage)
+      || null
     const requestId = stringValue(lastResolveResult.requestId)
       || stringValue(lastGenerationError.requestId)
+      || null
+    const ossRequestId = stringValue(lastGenerationError.ossRequestId)
+      || stringValue(nodeMetadata.ossRequestId)
+      || stringValue(mediaPersistence.ossRequestId)
       || null
     const generationRequestUrl = stringValue(lastGenerationError.generationRequestUrl)
       || stringValue(lastGenerationError.requestUrl)
@@ -1501,6 +1562,18 @@ export function CanvasNodeCard({
         || stringValue(nodeMetadata.providerFetchError)
         || null
       const providerFetchCause = lastGenerationError.providerFetchCause ?? nodeMetadata.providerFetchCause ?? null
+      const attemptedUploadKey = stringValue(lastGenerationError.attemptedUploadKey)
+        || stringValue(nodeMetadata.attemptedUploadKey)
+        || stringValue(mediaPersistence.attemptedUploadKey)
+        || null
+      const mediaDownloadUrl = stringValue(lastGenerationError.mediaDownloadUrl)
+        || stringValue(nodeMetadata.mediaDownloadUrl)
+        || stringValue(mediaPersistence.mediaDownloadUrl)
+        || null
+      const sourceUrl = stringValue(lastGenerationError.sourceUrl)
+        || stringValue(nodeMetadata.sourceUrl)
+        || stringValue(mediaPersistence.sourceUrl)
+        || null
     const missingEnv = uniqueStrings([
       ...(generationHealth?.missingEnv ?? []),
       ...stringArrayValue(lastGenerationError.missingEnv),
@@ -1563,6 +1636,7 @@ export function CanvasNodeCard({
       providerJobId: nullableString(providerJobIdFor(nodeMetadata)),
       storageKey: nullableString(storageKey),
       bucket: nullableString(bucket),
+      storageProvider: nullableString(storageProvider),
       isPrivateBucket,
       originalUrl: nullableString(originalUrl),
       currentUrl: nullableString(currentUrl),
@@ -1595,9 +1669,11 @@ export function CanvasNodeCard({
       lastGenerationError: Object.keys(lastGenerationError).length ? lastGenerationError : null,
       upstreamStatus,
       upstreamMessage,
+      generationStage,
       errorCode,
       errorMessage,
       requestId,
+      ossRequestId,
       generationRequestUrl,
       generationRequestMethod,
         generationHttpStatus,
@@ -1608,6 +1684,9 @@ export function CanvasNodeCard({
         providerHttpStatus,
         providerFetchError,
         providerFetchCause: sanitizeDiagnosticValue(providerFetchCause),
+        attemptedUploadKey,
+        mediaDownloadUrl,
+        sourceUrl,
         canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
       whyNotRecoverable: mediaFailureDiagnosis?.canRecover && !storageKeyReadProblem && !assetRecordMissing && !missingEnv.length ? null : whyNotRecoverable,
       nextAction,
@@ -2555,6 +2634,11 @@ export function CanvasNodeCard({
           errorCode: {mediaDiagnosticPayload.errorCode}
         </span>
       ) : null}
+      {mediaDiagnosticPayload?.generationStage ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
+          stage: {mediaDiagnosticPayload.generationStage}
+        </span>
+      ) : null}
       {mediaDiagnosticPayload?.errorMessage ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/62">
           errorMessage: {mediaDiagnosticPayload.errorMessage}
@@ -2573,6 +2657,31 @@ export function CanvasNodeCard({
       {mediaDiagnosticPayload?.requestId ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
           requestId: {mediaDiagnosticPayload.requestId}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.ossRequestId ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          ossRequestId: {mediaDiagnosticPayload.ossRequestId}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.storageProvider ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          storageProvider: {mediaDiagnosticPayload.storageProvider}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.bucket ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          bucket: {mediaDiagnosticPayload.bucket}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.attemptedUploadKey ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          attemptedUploadKey: {mediaDiagnosticPayload.attemptedUploadKey}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.mediaDownloadUrl ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          mediaDownloadUrl: {mediaDiagnosticPayload.mediaDownloadUrl}
         </span>
       ) : null}
       {mediaDiagnosticPayload?.generationRequestUrl ? (

@@ -18,6 +18,9 @@ const REQUIRED = [
   { name: 'ALIYUN_OSS_ENDPOINT', aliases: ['ALIYUN_OSS_ENDPOINT'] },
 ] as const
 
+const DEFAULT_ALIYUN_OSS_TIMEOUT_MS = 120_000
+const ALIYUN_OSS_UPLOAD_RETRIES = 2
+
 function hasEnv(name: string) {
   return Boolean(process.env[name]?.trim())
 }
@@ -28,6 +31,11 @@ function envValue(...names: string[]) {
     if (value) return value
   }
   return ''
+}
+
+function numericEnv(name: string, fallback: number) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 function missingRequiredAliyunEnv() {
@@ -66,6 +74,7 @@ function getAliyunClient() {
     bucket: process.env.ALIYUN_OSS_BUCKET!,
     region: process.env.ALIYUN_OSS_REGION!,
     endpoint: process.env.ALIYUN_OSS_ENDPOINT,
+    timeout: numericEnv('ALIYUN_OSS_TIMEOUT_MS', DEFAULT_ALIYUN_OSS_TIMEOUT_MS),
   })
 }
 
@@ -103,18 +112,33 @@ function headerValue(headers: unknown, key: string) {
 
 function objectErrorDetails(error: unknown) {
   const record = error && typeof error === 'object' ? error as Record<string, unknown> : {}
+  const response = record.response && typeof record.response === 'object' ? record.response as Record<string, unknown> : {}
+  const headers = record.headers ?? response.headers
   const status = typeof record.status === 'number'
     ? record.status
     : typeof record.statusCode === 'number'
       ? record.statusCode
       : undefined
+  const name = error instanceof Error ? error.name : typeof record.name === 'string' ? record.name : undefined
+  const message = error instanceof Error ? error.message : typeof record.message === 'string' ? record.message : undefined
   const code = typeof record.code === 'string' ? record.code : undefined
   const requestId = typeof record.requestId === 'string'
     ? record.requestId
     : typeof record.requestid === 'string'
       ? record.requestid
-      : undefined
-  return { status, code, requestId }
+      : headerValue(headers, 'x-oss-request-id')
+  const cause = record.cause && typeof record.cause === 'object' ? record.cause as Record<string, unknown> : {}
+  return {
+    status,
+    code,
+    name,
+    message,
+    requestId,
+    ossRequestId: requestId,
+    causeName: typeof cause.name === 'string' ? cause.name : undefined,
+    causeCode: typeof cause.code === 'string' ? cause.code : undefined,
+    causeMessage: typeof cause.message === 'string' ? cause.message : undefined,
+  }
 }
 
 function bufferFromObjectContent(content: unknown) {
@@ -131,17 +155,77 @@ function buildPublicUrl(key: string, fallback?: string) {
   return `${baseUrl.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`
 }
 
+function classifyAliyunError(error: unknown) {
+  const details = objectErrorDetails(error)
+  const haystack = [
+    details.name,
+    details.code,
+    details.message,
+    details.causeName,
+    details.causeCode,
+    details.causeMessage,
+  ].filter(Boolean).join(' ').toLowerCase()
+  if (/responsetimeouterror|timeout|timedout|etimedout|socket timeout/.test(haystack)) {
+    return { code: 'STORAGE_UPLOAD_TIMEOUT' as const, status: 504, message: 'Aliyun OSS upload timed out' }
+  }
+  if (/nosuchbucket|invalidbucket|invalid endpoint|unknown endpoint|enotfound|getaddrinfo|storage_not_configured|not configured/.test(haystack)) {
+    return { code: 'STORAGE_CONFIG_ERROR' as const, status: details.status ?? 503, message: details.message || 'Aliyun OSS configuration is invalid.' }
+  }
+  if (/invalidaccesskeyid|signaturedoesnotmatch|invalidsecuritytoken|accesskey|credentials?|credential/.test(haystack)) {
+    return { code: 'STORAGE_AUTH_FAILED' as const, status: details.status ?? 401, message: details.message || 'Aliyun OSS authentication failed.' }
+  }
+  if (details.status === 401 || details.status === 403 || /accessdenied|forbidden|permission|not authorized/.test(haystack)) {
+    return { code: 'STORAGE_PERMISSION_DENIED' as const, status: details.status ?? 403, message: details.message || 'Aliyun OSS permission denied.' }
+  }
+  return { code: 'STORAGE_OPERATION_FAILED' as const, status: details.status ?? 502, message: details.message || 'Aliyun OSS upload failed.' }
+}
+
+function shouldRetryAliyunUpload(error: unknown) {
+  const details = objectErrorDetails(error)
+  const haystack = [
+    details.name,
+    details.code,
+    details.message,
+    details.causeName,
+    details.causeCode,
+    details.causeMessage,
+  ].filter(Boolean).join(' ').toLowerCase()
+  if (/responsetimeouterror|timeout|timedout|etimedout|econnreset|eai_again|socket hang up/.test(haystack)) return true
+  return typeof details.status === 'number' && details.status >= 500
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<ChinaStorageObjectResult> {
-  const client = getAliyunClient()
+  const timeout = numericEnv('ALIYUN_OSS_UPLOAD_TIMEOUT_MS', numericEnv('ALIYUN_OSS_TIMEOUT_MS', DEFAULT_ALIYUN_OSS_TIMEOUT_MS))
+  let attempt = 0
   try {
-    const result = await client.put(input.key, normalizeBody(input.body), {
-      headers: {
-        ...(input.contentType ? { 'Content-Type': input.contentType } : {}),
-        ...(input.metadata
-          ? Object.fromEntries(Object.entries(input.metadata).map(([key, value]) => [`x-oss-meta-${key}`, value]))
-          : {}),
-      },
-    })
+    const client = getAliyunClient()
+    let result: Awaited<ReturnType<typeof client.put>> | null = null
+    for (;;) {
+      attempt += 1
+      try {
+        result = await client.put(input.key, normalizeBody(input.body), {
+          timeout,
+          headers: {
+            ...(input.contentType ? { 'Content-Type': input.contentType } : {}),
+            ...(input.metadata
+              ? Object.fromEntries(Object.entries(input.metadata).map(([key, value]) => [`x-oss-meta-${key}`, value]))
+              : {}),
+          },
+        })
+        break
+      } catch (error) {
+        if (attempt <= ALIYUN_OSS_UPLOAD_RETRIES && shouldRetryAliyunUpload(error)) {
+          await delay(350 * attempt)
+          continue
+        }
+        throw error
+      }
+    }
+    if (!result) throw new Error('Aliyun OSS upload did not return a result.')
     const url = typeof result.url === 'string' ? result.url : undefined
     return {
       provider: 'aliyun-oss',
@@ -155,14 +239,26 @@ export async function putAliyunOssObject(input: PutChinaObjectInput): Promise<Ch
         requestId: result.res?.headers && typeof result.res.headers === 'object'
           ? (result.res.headers as Record<string, unknown>)['x-oss-request-id']
           : undefined,
+        timeout,
+        attempts: attempt,
       },
     }
   } catch (error) {
+    const details = objectErrorDetails(error)
+    const classified = classifyAliyunError(error)
     throw new ChinaStorageError(
-      'STORAGE_OPERATION_FAILED',
-      error instanceof Error ? error.message : '阿里云 OSS 上传失败。',
-      502,
-      { provider: 'aliyun-oss' },
+      classified.code,
+      classified.message,
+      classified.status,
+      {
+        provider: 'aliyun-oss',
+        bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+        key: input.key,
+        operation: 'putObject',
+        timeout,
+        attempts: attempt,
+        ...details,
+      },
     )
   }
 }

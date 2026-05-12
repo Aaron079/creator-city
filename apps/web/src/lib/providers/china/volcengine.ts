@@ -338,6 +338,11 @@ export type SeedanceVideoResult =
       upstream?: string
       submittedInput?: Record<string, unknown>
       providerResponse?: Record<string, unknown>
+      requestId?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
+      upstreamMessage?: string
     }
   | {
       success: true
@@ -347,6 +352,11 @@ export type SeedanceVideoResult =
       videoUrl: string
       submittedInput?: Record<string, unknown>
       providerResponse?: Record<string, unknown>
+      requestId?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
+      upstreamMessage?: string
     }
   | {
       success: false
@@ -376,6 +386,9 @@ export type SeedanceVideoStatusResult =
       status: 'running'
       message: string
       requestId?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
       providerResponse?: Record<string, unknown>
       submittedInput?: Record<string, unknown>
     }
@@ -388,6 +401,9 @@ export type SeedanceVideoStatusResult =
       videoUrl: string
       message: string
       requestId?: string
+      providerEndpoint?: string
+      providerRequestMethod?: string
+      providerHttpStatus?: number
       providerResponse?: Record<string, unknown>
       submittedInput?: Record<string, unknown>
     }
@@ -519,6 +535,9 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       videoUrl,
       submittedInput,
       providerResponse: providerResponseSummary(data),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      upstreamMessage: result.upstreamMessage,
     }
   }
 
@@ -535,6 +554,9 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
       upstream: upstreamMessage(data, raw),
       submittedInput,
       providerResponse: providerResponseSummary(data),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      upstreamMessage: result.upstreamMessage,
     }
   }
 
@@ -633,6 +655,7 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
       videoUrl,
       message: '视频生成完成',
       requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
       providerResponse: providerResponseSummary(data),
     }
   }
@@ -665,6 +688,7 @@ export async function getSeedanceVideoStatus(taskId: string): Promise<SeedanceVi
     status: 'running',
     message: '视频任务已提交，正在生成中',
     requestId: result.requestId,
+    ...providerRequestDetails(endpoint, method, response.status),
     providerResponse: providerResponseSummary(data),
   }
 }
@@ -758,6 +782,9 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
       metadata: { responseFormat: finalUrl ? 'url' : 'b64_json' },
       submittedInput,
       providerResponse: providerResponseSummary(data),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      upstreamMessage: result.upstreamMessage,
     }
   }
 

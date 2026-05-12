@@ -153,7 +153,7 @@ async function main() {
   const persistLib = readFileSync('/Users/aaron/creator-city/apps/web/src/lib/assets/persist-generated-media.ts', 'utf8')
   const contracts = [
     ['callGenerationApi preserves HTTP status', workspace.includes('httpStatus: response.status')],
-    ['callGenerationApi preserves upstreamMessage on non-JSON', workspace.includes('upstreamMessage: raw.slice(0, 500)')],
+    ['callGenerationApi preserves upstreamMessage on non-JSON', workspace.includes('upstreamMessage: raw.slice(0, 500)') || (workspace.includes('responseTextPreview = raw.slice(0, 500)') && workspace.includes('upstreamMessage: responseTextPreview'))],
     ['image generation stores lastError metadata', workspace.includes('imageErrorMetadata')],
     ['video generation stores lastError metadata', workspace.includes('videoErrorMetadata')],
     ['image API fails loudly on media persistence failure', imageRoute.includes('图片生成成功，但媒体转存失败')],
@@ -161,7 +161,7 @@ async function main() {
     ['provider download failure keeps upstream status', persistLib.includes('downloaded.status || undefined')],
     ['OSS upload failure has explicit code', persistLib.includes('MEDIA_UPLOAD_FAILED')],
     ['Asset create failure has explicit code', persistLib.includes('MEDIA_ASSET_CREATE_FAILED')],
-    ['frontend normalizes provider auth errors', workspace.includes('provider_auth_error') && nodeCard.includes('provider_auth_error')],
+    ['frontend normalizes provider auth errors', workspace.includes('provider_auth_failed') && nodeCard.includes('provider_auth_failed')],
     ['frontend normalizes provider quota/billing errors', workspace.includes('provider_quota_or_billing_error') && nodeCard.includes('provider_quota_or_billing_error')],
     ['frontend normalizes OSS upload errors', workspace.includes('oss_upload_error') && nodeCard.includes('oss_upload_error')],
     ['frontend normalizes Asset persistence errors', workspace.includes('asset_persistence_error') && nodeCard.includes('asset_persistence_error')],

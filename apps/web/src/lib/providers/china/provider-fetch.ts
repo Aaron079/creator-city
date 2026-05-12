@@ -4,6 +4,8 @@ export type ProviderFetchErrorCode =
   | 'provider_auth_failed'
   | 'provider_invalid_parameter'
   | 'provider_model_invalid'
+  | 'provider_quota_or_billing_error'
+  | 'provider_request_failed'
   | 'provider_response_parse_failed'
 
 export type ProviderFetchFailure = {
@@ -141,10 +143,14 @@ function classifyResponseError(status: number, message: string, rawCode: string)
     return 'provider_auth_failed'
   }
   if (isModelInvalid(status, message, rawCode)) return 'provider_model_invalid'
+  if (status === 408 || /timeout|timed out|deadline|abort/.test(haystack)) return 'provider_timeout'
+  if (status === 402 || status === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit|too many requests/.test(haystack)) {
+    return 'provider_quota_or_billing_error'
+  }
   if (status === 400 || status === 422 || /invalid parameter|invalid_param|invalid request|bad request|parameter|unsupported|invalidinput|invalid_input/.test(haystack)) {
     return 'provider_invalid_parameter'
   }
-  return 'provider_network_failed'
+  return 'provider_request_failed'
 }
 
 export async function providerFetch<T = unknown>(
