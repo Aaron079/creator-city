@@ -216,6 +216,22 @@ function normalizeSeedanceResolution(value?: string) {
   return undefined
 }
 
+function summarizeSubmittedUrl(url?: string) {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    return {
+      protocol: parsed.protocol.replace(':', ''),
+      host: parsed.host,
+      pathnameTail: pathParts.slice(-2).join('/'),
+      hasQuery: Boolean(parsed.search),
+    }
+  } catch {
+    return { kind: url.startsWith('data:') ? 'data-url' : 'non-url', length: url.length }
+  }
+}
+
 function providerResponseSummary(data: unknown) {
   const record = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {}
   const error = record.error && typeof record.error === 'object' && !Array.isArray(record.error) ? record.error as Record<string, unknown> : {}
@@ -425,7 +441,7 @@ export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<
     contentTypes: content.map((item) => item.type),
     promptChars: input.prompt.trim().length,
     hasImageUrl: Boolean(input.imageUrl),
-    imageUrl: input.imageUrl,
+    imageUrl: summarizeSubmittedUrl(input.imageUrl),
     ratio,
     duration,
     requestedDuration: input.duration ?? null,

@@ -2421,6 +2421,26 @@ export function CanvasNodeCard({
           下一步：{nextAction}
         </span>
       ) : null}
+      {mediaDiagnosticPayload?.errorCode ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
+          errorCode: {mediaDiagnosticPayload.errorCode}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.errorMessage ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/62">
+          errorMessage: {mediaDiagnosticPayload.errorMessage}
+        </span>
+      ) : null}
+      {typeof mediaDiagnosticPayload?.upstreamStatus === 'number' ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          upstreamStatus: {mediaDiagnosticPayload.upstreamStatus}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.upstreamMessage ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          upstreamMessage: {mediaDiagnosticPayload.upstreamMessage}
+        </span>
+      ) : null}
       {mediaDiagnosticPayload?.requestId ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
           requestId: {mediaDiagnosticPayload.requestId}

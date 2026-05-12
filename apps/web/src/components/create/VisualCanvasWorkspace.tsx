@@ -506,13 +506,18 @@ type GenerateApiResult = GenerateResponse & {
   resultText?: string
   imageUrl?: string
   dataUrl?: string
-  asset?: { id?: string; url?: string | null }
+  asset?: { id?: string; url?: string | null; generationJobId?: string | null }
   assetId?: string
   assetUrl?: string
+  stableUrl?: string
   resolvedUrl?: string
   proxyUrl?: string
+  generationJobId?: string
   signedUrlAvailable?: boolean
   proxyAvailable?: boolean
+  storageProvider?: string
+  bucket?: string
+  storageKey?: string
   resultImageUrl?: string
   resultVideoUrl?: string
   originalProviderImageUrl?: string
@@ -710,6 +715,18 @@ function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: strin
   const imageUrl = candidates[0]
   if (!imageUrl) return undefined
   return [{ id: `${node.id}-reference-image`, type: 'image', url: imageUrl }]
+}
+
+function defaultProviderForRegenerationNode(node: VisualCanvasNode) {
+  if (node.kind === 'image') return IMAGE_NODE_PROVIDER_OPTIONS[0]?.value ?? 'volcengine-seedream-image'
+  if (node.kind === 'video') return VIDEO_NODE_PROVIDER_OPTIONS[0]?.value ?? 'volcengine-seedance-video'
+  return ''
+}
+
+function defaultModelForRegenerationNode(node: VisualCanvasNode, providerId: string) {
+  if (node.kind === 'image') return providerId || IMAGE_NODE_PROVIDER_OPTIONS[0]?.value || NODE_META.image.model
+  if (node.kind === 'video') return providerId || VIDEO_NODE_PROVIDER_OPTIONS[0]?.value || NODE_META.video.model
+  return providerId
 }
 
 function providerForRegenerationNode(node: VisualCanvasNode) {
@@ -1124,15 +1141,27 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     ? result.result.metadata as Record<string, unknown>
     : {}
   const persistedMedia = persistenceFromGenerateResult(result)
+  const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
     : result.assetUrl || result.asset?.url || undefined
   const resolvedUrl = result.resolvedUrl
     || (typeof resultMetadata.resolvedUrl === 'string' ? resultMetadata.resolvedUrl : undefined)
     || (typeof persistedMedia.resolvedUrl === 'string' ? persistedMedia.resolvedUrl : undefined)
+  const stableUrl = result.stableUrl
+    || (typeof resultMetadata.stableUrl === 'string' ? resultMetadata.stableUrl : undefined)
+    || resolvedUrl
+    || assetUrl
+    || resultImageUrl
   const proxyUrl = result.proxyUrl
     || (typeof resultMetadata.proxyUrl === 'string' ? resultMetadata.proxyUrl : undefined)
     || (typeof persistedMedia.proxyUrl === 'string' ? persistedMedia.proxyUrl : undefined)
+  const assetId = result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined)
+  const generationJobId = result.generationJobId
+    ?? result.jobId
+    ?? result.billingJobId
+    ?? (typeof resultMetadata.generationJobId === 'string' ? resultMetadata.generationJobId : undefined)
+    ?? result.asset?.generationJobId
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1148,19 +1177,34 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     regenerating: false,
     errorCode: null,
     errorMessage: null,
-    assetId: result.asset?.id ?? result.assetId ?? resultMetadata.assetId,
-    assetUrl,
-    ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
+    lastError: null,
+    lastGenerationError: null,
+    assetId,
+    outputAssetId: assetId,
+    generationJobId,
+    generationJob: {
+      ...metadataRecord(metadataRecord(node.metadataJson).generationJob),
+      ...(generationJobId ? { id: generationJobId } : {}),
+      ...(assetId ? { outputAssetId: assetId } : {}),
+    },
+    resultImageUrl: stableUrl || resultImageUrl,
+    assetUrl: stableUrl || assetUrl,
+    ...(stableUrl ? { resolvedUrl: stableUrl, stableUrl } : {}),
     ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
     proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
-    storageProvider: typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider,
-    bucket: typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket,
-    storageKey: typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey,
+    storageProvider: result.storageProvider ?? (typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider),
+    bucket: result.bucket ?? (typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket),
+    storageKey: result.storageKey ?? (typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey),
     originalProviderImageUrl: result.originalProviderImageUrl ?? (typeof resultMetadata.originalProviderImageUrl === 'string' ? resultMetadata.originalProviderImageUrl : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
-    mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    mediaPersistence: {
+      ...metadataRecord(resultMetadata.mediaPersistence),
+      ...metadataRecord(result.mediaPersistence),
+      ...(assetId ? { assetId, outputAssetId: assetId } : {}),
+      ...(stableUrl ? { stableUrl, resolvedUrl: stableUrl } : {}),
+    },
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
   }
@@ -1213,19 +1257,28 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   const persistedMedia = persistenceFromGenerateResult(result)
   const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
   const generationJobId = result.jobId
+    ?? result.generationJobId
+    ?? result.billingJobId
     ?? (typeof resultMetadata.generationJobId === 'string' ? resultMetadata.generationJobId : undefined)
     ?? taskId
   const submittedAt = result.submittedAt ?? (typeof resultMetadata.submittedAt === 'string' ? resultMetadata.submittedAt : undefined)
   const completedAt = result.completedAt ?? (typeof resultMetadata.completedAt === 'string' ? resultMetadata.completedAt : undefined)
+  const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
   const assetUrl = typeof resultMetadata.assetUrl === 'string'
     ? resultMetadata.assetUrl
     : result.assetUrl || result.asset?.url || undefined
   const resolvedUrl = result.resolvedUrl
     || (typeof resultMetadata.resolvedUrl === 'string' ? resultMetadata.resolvedUrl : undefined)
     || (typeof persistedMedia.resolvedUrl === 'string' ? persistedMedia.resolvedUrl : undefined)
+  const stableUrl = result.stableUrl
+    || (typeof resultMetadata.stableUrl === 'string' ? resultMetadata.stableUrl : undefined)
+    || resolvedUrl
+    || assetUrl
+    || resultVideoUrl
   const proxyUrl = result.proxyUrl
     || (typeof resultMetadata.proxyUrl === 'string' ? resultMetadata.proxyUrl : undefined)
     || (typeof persistedMedia.proxyUrl === 'string' ? persistedMedia.proxyUrl : undefined)
+  const assetId = result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined)
   return {
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
@@ -1240,21 +1293,35 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
     regenerating: Boolean(result.async),
     errorCode: null,
     errorMessage: null,
+    lastError: null,
+    lastGenerationError: null,
     taskId,
     generationJobId,
-    assetId: result.asset?.id ?? result.assetId ?? (typeof resultMetadata.assetId === 'string' ? resultMetadata.assetId : undefined),
-    assetUrl,
-    ...(resolvedUrl ? { resolvedUrl, stableUrl: resolvedUrl } : assetUrl ? { resolvedUrl: assetUrl, stableUrl: assetUrl } : {}),
+    assetId,
+    outputAssetId: assetId,
+    generationJob: {
+      ...metadataRecord(metadataRecord(node.metadataJson).generationJob),
+      ...(generationJobId ? { id: generationJobId } : {}),
+      ...(assetId ? { outputAssetId: assetId } : {}),
+    },
+    resultVideoUrl: stableUrl || resultVideoUrl,
+    assetUrl: stableUrl || assetUrl,
+    ...(stableUrl ? { resolvedUrl: stableUrl, stableUrl } : {}),
     ...(proxyUrl ? { proxyUrl } : {}),
     signedUrlAvailable: result.signedUrlAvailable ?? (assetUrl ? true : undefined),
     proxyAvailable: result.proxyAvailable ?? Boolean(proxyUrl),
-    storageProvider: typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider,
-    bucket: typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket,
-    storageKey: typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey,
+    storageProvider: result.storageProvider ?? (typeof persistedMedia.storageProvider === 'string' ? persistedMedia.storageProvider : resultMetadata.storageProvider),
+    bucket: result.bucket ?? (typeof persistedMedia.bucket === 'string' ? persistedMedia.bucket : resultMetadata.bucket),
+    storageKey: result.storageKey ?? (typeof persistedMedia.storageKey === 'string' ? persistedMedia.storageKey : resultMetadata.storageKey),
     originalProviderVideoUrl: result.originalProviderVideoUrl ?? (typeof resultMetadata.originalProviderVideoUrl === 'string' ? resultMetadata.originalProviderVideoUrl : undefined),
     submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
     providerResponse: result.providerResponse ?? resultMetadata.providerResponse,
-    mediaPersistence: result.mediaPersistence ?? resultMetadata.mediaPersistence,
+    mediaPersistence: {
+      ...metadataRecord(resultMetadata.mediaPersistence),
+      ...metadataRecord(result.mediaPersistence),
+      ...(assetId ? { assetId, outputAssetId: assetId } : {}),
+      ...(stableUrl ? { stableUrl, resolvedUrl: stableUrl } : {}),
+    },
     assetIntelligence: result.assetIntelligence ?? resultMetadata.assetIntelligence ?? metadataRecord(node.metadataJson).assetIntelligence,
     ...(result.warning ? { mediaPersistenceWarning: result.warning } : {}),
     ...(submittedAt ? { submittedAt } : {}),
@@ -3757,16 +3824,29 @@ export function VisualCanvasWorkspace({
   const handleRegenerateNodeFromPrompt = useCallback((node: VisualCanvasNode) => {
     if (node.kind !== 'image' && node.kind !== 'video') return
     const prompt = node.prompt?.trim()
-    const providerStatusEndpoint = `/api/generate/${node.kind}`
     const fallbackProviderId = providerForRegenerationNode(node)
+    const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
+    const selectedModel = fallbackModel || defaultModelForRegenerationNode(node, selectedProviderId)
     const initialRegenerationParams = buildRegenerationParams(node)
     const initialRegenerationInputAssets = buildRegenerationInputAssets(node)
+    const submittedInputBase = {
+      nodeId: node.id,
+      kind: node.kind,
+      promptChars: prompt?.length ?? 0,
+      providerId: selectedProviderId || null,
+      model: selectedModel || null,
+      aspectRatio: typeof initialRegenerationParams.aspectRatio === 'string' ? initialRegenerationParams.aspectRatio : null,
+      duration: typeof initialRegenerationParams.duration === 'number' ? initialRegenerationParams.duration : null,
+      resolution: typeof initialRegenerationParams.resolution === 'string' ? initialRegenerationParams.resolution : null,
+      inputAssets: initialRegenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })) ?? null,
+    }
     const failNode = (result: GenerateApiResult, providerId: string) => {
       const failureResult = {
         ...result,
         providerId: result.providerId || providerId,
-        model: result.model || fallbackModel || providerId,
+        model: result.model || selectedModel || providerId,
+        submittedInput: result.submittedInput ?? submittedInputBase,
       }
       const errMsg = formatGenerateError(failureResult)
       handleNodePatch(node.id, {
@@ -3782,141 +3862,62 @@ export function VisualCanvasWorkspace({
       scheduleCanvasSave(0)
       showCanvasFeedback(errMsg)
     }
+    const clearRegenerationLoading = () => {
+      commitNodes((current) => current.map((currentNode) => {
+        if (currentNode.id !== node.id) return currentNode
+        const metadata = metadataRecord(currentNode.metadataJson)
+        if (!metadata.loading && !metadata.isRegenerating && !metadata.regenerating) return currentNode
+        return {
+          ...currentNode,
+          metadataJson: {
+            ...metadata,
+            loading: false,
+            isRegenerating: false,
+            regenerating: false,
+            isRecovering: false,
+            recovering: false,
+          },
+        }
+      }))
+    }
 
-    if (!prompt) {
+    const missingFields = [
+      ...(!prompt ? ['prompt'] : []),
+      ...(!selectedProviderId ? ['provider'] : []),
+      ...(!selectedModel ? ['model'] : []),
+    ]
+    if (missingFields.length) {
       failNode({
         success: false,
-        providerId: fallbackProviderId,
+        providerId: selectedProviderId,
         mode: 'unavailable',
         status: 'failed',
-        errorCode: 'MISSING_GENERATION_INPUT',
-        message: '该节点缺少重新生成所需字段：prompt。',
-        missingFields: ['prompt'],
+        errorCode: 'missing_generation_input',
+        message: `该节点缺少重新生成所需字段：${missingFields.join(', ')}。`,
+        missingFields,
         submittedInput: {
-          nodeId: node.id,
-          kind: node.kind,
-          hasPrompt: false,
-          providerId: fallbackProviderId || null,
-          model: fallbackModel || null,
+          ...submittedInputBase,
+          hasPrompt: Boolean(prompt),
           params: initialRegenerationParams,
         },
-      }, fallbackProviderId)
+      }, selectedProviderId)
       return
     }
 
     void (async () => {
+      const requestedAt = new Date().toISOString()
       try {
-        const statusResponse = await fetch(providerStatusEndpoint, {
-          method: 'GET',
-          cache: 'no-store',
-          credentials: 'include',
-          headers: { Accept: 'application/json' },
-        })
-        const statusData = await statusResponse.json().catch(() => ({})) as {
-          success?: boolean
-          message?: string
-          errorCode?: string
-          defaultProviderId?: string
-          providers?: Array<ImageProviderStatusInfo>
-        }
-        const defaultProviderId = statusData.defaultProviderId
-          || statusData.providers?.find((item) => item.available)?.providerId
-          || ''
-        const providerId = fallbackProviderId || defaultProviderId
-        const provider = statusData.providers?.find((item) => item.providerId === providerId)
-          ?? statusData.providers?.find((item) => item.providerId === defaultProviderId)
-        const selectedProviderId = provider?.providerId || providerId
-        const selectedModel = provider?.model || fallbackModel || selectedProviderId
-        const providerMissingEnv = provider?.missingEnvKeys?.length ? provider.missingEnvKeys : provider?.missingEnv
-        const defaultMissingEnv = statusData.providers?.flatMap((item) => item.missingEnvKeys?.length ? item.missingEnvKeys : item.missingEnv ?? []) ?? []
-        const submittedInputBase = {
-          nodeId: node.id,
-          kind: node.kind,
-          promptChars: prompt.length,
-          providerId: selectedProviderId || null,
-          model: selectedModel || null,
-          aspectRatio: typeof initialRegenerationParams.aspectRatio === 'string' ? initialRegenerationParams.aspectRatio : null,
-          duration: typeof initialRegenerationParams.duration === 'number' ? initialRegenerationParams.duration : null,
-          resolution: typeof initialRegenerationParams.resolution === 'string' ? initialRegenerationParams.resolution : null,
-          inputAssets: initialRegenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })) ?? null,
-        }
-        if (!selectedProviderId) {
-          failNode({
-            success: false,
-            providerId: '',
-            mode: 'unavailable',
-            status: 'failed',
-            errorCode: 'PROVIDER_NOT_CONFIGURED',
-            message: '当前类型没有可用默认 Provider，请先配置生成环境变量。',
-            missingEnv: defaultMissingEnv,
-            missingEnvKeys: defaultMissingEnv,
-            submittedInput: submittedInputBase,
-          }, '')
-          return
-        }
-        if (!statusResponse.ok || statusData.success === false) {
-          failNode({
-            success: false,
-            providerId: selectedProviderId,
-            mode: 'unavailable',
-            status: 'failed',
-            errorCode: statusData.errorCode || 'PROVIDER_STATUS_FAILED',
-            message: statusData.message || 'Provider health check 失败。',
-            model: selectedModel,
-            submittedInput: submittedInputBase,
-          }, selectedProviderId)
-          return
-        }
-        if (!provider) {
-          failNode({
-            success: false,
-            providerId: selectedProviderId,
-            mode: 'unavailable',
-            status: 'failed',
-            errorCode: 'PROVIDER_INVALID_PARAMETER',
-            message: '节点记录的 provider/model 当前不被该生成接口支持。',
-            model: selectedModel,
-            upstreamMessage: `providerId not found in ${node.kind} providers: ${selectedProviderId}`,
-            submittedInput: submittedInputBase,
-          }, selectedProviderId)
-          return
-        }
-        if (!selectedModel) {
-          const modelMissingEnv = selectedProviderId === 'volcengine-seedream-image'
-            ? ['VOLCENGINE_SEEDREAM_MODEL']
-            : selectedProviderId === 'volcengine-seedance-video'
-              ? ['VOLCENGINE_SEEDANCE_MODEL']
-              : providerMissingEnv
-          failNode({
-            success: false,
-            providerId: selectedProviderId,
-            mode: 'unavailable',
-            status: 'failed',
-            errorCode: 'PROVIDER_NOT_CONFIGURED',
-            message: 'Provider 模型环境变量未配置。',
-            missingEnv: modelMissingEnv,
-            missingEnvKeys: modelMissingEnv,
-            submittedInput: submittedInputBase,
-          }, selectedProviderId)
-          return
-        }
-        if (!provider?.available) {
-          failNode({
-            success: false,
-            providerId: selectedProviderId,
-            mode: 'unavailable',
-            status: 'not-configured',
-            errorCode: 'PROVIDER_NOT_CONFIGURED',
-            message: provider?.reason || provider?.status || 'Provider 不可用。',
-            model: selectedModel,
-            missingEnv: providerMissingEnv,
-            missingEnvKeys: providerMissingEnv,
-            submittedInput: submittedInputBase,
-          }, selectedProviderId)
-          return
-        }
         const regenerationParams = initialRegenerationParams
         const regenerationInputAssets = initialRegenerationInputAssets
+        const regenerateInputPreview = {
+          prompt,
+          providerId: selectedProviderId,
+          model: selectedModel,
+          params: regenerationParams,
+          inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })),
+          nodeId: node.id,
+          requestedAt,
+        }
         handleNodePatch(node.id, {
           status: 'generating',
           errorMessage: undefined,
@@ -3936,16 +3937,11 @@ export function VisualCanvasWorkspace({
             error: null,
             errorCode: null,
             errorMessage: null,
+            lastError: null,
+            lastGenerationError: null,
             nextAction: 'show_media',
-            regenerationInputPreview: {
-              prompt,
-              providerId: selectedProviderId,
-              model: selectedModel,
-              params: regenerationParams,
-              inputAssets: regenerationInputAssets?.map((asset) => ({ id: asset.id, type: asset.type, hasUrl: Boolean(asset.url), url: summarizeUrlForDiagnostics(asset.url) })),
-              nodeId: node.id,
-              requestedAt: new Date().toISOString(),
-            },
+            regenerateInputPreview,
+            regenerationInputPreview: regenerateInputPreview,
           },
         })
         const nodeType = node.kind === 'image' ? 'image' : 'video'
@@ -3969,7 +3965,14 @@ export function VisualCanvasWorkspace({
             resultPreview: '视频任务已提交，正在生成中',
             outputLabel: '视频生成中',
             errorMessage: undefined,
-            metadataJson: videoSuccessMetadata(node, result, selectedProviderId),
+            metadataJson: {
+              ...videoSuccessMetadata(node, result, selectedProviderId),
+              recoveryStatus: 'regenerating',
+              mediaRecoveryStatus: 'regenerating',
+              loading: true,
+              isRegenerating: true,
+              regenerating: true,
+            },
           })
           flushLocalSnapshot()
           scheduleCanvasSave(0)
@@ -3994,7 +3997,14 @@ export function VisualCanvasWorkspace({
               status: 'running',
               resultPreview: `视频生成中，已查询 ${polls + 1} 次`,
               outputLabel: '视频生成中',
-              metadataJson: videoSuccessMetadata(node, result, selectedProviderId),
+              metadataJson: {
+                ...videoSuccessMetadata(node, result, selectedProviderId),
+                recoveryStatus: 'regenerating',
+                mediaRecoveryStatus: 'regenerating',
+                loading: true,
+                isRegenerating: true,
+                regenerating: true,
+              },
             })
             polls += 1
           }
@@ -4019,8 +4029,10 @@ export function VisualCanvasWorkspace({
         }
 
         const resultText = getGeneratedText(result)
-        const resultImageUrl = result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
-        const resultVideoUrl = result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
+        const generatedImageUrl = result.resolvedUrl ?? result.stableUrl ?? result.assetUrl ?? result.result?.imageUrl ?? result.resultImageUrl ?? result.imageUrl ?? result.dataUrl
+        const generatedVideoUrl = result.resolvedUrl ?? result.stableUrl ?? result.assetUrl ?? result.result?.videoUrl ?? result.resultVideoUrl ?? result.videoUrl
+        const resultImageUrl = node.kind === 'image' ? generatedImageUrl : undefined
+        const resultVideoUrl = node.kind === 'video' ? generatedVideoUrl : undefined
         if (!resultImageUrl && !resultVideoUrl) {
           failNode({
             ...result,
@@ -4042,8 +4054,8 @@ export function VisualCanvasWorkspace({
           resultText,
           resultPreview: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : resultText?.slice(0, 200) ?? '生成完成',
           outputLabel: resultImageUrl ? '图片已生成' : resultVideoUrl ? '视频已生成' : '生成完成',
-          resultImageUrl: resultImageUrl ?? node.resultImageUrl,
-          resultVideoUrl: resultVideoUrl ?? node.resultVideoUrl,
+          resultImageUrl: node.kind === 'image' ? resultImageUrl : node.resultImageUrl,
+          resultVideoUrl: node.kind === 'video' ? resultVideoUrl : node.resultVideoUrl,
           ...(generatedAssetId ? { assetId: generatedAssetId } : {}),
           errorMessage: undefined,
           metadataJson: {
@@ -4060,15 +4072,17 @@ export function VisualCanvasWorkspace({
       } catch (error) {
         failNode({
           success: false,
-          providerId: fallbackProviderId,
+          providerId: selectedProviderId,
           mode: 'unavailable',
           status: 'failed',
           errorCode: 'CARD_REGENERATE_FAILED',
           message: error instanceof Error ? error.message : '节点卡片重新生成失败。',
-        }, fallbackProviderId)
+        }, selectedProviderId)
+      } finally {
+        clearRegenerationLoading()
       }
     })()
-  }, [flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+  }, [commitNodes, flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
 
   const assetResolveKey = useMemo(() => nodes
     .filter((node) => node.kind === 'image' || node.kind === 'video')

@@ -157,9 +157,10 @@ function validateVideoInput(args: {
   if (args.requestedDuration !== undefined && (!Number.isFinite(args.requestedDuration) || args.requestedDuration < 1 || args.requestedDuration > 60)) invalidFields.push('duration')
   if (args.requestedResolution && !normalizeSeedanceRouteResolution(args.requestedResolution)) invalidFields.push('resolution')
   if (!missingFields.length && !invalidFields.length) return { ok: true as const }
+  const errorCode = invalidFields.length ? 'provider_invalid_parameter' : 'missing_generation_input'
   return {
     ok: false as const,
-    errorCode: 'missing_or_invalid_video_input',
+    errorCode,
     message: `Seedance 输入缺失或参数无效：${[...missingFields, ...invalidFields].join(', ')}`,
     missingFields,
     invalidFields,
@@ -251,6 +252,7 @@ async function attachPersistedVideo(args: {
   if (process.env.MEDIA_PERSISTENCE_ENABLED === 'false') {
     return {
       videoUrl: args.videoUrl,
+      stableUrl: args.videoUrl,
       mediaPersistence: { status: 'disabled' },
       assetIntelligence,
       warning: undefined,
@@ -302,6 +304,7 @@ async function attachPersistedVideo(args: {
 
   return {
     videoUrl: persistence.stableUrl,
+    stableUrl: persistence.stableUrl,
     mediaPersistence: { status: 'persisted', ...persistence },
     assetIntelligence,
     warning: undefined,
@@ -539,6 +542,7 @@ export async function POST(request: NextRequest) {
         async: true,
         taskId: raw.taskId,
         jobId: generationJob.id,
+        generationJobId: generationJob.id,
         providerId,
         model: raw.model,
         mode: 'real',
@@ -597,7 +601,8 @@ export async function POST(request: NextRequest) {
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
-      resolvedUrl: persisted.resolvedUrl ?? undefined,
+      resolvedUrl: persisted.resolvedUrl ?? persisted.videoUrl,
+      stableUrl: persisted.stableUrl,
       proxyUrl: persisted.proxyUrl ?? undefined,
       storageProvider: persisted.storageProvider ?? undefined,
       bucket: persisted.bucket ?? undefined,
@@ -605,6 +610,8 @@ export async function POST(request: NextRequest) {
       signedUrlAvailable: persisted.signedUrlAvailable,
       proxyAvailable: persisted.proxyAvailable,
       assetId: persisted.assetId,
+      outputAssetId: persisted.assetId,
+      generationJobId: generationJob.id,
       asset: persisted.asset,
       originalProviderVideoUrl: raw.videoUrl,
       mediaPersistence: persisted.mediaPersistence,
@@ -624,8 +631,9 @@ export async function POST(request: NextRequest) {
           model: raw.model,
           completedAt,
           generationJobId: generationJob.id,
-          ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
-          ...(persisted.resolvedUrl ? { resolvedUrl: persisted.resolvedUrl, stableUrl: persisted.resolvedUrl } : {}),
+          ...(persisted.assetId ? { assetId: persisted.assetId, outputAssetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          resolvedUrl: persisted.resolvedUrl ?? persisted.videoUrl,
+          stableUrl: persisted.stableUrl,
           ...(persisted.proxyUrl ? { proxyUrl: persisted.proxyUrl } : {}),
           storageProvider: persisted.storageProvider,
           bucket: persisted.bucket,
@@ -704,7 +712,8 @@ export async function POST(request: NextRequest) {
       videoUrl: persisted.videoUrl,
       resultVideoUrl: persisted.videoUrl,
       assetUrl: persisted.assetId ? persisted.videoUrl : undefined,
-      resolvedUrl: persisted.resolvedUrl ?? undefined,
+      resolvedUrl: persisted.resolvedUrl ?? persisted.videoUrl,
+      stableUrl: persisted.stableUrl,
       proxyUrl: persisted.proxyUrl ?? undefined,
       storageProvider: persisted.storageProvider ?? undefined,
       bucket: persisted.bucket ?? undefined,
@@ -712,6 +721,8 @@ export async function POST(request: NextRequest) {
       signedUrlAvailable: persisted.signedUrlAvailable,
       proxyAvailable: persisted.proxyAvailable,
       assetId: persisted.assetId,
+      outputAssetId: persisted.assetId,
+      generationJobId: result.billingJobId ?? result.jobId,
       asset: persisted.asset,
       originalProviderVideoUrl: providerVideoUrl,
       mediaPersistence: persisted.mediaPersistence,
@@ -723,8 +734,9 @@ export async function POST(request: NextRequest) {
         previewUrl: persisted.videoUrl,
         metadata: {
           ...(result.result?.metadata ?? {}),
-          ...(persisted.assetId ? { assetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
-          ...(persisted.resolvedUrl ? { resolvedUrl: persisted.resolvedUrl, stableUrl: persisted.resolvedUrl } : {}),
+          ...(persisted.assetId ? { assetId: persisted.assetId, outputAssetId: persisted.assetId, assetUrl: persisted.videoUrl } : {}),
+          resolvedUrl: persisted.resolvedUrl ?? persisted.videoUrl,
+          stableUrl: persisted.stableUrl,
           ...(persisted.proxyUrl ? { proxyUrl: persisted.proxyUrl } : {}),
           storageProvider: persisted.storageProvider,
           bucket: persisted.bucket,
