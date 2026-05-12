@@ -7,6 +7,22 @@ import { mapCanvasEdge, mapCanvasNode } from '@/lib/projects/canvas-mappers'
 
 export const dynamic = 'force-dynamic'
 
+function mapCanvasNodeWithProject(row: Parameters<typeof mapCanvasNode>[0], projectId: string, workflowId: string) {
+  const node = mapCanvasNode(row)
+  const metadata = node.metadataJson && typeof node.metadataJson === 'object' && !Array.isArray(node.metadataJson)
+    ? node.metadataJson as Record<string, unknown>
+    : {}
+  return {
+    ...node,
+    metadataJson: {
+      ...metadata,
+      projectId,
+      workflowId,
+      nodeId: node.id,
+    },
+  }
+}
+
 async function handleEnsure(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) {
@@ -69,7 +85,7 @@ async function handleEnsure(request: NextRequest) {
         success: true,
         project: result.project,
         workflow: result.workflow,
-        nodes: nodes.map(mapCanvasNode),
+        nodes: nodes.map((node) => mapCanvasNodeWithProject(node, result.project.id, result.workflow.id)),
         edges: edges.map(mapCanvasEdge),
         viewport: result.workflow.viewportJson,
         serverUpdatedAt: result.workflow.updatedAt,

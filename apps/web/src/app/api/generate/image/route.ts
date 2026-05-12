@@ -11,6 +11,7 @@ import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
+import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,6 +93,11 @@ function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; 
     ?? ''
 }
 
+function isMissingGenerationJobNodeIdColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /GenerationJob.*nodeId|nodeId.*GenerationJob|column.*nodeId|Unknown arg `nodeId`/i.test(message)
+}
+
 async function createImageGenerationJob(args: {
   userId: string
   providerId: string
@@ -99,25 +105,33 @@ async function createImageGenerationJob(args: {
   body: ImageGenerateBody
   model?: string | null
 }) {
-  return db.generationJob.create({
-    data: {
-      userId: args.userId,
+  const data = {
+    userId: args.userId,
+    projectId: args.body.projectId ?? null,
+    nodeId: args.body.nodeId ?? null,
+    providerId: args.providerId,
+    provider: args.providerId,
+    nodeType: 'image',
+    kind: 'image',
+    status: 'PROCESSING' as const,
+    prompt: args.prompt.slice(0, 2000),
+    input: {
+      prompt: args.prompt,
       projectId: args.body.projectId ?? null,
-      providerId: args.providerId,
-      provider: args.providerId,
-      nodeType: 'image',
-      kind: 'image',
-      status: 'PROCESSING',
-      prompt: args.prompt.slice(0, 2000),
-      input: {
-        prompt: args.prompt,
-        params: args.body.params ?? {},
-        model: args.model ?? null,
-        workflowId: args.body.workflowId,
-        nodeId: args.body.nodeId,
-      },
+      params: args.body.params ?? {},
+      model: args.model ?? null,
+      workflowId: args.body.workflowId,
+      nodeId: args.body.nodeId,
     },
-  })
+  }
+  try {
+    return await db.generationJob.create({ data })
+  } catch (error) {
+    if (!isMissingGenerationJobNodeIdColumn(error)) throw error
+    const fallbackData = { ...data }
+    delete (fallbackData as { nodeId?: string | null }).nodeId
+    return db.generationJob.create({ data: fallbackData })
+  }
 }
 
 async function markImageGenerationJobFailed(jobId: string | undefined, message: string) {
@@ -185,6 +199,23 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
 
+    const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
+    const projectId = stringInput(body.projectId)
+    const nodeId = stringInput(body.nodeId)
+    const workflowId = stringInput(body.workflowId)
+    const missing = missingGenerationInput({ projectId, nodeId, prompt })
+    if (missing.length) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'missing_generation_input',
+        message: `缺少生成必要字段：${missing.join(', ')}。`,
+        missing,
+        missingFields: missing,
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 400 })
+    }
+
     const providers = await getImageProviderRows()
     const defaultProviderId = defaultImageProviderId(providers)
     const providerId = body.providerId || defaultProviderId || 'volcengine-seedream-image'
@@ -203,18 +234,6 @@ export async function POST(request: NextRequest) {
         }, { status: 200 })
       }
       return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [])
-    }
-    const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
-    if (!prompt) {
-      return NextResponse.json({
-        success: false,
-        errorCode: 'missing_generation_input',
-        message: '请输入图片提示词',
-        providerId,
-        mode: 'unavailable',
-        status: 'failed',
-        missingFields: ['prompt'],
-      }, { status: 200 })
     }
     if (providerId === 'volcengine-seedream-image' && !process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()) {
       return NextResponse.json({
@@ -241,6 +260,28 @@ export async function POST(request: NextRequest) {
     const requestModel = typeof body.model === 'string' && body.model.trim()
       ? body.model.trim()
       : providerRow?.model ?? null
+    const generationContext = await prepareGenerationContext({
+      userId: currentUser.id,
+      projectId,
+      workflowId: workflowId || undefined,
+      nodeId,
+      kind: 'image',
+      prompt,
+      providerId,
+      model: requestModel,
+    })
+    if (!generationContext.ok) {
+      return NextResponse.json({
+        success: false,
+        errorCode: generationContext.errorCode,
+        message: generationContext.message,
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: generationContext.status })
+    }
+    body.projectId = generationContext.projectId
+    body.workflowId = generationContext.workflowId
+    body.nodeId = generationContext.nodeId
     const submittedInput = {
       providerId,
       model: requestModel,
@@ -254,7 +295,7 @@ export async function POST(request: NextRequest) {
       workflowId: body.workflowId ?? null,
     }
 
-    const billing = await setupBilling(request, providerId, 'image', prompt)
+    const billing = await setupBilling(request, providerId, 'image', prompt, { projectId, nodeId })
     if (!billing.ok) {
       if (providerId === 'openai-image' && billing.errorResponse.errorCode === 'BILLING_ERROR') {
         return NextResponse.json({

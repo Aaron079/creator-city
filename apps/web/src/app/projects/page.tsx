@@ -96,7 +96,7 @@ export default function ProjectsPage() {
       if (!hasVisibleProjectsRef.current) setLoading(true)
       setMessage('')
       try {
-        const response = await fetch('/api/projects?scope=owned', {
+        const response = await fetch('/api/projects', {
           credentials: 'include',
           cache: 'no-store',
           headers: { Accept: 'application/json' },

@@ -395,8 +395,17 @@ export async function resolveAssetRecord(asset: AssetForResolve): Promise<AssetR
   return resultFromAsset(updated, 'no_recovery_source', null, 'no_recovery_source', updated.error, 'marked_unrecoverable')
 }
 
-export async function resolveAssetById(assetId: string, ownerId: string) {
-  const asset = await db.asset.findFirst({ where: { id: assetId, ownerId } })
+export async function resolveAssetById(assetId: string, userId: string) {
+  const asset = await db.asset.findFirst({
+    where: {
+      id: assetId,
+      OR: [
+        { ownerId: userId },
+        { project: { ownerId: userId } },
+        { project: { members: { some: { userId, isActive: true, leftAt: null } } } },
+      ],
+    },
+  })
   if (!asset) return null
   return resolveAssetRecord(asset)
 }

@@ -66,10 +66,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   }
 
   const asset = await db.asset.findFirst({
-    where: { id: assetId, ownerId: user.id },
+    where: {
+      id: assetId,
+      OR: [
+        { ownerId: user.id },
+        { project: { ownerId: user.id } },
+        { project: { members: { some: { userId: user.id, isActive: true, leftAt: null } } } },
+      ],
+    },
   })
   if (!asset) {
-    return NextResponse.json({ ok: false, errorCode: 'object_missing', message: '素材不存在或不属于当前用户。' }, { status: 404 })
+    return NextResponse.json({ ok: false, errorCode: 'object_missing', message: '素材不存在或当前用户无权访问。' }, { status: 404 })
   }
 
   const result = await readStoredAssetObject(asset)

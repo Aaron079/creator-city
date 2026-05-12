@@ -745,6 +745,7 @@ export function P0MediaDebugPanel({
   const [busyNodeId, setBusyNodeId] = useState('')
   const [messages, setMessages] = useState<Record<string, string>>({})
   const [copyState, setCopyState] = useState('')
+  const [projectStateCopy, setProjectStateCopy] = useState('')
 
   const mediaNodes = useMemo(() => nodes.filter((node) => node.kind === 'image' || node.kind === 'video'), [nodes])
   const diagnostics = useMemo(
@@ -776,7 +777,7 @@ export function P0MediaDebugPanel({
       cache: 'no-store',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ assetIds: [assetId] }),
+      body: JSON.stringify({ assetIds: [assetId], projectId }),
     })
     const data = await readJson(response) as { assets?: AssetResolveResult[]; message?: string; errorCode?: string }
     const result = Array.isArray(data.assets) ? data.assets[0] : undefined
@@ -791,7 +792,12 @@ export function P0MediaDebugPanel({
       cache: 'no-store',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ nodeId: node.id, projectId, workflowId }),
+      body: JSON.stringify({
+        nodeId: node.id,
+        projectId,
+        workflowId,
+        legacyUrls: mediaSourcesForNode(node).map((candidate) => ({ url: candidate.url, source: candidate.source })),
+      }),
     })
     const data = await readJson(response) as AssetResolveResult & { message?: string; errorCode?: string }
     if (!response.ok || !data.assetId) {
@@ -912,7 +918,17 @@ export function P0MediaDebugPanel({
         errorCode: 'missing_generation_input',
         message: 'missing_generation_input：缺少 prompt。',
         missingFields: ['prompt'],
-        submittedInput: { nodeId: node.id, kind: node.kind, hasPrompt: false },
+        submittedInput: { projectId, workflowId, nodeId: node.id, kind: node.kind, hasPrompt: false },
+      }
+      failGeneration(result)
+      throw new Error(result.message)
+    }
+    if (!projectId) {
+      const result = {
+        errorCode: 'missing_generation_input',
+        message: 'missing_generation_input：缺少 projectId。',
+        missingFields: ['projectId'],
+        submittedInput: { projectId, workflowId, nodeId: node.id, kind: node.kind, hasPrompt: true },
       }
       failGeneration(result)
       throw new Error(result.message)
@@ -938,6 +954,8 @@ export function P0MediaDebugPanel({
     const params = buildRegenerationParams(node)
     const inputAssets = buildRegenerationInputAssets(node)
     const submittedInputBase = {
+      projectId,
+      workflowId,
       nodeId: node.id,
       kind: node.kind,
       promptChars: prompt.length,
@@ -978,10 +996,12 @@ export function P0MediaDebugPanel({
         prompt,
         compiledPrompt: prompt,
         providerId: provider.providerId,
+        provider: provider.providerId,
         model,
         projectId,
         workflowId,
         nodeId: node.id,
+        kind: node.kind,
         inputAssets,
         aspectRatio: typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined,
         duration: typeof params.duration === 'number' ? params.duration : undefined,
@@ -1061,6 +1081,24 @@ export function P0MediaDebugPanel({
     }
   }
 
+  async function copyCurrentProjectState() {
+    try {
+      const suffix = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+      const response = await fetch(`/api/debug/current-project-state${suffix}`, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      const payload = await readJson(response)
+      await navigator.clipboard.writeText(formatJson(payload))
+      setProjectStateCopy(response.ok ? 'copied' : 'failed')
+      window.setTimeout(() => setProjectStateCopy(''), 1400)
+    } catch {
+      setProjectStateCopy('failed')
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-start justify-end bg-black/42 p-4 text-white"
@@ -1089,6 +1127,13 @@ export function P0MediaDebugPanel({
             </p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-xs font-semibold text-cyan-50 hover:bg-cyan-200/16"
+              onClick={() => { void copyCurrentProjectState() }}
+            >
+              {projectStateCopy === 'copied' ? '已复制项目诊断 JSON' : '复制当前用户项目诊断 JSON'}
+            </button>
             <button
               type="button"
               className="rounded-md border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-xs font-semibold text-cyan-50 hover:bg-cyan-200/16"
@@ -1210,7 +1255,7 @@ export function P0MediaDebugPanel({
 
                     {regeneratePrimary ? (
                       <div className="mt-3 rounded-md border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs leading-5 text-amber-50">
-                        历史资产源已不可读取。可以用原 Prompt 重新生成并重新写入资产库。
+                        历史 Asset 记录不存在，需要用原 Prompt 重建。
                       </div>
                     ) : null}
 

@@ -10,11 +10,13 @@ import { db } from '@/lib/db'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
+import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 
 export const dynamic = 'force-dynamic'
 
 type VideoGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
+  model?: string
   imageUrl?: string
   duration?: number
   aspectRatio?: string
@@ -83,6 +85,11 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'provider_media_download_failed' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
   if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'provider_no_download_url' || code === 'VIDEO_URL_EMPTY' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
   return code || 'generation_failed'
+}
+
+function isMissingGenerationJobNodeIdColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /GenerationJob.*nodeId|nodeId.*GenerationJob|column.*nodeId|Unknown arg `nodeId`/i.test(message)
 }
 
 function numberParam(value: unknown) {
@@ -196,25 +203,33 @@ async function createVideoGenerationJob(args: {
   body: VideoGenerateBody
   imageUrl?: string
 }) {
-  return db.generationJob.create({
-    data: {
-      userId: args.userId,
+  const data = {
+    userId: args.userId,
+    projectId: args.body.projectId ?? null,
+    nodeId: args.body.nodeId ?? null,
+    providerId: args.providerId,
+    provider: args.providerId,
+    nodeType: 'video',
+    kind: 'video',
+    status: 'PROCESSING' as const,
+    prompt: args.prompt.slice(0, 2000),
+    input: {
+      prompt: args.prompt,
       projectId: args.body.projectId ?? null,
-      providerId: args.providerId,
-      provider: args.providerId,
-      nodeType: 'video',
-      kind: 'video',
-      status: 'PROCESSING',
-      prompt: args.prompt.slice(0, 2000),
-      input: {
-        prompt: args.prompt,
-        imageUrl: args.imageUrl,
-        params: args.body.params ?? {},
-        workflowId: args.body.workflowId,
-        nodeId: args.body.nodeId,
-      },
+      imageUrl: args.imageUrl,
+      params: args.body.params ?? {},
+      workflowId: args.body.workflowId,
+      nodeId: args.body.nodeId,
     },
-  })
+  }
+  try {
+    return await db.generationJob.create({ data })
+  } catch (error) {
+    if (!isMissingGenerationJobNodeIdColumn(error)) throw error
+    const fallbackData = { ...data }
+    delete (fallbackData as { nodeId?: string | null }).nodeId
+    return db.generationJob.create({ data: fallbackData })
+  }
 }
 
 async function markVideoGenerationJobFailed(jobId: string | undefined, message: string) {
@@ -383,28 +398,58 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
 
-  const providers = await getVideoProviderRows()
-  const defaultProviderId = defaultVideoProviderId(providers)
-  const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
-  const prompt = body.compiledPrompt?.trim() || body.prompt || ''
-  const imageUrl = firstImageInput(body)
-
-  if (!prompt.trim() && !imageUrl) {
+  const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
+  const projectId = stringInput(body.projectId)
+  const nodeId = stringInput(body.nodeId)
+  const workflowId = stringInput(body.workflowId)
+  const missing = missingGenerationInput({ projectId, nodeId, prompt })
+  if (missing.length) {
     return NextResponse.json({
       success: false,
       errorCode: 'missing_generation_input',
-      message: '请输入视频提示词，或连接一个上游图片作为视频输入。',
-      providerId,
+      message: `缺少生成必要字段：${missing.join(', ')}。`,
+      missing,
+      missingFields: missing,
       mode: 'unavailable',
       status: 'failed',
-      missingFields: ['prompt'],
-    }, { status: 200 })
+    }, { status: 400 })
   }
+
+  const providers = await getVideoProviderRows()
+  const defaultProviderId = defaultVideoProviderId(providers)
+  const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
+  const imageUrl = firstImageInput(body)
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
   if (!providerRow?.available) {
     return providerNotConfiguredResponse(providerId, providerRow?.missingEnv ?? [])
   }
+
+  const requestModel = typeof body.model === 'string' && body.model.trim()
+    ? body.model.trim()
+    : providerRow?.model ?? providerId
+  const generationContext = await prepareGenerationContext({
+    userId: currentUser.id,
+    projectId,
+    workflowId: workflowId || undefined,
+    nodeId,
+    kind: 'video',
+    prompt,
+    providerId,
+    model: requestModel,
+  })
+  if (!generationContext.ok) {
+    return NextResponse.json({
+      success: false,
+      errorCode: generationContext.errorCode,
+      message: generationContext.message,
+      mode: 'unavailable',
+      status: 'failed',
+    }, { status: generationContext.status })
+  }
+  body.projectId = generationContext.projectId
+  body.workflowId = generationContext.workflowId
+  body.nodeId = generationContext.nodeId
 
   if (providerId === 'volcengine-seedance-video') {
     const generationJob = await createVideoGenerationJob({
@@ -652,7 +697,7 @@ export async function POST(request: NextRequest) {
     }, { status: 200 })
   }
 
-  const billing = await setupBilling(request, providerId, 'video', prompt)
+  const billing = await setupBilling(request, providerId, 'video', prompt, { projectId, nodeId })
   if (!billing.ok) {
     return NextResponse.json(billing.errorResponse, { status: billing.status })
   }

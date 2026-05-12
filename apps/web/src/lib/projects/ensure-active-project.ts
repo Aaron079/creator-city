@@ -5,6 +5,8 @@ import { db } from '@/lib/db'
 const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
 const OWNER_ROLE_ID = 'OWNER'
 const OWNER_ROLE_NAME = 'OWNER'
+const PRODUCER_ROLE_ID = 'PRODUCER'
+const PRODUCER_ROLE_NAME = 'PRODUCER'
 
 const projectSelect = {
   id: true,
@@ -52,6 +54,12 @@ export interface ProjectAccess {
   source: 'owner' | 'member' | 'none'
 }
 
+export interface ProjectOwnershipRepairResult {
+  attached: boolean
+  reason: 'already_allowed' | 'user_project_asset' | 'user_generation_job' | 'no_user_project_evidence' | 'failed'
+  warning?: string
+}
+
 function normalizeMembershipWarning(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return `ProjectMember sync skipped: ${message}`
@@ -92,6 +100,88 @@ export async function ensureOwnerProjectMember(projectId: string, userId: string
     const warning = normalizeMembershipWarning(error)
     console.warn('[projects] owner ProjectMember sync failed', { projectId, userId, error })
     return warning
+  }
+}
+
+export async function attachCurrentUserProjectMemberWithEvidence(
+  projectId: string,
+  userId: string,
+  source: string,
+): Promise<ProjectOwnershipRepairResult> {
+  const access = await getProjectAccess(userId, projectId)
+  if (access.canRead && access.canWrite) {
+    return { attached: false, reason: 'already_allowed' }
+  }
+
+  const [asset, generationJob] = await Promise.all([
+    db.asset.findFirst({
+      where: { projectId, ownerId: userId },
+      select: { id: true },
+    }),
+    db.generationJob.findFirst({
+      where: { projectId, userId },
+      select: { id: true },
+    }),
+  ])
+  const evidence = asset
+    ? { reason: 'user_project_asset' as const, assetId: asset.id }
+    : generationJob
+      ? { reason: 'user_generation_job' as const, generationJobId: generationJob.id }
+      : null
+
+  if (!evidence) return { attached: false, reason: 'no_user_project_evidence' }
+
+  try {
+    const role = await db.projectRole.upsert({
+      where: { name: PRODUCER_ROLE_NAME },
+      create: {
+        id: PRODUCER_ROLE_ID,
+        name: PRODUCER_ROLE_NAME,
+        permissions: ['project:read', 'project:write', 'canvas:read', 'canvas:write'],
+        description: 'Project producer',
+      },
+      update: {
+        permissions: ['project:read', 'project:write', 'canvas:read', 'canvas:write'],
+      },
+      select: { id: true },
+    })
+
+    await db.projectMember.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: {
+        projectId,
+        userId,
+        roleId: role.id,
+        isActive: true,
+      },
+      update: {
+        roleId: role.id,
+        isActive: true,
+        leftAt: null,
+      },
+    })
+
+    await db.auditLog.create({
+      data: {
+        actorUserId: userId,
+        action: 'project_member_attached_by_ownership_repair',
+        targetType: 'Project',
+        targetId: projectId,
+        metadataJson: {
+          source,
+          roleId: role.id,
+          evidence,
+        },
+      },
+    }).catch((error: unknown) => {
+      console.warn('[projects] ownership repair audit log failed', { projectId, userId, error })
+    })
+
+    return { attached: true, reason: evidence.reason }
+  } catch (error) {
+    const warning = normalizeMembershipWarning(error)
+    console.warn('[projects] ownership repair ProjectMember attach failed', { projectId, userId, error })
+    return { attached: false, reason: 'failed', warning }
   }
 }
 

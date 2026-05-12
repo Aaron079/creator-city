@@ -443,7 +443,7 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'proxy_error',
   'generation_failed',
 ])
-const PROMPT_REBUILD_DETAIL = '历史资产源已不可读取。可以用原 Prompt 重新生成并重新写入资产库。'
+const PROMPT_REBUILD_DETAIL = '历史 Asset 记录不存在，需要用原 Prompt 重建。'
 const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
 const STORAGE_SIGNED_PROXY_MESSAGE = '对象存在但需要 signed URL/proxy 读取。'
 
@@ -1827,6 +1827,7 @@ export function CanvasNodeCard({
           nodeId: node.id,
           projectId: recoveryProjectId,
           workflowId: recoveryWorkflowId,
+          legacyUrls: (mediaKind === 'image' ? imageCandidateUrls : videoCandidateUrls).map((candidate) => ({ url: candidate.url, source: candidate.source })),
         }),
       })
       if (!lookupResponse?.ok || !lookupData.assetId) {
@@ -1944,6 +1945,7 @@ export function CanvasNodeCard({
           nodeId: node.id,
           projectId: recoveryProjectId,
           workflowId: recoveryWorkflowId,
+          legacyUrls: (mediaKind === 'image' ? imageCandidateUrls : videoCandidateUrls).map((candidate) => ({ url: candidate.url, source: candidate.source })),
         }),
       })
       recoveryAttempts.push({ step: 'resolve-by-node', nodeId: node.id, ok: Boolean(lookupResponse?.ok), result: lookupData })

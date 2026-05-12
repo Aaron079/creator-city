@@ -95,7 +95,9 @@ function jsonMetadata(input: PersistGeneratedMediaInput, uploaded: {
           ? input.metadata.generationJobId
           : undefined,
     nodeId: input.nodeId,
+    canvasNodeId: input.nodeId,
     projectId: input.projectId,
+    userId: input.userId,
     mediaType: input.type,
     storageProvider: uploaded.provider,
     bucket: uploaded.bucket,
@@ -124,29 +126,41 @@ async function linkGenerationJob(input: PersistGeneratedMediaInput, assetId: str
       ? input.metadata.taskId
       : undefined
 
+  const data = {
+    projectId: input.projectId ?? undefined,
+    nodeId: input.nodeId ?? undefined,
+    providerJobId,
+    provider: input.sourceProvider ?? undefined,
+    kind: input.type,
+    status: 'SUCCEEDED' as const,
+    outputAssetId: assetId,
+    output: {
+      assetId,
+      url: stableUrl,
+      type: input.type,
+      providerJobId,
+      completedAt: new Date().toISOString(),
+    },
+    completedAt: new Date(),
+  }
   await db.generationJob.update({
     where: { id: generationJobId },
-    data: {
-      projectId: input.projectId ?? undefined,
-      providerJobId,
-      provider: input.sourceProvider ?? undefined,
-      kind: input.type,
-      status: 'SUCCEEDED',
-      outputAssetId: assetId,
-      output: {
-        assetId,
-        url: stableUrl,
-        type: input.type,
-        providerJobId,
-        completedAt: new Date().toISOString(),
-      },
-      completedAt: new Date(),
-    },
-  }).catch((error: unknown) => {
+    data,
+  }).catch(async (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/GenerationJob.*nodeId|nodeId.*GenerationJob|column.*nodeId|Unknown arg `nodeId`/i.test(message)) {
+      const fallbackData = { ...data }
+      delete (fallbackData as { nodeId?: string }).nodeId
+      await db.generationJob.update({
+        where: { id: generationJobId },
+        data: fallbackData,
+      }).catch(() => null)
+      return
+    }
     console.warn('[assets] failed to link GenerationJob to Asset', {
       generationJobId,
       assetId,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     })
   })
 }
@@ -183,10 +197,13 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
       data: {
         ...(input.type === 'image' ? { resultImageUrl: stableUrl } : {}),
         ...(input.type === 'video' ? { resultVideoUrl: stableUrl } : {}),
+        status: 'done',
+        errorMessage: null,
         metadataJson: {
           ...metadata,
           assetId,
           outputAssetId: assetId,
+          ...(typeof input.metadata?.generationJobId === 'string' ? { generationJobId: input.metadata.generationJobId } : {}),
           assetUrl: uploaded.resolvedUrl ?? stableUrl,
           resolvedUrl: uploaded.resolvedUrl ?? stableUrl,
           stableUrl,
@@ -203,6 +220,7 @@ async function linkCanvasNode(input: PersistGeneratedMediaInput, assetId: string
             status: 'persisted',
             assetId,
             outputAssetId: assetId,
+            ...(typeof input.metadata?.generationJobId === 'string' ? { generationJobId: input.metadata.generationJobId } : {}),
             stableUrl,
             assetUrl: uploaded.resolvedUrl ?? stableUrl,
             resolvedUrl: uploaded.resolvedUrl ?? stableUrl,

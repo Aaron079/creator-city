@@ -1167,6 +1167,7 @@ model GenerationJob {
   id            String                     @id @default(uuid())
   userId        String
   projectId     String?
+  nodeId        String?
   walletId      String?
   externalJobId String?
   providerJobId String?
@@ -1194,6 +1195,8 @@ model GenerationJob {
 
   @@index([userId])
   @@index([projectId])
+  @@index([nodeId])
+  @@index([projectId, nodeId])
   @@index([walletId])
   @@index([status])
   @@index([billingStatus])

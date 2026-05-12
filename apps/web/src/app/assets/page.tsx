@@ -94,7 +94,7 @@ export default function AssetsPage() {
 
   async function loadProjects() {
     try {
-      const response = await fetch('/api/projects?scope=owned&limit=20', {
+      const response = await fetch('/api/projects?limit=20', {
         credentials: 'include',
         cache: 'no-store',
         headers: { Accept: 'application/json' },

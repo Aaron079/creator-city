@@ -8,7 +8,10 @@ import {
   isProjectCanvasSchemaMissing,
 } from '@/lib/projects/api-errors'
 import { mapCanvasEdge, mapCanvasNode } from '@/lib/projects/canvas-mappers'
-import { getProjectAccess } from '@/lib/projects/ensure-active-project'
+import {
+  attachCurrentUserProjectMemberWithEvidence,
+  getProjectAccess,
+} from '@/lib/projects/ensure-active-project'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -63,6 +66,22 @@ const WORKFLOW_SELECT = {
   updatedAt: true,
 } as const
 
+function mapCanvasNodeWithProject(row: Parameters<typeof mapCanvasNode>[0], projectId: string, workflowId: string) {
+  const node = mapCanvasNode(row)
+  const metadata = node.metadataJson && typeof node.metadataJson === 'object' && !Array.isArray(node.metadataJson)
+    ? node.metadataJson as Record<string, unknown>
+    : {}
+  return {
+    ...node,
+    metadataJson: {
+      ...metadata,
+      projectId,
+      workflowId,
+      nodeId: node.id,
+    },
+  }
+}
+
 async function requireProjectAccess(projectId: string, userId: string, write = false) {
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -83,7 +102,19 @@ async function requireProjectAccess(projectId: string, userId: string, write = f
   // Owner always has full access — skip potentially-broken ProjectMember lookup.
   if (project.ownerId === userId) return project
   const access = await getProjectAccess(userId, projectId)
-  if (!access.canRead || (write && !access.canWrite)) return 'FORBIDDEN' as const
+  if (!access.canRead || (write && !access.canWrite)) {
+    const repair = await attachCurrentUserProjectMemberWithEvidence(
+      projectId,
+      userId,
+      write ? 'canvas_save_current_project' : 'canvas_load_current_project',
+    )
+    if (!repair.attached) return 'FORBIDDEN' as const
+    console.info('[canvas] current project membership repaired', {
+      projectId,
+      userId,
+      reason: repair.reason,
+    })
+  }
   return project
 }
 
@@ -224,7 +255,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     return jsonOk({
       project,
       workflow,
-      nodes: nodes.map(mapCanvasNode),
+      nodes: nodes.map((node) => mapCanvasNodeWithProject(node, params.projectId, workflow.id)),
       edges: edges.map(mapCanvasEdge),
       assets: [],
       viewport: workflow.viewportJson,
@@ -320,6 +351,9 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
         : {}
       const metadataJson = {
         ...nodeMetadata,
+        projectId: params.projectId,
+        workflowId: workflow.id,
+        nodeId: node.id,
         ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
         outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
         preview: node.preview ?? nodeMetadata.preview ?? null,

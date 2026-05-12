@@ -51,6 +51,7 @@ export async function setupBilling(
   providerId: string,
   nodeType: string,
   prompt: string,
+  context?: { projectId?: string; nodeId?: string },
 ): Promise<BillingSetupResult> {
   const user = await getCurrentUser()
   if (!user) {
@@ -80,7 +81,7 @@ export async function setupBilling(
     const wallet = await getOrCreateWallet(user.id)
     if (wallet.balance >= 1) {
       try {
-        const reserve = await reserveCreditsForJob({ userId: user.id, estimatedCredits: 1, providerId, nodeType, prompt })
+        const reserve = await reserveCreditsForJob({ userId: user.id, estimatedCredits: 1, providerId, nodeType, prompt, projectId: context?.projectId, nodeId: context?.nodeId })
         return { ok: true, ctx: { userId: user.id, billingJobId: reserve.jobId, estimatedCredits: 1 } }
       } catch {
         // Fall through to free mock on any error
@@ -111,7 +112,7 @@ export async function setupBilling(
   }
 
   try {
-    const reserve = await reserveCreditsForJob({ userId: user.id, estimatedCredits: estimated, providerId, nodeType, prompt })
+    const reserve = await reserveCreditsForJob({ userId: user.id, estimatedCredits: estimated, providerId, nodeType, prompt, projectId: context?.projectId, nodeId: context?.nodeId })
     return { ok: true, ctx: { userId: user.id, billingJobId: reserve.jobId, estimatedCredits: estimated } }
   } catch (err) {
     if (err instanceof InsufficientCreditsError) {

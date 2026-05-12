@@ -1462,10 +1462,25 @@ async function callGenerationApi(
   }
 
   const firstImageUrl = inputAssets?.find((asset) => asset.type === 'image' && asset.url)?.url
+  const aspectRatio = typeof params?.aspectRatio === 'string'
+    ? params.aspectRatio
+    : typeof params?.ratio === 'string'
+      ? params.ratio
+      : undefined
+  const duration = typeof params?.duration === 'number' ? params.duration : undefined
+  const resolution = typeof params?.resolution === 'string'
+    ? params.resolution
+    : typeof params?.size === 'string'
+      ? params.size
+      : typeof params?.quality === 'string'
+        ? params.quality
+        : undefined
   const requestBody = {
     providerId,
+    provider: providerId,
     model,
     nodeType,
+    kind: nodeType,
     prompt,
     compiledPrompt: prompt,
     system,
@@ -1478,22 +1493,15 @@ async function callGenerationApi(
     inputAssets,
     projectId,
     workflowId,
+    aspectRatio,
+    duration,
+    resolution,
     ...(nodeType === 'video'
       ? {
           imageUrl: firstImageUrl,
-          duration: typeof params?.duration === 'number' ? params.duration : 5,
-          aspectRatio: typeof params?.aspectRatio === 'string'
-            ? params.aspectRatio
-            : typeof params?.ratio === 'string'
-              ? params.ratio
-              : '16:9',
-          resolution: typeof params?.resolution === 'string'
-            ? params.resolution
-            : typeof params?.size === 'string'
-              ? params.size
-              : typeof params?.quality === 'string'
-                ? params.quality
-                : undefined,
+          duration: duration ?? 5,
+          aspectRatio: aspectRatio ?? '16:9',
+          resolution,
         }
       : {}),
   }
@@ -1558,6 +1566,11 @@ async function callGenerationApi(
       const upstreamStatus = typeof parsedRecord.upstreamStatus === 'number' ? parsedRecord.upstreamStatus : undefined
       const upstreamMessage = stringValue(parsedRecord.upstreamMessage) || responseTextPreview
       const responseErrorCode = stringValue(parsedRecord.errorCode)
+      const parsedMissingFields = Array.isArray(parsedRecord.missingFields)
+        ? parsedRecord.missingFields.filter((value): value is string => typeof value === 'string')
+        : Array.isArray(parsedRecord.missing)
+          ? parsedRecord.missing.filter((value): value is string => typeof value === 'string')
+          : undefined
       const apiErrorCode = response.status === 401
         ? 'auth_required'
         : response.status >= 500
@@ -1579,6 +1592,7 @@ async function callGenerationApi(
         errorMessage,
         upstreamStatus,
         upstreamMessage,
+        missingFields: parsed.missingFields ?? parsedMissingFields,
         rawCode: responseErrorCode || parsed.rawCode,
         requestId: stringValue(parsedRecord.requestId) || undefined,
         ...responseMeta,
@@ -2938,7 +2952,7 @@ export function VisualCanvasWorkspace({
         const serverTime = timeValue(serverUpdatedAtText)
         const localTime = timeValue(localCandidate?.value.updatedAt)
         const serverIsNewer = Boolean(serverNodes.length > 0 && hasLocalCanvas && serverTime > localTime + 500)
-        const shouldRestoreLocalCanvas = hasLocalCanvas
+        const shouldRestoreLocalCanvas = Boolean(hasLocalCanvas && (serverNodes.length === 0 || localIsNewer))
         const viewport = data.viewport ?? data.workflow?.viewportJson
         const effectiveWorkflowId = data.workflow?.id ?? localCandidate?.value.workflowId ?? ''
         const effectiveNodes = shouldRestoreLocalCanvas && localCandidate ? localCandidate.value.nodes : serverNodes
@@ -3624,6 +3638,7 @@ export function VisualCanvasWorkspace({
           projectId,
           workflowId,
           compiled?.system,
+          providerId,
         )
 
         if (node.kind === 'video' && generateResult.async && generateResult.taskId) {
@@ -3964,6 +3979,8 @@ export function VisualCanvasWorkspace({
     const initialRegenerationParams = buildRegenerationParams(node)
     const initialRegenerationInputAssets = buildRegenerationInputAssets(node)
     const submittedInputBase = {
+      projectId,
+      workflowId,
       nodeId: node.id,
       kind: node.kind,
       promptChars: prompt?.length ?? 0,
@@ -4015,6 +4032,7 @@ export function VisualCanvasWorkspace({
     }
 
     const missingFields = [
+      ...(!projectId ? ['projectId'] : []),
       ...(!prompt ? ['prompt'] : []),
       ...(!selectedProviderId ? ['provider'] : []),
       ...(!selectedModel ? ['model'] : []),
@@ -5690,6 +5708,45 @@ export function VisualCanvasWorkspace({
       return
     }
 
+    const generationContextMissing = nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video'
+      ? [
+          ...(!projectId ? ['projectId'] : []),
+          ...(!nodeSnapshot.id ? ['nodeId'] : []),
+          ...(!generationPrompt.trim() ? ['prompt'] : []),
+        ]
+      : []
+    if (generationContextMissing.length) {
+      const result: GenerateApiResult = {
+        success: false,
+        providerId: generationProviderId,
+        mode: 'unavailable',
+        status: 'failed',
+        errorCode: 'missing_generation_input',
+        message: `缺少生成必要字段：${generationContextMissing.join(', ')}。`,
+        missingFields: generationContextMissing,
+        submittedInput: {
+          projectId,
+          workflowId,
+          nodeId: nodeSnapshot.id,
+          kind: nodeSnapshot.kind,
+          promptChars: generationPrompt.length,
+        },
+      }
+      const errMsg = formatGenerateError(result)
+      handleNodePatch(nodeSnapshot.id, {
+        status: 'error',
+        errorMessage: errMsg,
+        resultPreview: nodeSnapshot.kind === 'image' ? '图片生成失败' : '视频生成失败',
+        outputLabel: nodeSnapshot.kind === 'image' ? '图片生成失败' : '视频生成失败',
+        metadataJson: nodeSnapshot.kind === 'image'
+          ? imageErrorMetadata(nodeSnapshot, result, generationProviderId)
+          : videoErrorMetadata(nodeSnapshot, result, generationProviderId),
+      })
+      setDialogError(errMsg)
+      showCanvasFeedback(errMsg)
+      return
+    }
+
     // Validate provider supports this node type
     const providerEntry = getToolProviderById(generationProviderId)
     if (providerEntry && !providerEntry.nodeTypes.includes(nodeType)) {
@@ -5830,6 +5887,7 @@ export function VisualCanvasWorkspace({
       nodeType === 'image' || nodeType === 'video' ? projectId : undefined,
       nodeType === 'image' || nodeType === 'video' ? workflowId : undefined,
       compiled?.system,
+      generationProviderId,
     ).then(async (result) => {
       if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
         const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId)
