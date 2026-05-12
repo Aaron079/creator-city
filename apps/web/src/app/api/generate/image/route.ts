@@ -174,6 +174,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
     }
 
+    const currentUser = await getCurrentUser()
+    if (!currentUser) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'UNAUTHORIZED',
+        message: '请先登录后再生成图片。',
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 401 })
+    }
+
     const providers = await getImageProviderRows()
     const defaultProviderId = defaultImageProviderId(providers)
     const providerId = body.providerId || defaultProviderId || 'volcengine-seedream-image'
@@ -263,7 +274,6 @@ export async function POST(request: NextRequest) {
       }, { status: billing.status })
     }
 
-    const currentUser = await getCurrentUser()
     let raw: GenerateResponse & {
       model?: string
       upstreamStatus?: number

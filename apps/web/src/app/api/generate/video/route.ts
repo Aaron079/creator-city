@@ -364,22 +364,24 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  let body: VideoGenerateBody
   try {
-    body = await request.json() as VideoGenerateBody
-  } catch {
-    return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
-  }
+    let body: VideoGenerateBody
+    try {
+      body = await request.json() as VideoGenerateBody
+    } catch {
+      return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
+    }
 
-  const currentUser = await getCurrentUser()
-  if (!currentUser) {
-    return NextResponse.json({
-      success: false,
-      errorCode: 'UNAUTHORIZED',
-      message: '请先登录后再生成视频。',
-      status: 'failed',
-    }, { status: 401 })
-  }
+    const currentUser = await getCurrentUser()
+    if (!currentUser) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'UNAUTHORIZED',
+        message: '请先登录后再生成视频。',
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 401 })
+    }
 
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
@@ -750,5 +752,16 @@ export async function POST(request: NextRequest) {
       },
     })
   }
-  return NextResponse.json(result)
+    return NextResponse.json(result)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '生成请求失败'
+    console.error('[api/generate/video]', err)
+    return NextResponse.json({
+      success: false,
+      message,
+      errorCode: 'generation_failed',
+      mode: 'unavailable',
+      status: 'failed',
+    }, { status: 500 })
+  }
 }

@@ -526,10 +526,19 @@ type GenerateApiResult = GenerateResponse & {
   assetIntelligence?: unknown
   warning?: string
   httpStatus?: number
+  errorMessage?: string
   upstreamStatus?: number
   upstreamMessage?: string
   rawCode?: string
   requestId?: string
+  requestUrl?: string
+  method?: string
+  hint?: string
+  generationRequestUrl?: string
+  generationRequestMethod?: string
+  generationHttpStatus?: number
+  generationFetchError?: string
+  generationResponseTextPreview?: string
   submittedInput?: unknown
   providerResponse?: unknown
   missingEnv?: string[]
@@ -556,8 +565,8 @@ type ImageProviderStatusInfo = {
 
 type VideoProviderStatusInfo = ImageProviderStatusInfo
 
-function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message'>) {
-  const message = result.message ?? ''
+function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage'>) {
+  const message = result.errorMessage || result.message || ''
   if (
     result.errorCode === 'KIMI_REQUEST_TIMEOUT'
     || (result.errorCode === 'KIMI_TEXT_FAILED' && message.toLowerCase().includes('abort'))
@@ -572,6 +581,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   const upstreamMessage = result.upstreamMessage ?? ''
   const message = result.message ?? ''
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
+  if (errorCode === 'client_fetch_failed') return 'client_fetch_failed'
   if (errorCode === 'MISSING_GENERATION_INPUT' || errorCode === 'missing_generation_input' || errorCode === 'missing_or_invalid_video_input') return 'missing_generation_input'
   const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
   if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode === 'provider_env_missing' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
@@ -591,16 +601,23 @@ function formatGenerateError(result: GenerateApiResult) {
   const message = normalizeGenerateErrorMessage(result)
   const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
   const visibleCode = normalizeVisibleGenerateErrorCode(result)
+  const requestUrl = result.generationRequestUrl || result.requestUrl
+  const requestMethod = result.generationRequestMethod || result.method
   return [
     visibleCode,
     result.errorCode,
     message,
+    requestUrl ? `requestUrl: ${requestUrl}` : '',
+    requestMethod ? `method: ${requestMethod}` : '',
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
     result.missingFields?.length ? `missingFields: ${result.missingFields.join(', ')}` : '',
     result.model ? `model: ${result.model}` : '',
     typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
+    typeof result.generationHttpStatus === 'number' ? `generationHttpStatus: ${result.generationHttpStatus}` : '',
+    result.generationFetchError ? `fetchError: ${result.generationFetchError}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
     result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
+    result.generationResponseTextPreview ? `responsePreview: ${result.generationResponseTextPreview.slice(0, 200)}` : '',
     result.requestId ? `requestId: ${result.requestId}` : '',
   ].filter(Boolean).join(' · ') || '生成失败'
 }
@@ -1210,13 +1227,25 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
+  const requestUrl = result.generationRequestUrl || result.requestUrl
+  const requestMethod = result.generationRequestMethod || result.method
+  const generationHttpStatus = result.generationHttpStatus ?? result.httpStatus
   const lastGenerationError = {
     errorCode: visibleErrorCode,
     rawErrorCode: result.errorCode,
     message: normalizeGenerateErrorMessage(result),
+    errorMessage: result.errorMessage || normalizeGenerateErrorMessage(result),
     httpStatus: result.httpStatus,
+    generationRequestUrl: requestUrl,
+    generationRequestMethod: requestMethod,
+    generationHttpStatus,
+    generationFetchError: result.generationFetchError,
+    generationResponseTextPreview: result.generationResponseTextPreview,
+    requestUrl,
+    method: requestMethod,
+    hint: result.hint,
     upstreamStatus: result.upstreamStatus,
     upstreamMessage: result.upstreamMessage,
     rawCode: result.rawCode,
@@ -1241,6 +1270,11 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     regenerating: false,
     errorCode: visibleErrorCode,
     errorMessage: normalizeGenerateErrorMessage(result),
+    generationRequestUrl: requestUrl,
+    generationRequestMethod: requestMethod,
+    generationHttpStatus,
+    generationFetchError: result.generationFetchError,
+    generationResponseTextPreview: result.generationResponseTextPreview,
     upstreamStatus: result.upstreamStatus,
     upstreamMessage: result.upstreamMessage,
     requestId: result.requestId,
@@ -1329,13 +1363,25 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
+  const requestUrl = result.generationRequestUrl || result.requestUrl
+  const requestMethod = result.generationRequestMethod || result.method
+  const generationHttpStatus = result.generationHttpStatus ?? result.httpStatus
   const lastGenerationError = {
     errorCode: visibleErrorCode,
     rawErrorCode: result.errorCode,
     message: normalizeGenerateErrorMessage(result),
+    errorMessage: result.errorMessage || normalizeGenerateErrorMessage(result),
     httpStatus: result.httpStatus,
+    generationRequestUrl: requestUrl,
+    generationRequestMethod: requestMethod,
+    generationHttpStatus,
+    generationFetchError: result.generationFetchError,
+    generationResponseTextPreview: result.generationResponseTextPreview,
+    requestUrl,
+    method: requestMethod,
+    hint: result.hint,
     upstreamStatus: result.upstreamStatus,
     upstreamMessage: result.upstreamMessage,
     rawCode: result.rawCode,
@@ -1362,6 +1408,11 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     regenerating: false,
     errorCode: visibleErrorCode,
     errorMessage: normalizeGenerateErrorMessage(result),
+    generationRequestUrl: requestUrl,
+    generationRequestMethod: requestMethod,
+    generationHttpStatus,
+    generationFetchError: result.generationFetchError,
+    generationResponseTextPreview: result.generationResponseTextPreview,
     upstreamStatus: result.upstreamStatus,
     upstreamMessage: result.upstreamMessage,
     requestId: result.requestId,
@@ -1370,6 +1421,8 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     lastGenerationError,
   }
 }
+
+const GENERATION_FETCH_HINT = 'Browser could not complete request. Check Network tab, route availability, auth redirect, or CORS.'
 
 async function callGenerationApi(
   nodeType: ToolProviderNodeType,
@@ -1388,6 +1441,13 @@ async function callGenerationApi(
     : nodeType === 'video' ? '/api/generate/video'
     : nodeType === 'audio' ? '/api/generate/audio'
     : '/api/generate/text'
+  const method = 'POST'
+  const requestMeta = {
+    requestUrl: endpoint,
+    method,
+    generationRequestUrl: endpoint,
+    generationRequestMethod: method,
+  }
   const maxTokens = nodeType === 'text' ? 1024 : undefined
 
   if (process.env.NODE_ENV !== 'production') {
@@ -1434,40 +1494,95 @@ async function callGenerationApi(
   let response: Response
   try {
     response = await fetch(endpoint, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      method,
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : '网络请求失败'
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, errorCode: 'PROVIDER_REQUEST_FAILED', upstreamMessage: message }
+    const reason = err instanceof Error ? err.message : String(err || '网络请求失败')
+    const errorMessage = `${method} ${endpoint} fetch failed: ${reason}`
+    return {
+      success: false,
+      providerId,
+      mode: 'unavailable',
+      status: 'failed',
+      message: errorMessage,
+      errorMessage,
+      errorCode: 'client_fetch_failed',
+      hint: GENERATION_FETCH_HINT,
+      generationFetchError: reason,
+      upstreamMessage: reason,
+      ...requestMeta,
+    }
   }
 
   const raw = await response.text().catch(() => '')
+  const responseTextPreview = raw.slice(0, 500)
+  const responseMeta = {
+    ...requestMeta,
+    httpStatus: response.status,
+    generationHttpStatus: response.status,
+    generationResponseTextPreview: responseTextPreview,
+  }
   if (!raw.trim()) {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回空响应（HTTP ${response.status}）`, errorCode: 'EMPTY_RESPONSE', httpStatus: response.status }
+    const errorMessage = `生成接口返回空响应（HTTP ${response.status}）`
+    return {
+      success: false,
+      providerId,
+      mode: 'unavailable',
+      status: 'failed',
+      message: errorMessage,
+      errorMessage,
+      errorCode: 'EMPTY_RESPONSE',
+      upstreamMessage: '',
+      ...responseMeta,
+    }
   }
   try {
-    const parsed = JSON.parse(raw) as GenerateApiResult
+    const parsedValue = JSON.parse(raw) as unknown
+    const parsedRecord = nestedRecord(parsedValue)
+    const parsed = parsedRecord as unknown as GenerateApiResult
     if (!response.ok || parsed.success === false) {
+      const parsedStatus = typeof parsedRecord.status === 'string' ? parsedRecord.status as GenerateApiResult['status'] : 'failed'
+      const parsedMode = typeof parsedRecord.mode === 'string' ? parsedRecord.mode as GenerateApiResult['mode'] : 'unavailable'
+      const upstreamStatus = typeof parsedRecord.upstreamStatus === 'number' ? parsedRecord.upstreamStatus : undefined
+      const upstreamMessage = stringValue(parsedRecord.upstreamMessage) || responseTextPreview
+      const errorMessage = stringValue(parsedRecord.errorMessage)
+        || stringValue(parsedRecord.message)
+        || `生成接口返回 HTTP ${response.status}`
       return {
         ...parsed,
         success: false,
         providerId: parsed.providerId || providerId,
-        mode: parsed.mode || 'unavailable',
-        status: parsed.status || 'failed',
-        httpStatus: response.status,
-        errorCode: parsed.errorCode || `HTTP_${response.status}`,
-        message: parsed.message || `生成接口返回 HTTP ${response.status}`,
+        mode: parsedMode,
+        status: parsedStatus,
+        errorCode: stringValue(parsedRecord.errorCode) || `HTTP_${response.status}`,
+        message: errorMessage,
+        errorMessage,
+        upstreamStatus,
+        upstreamMessage,
+        requestId: stringValue(parsedRecord.requestId) || undefined,
+        ...responseMeta,
       }
     }
     return {
       ...parsed,
-      httpStatus: response.status,
+      ...responseMeta,
     }
   } catch {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `生成接口返回非 JSON 响应（HTTP ${response.status}）`, errorCode: 'NON_JSON_RESPONSE', httpStatus: response.status, upstreamMessage: raw.slice(0, 500) }
+    const errorMessage = `生成接口返回非 JSON 响应（HTTP ${response.status}）`
+    return {
+      success: false,
+      providerId,
+      mode: 'unavailable',
+      status: 'failed',
+      message: errorMessage,
+      errorMessage,
+      errorCode: response.ok ? 'NON_JSON_RESPONSE' : `HTTP_${response.status}`,
+      upstreamMessage: responseTextPreview,
+      ...responseMeta,
+    }
   }
 }
 

@@ -347,6 +347,11 @@ type MediaDiagnosticPayload = {
   errorCode: string | null
   errorMessage: string | null
   requestId: string | null
+  generationRequestUrl: string | null
+  generationRequestMethod: string | null
+  generationHttpStatus: number | null
+  generationFetchError: string | null
+  generationResponseTextPreview: string | null
   canRecover: boolean
   whyNotRecoverable: string | null
   nextAction: string
@@ -409,6 +414,11 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'errorCode',
   'errorMessage',
   'requestId',
+  'generationRequestUrl',
+  'generationRequestMethod',
+  'generationHttpStatus',
+  'generationFetchError',
+  'generationResponseTextPreview',
   'canRecover',
   'whyNotRecoverable',
   'nextAction',
@@ -425,6 +435,7 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'no_recovery_source',
   'provider_invalid_parameter',
   'provider_env_missing',
+  'client_fetch_failed',
   'storage_permission_error',
   'signing_error',
   'proxy_error',
@@ -838,6 +849,7 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const message = stringValue(error.message)
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
+  if (code === 'client_fetch_failed') return 'client_fetch_failed'
   if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
   if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
   if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
@@ -862,6 +874,12 @@ function generationFailureMessage(error: Record<string, unknown>) {
   const message = stringValue(error.message)
   const requestId = stringValue(error.requestId)
   const requestSuffix = requestId ? ` · requestId=${requestId}` : ''
+  if (normalized === 'client_fetch_failed') {
+    const requestUrl = stringValue(error.generationRequestUrl) || stringValue(error.requestUrl)
+    const method = stringValue(error.generationRequestMethod) || stringValue(error.method)
+    const fetchError = stringValue(error.generationFetchError) || stringValue(error.errorMessage) || message
+    return `client_fetch_failed：${[method, requestUrl, fetchError].filter(Boolean).join(' · ')}${requestSuffix}`
+  }
   if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}${requestSuffix}`
   if (normalized === 'missing_generation_input') {
     const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
@@ -899,6 +917,9 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'MEDIA_SOURCE_EXPIRED' || reason === 'ASSET_DOWNLOAD_FAILED') return '旧媒体源当前不可读取，可能已过期或需要权限。'
   if (reason === 'old_url_expired') return '旧媒体 URL 候选已全部尝试，当前不可下载。'
   if (reason === 'provider_media_download_failed') return 'Provider 返回的媒体链接不可下载，或传给 Provider 的首帧/参考图 URL 不可读取。'
+  if (reason === 'client_fetch_failed') {
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'client_fetch_failed：浏览器未能完成生成接口请求。'
+  }
   if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请复制诊断 JSON 查看 requestId 和 submittedInput。'
   if (reason === 'provider_env_missing') return 'Provider 或对象存储环境变量缺失，配置后再重新生成或恢复。'
   if (reason === 'recovery_timeout') return '资产恢复请求超时，已停止本次恢复流程。'
@@ -1384,6 +1405,27 @@ export function CanvasNodeCard({
     const requestId = stringValue(lastResolveResult.requestId)
       || stringValue(lastGenerationError.requestId)
       || null
+    const generationRequestUrl = stringValue(lastGenerationError.generationRequestUrl)
+      || stringValue(lastGenerationError.requestUrl)
+      || stringValue(nodeMetadata.generationRequestUrl)
+      || null
+    const generationRequestMethod = stringValue(lastGenerationError.generationRequestMethod)
+      || stringValue(lastGenerationError.method)
+      || stringValue(nodeMetadata.generationRequestMethod)
+      || null
+    const generationHttpStatus = typeof lastGenerationError.generationHttpStatus === 'number'
+      ? lastGenerationError.generationHttpStatus
+      : typeof lastGenerationError.httpStatus === 'number'
+        ? lastGenerationError.httpStatus
+        : typeof nodeMetadata.generationHttpStatus === 'number'
+          ? nodeMetadata.generationHttpStatus
+          : null
+    const generationFetchError = stringValue(lastGenerationError.generationFetchError)
+      || stringValue(nodeMetadata.generationFetchError)
+      || null
+    const generationResponseTextPreview = stringValue(lastGenerationError.generationResponseTextPreview)
+      || stringValue(nodeMetadata.generationResponseTextPreview)
+      || null
     const missingEnv = uniqueStrings([
       ...(generationHealth?.missingEnv ?? []),
       ...stringArrayValue(lastGenerationError.missingEnv),
@@ -1481,6 +1523,11 @@ export function CanvasNodeCard({
       errorCode,
       errorMessage,
       requestId,
+      generationRequestUrl,
+      generationRequestMethod,
+      generationHttpStatus,
+      generationFetchError,
+      generationResponseTextPreview,
       canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
       whyNotRecoverable: mediaFailureDiagnosis?.canRecover && !storageKeyReadProblem && !assetRecordMissing && !missingEnv.length ? null : whyNotRecoverable,
       nextAction,
