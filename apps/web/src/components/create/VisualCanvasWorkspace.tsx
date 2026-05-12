@@ -240,7 +240,15 @@ type CanvasAssetResolveResult = {
   providerJobId?: string | null
   recoveryStatus?: string | null
   error?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
   actionTaken?: string | null
+  nextAction?: string | null
+  proxyFallbackUrl?: string | null
+  proxyHttpStatus?: number | null
+  proxyErrorCode?: string | null
+  proxyErrorMessage?: string | null
+  proxyRejectedHost?: string | null
 }
 
 type CanvasEdgeStatus = 'idle' | 'active' | 'done'
@@ -920,6 +928,13 @@ function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetRes
     ...(result.bucket ? { bucket: result.bucket } : {}),
     ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
+    ...(result.nextAction ? { nextAction: result.nextAction } : {}),
+    ...(typeof result.proxyHttpStatus === 'number' ? { proxyHttpStatus: result.proxyHttpStatus } : {}),
+    ...(result.proxyErrorCode ? { proxyErrorCode: result.proxyErrorCode } : {}),
+    ...(result.proxyErrorMessage ? { proxyErrorMessage: result.proxyErrorMessage } : {}),
+    ...(result.proxyRejectedHost ? { proxyRejectedHost: result.proxyRejectedHost } : {}),
     p0LastResolveResult: result,
     p0LastResolveAt: new Date().toISOString(),
     mediaPersistence: {
@@ -938,7 +953,7 @@ function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetRes
     return {
       ...node,
       assetId: result.assetId,
-      errorMessage: result.error ?? node.errorMessage,
+      errorMessage: result.errorMessage ?? result.error ?? result.errorCode ?? node.errorMessage,
       metadataJson: nextMetadata,
     }
   }

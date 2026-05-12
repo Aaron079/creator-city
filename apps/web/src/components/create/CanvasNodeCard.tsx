@@ -249,6 +249,10 @@ type AssetRecoverResponse = {
   resolvedUrl?: string | null
   proxyUrl?: string | null
   proxyFallbackUrl?: string | null
+  proxyHttpStatus?: number | null
+  proxyErrorCode?: string | null
+  proxyErrorMessage?: string | null
+  proxyRejectedHost?: string | null
   signedUrlAvailable?: boolean | null
   signedUrlGenerated?: boolean | null
   proxyAvailable?: boolean | null
@@ -297,6 +301,9 @@ type CandidateProbe = MediaUrlSource & {
   proxyStatus: number
   upstreamStatus?: number
   reachable: boolean
+  proxyErrorCode?: string | null
+  proxyErrorMessage?: string | null
+  proxyRejectedHost?: string | null
 }
 
 type RenderFailure = {
@@ -305,6 +312,10 @@ type RenderFailure = {
   proxiedUrl: string
   reason: string
   at: string
+  proxyHttpStatus?: number
+  proxyErrorCode?: string | null
+  proxyErrorMessage?: string | null
+  proxyRejectedHost?: string | null
 }
 
 type MediaFailureDiagnosis = {
@@ -343,6 +354,10 @@ type MediaDiagnosticPayload = {
   resultVideoUrl: string | null
   resolvedUrl: string | null
   proxyUrl: string | null
+  proxyHttpStatus: number | null
+  proxyErrorCode: string | null
+  proxyErrorMessage: string | null
+  proxyRejectedHost: string | null
   signedUrlAvailable: boolean | null
   proxyAvailable: boolean | null
   assetUrl: string | null
@@ -429,6 +444,10 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'resultVideoUrl',
   'resolvedUrl',
   'proxyUrl',
+  'proxyHttpStatus',
+  'proxyErrorCode',
+  'proxyErrorMessage',
+  'proxyRejectedHost',
   'signedUrlAvailable',
   'proxyAvailable',
   'assetUrl',
@@ -605,15 +624,30 @@ async function probeMediaCandidate(candidate: MediaUrlSource): Promise<Candidate
     })
     const upstreamStatusHeader = response.headers.get('x-media-proxy-upstream-status')
     const upstreamStatus = upstreamStatusHeader ? Number(upstreamStatusHeader) : response.status
+    const proxyError = response.ok || response.status === 206
+      ? {}
+      : await response.clone().json().catch(() => ({})) as Record<string, unknown>
     return {
       ...candidate,
       proxiedUrl,
       proxyStatus: response.status,
       upstreamStatus: Number.isFinite(upstreamStatus) ? upstreamStatus : response.status,
       reachable: response.ok || response.status === 206,
+      proxyErrorCode: stringValue(proxyError.errorCode),
+      proxyErrorMessage: stringValue(proxyError.errorMessage) || stringValue(proxyError.message),
+      proxyRejectedHost: stringValue(proxyError.proxyRejectedHost) || stringValue(proxyError.hostname),
     }
-  } catch {
-    return { ...candidate, proxiedUrl, proxyStatus: 0, upstreamStatus: 0, reachable: false }
+  } catch (error) {
+    return {
+      ...candidate,
+      proxiedUrl,
+      proxyStatus: 0,
+      upstreamStatus: 0,
+      reachable: false,
+      proxyErrorCode: 'proxy_fetch_failed',
+      proxyErrorMessage: error instanceof Error ? error.message : 'proxy fetch failed',
+      proxyRejectedHost: null,
+    }
   }
 }
 
@@ -828,6 +862,14 @@ function normalizeAttemptedUrls(value: unknown): RenderFailure[] {
         proxiedUrl: stringValue(record.proxiedUrl) || getProxiedMediaUrl(url),
         reason: stringValue(record.reason) || stringValue(record.errorCode) || stringValue(record.message) || stringValue(record.error) || 'attempted',
         at: stringValue(record.at) || new Date().toISOString(),
+        proxyHttpStatus: typeof record.proxyHttpStatus === 'number'
+          ? record.proxyHttpStatus
+          : typeof record.proxyStatus === 'number'
+            ? record.proxyStatus
+            : undefined,
+        proxyErrorCode: nullableString(record.proxyErrorCode),
+        proxyErrorMessage: nullableString(record.proxyErrorMessage) || nullableString(record.errorMessage),
+        proxyRejectedHost: nullableString(record.proxyRejectedHost) || nullableString(record.hostname),
       }]
     }
     if (typeof item === 'string' && item.trim()) {
@@ -1565,6 +1607,27 @@ export function CanvasNodeCard({
       ...normalizeFailedUrls(nodeMetadata.attemptedUrls),
       ...normalizeFailedUrls(lastResolveResult.attemptedUrls),
     ]
+    const proxyFailure = attemptedUrls.find((failure) => failure.proxyErrorCode || typeof failure.proxyHttpStatus === 'number')
+    const proxyHttpStatus = typeof proxyFailure?.proxyHttpStatus === 'number'
+      ? proxyFailure.proxyHttpStatus
+      : typeof lastResolveResult.proxyHttpStatus === 'number'
+        ? lastResolveResult.proxyHttpStatus
+        : typeof nodeMetadata.proxyHttpStatus === 'number'
+          ? nodeMetadata.proxyHttpStatus
+          : typeof lastResolveResult.proxyFallbackStatus === 'number'
+            ? lastResolveResult.proxyFallbackStatus
+            : null
+    const proxyErrorCode = nullableString(proxyFailure?.proxyErrorCode)
+      || nullableString(lastResolveResult.proxyErrorCode)
+      || nullableString(nodeMetadata.proxyErrorCode)
+    const proxyErrorMessage = nullableString(proxyFailure?.proxyErrorMessage)
+      || nullableString(lastResolveResult.proxyErrorMessage)
+      || nullableString(lastResolveResult.proxyMessage)
+      || nullableString(nodeMetadata.proxyErrorMessage)
+    const proxyRejectedHost = nullableString(proxyFailure?.proxyRejectedHost)
+      || nullableString(lastResolveResult.proxyRejectedHost)
+      || nullableString(lastResolveResult.hostname)
+      || nullableString(nodeMetadata.proxyRejectedHost)
     const isRecovering = isActiveRecoveryStatus(mediaRecoveryStatus)
       || (nodeMetadata.isRecovering === true && !isTerminalRecoveryReason(recoveryStatus || ''))
       || (nodeMetadata.recovering === true && !isTerminalRecoveryReason(recoveryStatus || ''))
@@ -1724,6 +1787,10 @@ export function CanvasNodeCard({
       resultVideoUrl: nullableString(node.resultVideoUrl || nodeMetadata.resultVideoUrl),
       resolvedUrl: nullableString(resolvedUrl),
       proxyUrl: nullableString(diagnosticProxyUrl),
+      proxyHttpStatus,
+      proxyErrorCode,
+      proxyErrorMessage,
+      proxyRejectedHost,
       signedUrlAvailable,
       proxyAvailable,
       assetUrl: nullableString(assetUrl),
@@ -2422,13 +2489,47 @@ export function CanvasNodeCard({
       if (!cancelled) {
         setSelectedImageSource(imageCandidateUrls[0] ?? null)
         setImageLoadFailed(true)
-        setImageRenderFailures(probes.map((probe) => ({
+        const failures = probes.map((probe) => ({
           url: probe.url,
           source: probe.source,
           proxiedUrl: probe.proxiedUrl,
-          reason: `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
+          reason: probe.proxyErrorCode
+            ? `probe failed: ${probe.proxyErrorCode} proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`
+            : `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
           at: new Date().toISOString(),
-        })).slice(-12))
+          proxyHttpStatus: probe.proxyStatus,
+          proxyErrorCode: probe.proxyErrorCode ?? null,
+          proxyErrorMessage: probe.proxyErrorMessage ?? null,
+          proxyRejectedHost: probe.proxyRejectedHost ?? null,
+        })).slice(-12)
+        setImageRenderFailures(failures)
+        const primaryFailure = failures.find((failure) => failure.proxyErrorCode) ?? failures[0]
+        if (onRecoverMedia && primaryFailure) {
+          const existing = Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []
+          const existingFailed = Array.isArray(nodeMetadata.failedUrls) ? nodeMetadata.failedUrls : []
+          onRecoverMedia(node.id, {
+            metadataJson: {
+              ...metadataRecord(node.metadataJson),
+              failedRenderUrl: primaryFailure.url,
+              failedRenderReason: primaryFailure.reason,
+              attemptedUrls: [...existing, ...failures].slice(-12),
+              failedUrls: [...existingFailed, ...failures.map((failure) => ({
+                url: failure.url,
+                reason: failure.reason,
+                at: failure.at,
+                proxyHttpStatus: failure.proxyHttpStatus,
+                proxyErrorCode: failure.proxyErrorCode,
+                proxyErrorMessage: failure.proxyErrorMessage,
+                proxyRejectedHost: failure.proxyRejectedHost,
+              }))].slice(-12),
+              proxyHttpStatus: primaryFailure.proxyHttpStatus ?? null,
+              proxyErrorCode: primaryFailure.proxyErrorCode ?? null,
+              proxyErrorMessage: primaryFailure.proxyErrorMessage ?? null,
+              proxyRejectedHost: primaryFailure.proxyRejectedHost ?? null,
+              lastRenderFailureAt: primaryFailure.at,
+            },
+          })
+        }
         console.log('[legacy-media-recovery]', {
           nodeId: node.id,
           kind: node.kind,
@@ -2491,13 +2592,47 @@ export function CanvasNodeCard({
       if (!cancelled) {
         setSelectedVideoSource(videoCandidateUrls[0] ?? null)
         setVideoLoadFailed(true)
-        setVideoRenderFailures(probes.map((probe) => ({
+        const failures = probes.map((probe) => ({
           url: probe.url,
           source: probe.source,
           proxiedUrl: probe.proxiedUrl,
-          reason: `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
+          reason: probe.proxyErrorCode
+            ? `probe failed: ${probe.proxyErrorCode} proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`
+            : `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
           at: new Date().toISOString(),
-        })).slice(-12))
+          proxyHttpStatus: probe.proxyStatus,
+          proxyErrorCode: probe.proxyErrorCode ?? null,
+          proxyErrorMessage: probe.proxyErrorMessage ?? null,
+          proxyRejectedHost: probe.proxyRejectedHost ?? null,
+        })).slice(-12)
+        setVideoRenderFailures(failures)
+        const primaryFailure = failures.find((failure) => failure.proxyErrorCode) ?? failures[0]
+        if (onRecoverMedia && primaryFailure) {
+          const existing = Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []
+          const existingFailed = Array.isArray(nodeMetadata.failedUrls) ? nodeMetadata.failedUrls : []
+          onRecoverMedia(node.id, {
+            metadataJson: {
+              ...metadataRecord(node.metadataJson),
+              failedRenderUrl: primaryFailure.url,
+              failedRenderReason: primaryFailure.reason,
+              attemptedUrls: [...existing, ...failures].slice(-12),
+              failedUrls: [...existingFailed, ...failures.map((failure) => ({
+                url: failure.url,
+                reason: failure.reason,
+                at: failure.at,
+                proxyHttpStatus: failure.proxyHttpStatus,
+                proxyErrorCode: failure.proxyErrorCode,
+                proxyErrorMessage: failure.proxyErrorMessage,
+                proxyRejectedHost: failure.proxyRejectedHost,
+              }))].slice(-12),
+              proxyHttpStatus: primaryFailure.proxyHttpStatus ?? null,
+              proxyErrorCode: primaryFailure.proxyErrorCode ?? null,
+              proxyErrorMessage: primaryFailure.proxyErrorMessage ?? null,
+              proxyRejectedHost: primaryFailure.proxyRejectedHost ?? null,
+              lastRenderFailureAt: primaryFailure.at,
+            },
+          })
+        }
         console.log('[legacy-media-recovery]', {
           nodeId: node.id,
           kind: node.kind,

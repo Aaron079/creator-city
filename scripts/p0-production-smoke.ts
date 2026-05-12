@@ -94,24 +94,43 @@ async function main() {
     fail('Home page', `HTTP ${home.status}`)
   }
 
-  // 2. resolve-batch API — requires auth; 401 = Lambda alive, 200 = public access
+  // 2. resolve-batch API — empty assetIds must be a stable 200 JSON response.
   console.log('\n--- 2. /api/assets/resolve-batch ---')
   const resolveEmpty = await post(`${baseUrl}/api/assets/resolve-batch`, { assetIds: [] })
   if (resolveEmpty.ok && isJsonResponse(resolveEmpty.json)) {
     pass('resolve-batch responds with 200', `latency ${resolveEmpty.latencyMs}ms`)
-    if ('assets' in resolveEmpty.json) {
-      pass('resolve-batch returns assets field')
+    const json = resolveEmpty.json as Record<string, unknown>
+    if (Array.isArray(json.assets) && json.assets.length === 0) {
+      pass('resolve-batch empty request returns assets=[]')
     } else {
       fail('resolve-batch missing assets field', JSON.stringify(resolveEmpty.json).slice(0, 200))
     }
-  } else if (resolveEmpty.status === 401) {
-    // Auth required — Lambda is alive and responding correctly
-    pass('resolve-batch Lambda alive (401 auth required — expected unauthenticated)', `latency ${resolveEmpty.latencyMs}ms`)
   } else {
     fail(`resolve-batch returned HTTP ${resolveEmpty.status}`, resolveEmpty.body.slice(0, 300))
     if (resolveEmpty.body.includes('Cannot find module')) {
       fail('CRITICAL: Next.js serverless runtime module not found — Lambda is broken')
     }
+  }
+
+  // 2b. media proxy diagnostics — errors must be JSON and specific.
+  console.log('\n--- 2b. /api/media/proxy diagnostics ---')
+  const proxyMissingUrl = await get(`${baseUrl}/api/media/proxy`)
+  if (proxyMissingUrl.status === 400 && isJsonResponse(proxyMissingUrl.json) && (proxyMissingUrl.json as Record<string, unknown>).errorCode === 'proxy_url_missing') {
+    pass('media/proxy without url returns JSON proxy_url_missing', `latency ${proxyMissingUrl.latencyMs}ms`)
+  } else {
+    fail(`media/proxy without url HTTP ${proxyMissingUrl.status}`, proxyMissingUrl.body.slice(0, 300))
+  }
+
+  const proxyExample = await get(`${baseUrl}/api/media/proxy?url=${encodeURIComponent('https://example.com')}`)
+  if (proxyExample.status !== 500 && isJsonResponse(proxyExample.json)) {
+    const json = proxyExample.json as Record<string, unknown>
+    if (typeof json.errorCode === 'string') {
+      pass('media/proxy disallowed URL returns JSON errorCode', `${json.errorCode}`)
+    } else {
+      fail('media/proxy disallowed URL JSON missing errorCode', proxyExample.body.slice(0, 300))
+    }
+  } else {
+    fail(`media/proxy disallowed URL HTTP ${proxyExample.status}`, proxyExample.body.slice(0, 300))
   }
 
   // 3. generate/image API — GET is a provider health check and does not spend credits.

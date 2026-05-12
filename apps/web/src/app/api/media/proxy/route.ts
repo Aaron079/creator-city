@@ -1,10 +1,27 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { getCurrentUser } from '@/lib/auth/current-user'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const ALLOWED_CONTENT_PREFIXES = ['image/', 'video/', 'audio/']
+const DEFAULT_ALLOWED_HOST_SUFFIXES = [
+  'aliyuncs.com',
+  'volces.com',
+  'volcengine.com',
+  'byteimg.com',
+  'bytecdn.cn',
+]
+
+type ProxyErrorCode =
+  | 'proxy_url_missing'
+  | 'proxy_url_not_allowed'
+  | 'proxy_auth_required'
+  | 'proxy_upstream_403'
+  | 'proxy_upstream_404'
+  | 'proxy_fetch_failed'
+  | 'proxy_timeout'
 
 function isAllowedContentType(contentType: string | null) {
   if (!contentType) return false
@@ -13,34 +30,127 @@ function isAllowedContentType(contentType: string | null) {
 }
 
 function isPrivateHost(hostname: string) {
-  const h = hostname.toLowerCase()
-  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '0.0.0.0') return true
   if (/^10\./.test(h)) return true
   if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)) return true
   if (/^192\.168\./.test(h)) return true
+  if (/^169\.254\./.test(h)) return true
   if (h.endsWith('.local') || h.endsWith('.internal')) return true
   return false
+}
+
+function envList(name: string) {
+  return (process.env[name] ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function hostnameFromValue(value?: string | null) {
+  const trimmed = value?.trim()
+  if (!trimmed) return ''
+  try {
+    return new URL(trimmed).hostname.toLowerCase()
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).hostname.toLowerCase()
+    } catch {
+      return ''
+    }
+  }
+}
+
+function configuredAllowedHosts() {
+  const hosts = [
+    hostnameFromValue(process.env.ALIYUN_OSS_ENDPOINT),
+    hostnameFromValue(process.env.ALIYUN_OSS_PUBLIC_BASE_URL),
+    hostnameFromValue(process.env.VOLCENGINE_ARK_BASE_URL),
+    hostnameFromValue(process.env.CUSTOM_VIDEO_PROVIDER_ENDPOINT),
+    hostnameFromValue(process.env.CREATOR_VIDEO_GATEWAY_ENDPOINT),
+    hostnameFromValue(process.env.CUSTOM_PROVIDER_ENDPOINT),
+    hostnameFromValue(process.env.SCENE_PLUGIN_ENDPOINT),
+    ...envList('MEDIA_PROXY_ALLOWED_HOSTS').map(hostnameFromValue),
+  ].filter(Boolean)
+  return [...new Set(hosts)]
+}
+
+function configuredAllowedSuffixes() {
+  return [...new Set([...DEFAULT_ALLOWED_HOST_SUFFIXES, ...envList('MEDIA_PROXY_ALLOWED_HOST_SUFFIXES')].map((host) => host.toLowerCase().replace(/^\./, '')))]
+}
+
+function isAllowedProxyHost(hostname: string) {
+  const host = hostname.toLowerCase()
+  const exactHosts = configuredAllowedHosts()
+  if (exactHosts.includes(host)) return true
+  return configuredAllowedSuffixes().some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+}
+
+function proxyError(
+  errorCode: ProxyErrorCode,
+  status: number,
+  message: string,
+  details: Record<string, unknown> = {},
+  headers?: Headers,
+) {
+  const outHeaders = new Headers(headers)
+  outHeaders.set('Cache-Control', 'no-store')
+  return NextResponse.json({
+    ok: false,
+    success: false,
+    errorCode,
+    errorMessage: message,
+    message,
+    ...details,
+  }, { status, headers: outHeaders })
+}
+
+function fetchErrorCode(error: unknown): ProxyErrorCode {
+  if (error instanceof Error && error.name === 'AbortError') return 'proxy_timeout'
+  return 'proxy_fetch_failed'
 }
 
 export async function GET(request: NextRequest) {
   const rawUrl = request.nextUrl.searchParams.get('url') ?? ''
   const proxyRequestUrl = request.nextUrl.toString()
   if (!rawUrl.trim()) {
-    return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 })
+    return proxyError('proxy_url_missing', 400, 'Missing url parameter.', { proxyUrl: proxyRequestUrl })
   }
 
   let target: URL
   try {
     target = new URL(rawUrl)
   } catch {
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+    return proxyError('proxy_url_not_allowed', 403, 'Invalid URL.', { receivedUrl: rawUrl, proxyUrl: proxyRequestUrl })
   }
 
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-    return NextResponse.json({ error: 'Only http/https URLs are supported' }, { status: 400 })
+    return proxyError('proxy_url_not_allowed', 403, 'Only http/https URLs are supported.', {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyRejectedHost: target.hostname,
+      proxyUrl: proxyRequestUrl,
+    })
   }
-  if (isPrivateHost(target.hostname)) {
-    return NextResponse.json({ error: 'Private addresses are not allowed' }, { status: 403 })
+  if (isPrivateHost(target.hostname) || !isAllowedProxyHost(target.hostname)) {
+    return proxyError('proxy_url_not_allowed', 403, `Proxy target host is not allowed: ${target.hostname}`, {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyRejectedHost: target.hostname,
+      proxyUrl: proxyRequestUrl,
+    })
+  }
+
+  const user = await getCurrentUser().catch((error) => {
+    console.error('[media-proxy] auth lookup failed', error)
+    return null
+  })
+  if (!user) {
+    return proxyError('proxy_auth_required', 401, 'Login is required to proxy media URLs.', {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyUrl: proxyRequestUrl,
+    })
   }
 
   const rangeHeader = request.headers.get('range')
@@ -67,12 +177,20 @@ export async function GET(request: NextRequest) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Upstream fetch failed'
+    const errorCode = fetchErrorCode(err)
+    const status = errorCode === 'proxy_timeout' ? 504 : 502
     console.log('[media-proxy]', {
       receivedUrl: rawUrl,
       proxyRequestUrl,
+      hostname: target.hostname,
+      errorCode,
       error: msg,
     })
-    return NextResponse.json({ error: msg, receivedUrl: rawUrl }, { status: 502 })
+    return proxyError(errorCode, status, msg, {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyUrl: proxyRequestUrl,
+    })
   }
 
   console.log('[media-proxy]', {
@@ -88,20 +206,31 @@ export async function GET(request: NextRequest) {
   if (!upstream.ok && upstream.status !== 206) {
     const headers = new Headers()
     headers.set('x-media-proxy-upstream-status', String(upstream.status))
-    return NextResponse.json(
-      { error: `Upstream returned ${upstream.status}`, upstreamStatus: upstream.status, receivedUrl: rawUrl },
-      { status: upstream.status, headers },
-    )
+    const errorCode: ProxyErrorCode = upstream.status === 403
+      ? 'proxy_upstream_403'
+      : upstream.status === 404
+        ? 'proxy_upstream_404'
+        : 'proxy_fetch_failed'
+    const status = upstream.status === 403 || upstream.status === 404 ? upstream.status : 502
+    return proxyError(errorCode, status, `Upstream returned HTTP ${upstream.status}.`, {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyUrl: proxyRequestUrl,
+      upstreamStatus: upstream.status,
+    }, headers)
   }
 
   const contentType = upstream.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
   if (!isAllowedContentType(contentType)) {
     const headers = new Headers()
     headers.set('x-media-proxy-upstream-status', String(upstream.status))
-    return NextResponse.json(
-      { error: `Non-media content type: ${contentType || 'unknown'}`, upstreamStatus: upstream.status, receivedUrl: rawUrl },
-      { status: 415, headers },
-    )
+    return proxyError('proxy_fetch_failed', 415, `Non-media content type: ${contentType || 'unknown'}`, {
+      receivedUrl: rawUrl,
+      hostname: target.hostname,
+      proxyUrl: proxyRequestUrl,
+      upstreamStatus: upstream.status,
+      contentType: contentType || null,
+    }, headers)
   }
 
   const out = new Headers()

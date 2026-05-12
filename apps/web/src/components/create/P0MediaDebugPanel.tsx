@@ -20,6 +20,7 @@ type AssetResolveResult = {
   providerJobId?: string | null
   recoveryStatus?: string | null
   error?: string | null
+  errorMessage?: string | null
   message?: string
   actionTaken?: string | null
   mediaPersistence?: unknown
@@ -30,6 +31,10 @@ type AssetResolveResult = {
   signedUrlError?: string | null
   proxyFallbackUrl?: string | null
   proxyFallbackStatus?: number | null
+  proxyHttpStatus?: number | null
+  proxyErrorCode?: string | null
+  proxyErrorMessage?: string | null
+  proxyRejectedHost?: string | null
   storageKeyFailureReason?: string | null
   whyUnrecoverable?: string | null
 }
@@ -546,6 +551,31 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     ...arrayValue(lastResolveResult.failedUrls),
     ...arrayValue(lastResolveResult.attemptedUrls),
   ]
+  const proxyFailure = [...attemptedUrls, ...failedUrls]
+    .map(recordValue)
+    .find((record) => (
+      stringValue(record.proxyErrorCode)
+      || typeof record.proxyHttpStatus === 'number'
+      || typeof record.proxyStatus === 'number'
+    ))
+  const proxyHttpStatus = numberValue(proxyFailure?.proxyHttpStatus)
+    ?? numberValue(proxyFailure?.proxyStatus)
+    ?? numberValue(lastResolveResult.proxyHttpStatus)
+    ?? numberValue(metadata.proxyHttpStatus)
+    ?? proxyFallbackStatus
+  const proxyErrorCode = nullableString(proxyFailure?.proxyErrorCode)
+    || nullableString(lastResolveResult.proxyErrorCode)
+    || nullableString(metadata.proxyErrorCode)
+  const proxyErrorMessage = nullableString(proxyFailure?.proxyErrorMessage)
+    || nullableString(proxyFailure?.errorMessage)
+    || nullableString(lastResolveResult.proxyErrorMessage)
+    || nullableString(lastResolveResult.proxyMessage)
+    || nullableString(metadata.proxyErrorMessage)
+  const proxyRejectedHost = nullableString(proxyFailure?.proxyRejectedHost)
+    || nullableString(proxyFailure?.hostname)
+    || nullableString(lastResolveResult.proxyRejectedHost)
+    || nullableString(lastResolveResult.hostname)
+    || nullableString(metadata.proxyRejectedHost)
   const missingEnv = uniqueStrings([
     ...(generationHealth?.missingEnv ?? []),
     ...stringArrayValue(lastGenerationError.missingEnv),
@@ -619,6 +649,10 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
     currentUrl: current.url,
     assetUrl: nullableString(assetUrl),
     proxyUrl: nullableString(proxyUrl),
+    proxyHttpStatus,
+    proxyErrorCode,
+    proxyErrorMessage,
+    proxyRejectedHost,
     selectedRenderUrl: nullableString(current.url),
     currentUrlSource: current.source,
     storageKey,
@@ -720,6 +754,12 @@ function patchFromResolved(node: VisualCanvasNode, result: AssetResolveResult): 
     ...(result.bucket ? { bucket: result.bucket } : {}),
     ...(result.providerJobId ? { providerJobId: result.providerJobId } : {}),
     ...(result.error || result.message ? { error: result.error || result.message } : {}),
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
+    ...(typeof result.proxyHttpStatus === 'number' ? { proxyHttpStatus: result.proxyHttpStatus } : {}),
+    ...(result.proxyErrorCode ? { proxyErrorCode: result.proxyErrorCode } : {}),
+    ...(result.proxyErrorMessage ? { proxyErrorMessage: result.proxyErrorMessage } : {}),
+    ...(result.proxyRejectedHost ? { proxyRejectedHost: result.proxyRejectedHost } : {}),
     p0LastResolveResult: result,
     p0LastResolveAt: new Date().toISOString(),
     mediaPersistence: {
@@ -742,7 +782,7 @@ function patchFromResolved(node: VisualCanvasNode, result: AssetResolveResult): 
       resultVideoUrl: resolvedUrl,
       preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: resolvedUrl, poster: result.thumbnailUrl ?? node.preview?.poster },
     } : {}),
-    errorMessage: resolvedUrl ? undefined : result.error || result.message || node.errorMessage,
+    errorMessage: resolvedUrl ? undefined : result.errorMessage || result.error || result.message || result.errorCode || node.errorMessage,
     metadataJson: nextMetadata,
   }
 }
@@ -1546,6 +1586,10 @@ export function P0MediaDebugPanel({
                         ['signedUrl 错误', item.signedUrlError || '(none)'],
                         ['proxy fallback URL', item.proxyFallbackUrl || '(none)'],
                         ['proxy fallback status', item.proxyFallbackStatus ?? '(none)'],
+                        ['proxy HTTP status', item.proxyHttpStatus ?? '(none)'],
+                        ['proxy errorCode', item.proxyErrorCode || '(none)'],
+                        ['proxy errorMessage', item.proxyErrorMessage || '(none)'],
+                        ['proxy rejected host', item.proxyRejectedHost || '(none)'],
                           ['recoveryStatus', item.recoveryStatus || '(none)'],
                           ['error', item.error || '(none)'],
                           ['generationStage', item.generationStage || '(none)'],
