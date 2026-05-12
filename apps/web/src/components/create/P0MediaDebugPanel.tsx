@@ -63,9 +63,14 @@ type GenerateResponseShape = {
   errorCode?: string
   upstreamStatus?: number
   upstreamMessage?: string
-  rawCode?: string
-  requestId?: string
-  missingEnv?: string[]
+    rawCode?: string
+    requestId?: string
+    providerEndpoint?: string
+    providerRequestMethod?: string
+    providerHttpStatus?: number
+    providerFetchError?: string
+    providerFetchCause?: unknown
+    missingEnv?: string[]
   missingEnvKeys?: string[]
   missingFields?: string[]
   submittedInput?: unknown
@@ -85,6 +90,42 @@ type GenerateResponseShape = {
     videoUrl?: string
     previewUrl?: string
     metadata?: Record<string, unknown>
+    }
+  }
+
+type ExternalConnectivityResponse = {
+  ok?: boolean
+  errorCode?: string
+  message?: string
+  volcengine?: {
+    ok?: boolean
+    endpoint?: string
+    authOk?: boolean
+    networkOk?: boolean
+    status?: number | null
+    errorCode?: string | null
+    errorMessage?: string | null
+    requestId?: string | null
+  }
+  seedream?: {
+    ok?: boolean
+    model?: string
+    errorCode?: string | null
+  }
+  seedance?: {
+    ok?: boolean
+    model?: string
+    errorCode?: string | null
+  }
+  oss?: {
+    ok?: boolean
+    bucket?: string
+    signedUrlAvailable?: boolean
+    uploadTestOk?: boolean
+    readTestOk?: boolean
+    deleteTestOk?: boolean
+    errorCode?: string | null
+    errorMessage?: string | null
   }
 }
 
@@ -601,9 +642,18 @@ function buildDiagnostic(node: VisualCanvasNode, projectId: string, workflowId: 
       : typeof lastResolveResult.upstreamStatus === 'number'
         ? lastResolveResult.upstreamStatus
         : null,
-    upstreamMessage: nullableString(stringValue(lastGenerationError.upstreamMessage) || stringValue(lastResolveResult.upstreamMessage)),
-    requestId: nullableString(stringValue(lastGenerationError.requestId) || stringValue(lastResolveResult.requestId)),
-    regenerateInputPreview: sanitizeDiagnosticValue(metadata.regenerationInputPreview ?? null),
+      upstreamMessage: nullableString(stringValue(lastGenerationError.upstreamMessage) || stringValue(lastResolveResult.upstreamMessage)),
+      requestId: nullableString(stringValue(lastGenerationError.requestId) || stringValue(lastResolveResult.requestId)),
+      providerEndpoint: nullableString(stringValue(lastGenerationError.providerEndpoint) || stringValue(metadata.providerEndpoint)),
+      providerRequestMethod: nullableString(stringValue(lastGenerationError.providerRequestMethod) || stringValue(metadata.providerRequestMethod)),
+      providerHttpStatus: typeof lastGenerationError.providerHttpStatus === 'number'
+        ? lastGenerationError.providerHttpStatus
+        : typeof metadata.providerHttpStatus === 'number'
+          ? metadata.providerHttpStatus
+          : null,
+      providerFetchError: nullableString(stringValue(lastGenerationError.providerFetchError) || stringValue(metadata.providerFetchError)),
+      providerFetchCause: sanitizeDiagnosticValue(lastGenerationError.providerFetchCause ?? metadata.providerFetchCause ?? null),
+      regenerateInputPreview: sanitizeDiagnosticValue(metadata.regenerationInputPreview ?? null),
     submittedInput: sanitizeDiagnosticValue(lastGenerationError.submittedInput ?? metadata.submittedInput ?? lastResolveResult.submittedInput ?? null),
     generationHealth,
     missingEnv,
@@ -705,6 +755,35 @@ async function readJson(response: Response) {
   return await response.json().catch(() => ({})) as Record<string, unknown>
 }
 
+function externalConnectivityTone(ok?: boolean | null) {
+  if (ok === true) return 'border-emerald-300/25 bg-emerald-300/10 text-emerald-50'
+  if (ok === false) return 'border-red-300/25 bg-red-300/10 text-red-50'
+  return 'border-white/10 bg-white/[0.04] text-white/60'
+}
+
+function errorCauseDetails(error: unknown) {
+  if (!(error instanceof Error)) return { name: 'UnknownError', message: String(error || 'Unknown error') }
+  const cause = (error as Error & { cause?: unknown }).cause
+  return {
+    name: error.name,
+    message: error.message,
+    causeName: cause instanceof Error ? cause.name : undefined,
+    causeMessage: cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : undefined,
+  }
+}
+
+function visibleGenerationFailureCode(result: Partial<GenerateResponseShape> & { message?: string; errorCode?: string }) {
+  const rawCode = result.errorCode || ''
+  const message = `${result.message || ''} ${result.upstreamMessage || ''} ${result.providerFetchError || ''}`.toLowerCase()
+  if (rawCode === 'provider_timeout' || /timeout|abort/.test(`${rawCode} ${message}`)) return 'provider_timeout'
+  if (rawCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(`${rawCode} ${message}`)) return 'provider_network_failed'
+  if (rawCode === 'provider_auth_failed' || rawCode === 'provider_auth_error' || result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(message)) return 'provider_auth_failed'
+  if (rawCode === 'provider_invalid_parameter' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(message)) return 'provider_invalid_parameter'
+  if (rawCode === 'provider_no_download_url') return 'provider_no_download_url'
+  if (rawCode === 'provider_media_download_failed' || rawCode === 'MEDIA_FETCH_FAILED' || rawCode === 'ASSET_DOWNLOAD_FAILED' || rawCode === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(message)) return 'provider_media_download_failed'
+  return rawCode || 'generation_failed'
+}
+
 function healthTone(section?: GenerationHealthSection) {
   if (!section) return 'border-white/10 bg-white/[0.04] text-white/60'
   return section.ok
@@ -733,6 +812,24 @@ function HealthStatusItem({
   )
 }
 
+function ConnectivityStatusItem({
+  label,
+  ok,
+  detail,
+}: {
+  label: string
+  ok?: boolean | null
+  detail?: string | null
+}) {
+  return (
+    <div className={`rounded-lg border p-3 ${externalConnectivityTone(ok)}`}>
+      <div className="text-white/48">{label}</div>
+      <div className="mt-1 font-mono text-xs">{ok === true ? 'ok' : ok === false ? 'failed' : 'not_run'}</div>
+      {detail ? <div className="mt-1 break-all text-[11px] leading-snug text-white/62">{detail}</div> : null}
+    </div>
+  )
+}
+
 export function P0MediaDebugPanel({
   open,
   projectId,
@@ -746,6 +843,9 @@ export function P0MediaDebugPanel({
   const [messages, setMessages] = useState<Record<string, string>>({})
   const [copyState, setCopyState] = useState('')
   const [projectStateCopy, setProjectStateCopy] = useState('')
+  const [connectivity, setConnectivity] = useState<ExternalConnectivityResponse | null>(null)
+  const [connectivityBusy, setConnectivityBusy] = useState(false)
+  const [connectivityCopy, setConnectivityCopy] = useState('')
 
   const mediaNodes = useMemo(() => nodes.filter((node) => node.kind === 'image' || node.kind === 'video'), [nodes])
   const diagnostics = useMemo(
@@ -866,23 +966,28 @@ export function P0MediaDebugPanel({
   async function regenerateFromPrompt(node: VisualCanvasNode) {
     if (node.kind !== 'image' && node.kind !== 'video') return
     const prompt = node.prompt?.trim()
-    const failGeneration = (result: Partial<GenerateResponseShape> & { message?: string; errorCode?: string }) => {
-      const code = result.errorCode || 'generation_failed'
-      const message = result.message || code
-      const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
-      const metadata = recordValue(node.metadataJson)
-      onPatchNode(node.id, {
+      const failGeneration = (result: Partial<GenerateResponseShape> & { message?: string; errorCode?: string }) => {
+        const code = visibleGenerationFailureCode(result)
+        const rawCode = result.errorCode || code
+        const message = result.message || code
+        const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
+        const metadata = recordValue(node.metadataJson)
+        onPatchNode(node.id, {
         status: 'error',
         errorMessage: [
           code,
           message,
           missingEnv?.length ? `missingEnv=${missingEnv.join(', ')}` : '',
-          result.upstreamStatus ? `upstreamStatus=${result.upstreamStatus}` : '',
-          result.upstreamMessage ? `upstreamMessage=${result.upstreamMessage}` : '',
-          result.requestId ? `requestId=${result.requestId}` : '',
-        ].filter(Boolean).join(' · '),
-        metadataJson: {
-          ...metadata,
+            result.upstreamStatus ? `upstreamStatus=${result.upstreamStatus}` : '',
+            result.upstreamMessage ? `upstreamMessage=${result.upstreamMessage}` : '',
+            result.requestId ? `requestId=${result.requestId}` : '',
+            result.providerEndpoint ? `providerEndpoint=${result.providerEndpoint}` : '',
+            result.providerRequestMethod ? `providerRequestMethod=${result.providerRequestMethod}` : '',
+            result.providerHttpStatus ? `providerHttpStatus=${result.providerHttpStatus}` : '',
+            result.providerFetchError ? `providerFetchError=${result.providerFetchError}` : '',
+          ].filter(Boolean).join(' · '),
+          metadataJson: {
+            ...metadata,
           recoveryStatus: code,
           mediaRecoveryStatus: 'generation_failed',
           nextAction: code === 'provider_env_missing' || code === 'missing_generation_input' ? 'manual_debug' : 'regenerate_from_prompt',
@@ -893,20 +998,30 @@ export function P0MediaDebugPanel({
           loading: false,
           errorCode: code,
           errorMessage: message,
-          upstreamStatus: result.upstreamStatus,
-          upstreamMessage: result.upstreamMessage,
-          requestId: result.requestId,
-          submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
-          lastGenerationError: {
-            errorCode: code,
-            rawErrorCode: result.rawCode || result.errorCode,
-            message,
             upstreamStatus: result.upstreamStatus,
             upstreamMessage: result.upstreamMessage,
             requestId: result.requestId,
-            missingEnv,
-            missingFields: result.missingFields,
+            providerEndpoint: result.providerEndpoint,
+            providerRequestMethod: result.providerRequestMethod,
+            providerHttpStatus: result.providerHttpStatus,
+            providerFetchError: result.providerFetchError,
+            providerFetchCause: sanitizeDiagnosticValue(result.providerFetchCause ?? null),
             submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
+            lastGenerationError: {
+              errorCode: code,
+              rawErrorCode: result.rawCode || rawCode,
+              message,
+              upstreamStatus: result.upstreamStatus,
+              upstreamMessage: result.upstreamMessage,
+              requestId: result.requestId,
+              providerEndpoint: result.providerEndpoint,
+              providerRequestMethod: result.providerRequestMethod,
+              providerHttpStatus: result.providerHttpStatus,
+              providerFetchError: result.providerFetchError,
+              providerFetchCause: sanitizeDiagnosticValue(result.providerFetchCause ?? null),
+              missingEnv,
+              missingFields: result.missingFields,
+              submittedInput: sanitizeDiagnosticValue(result.submittedInput ?? null),
             providerResponse: sanitizeDiagnosticValue(result.providerResponse ?? null),
             at: new Date().toISOString(),
           },
@@ -987,28 +1102,42 @@ export function P0MediaDebugPanel({
       failGeneration(result)
       throw new Error(result.message)
     }
-    const response = await fetch(`/api/generate/${node.kind}`, {
-      method: 'POST',
-      cache: 'no-store',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        compiledPrompt: prompt,
-        providerId: provider.providerId,
-        provider: provider.providerId,
-        model,
-        projectId,
-        workflowId,
-        nodeId: node.id,
-        kind: node.kind,
-        inputAssets,
-        aspectRatio: typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined,
-        duration: typeof params.duration === 'number' ? params.duration : undefined,
-        resolution: typeof params.resolution === 'string' ? params.resolution : undefined,
-        params,
-      }),
-    })
+      let response: Response
+      try {
+        response = await fetch(`/api/generate/${node.kind}`, {
+          method: 'POST',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            compiledPrompt: prompt,
+            providerId: provider.providerId,
+            provider: provider.providerId,
+            model,
+            projectId,
+            workflowId,
+            nodeId: node.id,
+            kind: node.kind,
+            inputAssets,
+            aspectRatio: typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined,
+            duration: typeof params.duration === 'number' ? params.duration : undefined,
+            resolution: typeof params.resolution === 'string' ? params.resolution : undefined,
+            params,
+          }),
+        })
+      } catch (error) {
+        const cause = errorCauseDetails(error)
+        const result = {
+          errorCode: 'client_fetch_failed',
+          message: `POST /api/generate/${node.kind} fetch failed: ${cause.name}: ${cause.message}`,
+          providerFetchError: `${cause.name}: ${cause.message}`,
+          providerFetchCause: cause,
+          submittedInput: submittedInputBase,
+        }
+        failGeneration(result)
+        throw new Error(result.message)
+      }
     const data = await response.json().catch(() => ({})) as GenerateResponseShape
     if (!response.ok || data.success === false) {
       failGeneration({
@@ -1099,6 +1228,41 @@ export function P0MediaDebugPanel({
     }
   }
 
+  async function runConnectivityTest() {
+    setConnectivityBusy(true)
+    setConnectivityCopy('')
+    try {
+      const response = await fetch('/api/generation/connectivity', {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      const payload = await readJson(response) as ExternalConnectivityResponse
+      setConnectivity(payload)
+    } catch (error) {
+      const cause = errorCauseDetails(error)
+      setConnectivity({
+        ok: false,
+        errorCode: 'client_fetch_failed',
+        message: `${cause.name}: ${cause.message}`,
+      })
+    } finally {
+      setConnectivityBusy(false)
+    }
+  }
+
+  async function copyConnectivityJson() {
+    if (!connectivity) return
+    try {
+      await navigator.clipboard.writeText(formatJson(connectivity))
+      setConnectivityCopy('copied')
+      window.setTimeout(() => setConnectivityCopy(''), 1400)
+    } catch {
+      setConnectivityCopy('failed')
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-start justify-end bg-black/42 p-4 text-white"
@@ -1162,13 +1326,66 @@ export function P0MediaDebugPanel({
               {generationHealth ? (generationHealth.ok ? 'ok' : 'missing_env') : 'not_loaded'}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <HealthStatusItem label="数据库" section={generationHealth?.database} />
-            <HealthStatusItem label="OSS" section={generationHealth?.storage} />
-            <HealthStatusItem label="图片生成 Provider" section={generationHealth?.imageGeneration} />
-            <HealthStatusItem label="视频生成 Provider" section={generationHealth?.videoGeneration} />
+            <div className="grid gap-3 sm:grid-cols-4">
+              <HealthStatusItem label="数据库" section={generationHealth?.database} />
+              <HealthStatusItem label="OSS" section={generationHealth?.storage} />
+              <HealthStatusItem label="图片生成 Provider" section={generationHealth?.imageGeneration} />
+              <HealthStatusItem label="视频生成 Provider" section={generationHealth?.videoGeneration} />
+            </div>
+            <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-white/82">外接 API 连通性测试</div>
+                  <div className="mt-1 font-mono text-[11px] text-white/46">GET /api/generation/connectivity</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-emerald-200/25 bg-emerald-200/10 px-3 py-2 text-xs font-semibold text-emerald-50 hover:bg-emerald-200/16 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={connectivityBusy}
+                    onClick={() => { void runConnectivityTest() }}
+                  >
+                    {connectivityBusy ? '测试中...' : '外接 API 连通性测试'}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-xs font-semibold text-cyan-50 hover:bg-cyan-200/16 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!connectivity}
+                    onClick={() => { void copyConnectivityJson() }}
+                  >
+                    {connectivityCopy === 'copied' ? '已复制连通性 JSON' : connectivityCopy === 'failed' ? '复制失败' : '复制外接 API 连通性 JSON'}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                <ConnectivityStatusItem label="火山引擎网络" ok={connectivity?.volcengine?.networkOk ?? null} detail={connectivity?.volcengine?.endpoint ?? null} />
+                <ConnectivityStatusItem label="火山引擎鉴权" ok={connectivity?.volcengine?.authOk ?? null} detail={connectivity?.volcengine?.requestId ? `requestId=${connectivity.volcengine.requestId}` : connectivity?.volcengine?.status ? `HTTP ${connectivity.volcengine.status}` : null} />
+                <ConnectivityStatusItem label="Seedream 模型" ok={connectivity?.seedream?.ok ?? null} detail={connectivity?.seedream?.model || connectivity?.seedream?.errorCode || null} />
+                <ConnectivityStatusItem label="Seedance 模型" ok={connectivity?.seedance?.ok ?? null} detail={connectivity?.seedance?.model || connectivity?.seedance?.errorCode || null} />
+                <ConnectivityStatusItem label="OSS signed URL" ok={connectivity?.oss?.signedUrlAvailable ?? null} detail={connectivity?.oss?.bucket ?? null} />
+                <ConnectivityStatusItem label="OSS 上传测试" ok={connectivity?.oss?.uploadTestOk ?? null} detail={connectivity?.oss?.errorCode === 'oss_upload_failed' ? connectivity.oss.errorMessage : null} />
+                <ConnectivityStatusItem label="OSS 读取测试" ok={connectivity?.oss?.readTestOk ?? null} detail={connectivity?.oss?.errorCode === 'oss_read_failed' ? connectivity.oss.errorMessage : null} />
+                <ConnectivityStatusItem label="OSS 删除测试" ok={connectivity?.oss?.deleteTestOk ?? null} detail={connectivity?.oss?.errorCode === 'oss_delete_failed' ? connectivity.oss.errorMessage : null} />
+              </div>
+              {connectivity?.volcengine?.errorCode || connectivity?.oss?.errorCode || connectivity?.seedream?.errorCode || connectivity?.seedance?.errorCode || connectivity?.errorCode ? (
+                <div className="mt-3 rounded-md border border-red-300/20 bg-red-300/10 px-3 py-2 text-xs leading-5 text-red-50">
+                  {[
+                    connectivity.errorCode ? `client=${connectivity.errorCode}${connectivity.message ? `: ${connectivity.message}` : ''}` : '',
+                    connectivity.volcengine?.errorCode ? `volcengine=${connectivity.volcengine.errorCode}${connectivity.volcengine.errorMessage ? `: ${connectivity.volcengine.errorMessage}` : ''}` : '',
+                    connectivity.seedream?.errorCode ? `seedream=${connectivity.seedream.errorCode}` : '',
+                    connectivity.seedance?.errorCode ? `seedance=${connectivity.seedance.errorCode}` : '',
+                    connectivity.oss?.errorCode ? `oss=${connectivity.oss.errorCode}${connectivity.oss.errorMessage ? `: ${connectivity.oss.errorMessage}` : ''}` : '',
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              ) : null}
+              {connectivity ? (
+                <details className="mt-3 rounded-md border border-white/10 bg-black/25 p-3">
+                  <summary className="cursor-pointer font-semibold text-white/70">外接 API 连通性 JSON</summary>
+                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded bg-black/35 p-3 text-[11px] leading-5 text-white/62">{formatJson(connectivity)}</pre>
+                </details>
+              ) : null}
+            </div>
           </div>
-        </div>
 
         <div className="grid gap-3 border-b border-white/10 px-5 py-4 text-xs sm:grid-cols-4">
           <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
@@ -1284,9 +1501,14 @@ export function P0MediaDebugPanel({
                         ['signedUrl 错误', item.signedUrlError || '(none)'],
                         ['proxy fallback URL', item.proxyFallbackUrl || '(none)'],
                         ['proxy fallback status', item.proxyFallbackStatus ?? '(none)'],
-                        ['recoveryStatus', item.recoveryStatus || '(none)'],
-                        ['error', item.error || '(none)'],
-                        ['是否 unrecoverable', item.unrecoverable ? 'yes' : 'no'],
+                          ['recoveryStatus', item.recoveryStatus || '(none)'],
+                          ['error', item.error || '(none)'],
+                          ['providerEndpoint', item.providerEndpoint || '(none)'],
+                          ['providerRequestMethod', item.providerRequestMethod || '(none)'],
+                          ['providerHttpStatus', item.providerHttpStatus ?? '(none)'],
+                          ['providerFetchError', item.providerFetchError || '(none)'],
+                          ['providerFetchCause', item.providerFetchCause ? formatJson(item.providerFetchCause) : '(none)'],
+                          ['是否 unrecoverable', item.unrecoverable ? 'yes' : 'no'],
                         ['是否有可恢复来源', item.hasRecoverableSource ? 'yes' : 'no'],
                         ['为什么显示 storageKey，无法恢复', item.storageKeyFailureReason],
                         ['为什么最终显示不可恢复', item.whyUnrecoverable],

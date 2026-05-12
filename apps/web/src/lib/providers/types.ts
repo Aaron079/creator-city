@@ -57,6 +57,17 @@ export interface GenerateResponse {
   message: string
   errorCode?: string
   billingJobId?: string
+  upstreamStatus?: number
+  upstreamMessage?: string
+  rawCode?: string
+  requestId?: string
+  providerEndpoint?: string
+  providerRequestMethod?: string
+  providerHttpStatus?: number
+  providerFetchError?: string
+  providerFetchCause?: Record<string, unknown>
+  submittedInput?: unknown
+  providerResponse?: unknown
 }
 
 export interface ProviderAdapter {

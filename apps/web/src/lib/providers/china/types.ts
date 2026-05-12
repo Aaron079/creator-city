@@ -88,12 +88,17 @@ export type ChinaImageGenerationResult =
       errorCode: string
       message: string
       upstreamStatus?: number
-      upstreamMessage?: string
-      rawCode?: string
-      requestId?: string
-      submittedInput?: Record<string, unknown>
-      providerResponse?: Record<string, unknown>
-    }
+        upstreamMessage?: string
+        rawCode?: string
+        requestId?: string
+        providerEndpoint?: string
+        providerRequestMethod?: string
+        providerHttpStatus?: number
+        providerFetchError?: string
+        providerFetchCause?: Record<string, unknown>
+        submittedInput?: Record<string, unknown>
+        providerResponse?: Record<string, unknown>
+      }
 
 export function getChinaProviderStatus(config: ChinaProviderConfig): ChinaProviderStatus {
   const missingEnv = config.envKeys.filter((key) => !process.env[key])

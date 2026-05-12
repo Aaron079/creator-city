@@ -60,13 +60,17 @@ export type DownloadExternalAssetResult =
       size: number
       status: number
     }
-  | {
-      ok: false
-      status: number
-      errorCode: string
-      message: string
-      bodySnippet?: string
-    }
+    | {
+        ok: false
+        status: number
+        errorCode: string
+        message: string
+        bodySnippet?: string
+        requestUrl?: string
+        method?: string
+        fetchError?: string
+        fetchCause?: Record<string, unknown>
+      }
 
 export type ReadStoredAssetObjectResult =
   | {
@@ -608,15 +612,31 @@ async function readTextSnippet(response: Response) {
   return (await response.text().catch(() => '')).slice(0, 600)
 }
 
+function errorCauseDetails(error: unknown) {
+  if (!(error instanceof Error)) {
+    return { name: 'UnknownError', message: String(error || 'Unknown fetch failure') }
+  }
+  const cause = (error as Error & { cause?: unknown }).cause
+  return {
+    name: error.name,
+    message: error.message,
+    causeName: cause instanceof Error ? cause.name : undefined,
+    causeMessage: cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : undefined,
+  }
+}
+
 export async function downloadExternalAsset(url: string): Promise<DownloadExternalAssetResult> {
   if (!/^https?:\/\//i.test(url)) {
-    return { ok: false, status: 0, errorCode: 'URL_NOT_HTTP', message: 'Only http/https assets can be downloaded.' }
+    return { ok: false, status: 0, errorCode: 'URL_NOT_HTTP', message: 'Only http/https assets can be downloaded.', requestUrl: url, method: 'GET' }
   }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 45000)
   try {
     const response = await fetch(url, {
       method: 'GET',
       cache: 'no-store',
       redirect: 'follow',
+      signal: controller.signal,
       headers: {
         Accept: 'image/*,video/*,audio/*,*/*;q=0.5',
         'User-Agent': 'Mozilla/5.0 (compatible; CreatorCityAssetRecovery/1.0)',
@@ -625,12 +645,14 @@ export async function downloadExternalAsset(url: string): Promise<DownloadExtern
     if (!response.ok) {
       return {
         ok: false,
-        status: response.status,
-        errorCode: 'ASSET_DOWNLOAD_FAILED',
-        message: `External asset returned HTTP ${response.status}.`,
-        bodySnippet: await readTextSnippet(response),
+          status: response.status,
+          errorCode: 'ASSET_DOWNLOAD_FAILED',
+          message: `External asset returned HTTP ${response.status}.`,
+          bodySnippet: await readTextSnippet(response),
+          requestUrl: url,
+          method: 'GET',
+        }
       }
-    }
     const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
     const buffer = Buffer.from(await response.arrayBuffer())
     return {
@@ -640,15 +662,22 @@ export async function downloadExternalAsset(url: string): Promise<DownloadExtern
       size: buffer.byteLength,
       status: response.status,
     }
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      errorCode: 'ASSET_DOWNLOAD_ERROR',
-      message: error instanceof Error ? error.message : 'External asset download failed.',
+    } catch (error) {
+      const cause = errorCauseDetails(error)
+      return {
+        ok: false,
+        status: 0,
+        errorCode: error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('abort')) ? 'ASSET_DOWNLOAD_TIMEOUT' : 'ASSET_DOWNLOAD_ERROR',
+        message: error instanceof Error ? error.message : 'External asset download failed.',
+        requestUrl: url,
+        method: 'GET',
+        fetchError: `${cause.name}: ${cause.message}`,
+        fetchCause: cause,
+      }
+    } finally {
+      clearTimeout(timer)
     }
   }
-}
 
 export function classifyAssetUrl(url?: string | null) {
   const value = url?.trim() || ''

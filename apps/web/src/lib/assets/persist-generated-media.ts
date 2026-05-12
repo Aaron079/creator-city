@@ -34,17 +34,27 @@ export type PersistGeneratedMediaResult =
     }
   | {
       ok: false
-      errorCode: string
-      message: string
-      upstreamStatus?: number
-    }
+        errorCode: string
+        message: string
+        upstreamStatus?: number
+        upstreamMessage?: string
+        providerFetchError?: string
+        providerFetchCause?: Record<string, unknown>
+      }
 
-function persistError(errorCode: string, message: string, upstreamStatus?: number): PersistGeneratedMediaResult {
+function persistError(errorCode: string, message: string, upstreamStatus?: number, details?: {
+  upstreamMessage?: string
+  providerFetchError?: string
+  providerFetchCause?: Record<string, unknown>
+}): PersistGeneratedMediaResult {
   return {
     ok: false,
     errorCode,
     message,
     ...(upstreamStatus !== undefined ? { upstreamStatus } : {}),
+    ...(details?.upstreamMessage ? { upstreamMessage: details.upstreamMessage } : {}),
+    ...(details?.providerFetchError ? { providerFetchError: details.providerFetchError } : {}),
+    ...(details?.providerFetchCause ? { providerFetchCause: details.providerFetchCause } : {}),
   }
 }
 
@@ -245,12 +255,16 @@ export async function persistGeneratedMedia(input: PersistGeneratedMediaInput): 
     if (!input.userId) {
       return persistError('MEDIA_UPLOAD_FAILED', '缺少媒体归属用户，无法保存 Asset。')
     }
-    const downloaded = url.startsWith('data:')
-      ? dataUrlToDownloadedAsset(url) ?? { ok: false as const, status: 0, errorCode: 'MEDIA_FETCH_FAILED', message: 'Data URL 无法解析为媒体文件。' }
-      : await downloadExternalAsset(url)
-    if (!downloaded.ok) {
-      return persistError(downloaded.errorCode || 'MEDIA_FETCH_FAILED', downloaded.message, downloaded.status || undefined)
-    }
+      const downloaded = url.startsWith('data:')
+        ? dataUrlToDownloadedAsset(url) ?? { ok: false as const, status: 0, errorCode: 'MEDIA_FETCH_FAILED', message: 'Data URL 无法解析为媒体文件。' }
+        : await downloadExternalAsset(url)
+      if (!downloaded.ok) {
+        return persistError(downloaded.errorCode || 'MEDIA_FETCH_FAILED', downloaded.message, downloaded.status || undefined, {
+          upstreamMessage: 'bodySnippet' in downloaded ? downloaded.bodySnippet : undefined,
+          providerFetchError: 'fetchError' in downloaded ? downloaded.fetchError : undefined,
+          providerFetchCause: 'fetchCause' in downloaded ? downloaded.fetchCause : undefined,
+        })
+      }
     const contentType = downloaded.mimeType
     const body = downloaded.buffer
     const assetId = randomUUID()

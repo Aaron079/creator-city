@@ -69,6 +69,19 @@ function callAdapterForNodeType(
   })
 }
 
+function errorCauseDetails(error: unknown) {
+  if (!(error instanceof Error)) {
+    return { name: 'UnknownError', message: String(error || 'Unknown provider failure') }
+  }
+  const cause = (error as Error & { cause?: unknown }).cause
+  return {
+    name: error.name,
+    message: error.message,
+    causeName: cause instanceof Error ? cause.name : undefined,
+    causeMessage: cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : undefined,
+  }
+}
+
 export async function runGenerate(request: GenerateRequest): Promise<GenerateResponse> {
   const { providerId, nodeType, prompt } = request
 
@@ -145,15 +158,18 @@ export async function runGenerate(request: GenerateRequest): Promise<GenerateRes
         errorCode: error.code,
       }
     }
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error(`[generate] ${providerId}`, error)
-    return {
-      success: false,
-      providerId,
-      mode: 'unavailable',
-      status: 'failed',
-      message,
-      errorCode: PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED,
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      const cause = errorCauseDetails(error)
+      console.error(`[generate] ${providerId}`, error)
+      return {
+        success: false,
+        providerId,
+        mode: 'unavailable',
+        status: 'failed',
+        message,
+        errorCode: PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED,
+        providerFetchError: `${cause.name}: ${cause.message}`,
+        providerFetchCause: cause,
+      }
     }
   }
-}

@@ -529,9 +529,14 @@ type GenerateApiResult = GenerateResponse & {
   errorMessage?: string
   upstreamStatus?: number
   upstreamMessage?: string
-  rawCode?: string
-  requestId?: string
-  requestUrl?: string
+    rawCode?: string
+    requestId?: string
+    providerEndpoint?: string
+    providerRequestMethod?: string
+    providerHttpStatus?: number
+    providerFetchError?: string
+    providerFetchCause?: unknown
+    requestUrl?: string
   method?: string
   hint?: string
   generationRequestUrl?: string
@@ -589,7 +594,9 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (errorCode === 'MISSING_GENERATION_INPUT' || errorCode === 'missing_generation_input' || errorCode === 'missing_or_invalid_video_input') return 'missing_generation_input'
   const hasMissingEnv = Boolean(result.missingEnvKeys?.length || result.missingEnv?.length)
   if (hasMissingEnv || errorCode === 'PROVIDER_NOT_CONFIGURED' || errorCode === 'provider_env_missing' || errorCode.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
-  if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+    if (errorCode === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
+    if (errorCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
+    if (result.upstreamStatus === 401 || result.upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (result.upstreamStatus === 402 || result.upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
@@ -621,7 +628,11 @@ function formatGenerateError(result: GenerateApiResult) {
     result.model ? `model: ${result.model}` : '',
     typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
     typeof result.generationHttpStatus === 'number' ? `generationHttpStatus: ${result.generationHttpStatus}` : '',
-    result.generationFetchError ? `fetchError: ${result.generationFetchError}` : '',
+      result.generationFetchError ? `fetchError: ${result.generationFetchError}` : '',
+      result.providerEndpoint ? `providerEndpoint: ${result.providerEndpoint}` : '',
+      result.providerRequestMethod ? `providerMethod: ${result.providerRequestMethod}` : '',
+      typeof result.providerHttpStatus === 'number' ? `providerHttpStatus: ${result.providerHttpStatus}` : '',
+      result.providerFetchError ? `providerFetchError: ${result.providerFetchError}` : '',
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
     result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
     result.generationResponseTextPreview ? `responsePreview: ${result.generationResponseTextPreview.slice(0, 200)}` : '',
@@ -1234,7 +1245,7 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
   const requestMethod = result.generationRequestMethod || result.method
@@ -1254,9 +1265,14 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     method: requestMethod,
     hint: result.hint,
     upstreamStatus: result.upstreamStatus,
-    upstreamMessage: result.upstreamMessage,
-    rawCode: result.rawCode,
-    requestId: result.requestId,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
+      providerEndpoint: result.providerEndpoint,
+      providerRequestMethod: result.providerRequestMethod,
+      providerHttpStatus: result.providerHttpStatus,
+      providerFetchError: result.providerFetchError,
+      providerFetchCause: result.providerFetchCause,
     missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
     missingFields: result.missingFields,
     submittedInput: result.submittedInput,
@@ -1283,8 +1299,13 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     generationFetchError: result.generationFetchError,
     generationResponseTextPreview: result.generationResponseTextPreview,
     upstreamStatus: result.upstreamStatus,
-    upstreamMessage: result.upstreamMessage,
-    requestId: result.requestId,
+      upstreamMessage: result.upstreamMessage,
+      requestId: result.requestId,
+      providerEndpoint: result.providerEndpoint,
+      providerRequestMethod: result.providerRequestMethod,
+      providerHttpStatus: result.providerHttpStatus,
+      providerFetchError: result.providerFetchError,
+      providerFetchCause: result.providerFetchCause,
     submittedInput: result.submittedInput,
     lastError: lastGenerationError,
     lastGenerationError,
@@ -1370,7 +1391,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'rawCode' | 'requestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
   const requestMethod = result.generationRequestMethod || result.method
@@ -1390,9 +1411,14 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     method: requestMethod,
     hint: result.hint,
     upstreamStatus: result.upstreamStatus,
-    upstreamMessage: result.upstreamMessage,
-    rawCode: result.rawCode,
-    requestId: result.requestId,
+      upstreamMessage: result.upstreamMessage,
+      rawCode: result.rawCode,
+      requestId: result.requestId,
+      providerEndpoint: result.providerEndpoint,
+      providerRequestMethod: result.providerRequestMethod,
+      providerHttpStatus: result.providerHttpStatus,
+      providerFetchError: result.providerFetchError,
+      providerFetchCause: result.providerFetchCause,
     missingEnv: result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv,
     missingFields: result.missingFields,
     submittedInput: result.submittedInput,
@@ -1421,8 +1447,13 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     generationFetchError: result.generationFetchError,
     generationResponseTextPreview: result.generationResponseTextPreview,
     upstreamStatus: result.upstreamStatus,
-    upstreamMessage: result.upstreamMessage,
-    requestId: result.requestId,
+      upstreamMessage: result.upstreamMessage,
+      requestId: result.requestId,
+      providerEndpoint: result.providerEndpoint,
+      providerRequestMethod: result.providerRequestMethod,
+      providerHttpStatus: result.providerHttpStatus,
+      providerFetchError: result.providerFetchError,
+      providerFetchCause: result.providerFetchCause,
     submittedInput: result.submittedInput,
     lastError: lastGenerationError,
     lastGenerationError,

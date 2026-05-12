@@ -273,11 +273,26 @@ export async function getAliyunOssSignedDownloadUrl(input: SignedChinaObjectInpu
 }
 
 export async function deleteAliyunOssObject(key: string): Promise<ChinaStorageObjectResult> {
-  requireAliyunOss()
-  return {
-    provider: 'aliyun-oss',
-    bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
-    key,
-    raw: { mode: 'stub' },
+  const client = getAliyunClient()
+  try {
+    const result = await client.delete(key)
+    const headers = result.res?.headers
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key,
+      raw: {
+        requestId: headerValue(headers, 'x-oss-request-id'),
+        status: result.res?.status,
+      },
+    }
+  } catch (error) {
+    const details = objectErrorDetails(error)
+    throw new ChinaStorageError(
+      'STORAGE_OPERATION_FAILED',
+      error instanceof Error ? error.message : '阿里云 OSS 对象删除失败。',
+      details.status ?? 502,
+      { provider: 'aliyun-oss', key, ...details },
+    )
   }
 }

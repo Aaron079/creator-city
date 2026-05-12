@@ -28,6 +28,7 @@ function mediaPersistenceTimeout() {
 
 function visiblePersistenceErrorCode(errorCode: string) {
   if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'ASSET_DOWNLOAD_TIMEOUT') return 'provider_timeout'
   if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
   if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
   return errorCode
@@ -37,7 +38,9 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   const code = errorCode ?? ''
   const haystack = `${code} ${message}`.toLowerCase()
   if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'provider_env_missing' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
-  if (code === 'PROVIDER_AUTH_ERROR' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+  if (code === 'provider_timeout' || code.includes('TIMEOUT') || /timeout|abort/.test(haystack)) return 'provider_timeout'
+  if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
+  if (code === 'PROVIDER_AUTH_ERROR' || code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'provider_quota_or_billing_error' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (code === 'PROVIDER_INVALID_PARAMETER' || code === 'provider_invalid_parameter' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'provider_media_download_failed' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
@@ -125,12 +128,17 @@ export async function GET(request: NextRequest) {
       message: result.message,
       model: result.model,
       upstreamStatus: result.upstreamStatus,
-      upstreamMessage: result.upstreamMessage,
-      rawCode: result.rawCode,
-      requestId: result.requestId,
-      submittedInput,
-      providerResponse: result.providerResponse,
-    }, { status: 200 })
+        upstreamMessage: result.upstreamMessage,
+        rawCode: result.rawCode,
+        requestId: result.requestId,
+        providerEndpoint: result.providerEndpoint,
+        providerRequestMethod: result.providerRequestMethod,
+        providerHttpStatus: result.providerHttpStatus,
+        providerFetchError: result.providerFetchError,
+        providerFetchCause: result.providerFetchCause,
+        submittedInput,
+        providerResponse: result.providerResponse,
+      }, { status: 200 })
   }
 
   if (result.status === 'done' && result.videoUrl) {

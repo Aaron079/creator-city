@@ -52,21 +52,25 @@ function providerNotConfiguredResponse(providerId: string, missingEnv: string[] 
   }, { status: 200 })
 }
 
-function failedMediaPersistence(errorCode: string, message: string, upstreamStatus?: number) {
+function failedMediaPersistence(errorCode: string, message: string, upstreamStatus?: number, upstreamMessage?: string, providerFetchError?: string, providerFetchCause?: Record<string, unknown>) {
   return {
     status: 'failed',
     errorCode,
     message,
     upstreamStatus,
+    upstreamMessage,
+    providerFetchError,
+    providerFetchCause,
   }
 }
 
 function normalizePersistFailure(result: Extract<PersistGeneratedMediaResult, { ok: false }>) {
-  return failedMediaPersistence(result.errorCode, result.message, result.upstreamStatus)
+  return failedMediaPersistence(result.errorCode, result.message, result.upstreamStatus, result.upstreamMessage, result.providerFetchError, result.providerFetchCause)
 }
 
 function visiblePersistenceErrorCode(errorCode: string) {
   if (errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
+  if (errorCode === 'ASSET_DOWNLOAD_TIMEOUT') return 'provider_timeout'
   if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
   if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
   return errorCode
@@ -77,7 +81,9 @@ function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?
   const haystack = `${code} ${message}`.toLowerCase()
   if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'VOLCENGINE_MODEL_REQUIRED' || code === 'provider_env_missing' || code.includes('MODEL_REQUIRED')) return 'provider_env_missing'
   if (code === 'PROMPT_REQUIRED' || code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input') return 'missing_generation_input'
-  if (code === 'PROVIDER_AUTH_ERROR' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+  if (code === 'provider_timeout' || code.includes('TIMEOUT') || /timeout|abort/.test(haystack)) return 'provider_timeout'
+  if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
+  if (code === 'PROVIDER_AUTH_ERROR' || code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'INSUFFICIENT_CREDITS' || code === 'BILLING_ERROR' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (code === 'PROVIDER_INVALID_PARAMETER' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
   if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
@@ -318,12 +324,17 @@ export async function POST(request: NextRequest) {
     let raw: GenerateResponse & {
       model?: string
       upstreamStatus?: number
-      upstreamMessage?: string
-      rawCode?: string
-      requestId?: string
-      submittedInput?: unknown
-      providerResponse?: unknown
-    }
+        upstreamMessage?: string
+        rawCode?: string
+        requestId?: string
+        providerEndpoint?: string
+        providerRequestMethod?: string
+        providerHttpStatus?: number
+        providerFetchError?: string
+        providerFetchCause?: Record<string, unknown>
+        submittedInput?: unknown
+        providerResponse?: unknown
+      }
     if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
       const chinaResult = providerId === 'volcengine-seedream-image'
         ? await generateSeedreamImage({ prompt, aspectRatio, size, referenceImages })
@@ -359,12 +370,17 @@ export async function POST(request: NextRequest) {
             errorCode: visibleProviderErrorCode(chinaResult.errorCode, chinaResult.upstreamStatus, chinaResult.message),
             model: chinaResult.model,
             upstreamStatus: chinaResult.upstreamStatus,
-            upstreamMessage: chinaResult.upstreamMessage,
-            rawCode: chinaResult.rawCode,
-            requestId: chinaResult.requestId,
-            submittedInput: {
-              ...(chinaResult.submittedInput ?? submittedInput),
-              model: chinaResult.model ?? submittedInput.model,
+              upstreamMessage: chinaResult.upstreamMessage,
+              rawCode: chinaResult.rawCode,
+              requestId: chinaResult.requestId,
+              providerEndpoint: chinaResult.providerEndpoint,
+              providerRequestMethod: chinaResult.providerRequestMethod,
+              providerHttpStatus: chinaResult.providerHttpStatus,
+              providerFetchError: chinaResult.providerFetchError,
+              providerFetchCause: chinaResult.providerFetchCause,
+              submittedInput: {
+                ...(chinaResult.submittedInput ?? submittedInput),
+                model: chinaResult.model ?? submittedInput.model,
             },
             providerResponse: chinaResult.providerResponse,
           }
@@ -387,12 +403,17 @@ export async function POST(request: NextRequest) {
         errorCode: visibleProviderErrorCode(finalized.errorCode, raw.upstreamStatus, finalized.message),
         model: raw.model,
         upstreamStatus: raw.upstreamStatus,
-        upstreamMessage: raw.upstreamMessage,
-        rawCode: raw.rawCode,
-        requestId: raw.requestId,
-        submittedInput: raw.submittedInput ?? submittedInput,
-        providerResponse: raw.providerResponse,
-      }, { status: 200 })
+          upstreamMessage: raw.upstreamMessage,
+          rawCode: raw.rawCode,
+          requestId: raw.requestId,
+          providerEndpoint: raw.providerEndpoint,
+          providerRequestMethod: raw.providerRequestMethod,
+          providerHttpStatus: raw.providerHttpStatus,
+          providerFetchError: raw.providerFetchError,
+          providerFetchCause: raw.providerFetchCause,
+          submittedInput: raw.submittedInput ?? submittedInput,
+          providerResponse: raw.providerResponse,
+        }, { status: 200 })
     }
 
     const providerImageUrl = imageUrlFromResponse(finalized)
@@ -401,11 +422,20 @@ export async function POST(request: NextRequest) {
         ...finalized,
         success: false,
         errorCode: 'provider_no_download_url',
-        message: finalized.message || '图片生成成功，但 Provider 未返回图片 URL。',
-        model: raw.model,
-        submittedInput: raw.submittedInput ?? submittedInput,
-        providerResponse: raw.providerResponse,
-      }, { status: 200 })
+          message: finalized.message || '图片生成成功，但 Provider 未返回图片 URL。',
+          model: raw.model,
+          upstreamStatus: raw.upstreamStatus,
+          upstreamMessage: raw.upstreamMessage,
+          rawCode: raw.rawCode,
+          requestId: raw.requestId,
+          providerEndpoint: raw.providerEndpoint,
+          providerRequestMethod: raw.providerRequestMethod,
+          providerHttpStatus: raw.providerHttpStatus,
+          providerFetchError: raw.providerFetchError,
+          providerFetchCause: raw.providerFetchCause,
+          submittedInput: raw.submittedInput ?? submittedInput,
+          providerResponse: raw.providerResponse,
+        }, { status: 200 })
     }
 
     const resultMetadata = finalized.result.metadata && typeof finalized.result.metadata === 'object'
@@ -476,12 +506,17 @@ export async function POST(request: NextRequest) {
             model: raw.model,
             mode: 'real',
             status: 'failed',
-            upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
-            upstreamMessage: raw.upstreamMessage,
-            requestId: raw.requestId,
-            submittedInput: raw.submittedInput ?? submittedInput,
-            providerResponse: raw.providerResponse,
-            originalProviderImageUrl: providerImageUrl,
+              upstreamStatus: persistence.upstreamStatus ?? raw.upstreamStatus,
+              upstreamMessage: persistence.upstreamMessage ?? raw.upstreamMessage,
+              requestId: raw.requestId,
+              providerEndpoint: raw.providerEndpoint,
+              providerRequestMethod: raw.providerRequestMethod,
+              providerHttpStatus: raw.providerHttpStatus,
+              providerFetchError: raw.providerFetchError ?? persistence.providerFetchError,
+              providerFetchCause: raw.providerFetchCause ?? persistence.providerFetchCause,
+              submittedInput: raw.submittedInput ?? submittedInput,
+              providerResponse: raw.providerResponse,
+              originalProviderImageUrl: providerImageUrl,
             mediaPersistence,
           }, { status: 200 })
         }
@@ -499,12 +534,17 @@ export async function POST(request: NextRequest) {
           model: raw.model,
           mode: 'real',
           status: 'failed',
-          upstreamStatus: raw.upstreamStatus,
-          upstreamMessage: raw.upstreamMessage,
-          requestId: raw.requestId,
-          submittedInput: raw.submittedInput ?? submittedInput,
-          providerResponse: raw.providerResponse,
-          originalProviderImageUrl: providerImageUrl,
+            upstreamStatus: raw.upstreamStatus,
+            upstreamMessage: raw.upstreamMessage,
+            requestId: raw.requestId,
+            providerEndpoint: raw.providerEndpoint,
+            providerRequestMethod: raw.providerRequestMethod,
+            providerHttpStatus: raw.providerHttpStatus,
+            providerFetchError: raw.providerFetchError,
+            providerFetchCause: raw.providerFetchCause,
+            submittedInput: raw.submittedInput ?? submittedInput,
+            providerResponse: raw.providerResponse,
+            originalProviderImageUrl: providerImageUrl,
           mediaPersistence,
         }, { status: 200 })
       }
@@ -576,11 +616,16 @@ export async function POST(request: NextRequest) {
         metadata: finalMetadata,
       },
       model: typeof resultMetadata.model === 'string' ? resultMetadata.model : raw.model,
-      upstreamStatus: raw.upstreamStatus,
-      upstreamMessage: raw.upstreamMessage,
-      rawCode: raw.rawCode,
-      requestId: raw.requestId,
-    }, { status: 200 })
+        upstreamStatus: raw.upstreamStatus,
+        upstreamMessage: raw.upstreamMessage,
+        rawCode: raw.rawCode,
+        requestId: raw.requestId,
+        providerEndpoint: raw.providerEndpoint,
+        providerRequestMethod: raw.providerRequestMethod,
+        providerHttpStatus: raw.providerHttpStatus,
+        providerFetchError: raw.providerFetchError,
+        providerFetchCause: raw.providerFetchCause,
+      }, { status: 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/image]', err)

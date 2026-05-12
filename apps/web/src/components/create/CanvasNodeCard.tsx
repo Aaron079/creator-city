@@ -271,8 +271,13 @@ type AssetRecoverResponse = {
   failedUrl?: string | null
   upstreamStatus?: number
   upstreamMessage?: string | null
-  requestId?: string | null
-}
+    requestId?: string | null
+    providerEndpoint?: string | null
+    providerRequestMethod?: string | null
+    providerHttpStatus?: number | null
+    providerFetchError?: string | null
+    providerFetchCause?: unknown
+  }
 
 type CandidateProbe = MediaUrlSource & {
   proxiedUrl: string
@@ -350,9 +355,14 @@ type MediaDiagnosticPayload = {
   generationRequestUrl: string | null
   generationRequestMethod: string | null
   generationHttpStatus: number | null
-  generationFetchError: string | null
-  generationResponseTextPreview: string | null
-  canRecover: boolean
+    generationFetchError: string | null
+    generationResponseTextPreview: string | null
+    providerEndpoint: string | null
+    providerRequestMethod: string | null
+    providerHttpStatus: number | null
+    providerFetchError: string | null
+    providerFetchCause?: unknown
+    canRecover: boolean
   whyNotRecoverable: string | null
   nextAction: string
   regenerateInputPreview: Record<string, unknown> | null
@@ -417,9 +427,14 @@ const REQUIRED_MEDIA_DIAGNOSTIC_FIELDS = [
   'generationRequestUrl',
   'generationRequestMethod',
   'generationHttpStatus',
-  'generationFetchError',
-  'generationResponseTextPreview',
-  'canRecover',
+    'generationFetchError',
+    'generationResponseTextPreview',
+    'providerEndpoint',
+    'providerRequestMethod',
+    'providerHttpStatus',
+    'providerFetchError',
+    'providerFetchCause',
+    'canRecover',
   'whyNotRecoverable',
   'nextAction',
   'regenerateInputPreview',
@@ -433,8 +448,11 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'old_url_expired',
   'provider_media_download_failed',
   'no_recovery_source',
-  'provider_invalid_parameter',
-  'provider_env_missing',
+    'provider_invalid_parameter',
+    'provider_network_failed',
+    'provider_auth_failed',
+    'provider_timeout',
+    'provider_env_missing',
   'auth_required',
   'api_error',
   'client_fetch_failed',
@@ -858,11 +876,13 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
   if (code === 'auth_required' || code === 'UNAUTHORIZED' || code === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
   if (code === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
-  if (code === 'client_fetch_failed') return 'client_fetch_failed'
-  if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
-  if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
-  if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
-  if (upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_error'
+    if (code === 'client_fetch_failed') return 'client_fetch_failed'
+    if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
+    if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
+    if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
+    if (code === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
+    if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/i.test(haystack)) return 'provider_network_failed'
+    if (code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
   if (upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/i.test(haystack)) return 'provider_invalid_parameter'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
@@ -902,7 +922,9 @@ function generationFailureMessage(error: Record<string, unknown>) {
     const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
     return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}${requestSuffix}`
   }
-  if (normalized === 'provider_auth_error') return `provider_auth_error：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
+    if (normalized === 'provider_network_failed') return `provider_network_failed：Provider 网络请求失败。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
+    if (normalized === 'provider_timeout') return `provider_timeout：Provider 请求超时或被中断。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${requestSuffix}`
+    if (normalized === 'provider_auth_failed') return `provider_auth_failed：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
   if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${requestSuffix}`
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${requestSuffix}`
   if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${requestSuffix}`
@@ -1449,12 +1471,27 @@ export function CanvasNodeCard({
         : typeof nodeMetadata.generationHttpStatus === 'number'
           ? nodeMetadata.generationHttpStatus
           : null
-    const generationFetchError = stringValue(lastGenerationError.generationFetchError)
-      || stringValue(nodeMetadata.generationFetchError)
-      || null
-    const generationResponseTextPreview = stringValue(lastGenerationError.generationResponseTextPreview)
-      || stringValue(nodeMetadata.generationResponseTextPreview)
-      || null
+      const generationFetchError = stringValue(lastGenerationError.generationFetchError)
+        || stringValue(nodeMetadata.generationFetchError)
+        || null
+      const generationResponseTextPreview = stringValue(lastGenerationError.generationResponseTextPreview)
+        || stringValue(nodeMetadata.generationResponseTextPreview)
+        || null
+      const providerEndpoint = stringValue(lastGenerationError.providerEndpoint)
+        || stringValue(nodeMetadata.providerEndpoint)
+        || null
+      const providerRequestMethod = stringValue(lastGenerationError.providerRequestMethod)
+        || stringValue(nodeMetadata.providerRequestMethod)
+        || null
+      const providerHttpStatus = typeof lastGenerationError.providerHttpStatus === 'number'
+        ? lastGenerationError.providerHttpStatus
+        : typeof nodeMetadata.providerHttpStatus === 'number'
+          ? nodeMetadata.providerHttpStatus
+          : null
+      const providerFetchError = stringValue(lastGenerationError.providerFetchError)
+        || stringValue(nodeMetadata.providerFetchError)
+        || null
+      const providerFetchCause = lastGenerationError.providerFetchCause ?? nodeMetadata.providerFetchCause ?? null
     const missingEnv = uniqueStrings([
       ...(generationHealth?.missingEnv ?? []),
       ...stringArrayValue(lastGenerationError.missingEnv),
@@ -1554,10 +1591,15 @@ export function CanvasNodeCard({
       requestId,
       generationRequestUrl,
       generationRequestMethod,
-      generationHttpStatus,
-      generationFetchError,
-      generationResponseTextPreview,
-      canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
+        generationHttpStatus,
+        generationFetchError,
+        generationResponseTextPreview,
+        providerEndpoint,
+        providerRequestMethod,
+        providerHttpStatus,
+        providerFetchError,
+        providerFetchCause: sanitizeDiagnosticValue(providerFetchCause),
+        canRecover: Boolean(mediaFailureDiagnosis?.canRecover),
       whyNotRecoverable: mediaFailureDiagnosis?.canRecover && !storageKeyReadProblem && !assetRecordMissing && !missingEnv.length ? null : whyNotRecoverable,
       nextAction,
       regenerateInputPreview,
@@ -2534,12 +2576,27 @@ export function CanvasNodeCard({
           generationHttpStatus: {mediaDiagnosticPayload.generationHttpStatus}
         </span>
       ) : null}
-      {mediaDiagnosticPayload?.generationFetchError ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          generationFetchError: {mediaDiagnosticPayload.generationFetchError}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.generationResponseTextPreview ? (
+        {mediaDiagnosticPayload?.generationFetchError ? (
+          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+            generationFetchError: {mediaDiagnosticPayload.generationFetchError}
+          </span>
+        ) : null}
+        {mediaDiagnosticPayload?.providerEndpoint ? (
+          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+            providerEndpoint: {mediaDiagnosticPayload.providerEndpoint}
+          </span>
+        ) : null}
+        {typeof mediaDiagnosticPayload?.providerHttpStatus === 'number' ? (
+          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+            providerHttpStatus: {mediaDiagnosticPayload.providerHttpStatus}
+          </span>
+        ) : null}
+        {mediaDiagnosticPayload?.providerFetchError ? (
+          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+            providerFetchError: {mediaDiagnosticPayload.providerFetchError}
+          </span>
+        ) : null}
+        {mediaDiagnosticPayload?.generationResponseTextPreview ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
           generationResponseTextPreview: {mediaDiagnosticPayload.generationResponseTextPreview}
         </span>
