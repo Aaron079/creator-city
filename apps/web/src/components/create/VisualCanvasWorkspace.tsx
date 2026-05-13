@@ -799,10 +799,7 @@ function buildRegenerationParams(node: VisualCanvasNode) {
 }
 
 function isProviderAccessibleUrl(url: string): boolean {
-  if (!/^https?:\/\//i.test(url)) return false
-  // Private OSS URLs without signing params can't be read by third-party providers
-  if (/aliyuncs\.com|oss-cn-/i.test(url) && !url.includes('Expires=') && !url.includes('x-oss-signature')) return false
-  return true
+  return /^https?:\/\//i.test(url)
 }
 
 function buildRegenerationInputAssets(node: VisualCanvasNode): Array<{ id: string; type: string; url?: string }> | undefined {
@@ -5875,8 +5872,9 @@ export function VisualCanvasWorkspace({
     const generationPrompt = trimmedPrompt || upstreamTextPrompt
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
-        if (!upstreamNode?.resultImageUrl) return []
-        return [{ id: upstreamNode.id, type: 'image', url: upstreamNode.resultImageUrl }]
+        const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl
+        if (!imageUrl || !isProviderAccessibleUrl(imageUrl)) return []
+        return [{ id: upstreamNode.id, type: 'image', url: imageUrl }]
       })
     const upstreamImageUrl = upstreamImageAssets.find((asset) => asset.url)?.url
     if (!generationPrompt && !(nodeSnapshot.kind === 'video' && upstreamImageAssets.length > 0)) {

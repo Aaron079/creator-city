@@ -9,7 +9,6 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
-import { diagnoseMediaUrl } from '@/lib/assets/media-diagnostics'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
@@ -246,7 +245,7 @@ function validateVideoInput(args: {
   }
 }
 
-async function assertProviderReadableImageUrl(imageUrl: string | undefined) {
+function assertProviderReadableImageUrl(imageUrl: string | undefined) {
   if (!imageUrl) return { ok: true as const }
   if (!/^https?:\/\//i.test(imageUrl)) {
     return {
@@ -265,16 +264,7 @@ async function assertProviderReadableImageUrl(imageUrl: string | undefined) {
       upstreamMessage: `${mediaCandidate.reason}: ${imageUrl.slice(0, 160)}`,
     }
   }
-  const diagnostic = await diagnoseMediaUrl(imageUrl)
-  if (diagnostic.reachable) return { ok: true as const, diagnostic }
-  return {
-    ok: false as const,
-    errorCode: 'PROVIDER_MEDIA_DOWNLOAD_FAILED',
-    message: 'Seedance 首帧 imageUrl 当前不可下载，Provider 会返回 media download failed。',
-    upstreamStatus: diagnostic.upstreamStatus || diagnostic.status,
-    upstreamMessage: diagnostic.message,
-    diagnostic,
-  }
+  return { ok: true as const }
 }
 
 async function createVideoGenerationJob(args: {
@@ -677,7 +667,7 @@ export async function POST(request: NextRequest) {
         },
       })
     }
-    const imageReadable = await assertProviderReadableImageUrl(imageUrl)
+    const imageReadable = assertProviderReadableImageUrl(imageUrl)
     if (!imageReadable.ok) {
       await markVideoGenerationJobFailed(generationJob.id, imageReadable.message)
       return videoErrorResponse({
@@ -685,9 +675,8 @@ export async function POST(request: NextRequest) {
         mode: 'real',
         status: 'failed',
         errorMessage: imageReadable.message,
-        errorCode: visibleProviderErrorCode(imageReadable.errorCode, imageReadable.upstreamStatus, imageReadable.message),
+        errorCode: visibleProviderErrorCode(imageReadable.errorCode, undefined, imageReadable.message),
         requestId: routeRequestId,
-        upstreamStatus: imageReadable.upstreamStatus,
         upstreamMessage: imageReadable.upstreamMessage,
         submittedInput: {
           providerId,
@@ -704,7 +693,6 @@ export async function POST(request: NextRequest) {
         },
         details: {
           model: providerRow.model,
-          providerResponse: imageReadable.diagnostic,
         },
       })
     }
