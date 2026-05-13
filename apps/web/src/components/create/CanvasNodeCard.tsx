@@ -2662,7 +2662,17 @@ export function CanvasNodeCard({
     const currentUrl = mediaKind === 'image' ? imagePreviewUrl : videoPreviewUrl
     const loadFailed = mediaKind === 'image' ? imageLoadFailed : videoLoadFailed
     const originalProviderUrl = getOriginalProviderUrl(nodeMetadata, mediaKind) || (!assetUrl ? resultUrl : '')
-    const shouldAudit = Boolean(currentUrl || assetUrl || originalProviderUrl)
+    // Skip auto-audit if the node is already in a terminal recovery state.
+    // Writing 'old_url_expired'/'no_recovery_source' here stops both the audit and
+    // the workspace's resync loop (see VisualCanvasWorkspace isTrulyUnrecoverable).
+    const nodeRecoveryStatus = stringValue(nodeMetadata.recoveryStatus)
+    const isTerminalNodeRecovery = nodeRecoveryStatus === 'no_recovery_source'
+      || nodeRecoveryStatus === 'old_url_expired'
+      || nodeRecoveryStatus === 'recovered'
+      || nodeRecoveryStatus === 'provider_media_download_failed'
+      || nodeRecoveryStatus === 'provider_error'
+      || nodeMetadata.nextAction === 'regenerate_from_prompt'
+    const shouldAudit = !isTerminalNodeRecovery && Boolean(currentUrl || assetUrl || originalProviderUrl)
       && (
         loadFailed
         || (assetUrl && resultUrl !== assetUrl)
@@ -2766,7 +2776,23 @@ export function CanvasNodeCard({
         return
       }
 
-      setMediaRecoveryStatus(loadFailed && !audit.likelyRecoverable ? 'failed_unrecoverable' : 'idle')
+      if (loadFailed && !audit.likelyRecoverable) {
+        setMediaRecoveryStatus('failed_unrecoverable')
+        // Persist terminal state so future renders skip the audit and the workspace
+        // stops re-running resync for this node.
+        if (!cancelled) {
+          onRecoverMedia(node.id, {
+            metadataJson: {
+              ...metadataRecord(node.metadataJson),
+              recoveryStatus: 'old_url_expired',
+              nextAction: 'regenerate_from_prompt',
+              autoRecoveryFailedAt: new Date().toISOString(),
+            },
+          })
+        }
+      } else {
+        setMediaRecoveryStatus('idle')
+      }
     }).catch(() => {
       if (!cancelled) setMediaRecoveryStatus(loadFailed ? 'failed_unrecoverable' : 'idle')
     })

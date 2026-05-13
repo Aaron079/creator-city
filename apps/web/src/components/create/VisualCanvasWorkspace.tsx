@@ -908,7 +908,10 @@ function unresolvedLegacyStatus(url: string) {
   if (/x-tos-signature|x-tos-expires|x-amz-signature|x-amz-expires|x-oss-signature|x-oss-expires|signature=|expires=|security-token=/i.test(url)) {
     return 'needs_signed_url'
   }
-  return 'provider_error'
+  // Use 'old_url_expired' for consistency with CanvasNodeCard audit terminal state.
+  // Both sides writing the same code prevents the oscillation loop where
+  // workspace writes 'provider_error' ↔ audit writes 'old_url_expired' indefinitely.
+  return 'old_url_expired'
 }
 
 function applyResolvedAssetToNode(node: VisualCanvasNode, result: CanvasAssetResolveResult): VisualCanvasNode {
@@ -4482,9 +4485,16 @@ export function VisualCanvasWorkspace({
         const url = legacyMediaUrlForNode(current)
         const metadata = metadataRecord(current.metadataJson)
         const recoveryStatus = stringValue(metadata.recoveryStatus)
-        // Only permanently skip truly unrecoverable blobs/data URLs with no hope of recovery.
-        // OSS 403/network errors might be fixable with a proper signed URL, so allow retry.
-        const isTrulyUnrecoverable = recoveryStatus === 'unrecoverable_blob_url' || recoveryStatus === 'unrecoverable_data_url_without_file'
+        // Skip nodes already in a terminal recovery state. Adding 'old_url_expired',
+        // 'no_recovery_source', 'provider_media_download_failed', and 'provider_error'
+        // here breaks the loop where this effect and CanvasNodeCard's audit alternate
+        // writing different recovery codes and each change re-triggers the other.
+        const isTrulyUnrecoverable = recoveryStatus === 'unrecoverable_blob_url'
+          || recoveryStatus === 'unrecoverable_data_url_without_file'
+          || recoveryStatus === 'old_url_expired'
+          || recoveryStatus === 'no_recovery_source'
+          || recoveryStatus === 'provider_media_download_failed'
+          || recoveryStatus === 'provider_error'
         if (isTrulyUnrecoverable) continue
 
         if (!url || url.startsWith('blob:') || (!/^https?:\/\//i.test(url) && !url.startsWith('data:'))) {

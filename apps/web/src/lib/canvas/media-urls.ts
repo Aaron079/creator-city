@@ -1,5 +1,26 @@
 import { filterRenderableMediaUrlSources, isRenderableMediaUrl } from '@/lib/media/renderable-url'
 
+// Keys that hold diagnostic/error tracking data, not renderable media URLs.
+// Scanning these would pull provider API endpoints or failed URL logs back into candidates.
+const SKIP_MEDIA_SCAN_KEYS = new Set([
+  'failedUrls',
+  'attemptedUrls',
+  'renderFailures',
+  'probeFailures',
+  'lastError',
+  'lastGenerationError',
+  'submittedInput',
+  'urlCandidates',
+  'mediaRecoveryAudit',
+  'mediaResync',
+  'mediaResyncDiagnostic',
+  'diagnostic',
+  'p0Debug',
+  'attemptsDiagnostic',
+  'providerResponse',
+  'debugInfo',
+])
+
 type MediaNodeLike = {
   resultImageUrl?: string | null
   resultVideoUrl?: string | null
@@ -64,6 +85,7 @@ function collectMetadataMediaUrls(
   const record = value as Record<string, unknown>
   const items: Array<[string, string]> = []
   for (const [key, nested] of Object.entries(record)) {
+    if (SKIP_MEDIA_SCAN_KEYS.has(key)) continue
     const nextPath = `${path}.${key}`
     if (typeof nested === 'string' && looksLikeMediaUrlKey(key, kind)) {
       const url = stringValue(nested)

@@ -21,6 +21,18 @@ export type RenderableMediaUrlDecision =
 
 const MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.mov'])
 
+// Hostnames that are exclusively API endpoints, never media storage.
+// Any URL from these hosts is a provider API call, not a renderable file.
+const PROVIDER_API_ONLY_HOSTNAMES = new Set([
+  'ark.cn-beijing.volces.com',
+  'ark.cn-hangzhou.volces.com',
+  'ark.cn-guangzhou.volces.com',
+  'ark.volcengineapi.com',
+  'open.volcengineapi.com',
+  'visual.volcengineapi.com',
+  'maas-api.ml-platform-cn-beijing.volces.com',
+])
+
 function parseHttpUrl(value: string): URL | null {
   try {
     const parsed = new URL(value)
@@ -28,6 +40,16 @@ function parseHttpUrl(value: string): URL | null {
   } catch {
     return null
   }
+}
+
+function isProviderApiOnlyHost(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  // Exact matches
+  if (PROVIDER_API_ONLY_HOSTNAMES.has(h)) return true
+  // Pattern: ark.*.volces.com (but NOT tos-*.volces.com which is object storage)
+  if (h.endsWith('.volces.com') && /^ark\./i.test(h)) return true
+  if (h.endsWith('.volcengineapi.com')) return true
+  return false
 }
 
 function hasForbiddenApiPath(pathname: string) {
@@ -104,7 +126,7 @@ export function isRenderableMediaUrl(value: string, options: { source?: string }
     return { ok: false, reason: 'unsupported_protocol', hostname, pathname }
   }
 
-  if (hasForbiddenApiPath(pathname)) {
+  if (isProviderApiOnlyHost(hostname) || hasForbiddenApiPath(pathname)) {
     return { ok: false, reason: 'provider_api_endpoint', hostname, pathname, providerEndpoint: trimmed }
   }
 
