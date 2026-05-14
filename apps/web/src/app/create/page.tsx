@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useCallback, useRef, useEffect, WheelEvent, useMemo } from 'react'
+import { Suspense, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -2684,16 +2684,26 @@ function ShotTimeline({
   }, [narrative, shots])
   const widestRow = Math.max(...sequenceRows.map((row) => row.shots.length), 1)
 
-  // Wheel → horizontal scroll; Ctrl/Cmd+wheel → zoom
-  const handleWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    if (e.ctrlKey || e.metaKey) {
-      const delta = e.deltaY > 0 ? -0.06 : 0.06
-      setZoom((z) => Math.min(1.4, Math.max(0.55, z + delta)))
-    } else {
-      const scrollAmount = e.deltaY !== 0 ? e.deltaY : e.deltaX
-      if (containerRef.current) containerRef.current.scrollLeft += scrollAmount
+  // Wheel → horizontal scroll; Ctrl/Cmd+wheel → zoom.
+  // Must use native addEventListener with { passive: false } so preventDefault works.
+  // React's onWheel is passive in modern browsers and cannot call preventDefault.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      if (e.ctrlKey || e.metaKey) {
+        const delta = e.deltaY > 0 ? -0.06 : 0.06
+        setZoom((z) => Math.min(1.4, Math.max(0.55, z + delta)))
+      } else {
+        const scrollAmount = e.deltaY !== 0 ? e.deltaY : e.deltaX
+        if (containerRef.current) containerRef.current.scrollLeft += scrollAmount
+      }
     }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  // setZoom is stable (useState), containerRef never changes reference
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -2835,7 +2845,6 @@ function ShotTimeline({
       {/* Scrollable track */}
       <div
         ref={containerRef}
-        onWheel={handleWheel}
         className="create-quiet-grid relative mx-5 mt-3 flex-1 overflow-x-auto overflow-y-auto rounded-[30px]"
         style={{
           scrollbarWidth: 'thin',
@@ -5912,6 +5921,8 @@ export default function CreatePage() {
     status: 'draft',
   })
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('canvas')
+  const [directorDeskMode, setDirectorDeskMode] = useState<'desk' | 'canvas'>('desk')
+  const [directorWorkflowGenerated, setDirectorWorkflowGenerated] = useState(false)
   const [showStartupPanels, setShowStartupPanels] = useState(false)
   const [acceptedClipReviewIds, setAcceptedClipReviewIds] = useState<string[]>([])
   const [ignoredClipReviewActions, setIgnoredClipReviewActions] = useState<string[]>([])
@@ -8818,22 +8829,160 @@ export default function CreatePage() {
   return (
     <>
       <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
-        <div className="h-screen min-h-0 w-full overflow-hidden">
-          <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
-            <VisualCanvasWorkspace
-              projectTitle={deliveryProjectTitle}
-              templateName={activeWorkflowTemplate?.name ?? null}
-              canOpenClientDelivery={canOpenClientDeliveryFromCanvas}
-              onOpenTimeline={() => setWorkspaceView('editor')}
-              onOpenAssets={() => setWorkspaceView('footage')}
-              onOpenDelivery={() => setWorkspaceView('delivery')}
-              onShowStartup={() => {
-                setShowStartupPanels(true)
-                scrollToWorkspace()
-              }}
-            />
-          </Suspense>
-        </div>
+        {directorDeskMode === 'canvas' ? (
+          <div className="h-screen min-h-0 w-full overflow-hidden">
+            <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
+              <VisualCanvasWorkspace
+                projectTitle={deliveryProjectTitle}
+                templateName={activeWorkflowTemplate?.name ?? projectTemplate?.name ?? null}
+                canOpenClientDelivery={canOpenClientDeliveryFromCanvas}
+                onOpenTimeline={() => setWorkspaceView('editor')}
+                onOpenAssets={() => setWorkspaceView('footage')}
+                onOpenDelivery={() => setWorkspaceView('delivery')}
+                onShowStartup={() => {
+                  setShowStartupPanels(true)
+                  scrollToWorkspace()
+                }}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="flex h-screen min-h-0 w-full overflow-hidden">
+            <aside className="flex w-[380px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/10 bg-black/35 p-6 backdrop-blur-xl">
+              <div>
+                <div className="mb-3 inline-flex rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-[11px] text-indigo-100">
+                  AI 是副导演，不替你做最终决定
+                </div>
+                <h1 className="text-2xl font-light tracking-[-0.05em] text-white">AI 导演工作台</h1>
+                <p className="mt-3 text-sm leading-6 text-white/55">
+                  先把创意拆成专业制作流程。所有结果都是建议，你可以应用、编辑或忽略，不会自动覆盖作品。
+                </p>
+              </div>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-semibold text-white/45">创意输入</span>
+                <textarea
+                  value={idea}
+                  onChange={(event) => {
+                    handleIdeaChange(event.target.value)
+                    setDirectorWorkflowGenerated(false)
+                  }}
+                  placeholder="例如：为一个新咖啡品牌拍一支 15 秒电影感广告，强调清晨、城市、年轻创作者。"
+                  className="min-h-[150px] resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-indigo-300/60 focus:bg-white/[0.07]"
+                />
+              </label>
+
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold text-white/45">风格选择</span>
+                <div className="flex flex-wrap gap-2">
+                  {STYLES.map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => {
+                        handleStyleChange(style)
+                        setDirectorWorkflowGenerated(false)
+                      }}
+                      className="rounded-full border px-3 py-1.5 text-xs transition"
+                      style={style === selectedStyle
+                        ? { borderColor: 'rgba(129,140,248,0.75)', background: 'rgba(99,102,241,0.25)', color: '#e0e7ff' }
+                        : { borderColor: 'rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.58)' }}
+                    >
+                      {style}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDirectorWorkflowGenerated(true)}
+                disabled={!idea.trim()}
+                className="rounded-2xl bg-indigo-400 px-4 py-3 text-sm font-semibold text-black transition hover:bg-indigo-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                生成导演工作流
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDirectorDeskMode('canvas')}
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+              >
+                进入完整 AI 画布
+              </button>
+            </aside>
+
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden p-6">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-white/28">Director Workflow</p>
+                  <h2 className="mt-2 text-xl font-light tracking-[-0.04em] text-white">从创意到可交付方案</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDirectorDeskMode('canvas')}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-white/60 transition hover:bg-white/[0.08] hover:text-white"
+                >
+                  打开完整画布
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-auto rounded-[28px] border border-white/10 bg-white/[0.025] p-6">
+                <div className="flex min-w-[1120px] items-stretch gap-4">
+                  {[
+                    ['创意', '整理核心创意、受众和情绪入口', '把想法变成清晰 brief'],
+                    ['编剧', '拆解故事结构、冲突和信息顺序', '形成可拍摄的叙事骨架'],
+                    ['导演', '确定节奏、表演方向和镜头语言', '给出导演阐述与调度建议'],
+                    ['选角', '定义角色气质、表演状态和参考', '保证人物与品牌调性一致'],
+                    ['摄影', '建议景别、运镜、光线和镜头参数', '把文字转成可执行视觉方案'],
+                    ['输出', '汇总为下一步制作清单', '进入完整画布继续生成素材'],
+                  ].map(([title, description, result], index, list) => {
+                    const active = directorWorkflowGenerated || index === 0
+                    return (
+                      <div key={title} className="flex flex-1 items-center gap-4">
+                        <div
+                          className="flex min-h-[300px] flex-1 flex-col rounded-[24px] border p-5"
+                          style={active
+                            ? { borderColor: 'rgba(129,140,248,0.45)', background: 'linear-gradient(180deg, rgba(99,102,241,0.16), rgba(15,23,42,0.58))' }
+                            : { borderColor: 'rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.035)' }}
+                        >
+                          <div className="mb-5 flex items-center justify-between gap-3">
+                            <span className="text-[11px] text-white/35">0{index + 1}</span>
+                            <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] text-white/45">
+                              {active ? (directorWorkflowGenerated ? '已生成建议' : '等待创意') : '待处理'}
+                            </span>
+                          </div>
+                          <h3 className="text-lg font-light text-white">{title}</h3>
+                          <p className="mt-3 text-sm leading-6 text-white/52">{description}</p>
+                          <div className="mt-auto rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/55">
+                            {directorWorkflowGenerated
+                              ? `${selectedStyle}方向：${result}`
+                              : index === 0
+                                ? '请先输入创意，再生成导演工作流。'
+                                : '生成后这里会出现副导演建议。'}
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {['应用建议', '编辑', '忽略'].map((action) => (
+                              <button
+                                key={action}
+                                type="button"
+                                disabled={!directorWorkflowGenerated}
+                                className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/55 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35"
+                              >
+                                {action}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {index < list.length - 1 ? <div className="text-white/25">→</div> : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </main>
+          </div>
+        )}
 
         {renderLegacyCreateShell ? (
         <>

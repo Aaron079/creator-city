@@ -6488,14 +6488,26 @@ export function VisualCanvasWorkspace({
     return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-media-diagnostics="true"], [data-creative-assets="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
-  const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
+  // Keep a ref so the wheel handler always reads the current zoom without
+  // needing to re-attach the listener on every zoom step.
+  const canvasZoomForWheelRef = useRef(canvasZoom)
+  useEffect(() => { canvasZoomForWheelRef.current = canvasZoom }, [canvasZoom])
 
-    const normalizedDelta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
-    const zoomFactor = Math.exp(-normalizedDelta * 0.0014)
-    setZoomAroundPoint(canvasZoom * zoomFactor, { x: event.clientX, y: event.clientY })
-  }, [canvasZoom, setZoomAroundPoint])
+  // Native wheel listener registered with { passive: false } so preventDefault works.
+  // React's onWheel is passive in modern browsers and cannot call preventDefault.
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const handler = (event: WheelEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const normalizedDelta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
+      const zoomFactor = Math.exp(-normalizedDelta * 0.0014)
+      setZoomAroundPoint(canvasZoomForWheelRef.current * zoomFactor, { x: event.clientX, y: event.clientY })
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [setZoomAroundPoint])
 
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
@@ -7209,7 +7221,6 @@ export function VisualCanvasWorkspace({
       <div
         ref={viewportRef}
         className={`canvas-viewport ${isPanning ? 'is-panning' : ''} ${isSpacePressed ? 'is-space-panning' : ''}`}
-        onWheel={handleCanvasWheel}
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
