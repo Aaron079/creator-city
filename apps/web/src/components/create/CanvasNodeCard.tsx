@@ -601,6 +601,21 @@ function candidateKey(candidates: MediaUrlSource[]) {
   return candidates.map((candidate) => `${candidate.source}=${candidate.url}`).join('|')
 }
 
+// Final render-time guard: isRenderableMediaUrl already blocks these, but this is a
+// last-resort string check so no Ark API URL can ever reach img/video src.
+function rejectBlockedSrc(url: string): string {
+  if (!url) return ''
+  if (/ark\.cn-[a-z]/.test(url)) return ''
+  if (/\.volcengineapi\.com/.test(url)) return ''
+  if (/\/api\/v[123]\//.test(url)) return ''
+  if (/\/tasks(?:\/|$)/.test(url)) return ''
+  if (/\/images\/generations/.test(url)) return ''
+  if (/\/videos\/generations/.test(url)) return ''
+  if (/\/contents\/generations/.test(url)) return ''
+  if (/\/generate(?:\/|$)/.test(url)) return ''
+  return url
+}
+
 function mediaPersistenceStatus(value: unknown) {
   const record = metadataRecord(value)
   if (record.status === 'persisted' || record.ok === true) return 'persisted'
@@ -1414,14 +1429,17 @@ export function CanvasNodeCard({
             ? { label: '旧链接失败', tone: 'expired' }
           : null
     : null
-  const imagePreviewUrl = imageMedia.url
-  const videoPreviewUrl = videoMedia.url
+  const imagePreviewUrl = rejectBlockedSrc(imageMedia.url)
+  const videoPreviewUrl = rejectBlockedSrc(videoMedia.url)
   const mediaFailureText = mediaFailureMessage(nodeMetadata, Boolean(nodeAssetId))
   const imageProxiedSrc = getProxiedMediaUrl(imagePreviewUrl)
   const videoProxiedSrc = getProxiedMediaUrl(videoPreviewUrl)
   const selectedRenderUrl = node.kind === 'image' ? imagePreviewUrl : node.kind === 'video' ? videoPreviewUrl : ''
   const selectedRenderSrc = node.kind === 'image' ? imageProxiedSrc : node.kind === 'video' ? videoProxiedSrc : ''
   const hasMediaResult = (node.kind === 'image' && imageMedia.hasUrl) || (node.kind === 'video' && videoMedia.hasUrl)
+  // True when node has a raw result URL but isRenderableMediaUrl blocked it (e.g., Ark API endpoint stored as resultImageUrl)
+  const hasRawMediaResult = (node.kind === 'image' && Boolean(node.resultImageUrl?.trim()))
+    || (node.kind === 'video' && Boolean(node.resultVideoUrl?.trim()))
   const mediaFailureDiagnosis = node.kind === 'image' || node.kind === 'video'
     ? failureDiagnosis({
         node,
@@ -1440,7 +1458,8 @@ export function CanvasNodeCard({
       activeMedia?.loadFailed ||
       recoveryReason ||
       statusFromRecord(nodeMetadata.lastError) ||
-      (nodeAssetId && !hasMediaResult)
+      (nodeAssetId && !hasMediaResult) ||
+      (hasRawMediaResult && !hasMediaResult)
     ),
   )
   const textResult = node.resultText?.trim() ? node.resultText : ''
@@ -2441,7 +2460,13 @@ export function CanvasNodeCard({
     if (!onRecoverMedia || (node.kind !== 'image' && node.kind !== 'video')) return
     const mediaKind = node.kind
     const loadFailed = mediaKind === 'image' ? imageLoadFailed : videoLoadFailed
-    if (!loadFailed) return
+    // Also fire when node has a raw result URL but it was blocked (Ark API endpoint stored
+    // as resultImageUrl) — the img element never loads so imageLoadFailed stays false.
+    const hasRawUrl = mediaKind === 'image' ? Boolean(node.resultImageUrl?.trim()) : Boolean(node.resultVideoUrl?.trim())
+    const hasRenderableUrl = mediaKind === 'image' ? imageMedia.hasUrl : videoMedia.hasUrl
+    const urlBlocked = hasRawUrl && !hasRenderableUrl
+      && node.status !== 'running' && node.status !== 'generating' && node.status !== 'queued'
+    if (!loadFailed && !urlBlocked) return
     const nodeRecoveryStatus = stringValue(nodeMetadata.recoveryStatus)
     const isTerminalNodeRecovery = nodeRecoveryStatus === 'no_recovery_source'
       || nodeRecoveryStatus === 'old_url_expired'
@@ -2467,6 +2492,11 @@ export function CanvasNodeCard({
     videoLoadFailed,
     node.id,
     node.kind,
+    node.status,
+    node.resultImageUrl,
+    node.resultVideoUrl,
+    imageMedia.hasUrl,
+    videoMedia.hasUrl,
     nodeMetadata,
     onRecoverMedia,
   ])
