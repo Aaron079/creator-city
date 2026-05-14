@@ -6,7 +6,6 @@ import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './Charac
 import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
-import { auditNodeMedia, type MediaRecoveryAudit } from '@/lib/media/recovery-audit'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 
@@ -296,16 +295,6 @@ type AssetRecoverResponse = {
   persistenceError?: string | null
   retryPersistenceAvailable?: boolean | null
   }
-
-type CandidateProbe = MediaUrlSource & {
-  proxiedUrl: string
-  proxyStatus: number
-  upstreamStatus?: number
-  reachable: boolean
-  proxyErrorCode?: string | null
-  proxyErrorMessage?: string | null
-  proxyRejectedHost?: string | null
-}
 
 type RenderFailure = {
   url: string
@@ -610,46 +599,6 @@ function mediaState(source: { url: string; source: string }, loadFailed: boolean
 
 function candidateKey(candidates: MediaUrlSource[]) {
   return candidates.map((candidate) => `${candidate.source}=${candidate.url}`).join('|')
-}
-
-async function probeMediaCandidate(candidate: MediaUrlSource): Promise<CandidateProbe> {
-  const proxiedUrl = getProxiedMediaUrl(candidate.url)
-  if (candidate.url.startsWith('data:')) {
-    return { ...candidate, proxiedUrl, proxyStatus: 200, upstreamStatus: 200, reachable: true }
-  }
-  try {
-    const response = await fetch(proxiedUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: { Range: 'bytes=0-1' },
-    })
-    const upstreamStatusHeader = response.headers.get('x-media-proxy-upstream-status')
-    const upstreamStatus = upstreamStatusHeader ? Number(upstreamStatusHeader) : response.status
-    const proxyError = response.ok || response.status === 206
-      ? {}
-      : await response.clone().json().catch(() => ({})) as Record<string, unknown>
-    return {
-      ...candidate,
-      proxiedUrl,
-      proxyStatus: response.status,
-      upstreamStatus: Number.isFinite(upstreamStatus) ? upstreamStatus : response.status,
-      reachable: response.ok || response.status === 206,
-      proxyErrorCode: stringValue(proxyError.errorCode),
-      proxyErrorMessage: stringValue(proxyError.errorMessage) || stringValue(proxyError.message),
-      proxyRejectedHost: stringValue(proxyError.proxyRejectedHost) || stringValue(proxyError.hostname),
-    }
-  } catch (error) {
-    return {
-      ...candidate,
-      proxiedUrl,
-      proxyStatus: 0,
-      upstreamStatus: 0,
-      reachable: false,
-      proxyErrorCode: 'proxy_fetch_failed',
-      proxyErrorMessage: error instanceof Error ? error.message : 'proxy fetch failed',
-      proxyRejectedHost: null,
-    }
-  }
 }
 
 function mediaPersistenceStatus(value: unknown) {
@@ -1229,17 +1178,6 @@ function failureDiagnosis(args: {
     return withAction('storage_permission_error', 'storage_permission_error', 'storageKey 存在但没有可读 URL；点击”重新 resolve”生成可读 URL。')
   }
   return withAction(assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? 'asset_not_found_by_node' : 'no_asset_id', assetId ? '用原 Prompt 重新生成并重建 Asset。' : '点击”立即恢复资产”先按 nodeId 找 Asset。', false)
-}
-
-function persistedRecoveryMetadata(value: unknown, recoveredAt: string) {
-  const record = metadataRecord(value)
-  if (record.status === 'persisted' || record.ok === true) return value
-  return {
-    ...record,
-    status: 'persisted',
-    source: stringValue(record.source) || 'media-recovery-audit',
-    recoveredAt,
-  }
 }
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -2461,93 +2399,9 @@ export function CanvasNodeCard({
       return
     }
 
-    let cancelled = false
     setImageLoadFailed(false)
     setImageRenderFailures([])
-
-    void (async () => {
-      const probes: CandidateProbe[] = []
-      for (const candidate of imageCandidateUrls) {
-        const probe = await probeMediaCandidate(candidate)
-        probes.push(probe)
-        if (cancelled) return
-        if (probe.reachable) {
-          setSelectedImageSource(candidate)
-          setImageLoadFailed(false)
-          console.log('[legacy-media-recovery]', {
-            nodeId: node.id,
-            kind: node.kind,
-            metadataJson: node.metadataJson,
-            candidateUrls: imageCandidateUrls,
-            selectedDisplayUrl: candidate.url,
-            proxiedUrl: probe.proxiedUrl,
-            proxyStatus: probe.proxyStatus,
-            upstreamStatus: probe.upstreamStatus,
-          })
-          return
-        }
-      }
-      if (!cancelled) {
-        setSelectedImageSource(imageCandidateUrls[0] ?? null)
-        setImageLoadFailed(true)
-        const failures = probes.map((probe) => ({
-          url: probe.url,
-          source: probe.source,
-          proxiedUrl: probe.proxiedUrl,
-          reason: probe.proxyErrorCode
-            ? `probe failed: ${probe.proxyErrorCode} proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`
-            : `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
-          at: new Date().toISOString(),
-          proxyHttpStatus: probe.proxyStatus,
-          proxyErrorCode: probe.proxyErrorCode ?? null,
-          proxyErrorMessage: probe.proxyErrorMessage ?? null,
-          proxyRejectedHost: probe.proxyRejectedHost ?? null,
-        })).slice(-12)
-        setImageRenderFailures(failures)
-        const primaryFailure = failures.find((failure) => failure.proxyErrorCode) ?? failures[0]
-        if (onRecoverMedia && primaryFailure) {
-          const existing = Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []
-          const existingFailed = Array.isArray(nodeMetadata.failedUrls) ? nodeMetadata.failedUrls : []
-          onRecoverMedia(node.id, {
-            metadataJson: {
-              ...metadataRecord(node.metadataJson),
-              failedRenderUrl: primaryFailure.url,
-              failedRenderReason: primaryFailure.reason,
-              attemptedUrls: [...existing, ...failures].slice(-12),
-              failedUrls: [...existingFailed, ...failures.map((failure) => ({
-                url: failure.url,
-                reason: failure.reason,
-                at: failure.at,
-                proxyHttpStatus: failure.proxyHttpStatus,
-                proxyErrorCode: failure.proxyErrorCode,
-                proxyErrorMessage: failure.proxyErrorMessage,
-                proxyRejectedHost: failure.proxyRejectedHost,
-              }))].slice(-12),
-              proxyHttpStatus: primaryFailure.proxyHttpStatus ?? null,
-              proxyErrorCode: primaryFailure.proxyErrorCode ?? null,
-              proxyErrorMessage: primaryFailure.proxyErrorMessage ?? null,
-              proxyRejectedHost: primaryFailure.proxyRejectedHost ?? null,
-              lastRenderFailureAt: primaryFailure.at,
-            },
-          })
-        }
-        console.log('[legacy-media-recovery]', {
-          nodeId: node.id,
-          kind: node.kind,
-          metadataJson: node.metadataJson,
-          candidateUrls: imageCandidateUrls,
-          selectedDisplayUrl: '',
-          proxiedUrl: probes[0]?.proxiedUrl ?? '',
-          proxyStatus: probes[0]?.proxyStatus ?? 0,
-          upstreamStatus: probes[0]?.upstreamStatus ?? 0,
-          probes,
-        })
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
+    setSelectedImageSource(imageCandidateUrls[0] ?? null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageCandidateUrlsKey, node.id, node.kind])
 
@@ -2564,107 +2418,17 @@ export function CanvasNodeCard({
       return
     }
 
-    let cancelled = false
     setVideoLoadFailed(false)
     setVideoRenderFailures([])
-
-    void (async () => {
-      const probes: CandidateProbe[] = []
-      for (const candidate of videoCandidateUrls) {
-        const probe = await probeMediaCandidate(candidate)
-        probes.push(probe)
-        if (cancelled) return
-        if (probe.reachable) {
-          setSelectedVideoSource(candidate)
-          setVideoLoadFailed(false)
-          console.log('[legacy-media-recovery]', {
-            nodeId: node.id,
-            kind: node.kind,
-            metadataJson: node.metadataJson,
-            candidateUrls: videoCandidateUrls,
-            selectedDisplayUrl: candidate.url,
-            proxiedUrl: probe.proxiedUrl,
-            proxyStatus: probe.proxyStatus,
-            upstreamStatus: probe.upstreamStatus,
-          })
-          return
-        }
-      }
-      if (!cancelled) {
-        setSelectedVideoSource(videoCandidateUrls[0] ?? null)
-        setVideoLoadFailed(true)
-        const failures = probes.map((probe) => ({
-          url: probe.url,
-          source: probe.source,
-          proxiedUrl: probe.proxiedUrl,
-          reason: probe.proxyErrorCode
-            ? `probe failed: ${probe.proxyErrorCode} proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`
-            : `probe failed: proxy=${probe.proxyStatus} upstream=${probe.upstreamStatus ?? 0}`,
-          at: new Date().toISOString(),
-          proxyHttpStatus: probe.proxyStatus,
-          proxyErrorCode: probe.proxyErrorCode ?? null,
-          proxyErrorMessage: probe.proxyErrorMessage ?? null,
-          proxyRejectedHost: probe.proxyRejectedHost ?? null,
-        })).slice(-12)
-        setVideoRenderFailures(failures)
-        const primaryFailure = failures.find((failure) => failure.proxyErrorCode) ?? failures[0]
-        if (onRecoverMedia && primaryFailure) {
-          const existing = Array.isArray(nodeMetadata.attemptedUrls) ? nodeMetadata.attemptedUrls : []
-          const existingFailed = Array.isArray(nodeMetadata.failedUrls) ? nodeMetadata.failedUrls : []
-          onRecoverMedia(node.id, {
-            metadataJson: {
-              ...metadataRecord(node.metadataJson),
-              failedRenderUrl: primaryFailure.url,
-              failedRenderReason: primaryFailure.reason,
-              attemptedUrls: [...existing, ...failures].slice(-12),
-              failedUrls: [...existingFailed, ...failures.map((failure) => ({
-                url: failure.url,
-                reason: failure.reason,
-                at: failure.at,
-                proxyHttpStatus: failure.proxyHttpStatus,
-                proxyErrorCode: failure.proxyErrorCode,
-                proxyErrorMessage: failure.proxyErrorMessage,
-                proxyRejectedHost: failure.proxyRejectedHost,
-              }))].slice(-12),
-              proxyHttpStatus: primaryFailure.proxyHttpStatus ?? null,
-              proxyErrorCode: primaryFailure.proxyErrorCode ?? null,
-              proxyErrorMessage: primaryFailure.proxyErrorMessage ?? null,
-              proxyRejectedHost: primaryFailure.proxyRejectedHost ?? null,
-              lastRenderFailureAt: primaryFailure.at,
-            },
-          })
-        }
-        console.log('[legacy-media-recovery]', {
-          nodeId: node.id,
-          kind: node.kind,
-          metadataJson: node.metadataJson,
-          candidateUrls: videoCandidateUrls,
-          selectedDisplayUrl: '',
-          proxiedUrl: probes[0]?.proxiedUrl ?? '',
-          proxyStatus: probes[0]?.proxyStatus ?? 0,
-          upstreamStatus: probes[0]?.upstreamStatus ?? 0,
-          probes,
-        })
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
+    setSelectedVideoSource(videoCandidateUrls[0] ?? null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoCandidateUrlsKey, node.id, node.kind])
 
   useEffect(() => {
     if (!onRecoverMedia || (node.kind !== 'image' && node.kind !== 'video')) return
-
     const mediaKind = node.kind
-    const resultUrl = mediaKind === 'image' ? stringValue(node.resultImageUrl) : stringValue(node.resultVideoUrl)
-    const currentUrl = mediaKind === 'image' ? imagePreviewUrl : videoPreviewUrl
     const loadFailed = mediaKind === 'image' ? imageLoadFailed : videoLoadFailed
-    const originalProviderUrl = getOriginalProviderUrl(nodeMetadata, mediaKind) || (!assetUrl ? resultUrl : '')
-    // Skip auto-audit if the node is already in a terminal recovery state.
-    // Writing 'old_url_expired'/'no_recovery_source' here stops both the audit and
-    // the workspace's resync loop (see VisualCanvasWorkspace isTrulyUnrecoverable).
+    if (!loadFailed) return
     const nodeRecoveryStatus = stringValue(nodeMetadata.recoveryStatus)
     const isTerminalNodeRecovery = nodeRecoveryStatus === 'no_recovery_source'
       || nodeRecoveryStatus === 'old_url_expired'
@@ -2672,144 +2436,26 @@ export function CanvasNodeCard({
       || nodeRecoveryStatus === 'provider_media_download_failed'
       || nodeRecoveryStatus === 'provider_error'
       || nodeMetadata.nextAction === 'regenerate_from_prompt'
-    const shouldAudit = !isTerminalNodeRecovery && Boolean(currentUrl || assetUrl || originalProviderUrl)
-      && (
-        loadFailed
-        || (assetUrl && resultUrl !== assetUrl)
-        || (!assetUrl && originalProviderUrl && persistenceStatus !== 'persisted')
-      )
-    if (!shouldAudit) return
-
-    const attemptKey = [
-      node.id,
-      mediaKind,
-      resultUrl,
-      currentUrl,
-      assetUrl,
-      originalProviderUrl,
-      persistenceStatus,
-      loadFailed ? 'failed' : 'ready',
-    ].join('|')
+    if (isTerminalNodeRecovery) return
+    const attemptKey = [node.id, mediaKind, 'failed'].join('|')
     if (recoveryAttemptKeyRef.current === attemptKey) return
     recoveryAttemptKeyRef.current = attemptKey
-
-    let cancelled = false
-
-    const patchRecoveredNode = (workingUrl: string, audit: MediaRecoveryAudit, extraMetadata?: Record<string, unknown>) => {
-      const recoveredAt = new Date().toISOString()
-      const recoveredFrom = audit.selectedWorkingSource ?? audit.providerUrl ?? audit.stableAssetUrl ?? audit.currentUrl ?? 'unknown'
-      const nextMetadata = {
+    setMediaRecoveryStatus('failed_unrecoverable')
+    onRecoverMedia(node.id, {
+      metadataJson: {
         ...metadataRecord(node.metadataJson),
-        recoveredAt,
-        recoveredFrom,
-        recoveryStatus: 'recovered',
-        mediaPersistence: persistedRecoveryMetadata(nodeMetadata.mediaPersistence, recoveredAt),
-        mediaRecoveryAudit: audit,
-        mediaRecoveredAt: recoveredAt,
-        ...(mediaKind === 'image' && audit.providerUrl ? { originalProviderImageUrl: audit.providerUrl } : {}),
-        ...(mediaKind === 'video' && audit.providerUrl ? { originalProviderVideoUrl: audit.providerUrl } : {}),
-        ...(extraMetadata ?? {}),
-      }
-      onRecoverMedia(node.id, {
-        ...(mediaKind === 'image' ? { resultImageUrl: workingUrl } : { resultVideoUrl: workingUrl }),
-        metadataJson: nextMetadata,
-      })
-      setMediaRecoveryStatus('recovered')
-    }
-
-    void auditNodeMedia(node, mediaKind).then(async (audit) => {
-      if (cancelled) return
-      if (audit.assetReachable && audit.stableAssetUrl) {
-        patchRecoveredNode(audit.stableAssetUrl, audit, { assetUrl: audit.stableAssetUrl })
-        return
-      }
-
-      const resyncUrl = !audit.hasStableAsset
-        ? audit.selectedWorkingUrl ?? (audit.providerReachable ? audit.providerUrl : undefined)
-        : undefined
-
-      if (resyncUrl) {
-        try {
-          const response = await fetch('/api/media/resync', {
-            method: 'POST',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              url: resyncUrl,
-              type: mediaKind,
-              nodeId: node.id,
-              filenameHint: `${node.title || node.id || 'recovered'}-${mediaKind}.${mediaKind === 'image' ? 'png' : 'mp4'}`,
-              metadata: nodeMetadata,
-            }),
-          })
-          const data = await response.json().catch(() => ({})) as {
-            success?: boolean
-            stableUrl?: string
-            assetId?: string
-            mediaPersistence?: unknown
-            diagnostic?: unknown
-          }
-          if (!cancelled && response.ok && data.success && data.stableUrl) {
-            patchRecoveredNode(data.stableUrl, audit, {
-              assetUrl: data.stableUrl,
-              assetId: data.assetId,
-              mediaPersistence: data.mediaPersistence
-                ? { ...metadataRecord(data.mediaPersistence), status: 'persisted' }
-                : persistedRecoveryMetadata(nodeMetadata.mediaPersistence, new Date().toISOString()),
-              mediaResync: data,
-            })
-            return
-          }
-        } catch {
-          // Fall through to the unrecoverable state when the visible media has already failed.
-        }
-      }
-
-      if (audit.selectedWorkingUrl) {
-        patchRecoveredNode(audit.selectedWorkingUrl, audit, {
-          mediaPersistence: {
-            ...metadataRecord(nodeMetadata.mediaPersistence),
-            status: mediaPersistenceStatus(nodeMetadata.mediaPersistence),
-          },
-        })
-        return
-      }
-
-      if (loadFailed && !audit.likelyRecoverable) {
-        setMediaRecoveryStatus('failed_unrecoverable')
-        // Persist terminal state so future renders skip the audit and the workspace
-        // stops re-running resync for this node.
-        if (!cancelled) {
-          onRecoverMedia(node.id, {
-            metadataJson: {
-              ...metadataRecord(node.metadataJson),
-              recoveryStatus: 'old_url_expired',
-              nextAction: 'regenerate_from_prompt',
-              autoRecoveryFailedAt: new Date().toISOString(),
-            },
-          })
-        }
-      } else {
-        setMediaRecoveryStatus('idle')
-      }
-    }).catch(() => {
-      if (!cancelled) setMediaRecoveryStatus(loadFailed ? 'failed_unrecoverable' : 'idle')
+        recoveryStatus: 'old_url_expired',
+        nextAction: 'regenerate_from_prompt',
+        autoRecoveryFailedAt: new Date().toISOString(),
+      },
     })
-
-    return () => {
-      cancelled = true
-    }
   }, [
-    assetUrl,
     imageLoadFailed,
-    imagePreviewUrl,
-    node,
+    videoLoadFailed,
+    node.id,
+    node.kind,
     nodeMetadata,
     onRecoverMedia,
-    persistenceStatus,
-    videoLoadFailed,
-    videoPreviewUrl,
   ])
 
   useEffect(() => {

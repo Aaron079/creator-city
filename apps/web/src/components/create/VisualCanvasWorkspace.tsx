@@ -4513,72 +4513,9 @@ export function VisualCanvasWorkspace({
           continue
         }
 
-        try {
-          const response = await fetch('/api/media/resync', {
-            method: 'POST',
-            cache: 'no-store',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-              url,
-              type: current.kind,
-              projectId,
-              workflowId,
-              nodeId: current.id,
-              filenameHint: `${current.title || current.id}-${current.kind}.${current.kind === 'image' ? 'png' : 'mp4'}`,
-              metadata,
-            }),
-          })
-          const data = await response.json().catch(() => ({})) as {
-            success?: boolean
-            stableUrl?: string
-            assetId?: string
-            mediaPersistence?: unknown
-            message?: string
-            errorCode?: string
-          }
-          if (cancelled) return
-          if (response.ok && data.success && data.assetId && data.stableUrl) {
-            nextNodes = nextNodes.map((node) => node.id === current.id
-              ? {
-                  ...node,
-                  assetId: data.assetId,
-                  ...(node.kind === 'image' ? { resultImageUrl: data.stableUrl } : {}),
-                  ...(node.kind === 'video' ? { resultVideoUrl: data.stableUrl, preview: { ...(node.preview ?? { type: 'remote-video' as const }), type: 'remote-video' as const, url: data.stableUrl } } : {}),
-                  metadataJson: {
-                    ...metadataRecord(node.metadataJson),
-                    assetId: data.assetId,
-                    assetUrl: data.stableUrl,
-                    resolvedUrl: data.stableUrl,
-                    assetResolveStatus: 'ready',
-                    recoveryStatus: 'ready',
-                    mediaPersistence: data.mediaPersistence ?? {
-                      status: 'persisted',
-                      assetId: data.assetId,
-                      recoveredAt: new Date().toISOString(),
-                    },
-                  },
-                }
-              : node)
-            changed = true
-            continue
-          }
-          const recoveryStatus = unresolvedLegacyStatus(url)
-          nextNodes = nextNodes.map((node) => node.id === current.id
-            ? {
-                ...node,
-                metadataJson: {
-                  ...metadataRecord(node.metadataJson),
-                  assetResolveStatus: recoveryStatus,
-                  recoveryStatus,
-                  error: data.message || data.errorCode || '旧媒体 URL 已不可读取。',
-                },
-              }
-            : node)
-          changed = true
-        } catch {
-          // Keep the current node visible; the next page load can retry this queue.
-        }
+        // Legacy node has a URL — let the browser try to load it.
+        // If it fails, CanvasNodeCard's onError handler cycles candidates and
+        // the recovery useEffect writes old_url_expired without any network requests.
       }
 
       if (!cancelled && changed) {
