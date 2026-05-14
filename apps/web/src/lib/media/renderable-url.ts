@@ -31,6 +31,10 @@ const PROVIDER_API_ONLY_HOSTNAMES = new Set([
   'open.volcengineapi.com',
   'visual.volcengineapi.com',
   'maas-api.ml-platform-cn-beijing.volces.com',
+  // ByteDance / Volcengine AI API gateways
+  'api.byteplus.com',
+  'maas.volces.com',
+  'open.bytedance.com',
 ])
 
 function parseHttpUrl(value: string): URL | null {
@@ -47,24 +51,30 @@ function isProviderApiOnlyHost(hostname: string): boolean {
   // Exact matches
   if (PROVIDER_API_ONLY_HOSTNAMES.has(h)) return true
   // Pattern: ark.*.volces.com (but NOT tos-*.volces.com which is object storage)
-  if (h.endsWith('.volces.com') && /^ark\./i.test(h)) return true
+  if (h.endsWith('.volces.com') && /^ark[.-]/i.test(h)) return true
   if (h.endsWith('.volcengineapi.com')) return true
+  // Volcengine / ByteDance API subdomains
+  if (h.endsWith('.byteplus.com') && !/^(cdn|storage|tos|oss|static|img|media|files)[.-]/i.test(h)) return true
   return false
 }
 
 function hasForbiddenApiPath(pathname: string) {
   const path = pathname.toLowerCase()
-  return path === '/api'
-    || path.startsWith('/api/')
-    || path.includes('/api/')
-    || path === '/v1'
-    || path.startsWith('/v1/')
-    || path.includes('/v1/')
-    || path.includes('/v3/images/generations')
-    || path.includes('/v3/contents/generations')
-    || path === '/tasks'
-    || path.startsWith('/tasks/')
-    || path.includes('/tasks/')
+  // Common REST API path prefixes
+  if (path === '/api' || path.startsWith('/api/') || path.includes('/api/')) return true
+  if (path === '/v1' || path.startsWith('/v1/') || path.includes('/v1/')) return true
+  if (path === '/v2' || path.startsWith('/v2/') || path.includes('/v2/')) return true
+  if (path === '/v3' || path.startsWith('/v3/') || path.includes('/v3/')) return true
+  // Provider-specific generation/task endpoints
+  if (path.includes('/images/generations')) return true
+  if (path.includes('/contents/generations')) return true
+  if (path.includes('/videos/generations')) return true
+  if (path.includes('/text-to-image')) return true
+  if (path.includes('/text-to-video')) return true
+  if (path.includes('/image-to-video')) return true
+  if (path === '/tasks' || path.startsWith('/tasks/') || path.includes('/tasks/')) return true
+  if (path.includes('/generate')) return true
+  return false
 }
 
 function hasMediaExtension(pathname: string) {
@@ -99,11 +109,21 @@ function explicitProviderMediaField(source?: string) {
     ?.replace(/\[\d+\]/g, '')
     .replace(/[_-]/g, '')
     .toLowerCase()
+  // Only allow well-known media URL field names — NOT bare 'url' since that
+  // is used by many provider APIs to store their API endpoint URLs.
   return last === 'imageurl'
     || last === 'videourl'
     || last === 'mediaurl'
     || last === 'downloadurl'
-    || last === 'url'
+    || last === 'resultimageurl'
+    || last === 'resultvideourl'
+    || last === 'asseturl'
+    || last === 'stableurl'
+    || last === 'resolvedurl'
+    || last === 'originalurl'
+    || last === 'provideroriginalurl'
+    || last === 'sourceimageurl'
+    || last === 'sourcevideourl'
 }
 
 export function isProviderApiEndpointUrl(value: string) {
@@ -126,6 +146,9 @@ export function isRenderableMediaUrl(value: string, options: { source?: string }
     return { ok: false, reason: 'unsupported_protocol', hostname, pathname }
   }
 
+  // Provider API-only hosts and API paths are never renderable media.
+  // This check runs before media extension / CDN checks so a .mp4 URL
+  // on an Ark API host is still rejected.
   if (isProviderApiOnlyHost(hostname) || hasForbiddenApiPath(pathname)) {
     return { ok: false, reason: 'provider_api_endpoint', hostname, pathname, providerEndpoint: trimmed }
   }

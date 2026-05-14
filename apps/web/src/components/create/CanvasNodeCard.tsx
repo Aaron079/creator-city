@@ -1348,12 +1348,25 @@ export function CanvasNodeCard({
   const videoCandidateUrls = useMemo(() => (node.kind === 'video' ? getNodeVideoUrlSources(node) : []), [node])
   const imageCandidateUrlsKey = useMemo(() => candidateKey(imageCandidateUrls), [imageCandidateUrls])
   const videoCandidateUrlsKey = useMemo(() => candidateKey(videoCandidateUrls), [videoCandidateUrls])
-  const imageSource = selectedImageSource && imageCandidateUrls.some((candidate) => candidate.url === selectedImageSource.url)
-    ? selectedImageSource
-    : imageCandidateUrls[0] ?? { url: '', source: '' }
-  const videoSource = selectedVideoSource && videoCandidateUrls.some((candidate) => candidate.url === selectedVideoSource.url)
-    ? selectedVideoSource
-    : videoCandidateUrls[0] ?? { url: '', source: '' }
+  // Safety gate: ensure selected source is a genuinely renderable URL.
+  // getNodeImageUrlSources filters via isRenderableMediaUrl, but edge-case
+  // Ark/API URLs could still slip through stale state or future provider changes.
+  // An invalid URL here would become img src via getProxiedMediaUrl → browser
+  // auto-requests /api/media/proxy?url=<ark-api-url> → 403 noise.
+  const imageSource = (() => {
+    const candidate = selectedImageSource && imageCandidateUrls.some((c) => c.url === selectedImageSource.url)
+      ? selectedImageSource
+      : (imageCandidateUrls[0] ?? null)
+    if (!candidate?.url || !isRenderableMediaUrl(candidate.url).ok) return { url: '', source: '' }
+    return candidate
+  })()
+  const videoSource = (() => {
+    const candidate = selectedVideoSource && videoCandidateUrls.some((c) => c.url === selectedVideoSource.url)
+      ? selectedVideoSource
+      : (videoCandidateUrls[0] ?? null)
+    if (!candidate?.url || !isRenderableMediaUrl(candidate.url).ok) return { url: '', source: '' }
+    return candidate
+  })()
   const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? videoSource : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)

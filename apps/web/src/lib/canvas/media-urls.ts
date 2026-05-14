@@ -1,25 +1,4 @@
-import { filterRenderableMediaUrlSources, isRenderableMediaUrl } from '@/lib/media/renderable-url'
-
-// Keys that hold diagnostic/error tracking data, not renderable media URLs.
-// Scanning these would pull provider API endpoints or failed URL logs back into candidates.
-const SKIP_MEDIA_SCAN_KEYS = new Set([
-  'failedUrls',
-  'attemptedUrls',
-  'renderFailures',
-  'probeFailures',
-  'lastError',
-  'lastGenerationError',
-  'submittedInput',
-  'urlCandidates',
-  'mediaRecoveryAudit',
-  'mediaResync',
-  'mediaResyncDiagnostic',
-  'diagnostic',
-  'p0Debug',
-  'attemptsDiagnostic',
-  'providerResponse',
-  'debugInfo',
-])
+import { filterRenderableMediaUrlSources } from '@/lib/media/renderable-url'
 
 type MediaNodeLike = {
   resultImageUrl?: string | null
@@ -60,43 +39,6 @@ export type MediaUrlSource = {
   source: string
 }
 
-function looksLikeMediaUrlKey(key: string, kind: 'image' | 'video') {
-  const normalized = key.toLowerCase()
-  if (!/(url|uri|href)$/i.test(key)) return false
-  if (kind === 'image') return /(image|asset|media|provider|original|stable|resolved|result|output|thumbnail|preview|source|url|uri|href)/.test(normalized)
-  return /(video|asset|media|provider|original|stable|resolved|result|output|preview|source|url|uri|href)/.test(normalized)
-}
-
-function collectMetadataMediaUrls(
-  value: unknown,
-  kind: 'image' | 'video',
-  path = 'metadataJson',
-  depth = 0,
-): Array<[string, string]> {
-  if (!value || depth > 5) return []
-  if (typeof value === 'string') {
-    if (isRenderableMediaUrl(value, { source: path }).ok) return [[path, value]]
-    return []
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => collectMetadataMediaUrls(item, kind, `${path}[${index}]`, depth + 1))
-  }
-  if (typeof value !== 'object') return []
-  const record = value as Record<string, unknown>
-  const items: Array<[string, string]> = []
-  for (const [key, nested] of Object.entries(record)) {
-    if (SKIP_MEDIA_SCAN_KEYS.has(key)) continue
-    const nextPath = `${path}.${key}`
-    if (typeof nested === 'string' && looksLikeMediaUrlKey(key, kind)) {
-      const url = stringValue(nested)
-      if (isRenderableMediaUrl(url, { source: nextPath }).ok) items.push([nextPath, url])
-      continue
-    }
-    items.push(...collectMetadataMediaUrls(nested, kind, nextPath, depth + 1))
-  }
-  return items
-}
-
 function uniqueSources(candidates: Array<[string, string]>): MediaUrlSource[] {
   const seen = new Set<string>()
   return candidates.reduce<MediaUrlSource[]>((items, [source, url]) => {
@@ -115,6 +57,9 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
   const pluginOutput = recordValue(pluginResult.output)
   const asset = recordValue(metadata.asset)
 
+  // Whitelist-only: explicit known fields, no deep metadata scan.
+  // Deep scanning found URLs in arbitrary keys (including provider API endpoints
+  // stored at keys named "url"), causing those to enter candidates and be proxied.
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
@@ -152,7 +97,9 @@ export function getNodeImageUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.pluginResult.output.resultImageUrl', stringValue(pluginOutput.resultImageUrl)],
     ['metadata.pluginResult.output.assetUrl', stringValue(pluginOutput.assetUrl)],
     ['metadata.pluginResult.images[0].url', firstImageUrl(pluginResult.images)],
-    ...collectMetadataMediaUrls(metadata, 'image'),
+    ['metadata.downloadUrl', stringValue(metadata.downloadUrl)],
+    ['metadata.mediaUrl', stringValue(metadata.mediaUrl)],
+    ['metadata.image_url', stringValue(metadata.image_url)],
   ]
   return filterRenderableMediaUrlSources(uniqueSources(candidates))
 }
@@ -173,6 +120,7 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
   const pluginOutput = recordValue(pluginResult.output)
   const asset = recordValue(metadata.asset)
 
+  // Whitelist-only: explicit known fields, no deep metadata scan.
   const candidates: Array<[string, string]> = [
     ['metadata.resolvedUrl', stringValue(metadata.resolvedUrl)],
     ['metadata.assetUrl', stringValue(metadata.assetUrl)],
@@ -211,7 +159,9 @@ export function getNodeVideoUrlSources(node?: MediaNodeLike | null): MediaUrlSou
     ['metadata.pluginResult.output.assetUrl', stringValue(pluginOutput.assetUrl)],
     ['metadata.pluginResult.videos[0].url', firstVideoUrl(pluginResult.videos)],
     ['preview.url', node.preview?.type === 'remote-video' ? stringValue(node.preview.url) : ''],
-    ...collectMetadataMediaUrls(metadata, 'video'),
+    ['metadata.downloadUrl', stringValue(metadata.downloadUrl)],
+    ['metadata.mediaUrl', stringValue(metadata.mediaUrl)],
+    ['metadata.video_url', stringValue(metadata.video_url)],
   ]
   return filterRenderableMediaUrlSources(uniqueSources(candidates))
 }
