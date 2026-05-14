@@ -5921,7 +5921,7 @@ export default function CreatePage() {
     status: 'draft',
   })
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('canvas')
-  const [directorDeskMode, setDirectorDeskMode] = useState<'desk' | 'canvas'>('desk')
+  const [directorDeskMode, setDirectorDeskMode] = useState<'desk' | 'canvas'>('canvas')
   const [directorWorkflowGenerated, setDirectorWorkflowGenerated] = useState(false)
   const [showStartupPanels, setShowStartupPanels] = useState(false)
   const [acceptedClipReviewIds, setAcceptedClipReviewIds] = useState<string[]>([])
