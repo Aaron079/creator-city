@@ -4147,8 +4147,12 @@ export function VisualCanvasWorkspace({
     const selectedModel = fallbackModel || defaultModelForRegenerationNode(node, selectedProviderId)
     const initialRegenerationParams = buildRegenerationParams(node)
     const initialRegenerationInputAssets = buildRegenerationInputAssets(node)
+    const nodeMetaRecord = metadataRecord(node.metadataJson)
+    // Fall back to projectId stored in the node's own submittedInput when component state is still empty (async load not yet settled).
+    const effectiveProjectId = projectId
+      || stringValue(metadataRecord(nodeMetaRecord.submittedInput).projectId)
     const submittedInputBase = {
-      projectId,
+      projectId: effectiveProjectId,
       workflowId,
       nodeId: node.id,
       kind: node.kind,
@@ -4201,7 +4205,7 @@ export function VisualCanvasWorkspace({
     }
 
     const missingFields = [
-      ...(!projectId ? ['projectId'] : []),
+      ...(!effectiveProjectId ? ['projectId'] : []),
       ...(!prompt ? ['prompt'] : []),
       ...(!selectedProviderId ? ['provider'] : []),
       ...(!selectedModel ? ['model'] : []),
@@ -4272,7 +4276,7 @@ export function VisualCanvasWorkspace({
           regenerationParams,
           node.id,
           regenerationInputAssets,
-          projectId,
+          effectiveProjectId,
           workflowId,
           undefined,
           selectedModel,
@@ -4301,7 +4305,7 @@ export function VisualCanvasWorkspace({
           while (polls < 60) {
             await delay(5000)
             const statusResult = await pollSeedanceVideoTask(selectedProviderId, taskId, {
-              projectId,
+              projectId: effectiveProjectId,
               workflowId,
               nodeId: node.id,
               prompt,
