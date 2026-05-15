@@ -1,3 +1,4 @@
+import { getExecutorStatus } from '@/lib/executors/executor-gateway'
 import type { GenerationHealthResponse, GenerationHealthSection } from './health-types'
 
 type RequiredEnv =
@@ -66,6 +67,8 @@ export function getGenerationHealth(): GenerationHealthResponse {
     ...videoGeneration.missingEnv,
   ])
 
+  const executors = getExecutorStatus()
+
   return {
     ok: database.ok && storage.ok && imageGeneration.ok && videoGeneration.ok,
     checkedAt: new Date().toISOString(),
@@ -74,5 +77,6 @@ export function getGenerationHealth(): GenerationHealthResponse {
     imageGeneration,
     videoGeneration,
     missingEnv: missing,
+    executors,
   }
 }

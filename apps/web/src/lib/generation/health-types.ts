@@ -9,6 +9,11 @@ export type GenerationHealthSection = {
   proxyAvailable?: boolean
 }
 
+export type ExecutorHealthStatus = {
+  configured: boolean
+  baseUrlConfigured: boolean
+}
+
 export type GenerationHealthResponse = {
   ok: boolean
   checkedAt: string
@@ -17,4 +22,8 @@ export type GenerationHealthResponse = {
   imageGeneration: GenerationHealthSection
   videoGeneration: GenerationHealthSection
   missingEnv: string[]
+  executors: {
+    cn: ExecutorHealthStatus
+    global: ExecutorHealthStatus
+  }
 }
