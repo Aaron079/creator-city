@@ -1,0 +1,27 @@
+{
+  "name": "cn-executor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Creator City China region executor — Aliyun Function Compute HTTP service",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^8.57.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5"
+  }
+}
