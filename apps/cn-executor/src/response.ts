@@ -26,7 +26,7 @@ export function jsonError(
 }
 
 export function jsonNotFound(res: ServerResponse, path: string): void {
-  jsonError(res, { errorCode: 'not_found', message: `No route for ${path}` }, 404)
+  jsonError(res, { errorCode: 'route_not_found', message: `No route for ${path}`, path }, 404)
 }
 
 export function jsonUnauthorized(res: ServerResponse): void {

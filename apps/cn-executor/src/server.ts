@@ -44,6 +44,18 @@ const server = http.createServer((req, res) => {
   const method = req.method?.toUpperCase() ?? 'GET'
   const url = req.url?.split('?')[0] ?? '/'
 
+  // Root — always JSON 200, never redirect. Aliyun FC forbids external redirects
+  // on the default public endpoint; returning a non-2xx can trigger platform
+  // redirects, so all base paths must respond with a JSON body and 200.
+  if (method === 'GET' && (url === '/' || url === '')) {
+    jsonOk(res, {
+      ok: true,
+      service: 'creator-city-cn-executor',
+      message: 'CN executor is running. Use /health for diagnostics.',
+    })
+    return
+  }
+
   if (method === 'GET' && url === '/health') {
     handleHealth(res)
     return
