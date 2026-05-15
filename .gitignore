@@ -34,3 +34,4 @@ apps/server/prisma/generated/
 coverage
 .vercel
 .env*.local
+cn-executor-deploy.zip

@@ -1,0 +1,5 @@
+#!/bin/bash
+# Aliyun Function Compute custom runtime bootstrap.
+# FC injects FC_SERVER_PORT; fall back to 9000 for local dev.
+export PORT="${FC_SERVER_PORT:-${PORT:-9000}}"
+exec node /code/dist/server.js
