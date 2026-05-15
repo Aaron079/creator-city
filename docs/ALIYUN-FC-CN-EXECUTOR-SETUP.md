@@ -108,6 +108,9 @@ Set these in **Function Compute → Function Settings → Environment Variables*
 | `ALIYUN_OSS_ENDPOINT` | OSS endpoint (e.g. `https://oss-cn-hangzhou.aliyuncs.com`) |
 | `ALIYUN_OSS_PUBLIC_BASE_URL` | Optional public CDN base URL for served assets |
 | `CREATOR_EXECUTOR_SHARED_SECRET` | Random secret shared with Vercel for request auth |
+| `DEEPSEEK_API_KEY` | DeepSeek API key for text generation (e.g. script writing, prompt expansion) |
+| `DEEPSEEK_BASE_URL` | DeepSeek API base URL — default: `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | DeepSeek model name — default: `deepseek-v4-flash` |
 
 Generate a strong shared secret:
 

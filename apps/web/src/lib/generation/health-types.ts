@@ -21,6 +21,7 @@ export type GenerationHealthResponse = {
   storage: GenerationHealthSection
   imageGeneration: GenerationHealthSection
   videoGeneration: GenerationHealthSection
+  textGeneration: GenerationHealthSection
   missingEnv: string[]
   executors: {
     cn: ExecutorHealthStatus

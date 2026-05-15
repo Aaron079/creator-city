@@ -60,22 +60,29 @@ export function getGenerationHealth(): GenerationHealthResponse {
     'VOLCENGINE_ARK_API_KEY',
     'VOLCENGINE_SEEDANCE_MODEL',
   ])
+  const textGeneration = section('deepseek', [
+    'DEEPSEEK_API_KEY',
+    'DEEPSEEK_BASE_URL',
+    'DEEPSEEK_MODEL',
+  ])
   const missing = unique([
     ...database.missingEnv,
     ...storage.missingEnv,
     ...imageGeneration.missingEnv,
     ...videoGeneration.missingEnv,
+    ...textGeneration.missingEnv,
   ])
 
   const executors = getExecutorStatus()
 
   return {
-    ok: database.ok && storage.ok && imageGeneration.ok && videoGeneration.ok,
+    ok: database.ok && storage.ok && imageGeneration.ok && videoGeneration.ok && textGeneration.ok,
     checkedAt: new Date().toISOString(),
     database,
     storage,
     imageGeneration,
     videoGeneration,
+    textGeneration,
     missingEnv: missing,
     executors,
   }
