@@ -29,6 +29,12 @@ importers:
       ali-oss:
         specifier: ^6.23.0
         version: 6.23.0
+      debug:
+        specifier: ^4.3.4
+        version: 4.4.3
+      escape-html:
+        specifier: ^1.0.3
+        version: 1.0.3
     devDependencies:
       '@types/ali-oss':
         specifier: ^6.23.3

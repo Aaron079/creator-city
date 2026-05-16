@@ -16,7 +16,9 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "ali-oss": "^6.23.0"
+    "ali-oss": "^6.23.0",
+    "debug": "^4.3.4",
+    "escape-html": "^1.0.3"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
