@@ -62,11 +62,12 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
 
   const model = typeof body.model === 'string' ? body.model.trim() || undefined : undefined
   const aspectRatio = typeof body.aspectRatio === 'string' ? body.aspectRatio.trim() || undefined : undefined
+  const resolution = typeof body.resolution === 'string' ? body.resolution.trim() || undefined : undefined
   const projectId = typeof body.projectId === 'string' ? body.projectId.trim() || undefined : undefined
   const nodeId = typeof body.nodeId === 'string' ? body.nodeId.trim() || undefined : undefined
 
   // 1. Generate via Volcengine Seedream
-  const genResult = await generateSeedreamImage({ prompt, model, aspectRatio })
+  const genResult = await generateSeedreamImage({ prompt, model, aspectRatio, resolution })
   if (!genResult.success) {
     jsonError(res, {
       errorCode: genResult.errorCode,
@@ -74,6 +75,11 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
       provider: 'volcengine_seedream',
       ...(genResult.upstreamStatus !== undefined ? { upstreamStatus: genResult.upstreamStatus } : {}),
       ...(genResult.upstreamMessage !== undefined ? { upstreamMessage: genResult.upstreamMessage } : {}),
+      ...(genResult.providerEndpoint !== undefined ? { providerEndpoint: genResult.providerEndpoint } : {}),
+      ...(genResult.providerHttpStatus !== undefined ? { providerHttpStatus: genResult.providerHttpStatus } : {}),
+      ...(genResult.requestId !== undefined ? { requestId: genResult.requestId } : {}),
+      ...(genResult.submittedInput !== undefined ? { submittedInput: genResult.submittedInput } : {}),
+      ...(genResult.providerResponse !== undefined ? { providerResponse: genResult.providerResponse } : {}),
     })
     return
   }
