@@ -12,6 +12,7 @@ import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
+import { executeImageGenerationViaRegion } from '@/lib/executors/executor-gateway'
 
 export const dynamic = 'force-dynamic'
 
@@ -325,7 +326,46 @@ export async function POST(request: NextRequest) {
         submittedInput?: unknown
         providerResponse?: unknown
       }
-    if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
+    const cnExecutorBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim()
+    const useCnExecutor = Boolean(cnExecutorBaseUrl) && providerId === 'volcengine-seedream-image'
+
+    if (useCnExecutor) {
+      const executorResult = await executeImageGenerationViaRegion({
+        userId: currentUser.id,
+        projectId: body.projectId ?? null,
+        nodeId: body.nodeId ?? null,
+        prompt,
+        provider: providerId,
+        model: requestModel ?? null,
+        aspectRatio: aspectRatio ?? null,
+      })
+      if (!executorResult.success) {
+        return NextResponse.json({
+          success: false,
+          errorCode: visibleProviderErrorCode(executorResult.errorCode ?? 'cn_executor_failed', undefined, executorResult.errorMessage ?? ''),
+          message: executorResult.errorMessage ?? 'CN executor returned an error.',
+          mode: 'unavailable',
+          status: 'failed',
+          submittedInput,
+        }, { status: 200 })
+      }
+      const executorImageUrl = String(executorResult.resultImageUrl ?? executorResult.stableUrl ?? '')
+      const executorModel = String(executorResult.model ?? requestModel ?? '')
+      raw = {
+        success: true,
+        providerId,
+        mode: 'real',
+        status: 'succeeded',
+        result: {
+          imageUrl: executorImageUrl,
+          previewUrl: executorImageUrl,
+          metadata: { providerId, model: executorModel, generationSource: 'cn_executor' },
+        },
+        message: `图片生成成功（cn-executor，${executorModel}）`,
+        model: executorModel,
+        submittedInput,
+      }
+    } else if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
       const chinaResult = providerId === 'volcengine-seedream-image'
         ? await generateSeedreamImage({ prompt, aspectRatio, size, referenceImages })
         : await generateJimengImage({ prompt, aspectRatio, size, referenceImages })

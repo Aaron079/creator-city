@@ -70,10 +70,14 @@ async function forwardToExecutor(
 ): Promise<ExecutorResult> {
   let response: Response
   try {
+    const secret = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim() ?? ''
     response = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       // No credentials: 'same-origin' — never forward user cookies to the executor.
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(secret ? { 'x-creator-executor-secret': secret } : {}),
+      },
       body: JSON.stringify(buildForwardBody(input)),
     })
   } catch (err) {

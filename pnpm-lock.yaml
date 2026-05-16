@@ -25,7 +25,14 @@ importers:
         version: 5.9.3
 
   apps/cn-executor:
+    dependencies:
+      ali-oss:
+        specifier: ^6.23.0
+        version: 6.23.0
     devDependencies:
+      '@types/ali-oss':
+        specifier: ^6.23.3
+        version: 6.23.3
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39

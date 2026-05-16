@@ -2,6 +2,7 @@ import http from 'http'
 import { getEnvPresence, getMissingEnv } from './env'
 import { jsonError, jsonNotFound, jsonOk, jsonUnauthorized } from './response'
 import { isAuthorized } from './auth'
+import { handleGenerateImage } from './handlers/generateImage'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
 
@@ -15,17 +16,6 @@ function handleHealth(res: http.ServerResponse): void {
     runtime: 'node',
     env: envPresence,
     missingEnv,
-  })
-}
-
-function handleGenerateImage(req: http.IncomingMessage, res: http.ServerResponse): void {
-  if (!isAuthorized(req)) {
-    jsonUnauthorized(res)
-    return
-  }
-  jsonError(res, {
-    errorCode: 'cn_executor_image_not_implemented',
-    message: 'CN image executor scaffold is deployed, generation not implemented yet.',
   })
 }
 
@@ -62,7 +52,14 @@ const server = http.createServer((req, res) => {
   }
 
   if (method === 'POST' && url === '/api/generate/image') {
-    handleGenerateImage(req, res)
+    handleGenerateImage(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in image generation.',
+        })
+      }
+    })
     return
   }
 
