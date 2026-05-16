@@ -21,6 +21,7 @@ type ImageGenerateBody = Partial<GenerateRequest> & {
   model?: string
   aspectRatio?: string
   size?: string
+  resolution?: string
   system?: string
   compiledPrompt?: string
 }
@@ -338,6 +339,7 @@ export async function POST(request: NextRequest) {
         provider: providerId,
         model: requestModel ?? null,
         aspectRatio: aspectRatio ?? null,
+        resolution: typeof body.resolution === 'string' ? body.resolution : null,
       })
       if (!executorResult.success) {
         return NextResponse.json({
@@ -346,7 +348,7 @@ export async function POST(request: NextRequest) {
           message: executorResult.errorMessage ?? 'CN executor returned an error.',
           mode: 'unavailable',
           status: 'failed',
-          submittedInput,
+          submittedInput: (executorResult.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
         }, { status: 200 })
       }
       const executorImageUrl = String(executorResult.resultImageUrl ?? executorResult.stableUrl ?? '')

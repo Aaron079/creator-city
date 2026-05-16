@@ -5,18 +5,17 @@ function imageEndpoint(baseUrl: string): string {
   return /\/images\/generations$/i.test(base) ? base : `${base}/images/generations`
 }
 
-// Maps UI aspectRatio + resolution to a valid Volcengine ImageGenerations size string.
-// Returns WxH format (e.g. "1920x1080"). Never returns raw UI values like "9:16" or "2K · 5s".
-function normalizeSeedreamSize(aspectRatio?: string | null, resolution?: string | null): string {
+// Maps UI aspectRatio to the Volcengine Seedream WxH size string.
+// Seedream only accepts specific WxH values — never raw UI strings like "9:16".
+// Always defaults to high-res (2K) sizes; fallback is "1920x1080".
+function normalizeSeedreamSize(aspectRatio?: string | null): string {
   const ar = String(aspectRatio ?? '').trim().toLowerCase()
-  const res = String(resolution ?? '').trim().toUpperCase()
-  const high = res === '2K' || res === '3K' || res === '4K'
 
   // Pass through if already WxH format
   if (/^\d{3,5}x\d{3,5}$/i.test(ar)) return ar
 
-  // 2K and above — larger dimensions per aspect ratio
-  const map2K: Record<string, string> = {
+  // Seedream-supported sizes keyed by aspect ratio
+  const sizeMap: Record<string, string> = {
     '16:9':  '1920x1080',
     '9:16':  '1080x1920',
     '1:1':   '2048x2048',
@@ -27,28 +26,14 @@ function normalizeSeedreamSize(aspectRatio?: string | null, resolution?: string 
     '21:9':  '2560x1088',
   }
 
-  // Standard / 1K — smaller, widely supported dimensions
-  const mapStd: Record<string, string> = {
-    '16:9':  '1280x720',
-    '9:16':  '720x1280',
-    '1:1':   '1024x1024',
-    '4:3':   '1024x768',
-    '3:4':   '768x1024',
-    '2:3':   '683x1024',
-    '3:2':   '1024x683',
-    '21:9':  '1920x816',
-  }
-
-  const map = high ? map2K : mapStd
-  if (ar in map) return map[ar]
+  if (ar in sizeMap) return sizeMap[ar]
 
   // Legacy aliases
-  if (ar === '1080p' || ar === '1920x1080') return '1920x1080'
-  if (ar === '720p'  || ar === '1280x720')  return '1280x720'
-  if (ar === '2k')   return high ? '2048x2048' : '1024x1024'
+  if (ar === '1080p') return '1920x1080'
+  if (ar === '720p')  return '1280x720'
 
-  // Safe default — supported by virtually all Ark image models
-  return '1024x1024'
+  // Default — widest support
+  return '1920x1080'
 }
 
 function findImageUrl(value: unknown): string | null {
@@ -102,8 +87,10 @@ function findBase64Image(value: unknown): string | null {
 
 export type SeedreamInput = {
   prompt: string
-  /** ignored for API model selection — always uses VOLCENGINE_SEEDREAM_MODEL env var */
+  /** UI/provider identifier only — ignored for API model selection, always uses VOLCENGINE_SEEDREAM_MODEL env var */
   model?: string | null
+  /** UI/provider identifier only — for submittedInput logging, never used as Volcengine model */
+  providerId?: string | null
   aspectRatio?: string | null
   resolution?: string | null
 }
@@ -159,26 +146,27 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
     }
   }
 
-  const size = normalizeSeedreamSize(input.aspectRatio, input.resolution)
+  const size = normalizeSeedreamSize(input.aspectRatio)
 
   // Minimal valid Volcengine ARK ImageGenerations body.
-  // Do NOT include chat-only params (stream, sequential_image_generation, etc.).
+  // Do NOT include chat-only params (stream, sequential_image_generation, referenceImages, etc.).
   const reqBody: Record<string, unknown> = {
     model,
     prompt: input.prompt,
     size,
     response_format: 'url',
-    n: 1,
     watermark: false,
   }
 
   const submittedInput: Record<string, unknown> = {
+    providerId: input.providerId ?? null,
     model,
     size,
-    promptChars: input.prompt.length,
-    hasImage: false,
     aspectRatio: input.aspectRatio ?? null,
     resolution: input.resolution ?? null,
+    promptChars: input.prompt.length,
+    hasReferenceImages: false,
+    referenceImageCount: 0,
   }
 
   let response: Response

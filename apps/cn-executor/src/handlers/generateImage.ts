@@ -60,14 +60,16 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
     return
   }
 
+  // model and providerId are UI identifiers — passed for logging only, never used as Volcengine API model
   const model = typeof body.model === 'string' ? body.model.trim() || undefined : undefined
+  const providerId = typeof body.provider === 'string' ? body.provider.trim() || undefined : undefined
   const aspectRatio = typeof body.aspectRatio === 'string' ? body.aspectRatio.trim() || undefined : undefined
   const resolution = typeof body.resolution === 'string' ? body.resolution.trim() || undefined : undefined
   const projectId = typeof body.projectId === 'string' ? body.projectId.trim() || undefined : undefined
   const nodeId = typeof body.nodeId === 'string' ? body.nodeId.trim() || undefined : undefined
 
   // 1. Generate via Volcengine Seedream
-  const genResult = await generateSeedreamImage({ prompt, model, aspectRatio, resolution })
+  const genResult = await generateSeedreamImage({ prompt, model, providerId, aspectRatio, resolution })
   if (!genResult.success) {
     jsonError(res, {
       errorCode: genResult.errorCode,
