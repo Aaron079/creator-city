@@ -1,8 +1,55 @@
-const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+export const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
-function imageEndpoint(baseUrl: string): string {
+export function imageEndpoint(baseUrl: string): string {
   const base = baseUrl.replace(/\/+$/, '')
   return /\/images\/generations$/i.test(base) ? base : `${base}/images/generations`
+}
+
+function getSeedreamEndpoint(): string {
+  const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL?.trim() || VOLCENGINE_ARK_DEFAULT_BASE_URL
+  return imageEndpoint(baseUrl)
+}
+
+function looksLikeSeedreamUiProviderId(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'volcengine-seedream-image'
+    || normalized === 'volcengine_seedream_image'
+    || normalized === 'volcengine_seedream'
+}
+
+function looksLikeSeedreamEndpointId(value: string): boolean {
+  return /^ep-[a-z0-9][a-z0-9-]*$/i.test(value.trim())
+}
+
+function looksLikeSeedreamModelId(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || looksLikeSeedreamUiProviderId(normalized) || looksLikeSeedreamEndpointId(normalized)) return false
+  return /^(doubao-)?seedream-\d/.test(normalized)
+}
+
+export function getSeedreamConfigDebugPayload(): Record<string, unknown> {
+  const model = process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() ?? ''
+  return {
+    ok: true,
+    provider: 'volcengine_seedream',
+    endpoint: getSeedreamEndpoint(),
+    model: {
+      present: Boolean(model),
+      valuePreview: model,
+      looksLikeUiProviderId: Boolean(model) && looksLikeSeedreamUiProviderId(model),
+      looksLikeModelId: Boolean(model) && looksLikeSeedreamModelId(model),
+      looksLikeEndpointId: Boolean(model) && looksLikeSeedreamEndpointId(model),
+    },
+    expectedExamples: [
+      'doubao-seedream-4-0-250828',
+      'seedream-5-0-260128',
+      'ep-xxxxxxxx',
+    ],
+    notes: [
+      'model must be a Volcengine Ark image generation model ID or endpoint ID',
+      'providerId such as volcengine-seedream-image is not valid as model',
+    ],
+  }
 }
 
 // Maps UI aspectRatio to the Volcengine Seedream WxH size string.
@@ -121,13 +168,36 @@ export type SeedreamError = {
 
 export type SeedreamResult = SeedreamSuccess | SeedreamError
 
+function normalizeSeedreamErrorCode(status: number, message: string): string {
+  const haystack = message.toLowerCase()
+  if (status === 401 || status === 403) return 'provider_auth_failed'
+  if (
+    status === 404
+    || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|not found|does not exist)|模型|接入点/.test(haystack)
+  ) {
+    return 'provider_model_invalid'
+  }
+  return 'provider_invalid_parameter'
+}
+
 export async function generateSeedreamImage(input: SeedreamInput): Promise<SeedreamResult> {
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY?.trim()
-  const baseUrl = process.env.VOLCENGINE_ARK_BASE_URL?.trim() || VOLCENGINE_ARK_DEFAULT_BASE_URL
-  const endpoint = imageEndpoint(baseUrl)
+  const endpoint = getSeedreamEndpoint()
 
   // Always use the env-var model — never trust the forwarded provider/display ID
   const model = process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() ?? ''
+  const size = normalizeSeedreamSize(input.aspectRatio)
+  const submittedInput: Record<string, unknown> = {
+    providerId: input.providerId ?? null,
+    model,
+    modelSource: 'VOLCENGINE_SEEDREAM_MODEL',
+    size,
+    aspectRatio: input.aspectRatio ?? null,
+    resolution: input.resolution ?? null,
+    promptChars: input.prompt.length,
+    hasReferenceImages: false,
+    referenceImageCount: 0,
+  }
 
   if (!apiKey) {
     return {
@@ -135,6 +205,7 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
       errorCode: 'provider_auth_failed',
       message: 'VOLCENGINE_ARK_API_KEY is not configured.',
       providerEndpoint: endpoint,
+      submittedInput,
     }
   }
   if (!model) {
@@ -143,10 +214,9 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
       errorCode: 'provider_invalid_parameter',
       message: 'VOLCENGINE_SEEDREAM_MODEL is not configured.',
       providerEndpoint: endpoint,
+      submittedInput,
     }
   }
-
-  const size = normalizeSeedreamSize(input.aspectRatio)
 
   // Minimal valid Volcengine ARK ImageGenerations body.
   // Do NOT include chat-only params (stream, sequential_image_generation, referenceImages, etc.).
@@ -156,17 +226,6 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
     size,
     response_format: 'url',
     watermark: false,
-  }
-
-  const submittedInput: Record<string, unknown> = {
-    providerId: input.providerId ?? null,
-    model,
-    size,
-    aspectRatio: input.aspectRatio ?? null,
-    resolution: input.resolution ?? null,
-    promptChars: input.prompt.length,
-    hasReferenceImages: false,
-    referenceImageCount: 0,
   }
 
   let response: Response
@@ -232,10 +291,7 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
 
     return {
       success: false,
-      errorCode:
-        response.status === 401 || response.status === 403
-          ? 'provider_auth_failed'
-          : 'provider_invalid_parameter',
+      errorCode: normalizeSeedreamErrorCode(response.status, upstreamMessage),
       message: `Volcengine returned HTTP ${response.status}: ${upstreamMessage}`,
       upstreamStatus: response.status,
       upstreamMessage,

@@ -3,6 +3,7 @@ import { getEnvPresence, getMissingEnv } from './env'
 import { jsonError, jsonNotFound, jsonOk, jsonUnauthorized } from './response'
 import { isAuthorized } from './auth'
 import { handleGenerateImage } from './handlers/generateImage'
+import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
 
@@ -48,6 +49,11 @@ const server = http.createServer((req, res) => {
 
   if (method === 'GET' && url === '/health') {
     handleHealth(res)
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/seedream-config') {
+    handleSeedreamConfigDebug(req, res)
     return
   }
 

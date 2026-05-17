@@ -725,6 +725,7 @@ export async function generateSeedreamImage(input: ChinaImageGenerationInput): P
   const submittedInput = {
     providerId,
     model,
+    modelSource: 'VOLCENGINE_SEEDREAM_MODEL',
     endpoint: '/images/generations',
     promptChars: input.prompt.trim().length,
     aspectRatio: input.aspectRatio ?? null,

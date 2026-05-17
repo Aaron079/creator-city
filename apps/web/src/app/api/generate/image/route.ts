@@ -258,6 +258,9 @@ export async function POST(request: NextRequest) {
     const requestModel = typeof body.model === 'string' && body.model.trim()
       ? body.model.trim()
       : providerRow?.model ?? null
+    const submittedModel = providerId === 'volcengine-seedream-image'
+      ? (process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() || requestModel)
+      : requestModel
     const generationContext = await prepareGenerationContext({
       userId: currentUser.id,
       projectId,
@@ -282,7 +285,8 @@ export async function POST(request: NextRequest) {
     body.nodeId = generationContext.nodeId
     const submittedInput = {
       providerId,
-      model: requestModel,
+      model: submittedModel,
+      ...(providerId === 'volcengine-seedream-image' ? { modelSource: 'VOLCENGINE_SEEDREAM_MODEL' } : {}),
       promptChars: prompt.length,
       aspectRatio: aspectRatio ?? null,
       size: size ?? null,
