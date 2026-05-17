@@ -108,9 +108,13 @@ function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; 
     ?? ''
 }
 
-function isMissingGenerationJobNodeIdColumn(error: unknown) {
+function isMissingColumn(error: unknown, column: string) {
   const message = error instanceof Error ? error.message : String(error)
-  return /GenerationJob.*nodeId|nodeId.*GenerationJob|column.*nodeId|Unknown arg `nodeId`/i.test(message)
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(
+    `GenerationJob.*${escaped}|${escaped}.*GenerationJob|column.*${escaped}|Unknown arg \`${escaped}\``,
+    'i',
+  ).test(message)
 }
 
 async function createImageGenerationJob(args: {
@@ -120,14 +124,12 @@ async function createImageGenerationJob(args: {
   body: ImageGenerateBody
   model?: string | null
 }) {
-  const data = {
+  const base = {
     userId: args.userId,
     projectId: args.body.projectId ?? null,
-    nodeId: args.body.nodeId ?? null,
     providerId: args.providerId,
     provider: args.providerId,
     nodeType: 'image',
-    kind: 'image',
     status: 'PROCESSING' as const,
     prompt: args.prompt.slice(0, 2000),
     input: {
@@ -139,13 +141,29 @@ async function createImageGenerationJob(args: {
       nodeId: args.body.nodeId,
     },
   }
+  // Try with all optional fields, then progressively strip missing columns.
+  // The running DB may lag behind the schema if migrations haven't been applied.
+  const full = { ...base, kind: 'image', nodeId: args.body.nodeId ?? null }
   try {
-    return await db.generationJob.create({ data })
-  } catch (error) {
-    if (!isMissingGenerationJobNodeIdColumn(error)) throw error
-    const fallbackData = { ...data }
-    delete (fallbackData as { nodeId?: string | null }).nodeId
-    return db.generationJob.create({ data: fallbackData })
+    return await db.generationJob.create({ data: full })
+  } catch (err1) {
+    if (isMissingColumn(err1, 'kind')) {
+      const { kind: _k, ...withoutKind } = full
+      try {
+        return await db.generationJob.create({ data: withoutKind })
+      } catch (err2) {
+        if (isMissingColumn(err2, 'nodeId')) {
+          const { nodeId: _n, ...withoutKindNodeId } = withoutKind
+          return db.generationJob.create({ data: withoutKindNodeId })
+        }
+        throw err2
+      }
+    }
+    if (isMissingColumn(err1, 'nodeId')) {
+      const { nodeId: _n, kind: _k2, ...withoutNodeId } = full
+      return db.generationJob.create({ data: withoutNodeId })
+    }
+    throw err1
   }
 }
 
@@ -361,6 +379,7 @@ export async function POST(request: NextRequest) {
     if (useCnExecutor) {
       let generationJobId = billing.ctx.billingJobId
       if (!generationJobId) {
+        let jobCreateError: unknown = null
         const imageGenerationJob = await createImageGenerationJob({
           userId: billing.ctx.userId,
           providerId,
@@ -368,21 +387,23 @@ export async function POST(request: NextRequest) {
           body,
           model: requestModel,
         }).catch((error: unknown) => {
+          jobCreateError = error
           console.warn('[api/generate/image] failed to create async GenerationJob', error)
           return null
         })
         generationJobId = imageGenerationJob?.id ?? null
-      }
 
-      if (!generationJobId) {
-        return NextResponse.json({
-          success: false,
-          errorCode: 'generation_job_create_failed',
-          message: '图片任务创建失败，未提交到 cn-executor。',
-          mode: 'unavailable',
-          status: 'failed',
-          submittedInput,
-        }, { status: 200 })
+        if (!generationJobId) {
+          const errMsg = jobCreateError instanceof Error ? jobCreateError.message : String(jobCreateError ?? '未知错误')
+          return NextResponse.json({
+            success: false,
+            errorCode: 'generation_job_create_failed',
+            message: `图片任务创建失败：${errMsg}`,
+            mode: 'unavailable',
+            status: 'failed',
+            submittedInput,
+          }, { status: 200 })
+        }
       }
 
       await db.generationJob.update({
