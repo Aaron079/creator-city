@@ -343,6 +343,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       },
     })
 
+    const failedNodeIds: string[] = []
     for (const node of body.nodes ?? []) {
       if (!node.id || !node.kind) continue
       const providerId = node.providerId ?? node.model ?? null
@@ -358,50 +359,60 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
         outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
         preview: node.preview ?? nodeMetadata.preview ?? null,
       }
-      await db.canvasNode.upsert({
-        where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
-        create: {
+      try {
+        await db.canvasNode.upsert({
+          where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
+          create: {
+            workflowId: workflow.id,
+            nodeId: node.id,
+            kind: node.kind,
+            title: node.title ?? null,
+            providerId,
+            status: node.status ?? 'idle',
+            x: Number(node.x ?? 0),
+            y: Number(node.y ?? 0),
+            width: Number(node.width ?? 320),
+            height: Number(node.height ?? 220),
+            prompt: node.prompt ?? null,
+            resultText: node.resultText ?? null,
+            resultImageUrl: node.resultImageUrl ?? null,
+            resultVideoUrl: node.resultVideoUrl ?? null,
+            resultAudioUrl: node.resultAudioUrl ?? null,
+            resultPreview: node.resultPreview ?? null,
+            errorMessage: node.errorMessage ?? null,
+            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+            metadataJson,
+          },
+          update: {
+            kind: node.kind,
+            title: node.title ?? null,
+            providerId,
+            status: node.status ?? 'idle',
+            x: Number(node.x ?? 0),
+            y: Number(node.y ?? 0),
+            width: Number(node.width ?? 320),
+            height: Number(node.height ?? 220),
+            prompt: node.prompt ?? null,
+            resultText: node.resultText ?? null,
+            resultImageUrl: node.resultImageUrl ?? null,
+            resultVideoUrl: node.resultVideoUrl ?? null,
+            resultAudioUrl: node.resultAudioUrl ?? null,
+            resultPreview: node.resultPreview ?? null,
+            errorMessage: node.errorMessage ?? null,
+            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+            metadataJson,
+            updatedAt: now,
+          },
+        })
+      } catch (nodeError) {
+        failedNodeIds.push(node.id)
+        console.error('[canvas-api] node upsert failed, continuing', {
+          projectId: params.projectId,
           workflowId: workflow.id,
           nodeId: node.id,
-          kind: node.kind,
-          title: node.title ?? null,
-          providerId,
-          status: node.status ?? 'idle',
-          x: Number(node.x ?? 0),
-          y: Number(node.y ?? 0),
-          width: Number(node.width ?? 320),
-          height: Number(node.height ?? 220),
-          prompt: node.prompt ?? null,
-          resultText: node.resultText ?? null,
-          resultImageUrl: node.resultImageUrl ?? null,
-          resultVideoUrl: node.resultVideoUrl ?? null,
-          resultAudioUrl: node.resultAudioUrl ?? null,
-          resultPreview: node.resultPreview ?? null,
-          errorMessage: node.errorMessage ?? null,
-          paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-          metadataJson,
-        },
-        update: {
-          kind: node.kind,
-          title: node.title ?? null,
-          providerId,
-          status: node.status ?? 'idle',
-          x: Number(node.x ?? 0),
-          y: Number(node.y ?? 0),
-          width: Number(node.width ?? 320),
-          height: Number(node.height ?? 220),
-          prompt: node.prompt ?? null,
-          resultText: node.resultText ?? null,
-          resultImageUrl: node.resultImageUrl ?? null,
-          resultVideoUrl: node.resultVideoUrl ?? null,
-          resultAudioUrl: node.resultAudioUrl ?? null,
-          resultPreview: node.resultPreview ?? null,
-          errorMessage: node.errorMessage ?? null,
-          paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
-          metadataJson,
-          updatedAt: now,
-        },
-      })
+          error: nodeError instanceof Error ? nodeError.message : String(nodeError),
+        })
+      }
     }
 
     for (const edge of body.edges ?? []) {
@@ -460,6 +471,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       serverUpdatedAt: now.toISOString(),
       nodeCount: body.nodes.length,
       edgeCount: body.edges.length,
+      ...(failedNodeIds.length > 0 ? { failedNodeIds, partialSave: true } : {}),
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {

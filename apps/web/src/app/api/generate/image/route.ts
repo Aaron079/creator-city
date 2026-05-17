@@ -342,13 +342,25 @@ export async function POST(request: NextRequest) {
         resolution: typeof body.resolution === 'string' ? body.resolution : null,
       })
       if (!executorResult.success) {
+        // cn-executor returns { success, errorCode, message, ... } — note: message not errorMessage
+        const execErr = executorResult as Record<string, unknown>
+        const errCode = typeof execErr.errorCode === 'string' ? execErr.errorCode : 'cn_executor_failed'
+        const errMsg = typeof execErr.message === 'string' ? execErr.message
+          : typeof execErr.errorMessage === 'string' ? execErr.errorMessage
+          : 'CN executor returned an error.'
         return NextResponse.json({
           success: false,
-          errorCode: visibleProviderErrorCode(executorResult.errorCode ?? 'cn_executor_failed', undefined, executorResult.errorMessage ?? ''),
-          message: executorResult.errorMessage ?? 'CN executor returned an error.',
+          errorCode: visibleProviderErrorCode(errCode, typeof execErr.upstreamStatus === 'number' ? execErr.upstreamStatus : undefined, errMsg),
+          message: errMsg,
           mode: 'unavailable',
           status: 'failed',
-          submittedInput: (executorResult.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
+          submittedInput: (execErr.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
+          upstreamMessage: execErr.upstreamMessage,
+          upstreamStatus: execErr.upstreamStatus,
+          requestId: execErr.requestId,
+          providerEndpoint: execErr.providerEndpoint,
+          providerHttpStatus: execErr.providerHttpStatus,
+          providerResponse: execErr.providerResponse,
         }, { status: 200 })
       }
       const executorImageUrl = String(executorResult.resultImageUrl ?? executorResult.stableUrl ?? '')
