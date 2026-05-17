@@ -1331,6 +1331,41 @@ function imageSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
+function imageRunningMetadata(node: VisualCanvasNode, result: GenerateApiResult, providerId: string) {
+  const resultMetadata = result.result?.metadata && typeof result.result.metadata === 'object'
+    ? result.result.metadata as Record<string, unknown>
+    : {}
+  const taskId = result.taskId ?? (typeof resultMetadata.taskId === 'string' ? resultMetadata.taskId : undefined)
+  const generationJobId = result.generationJobId
+    ?? result.jobId
+    ?? result.billingJobId
+    ?? (typeof resultMetadata.generationJobId === 'string' ? resultMetadata.generationJobId : undefined)
+    ?? taskId
+  return {
+    ...metadataRecord(node.metadataJson),
+    providerId: result.providerId || providerId,
+    model: result.model ?? (typeof resultMetadata.model === 'string' ? resultMetadata.model : undefined),
+    taskId,
+    generationJobId,
+    generationStatus: 'generation_running',
+    recoveryStatus: 'regenerating',
+    mediaRecoveryStatus: 'regenerating',
+    nextAction: 'poll_generation_status',
+    loading: true,
+    isRegenerating: true,
+    regenerating: true,
+    errorCode: null,
+    errorMessage: null,
+    lastError: null,
+    lastGenerationError: null,
+    submittedInput: result.submittedInput ?? resultMetadata.submittedInput,
+    generationJob: {
+      ...metadataRecord(metadataRecord(node.metadataJson).generationJob),
+      ...(generationJobId ? { id: generationJobId } : {}),
+    },
+  }
+}
+
 function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
@@ -1838,6 +1873,39 @@ async function pollSeedanceVideoTask(
     return JSON.parse(raw) as GenerateApiResult
   } catch {
     return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）`, taskId }
+  }
+}
+
+async function pollImageGenerationTask(
+  providerId: string,
+  generationJobId: string,
+): Promise<GenerateApiResult> {
+  let response: Response
+  try {
+    const params = new URLSearchParams({ generationJobId })
+    response = await fetch(`/api/generate/image/status?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '网络请求失败'
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, generationJobId }
+  }
+  const raw = await response.text().catch(() => '')
+  if (!raw.trim()) {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回空响应（HTTP ${response.status}）`, generationJobId }
+  }
+  try {
+    const parsed = JSON.parse(raw) as GenerateApiResult
+    return {
+      ...parsed,
+      providerId: parsed.providerId || providerId,
+      generationJobId: parsed.generationJobId ?? generationJobId,
+      jobId: parsed.jobId ?? generationJobId,
+    }
+  } catch {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）`, generationJobId }
   }
 }
 
@@ -3810,6 +3878,19 @@ export function VisualCanvasWorkspace({
           providerId,
         )
 
+        if (node.kind === 'image' && generateResult.status === 'running' && (generateResult.generationJobId || generateResult.jobId)) {
+          const generationJobId = generateResult.generationJobId ?? generateResult.jobId!
+          let polls = 0
+          while (polls < 60 && generateResult.status === 'running') {
+            await delay(5000)
+            generateResult = await pollImageGenerationTask(providerId, generationJobId)
+            polls += 1
+          }
+          if (generateResult.status === 'running') {
+            throw new Error(`WORKFLOW_NODE_TIMEOUT: ${generateResult.message || '图片仍在生成，请稍后检查任务状态。'}`)
+          }
+        }
+
         if (node.kind === 'video' && generateResult.async && generateResult.taskId) {
           return workflowResultFromGenerateResult(nodeForGeneration, generateResult, prompt)
         }
@@ -4281,6 +4362,44 @@ export function VisualCanvasWorkspace({
           undefined,
           selectedModel,
         )
+
+        if (node.kind === 'image' && result.status === 'running' && (result.generationJobId || result.jobId)) {
+          const generationJobId = result.generationJobId ?? result.jobId!
+          const taskId = result.taskId ?? generationJobId
+          handleNodePatch(node.id, {
+            status: 'running',
+            resultPreview: '图片生成中',
+            outputLabel: '图片生成中',
+            errorMessage: undefined,
+            metadataJson: imageRunningMetadata(node, { ...result, generationJobId, taskId }, selectedProviderId),
+          })
+          flushLocalSnapshot()
+          scheduleCanvasSave(0)
+          showCanvasFeedback('图片生成中')
+          let polls = 0
+          while (polls < 60) {
+            await delay(5000)
+            const statusResult = await pollImageGenerationTask(selectedProviderId, generationJobId)
+            result = {
+              ...statusResult,
+              generationJobId,
+              jobId: statusResult.jobId ?? generationJobId,
+              taskId: statusResult.taskId ?? taskId,
+            }
+            if (!statusResult.success || statusResult.status !== 'running') break
+            handleNodePatch(node.id, {
+              status: 'running',
+              resultPreview: `图片生成中，已查询 ${polls + 1} 次`,
+              outputLabel: '图片生成中',
+              metadataJson: imageRunningMetadata(node, result, selectedProviderId),
+            })
+            polls += 1
+          }
+          if (result.success && result.status === 'running') {
+            showCanvasFeedback('图片仍在生成中，请稍后再查。')
+            return
+          }
+        }
 
         if (node.kind === 'video' && result.async && result.taskId) {
           const taskId = result.taskId
@@ -5699,12 +5818,82 @@ export function VisualCanvasWorkspace({
       : typeof currentMetadata.generationJobId === 'string'
         ? currentMetadata.generationJobId
         : ''
+    const currentGenerationJobId = typeof currentMetadata.generationJobId === 'string'
+      ? currentMetadata.generationJobId
+      : ''
     const selectedVideoStatusForGenerate = nodeSnapshot.kind === 'video'
       ? getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
       : null
     const generationProviderId = nodeSnapshot.kind === 'video' && selectedVideoStatusForGenerate !== 'available' && defaultVideoProviderId
       ? defaultVideoProviderId
       : normalizedPromptModel
+    if (nodeSnapshot.kind === 'image' && nodeSnapshot.status === 'running' && currentGenerationJobId) {
+      setDialogError(null)
+      showCanvasFeedback('正在查询图片任务状态...')
+      void pollImageGenerationTask(generationProviderId, currentGenerationJobId).then((statusResult) => {
+        if (statusResult.status === 'running') {
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'running',
+            resultPreview: '图片生成中，请稍后再查。',
+            outputLabel: '图片生成中',
+            metadataJson: imageRunningMetadata(nodeSnapshot, statusResult, generationProviderId),
+          })
+          showCanvasFeedback('图片生成中，请稍后再查。')
+          return
+        }
+        if (!statusResult.success || statusResult.status === 'failed') {
+          const errMsg = formatGenerateError(statusResult)
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: nodeSnapshot.resultPreview ?? '图片任务失败',
+            outputLabel: '图片任务失败',
+            metadataJson: imageErrorMetadata(nodeSnapshot, statusResult, generationProviderId),
+          })
+          setDialogError(errMsg)
+          showCanvasFeedback(errMsg)
+          return
+        }
+        const imageUrl = statusResult.result?.imageUrl ?? statusResult.resultImageUrl ?? statusResult.imageUrl ?? statusResult.stableUrl
+        if (!imageUrl) {
+          const errMsg = 'IMAGE_GENERATION_EMPTY: 图片任务已完成，但未返回图片 URL。'
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: nodeSnapshot.resultPreview ?? '图片任务未返回 URL',
+            outputLabel: '图片任务未返回 URL',
+          })
+          setDialogError(errMsg)
+          showCanvasFeedback(errMsg)
+          return
+        }
+        const metadataJson = imageSuccessMetadata(nodeSnapshot, statusResult, generationProviderId)
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'done',
+          resultImageUrl: imageUrl,
+          resultPreview: '图片已生成',
+          outputLabel: '图片已生成',
+          errorMessage: undefined,
+          metadataJson,
+        })
+        if (!statusResult.asset?.id && !statusResult.assetId) {
+          void createGeneratedAsset({
+            nodeId: nodeSnapshot.id,
+            type: 'image',
+            title: `${nodeSnapshot.title} 图片结果`,
+            url: imageUrl,
+            providerId: generationProviderId,
+            generationJobId: currentGenerationJobId,
+            metadataJson,
+          })
+        }
+        commitEdges((current) => current.map((edge) => (
+          edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
+        )))
+        showCanvasFeedback('图片生成完成')
+      })
+      return
+    }
     if (nodeSnapshot.kind === 'video' && generationProviderId === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
       setDialogError(null)
       showCanvasFeedback('正在查询视频任务状态...')
@@ -6009,6 +6198,42 @@ export function VisualCanvasWorkspace({
       compiled?.system,
       generationProviderId,
     ).then(async (result) => {
+      if (nodeSnapshot.kind === 'image' && result.status === 'running' && (result.generationJobId || result.jobId)) {
+        const generationJobId = result.generationJobId ?? result.jobId!
+        const taskId = result.taskId ?? generationJobId
+        handleNodePatch(nodeSnapshot.id, {
+          status: 'running',
+          resultPreview: '图片生成中',
+          outputLabel: '图片生成中',
+          errorMessage: undefined,
+          metadataJson: imageRunningMetadata(generationNodeSnapshot, { ...result, generationJobId, taskId }, generationProviderId),
+        })
+        showCanvasFeedback('图片生成中')
+        let polls = 0
+        while (polls < 60) {
+          await delay(5000)
+          const statusResult = await pollImageGenerationTask(generationProviderId, generationJobId)
+          result = {
+            ...statusResult,
+            generationJobId,
+            jobId: statusResult.jobId ?? generationJobId,
+            taskId: statusResult.taskId ?? taskId,
+          }
+          if (!statusResult.success || statusResult.status !== 'running') break
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'running',
+            resultPreview: `图片生成中，已查询 ${polls + 1} 次`,
+            outputLabel: '图片生成中',
+            metadataJson: imageRunningMetadata(generationNodeSnapshot, result, generationProviderId),
+          })
+          polls += 1
+        }
+        if (result.success && result.status === 'running') {
+          showCanvasFeedback('图片仍在生成中，请稍后再查。')
+          return
+        }
+      }
+
       if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
         const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId)
         handleNodePatch(nodeSnapshot.id, {

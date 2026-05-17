@@ -4,7 +4,7 @@ import { generateSeedreamImage } from '../volcengine'
 import { uploadToOss } from '../oss'
 import { jsonError, jsonOk, jsonUnauthorized } from '../response'
 
-function readBody(req: IncomingMessage): Promise<string> {
+export function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -39,25 +39,39 @@ function parseDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } 
   return { contentType: match[1], buffer: Buffer.from(match[2], 'base64') }
 }
 
-export async function handleGenerateImage(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (!isAuthorized(req)) {
-    jsonUnauthorized(res)
-    return
-  }
+export type ImageExecutionInput = {
+  prompt: string
+  model?: string
+  providerId?: string
+  aspectRatio?: string
+  resolution?: string
+  projectId?: string
+  nodeId?: string
+}
 
-  let body: Record<string, unknown> = {}
-  try {
-    const raw = await readBody(req)
-    if (raw.trim()) body = JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    jsonError(res, { errorCode: 'invalid_request', message: 'Request body must be valid JSON.' })
-    return
-  }
+export type ImageExecutionResult = {
+  success: boolean
+  errorCode?: string
+  message?: string
+  provider?: string
+  model?: string
+  resultImageUrl?: string
+  stableUrl?: string
+  asset?: Record<string, unknown>
+  upstreamStatus?: number
+  upstreamMessage?: string
+  providerEndpoint?: string
+  providerHttpStatus?: number
+  requestId?: string
+  submittedInput?: Record<string, unknown>
+  providerResponse?: unknown
+  providerOriginalUrl?: string | null
+}
 
+export function parseImageExecutionInput(body: Record<string, unknown>): ImageExecutionInput | { errorCode: string; message: string } {
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
   if (!prompt) {
-    jsonError(res, { errorCode: 'provider_invalid_parameter', message: 'prompt is required.' })
-    return
+    return { errorCode: 'provider_invalid_parameter', message: 'prompt is required.' }
   }
 
   // model and providerId are UI identifiers — passed for logging only, never used as Volcengine API model
@@ -67,11 +81,15 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
   const resolution = typeof body.resolution === 'string' ? body.resolution.trim() || undefined : undefined
   const projectId = typeof body.projectId === 'string' ? body.projectId.trim() || undefined : undefined
   const nodeId = typeof body.nodeId === 'string' ? body.nodeId.trim() || undefined : undefined
+  return { prompt, model, providerId, aspectRatio, resolution, projectId, nodeId }
+}
 
+export async function executeImageGeneration(input: ImageExecutionInput): Promise<ImageExecutionResult> {
   // 1. Generate via Volcengine Seedream
-  const genResult = await generateSeedreamImage({ prompt, model, providerId, aspectRatio, resolution })
+  const genResult = await generateSeedreamImage(input)
   if (!genResult.success) {
-    jsonError(res, {
+    return {
+      success: false,
       errorCode: genResult.errorCode,
       message: genResult.message,
       provider: 'volcengine_seedream',
@@ -82,8 +100,7 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
       ...(genResult.requestId !== undefined ? { requestId: genResult.requestId } : {}),
       ...(genResult.submittedInput !== undefined ? { submittedInput: genResult.submittedInput } : {}),
       ...(genResult.providerResponse !== undefined ? { providerResponse: genResult.providerResponse } : {}),
-    })
-    return
+    }
   }
 
   // 2. Obtain image buffer — URL download or base64 decode
@@ -102,28 +119,29 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
   }
 
   if (!imageBuffer || imageBuffer.byteLength === 0) {
-    jsonError(res, {
+    return {
+      success: false,
       errorCode: 'provider_media_download_failed',
       message: 'Failed to download generated image from provider.',
       providerOriginalUrl: providerOriginalUrl ?? null,
-    })
-    return
+      submittedInput: genResult.submittedInput,
+    }
   }
 
   // 3. Upload to Aliyun OSS
-  const ossKey = buildOssKey(projectId, nodeId)
+  const ossKey = buildOssKey(input.projectId, input.nodeId)
   const uploadResult = await uploadToOss(ossKey, imageBuffer, contentType)
   if (!uploadResult.success) {
-    jsonError(res, {
+    return {
+      success: false,
       errorCode: uploadResult.errorCode,
       message: uploadResult.message,
       providerOriginalUrl: providerOriginalUrl ?? null,
-    })
-    return
+      submittedInput: genResult.submittedInput,
+    }
   }
 
-  // 4. Return structured success response
-  jsonOk(res, {
+  return {
     success: true,
     provider: 'volcengine_seedream',
     model: genResult.model,
@@ -134,5 +152,56 @@ export async function handleGenerateImage(req: IncomingMessage, res: ServerRespo
       resolvedUrl: uploadResult.url,
       providerOriginalUrl: providerOriginalUrl ?? null,
     },
+    providerOriginalUrl: providerOriginalUrl ?? null,
+    submittedInput: genResult.submittedInput,
+  }
+}
+
+export async function parseImageExecutionRequest(req: IncomingMessage): Promise<ImageExecutionInput | { errorCode: string; message: string }> {
+  let body: Record<string, unknown> = {}
+  try {
+    const raw = await readBody(req)
+    if (raw.trim()) body = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return { errorCode: 'invalid_request', message: 'Request body must be valid JSON.' }
+  }
+
+  return parseImageExecutionInput(body)
+}
+
+function isImageExecutionError(input: ImageExecutionInput | { errorCode: string; message: string }): input is { errorCode: string; message: string } {
+  return 'errorCode' in input
+}
+
+export async function handleGenerateImage(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!isAuthorized(req)) {
+    jsonUnauthorized(res)
+    return
+  }
+
+  const input = await parseImageExecutionRequest(req)
+  if (isImageExecutionError(input)) {
+    jsonError(res, input)
+    return
+  }
+
+  const result = await executeImageGeneration(input)
+  if (result.success) {
+    jsonOk(res, result)
+    return
+  }
+
+  jsonError(res, {
+    errorCode: result.errorCode ?? 'image_generation_failed',
+    message: result.message ?? 'Image generation failed.',
+    provider: result.provider ?? 'volcengine_seedream',
+    ...(result.upstreamStatus !== undefined ? { upstreamStatus: result.upstreamStatus } : {}),
+    ...(result.upstreamMessage !== undefined ? { upstreamMessage: result.upstreamMessage } : {}),
+    ...(result.providerEndpoint !== undefined ? { providerEndpoint: result.providerEndpoint } : {}),
+    ...(result.providerHttpStatus !== undefined ? { providerHttpStatus: result.providerHttpStatus } : {}),
+    ...(result.requestId !== undefined ? { requestId: result.requestId } : {}),
+    ...(result.submittedInput !== undefined ? { submittedInput: result.submittedInput } : {}),
+    ...(result.providerResponse !== undefined ? { providerResponse: result.providerResponse } : {}),
+    ...(result.providerOriginalUrl !== undefined ? { providerOriginalUrl: result.providerOriginalUrl } : {}),
   })
 }

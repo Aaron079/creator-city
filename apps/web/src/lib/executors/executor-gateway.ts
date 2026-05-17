@@ -116,6 +116,59 @@ async function forwardToExecutor(
   return body as ExecutorResult
 }
 
+async function getExecutorStatusRequest(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string>,
+): Promise<ExecutorResult> {
+  const search = new URLSearchParams(params)
+  let response: Response
+  try {
+    const secret = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim() ?? ''
+    response = await fetch(`${baseUrl}${path}?${search.toString()}`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        ...(secret ? { 'x-creator-executor-secret': secret } : {}),
+      },
+      cache: 'no-store',
+    })
+  } catch (err) {
+    return {
+      success: false,
+      errorCode: 'executor_fetch_failed',
+      errorMessage: `Failed to reach executor at ${baseUrl}: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    return {
+      success: false,
+      errorCode: 'executor_invalid_response',
+      errorMessage: `Executor at ${baseUrl} returned HTTP ${response.status} with non-JSON body`,
+      upstreamStatus: response.status,
+    }
+  }
+
+  if (!response.ok) {
+    const b = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+    return {
+      success: false,
+      errorCode: (typeof b.errorCode === 'string' ? b.errorCode : undefined) ?? 'executor_error',
+      errorMessage: (typeof b.errorMessage === 'string' ? b.errorMessage : undefined)
+        ?? (typeof b.message === 'string' ? b.message : undefined)
+        ?? `Executor returned HTTP ${response.status}`,
+      upstreamStatus: response.status,
+      ...(b as Record<string, unknown>),
+    }
+  }
+
+  return body as ExecutorResult
+}
+
 export async function executeImageGenerationViaRegion(input: ExecutorInput): Promise<ExecutorResult> {
   const providerRegion = getProviderRegion(input.provider)
 
@@ -142,6 +195,53 @@ export async function executeImageGenerationViaRegion(input: ExecutorInput): Pro
     }
   }
   return forwardToExecutor(base, '/api/generate/image', input)
+}
+
+export async function startImageGenerationViaRegion(input: ExecutorInput): Promise<ExecutorResult> {
+  const providerRegion = getProviderRegion(input.provider)
+
+  if (providerRegion === 'cn') {
+    const base = cnApiBaseUrl()
+    if (!base) {
+      return {
+        success: false,
+        errorCode: 'cn_executor_not_configured',
+        errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
+        providerRegion,
+      }
+    }
+    return forwardToExecutor(base, '/api/generate/image/start', input)
+  }
+
+  return executeImageGenerationViaRegion(input)
+}
+
+export async function getImageGenerationStatusViaRegion(provider: string, taskId: string): Promise<ExecutorResult> {
+  const providerRegion = getProviderRegion(provider)
+
+  if (providerRegion === 'cn') {
+    const base = cnApiBaseUrl()
+    if (!base) {
+      return {
+        success: false,
+        errorCode: 'cn_executor_not_configured',
+        errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
+        providerRegion,
+      }
+    }
+    return getExecutorStatusRequest(base, '/api/generate/image/status', { taskId })
+  }
+
+  const base = globalApiBaseUrl()
+  if (!base) {
+    return {
+      success: false,
+      errorCode: 'global_executor_not_configured',
+      errorMessage: 'Global executor is not configured. Set CREATOR_GLOBAL_API_BASE_URL.',
+      providerRegion,
+    }
+  }
+  return getExecutorStatusRequest(base, '/api/generate/image/status', { taskId })
 }
 
 export async function executeVideoGenerationViaRegion(input: ExecutorInput): Promise<ExecutorResult> {

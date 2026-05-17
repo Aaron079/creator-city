@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
+import { releaseJobCredits } from '@/lib/billing/settle'
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
@@ -12,9 +13,10 @@ import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
-import { executeImageGenerationViaRegion } from '@/lib/executors/executor-gateway'
+import { startImageGenerationViaRegion } from '@/lib/executors/executor-gateway'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 type ImageGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
@@ -145,6 +147,28 @@ async function createImageGenerationJob(args: {
     delete (fallbackData as { nodeId?: string | null }).nodeId
     return db.generationJob.create({ data: fallbackData })
   }
+}
+
+async function markImageGenerationJobFailed(jobId: string | undefined | null, message: string, errorCode?: string) {
+  if (!jobId) return
+  await db.generationJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'FAILED',
+      error: message,
+      errorMessage: message.slice(0, 1000),
+      output: {
+        errorCode: errorCode ?? 'image_generation_failed',
+        message,
+      },
+      completedAt: new Date(),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[api/generate/image] failed to mark GenerationJob failed', error)
+  })
+  await releaseJobCredits(jobId).catch((error: unknown) => {
+    console.warn('[api/generate/image] failed to release image generation credits', error)
+  })
 }
 
 export async function GET() {
@@ -335,7 +359,56 @@ export async function POST(request: NextRequest) {
     const useCnExecutor = Boolean(cnExecutorBaseUrl) && providerId === 'volcengine-seedream-image'
 
     if (useCnExecutor) {
-      const executorResult = await executeImageGenerationViaRegion({
+      let generationJobId = billing.ctx.billingJobId
+      if (!generationJobId) {
+        const imageGenerationJob = await createImageGenerationJob({
+          userId: billing.ctx.userId,
+          providerId,
+          prompt,
+          body,
+          model: requestModel,
+        }).catch((error: unknown) => {
+          console.warn('[api/generate/image] failed to create async GenerationJob', error)
+          return null
+        })
+        generationJobId = imageGenerationJob?.id ?? null
+      }
+
+      if (!generationJobId) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'generation_job_create_failed',
+          message: '图片任务创建失败，未提交到 cn-executor。',
+          mode: 'unavailable',
+          status: 'failed',
+          submittedInput,
+        }, { status: 200 })
+      }
+
+      await db.generationJob.update({
+        where: { id: generationJobId },
+        data: {
+          status: 'PROCESSING',
+          provider: providerId,
+          kind: 'image',
+          input: {
+            prompt,
+            providerId,
+            projectId: body.projectId ?? null,
+            workflowId: body.workflowId ?? null,
+            nodeId: body.nodeId ?? null,
+            params,
+            model: requestModel ?? null,
+            aspectRatio: aspectRatio ?? null,
+            size: size ?? null,
+            submittedInput,
+          },
+        },
+      }).catch((error: unknown) => {
+        console.warn('[api/generate/image] failed to mark async GenerationJob processing', error)
+      })
+
+      const executorResult = await startImageGenerationViaRegion({
         userId: currentUser.id,
         projectId: body.projectId ?? null,
         nodeId: body.nodeId ?? null,
@@ -352,6 +425,7 @@ export async function POST(request: NextRequest) {
         const errMsg = typeof execErr.message === 'string' ? execErr.message
           : typeof execErr.errorMessage === 'string' ? execErr.errorMessage
           : 'CN executor returned an error.'
+        await markImageGenerationJobFailed(generationJobId, errMsg, errCode)
         return NextResponse.json({
           success: false,
           errorCode: visibleProviderErrorCode(errCode, typeof execErr.upstreamStatus === 'number' ? execErr.upstreamStatus : undefined, errMsg),
@@ -367,22 +441,57 @@ export async function POST(request: NextRequest) {
           providerResponse: execErr.providerResponse,
         }, { status: 200 })
       }
-      const executorImageUrl = String(executorResult.resultImageUrl ?? executorResult.stableUrl ?? '')
-      const executorModel = String(executorResult.model ?? requestModel ?? '')
-      raw = {
+
+      const taskId = typeof executorResult.taskId === 'string' ? executorResult.taskId : ''
+      if (!taskId) {
+        const message = 'CN executor did not return taskId from /api/generate/image/start.'
+        await markImageGenerationJobFailed(generationJobId, message, 'cn_executor_task_id_missing')
+        return NextResponse.json({
+          success: false,
+          errorCode: 'cn_executor_task_id_missing',
+          message,
+          mode: 'unavailable',
+          status: 'failed',
+          submittedInput,
+        }, { status: 200 })
+      }
+
+      await db.generationJob.update({
+        where: { id: generationJobId },
+        data: {
+          status: 'PROCESSING',
+          providerJobId: taskId,
+          input: {
+            prompt,
+            providerId,
+            projectId: body.projectId ?? null,
+            workflowId: body.workflowId ?? null,
+            nodeId: body.nodeId ?? null,
+            params,
+            model: requestModel ?? null,
+            aspectRatio: aspectRatio ?? null,
+            size: size ?? null,
+            taskId,
+            submittedInput,
+          },
+        },
+      }).catch((error: unknown) => {
+        console.warn('[api/generate/image] failed to save cn executor taskId', error)
+      })
+
+      return NextResponse.json({
         success: true,
         providerId,
         mode: 'real',
-        status: 'succeeded',
-        result: {
-          imageUrl: executorImageUrl,
-          previewUrl: executorImageUrl,
-          metadata: { providerId, model: executorModel, generationSource: 'cn_executor' },
-        },
-        message: `图片生成成功（cn-executor，${executorModel}）`,
-        model: executorModel,
+        status: 'running',
+        async: true,
+        generationJobId,
+        jobId: generationJobId,
+        taskId,
+        message: 'Image generation submitted to cn executor',
+        model: submittedModel,
         submittedInput,
-      }
+      }, { status: 200 })
     } else if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
       const chinaResult = providerId === 'volcengine-seedream-image'
         ? await generateSeedreamImage({ prompt, aspectRatio, size, referenceImages })
