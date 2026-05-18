@@ -33,6 +33,27 @@ type GenerationJobRow = {
   input: Record<string, unknown> | null
 }
 
+type ImageJobResult = {
+  ok: boolean
+  status: 'succeeded' | 'failed' | 'skipped'
+  generationJobId: string
+  resultImageUrl?: string | null
+  stableUrl?: string | null
+  assetId?: string
+  model?: string | null
+  errorCode?: string
+  message?: string
+  submittedInput?: Record<string, unknown> | null
+  upstreamMessage?: unknown
+  upstreamStatus?: unknown
+  requestId?: unknown
+  providerResponse?: unknown
+  providerRegion?: string
+  executionRegion?: string
+  storageRegion?: string
+  executorKind?: string
+}
+
 async function fetchJob(generationJobId: string): Promise<GenerationJobRow | null> {
   const rows = await query<GenerationJobRow>(
     `SELECT id, "userId", "projectId", "nodeId", "providerId", status, prompt, input
@@ -238,20 +259,26 @@ export async function handleRunImageJob(req: IncomingMessage, res: ServerRespons
     return
   }
 
-  // Respond immediately — Vercel fires-and-forgets, cn-executor runs async after response
-  jsonOk(res, { success: true, message: 'Job received, executing.', generationJobId })
+  console.log('[cn-executor][jobRunner] received job, executing synchronously', { generationJobId })
 
-  setImmediate(() => {
-    runImageJob(generationJobId).catch((err: unknown) => {
-      console.error('[cn-executor][jobRunner] unhandled error in runImageJob', {
-        generationJobId,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    })
-  })
+  let result: ImageJobResult
+  try {
+    result = await runImageJob(generationJobId)
+  } catch (err) {
+    result = {
+      ok: false,
+      status: 'failed',
+      generationJobId,
+      errorCode: 'job_execution_error',
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // Always respond 200 so Vercel can read the JSON body regardless of outcome
+  jsonOk(res, result)
 }
 
-async function runImageJob(generationJobId: string): Promise<void> {
+async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
   console.log('[cn-executor][jobRunner] starting job', { generationJobId })
 
   let job: GenerationJobRow | null
@@ -262,12 +289,12 @@ async function runImageJob(generationJobId: string): Promise<void> {
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
-    return
+    return { ok: false, status: 'failed', generationJobId, errorCode: 'db_error', message: err instanceof Error ? err.message : String(err) }
   }
 
   if (!job) {
     console.error('[cn-executor][jobRunner] job not found', { generationJobId })
-    return
+    return { ok: false, status: 'failed', generationJobId, errorCode: 'job_not_found', message: `Job ${generationJobId} not found in DB.` }
   }
 
   if (job.status === 'SUCCEEDED' || job.status === 'FAILED' || job.status === 'CANCELED') {
@@ -275,7 +302,7 @@ async function runImageJob(generationJobId: string): Promise<void> {
       generationJobId,
       status: job.status,
     })
-    return
+    return { ok: true, status: 'skipped', generationJobId, message: `Job already in terminal state: ${job.status}` }
   }
 
   // Region isolation: cn-executor must only execute cn providers.
@@ -290,8 +317,9 @@ async function runImageJob(generationJobId: string): Promise<void> {
       message: errMsg,
       output: { errorCode: 'provider_region_mismatch', message: errMsg, providerId: job.providerId, jobProviderRegion },
     }).catch(() => {/* best-effort */})
-    return
+    return { ok: false, status: 'failed', generationJobId, errorCode: 'provider_region_mismatch', message: errMsg }
   }
+
   const workflowId = typeof input.workflowId === 'string' ? input.workflowId : ''
   const nodeId = job.nodeId ?? (typeof input.nodeId === 'string' ? input.nodeId : '')
   const projectId = job.projectId ?? (typeof input.projectId === 'string' ? input.projectId : null)
@@ -362,7 +390,18 @@ async function runImageJob(generationJobId: string): Promise<void> {
       })
     }
     console.error('[cn-executor][jobRunner] job failed', { generationJobId, errorCode: errCode, message: errMsg.slice(0, 200) })
-    return
+    return {
+      ok: false,
+      status: 'failed',
+      generationJobId,
+      errorCode: errCode,
+      message: errMsg,
+      submittedInput,
+      upstreamMessage: 'upstreamMessage' in result ? result.upstreamMessage : undefined,
+      upstreamStatus: 'upstreamStatus' in result ? result.upstreamStatus : undefined,
+      requestId: 'requestId' in result ? result.requestId : undefined,
+      providerResponse: 'providerResponse' in result ? result.providerResponse : undefined,
+    }
   }
 
   const resultImageUrl = result.resultImageUrl ?? ''
@@ -432,7 +471,15 @@ async function runImageJob(generationJobId: string): Promise<void> {
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
-    return
+    return {
+      ok: false,
+      status: 'failed',
+      generationJobId,
+      errorCode: 'db_write_failed',
+      message: `Image generated but failed to save result to DB: ${err instanceof Error ? err.message : String(err)}`,
+      resultImageUrl,
+      model: modelUsed,
+    }
   }
 
   if (workflowId && nodeId) {
@@ -461,4 +508,19 @@ async function runImageJob(generationJobId: string): Promise<void> {
     assetId,
     resultImageUrl: resultImageUrl.slice(0, 80),
   })
+
+  return {
+    ok: true,
+    status: 'succeeded',
+    generationJobId,
+    resultImageUrl,
+    stableUrl: resultImageUrl,
+    assetId,
+    model: modelUsed,
+    submittedInput,
+    storageRegion: 'cn',
+    executionRegion: 'cn',
+    providerRegion: 'cn',
+    executorKind: 'aliyun_fc',
+  }
 }

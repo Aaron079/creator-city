@@ -432,20 +432,79 @@ export async function POST(request: NextRequest) {
         console.warn('[api/generate/image] failed to update GenerationJob to QUEUED', error)
       })
 
-      // Fire-and-forget to cn-executor — do NOT await
+      // Await cn-executor synchronously — Vercel maxDuration=90 allows up to 90s.
+      // cn-executor executes the job within the HTTP request lifecycle (no setImmediate).
       const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
-      fetch(`${cnBaseUrl}/api/jobs/run-image`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
-        },
-        body: JSON.stringify({ generationJobId }),
-        signal: AbortSignal.timeout(8_000),
-      }).catch((err: unknown) => {
-        console.warn('[api/generate/image] cn-executor fire-and-forget failed:', err instanceof Error ? err.message : String(err))
-      })
+      let cnResult: Record<string, unknown> | null = null
+      try {
+        const cnResp = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+          },
+          body: JSON.stringify({ generationJobId }),
+          signal: AbortSignal.timeout(90_000),
+        })
+        const rawText = await cnResp.text()
+        try {
+          const parsed = JSON.parse(rawText)
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            cnResult = parsed as Record<string, unknown>
+          }
+        } catch {
+          console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
+        }
+      } catch (err: unknown) {
+        console.warn('[api/generate/image] cn-executor request failed (timeout or network):', err instanceof Error ? err.message : String(err), { generationJobId })
+      }
 
+      if (cnResult?.status === 'succeeded') {
+        return NextResponse.json({
+          success: true,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'real',
+          status: 'succeeded',
+          async: false,
+          generationJobId,
+          jobId: generationJobId,
+          model: (typeof cnResult.model === 'string' ? cnResult.model : null) ?? submittedModel,
+          resultImageUrl: cnResult.resultImageUrl,
+          stableUrl: cnResult.stableUrl,
+          assetId: cnResult.assetId,
+          submittedInput,
+          message: '图片生成完成',
+        }, { status: 200 })
+      }
+
+      if (cnResult?.status === 'failed') {
+        return NextResponse.json({
+          success: false,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'real',
+          status: 'failed',
+          async: false,
+          generationJobId,
+          jobId: generationJobId,
+          errorCode: (typeof cnResult.errorCode === 'string' ? cnResult.errorCode : null) ?? 'image_generation_failed',
+          message: (typeof cnResult.message === 'string' ? cnResult.message : null) ?? 'Image generation failed.',
+          upstreamMessage: cnResult.upstreamMessage,
+          requestId: cnResult.requestId,
+          submittedInput,
+        }, { status: 200 })
+      }
+
+      // cn-executor timed out or returned unexpected status — frontend polls DB
       return NextResponse.json({
         success: true,
         providerId,

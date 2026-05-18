@@ -246,7 +246,27 @@ export async function GET(request: NextRequest) {
     }, { status: 200 })
   }
 
-  // QUEUED or PROCESSING — cn-executor is working on it, return running status
+  // QUEUED or PROCESSING — detect stalled jobs (cn-executor did not respond within 5 min)
+  const STALL_TIMEOUT_MS = 5 * 60 * 1000
+  const ageMs = Date.now() - new Date(generationJob.updatedAt).getTime()
+  if (ageMs > STALL_TIMEOUT_MS) {
+    return NextResponse.json({
+      success: false,
+      status: 'failed',
+      errorCode: 'generation_job_stalled',
+      message: 'CN executor did not finish this job within expected time. Check Aliyun FC logs.',
+      providerId,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      generationJobId: generationJob.id,
+      jobStatus: generationJob.status,
+      updatedAt: generationJob.updatedAt.toISOString(),
+      ageMs,
+    }, { status: 200 })
+  }
+
   return NextResponse.json({
     success: true,
     providerId,
