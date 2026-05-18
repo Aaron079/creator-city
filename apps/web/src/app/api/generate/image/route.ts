@@ -108,13 +108,12 @@ function imageUrlFromResponse(response: GenerateResponse & { imageUrl?: string; 
     ?? ''
 }
 
-function isMissingColumn(error: unknown, column: string) {
-  const message = error instanceof Error ? error.message : String(error)
-  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(
-    `GenerationJob.*${escaped}|${escaped}.*GenerationJob|column.*${escaped}|Unknown arg \`${escaped}\``,
-    'i',
-  ).test(message)
+function extractMissingColumn(err: unknown): string | null {
+  const msg = err instanceof Error ? err.message : String(err)
+  // Prisma v5: "The column `X` does not exist in the current database."
+  return msg.match(/The column `([^`]+)` does not exist/)?.[1]
+    ?? msg.match(/Unknown arg `([^`]+)`/)?.[1]
+    ?? null
 }
 
 async function createImageGenerationJob(args: {
@@ -124,50 +123,39 @@ async function createImageGenerationJob(args: {
   body: ImageGenerateBody
   model?: string | null
 }) {
-  const base = {
-    userId: args.userId,
+  const inputJson = {
+    prompt: args.prompt,
     projectId: args.body.projectId ?? null,
-    providerId: args.providerId,
-    provider: args.providerId,
-    nodeType: 'image',
-    status: 'PROCESSING' as const,
-    prompt: args.prompt.slice(0, 2000),
-    input: {
-      prompt: args.prompt,
-      projectId: args.body.projectId ?? null,
-      params: args.body.params ?? {},
-      model: args.model ?? null,
-      workflowId: args.body.workflowId,
-      nodeId: args.body.nodeId,
-    },
+    params: args.body.params ?? {},
+    model: args.model ?? null,
+    workflowId: args.body.workflowId,
+    nodeId: args.body.nodeId,
   }
-  // Try with all optional fields, then progressively strip missing columns.
-  // The running DB may lag behind the schema if migrations haven't been applied.
-  const full = { ...base, kind: 'image' as const, nodeId: args.body.nodeId ?? null }
-  try {
-    return await db.generationJob.create({ data: full })
-  } catch (err1) {
-    if (isMissingColumn(err1, 'kind')) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { kind, ...withoutKind } = full
-      try {
-        return await db.generationJob.create({ data: withoutKind })
-      } catch (err2) {
-        if (isMissingColumn(err2, 'nodeId')) {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { nodeId, ...withoutKindNodeId } = withoutKind
-          return db.generationJob.create({ data: withoutKindNodeId })
-        }
-        throw err2
-      }
+  // Production DB may lag behind schema. Retry stripping each missing column until insert succeeds.
+  // Missing columns come one at a time from Prisma, so each retry strips exactly one more.
+  const skip = new Set<string>()
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const data = {
+      userId: args.userId,
+      providerId: args.providerId,
+      nodeType: 'image',
+      status: 'PROCESSING' as const,
+      prompt: args.prompt.slice(0, 2000),
+      ...(skip.has('projectId') ? {} : { projectId: args.body.projectId ?? null }),
+      ...(skip.has('provider') ? {} : { provider: args.providerId }),
+      ...(skip.has('nodeId') ? {} : { nodeId: args.body.nodeId ?? null }),
+      ...(skip.has('kind') ? {} : { kind: 'image' as const }),
+      ...(skip.has('input') ? {} : { input: inputJson }),
     }
-    if (isMissingColumn(err1, 'nodeId')) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { nodeId, kind, ...withoutNodeId } = full
-      return db.generationJob.create({ data: withoutNodeId })
+    try {
+      return await db.generationJob.create({ data })
+    } catch (err) {
+      const col = extractMissingColumn(err)
+      if (!col || skip.has(col)) throw err
+      skip.add(col)
     }
-    throw err1
   }
+  throw new Error('createImageGenerationJob: too many missing columns — run the production DB migration')
 }
 
 async function markImageGenerationJobFailed(jobId: string | undefined | null, message: string, errorCode?: string) {
