@@ -374,6 +374,23 @@ export async function POST(request: NextRequest) {
       }
     const useCnExecutor = resolvedExecutor === 'cn'
 
+    // CN providers must route through cn-executor — block Vercel-direct to protect mainland network
+    if (providerRegion === 'cn' && !useCnExecutor) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'executor_region_missing',
+        message: `国内 provider [${providerId}] 需要 cn-executor（executorKind=aliyun_fc），但 CREATOR_CN_API_BASE_URL 未配置，无法执行。请检查环境变量并重新部署。`,
+        providerId,
+        providerRegion,
+        executionRegion,
+        storageRegion,
+        executorKind,
+        mode: 'unavailable',
+        status: 'failed',
+        submittedInput,
+      }, { status: 200 })
+    }
+
     if (useCnExecutor) {
       let generationJobId = billing.ctx.billingJobId
       if (!generationJobId) {
@@ -449,6 +466,11 @@ export async function POST(request: NextRequest) {
           success: false,
           errorCode: visibleProviderErrorCode(errCode, typeof execErr.upstreamStatus === 'number' ? execErr.upstreamStatus : undefined, errMsg),
           message: errMsg,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executorKind,
           mode: 'unavailable',
           status: 'failed',
           submittedInput: (execErr.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
@@ -576,6 +598,11 @@ export async function POST(request: NextRequest) {
           success: false,
           errorCode: 'cn_executor_task_id_missing',
           message,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executorKind,
           mode: 'unavailable',
           status: 'failed',
           submittedInput,

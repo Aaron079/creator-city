@@ -65,6 +65,10 @@ async function writeCanvasNodeResult(args: {
   providerOriginalUrl?: string
   providerResponse?: unknown
   submittedInput?: unknown
+  providerRegion?: 'cn' | 'global'
+  executionRegion?: 'cn' | 'global'
+  storageRegion?: 'cn' | 'global'
+  sourceProviderRegion?: 'cn' | 'global'
 }) {
   if (!args.workflowId || !args.nodeId) return
   const node = await db.canvasNode.findUnique({
@@ -99,6 +103,10 @@ async function writeCanvasNodeResult(args: {
         resultImageUrl: args.imageUrl,
         providerOriginalUrl: args.providerOriginalUrl ?? metadata.providerOriginalUrl,
         originalProviderImageUrl: args.providerOriginalUrl ?? metadata.originalProviderImageUrl,
+        providerRegion: args.providerRegion ?? null,
+        executionRegion: args.executionRegion ?? null,
+        storageRegion: args.storageRegion ?? null,
+        sourceProviderRegion: args.sourceProviderRegion ?? args.providerRegion ?? null,
         generationStatus: 'generation_success',
         persistenceStatus: 'persistence_success',
         assetStatus: 'ready',
@@ -268,6 +276,7 @@ export async function GET(request: NextRequest) {
   const taskId = generationJob.providerJobId ?? stringValue(input.taskId)
   const workflowId = stringValue(input.workflowId)
   const nodeId = generationJob.nodeId ?? stringValue(input.nodeId)
+  const { providerRegion: sourceProviderRegion, executionRegion, storageRegion, executorKind } = getExecutorForProvider(providerId)
 
   if (generationJob.status === 'SUCCEEDED') {
     const asset = await findExistingAsset(generationJob.id, generationJob.outputAssetId)
@@ -285,6 +294,10 @@ export async function GET(request: NextRequest) {
         storageKey: stringValue(record(generationJob.output).storageKey),
         providerOriginalUrl: stringValue(record(generationJob.output).providerOriginalUrl),
         submittedInput: record(generationJob.output).submittedInput ?? record(generationJob.input).submittedInput,
+        providerRegion: sourceProviderRegion,
+        executionRegion,
+        storageRegion,
+        sourceProviderRegion,
       })
     }
     return NextResponse.json({
@@ -293,6 +306,10 @@ export async function GET(request: NextRequest) {
       status: 'succeeded',
       taskId,
       generationJobId: generationJob.id,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
       resultImageUrl: imageUrl,
       imageUrl,
       stableUrl: imageUrl,
@@ -312,16 +329,26 @@ export async function GET(request: NextRequest) {
   }
 
   if (generationJob.status === 'FAILED') {
+    const failOutput = record(generationJob.output)
     return NextResponse.json({
       success: false,
       providerId,
       status: 'failed',
       taskId,
       generationJobId: generationJob.id,
-      errorCode: stringValue(record(generationJob.output).errorCode) || 'image_generation_failed',
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      errorCode: stringValue(failOutput.errorCode) || 'image_generation_failed',
       message: generationJob.errorMessage || generationJob.error || 'Image generation failed.',
-      upstreamMessage: record(generationJob.output).upstreamMessage,
-      providerResponse: record(generationJob.output).providerResponse,
+      upstreamMessage: failOutput.upstreamMessage,
+      upstreamStatus: failOutput.upstreamStatus,
+      requestId: failOutput.requestId,
+      providerEndpoint: failOutput.providerEndpoint,
+      providerHttpStatus: failOutput.providerHttpStatus,
+      submittedInput: failOutput.submittedInput,
+      providerResponse: failOutput.providerResponse,
     }, { status: 200 })
   }
 
@@ -439,7 +466,6 @@ export async function GET(request: NextRequest) {
   const assetModel = typeof executorStatus.model === 'string' ? executorStatus.model : stringValue(input.model)
   const assetStorageKey = stringValue(record(executorStatus.asset).storageKey)
   const assetProviderOriginalUrl = stringValue(executorStatus.providerOriginalUrl) || stringValue(record(executorStatus.asset).providerOriginalUrl) || resultImageUrl
-  const { providerRegion: sourceProviderRegion, executionRegion, storageRegion } = getExecutorForProvider(providerId)
   const assetMetadata = {
     model: assetModel,
     taskId,
@@ -517,6 +543,10 @@ export async function GET(request: NextRequest) {
     providerOriginalUrl: assetProviderOriginalUrl,
     submittedInput: executorStatus.submittedInput ?? input.submittedInput,
     providerResponse: executorStatus.providerResponse,
+    providerRegion: sourceProviderRegion,
+    executionRegion,
+    storageRegion,
+    sourceProviderRegion,
   })
   await settleJobCredits(generationJob.id).catch((error: unknown) => {
     console.warn('[api/generate/image/status] failed to settle credits', error)
@@ -530,6 +560,10 @@ export async function GET(request: NextRequest) {
     taskId,
     generationJobId: generationJob.id,
     jobId: generationJob.id,
+    providerRegion: sourceProviderRegion,
+    executionRegion,
+    storageRegion,
+    executorKind,
     resultImageUrl,
     imageUrl: resultImageUrl,
     stableUrl: resultImageUrl,
