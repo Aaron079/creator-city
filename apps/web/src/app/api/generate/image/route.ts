@@ -457,14 +457,20 @@ export async function POST(request: NextRequest) {
           })
           console.log('[api/generate/image] cn-executor HTTP response', { generationJobId, httpStatus: cnResp.status })
           const rawText = await cnResp.text()
-          try {
-            const parsed = JSON.parse(rawText)
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              cnResult = parsed as Record<string, unknown>
-              console.log('[api/generate/image] cn-executor result', { generationJobId, status: cnResult.status, ok: cnResult.ok, errorCode: cnResult.errorCode })
+          // 401 = auth failure — cn-executor rejected the secret. Do NOT stay QUEUED.
+          if (cnResp.status === 401) {
+            console.error('[api/generate/image] cn-executor rejected auth (401). Check CREATOR_EXECUTOR_SHARED_SECRET matches on both Vercel and Aliyun FC.', { generationJobId, preview: rawText.slice(0, 200) })
+            cnResult = { status: 'failed', errorCode: 'cn_executor_auth_rejected', message: 'cn-executor 返回 401：共享密钥不匹配。请检查 Vercel 和阿里云 FC 的 CREATOR_EXECUTOR_SHARED_SECRET 是否一致。' }
+          } else {
+            try {
+              const parsed = JSON.parse(rawText)
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                cnResult = parsed as Record<string, unknown>
+                console.log('[api/generate/image] cn-executor result', { generationJobId, status: cnResult.status, ok: cnResult.ok, errorCode: cnResult.errorCode })
+              }
+            } catch {
+              console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
             }
-          } catch {
-            console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
           }
         } catch (err: unknown) {
           console.warn('[api/generate/image] cn-executor request failed (timeout or network):', err instanceof Error ? err.message : String(err), { generationJobId })
