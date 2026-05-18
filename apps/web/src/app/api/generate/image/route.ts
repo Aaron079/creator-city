@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
-import { releaseJobCredits } from '@/lib/billing/settle'
+
 import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
@@ -13,7 +13,7 @@ import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
-import { startImageGenerationViaRegion, getExecutorForProvider } from '@/lib/executors/executor-gateway'
+import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -158,27 +158,7 @@ async function createImageGenerationJob(args: {
   throw new Error('createImageGenerationJob: too many missing columns — run the production DB migration')
 }
 
-async function markImageGenerationJobFailed(jobId: string | undefined | null, message: string, errorCode?: string) {
-  if (!jobId) return
-  await db.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: 'FAILED',
-      error: message,
-      errorMessage: message.slice(0, 1000),
-      output: {
-        errorCode: errorCode ?? 'image_generation_failed',
-        message,
-      },
-      completedAt: new Date(),
-    },
-  }).catch((error: unknown) => {
-    console.warn('[api/generate/image] failed to mark GenerationJob failed', error)
-  })
-  await releaseJobCredits(jobId).catch((error: unknown) => {
-    console.warn('[api/generate/image] failed to release image generation credits', error)
-  })
-}
+
 
 export async function GET() {
   try {
@@ -392,6 +372,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (useCnExecutor) {
+      // --- DB Job Queue path ---
+      // 1. Create/get GenerationJob (QUEUED)
+      // 2. Fire-and-forget POST to cn-executor /api/jobs/run-image
+      // 3. Return immediately — frontend polls /api/generate/image/status
+
       let generationJobId = billing.ctx.billingJobId
       if (!generationJobId) {
         let jobCreateError: unknown = null
@@ -403,7 +388,7 @@ export async function POST(request: NextRequest) {
           model: requestModel,
         }).catch((error: unknown) => {
           jobCreateError = error
-          console.warn('[api/generate/image] failed to create async GenerationJob', error)
+          console.warn('[api/generate/image] failed to create GenerationJob', error)
           return null
         })
         generationJobId = imageGenerationJob?.id ?? null
@@ -421,10 +406,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Write full regional input into job and set QUEUED
       await db.generationJob.update({
         where: { id: generationJobId },
         data: {
-          status: 'PROCESSING',
+          status: 'QUEUED',
           provider: providerId,
           kind: 'image',
           input: {
@@ -437,199 +423,29 @@ export async function POST(request: NextRequest) {
             model: requestModel ?? null,
             aspectRatio: aspectRatio ?? null,
             size: size ?? null,
+            providerRegion,
+            executionRegion,
+            storageRegion,
+            executorKind,
             submittedInput,
           },
         },
       }).catch((error: unknown) => {
-        console.warn('[api/generate/image] failed to mark async GenerationJob processing', error)
+        console.warn('[api/generate/image] failed to update GenerationJob to QUEUED', error)
       })
 
-      const executorResult = await startImageGenerationViaRegion({
-        userId: currentUser.id,
-        projectId: body.projectId ?? null,
-        nodeId: body.nodeId ?? null,
-        prompt,
-        provider: providerId,
-        model: requestModel ?? null,
-        aspectRatio: aspectRatio ?? null,
-        resolution: typeof body.resolution === 'string' ? body.resolution : null,
-      })
-      if (!executorResult.success) {
-        // cn-executor returns { success, errorCode, message, ... } — note: message not errorMessage
-        const execErr = executorResult as Record<string, unknown>
-        const errCode = typeof execErr.errorCode === 'string' ? execErr.errorCode : 'cn_executor_failed'
-        const errMsg = typeof execErr.message === 'string' ? execErr.message
-          : typeof execErr.errorMessage === 'string' ? execErr.errorMessage
-          : 'CN executor returned an error.'
-        await markImageGenerationJobFailed(generationJobId, errMsg, errCode)
-        return NextResponse.json({
-          success: false,
-          errorCode: visibleProviderErrorCode(errCode, typeof execErr.upstreamStatus === 'number' ? execErr.upstreamStatus : undefined, errMsg),
-          message: errMsg,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executorKind,
-          mode: 'unavailable',
-          status: 'failed',
-          submittedInput: (execErr.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
-          upstreamMessage: execErr.upstreamMessage,
-          upstreamStatus: execErr.upstreamStatus,
-          requestId: execErr.requestId,
-          providerEndpoint: execErr.providerEndpoint,
-          providerHttpStatus: execErr.providerHttpStatus,
-          providerResponse: execErr.providerResponse,
-        }, { status: 200 })
-      }
-
-      const execResult = executorResult as Record<string, unknown>
-      const execStatus = typeof execResult.status === 'string' ? execResult.status : ''
-      const syncResultUrl = typeof execResult.resultImageUrl === 'string' && execResult.resultImageUrl ? execResult.resultImageUrl : ''
-      const taskId = typeof execResult.taskId === 'string' ? execResult.taskId : ''
-
-      // Sync success: cn-executor completed synchronously and image is already in OSS
-      if (execStatus === 'succeeded' && syncResultUrl) {
-        const execAsset = execResult.asset && typeof execResult.asset === 'object' ? execResult.asset as Record<string, unknown> : {}
-        const syncStorageKey = typeof execAsset.storageKey === 'string' ? execAsset.storageKey : ''
-        const syncModel = typeof execResult.model === 'string' ? execResult.model : submittedModel
-
-        let syncAssetId: string | undefined
-        try {
-          const createdAsset = await db.asset.create({
-            data: {
-              name: `generated-image-${Date.now()}.png`,
-              type: 'IMAGE',
-              status: 'READY',
-              ownerId: currentUser.id,
-              url: syncResultUrl,
-              mimeType: 'image/png',
-              source: 'generated',
-              provider: providerId,
-              providerId,
-              storageProvider: 'aliyun_oss',
-              bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
-              storageKey: syncStorageKey || null,
-              originalUrl: typeof execResult.providerOriginalUrl === 'string' ? execResult.providerOriginalUrl : null,
-              generationJobId,
-              nodeId: body.nodeId ?? null,
-              projectId: body.projectId ?? null,
-              workflowId: body.workflowId ?? null,
-              prompt: prompt.slice(0, 2000),
-              tags: [],
-              metadataJson: {
-                storageRegion: 'cn',
-                executionRegion: 'cn',
-                storageProvider: 'aliyun_oss',
-                taskId: taskId || null,
-                model: syncModel,
-                submittedInput,
-              },
-            },
-          })
-          syncAssetId = createdAsset.id
-        } catch (assetErr) {
-          console.warn('[api/generate/image] sync cn: failed to create Asset', assetErr)
-        }
-
-        await db.generationJob.update({
-          where: { id: generationJobId },
-          data: {
-            status: 'SUCCEEDED',
-            providerJobId: taskId || null,
-            outputAssetId: syncAssetId ?? null,
-            output: {
-              resultImageUrl: syncResultUrl,
-              stableUrl: syncResultUrl,
-              assetId: syncAssetId ?? null,
-              storageKey: syncStorageKey || null,
-              storageProvider: 'aliyun_oss',
-              storageRegion: 'cn',
-              model: syncModel,
-              submittedInput,
-            },
-            completedAt: new Date(),
-          },
-        }).catch((error: unknown) => {
-          console.warn('[api/generate/image] sync cn: failed to mark GenerationJob SUCCEEDED', error)
-        })
-
-        return NextResponse.json({
-          success: true,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executor: resolvedExecutor,
-          executorKind,
-          mode: 'real',
-          status: 'succeeded',
-          async: false,
-          generationJobId,
-          jobId: generationJobId,
-          taskId: taskId || null,
-          resultImageUrl: syncResultUrl,
-          stableUrl: syncResultUrl,
-          displayUrl: syncResultUrl,
-          imageUrl: syncResultUrl,
-          assetId: syncAssetId,
-          outputAssetId: syncAssetId,
-          storageKey: syncStorageKey || undefined,
-          storageProvider: 'aliyun_oss',
-          model: syncModel,
-          submittedInput: (execResult.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
-          message: '图片生成成功（火山 Seedream → 阿里 OSS）',
-          asset: syncAssetId ? {
-            id: syncAssetId,
-            type: 'IMAGE',
-            url: syncResultUrl,
-            status: 'ready',
-            storageKey: syncStorageKey || undefined,
-            storageProvider: 'aliyun_oss',
-          } : undefined,
-        }, { status: 200 })
-      }
-
-      // Fallback async polling path (taskId-based, for non-sync or unexpected responses)
-      if (!taskId) {
-        const message = 'CN executor did not return taskId or sync result from /api/generate/image/start.'
-        await markImageGenerationJobFailed(generationJobId, message, 'cn_executor_task_id_missing')
-        return NextResponse.json({
-          success: false,
-          errorCode: 'cn_executor_task_id_missing',
-          message,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executorKind,
-          mode: 'unavailable',
-          status: 'failed',
-          submittedInput,
-        }, { status: 200 })
-      }
-
-      await db.generationJob.update({
-        where: { id: generationJobId },
-        data: {
-          status: 'PROCESSING',
-          providerJobId: taskId,
-          input: {
-            prompt,
-            providerId,
-            projectId: body.projectId ?? null,
-            workflowId: body.workflowId ?? null,
-            nodeId: body.nodeId ?? null,
-            params,
-            model: requestModel ?? null,
-            aspectRatio: aspectRatio ?? null,
-            size: size ?? null,
-            taskId,
-            submittedInput,
-          },
+      // Fire-and-forget to cn-executor — do NOT await
+      const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
+      fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
         },
-      }).catch((error: unknown) => {
-        console.warn('[api/generate/image] failed to save cn executor taskId', error)
+        body: JSON.stringify({ generationJobId }),
+        signal: AbortSignal.timeout(8_000),
+      }).catch((err: unknown) => {
+        console.warn('[api/generate/image] cn-executor fire-and-forget failed:', err instanceof Error ? err.message : String(err))
       })
 
       return NextResponse.json({
@@ -641,14 +457,13 @@ export async function POST(request: NextRequest) {
         executor: resolvedExecutor,
         executorKind,
         mode: 'real',
-        status: 'running',
+        status: 'queued',
         async: true,
         generationJobId,
         jobId: generationJobId,
-        taskId,
-        message: 'Image generation submitted to cn executor',
         model: submittedModel,
         submittedInput,
+        message: '图片生成任务已提交，正在处理中',
       }, { status: 200 })
     } else if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
       const chinaResult = providerId === 'volcengine-seedream-image'

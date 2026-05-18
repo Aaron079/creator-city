@@ -18,13 +18,15 @@
   "dependencies": {
     "ali-oss": "^6.23.0",
     "debug": "^4.3.4",
-    "escape-html": "^1.0.3"
+    "escape-html": "^1.0.3",
+    "pg": "^8.13.3"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@types/ali-oss": "^6.23.3",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.10",
     "eslint": "^8.57.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.5"

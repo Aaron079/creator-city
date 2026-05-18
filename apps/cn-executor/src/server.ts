@@ -4,6 +4,7 @@ import { jsonError, jsonNotFound, jsonOk, jsonUnauthorized } from './response'
 import { isAuthorized } from './auth'
 import { handleGenerateImage } from './handlers/generateImage'
 import { handleImageGenerationStatus, handleStartImageGeneration } from './handlers/imageTasks'
+import { handleRunImageJob } from './handlers/jobRunner'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
 import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 
@@ -97,6 +98,18 @@ const server = http.createServer((req, res) => {
 
   if (method === 'GET' && url === '/api/generate/image/status') {
     handleImageGenerationStatus(req, res)
+    return
+  }
+
+  if (method === 'POST' && url === '/api/jobs/run-image') {
+    handleRunImageJob(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in job runner.',
+        })
+      }
+    })
     return
   }
 
