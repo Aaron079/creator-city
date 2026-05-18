@@ -143,6 +143,11 @@ async function markJobFailed(args: {
   providerResponse?: unknown
   upstreamMessage?: unknown
 }) {
+  console.error('[api/generate/image/status] job failed', {
+    jobId: args.jobId,
+    errorCode: args.errorCode,
+    message: args.message.slice(0, 300),
+  })
   await db.generationJob.update({
     where: { id: args.jobId },
     data: {
@@ -162,6 +167,63 @@ async function markJobFailed(args: {
   })
   await releaseJobCredits(args.jobId).catch((error: unknown) => {
     console.warn('[api/generate/image/status] failed to release credits', error)
+  })
+}
+
+async function writeCanvasNodeError(args: {
+  workflowId?: string
+  nodeId?: string | null
+  generationJobId: string
+  taskId: string
+  errorCode: string
+  message: string
+  upstreamMessage?: unknown
+  requestId?: unknown
+  submittedInput?: unknown
+  providerResponse?: unknown
+  providerHttpStatus?: unknown
+  providerEndpoint?: unknown
+}) {
+  if (!args.workflowId || !args.nodeId) return
+  const node = await db.canvasNode.findUnique({
+    where: { workflowId_nodeId: { workflowId: args.workflowId, nodeId: args.nodeId } },
+  }).catch(() => null)
+  if (!node) return
+  const metadata = record(node.metadataJson)
+  await db.canvasNode.update({
+    where: { id: node.id },
+    data: {
+      status: 'error',
+      errorMessage: args.message.slice(0, 500),
+      metadataJson: jsonValue({
+        ...metadata,
+        generationJobId: args.generationJobId,
+        taskId: args.taskId,
+        errorCode: args.errorCode,
+        errorMessage: args.message,
+        recoveryStatus: args.errorCode,
+        mediaRecoveryStatus: 'generation_failed',
+        loading: false,
+        isRegenerating: false,
+        regenerating: false,
+        upstreamMessage: args.upstreamMessage,
+        requestId: args.requestId,
+        submittedInput: args.submittedInput,
+        providerResponse: args.providerResponse,
+        providerHttpStatus: args.providerHttpStatus,
+        providerEndpoint: args.providerEndpoint,
+        lastGenerationError: jsonValue({
+          errorCode: args.errorCode,
+          message: args.message,
+          upstreamMessage: args.upstreamMessage,
+          requestId: args.requestId,
+          providerHttpStatus: args.providerHttpStatus,
+          at: new Date().toISOString(),
+        }),
+      }),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[api/generate/image/status] failed to update CanvasNode error state', error)
   })
 }
 
@@ -261,6 +323,11 @@ export async function GET(request: NextRequest) {
     }, { status: 200 })
   }
 
+  console.info('[api/generate/image/status] polling cn-executor', {
+    generationJobId: generationJob.id,
+    taskId,
+    providerId,
+  })
   const executorStatus = await getImageGenerationStatusViaRegion(providerId, taskId)
   const status = typeof executorStatus.status === 'string' ? executorStatus.status : ''
 
@@ -282,12 +349,35 @@ export async function GET(request: NextRequest) {
       : typeof executorStatus.errorMessage === 'string' ? executorStatus.errorMessage
       : 'CN executor image task failed.'
     const visibleCode = visibleProviderErrorCode(errCode, typeof executorStatus.upstreamStatus === 'number' ? executorStatus.upstreamStatus : undefined, errMsg)
+    console.error('[api/generate/image/status] executor reported failure', {
+      generationJobId: generationJob.id,
+      taskId,
+      errorCode: visibleCode,
+      rawCode: errCode,
+      upstreamStatus: executorStatus.upstreamStatus,
+      requestId: executorStatus.requestId,
+      message: errMsg.slice(0, 300),
+    })
     await markJobFailed({
       jobId: generationJob.id,
       errorCode: visibleCode,
       message: errMsg,
       upstreamMessage: executorStatus.upstreamMessage,
       providerResponse: executorStatus.providerResponse,
+    })
+    await writeCanvasNodeError({
+      workflowId,
+      nodeId,
+      generationJobId: generationJob.id,
+      taskId,
+      errorCode: visibleCode,
+      message: errMsg,
+      upstreamMessage: executorStatus.upstreamMessage,
+      requestId: executorStatus.requestId,
+      submittedInput: executorStatus.submittedInput,
+      providerResponse: executorStatus.providerResponse,
+      providerHttpStatus: executorStatus.providerHttpStatus,
+      providerEndpoint: executorStatus.providerEndpoint,
     })
     return NextResponse.json({
       success: false,

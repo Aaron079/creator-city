@@ -13,6 +13,14 @@ import {
   getProjectAccess,
 } from '@/lib/projects/ensure-active-project'
 
+function sanitizeJson(value: unknown): Prisma.InputJsonValue {
+  try {
+    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue
+  } catch {
+    return {} as Prisma.InputJsonObject
+  }
+}
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -350,7 +358,8 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
         ? node.metadataJson as Record<string, unknown>
         : {}
-      const metadataJson = {
+      // Sanitize through JSON roundtrip: strips undefined, functions, circular refs.
+      const metadataJson = sanitizeJson({
         ...nodeMetadata,
         projectId: params.projectId,
         workflowId: workflow.id,
@@ -358,7 +367,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
         ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
         outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
         preview: node.preview ?? nodeMetadata.preview ?? null,
-      }
+      })
       try {
         await db.canvasNode.upsert({
           where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
@@ -380,7 +389,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
             resultAudioUrl: node.resultAudioUrl ?? null,
             resultPreview: node.resultPreview ?? null,
             errorMessage: node.errorMessage ?? null,
-            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
             metadataJson,
           },
           update: {
@@ -399,7 +408,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
             resultAudioUrl: node.resultAudioUrl ?? null,
             resultPreview: node.resultPreview ?? null,
             errorMessage: node.errorMessage ?? null,
-            paramsJson: { model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null },
+            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
             metadataJson,
             updatedAt: now,
           },
@@ -415,30 +424,41 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       }
     }
 
+    const failedEdgeIds: string[] = []
     for (const edge of body.edges ?? []) {
       if (!edge.id || !edge.fromNodeId || !edge.toNodeId) continue
       const edgeMetadata = edge.metadataJson && typeof edge.metadataJson === 'object'
         ? edge.metadataJson as Record<string, unknown>
         : {}
-      const metadataJson = { ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' }
-      await db.canvasEdge.upsert({
-        where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
-        create: {
+      const metadataJson = sanitizeJson({ ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' })
+      try {
+        await db.canvasEdge.upsert({
+          where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
+          create: {
+            workflowId: workflow.id,
+            edgeId: edge.id,
+            sourceNodeId: edge.fromNodeId,
+            targetNodeId: edge.toNodeId,
+            type: edge.type ?? 'flow',
+            metadataJson,
+          },
+          update: {
+            sourceNodeId: edge.fromNodeId,
+            targetNodeId: edge.toNodeId,
+            type: edge.type ?? 'flow',
+            metadataJson,
+            updatedAt: now,
+          },
+        })
+      } catch (edgeError) {
+        failedEdgeIds.push(edge.id)
+        console.error('[canvas-api] edge upsert failed, continuing', {
+          projectId: params.projectId,
           workflowId: workflow.id,
           edgeId: edge.id,
-          sourceNodeId: edge.fromNodeId,
-          targetNodeId: edge.toNodeId,
-          type: edge.type ?? 'flow',
-          metadataJson,
-        },
-        update: {
-          sourceNodeId: edge.fromNodeId,
-          targetNodeId: edge.toNodeId,
-          type: edge.type ?? 'flow',
-          metadataJson,
-          updatedAt: now,
-        },
-      })
+          error: edgeError instanceof Error ? edgeError.message : String(edgeError),
+        })
+      }
     }
 
     if (body.clearCanvas && (body.nodes ?? []).length === 0) {
@@ -465,20 +485,29 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
     )
 
+    const hasPartialFailure = failedNodeIds.length > 0 || failedEdgeIds.length > 0
+    if (hasPartialFailure) {
+      console.warn('[canvas-api] partial save', {
+        projectId: params.projectId,
+        workflowId: workflow.id,
+        failedNodeIds,
+        failedEdgeIds,
+      })
+    }
     return jsonOk({
       workflowId: workflow.id,
       savedAt: now.toISOString(),
       serverUpdatedAt: now.toISOString(),
       nodeCount: body.nodes.length,
       edgeCount: body.edges.length,
-      ...(failedNodeIds.length > 0 ? { failedNodeIds, partialSave: true } : {}),
+      ...(hasPartialFailure ? { failedNodeIds, failedEdgeIds, partialSave: true } : {}),
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     const msg = safeErrorMessage(error)
-    console.error('[canvas-api] save failed', { projectId: params.projectId, error })
+    console.error('[canvas-api] save failed', { projectId: params.projectId, error: msg })
     return jsonError('CANVAS_SAVE_FAILED', `保存画布失败：${msg}`, 500)
   }
 }
