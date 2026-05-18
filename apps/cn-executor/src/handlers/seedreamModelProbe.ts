@@ -4,7 +4,8 @@ import { jsonResponse } from '../response'
 import { VOLCENGINE_ARK_DEFAULT_BASE_URL, imageEndpoint } from '../volcengine'
 
 // Volcengine Seedream sizes that are known-valid (for reference in conclusion)
-const VALID_SIZES = ['1920x1080', '1080x1920', '2048x2048', '1536x2048', '2048x1536']
+// Seedream 5.0 requires >= 3,686,400 pixels (min: 2560x1440 = 3,686,400)
+const VALID_SIZES = ['2560x1440', '1440x2560', '2048x2048', '2560x1920', '1920x2560']
 
 // Probe body intentionally uses an invalid size so no real generation is ever triggered.
 // Volcengine validates model first, then parameters:

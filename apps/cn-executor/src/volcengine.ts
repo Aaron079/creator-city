@@ -52,35 +52,36 @@ export function getSeedreamConfigDebugPayload(): Record<string, unknown> {
   }
 }
 
-// Maps UI aspectRatio to the Volcengine Seedream WxH size string.
-// Seedream only accepts specific WxH values — never raw UI strings like "9:16".
-// Always defaults to high-res (2K) sizes; fallback is "1920x1080".
+// Maps UI aspectRatio to Volcengine Seedream 5.0 WxH size string.
+// All sizes must be >= 3,686,400 pixels (Seedream 5.0 minimum).
+// Default (unknown/missing): 2560x1440 (exactly 3,686,400 px).
 function normalizeSeedreamSize(aspectRatio?: string | null): string {
+  const SEEDREAM_5_DEFAULT = '2560x1440'
+
   const ar = String(aspectRatio ?? '').trim().toLowerCase()
 
-  // Pass through if already WxH format
-  if (/^\d{3,5}x\d{3,5}$/i.test(ar)) return ar
+  // Pass through if already a valid WxH string — caller is responsible for pixel count
+  if (/^\d{3,5}x\d{3,5}$/i.test(ar)) {
+    const [w, h] = ar.split('x').map(Number)
+    // Reject sizes below the 3,686,400 px minimum and fall to default
+    if (w * h >= 3_686_400) return ar
+  }
 
-  // Seedream-supported sizes keyed by aspect ratio
+  // Seedream 5.0 sizes — all >= 3,686,400 pixels
+  // 2560x1440 = 3,686,400  |  1440x2560 = 3,686,400
+  // 2048x2048 = 4,194,304  |  2560x1920 = 4,915,200  |  1920x2560 = 4,915,200
   const sizeMap: Record<string, string> = {
-    '16:9':  '1920x1080',
-    '9:16':  '1080x1920',
-    '1:1':   '2048x2048',
-    '4:3':   '2048x1536',
-    '3:4':   '1536x2048',
-    '2:3':   '1365x2048',
-    '3:2':   '2048x1365',
-    '21:9':  '2560x1088',
+    '16:9': '2560x1440',
+    '9:16': '1440x2560',
+    '1:1':  '2048x2048',
+    '4:3':  '2560x1920',
+    '3:4':  '1920x2560',
   }
 
   if (ar in sizeMap) return sizeMap[ar]
 
-  // Legacy aliases
-  if (ar === '1080p') return '1920x1080'
-  if (ar === '720p')  return '1280x720'
-
-  // Default — widest support
-  return '1920x1080'
+  // Any other ratio (2:3, 3:2, 21:9, 1080p, unknown…) → default
+  return SEEDREAM_5_DEFAULT
 }
 
 function findImageUrl(value: unknown): string | null {
