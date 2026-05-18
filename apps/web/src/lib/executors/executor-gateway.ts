@@ -1,4 +1,5 @@
 import { getProviderRegion, resolveProviderRegionInfo } from '@/lib/regions/router'
+import type { ExecutorKind } from '@/lib/regions/types'
 
 export type ExecutorInput = {
   userId?: string | null
@@ -25,6 +26,7 @@ export type ExecutorResult = {
 export type ExecutorStatus = {
   configured: boolean
   baseUrlConfigured: boolean
+  executorKind: ExecutorKind
 }
 
 function cnApiBaseUrl(): string {
@@ -40,10 +42,12 @@ export function getExecutorStatus(): { cn: ExecutorStatus; global: ExecutorStatu
     cn: {
       configured: Boolean(cnApiBaseUrl()),
       baseUrlConfigured: Boolean(cnApiBaseUrl()),
+      executorKind: 'aliyun_fc',
     },
     global: {
       configured: Boolean(globalApiBaseUrl()),
       baseUrlConfigured: Boolean(globalApiBaseUrl()),
+      executorKind: 'vercel',
     },
   }
 }
@@ -54,6 +58,8 @@ export type ExecutorResolution = {
   executionRegion: 'cn' | 'global'
   storageRegion: 'cn' | 'global'
   executor: 'cn' | 'global' | 'none'
+  executorKind: ExecutorKind
+  executorBaseUrl: string
   cnBaseUrlConfigured: boolean
   globalConfigured: boolean
   unknownProvider: boolean
@@ -64,7 +70,7 @@ export function getExecutorForProvider(provider?: string | null): ExecutorResolu
   const { region, knownProvider } = resolveProviderRegionInfo(provider)
   const cnConfigured = Boolean(cnApiBaseUrl())
   const globalConfigured = Boolean(globalApiBaseUrl())
-  const base: Omit<ExecutorResolution, 'executor' | 'errorCode'> = {
+  const base: Omit<ExecutorResolution, 'executor' | 'executorKind' | 'executorBaseUrl' | 'errorCode'> = {
     providerId: provider,
     providerRegion: region,
     executionRegion: region,
@@ -75,10 +81,11 @@ export function getExecutorForProvider(provider?: string | null): ExecutorResolu
   }
   if (region === 'cn') {
     return cnConfigured
-      ? { ...base, executor: 'cn' }
-      : { ...base, executor: 'none', errorCode: 'executor_region_missing' }
+      ? { ...base, executor: 'cn', executorKind: 'aliyun_fc', executorBaseUrl: cnApiBaseUrl() }
+      : { ...base, executor: 'none', executorKind: 'none', executorBaseUrl: '', errorCode: 'executor_region_missing' }
   }
-  return { ...base, executor: globalConfigured ? 'global' : 'none' }
+  const base2 = { ...base, executorKind: (globalConfigured ? 'vercel' : 'none') as ExecutorKind, executorBaseUrl: globalApiBaseUrl() }
+  return { ...base2, executor: globalConfigured ? 'global' : 'none' }
 }
 
 function buildForwardBody(input: ExecutorInput): Record<string, unknown> {

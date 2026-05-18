@@ -12,6 +12,7 @@ export type GenerationHealthSection = {
 export type ExecutorHealthStatus = {
   configured: boolean
   baseUrlConfigured: boolean
+  executorKind: 'aliyun_fc' | 'vercel' | 'global_executor' | 'none'
   providers?: Array<{ id: string; label: string; runtimeProviderIds: string[] }>
 }
 

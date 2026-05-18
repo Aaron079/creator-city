@@ -568,8 +568,8 @@ export async function POST(request: NextRequest) {
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
-  // TODO(cn-video): when providerRegion === 'cn', route to cn-executor instead of direct provider
-  const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, unknownProvider } = getExecutorForProvider(providerId)
+  // cn video providers will route to cn-executor in v2; currently runs direct for Seedance
+  const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, executorKind, unknownProvider } = getExecutorForProvider(providerId)
   const imageUrl = firstImageInput(body)
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
@@ -766,6 +766,7 @@ export async function POST(request: NextRequest) {
         executionRegion,
         storageRegion,
         executor: resolvedExecutor,
+        executorKind,
         ...(unknownProvider ? { unknownProvider: true } : {}),
         model: raw.model,
         mode: 'real',
@@ -784,6 +785,7 @@ export async function POST(request: NextRequest) {
             executionRegion,
             storageRegion,
             executor: resolvedExecutor,
+            executorKind,
             model: raw.model,
             taskId: raw.taskId,
             providerJobId: raw.taskId,

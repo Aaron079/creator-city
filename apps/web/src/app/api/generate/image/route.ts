@@ -317,13 +317,14 @@ export async function POST(request: NextRequest) {
     body.workflowId = generationContext.workflowId
     body.nodeId = generationContext.nodeId
     const executorResolution = getExecutorForProvider(providerId)
-    const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, unknownProvider } = executorResolution
+    const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, executorKind, unknownProvider } = executorResolution
     const submittedInput = {
       providerId,
       providerRegion,
       executionRegion,
       storageRegion,
       executor: resolvedExecutor,
+      executorKind,
       ...(unknownProvider ? { unknownProvider: true } : {}),
       model: submittedModel,
       ...(providerId === 'volcengine-seedream-image' ? { modelSource: 'VOLCENGINE_SEEDREAM_MODEL' } : {}),
@@ -538,6 +539,7 @@ export async function POST(request: NextRequest) {
           executionRegion,
           storageRegion,
           executor: resolvedExecutor,
+          executorKind,
           mode: 'real',
           status: 'succeeded',
           async: false,
@@ -610,6 +612,7 @@ export async function POST(request: NextRequest) {
         executionRegion,
         storageRegion,
         executor: resolvedExecutor,
+        executorKind,
         mode: 'real',
         status: 'running',
         async: true,

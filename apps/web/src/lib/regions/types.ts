@@ -2,7 +2,11 @@ export type Region = 'cn' | 'global'
 
 export type ProviderRegion = Region
 
+export type ExecutionRegion = Region
+
 export type StorageRegion = Region
+
+export type ExecutorKind = 'aliyun_fc' | 'vercel' | 'global_executor' | 'none'
 
 export type ProviderAdapterId =
   | 'volcengine_seedream'
