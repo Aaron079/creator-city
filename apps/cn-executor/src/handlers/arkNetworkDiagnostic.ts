@@ -131,6 +131,7 @@ export async function handleArkNetworkDiagnostic(req: IncomingMessage, res: Serv
   ])
 
   const networkReachable = httpsNoAuth.ok
+  const authStatus = 'httpStatus' in httpsWithAuth ? httpsWithAuth.httpStatus : undefined
   const diagnosis =
     !dns4.ok
       ? 'DNS_FAILURE: 无法解析火山 Ark 域名，函数计算实例可能没有 DNS 配置或无公网访问。'
@@ -140,9 +141,13 @@ export async function handleArkNetworkDiagnostic(req: IncomingMessage, res: Serv
           ? 'HTTPS_FETCH_FAILED: TCP 可连但 fetch 失败，可能是 TLS SNI 拦截或代理问题。'
           : !hasApiKey
             ? 'NO_API_KEY: 网络可达，但 VOLCENGINE_ARK_API_KEY 未配置。'
-            : httpsWithAuth.ok
-              ? 'AUTH_OK: 网络可达，API Key 有效（即使返回参数错误也属正常）。'
-              : 'AUTH_FAILED: 网络可达但 API Key 无效或模型不存在。'
+            : authStatus === 404
+              ? 'network_ok_but_model_or_endpoint_not_found: 网络正常、API Key 认证通过，但请求的 model/endpoint 不存在或当前 API Key 无权访问。请用 /debug/seedream-model-probe 确认正确的 model ID。'
+              : authStatus === 401 || authStatus === 403
+                ? 'AUTH_FAILED: 网络可达但 API Key 无效（401/403）。请检查 VOLCENGINE_ARK_API_KEY。'
+                : !httpsWithAuth.ok
+                  ? 'AUTH_FAILED: 网络可达但认证/请求失败。请检查 VOLCENGINE_ARK_API_KEY。'
+                  : 'AUTH_OK: 网络可达，API Key 有效（4xx 参数错误属正常，说明认证成功）。'
 
   console.log('[ark-network-diag] complete', {
     networkReachable,
