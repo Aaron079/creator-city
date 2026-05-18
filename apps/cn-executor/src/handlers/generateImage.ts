@@ -85,9 +85,21 @@ export function parseImageExecutionInput(body: Record<string, unknown>): ImageEx
 }
 
 export async function executeImageGeneration(input: ImageExecutionInput): Promise<ImageExecutionResult> {
+  const logCtx = { providerId: input.providerId, aspectRatio: input.aspectRatio }
+
   // 1. Generate via Volcengine Seedream
+  console.log('[cn-executor][executeImage] step 1/3: calling Seedream', logCtx)
+  const t0 = Date.now()
   const genResult = await generateSeedreamImage(input)
+  const seedreamMs = Date.now() - t0
   if (!genResult.success) {
+    console.error('[cn-executor][executeImage] step 1/3 FAILED: Seedream error', {
+      ...logCtx,
+      seedreamMs,
+      errorCode: genResult.errorCode,
+      message: genResult.message?.slice(0, 300),
+      upstreamStatus: genResult.upstreamStatus,
+    })
     return {
       success: false,
       errorCode: genResult.errorCode,
@@ -102,6 +114,13 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
       ...(genResult.providerResponse !== undefined ? { providerResponse: genResult.providerResponse } : {}),
     }
   }
+  console.log('[cn-executor][executeImage] step 1/3 OK: Seedream success', {
+    ...logCtx,
+    seedreamMs,
+    model: genResult.model,
+    isBase64: genResult.isBase64,
+    hasUrl: Boolean(genResult.imageUrl),
+  })
 
   // 2. Obtain image buffer — URL download or base64 decode
   let imageBuffer: Buffer | null = null
@@ -109,16 +128,22 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
   const providerOriginalUrl = genResult.providerOriginalUrl
 
   if (genResult.isBase64 && genResult.dataUrl) {
+    console.log('[cn-executor][executeImage] step 2/3: decoding base64 image', logCtx)
     const parsed = parseDataUrl(genResult.dataUrl)
     if (parsed) {
       imageBuffer = parsed.buffer
       contentType = parsed.contentType
     }
+    console.log('[cn-executor][executeImage] step 2/3 base64', { ...logCtx, ok: Boolean(imageBuffer), bytes: imageBuffer?.byteLength })
   } else {
+    console.log('[cn-executor][executeImage] step 2/3: downloading image from provider URL', { ...logCtx, urlLen: genResult.imageUrl?.length })
+    const t1 = Date.now()
     imageBuffer = await downloadBuffer(genResult.imageUrl)
+    console.log('[cn-executor][executeImage] step 2/3 download', { ...logCtx, ok: Boolean(imageBuffer), bytes: imageBuffer?.byteLength, durationMs: Date.now() - t1 })
   }
 
   if (!imageBuffer || imageBuffer.byteLength === 0) {
+    console.error('[cn-executor][executeImage] step 2/3 FAILED: image buffer empty or download failed', logCtx)
     return {
       success: false,
       errorCode: 'provider_media_download_failed',
@@ -130,8 +155,17 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
 
   // 3. Upload to Aliyun OSS
   const ossKey = buildOssKey(input.projectId, input.nodeId)
+  console.log('[cn-executor][executeImage] step 3/3: uploading to OSS', { ...logCtx, ossKey, bytes: imageBuffer.byteLength })
+  const t2 = Date.now()
   const uploadResult = await uploadToOss(ossKey, imageBuffer, contentType)
+  const ossMs = Date.now() - t2
   if (!uploadResult.success) {
+    console.error('[cn-executor][executeImage] step 3/3 FAILED: OSS upload error', {
+      ...logCtx,
+      ossMs,
+      errorCode: uploadResult.errorCode,
+      message: uploadResult.message?.slice(0, 300),
+    })
     return {
       success: false,
       errorCode: uploadResult.errorCode,
@@ -140,6 +174,12 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
       submittedInput: genResult.submittedInput,
     }
   }
+  console.log('[cn-executor][executeImage] step 3/3 OK: OSS upload success', {
+    ...logCtx,
+    ossMs,
+    ossKey: uploadResult.storageKey,
+    url: uploadResult.url.slice(0, 80),
+  })
 
   return {
     success: true,

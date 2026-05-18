@@ -344,13 +344,16 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
       ...input,
       processingStartedAt: new Date().toISOString(),
     })
+    console.log('[cn-executor][jobRunner] marked PROCESSING', { generationJobId })
   } catch (err) {
-    console.warn('[cn-executor][jobRunner] failed to mark job PROCESSING', {
+    console.error('[cn-executor][jobRunner] FAILED to mark job PROCESSING — DB write error, continuing anyway', {
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
   }
 
+  console.log('[cn-executor][jobRunner] starting executeImageGeneration', { generationJobId, providerId: job.providerId, aspectRatio: execInput.aspectRatio })
+  const t0 = Date.now()
   let result
   try {
     result = await executeImageGeneration(execInput)
@@ -361,6 +364,8 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
       message: err instanceof Error ? err.message : 'Unexpected error during image generation.',
     }
   }
+  const execMs = Date.now() - t0
+  console.log('[cn-executor][jobRunner] executeImageGeneration done', { generationJobId, success: result.success, execMs })
 
   if (!result.success) {
     const errCode = result.errorCode ?? 'image_generation_failed'
@@ -381,15 +386,17 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     if ('requestId' in result) errorOutput.requestId = result.requestId
     if ('providerResponse' in result) errorOutput.providerResponse = result.providerResponse
 
+    console.error('[cn-executor][jobRunner] job failed, writing FAILED to DB', { generationJobId, errorCode: errCode, message: errMsg.slice(0, 300) })
     try {
       await markJobFailed({ id: generationJobId, errorCode: errCode, message: errMsg, output: errorOutput })
+      console.log('[cn-executor][jobRunner] FAILED written to DB', { generationJobId })
     } catch (dbErr) {
-      console.error('[cn-executor][jobRunner] failed to mark job FAILED in DB', {
+      console.error('[cn-executor][jobRunner] CRITICAL: failed to write FAILED to DB', {
         generationJobId,
-        error: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        dbError: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        originalError: errCode,
       })
     }
-    console.error('[cn-executor][jobRunner] job failed', { generationJobId, errorCode: errCode, message: errMsg.slice(0, 200) })
     return {
       ok: false,
       status: 'failed',
@@ -409,6 +416,8 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     result.asset && typeof result.asset.storageKey === 'string' ? result.asset.storageKey : null
   const providerOriginalUrl = result.providerOriginalUrl ?? null
   const modelUsed = result.model ?? null
+
+  console.log('[cn-executor][jobRunner] image generation OK, creating Asset', { generationJobId, resultImageUrl: resultImageUrl.slice(0, 80), hasStorageKey: Boolean(storageKey) })
 
   const assetId = uuid()
   const assetMetadata: Record<string, unknown> = {
@@ -441,8 +450,9 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
       providerId: job.providerId,
       metadataJson: assetMetadata,
     })
+    console.log('[cn-executor][jobRunner] Asset created in DB', { generationJobId, assetId })
   } catch (err) {
-    console.warn('[cn-executor][jobRunner] failed to create Asset in DB — continuing', {
+    console.error('[cn-executor][jobRunner] failed to create Asset in DB — continuing to mark SUCCEEDED', {
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -464,10 +474,12 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     providerResponse: result.providerResponse,
   }
 
+  console.log('[cn-executor][jobRunner] writing SUCCEEDED to DB', { generationJobId, assetId })
   try {
     await markJobSucceeded({ id: generationJobId, outputAssetId: assetId, output: successOutput })
+    console.log('[cn-executor][jobRunner] SUCCEEDED written to DB', { generationJobId })
   } catch (err) {
-    console.error('[cn-executor][jobRunner] failed to mark job SUCCEEDED in DB', {
+    console.error('[cn-executor][jobRunner] CRITICAL: failed to write SUCCEEDED to DB', {
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -483,6 +495,7 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
   }
 
   if (workflowId && nodeId) {
+    console.log('[cn-executor][jobRunner] updating CanvasNode', { generationJobId, workflowId, nodeId })
     try {
       await updateCanvasNode({
         workflowId,
@@ -495,15 +508,16 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
         providerOriginalUrl,
         submittedInput,
       })
+      console.log('[cn-executor][jobRunner] CanvasNode updated', { generationJobId })
     } catch (err) {
-      console.warn('[cn-executor][jobRunner] failed to update CanvasNode', {
+      console.error('[cn-executor][jobRunner] failed to update CanvasNode — job still SUCCEEDED', {
         generationJobId,
         error: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
-  console.log('[cn-executor][jobRunner] job completed', {
+  console.log('[cn-executor][jobRunner] job completed successfully', {
     generationJobId,
     assetId,
     resultImageUrl: resultImageUrl.slice(0, 80),

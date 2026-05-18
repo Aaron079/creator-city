@@ -9,6 +9,7 @@ import { handleRunVideoJob } from './handlers/videoJobRunner'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
 import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 import { handleSeedreamModelProbe } from './handlers/seedreamModelProbe'
+import { handleJobDebug } from './handlers/jobDebug'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
 
@@ -80,6 +81,18 @@ const server = http.createServer((req, res) => {
         jsonError(res, {
           errorCode: 'internal_error',
           message: err instanceof Error ? err.message : 'Unexpected error in seedream model probe.',
+        })
+      }
+    })
+    return
+  }
+
+  if (method === 'GET' && url.startsWith('/api/jobs/debug')) {
+    handleJobDebug(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in job debug.',
         })
       }
     })

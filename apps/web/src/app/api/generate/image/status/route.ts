@@ -250,11 +250,16 @@ export async function GET(request: NextRequest) {
   const STALL_TIMEOUT_MS = 5 * 60 * 1000
   const ageMs = Date.now() - new Date(generationJob.updatedAt).getTime()
   if (ageMs > STALL_TIMEOUT_MS) {
+    const stallOutput = record(generationJob.output)
+    const stallMessage =
+      generationJob.status === 'QUEUED'
+        ? 'Job stuck in QUEUED — cn-executor never started. Check: (1) CREATOR_CN_API_BASE_URL is set, (2) shared secret matches, (3) Aliyun FC function is running.'
+        : 'Job stuck in PROCESSING — cn-executor started but did not finish. Check Aliyun FC function logs for this job.'
     return NextResponse.json({
       success: false,
       status: 'failed',
       errorCode: 'generation_job_stalled',
-      message: 'CN executor did not finish this job within expected time. Check Aliyun FC logs.',
+      message: stallMessage,
       providerId,
       providerRegion: sourceProviderRegion,
       executionRegion,
@@ -264,6 +269,9 @@ export async function GET(request: NextRequest) {
       jobStatus: generationJob.status,
       updatedAt: generationJob.updatedAt.toISOString(),
       ageMs,
+      jobOutput: stallOutput,
+      jobError: generationJob.error ? String(generationJob.error).slice(0, 500) : null,
+      jobErrorMessage: generationJob.errorMessage,
     }, { status: 200 })
   }
 
