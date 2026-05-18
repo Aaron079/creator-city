@@ -26,13 +26,13 @@ function getClient(): OSS {
     bucket: process.env.ALIYUN_OSS_BUCKET!,
     region: process.env.ALIYUN_OSS_REGION!,
     endpoint: process.env.ALIYUN_OSS_ENDPOINT,
-    timeout: numericEnv('ALIYUN_OSS_TIMEOUT_MS', 120_000),
+    timeout: numericEnv('ALIYUN_OSS_TIMEOUT_MS', 30_000),
   })
 }
 
 function isRetryableError(err: unknown): boolean {
   const msg = String(err instanceof Error ? err.message : err).toLowerCase()
-  return /timeout|etimedout|econnreset|eai_again|socket hang up/.test(msg)
+  return /econnreset|eai_again|socket hang up/.test(msg)
 }
 
 export async function writeTaskStateJson(taskId: string, state: Record<string, unknown>): Promise<void> {
@@ -71,7 +71,7 @@ export async function uploadToOss(
   buffer: Buffer,
   contentType: string,
 ): Promise<OssUploadResult> {
-  const timeout = numericEnv('ALIYUN_OSS_UPLOAD_TIMEOUT_MS', numericEnv('ALIYUN_OSS_TIMEOUT_MS', 120_000))
+  const timeout = numericEnv('ALIYUN_OSS_UPLOAD_TIMEOUT_MS', numericEnv('ALIYUN_OSS_TIMEOUT_MS', 30_000))
   try {
     const client = getClient()
     let attempt = 0

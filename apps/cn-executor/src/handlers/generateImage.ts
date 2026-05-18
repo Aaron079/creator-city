@@ -25,7 +25,7 @@ function buildOssKey(projectId?: string | null, nodeId?: string | null): string 
 
 async function downloadBuffer(url: string): Promise<Buffer | null> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) return null
     return Buffer.from(await res.arrayBuffer())
   } catch {
