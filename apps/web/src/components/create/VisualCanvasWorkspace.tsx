@@ -3878,15 +3878,15 @@ export function VisualCanvasWorkspace({
           providerId,
         )
 
-        if (node.kind === 'image' && generateResult.status === 'running' && (generateResult.generationJobId || generateResult.jobId)) {
+        if (node.kind === 'image' && (generateResult.status === 'running' || generateResult.status === 'queued') && (generateResult.generationJobId || generateResult.jobId)) {
           const generationJobId = generateResult.generationJobId ?? generateResult.jobId!
           let polls = 0
-          while (polls < 60 && generateResult.status === 'running') {
+          while (polls < 60 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
             await delay(5000)
             generateResult = await pollImageGenerationTask(providerId, generationJobId)
             polls += 1
           }
-          if (generateResult.status === 'running') {
+          if (generateResult.status === 'running' || generateResult.status === 'queued') {
             throw new Error(`WORKFLOW_NODE_TIMEOUT: ${generateResult.message || '图片仍在生成，请稍后检查任务状态。'}`)
           }
         }
@@ -4363,7 +4363,7 @@ export function VisualCanvasWorkspace({
           selectedModel,
         )
 
-        if (node.kind === 'image' && result.status === 'running' && (result.generationJobId || result.jobId)) {
+        if (node.kind === 'image' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
           const generationJobId = result.generationJobId ?? result.jobId!
           const taskId = result.taskId ?? generationJobId
           handleNodePatch(node.id, {
@@ -6198,7 +6198,7 @@ export function VisualCanvasWorkspace({
       compiled?.system,
       generationProviderId,
     ).then(async (result) => {
-      if (nodeSnapshot.kind === 'image' && result.status === 'running' && (result.generationJobId || result.jobId)) {
+      if (nodeSnapshot.kind === 'image' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
         const generationJobId = result.generationJobId ?? result.jobId!
         const taskId = result.taskId ?? generationJobId
         handleNodePatch(nodeSnapshot.id, {
