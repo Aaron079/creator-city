@@ -514,7 +514,7 @@ export async function POST(request: NextRequest) {
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
   // cn video providers will route to cn-executor in v2; currently runs direct for Seedance
-  const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, executorKind, unknownProvider } = getExecutorForProvider(providerId)
+  const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, executorKind } = getExecutorForProvider(providerId)
   const imageUrl = firstImageInput(body)
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
@@ -721,6 +721,21 @@ export async function POST(request: NextRequest) {
       submittedAt,
       message: '视频生成任务已提交，正在处理中',
     }, { status: 200 })
+  }
+
+  // Guard: all cn providers must be handled above (Seedance block + future cn video providers).
+  // If a cn provider reaches here it means the route has no handler for it — reject explicitly.
+  if (providerRegion === 'cn') {
+    console.error('[api/generate/video] provider_region_mismatch: cn provider reached Vercel-local handler', { providerId, providerRegion, executorKind })
+    return videoErrorResponse({
+      providerId,
+      mode: 'unavailable',
+      status: 'failed',
+      errorCode: 'provider_region_mismatch',
+      errorMessage: `中国 provider [${providerId}] 不能在 Vercel 上直接执行，必须通过 cn-executor（aliyun_fc）运行。如需支持该 provider，请在 cn-executor 中实现对应的 job runner。`,
+      requestId: routeRequestId,
+      submittedInput: safeVideoSubmittedInput(body, { providerId }),
+    })
   }
 
   const billing = await setupBilling(request, providerId, 'video', prompt, { projectId, nodeId })

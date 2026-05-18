@@ -6,6 +6,14 @@ import { query } from '../db'
 import { submitSeedanceTask, pollSeedanceTaskUntilDone, buildVideoOssKey, downloadVideoBuffer } from '../seedance'
 import { uploadToOss } from '../oss'
 
+// cn-executor only executes cn providers. Mirrors registry.ts cn runtimeProviderIds.
+const CN_PROVIDER_IDS = new Set([
+  'volcengine-seedance-video', 'volcengine_seedance',
+  'volcengine-seedream-image', 'volcengine_seedream',
+  'jimeng', 'jimeng-image', 'jimeng-video',
+  'deepseek', 'deepseek-chat', 'deepseek-v3', 'deepseek-r1', 'deepseek-text',
+])
+
 function uuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
@@ -286,7 +294,20 @@ async function runVideoJob(generationJobId: string): Promise<void> {
     return
   }
 
+  // Region isolation: cn-executor must only execute cn providers.
   const input = job.input ?? {}
+  const jobProviderRegion = typeof input.providerRegion === 'string' ? input.providerRegion : null
+  if (jobProviderRegion === 'global' || (!jobProviderRegion && !CN_PROVIDER_IDS.has(job.providerId))) {
+    const errMsg = `cn-executor received a video job for non-cn provider [${job.providerId}] (providerRegion=${jobProviderRegion ?? 'unknown'}). This is a routing error.`
+    console.error('[cn-executor][videoJobRunner] provider_region_mismatch', { generationJobId, providerId: job.providerId, jobProviderRegion })
+    await markJobFailed({
+      id: generationJobId,
+      errorCode: 'provider_region_mismatch',
+      message: errMsg,
+      output: { errorCode: 'provider_region_mismatch', message: errMsg, providerId: job.providerId, jobProviderRegion },
+    }).catch(() => {/* best-effort */})
+    return
+  }
   const workflowId = typeof input.workflowId === 'string' ? input.workflowId : ''
   const nodeId = job.nodeId ?? (typeof input.nodeId === 'string' ? input.nodeId : '')
   const projectId = job.projectId ?? (typeof input.projectId === 'string' ? input.projectId : null)

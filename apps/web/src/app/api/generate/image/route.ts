@@ -7,8 +7,6 @@ import { gatewayGenerate } from '@/lib/gateway/generate'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
-import { generateJimengImage } from '@/lib/providers/china/jimeng'
-import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
@@ -465,61 +463,26 @@ export async function POST(request: NextRequest) {
         submittedInput,
         message: '图片生成任务已提交，正在处理中',
       }, { status: 200 })
-    } else if (providerId === 'volcengine-seedream-image' || providerId === 'jimeng-image') {
-      const chinaResult = providerId === 'volcengine-seedream-image'
-        ? await generateSeedreamImage({ prompt, aspectRatio, size, referenceImages })
-        : await generateJimengImage({ prompt, aspectRatio, size, referenceImages })
-
-      raw = chinaResult.success
-        ? {
-            success: true,
-            providerId,
-            mode: 'real',
-            status: 'succeeded',
-            result: {
-              imageUrl: chinaResult.imageUrl ?? chinaResult.dataUrl,
-              previewUrl: chinaResult.imageUrl ?? chinaResult.dataUrl,
-              metadata: {
-                ...(chinaResult.metadata ?? {}),
-                providerId,
-                model: chinaResult.model,
-                generationSource: providerId,
-              },
-            },
-            message: `图片生成成功（${chinaResult.model}）`,
-            model: chinaResult.model,
-            submittedInput: chinaResult.submittedInput ?? submittedInput,
-            providerResponse: chinaResult.providerResponse,
-            requestId: chinaResult.requestId,
-            providerEndpoint: chinaResult.providerEndpoint,
-            providerRequestMethod: chinaResult.providerRequestMethod,
-            providerHttpStatus: chinaResult.providerHttpStatus,
-            upstreamMessage: chinaResult.upstreamMessage,
-          }
-        : {
-            success: false,
-            providerId,
-            mode: 'unavailable',
-            status: chinaResult.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
-            message: chinaResult.message,
-            errorCode: visibleProviderErrorCode(chinaResult.errorCode, chinaResult.upstreamStatus, chinaResult.message),
-            model: chinaResult.model,
-            upstreamStatus: chinaResult.upstreamStatus,
-              upstreamMessage: chinaResult.upstreamMessage,
-              rawCode: chinaResult.rawCode,
-              requestId: chinaResult.requestId,
-              providerEndpoint: chinaResult.providerEndpoint,
-              providerRequestMethod: chinaResult.providerRequestMethod,
-              providerHttpStatus: chinaResult.providerHttpStatus,
-              providerFetchError: chinaResult.providerFetchError,
-              providerFetchCause: chinaResult.providerFetchCause,
-              submittedInput: {
-                ...(chinaResult.submittedInput ?? submittedInput),
-                model: chinaResult.model ?? submittedInput.model,
-            },
-            providerResponse: chinaResult.providerResponse,
-          }
     } else {
+      // Defense-in-depth: cn providers must never reach this branch.
+      // Guard 1 above (providerRegion === 'cn' && !useCnExecutor) blocks cn without executor.
+      // If somehow a cn provider arrives here it is a routing bug — reject immediately.
+      if (providerRegion === 'cn') {
+        console.error('[api/generate/image] provider_region_mismatch: cn provider reached Vercel-local handler', { providerId, providerRegion, executorKind })
+        return NextResponse.json({
+          success: false,
+          errorCode: 'provider_region_mismatch',
+          message: `中国 provider [${providerId}] 不能在 Vercel 上直接执行，必须通过 cn-executor（aliyun_fc）运行。`,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executorKind,
+          mode: 'unavailable',
+          status: 'failed',
+          submittedInput,
+        }, { status: 200 })
+      }
       raw = await gatewayGenerate({
         providerId,
         nodeType: 'image',

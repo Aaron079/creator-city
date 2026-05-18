@@ -5,6 +5,15 @@ import type { ImageExecutionInput } from './generateImage'
 import { jsonError, jsonOk, jsonUnauthorized } from '../response'
 import { query } from '../db'
 
+// cn-executor only executes cn providers. This set mirrors the runtimeProviderIds
+// from apps/web/src/lib/regions/registry.ts for all cn-region adapters.
+const CN_PROVIDER_IDS = new Set([
+  'volcengine-seedream-image', 'volcengine_seedream',
+  'volcengine-seedance-video', 'volcengine_seedance',
+  'jimeng', 'jimeng-image', 'jimeng-video',
+  'deepseek', 'deepseek-chat', 'deepseek-v3', 'deepseek-r1', 'deepseek-text',
+])
+
 function uuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
@@ -269,7 +278,20 @@ async function runImageJob(generationJobId: string): Promise<void> {
     return
   }
 
+  // Region isolation: cn-executor must only execute cn providers.
   const input = job.input ?? {}
+  const jobProviderRegion = typeof input.providerRegion === 'string' ? input.providerRegion : null
+  if (jobProviderRegion === 'global' || (!jobProviderRegion && !CN_PROVIDER_IDS.has(job.providerId))) {
+    const errMsg = `cn-executor received a job for non-cn provider [${job.providerId}] (providerRegion=${jobProviderRegion ?? 'unknown'}). This is a routing error.`
+    console.error('[cn-executor][jobRunner] provider_region_mismatch', { generationJobId, providerId: job.providerId, jobProviderRegion })
+    await markJobFailed({
+      id: generationJobId,
+      errorCode: 'provider_region_mismatch',
+      message: errMsg,
+      output: { errorCode: 'provider_region_mismatch', message: errMsg, providerId: job.providerId, jobProviderRegion },
+    }).catch(() => {/* best-effort */})
+    return
+  }
   const workflowId = typeof input.workflowId === 'string' ? input.workflowId : ''
   const nodeId = job.nodeId ?? (typeof input.nodeId === 'string' ? input.nodeId : '')
   const projectId = job.projectId ?? (typeof input.projectId === 'string' ? input.projectId : null)
