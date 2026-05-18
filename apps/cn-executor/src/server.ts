@@ -5,6 +5,7 @@ import { isAuthorized } from './auth'
 import { handleGenerateImage } from './handlers/generateImage'
 import { handleImageGenerationStatus, handleStartImageGeneration } from './handlers/imageTasks'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
+import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
 
@@ -55,6 +56,18 @@ const server = http.createServer((req, res) => {
 
   if (method === 'GET' && url === '/debug/seedream-config') {
     handleSeedreamConfigDebug(req, res)
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/ark-network') {
+    handleArkNetworkDiagnostic(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in network diagnostic.',
+        })
+      }
+    })
     return
   }
 
