@@ -14,6 +14,7 @@ import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { startImageGenerationViaRegion } from '@/lib/executors/executor-gateway'
+import { getProviderRegion } from '@/lib/regions/router'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -316,8 +317,10 @@ export async function POST(request: NextRequest) {
     body.projectId = generationContext.projectId
     body.workflowId = generationContext.workflowId
     body.nodeId = generationContext.nodeId
+    const providerRegion = getProviderRegion(providerId)
     const submittedInput = {
       providerId,
+      providerRegion,
       model: submittedModel,
       ...(providerId === 'volcengine-seedream-image' ? { modelSource: 'VOLCENGINE_SEEDREAM_MODEL' } : {}),
       promptChars: prompt.length,
@@ -364,8 +367,7 @@ export async function POST(request: NextRequest) {
         submittedInput?: unknown
         providerResponse?: unknown
       }
-    const cnExecutorBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim()
-    const useCnExecutor = Boolean(cnExecutorBaseUrl) && providerId === 'volcengine-seedream-image'
+    const useCnExecutor = providerRegion === 'cn' && Boolean(process.env.CREATOR_CN_API_BASE_URL?.trim())
 
     if (useCnExecutor) {
       let generationJobId = billing.ctx.billingJobId
@@ -494,6 +496,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         providerId,
+        providerRegion,
         mode: 'real',
         status: 'running',
         async: true,

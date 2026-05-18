@@ -1,4 +1,5 @@
 import { getExecutorStatus } from '@/lib/executors/executor-gateway'
+import { PROVIDER_REGION_REGISTRY } from '@/lib/regions/registry'
 import type { GenerationHealthResponse, GenerationHealthSection } from './health-types'
 
 type RequiredEnv =
@@ -73,7 +74,17 @@ export function getGenerationHealth(): GenerationHealthResponse {
     ...textGeneration.missingEnv,
   ])
 
-  const executors = getExecutorStatus()
+  const executorStatus = getExecutorStatus()
+  const cnProviders = Object.values(PROVIDER_REGION_REGISTRY)
+    .filter((p) => p.region === 'cn')
+    .map((p) => ({ id: p.id, label: p.label, runtimeProviderIds: p.runtimeProviderIds }))
+  const globalProviders = Object.values(PROVIDER_REGION_REGISTRY)
+    .filter((p) => p.region === 'global')
+    .map((p) => ({ id: p.id, label: p.label, runtimeProviderIds: p.runtimeProviderIds }))
+  const executors = {
+    cn: { ...executorStatus.cn, providers: cnProviders },
+    global: { ...executorStatus.global, providers: globalProviders },
+  }
 
   return {
     ok: database.ok && storage.ok && imageGeneration.ok && videoGeneration.ok && textGeneration.ok,

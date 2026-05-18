@@ -11,6 +11,7 @@ import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/a
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
+import { getProviderRegion } from '@/lib/regions/router'
 
 export const dynamic = 'force-dynamic'
 
@@ -567,6 +568,7 @@ export async function POST(request: NextRequest) {
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
+  const providerRegion = getProviderRegion(providerId)
   const imageUrl = firstImageInput(body)
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
@@ -759,6 +761,7 @@ export async function POST(request: NextRequest) {
         jobId: generationJob.id,
         generationJobId: generationJob.id,
         providerId,
+        providerRegion,
         model: raw.model,
         mode: 'real',
         status: 'running',

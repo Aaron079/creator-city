@@ -110,3 +110,7 @@ export function isCrossRegionJob(input: CrossRegionJobInput = {}): boolean {
 export function shouldUseAsyncExecutor(input: CrossRegionJobInput = {}): boolean {
   return isCrossRegionJob(input)
 }
+
+export function resolveProviderExecutionRegion(provider?: string | null): ProviderRegion {
+  return getProviderRegion(provider)
+}

@@ -48,6 +48,14 @@ export function getExecutorStatus(): { cn: ExecutorStatus; global: ExecutorStatu
   }
 }
 
+export function getExecutorForProvider(provider?: string | null): { region: 'cn' | 'global'; executor: 'cn' | 'global' | 'none' } {
+  const region = getProviderRegion(provider)
+  if (region === 'cn') {
+    return { region, executor: cnApiBaseUrl() ? 'cn' : 'none' }
+  }
+  return { region, executor: globalApiBaseUrl() ? 'global' : 'none' }
+}
+
 function buildForwardBody(input: ExecutorInput): Record<string, unknown> {
   return {
     userId: input.userId ?? null,

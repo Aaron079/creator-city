@@ -12,6 +12,7 @@ export type GenerationHealthSection = {
 export type ExecutorHealthStatus = {
   configured: boolean
   baseUrlConfigured: boolean
+  providers?: Array<{ id: string; label: string; runtimeProviderIds: string[] }>
 }
 
 export type GenerationHealthResponse = {

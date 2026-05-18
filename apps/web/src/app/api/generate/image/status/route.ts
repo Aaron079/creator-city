@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { releaseJobCredits, settleJobCredits } from '@/lib/billing/settle'
 import { getImageGenerationStatusViaRegion } from '@/lib/executors/executor-gateway'
+import { getProviderRegion } from '@/lib/regions/router'
 import type { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -424,6 +425,7 @@ export async function GET(request: NextRequest) {
   const assetModel = typeof executorStatus.model === 'string' ? executorStatus.model : stringValue(input.model)
   const assetStorageKey = stringValue(record(executorStatus.asset).storageKey)
   const assetProviderOriginalUrl = stringValue(executorStatus.providerOriginalUrl) || stringValue(record(executorStatus.asset).providerOriginalUrl) || resultImageUrl
+  const sourceProviderRegion = getProviderRegion(providerId)
   const assetMetadata = {
     model: assetModel,
     taskId,
@@ -433,6 +435,8 @@ export async function GET(request: NextRequest) {
     stableUrl: resultImageUrl,
     resolvedUrl: resultImageUrl,
     storageKey: assetStorageKey,
+    storageRegion: 'cn' as const,
+    sourceProviderRegion,
     submittedInput: executorStatus.submittedInput ?? input.submittedInput,
     providerResponse: executorStatus.providerResponse,
   }
