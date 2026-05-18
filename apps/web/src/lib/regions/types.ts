@@ -7,10 +7,16 @@ export type StorageRegion = Region
 export type ProviderAdapterId =
   | 'volcengine_seedream'
   | 'volcengine_seedance'
+  | 'jimeng'
+  | 'deepseek'
   | 'openai'
   | 'runway'
   | 'replicate'
   | 'fal'
+  | 'stability'
+  | 'google'
+  | 'midjourney'
+  | 'kling_global'
 
 export type StorageAdapterId =
   | 'aliyun_oss'

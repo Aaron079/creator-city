@@ -114,3 +114,18 @@ export function shouldUseAsyncExecutor(input: CrossRegionJobInput = {}): boolean
 export function resolveProviderExecutionRegion(provider?: string | null): ProviderRegion {
   return getProviderRegion(provider)
 }
+
+export function resolveProviderRegionInfo(provider?: string | null): { region: ProviderRegion; knownProvider: boolean; config: ProviderRegionConfig | null } {
+  const adapterId = normalizeProviderAdapterId(provider)
+  if (!adapterId) return { region: 'global', knownProvider: false, config: null }
+  const config = PROVIDER_REGION_REGISTRY[adapterId]
+  return { region: config.region, knownProvider: true, config }
+}
+
+export function getCnProviders(): ProviderRegionConfig[] {
+  return Object.values(PROVIDER_REGION_REGISTRY).filter((p) => p.region === 'cn')
+}
+
+export function getGlobalProviders(): ProviderRegionConfig[] {
+  return Object.values(PROVIDER_REGION_REGISTRY).filter((p) => p.region === 'global')
+}

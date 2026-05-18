@@ -1,4 +1,4 @@
-import { getProviderRegion } from '@/lib/regions/router'
+import { getProviderRegion, resolveProviderRegionInfo } from '@/lib/regions/router'
 
 export type ExecutorInput = {
   userId?: string | null
@@ -48,12 +48,37 @@ export function getExecutorStatus(): { cn: ExecutorStatus; global: ExecutorStatu
   }
 }
 
-export function getExecutorForProvider(provider?: string | null): { region: 'cn' | 'global'; executor: 'cn' | 'global' | 'none' } {
-  const region = getProviderRegion(provider)
-  if (region === 'cn') {
-    return { region, executor: cnApiBaseUrl() ? 'cn' : 'none' }
+export type ExecutorResolution = {
+  providerId: string | null | undefined
+  providerRegion: 'cn' | 'global'
+  executionRegion: 'cn' | 'global'
+  storageRegion: 'cn' | 'global'
+  executor: 'cn' | 'global' | 'none'
+  cnBaseUrlConfigured: boolean
+  globalConfigured: boolean
+  unknownProvider: boolean
+  errorCode?: 'executor_region_missing'
+}
+
+export function getExecutorForProvider(provider?: string | null): ExecutorResolution {
+  const { region, knownProvider } = resolveProviderRegionInfo(provider)
+  const cnConfigured = Boolean(cnApiBaseUrl())
+  const globalConfigured = Boolean(globalApiBaseUrl())
+  const base: Omit<ExecutorResolution, 'executor' | 'errorCode'> = {
+    providerId: provider,
+    providerRegion: region,
+    executionRegion: region,
+    storageRegion: region,
+    cnBaseUrlConfigured: cnConfigured,
+    globalConfigured,
+    unknownProvider: !knownProvider,
   }
-  return { region, executor: globalApiBaseUrl() ? 'global' : 'none' }
+  if (region === 'cn') {
+    return cnConfigured
+      ? { ...base, executor: 'cn' }
+      : { ...base, executor: 'none', errorCode: 'executor_region_missing' }
+  }
+  return { ...base, executor: globalConfigured ? 'global' : 'none' }
 }
 
 function buildForwardBody(input: ExecutorInput): Record<string, unknown> {
@@ -185,7 +210,7 @@ export async function executeImageGenerationViaRegion(input: ExecutorInput): Pro
     if (!base) {
       return {
         success: false,
-        errorCode: 'cn_executor_not_configured',
+        errorCode: 'executor_region_missing',
         errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
         providerRegion,
       }
@@ -213,7 +238,7 @@ export async function startImageGenerationViaRegion(input: ExecutorInput): Promi
     if (!base) {
       return {
         success: false,
-        errorCode: 'cn_executor_not_configured',
+        errorCode: 'executor_region_missing',
         errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
         providerRegion,
       }
@@ -232,7 +257,7 @@ export async function getImageGenerationStatusViaRegion(provider: string, taskId
     if (!base) {
       return {
         success: false,
-        errorCode: 'cn_executor_not_configured',
+        errorCode: 'executor_region_missing',
         errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
         providerRegion,
       }
@@ -260,7 +285,7 @@ export async function executeVideoGenerationViaRegion(input: ExecutorInput): Pro
     if (!base) {
       return {
         success: false,
-        errorCode: 'cn_executor_not_configured',
+        errorCode: 'executor_region_missing',
         errorMessage: 'China executor is not configured. Set CREATOR_CN_API_BASE_URL.',
         providerRegion,
       }

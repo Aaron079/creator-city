@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { checkObjectExists, resolveAssetUrl } from '@/lib/assets/storage-adapter'
 import { getNodeImageUrlSources, getNodeVideoUrlSources } from '@/lib/canvas/media-urls'
+import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
+import { detectAssetRegionBridgeRequirement } from '@/lib/assets/asset-region-bridge'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -222,6 +224,18 @@ export async function GET(request: NextRequest) {
           ? 'asset_id_not_found'
           : 'no_asset_id'
 
+      const nodeProviderId = stringValue(metadata.providerId)
+        || stringValue(recordValue(metadata.submittedInput).providerId)
+      const nodeExecution = nodeProviderId ? getExecutorForProvider(nodeProviderId) : null
+      const assetStorageRegion = stringValue(asset ? (asset.metadataJson && typeof asset.metadataJson === 'object' && !Array.isArray(asset.metadataJson) ? (asset.metadataJson as Record<string, unknown>).storageRegion : null) : null)
+        || null
+      const bridgeCheck = nodeExecution
+        ? detectAssetRegionBridgeRequirement(
+            asset ? { storageRegion: assetStorageRegion, metadataJson: asset.metadataJson } : null,
+            nodeExecution.executionRegion,
+          )
+        : null
+
       return {
         nodeId: node.nodeId,
         kind: node.kind,
@@ -230,6 +244,15 @@ export async function GET(request: NextRequest) {
         position: { x: node.x, y: node.y },
         size: { width: node.width, height: node.height },
         metadataJsonKeys: metadataKeys(metadata),
+        providerRegion: nodeExecution?.providerRegion ?? stringValue(metadata.providerRegion) ?? stringValue(recordValue(metadata.submittedInput).providerRegion) ?? null,
+        executionRegion: nodeExecution?.executionRegion ?? stringValue(metadata.executionRegion) ?? null,
+        storageRegion: assetStorageRegion || stringValue(metadata.storageRegion) || null,
+        sourceProviderRegion: stringValue(metadata.sourceProviderRegion) || null,
+        executor: nodeExecution?.executor ?? null,
+        cnExecutorConfigured: Boolean(process.env.CREATOR_CN_API_BASE_URL?.trim()),
+        globalExecutorConfigured: Boolean(process.env.CREATOR_GLOBAL_API_BASE_URL?.trim()),
+        assetRegionBridgeRequired: bridgeCheck?.required ?? false,
+        assetRegionBridgeReason: bridgeCheck?.reason ?? null,
         assetId: assetId || null,
         assetIdSource: candidates[0]?.source ?? null,
         assetIdCandidates: candidates.map((candidate) => candidate.source),
@@ -298,6 +321,8 @@ export async function GET(request: NextRequest) {
         ossConfigured: Boolean(process.env.ALIYUN_ACCESS_KEY_ID && process.env.ALIYUN_ACCESS_KEY_SECRET && process.env.ALIYUN_OSS_BUCKET),
         publicBaseUrlConfigured: Boolean(process.env.ALIYUN_OSS_PUBLIC_BASE_URL),
         p0DebugTokenConfigured: Boolean(expectedToken),
+        cnExecutorConfigured: Boolean(process.env.CREATOR_CN_API_BASE_URL?.trim()),
+        globalExecutorConfigured: Boolean(process.env.CREATOR_GLOBAL_API_BASE_URL?.trim()),
       },
       nodes: diagnostics,
     })

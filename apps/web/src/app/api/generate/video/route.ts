@@ -11,7 +11,7 @@ import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/a
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
-import { getProviderRegion } from '@/lib/regions/router'
+import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
 
 export const dynamic = 'force-dynamic'
 
@@ -568,7 +568,8 @@ export async function POST(request: NextRequest) {
   const providers = await getVideoProviderRows()
   const defaultProviderId = defaultVideoProviderId(providers)
   const providerId = body.providerId || defaultProviderId || 'volcengine-seedance-video'
-  const providerRegion = getProviderRegion(providerId)
+  // TODO(cn-video): when providerRegion === 'cn', route to cn-executor instead of direct provider
+  const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, unknownProvider } = getExecutorForProvider(providerId)
   const imageUrl = firstImageInput(body)
 
   const providerRow = providers.find((provider) => provider.providerId === providerId)
@@ -762,6 +763,10 @@ export async function POST(request: NextRequest) {
         generationJobId: generationJob.id,
         providerId,
         providerRegion,
+        executionRegion,
+        storageRegion,
+        executor: resolvedExecutor,
+        ...(unknownProvider ? { unknownProvider: true } : {}),
         model: raw.model,
         mode: 'real',
         status: 'running',
@@ -775,6 +780,10 @@ export async function POST(request: NextRequest) {
         result: {
           metadata: {
             providerId,
+            providerRegion,
+            executionRegion,
+            storageRegion,
+            executor: resolvedExecutor,
             model: raw.model,
             taskId: raw.taskId,
             providerJobId: raw.taskId,
