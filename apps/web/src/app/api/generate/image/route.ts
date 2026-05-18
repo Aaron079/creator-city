@@ -446,11 +446,14 @@ export async function POST(request: NextRequest) {
         console.error('[api/generate/image] CREATOR_CN_API_BASE_URL is not set — cn-executor cannot be reached. Job will stay QUEUED.', { generationJobId })
       } else {
         try {
+          const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
           const cnResp = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+              // Send both headers: Bearer for new cn-executor, x-creator-executor-secret for old code
+              Authorization: `Bearer ${cnSecret}`,
+              'x-creator-executor-secret': cnSecret,
             },
             body: JSON.stringify({ generationJobId }),
             signal: AbortSignal.timeout(90_000),

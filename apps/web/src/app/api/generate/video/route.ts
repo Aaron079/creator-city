@@ -692,11 +692,14 @@ export async function POST(request: NextRequest) {
 
     // Fire-and-forget to cn-executor — do NOT await
     const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
+    const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
     fetch(`${cnBaseUrl}/api/jobs/run-video`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+        // Send both headers: Bearer for new cn-executor, x-creator-executor-secret for old code
+        Authorization: `Bearer ${cnSecret}`,
+        'x-creator-executor-secret': cnSecret,
       },
       body: JSON.stringify({ generationJobId: generationJob.id }),
       signal: AbortSignal.timeout(8_000),
