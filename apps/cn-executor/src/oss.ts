@@ -35,6 +35,33 @@ function isRetryableError(err: unknown): boolean {
   return /timeout|etimedout|econnreset|eai_again|socket hang up/.test(msg)
 }
 
+export async function writeTaskStateJson(taskId: string, state: Record<string, unknown>): Promise<void> {
+  try {
+    const client = getClient()
+    const key = `cn-executor-tasks/${taskId}.json`
+    const buffer = Buffer.from(JSON.stringify(state), 'utf8')
+    await client.put(key, buffer, {
+      timeout: 8_000,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch {
+    // best-effort — don't fail the main generation flow
+  }
+}
+
+export async function readTaskStateJson(taskId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const client = getClient()
+    const key = `cn-executor-tasks/${taskId}.json`
+    const result = await client.get(key) as { content?: Buffer | string | null }
+    if (!result.content) return null
+    const text = Buffer.isBuffer(result.content) ? result.content.toString('utf8') : String(result.content)
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
 export type OssUploadResult =
   | { success: true; key: string; url: string; storageKey: string }
   | { success: false; errorCode: string; message: string }

@@ -237,7 +237,7 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(reqBody),
-      signal: AbortSignal.timeout(65_000),
+      signal: AbortSignal.timeout(55_000),
     })
   } catch (err) {
     return {

@@ -100,6 +100,7 @@ async function forwardToExecutor(
   baseUrl: string,
   path: string,
   input: ExecutorInput,
+  timeoutMs?: number,
 ): Promise<ExecutorResult> {
   let response: Response
   try {
@@ -112,6 +113,7 @@ async function forwardToExecutor(
         ...(secret ? { 'x-creator-executor-secret': secret } : {}),
       },
       body: JSON.stringify(buildForwardBody(input)),
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     })
   } catch (err) {
     return {
@@ -243,7 +245,7 @@ export async function startImageGenerationViaRegion(input: ExecutorInput): Promi
         providerRegion,
       }
     }
-    return forwardToExecutor(base, '/api/generate/image/start', input)
+    return forwardToExecutor(base, '/api/generate/image/start', input, 70_000)
   }
 
   return executeImageGenerationViaRegion(input)

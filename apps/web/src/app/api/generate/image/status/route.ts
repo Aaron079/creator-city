@@ -272,6 +272,21 @@ export async function GET(request: NextRequest) {
   if (generationJob.status === 'SUCCEEDED') {
     const asset = await findExistingAsset(generationJob.id, generationJob.outputAssetId)
     const imageUrl = asset?.url ?? stringValue(record(generationJob.output).stableUrl) ?? stringValue(record(generationJob.output).resultImageUrl)
+    const assetId = asset?.id ?? generationJob.outputAssetId
+    if (imageUrl && assetId) {
+      await writeCanvasNodeResult({
+        workflowId,
+        nodeId,
+        providerId,
+        taskId,
+        generationJobId: generationJob.id,
+        assetId,
+        imageUrl,
+        storageKey: stringValue(record(generationJob.output).storageKey),
+        providerOriginalUrl: stringValue(record(generationJob.output).providerOriginalUrl),
+        submittedInput: record(generationJob.output).submittedInput ?? record(generationJob.input).submittedInput,
+      })
+    }
     return NextResponse.json({
       success: true,
       providerId,
@@ -281,8 +296,8 @@ export async function GET(request: NextRequest) {
       resultImageUrl: imageUrl,
       imageUrl,
       stableUrl: imageUrl,
-      assetId: asset?.id ?? generationJob.outputAssetId,
-      outputAssetId: asset?.id ?? generationJob.outputAssetId,
+      assetId,
+      outputAssetId: assetId,
       asset: asset ? {
         id: asset.id,
         type: 'IMAGE',

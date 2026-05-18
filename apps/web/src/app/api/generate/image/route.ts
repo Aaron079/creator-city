@@ -16,7 +16,7 @@ import { missingGenerationInput, prepareGenerationContext, stringInput } from '@
 import { startImageGenerationViaRegion, getExecutorForProvider } from '@/lib/executors/executor-gateway'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 90
 
 type ImageGenerateBody = Partial<GenerateRequest> & {
   workflowId?: string
@@ -460,9 +460,115 @@ export async function POST(request: NextRequest) {
         }, { status: 200 })
       }
 
-      const taskId = typeof executorResult.taskId === 'string' ? executorResult.taskId : ''
+      const execResult = executorResult as Record<string, unknown>
+      const execStatus = typeof execResult.status === 'string' ? execResult.status : ''
+      const syncResultUrl = typeof execResult.resultImageUrl === 'string' && execResult.resultImageUrl ? execResult.resultImageUrl : ''
+      const taskId = typeof execResult.taskId === 'string' ? execResult.taskId : ''
+
+      // Sync success: cn-executor completed synchronously and image is already in OSS
+      if (execStatus === 'succeeded' && syncResultUrl) {
+        const execAsset = execResult.asset && typeof execResult.asset === 'object' ? execResult.asset as Record<string, unknown> : {}
+        const syncStorageKey = typeof execAsset.storageKey === 'string' ? execAsset.storageKey : ''
+        const syncModel = typeof execResult.model === 'string' ? execResult.model : submittedModel
+
+        let syncAssetId: string | undefined
+        try {
+          const createdAsset = await db.asset.create({
+            data: {
+              name: `generated-image-${Date.now()}.png`,
+              type: 'IMAGE',
+              status: 'READY',
+              ownerId: currentUser.id,
+              url: syncResultUrl,
+              mimeType: 'image/png',
+              source: 'generated',
+              provider: providerId,
+              providerId,
+              storageProvider: 'aliyun_oss',
+              bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+              storageKey: syncStorageKey || null,
+              originalUrl: typeof execResult.providerOriginalUrl === 'string' ? execResult.providerOriginalUrl : null,
+              generationJobId,
+              nodeId: body.nodeId ?? null,
+              projectId: body.projectId ?? null,
+              workflowId: body.workflowId ?? null,
+              prompt: prompt.slice(0, 2000),
+              tags: [],
+              metadataJson: {
+                storageRegion: 'cn',
+                executionRegion: 'cn',
+                storageProvider: 'aliyun_oss',
+                taskId: taskId || null,
+                model: syncModel,
+                submittedInput,
+              },
+            },
+          })
+          syncAssetId = createdAsset.id
+        } catch (assetErr) {
+          console.warn('[api/generate/image] sync cn: failed to create Asset', assetErr)
+        }
+
+        await db.generationJob.update({
+          where: { id: generationJobId },
+          data: {
+            status: 'SUCCEEDED',
+            providerJobId: taskId || null,
+            outputAssetId: syncAssetId ?? null,
+            output: {
+              resultImageUrl: syncResultUrl,
+              stableUrl: syncResultUrl,
+              assetId: syncAssetId ?? null,
+              storageKey: syncStorageKey || null,
+              storageProvider: 'aliyun_oss',
+              storageRegion: 'cn',
+              model: syncModel,
+              submittedInput,
+            },
+            completedAt: new Date(),
+          },
+        }).catch((error: unknown) => {
+          console.warn('[api/generate/image] sync cn: failed to mark GenerationJob SUCCEEDED', error)
+        })
+
+        return NextResponse.json({
+          success: true,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          mode: 'real',
+          status: 'succeeded',
+          async: false,
+          generationJobId,
+          jobId: generationJobId,
+          taskId: taskId || null,
+          resultImageUrl: syncResultUrl,
+          stableUrl: syncResultUrl,
+          displayUrl: syncResultUrl,
+          imageUrl: syncResultUrl,
+          assetId: syncAssetId,
+          outputAssetId: syncAssetId,
+          storageKey: syncStorageKey || undefined,
+          storageProvider: 'aliyun_oss',
+          model: syncModel,
+          submittedInput: (execResult.submittedInput as Record<string, unknown> | undefined) ?? submittedInput,
+          message: '图片生成成功（火山 Seedream → 阿里 OSS）',
+          asset: syncAssetId ? {
+            id: syncAssetId,
+            type: 'IMAGE',
+            url: syncResultUrl,
+            status: 'ready',
+            storageKey: syncStorageKey || undefined,
+            storageProvider: 'aliyun_oss',
+          } : undefined,
+        }, { status: 200 })
+      }
+
+      // Fallback async polling path (taskId-based, for non-sync or unexpected responses)
       if (!taskId) {
-        const message = 'CN executor did not return taskId from /api/generate/image/start.'
+        const message = 'CN executor did not return taskId or sync result from /api/generate/image/start.'
         await markImageGenerationJobFailed(generationJobId, message, 'cn_executor_task_id_missing')
         return NextResponse.json({
           success: false,
