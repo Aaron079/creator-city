@@ -435,28 +435,60 @@ export async function POST(request: NextRequest) {
       // Await cn-executor synchronously — Vercel maxDuration=90 allows up to 90s.
       // cn-executor executes the job within the HTTP request lifecycle (no setImmediate).
       const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
+      console.log('[api/generate/image] cn-executor dispatch', {
+        generationJobId,
+        cnBaseUrlConfigured: Boolean(cnBaseUrl),
+        cnBaseUrlLength: cnBaseUrl.length,
+        secretConfigured: Boolean(process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim()),
+      })
       let cnResult: Record<string, unknown> | null = null
-      try {
-        const cnResp = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
-          },
-          body: JSON.stringify({ generationJobId }),
-          signal: AbortSignal.timeout(90_000),
-        })
-        const rawText = await cnResp.text()
+      if (!cnBaseUrl) {
+        console.error('[api/generate/image] CREATOR_CN_API_BASE_URL is not set — cn-executor cannot be reached. Job will stay QUEUED.', { generationJobId })
+      } else {
         try {
-          const parsed = JSON.parse(rawText)
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            cnResult = parsed as Record<string, unknown>
+          const cnResp = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+            },
+            body: JSON.stringify({ generationJobId }),
+            signal: AbortSignal.timeout(90_000),
+          })
+          console.log('[api/generate/image] cn-executor HTTP response', { generationJobId, httpStatus: cnResp.status })
+          const rawText = await cnResp.text()
+          try {
+            const parsed = JSON.parse(rawText)
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              cnResult = parsed as Record<string, unknown>
+              console.log('[api/generate/image] cn-executor result', { generationJobId, status: cnResult.status, ok: cnResult.ok, errorCode: cnResult.errorCode })
+            }
+          } catch {
+            console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
           }
-        } catch {
-          console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
+        } catch (err: unknown) {
+          console.warn('[api/generate/image] cn-executor request failed (timeout or network):', err instanceof Error ? err.message : String(err), { generationJobId })
         }
-      } catch (err: unknown) {
-        console.warn('[api/generate/image] cn-executor request failed (timeout or network):', err instanceof Error ? err.message : String(err), { generationJobId })
+      }
+
+      // If URL is not configured, fail immediately with a clear error instead of QUEUED forever
+      if (!cnBaseUrl) {
+        return NextResponse.json({
+          success: false,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'unavailable',
+          status: 'failed',
+          errorCode: 'cn_executor_url_not_configured',
+          generationJobId,
+          jobId: generationJobId,
+          message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。请在 Vercel 环境变量中设置阿里云 FC 函数的 URL。',
+          submittedInput,
+        }, { status: 200 })
       }
 
       if (cnResult?.status === 'succeeded') {
