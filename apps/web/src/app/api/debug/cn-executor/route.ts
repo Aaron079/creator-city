@@ -1,18 +1,23 @@
 import { NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/auth/current-user'
+import type { NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 15
 
-export async function GET() {
-  const currentUser = await getCurrentUser()
-  if (!currentUser) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+export async function GET(request: NextRequest) {
+  // Accept executor secret via query param for CLI/WebFetch access
+  const { searchParams } = new URL(request.url)
+  const querySecret = searchParams.get('secret') ?? ''
+  const headerSecret = request.headers.get('x-debug-secret') ?? ''
+  const expectedSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim() ?? ''
+
+  if (!expectedSecret || (querySecret !== expectedSecret && headerSecret !== expectedSecret)) {
+    return NextResponse.json({ error: 'unauthorized — pass ?secret=<CREATOR_EXECUTOR_SHARED_SECRET>' }, { status: 401 })
   }
 
   const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
-  const secretConfigured = Boolean(process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim())
-  const secretLength = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim().length ?? 0
+  const secretConfigured = Boolean(expectedSecret)
+  const secretLength = expectedSecret.length
 
   if (!cnBaseUrl) {
     return NextResponse.json({
@@ -46,7 +51,7 @@ export async function GET() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+        Authorization: `Bearer ${expectedSecret}`,
       },
       body: JSON.stringify({}),
       signal: AbortSignal.timeout(8_000),

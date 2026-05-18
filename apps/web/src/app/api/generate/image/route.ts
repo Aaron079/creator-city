@@ -473,7 +473,13 @@ export async function POST(request: NextRequest) {
             }
           }
         } catch (err: unknown) {
-          console.warn('[api/generate/image] cn-executor request failed (timeout or network):', err instanceof Error ? err.message : String(err), { generationJobId })
+          const errMsg = err instanceof Error ? err.message : String(err)
+          console.warn('[api/generate/image] cn-executor request failed (timeout or network):', errMsg, { generationJobId })
+          cnResult = {
+            status: 'failed',
+            errorCode: errMsg.includes('timeout') || errMsg.includes('AbortError') ? 'cn_executor_timeout' : 'cn_executor_network_error',
+            message: `cn-executor 无法连接：${errMsg}`,
+          }
         }
       }
 
