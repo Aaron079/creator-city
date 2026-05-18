@@ -551,6 +551,28 @@ export async function POST(request: NextRequest) {
         }, { status: 200 })
       }
 
+      // cn-executor returned HTTP 200 but no status field — old cn-executor format (uses setImmediate, never completes on Aliyun FC)
+      // Treat as immediate failure so the user sees a clear error, not QUEUED forever.
+      if (cnResult && typeof cnResult === 'object' && cnResult.ok === true && !cnResult.status) {
+        console.error('[api/generate/image] cn-executor returned old fire-and-forget format (no status field). Upload new cn-executor ZIP to Aliyun FC.', { generationJobId, cnResult })
+        return NextResponse.json({
+          success: false,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'real',
+          status: 'failed',
+          errorCode: 'cn_executor_outdated',
+          generationJobId,
+          jobId: generationJobId,
+          message: 'cn-executor 运行旧版本代码（使用了 setImmediate，任务无法在阿里云 FC 上完成）。请将新版 ZIP 上传至阿里云 FC 函数并重新部署。文件位置：~/Downloads/cn-executor.zip',
+          submittedInput,
+        }, { status: 200 })
+      }
+
       // cn-executor timed out or returned unexpected status — frontend polls DB
       return NextResponse.json({
         success: true,
