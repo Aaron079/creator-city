@@ -143,24 +143,27 @@ async function createImageGenerationJob(args: {
   }
   // Try with all optional fields, then progressively strip missing columns.
   // The running DB may lag behind the schema if migrations haven't been applied.
-  const full = { ...base, kind: 'image', nodeId: args.body.nodeId ?? null }
+  const full = { ...base, kind: 'image' as const, nodeId: args.body.nodeId ?? null }
   try {
     return await db.generationJob.create({ data: full })
   } catch (err1) {
     if (isMissingColumn(err1, 'kind')) {
-      const { kind: _k, ...withoutKind } = full
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { kind, ...withoutKind } = full
       try {
         return await db.generationJob.create({ data: withoutKind })
       } catch (err2) {
         if (isMissingColumn(err2, 'nodeId')) {
-          const { nodeId: _n, ...withoutKindNodeId } = withoutKind
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { nodeId, ...withoutKindNodeId } = withoutKind
           return db.generationJob.create({ data: withoutKindNodeId })
         }
         throw err2
       }
     }
     if (isMissingColumn(err1, 'nodeId')) {
-      const { nodeId: _n, kind: _k2, ...withoutNodeId } = full
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { nodeId, kind, ...withoutNodeId } = full
       return db.generationJob.create({ data: withoutNodeId })
     }
     throw err1
