@@ -1,37 +1,127 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getSeedanceVideoStatus } from '@/lib/providers/china/volcengine'
 import { getCurrentUser } from '@/lib/auth/current-user'
-import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
-import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { db } from '@/lib/db'
+import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
+import type { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
-function visiblePersistenceErrorCode(errorCode: string) {
-  if (errorCode === 'provider_media_download_failed' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'ASSET_DOWNLOAD_TIMEOUT' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') return 'provider_media_download_failed'
-  if (errorCode === 'oss_upload_timeout' || errorCode === 'oss_upload_error' || errorCode === 'oss_auth_error' || errorCode === 'oss_permission_error' || errorCode === 'oss_config_error') return errorCode
-  if (errorCode === 'MEDIA_UPLOAD_FAILED') return 'oss_upload_error'
-  if (errorCode === 'canvas_save_error') return 'canvas_save_error'
-  if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'MEDIA_PERSIST_TIMEOUT') return 'asset_persistence_error'
-  return errorCode
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-function visibleProviderErrorCode(errorCode: string | undefined, upstreamStatus?: number, message = '') {
-  const code = errorCode ?? ''
-  const haystack = `${code} ${message}`.toLowerCase()
-  if (code === 'PROVIDER_NOT_CONFIGURED' || code === 'provider_env_missing' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
-  if (code === 'provider_timeout' || code.includes('TIMEOUT') || /timeout|abort/.test(haystack)) return 'provider_timeout'
-  if (code === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
-  if (code === 'provider_response_parse_failed') return 'provider_response_parse_failed'
-  if (code === 'provider_request_failed') return 'provider_request_failed'
-  if (code === 'PROVIDER_AUTH_ERROR' || code === 'provider_auth_failed' || code === 'provider_auth_error' || upstreamStatus === 401 || upstreamStatus === 403 || /auth|unauthorized|forbidden|permission|access denied/.test(haystack)) return 'provider_auth_failed'
-  if (code === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(haystack)) return 'provider_model_invalid'
-  if (code === 'PROVIDER_QUOTA_OR_BILLING_ERROR' || code === 'provider_quota_or_billing_error' || upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
-  if (code === 'PROVIDER_INVALID_PARAMETER' || code === 'provider_invalid_parameter' || /invalid parameter|invalid_param|invalid request|bad request|parameter/.test(haystack)) return 'provider_invalid_parameter'
-  if (code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'provider_media_download_failed' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || /media download failed|download failed/.test(haystack)) return 'provider_media_download_failed'
-  if (code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'provider_no_download_url' || code.includes('URL_EMPTY') || code.includes('URL_MISSING')) return 'provider_no_download_url'
-  return code || 'generation_failed'
+function stringValue(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function jsonValue(value: unknown): Prisma.InputJsonValue {
+  try {
+    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue
+  } catch {
+    return {} as Prisma.InputJsonObject
+  }
+}
+
+async function findExistingVideoAsset(jobId: string, outputAssetId?: string | null) {
+  if (outputAssetId) {
+    const asset = await db.asset.findUnique({ where: { id: outputAssetId } }).catch(() => null)
+    if (asset) return asset
+  }
+  return db.asset.findFirst({
+    where: { generationJobId: jobId },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => null)
+}
+
+async function writeCanvasNodeVideoResult(args: {
+  workflowId?: string
+  nodeId?: string | null
+  providerId: string
+  model?: string
+  taskId?: string
+  generationJobId: string
+  assetId: string
+  videoUrl: string
+  storageKey?: string
+  providerOriginalUrl?: string
+  providerRegion?: 'cn' | 'global'
+  executionRegion?: 'cn' | 'global'
+  storageRegion?: 'cn' | 'global'
+}) {
+  if (!args.workflowId || !args.nodeId) return
+  const node = await db.canvasNode.findUnique({
+    where: {
+      workflowId_nodeId: {
+        workflowId: args.workflowId,
+        nodeId: args.nodeId,
+      },
+    },
+  }).catch(() => null)
+  if (!node) return
+
+  const metadata = record(node.metadataJson)
+  await db.canvasNode.update({
+    where: { id: node.id },
+    data: {
+      status: 'done',
+      resultVideoUrl: args.videoUrl,
+      resultPreview: '视频已生成',
+      errorMessage: null,
+      metadataJson: jsonValue({
+        ...metadata,
+        providerId: args.providerId,
+        model: args.model ?? stringValue(metadata.model),
+        taskId: args.taskId ?? metadata.taskId,
+        generationJobId: args.generationJobId,
+        assetId: args.assetId,
+        outputAssetId: args.assetId,
+        assetUrl: args.videoUrl,
+        stableUrl: args.videoUrl,
+        resolvedUrl: args.videoUrl,
+        resultVideoUrl: args.videoUrl,
+        originalProviderVideoUrl: args.providerOriginalUrl ?? metadata.originalProviderVideoUrl,
+        providerOriginalUrl: args.providerOriginalUrl ?? metadata.providerOriginalUrl,
+        temporaryUrl: args.providerOriginalUrl ?? metadata.temporaryUrl,
+        providerRegion: args.providerRegion ?? null,
+        executionRegion: args.executionRegion ?? null,
+        storageRegion: args.storageRegion ?? null,
+        sourceProviderRegion: args.providerRegion ?? null,
+        executorKind: 'aliyun_fc',
+        generationStatus: 'generation_success',
+        persistenceStatus: 'persistence_success',
+        assetStatus: 'ready',
+        recoveryStatus: 'ready',
+        mediaRecoveryStatus: 'regenerated',
+        loading: false,
+        isRegenerating: false,
+        regenerating: false,
+        errorCode: null,
+        errorMessage: null,
+        lastError: null,
+        lastGenerationError: null,
+        mediaPersistence: {
+          ...record(metadata.mediaPersistence),
+          status: 'persisted',
+          persistenceStatus: 'persistence_success',
+          assetId: args.assetId,
+          outputAssetId: args.assetId,
+          stableUrl: args.videoUrl,
+          resolvedUrl: args.videoUrl,
+          storageProvider: 'aliyun-oss',
+          storageKey: args.storageKey,
+        },
+        generationJob: {
+          ...record(metadata.generationJob),
+          id: args.generationJobId,
+          outputAssetId: args.assetId,
+        },
+      }),
+    },
+  }).catch((error: unknown) => {
+    console.warn('[api/generate/video/status] failed to update CanvasNode', error)
+  })
 }
 
 export async function GET(request: NextRequest) {
@@ -39,317 +129,127 @@ export async function GET(request: NextRequest) {
   if (!currentUser) {
     return NextResponse.json({
       success: false,
-      status: 'error',
+      status: 'failed',
       errorCode: 'UNAUTHORIZED',
       message: '请先登录后再查询视频任务。',
     }, { status: 401 })
   }
 
   const { searchParams } = new URL(request.url)
-  const providerId = searchParams.get('providerId') ?? ''
-  const taskId = searchParams.get('taskId') ?? ''
-  const projectId = searchParams.get('projectId')?.trim() || undefined
-  const workflowId = searchParams.get('workflowId')?.trim() || undefined
-  const nodeId = searchParams.get('nodeId')?.trim() || undefined
-  const prompt = searchParams.get('prompt')?.trim() || undefined
-  const compiledPrompt = searchParams.get('compiledPrompt')?.trim() || undefined
-
-  if (!taskId) {
+  const generationJobId = searchParams.get('generationJobId')?.trim() ?? ''
+  if (!generationJobId) {
     return NextResponse.json({
       success: false,
-      status: 'error',
-      errorCode: 'TASK_ID_REQUIRED',
-      message: 'taskId is required',
+      status: 'failed',
+      errorCode: 'generation_job_id_required',
+      message: 'generationJobId is required',
     }, { status: 400 })
   }
 
-  if (providerId !== 'volcengine-seedance-video') {
-    return NextResponse.json({
-      success: false,
-      providerId,
-      taskId,
-      status: 'error',
-      errorCode: 'PROVIDER_NOT_SUPPORTED',
-      message: '该视频任务查询接口目前仅支持 volcengine-seedance-video。',
-    }, { status: 200 })
-  }
-
-  const result = await getSeedanceVideoStatus(taskId)
-  const submittedInput = result.submittedInput ?? {
-    providerId,
-    taskId,
-    projectId: projectId ?? null,
-    workflowId: workflowId ?? null,
-    nodeId: nodeId ?? null,
-    promptChars: prompt?.length ?? 0,
-    compiledPromptChars: compiledPrompt?.length ?? 0,
-  }
   const generationJob = await db.generationJob.findFirst({
-    where: {
-      userId: currentUser.id,
-      providerJobId: taskId,
-      providerId,
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => null)
+    where: { id: generationJobId, userId: currentUser.id },
+  })
 
-  if (!result.success) {
-    if (generationJob) {
-      await db.generationJob.update({
-        where: { id: generationJob.id },
-        data: {
-          status: 'FAILED',
-          error: result.message,
-          errorMessage: result.message.slice(0, 1000),
-          completedAt: new Date(),
-        },
-      }).catch(() => undefined)
-    }
+  if (!generationJob) {
     return NextResponse.json({
       success: false,
-      providerId,
-      taskId,
-      status: 'error',
-      errorCode: visibleProviderErrorCode(result.errorCode, result.upstreamStatus, result.message),
-      message: result.message,
-      model: result.model,
-      upstreamStatus: result.upstreamStatus,
-        upstreamMessage: result.upstreamMessage,
-        rawCode: result.rawCode,
-        requestId: result.requestId,
-        providerEndpoint: result.providerEndpoint,
-        providerRequestMethod: result.providerRequestMethod,
-        providerHttpStatus: result.providerHttpStatus,
-        providerFetchError: result.providerFetchError,
-        providerFetchCause: result.providerFetchCause,
-        submittedInput,
-        providerResponse: result.providerResponse,
-      }, { status: 200 })
+      status: 'failed',
+      errorCode: 'generation_job_not_found',
+      message: 'GenerationJob not found.',
+      generationJobId,
+    }, { status: 404 })
   }
 
-  if (result.status === 'done' && result.videoUrl) {
-    const assetIntelligence = analyzeAssetIntelligence({
-      mediaType: 'video',
-      prompt,
-      compiledPrompt,
-      providerId,
-      metadata: { model: result.model, taskId },
-    })
-    const persistence = await persistGeneratedMedia({
-        url: result.videoUrl,
-        type: 'video',
-        projectId,
+  const input = record(generationJob.input)
+  const providerId = generationJob.providerId
+  const taskId = generationJob.providerJobId ?? stringValue(input.taskId)
+  const workflowId = stringValue(input.workflowId)
+  const nodeId = generationJob.nodeId ?? stringValue(input.nodeId)
+  const { providerRegion: sourceProviderRegion, executionRegion, storageRegion, executorKind } = getExecutorForProvider(providerId)
+
+  if (generationJob.status === 'SUCCEEDED') {
+    const asset = await findExistingVideoAsset(generationJob.id, generationJob.outputAssetId)
+    const videoUrl = asset?.url ?? stringValue(record(generationJob.output).stableUrl) ?? stringValue(record(generationJob.output).resultVideoUrl)
+    const assetId = asset?.id ?? generationJob.outputAssetId
+    if (videoUrl && assetId) {
+      await writeCanvasNodeVideoResult({
         workflowId,
         nodeId,
-        filenameHint: 'generated-video.mp4',
-        sourceProvider: providerId,
-        userId: currentUser.id,
-        metadata: {
-          model: result.model,
-          taskId,
-          providerJobId: taskId,
-          generationJobId: generationJob?.id,
-          requestId: result.requestId,
-          providerEndpoint: result.providerEndpoint,
-          providerRequestMethod: result.providerRequestMethod,
-          providerHttpStatus: result.providerHttpStatus,
-          submittedInput,
-          assetIntelligence,
-        },
-      }).catch((error: unknown): Extract<PersistGeneratedMediaResult, { ok: false }> => ({
-        ok: false as const,
-        stage: 'asset_create' as const,
-        generationStage: 'asset_create' as const,
-        errorCode: 'asset_persistence_error',
-        rawErrorCode: 'MEDIA_PERSIST_FAILED',
-        errorMessage: error instanceof Error ? error.message : '生成视频转存失败。',
-        message: error instanceof Error ? error.message : '生成视频转存失败。',
-      }))
-
-    if (persistence.ok) {
-      return NextResponse.json({
-        success: true,
         providerId,
-        taskId,
-        status: 'done',
-        resultVideoUrl: persistence.stableUrl,
-        videoUrl: persistence.stableUrl,
-        assetUrl: persistence.stableUrl,
-        resolvedUrl: persistence.resolvedUrl ?? persistence.stableUrl,
-        stableUrl: persistence.stableUrl,
-        proxyUrl: persistence.proxyUrl ?? undefined,
-        storageProvider: persistence.storageProvider,
-        bucket: persistence.bucket,
-        storageKey: persistence.storageKey,
-        signedUrlAvailable: persistence.signedUrlAvailable,
-        proxyAvailable: persistence.proxyAvailable,
-        assetId: persistence.assetId,
-        outputAssetId: persistence.assetId,
-        generationJobId: generationJob?.id,
-        generationStatus: 'generation_success',
-        persistenceStatus: 'persistence_success',
-        assetStatus: 'ready',
-        asset: persistence.assetId ? {
-          id: persistence.assetId,
-          type: 'VIDEO',
-          url: persistence.stableUrl,
-          dataUrl: null,
-          thumbnailUrl: null,
-          providerId: 'generated-media-persistence',
-          generationJobId: generationJob?.id,
-          projectId,
-          workflowId,
-          nodeId,
-        } : undefined,
-        originalProviderVideoUrl: result.videoUrl,
-        providerOriginalUrl: result.videoUrl,
-        temporaryUrl: result.videoUrl,
-        mediaPersistence: persistence,
-        assetIntelligence,
-        model: result.model,
-        message: result.message,
-        requestId: result.requestId,
-        submittedInput,
-        providerResponse: result.providerResponse,
-        result: {
-          videoUrl: persistence.stableUrl,
-          previewUrl: persistence.stableUrl,
-          metadata: {
-            model: result.model,
-            taskId,
-            providerJobId: taskId,
-            generationJobId: generationJob?.id,
-            assetId: persistence.assetId,
-            outputAssetId: persistence.assetId,
-            assetUrl: persistence.stableUrl,
-            resolvedUrl: persistence.resolvedUrl ?? persistence.stableUrl,
-            stableUrl: persistence.stableUrl,
-            ...(persistence.proxyUrl ? { proxyUrl: persistence.proxyUrl } : {}),
-            storageProvider: persistence.storageProvider,
-            bucket: persistence.bucket,
-            storageKey: persistence.storageKey,
-            signedUrlAvailable: persistence.signedUrlAvailable,
-            proxyAvailable: persistence.proxyAvailable,
-            originalProviderVideoUrl: result.videoUrl,
-            providerOriginalUrl: result.videoUrl,
-            temporaryUrl: result.videoUrl,
-            generationStatus: 'generation_success',
-            persistenceStatus: 'persistence_success',
-            assetStatus: 'ready',
-            submittedInput,
-            providerResponse: result.providerResponse,
-            mediaPersistence: persistence,
-            assetIntelligence,
-          },
-        },
-      }, { status: 200 })
+        taskId: taskId || undefined,
+        generationJobId: generationJob.id,
+        assetId,
+        videoUrl,
+        storageKey: stringValue(record(generationJob.output).storageKey),
+        providerOriginalUrl: stringValue(record(generationJob.output).providerOriginalUrl),
+        providerRegion: sourceProviderRegion,
+        executionRegion,
+        storageRegion,
+      })
     }
-
-    const errorCode = visiblePersistenceErrorCode(persistence.errorCode)
-    const displayUrl = persistence.providerOriginalUrl || persistence.temporaryUrl || result.videoUrl
-    const persistencePending = persistence.persistenceStatus === 'pending_persistence'
     return NextResponse.json({
       success: true,
       providerId,
-      taskId,
-      status: persistencePending ? 'succeeded_with_persistence_pending' : 'done',
-      displayUrl,
-      videoUrl: displayUrl,
-      resultVideoUrl: displayUrl,
-      assetUrl: persistence.assetId && !persistencePending ? displayUrl : undefined,
-      resolvedUrl: persistencePending ? undefined : displayUrl,
-      stableUrl: displayUrl,
-      assetId: persistence.assetId,
-      outputAssetId: persistence.assetId,
-      asset: persistence.assetId ? {
-        id: persistence.assetId,
+      status: 'succeeded',
+      taskId: taskId || null,
+      generationJobId: generationJob.id,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      resultVideoUrl: videoUrl,
+      videoUrl,
+      stableUrl: videoUrl,
+      assetId,
+      outputAssetId: assetId,
+      asset: asset ? {
+        id: asset.id,
         type: 'VIDEO',
-        url: displayUrl,
-        dataUrl: null,
-        thumbnailUrl: null,
-        providerId: 'generated-media-persistence',
-        generationJobId: generationJob?.id,
-        projectId,
-        workflowId,
-        nodeId,
-        status: persistencePending ? 'pending_persistence' : 'failed',
+        url: asset.url,
+        generationJobId: generationJob.id,
+        projectId: asset.projectId,
+        workflowId: asset.workflowId,
+        nodeId: asset.nodeId,
       } : undefined,
-      generationStatus: 'generation_success',
-      persistenceStatus: persistencePending ? 'pending_persistence' : 'persistence_failed',
-      assetStatus: persistencePending ? 'pending_persistence' : 'failed',
-      persistenceError: errorCode,
-      errorCode: undefined,
-      errorMessage: undefined,
-      message: persistencePending ? '媒体已生成，资产库上传待重试。' : `视频生成成功，但媒体转存失败：${persistence.errorMessage || persistence.message}`,
-      generationStage: persistencePending ? 'oss_upload' : persistence.generationStage,
-      stage: persistence.stage,
-      nextAction: persistencePending ? 'retry_persistence' : undefined,
-      upstreamStatus: persistence.upstreamStatus,
-      upstreamMessage: persistence.upstreamMessage,
-      providerEndpoint: persistence.providerEndpoint ?? result.providerEndpoint,
-      providerRequestMethod: persistence.providerRequestMethod ?? result.providerRequestMethod,
-      providerHttpStatus: persistence.providerHttpStatus ?? result.providerHttpStatus,
-      providerFetchError: persistence.providerFetchError,
-      providerFetchCause: persistence.providerFetchCause,
-      storageProvider: persistence.storageProvider,
-      bucket: persistence.bucket,
-      storageKey: persistence.storageKey,
-      attemptedUploadKey: persistence.attemptedUploadKey,
-      ossRequestId: persistence.ossRequestId,
-      sourceUrl: persistence.sourceUrl,
-      mediaDownloadUrl: persistence.mediaDownloadUrl,
-      originalProviderVideoUrl: persistence.sourceUrl ?? undefined,
-      providerOriginalUrl: result.videoUrl,
-      temporaryUrl: result.videoUrl,
-      retryPersistenceAvailable: persistence.retryPersistenceAvailable ?? Boolean(persistence.assetId),
-      mediaPersistence: { status: persistencePending ? 'pending_persistence' : 'failed', ...persistence, errorCode },
-      assetIntelligence,
-      model: result.model,
-      requestId: persistence.requestId ?? result.requestId,
-      submittedInput,
-      providerResponse: result.providerResponse,
-      result: {
-        videoUrl: displayUrl,
-        previewUrl: displayUrl,
-        metadata: {
-          model: result.model,
-          taskId,
-          providerJobId: taskId,
-          generationJobId: generationJob?.id,
-          generationStatus: 'generation_success',
-          persistenceStatus: persistencePending ? 'pending_persistence' : 'persistence_failed',
-          assetStatus: persistencePending ? 'pending_persistence' : 'failed',
-          providerOriginalUrl: result.videoUrl,
-          temporaryUrl: result.videoUrl,
-          originalProviderVideoUrl: result.videoUrl,
-          ...(persistence.assetId ? { assetId: persistence.assetId, outputAssetId: persistence.assetId } : {}),
-          ...(persistence.assetId && !persistencePending ? { assetUrl: displayUrl, resolvedUrl: displayUrl } : {}),
-          stableUrl: displayUrl,
-          storageProvider: persistence.storageProvider,
-          bucket: persistence.bucket,
-          storageKey: persistence.storageKey,
-          persistenceError: errorCode,
-          attemptedUploadKey: persistence.attemptedUploadKey,
-          ossRequestId: persistence.ossRequestId,
-          retryPersistenceAvailable: persistence.retryPersistenceAvailable ?? Boolean(persistence.assetId),
-          nextAction: 'retry_persistence',
-          lastGenerationError: null,
-          submittedInput,
-          providerResponse: result.providerResponse,
-          mediaPersistence: { status: persistencePending ? 'pending_persistence' : 'failed', ...persistence, errorCode },
-          assetIntelligence,
-        },
-      },
+      message: '视频生成完成',
     }, { status: 200 })
   }
 
+  if (generationJob.status === 'FAILED') {
+    const failOutput = record(generationJob.output)
+    return NextResponse.json({
+      success: false,
+      providerId,
+      status: 'failed',
+      taskId: taskId || null,
+      generationJobId: generationJob.id,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      errorCode: stringValue(failOutput.errorCode) || 'video_generation_failed',
+      message: generationJob.errorMessage || generationJob.error || '视频生成失败。',
+      upstreamMessage: failOutput.upstreamMessage,
+      upstreamStatus: failOutput.upstreamStatus,
+      requestId: failOutput.requestId,
+      providerEndpoint: failOutput.providerEndpoint,
+      providerHttpStatus: failOutput.providerHttpStatus,
+      submittedInput: failOutput.submittedInput,
+      providerResponse: failOutput.providerResponse,
+    }, { status: 200 })
+  }
+
+  // QUEUED or PROCESSING — cn-executor is working on it
   return NextResponse.json({
     success: true,
     providerId,
-    taskId,
-    status: result.status,
-    videoUrl: result.status === 'done' ? result.videoUrl : undefined,
-    model: result.model,
-    message: result.message,
+    status: 'running',
+    taskId: taskId || null,
+    generationJobId: generationJob.id,
+    providerRegion: sourceProviderRegion,
+    executionRegion,
+    storageRegion,
+    executorKind,
+    message: '视频生成中，请继续轮询',
   }, { status: 200 })
 }

@@ -4,7 +4,6 @@ import { runGenerate } from '@/lib/providers/generate'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
-import { generateSeedanceVideo } from '@/lib/providers/china/volcengine'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
@@ -159,10 +158,6 @@ function classifyVideoException(error: unknown) {
   return { errorCode: 'generation_failed', message }
 }
 
-function isMissingGenerationJobNodeIdColumn(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  return /GenerationJob.*nodeId|nodeId.*GenerationJob|column.*nodeId|Unknown arg `nodeId`/i.test(message)
-}
 
 function numberParam(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -268,56 +263,6 @@ function assertProviderReadableImageUrl(imageUrl: string | undefined) {
   return { ok: true as const }
 }
 
-async function createVideoGenerationJob(args: {
-  userId: string
-  providerId: string
-  prompt: string
-  body: VideoGenerateBody
-  imageUrl?: string
-}) {
-  const data = {
-    userId: args.userId,
-    projectId: args.body.projectId ?? null,
-    nodeId: args.body.nodeId ?? null,
-    providerId: args.providerId,
-    provider: args.providerId,
-    nodeType: 'video',
-    kind: 'video',
-    status: 'PROCESSING' as const,
-    prompt: args.prompt.slice(0, 2000),
-    input: {
-      prompt: args.prompt,
-      projectId: args.body.projectId ?? null,
-      imageUrl: args.imageUrl,
-      params: args.body.params ?? {},
-      workflowId: args.body.workflowId,
-      nodeId: args.body.nodeId,
-    },
-  }
-  try {
-    return await db.generationJob.create({ data })
-  } catch (error) {
-    if (!isMissingGenerationJobNodeIdColumn(error)) throw error
-    const fallbackData = { ...data }
-    delete (fallbackData as { nodeId?: string | null }).nodeId
-    return db.generationJob.create({ data: fallbackData })
-  }
-}
-
-async function markVideoGenerationJobFailed(jobId: string | undefined, message: string) {
-  if (!jobId) return
-  await db.generationJob.update({
-    where: { id: jobId },
-    data: {
-      status: 'FAILED',
-      error: message,
-      errorMessage: message.slice(0, 1000),
-      completedAt: new Date(),
-    },
-  }).catch((error: unknown) => {
-    console.warn('[api/generate/video] failed to mark GenerationJob failed', error)
-  })
-}
 
 async function attachPersistedVideo(args: {
   videoUrl: string
@@ -612,13 +557,6 @@ export async function POST(request: NextRequest) {
   body.nodeId = generationContext.nodeId
 
   if (providerId === 'volcengine-seedance-video') {
-    const generationJob = await createVideoGenerationJob({
-      userId: currentUser.id,
-      providerId,
-      prompt,
-      body,
-      imageUrl,
-    })
     const params = body.params ?? {}
     const requestedDuration = body.duration
       ?? numberParam(params.duration)
@@ -634,6 +572,8 @@ export async function POST(request: NextRequest) {
     const duration = normalizeSeedanceRouteDuration(requestedDuration)
     const aspectRatio = normalizeSeedanceRouteAspectRatio(requestedAspectRatio)
     const resolution = normalizeSeedanceRouteResolution(requestedResolution)
+
+    // Validate before creating job
     const videoInputValidation = validateVideoInput({
       prompt,
       model: providerRow.model,
@@ -642,7 +582,6 @@ export async function POST(request: NextRequest) {
       requestedResolution,
     })
     if (!videoInputValidation.ok) {
-      await markVideoGenerationJobFailed(generationJob.id, videoInputValidation.message)
       return videoErrorResponse({
         providerId,
         mode: 'real',
@@ -672,7 +611,6 @@ export async function POST(request: NextRequest) {
     }
     const imageReadable = assertProviderReadableImageUrl(imageUrl)
     if (!imageReadable.ok) {
-      await markVideoGenerationJobFailed(generationJob.id, imageReadable.message)
       return videoErrorResponse({
         providerId,
         mode: 'real',
@@ -692,261 +630,96 @@ export async function POST(request: NextRequest) {
           requestedAspectRatio,
           aspectRatio,
           requestedResolution,
-          resolution,
+          resolution: resolution ?? null,
         },
-        details: {
+        details: { model: providerRow.model },
+      })
+    }
+
+    // Create GenerationJob (QUEUED) — cn-executor will execute asynchronously
+    const submittedAt = new Date().toISOString()
+    const submittedInput = {
+      providerId, model: providerRow.model,
+      promptChars: prompt.length,
+      hasImageUrl: Boolean(imageUrl),
+      imageUrl: summarizeInputUrl(imageUrl),
+      duration, aspectRatio, resolution: resolution ?? null,
+    }
+    const generationJob = await db.generationJob.create({
+      data: {
+        userId: currentUser.id,
+        projectId: body.projectId ?? null,
+        nodeId: body.nodeId ?? null,
+        providerId,
+        provider: providerId,
+        nodeType: 'video',
+        kind: 'video',
+        status: 'QUEUED',
+        prompt: prompt.slice(0, 2000),
+        input: {
+          prompt,
+          imageUrl: imageUrl ?? null,
           model: providerRow.model,
-        },
-      })
-    }
-    const raw = await generateSeedanceVideo({
-      prompt,
-      imageUrl,
-      providerId,
-      duration,
-      aspectRatio,
-      resolution,
-      projectId: body.projectId,
-      workflowId: body.workflowId,
-      nodeId: body.nodeId,
-    })
-
-    if (!raw.success) {
-      await markVideoGenerationJobFailed(generationJob.id, raw.message)
-      return videoErrorResponse({
-        providerId,
-        mode: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'unavailable' : 'real',
-        status: raw.errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
-        errorMessage: raw.message,
-        errorCode: visibleProviderErrorCode(raw.errorCode, raw.upstreamStatus, raw.message),
-        requestId: raw.requestId || routeRequestId,
-        upstreamStatus: raw.upstreamStatus,
-        upstreamMessage: raw.upstreamMessage,
-        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
+          duration,
+          aspectRatio,
+          resolution: resolution ?? null,
+          workflowId: body.workflowId ?? null,
+          nodeId: body.nodeId ?? null,
+          projectId: body.projectId ?? null,
           providerId,
-          model: raw.model,
-        }),
-        details: {
-          model: raw.model,
-          rawCode: raw.rawCode,
-          providerEndpoint: raw.providerEndpoint,
-          providerRequestMethod: raw.providerRequestMethod,
-          providerHttpStatus: raw.providerHttpStatus,
-          providerFetchError: raw.providerFetchError,
-          providerFetchCause: raw.providerFetchCause,
-          providerResponse: raw.providerResponse,
-        },
-      })
-    }
-
-    if (raw.async) {
-      const submittedAt = new Date().toISOString()
-      await db.generationJob.update({
-        where: { id: generationJob.id },
-        data: {
-          providerJobId: raw.taskId,
-          status: 'PROCESSING',
-          output: {
-            taskId: raw.taskId,
-            status: 'running',
-            submittedAt,
-          },
-        },
-      }).catch((error: unknown) => {
-        console.warn('[api/generate/video] failed to store provider task id', error)
-      })
-      return NextResponse.json({
-        success: true,
-        async: true,
-        taskId: raw.taskId,
-        jobId: generationJob.id,
-        generationJobId: generationJob.id,
-        providerId,
-        providerRegion,
-        executionRegion,
-        storageRegion,
-        executor: resolvedExecutor,
-        executorKind,
-        ...(unknownProvider ? { unknownProvider: true } : {}),
-        model: raw.model,
-        mode: 'real',
-        status: 'running',
-        message: '视频任务已提交，正在生成中',
-        submittedAt,
-        requestId: raw.requestId,
-        providerEndpoint: raw.providerEndpoint,
-        providerRequestMethod: raw.providerRequestMethod,
-        providerHttpStatus: raw.providerHttpStatus,
-        upstreamMessage: raw.upstreamMessage,
-        result: {
-          metadata: {
-            providerId,
-            providerRegion,
-            executionRegion,
-            storageRegion,
-            executor: resolvedExecutor,
-            executorKind,
-            model: raw.model,
-            taskId: raw.taskId,
-            providerJobId: raw.taskId,
-            generationJobId: generationJob.id,
-            submittedAt,
-            requestId: raw.requestId,
-            providerEndpoint: raw.providerEndpoint,
-            providerRequestMethod: raw.providerRequestMethod,
-            providerHttpStatus: raw.providerHttpStatus,
-            submittedInput: raw.submittedInput,
-            providerResponse: raw.providerResponse,
-          },
-        },
-      }, { status: 200 })
-    }
-
-    if (!raw.videoUrl) {
-      await markVideoGenerationJobFailed(generationJob.id, 'Provider 未返回可下载视频 URL。')
-      return videoErrorResponse({
-        providerId,
-        mode: 'real',
-        status: 'failed',
-        errorCode: 'provider_no_download_url',
-        errorMessage: '视频生成成功，但 Provider 未返回可下载视频 URL。',
-        requestId: raw.requestId || routeRequestId,
-        upstreamMessage: raw.upstreamMessage,
-        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
-          providerId,
-          model: raw.model,
-        }),
-        details: {
-          model: raw.model,
-          providerEndpoint: raw.providerEndpoint,
-          providerRequestMethod: raw.providerRequestMethod,
-          providerHttpStatus: raw.providerHttpStatus,
-          providerResponse: raw.providerResponse,
-        },
-      })
-    }
-
-    const completedAt = new Date().toISOString()
-    const persisted = await attachPersistedVideo({
-      videoUrl: raw.videoUrl,
-      providerId,
-      model: raw.model,
-      prompt,
-      body,
-      userId: currentUser.id,
-      generationJobId: generationJob.id,
-      requestId: raw.requestId,
-      providerEndpoint: raw.providerEndpoint,
-      providerRequestMethod: raw.providerRequestMethod,
-      providerHttpStatus: raw.providerHttpStatus,
-      submittedInput: raw.submittedInput,
-    })
-    const persistencePending = persisted.persistenceStatus === 'pending_persistence'
-    const persistenceErrorCode = persisted.persistenceError ? visiblePersistenceErrorCode(persisted.persistenceError.errorCode) : undefined
-    if (persistenceErrorCode) {
-      return videoErrorResponse({
-        providerId,
-        mode: 'real',
-        status: persisted.persistenceStatus ?? 'failed',
-        errorCode: persistenceErrorCode,
-        errorMessage: persisted.persistenceError?.message || persisted.warning || '视频生成成功，但 OSS 上传失败。',
-        requestId: raw.requestId || routeRequestId,
-        submittedInput: raw.submittedInput ?? safeVideoSubmittedInput(body, {
-          providerId,
-          model: raw.model,
-        }),
-        details: {
-          model: raw.model,
-          mediaDownloadUrl: raw.videoUrl,
-          sourceUrl: raw.videoUrl,
-          storageProvider: persisted.storageProvider,
-          bucket: persisted.bucket,
-          storageKey: persisted.storageKey,
-          attemptedUploadKey: persisted.attemptedUploadKey,
-          ossRequestId: persisted.ossRequestId,
-          mediaPersistence: persisted.mediaPersistence,
-          assetIntelligence: persisted.assetIntelligence,
-        },
-      })
-    }
-    return NextResponse.json({
-      success: true,
-      async: false,
-      displayUrl: persisted.videoUrl,
-      videoUrl: persisted.videoUrl,
-      resultVideoUrl: persisted.videoUrl,
-      assetUrl: persisted.assetId && !persistencePending ? persisted.videoUrl : undefined,
-      resolvedUrl: persistencePending ? undefined : persisted.resolvedUrl ?? persisted.videoUrl,
-      stableUrl: persisted.stableUrl,
-      proxyUrl: persisted.proxyUrl ?? undefined,
-      storageProvider: persisted.storageProvider ?? undefined,
-      bucket: persisted.bucket ?? undefined,
-      storageKey: persisted.storageKey ?? undefined,
-      signedUrlAvailable: persisted.signedUrlAvailable,
-      proxyAvailable: persisted.proxyAvailable,
-      assetId: persisted.assetId,
-      outputAssetId: persisted.assetId,
-      generationJobId: generationJob.id,
-      asset: persisted.asset,
-      originalProviderVideoUrl: raw.videoUrl,
-      providerOriginalUrl: raw.videoUrl,
-      temporaryUrl: raw.videoUrl,
-      generationStatus: 'generation_success',
-      persistenceStatus: persisted.persistenceStatus,
-      assetStatus: persisted.assetStatus,
-      persistenceError: persistenceErrorCode,
-      retryPersistenceAvailable: persisted.retryPersistenceAvailable,
-      generationStage: persistencePending ? 'oss_upload' : undefined,
-      nextAction: persistencePending ? 'retry_persistence' : 'show_media',
-      attemptedUploadKey: persisted.attemptedUploadKey,
-      ossRequestId: persisted.ossRequestId,
-      mediaPersistence: persisted.mediaPersistence,
-      assetIntelligence: persisted.assetIntelligence,
-      warning: persisted.warning,
-      providerId,
-      model: raw.model,
-      mode: 'real',
-      status: persistencePending ? 'succeeded_with_persistence_pending' : 'succeeded',
-      message: persisted.warning ?? `视频生成成功（${raw.model}）`,
-      completedAt,
-      result: {
-        videoUrl: persisted.videoUrl,
-        previewUrl: persisted.videoUrl,
-        metadata: {
-          providerId,
-          model: raw.model,
-          completedAt,
-          generationJobId: generationJob.id,
-          generationStatus: 'generation_success',
-          persistenceStatus: persisted.persistenceStatus,
-          assetStatus: persisted.assetStatus,
-          providerOriginalUrl: raw.videoUrl,
-          temporaryUrl: raw.videoUrl,
-          ...(persisted.assetId ? { assetId: persisted.assetId, outputAssetId: persisted.assetId } : {}),
-          ...(persisted.assetId && !persistencePending ? { assetUrl: persisted.videoUrl } : {}),
-          ...(persistencePending ? {} : { resolvedUrl: persisted.resolvedUrl ?? persisted.videoUrl }),
-          stableUrl: persisted.stableUrl,
-          ...(persisted.proxyUrl ? { proxyUrl: persisted.proxyUrl } : {}),
-          storageProvider: persisted.storageProvider,
-          bucket: persisted.bucket,
-          storageKey: persisted.storageKey,
-          signedUrlAvailable: persisted.signedUrlAvailable,
-          proxyAvailable: persisted.proxyAvailable,
-          originalProviderVideoUrl: raw.videoUrl,
-          lastGenerationError: null,
-          ...(persistenceErrorCode ? {
-            persistenceError: persistenceErrorCode,
-            attemptedUploadKey: persisted.attemptedUploadKey,
-            ossRequestId: persisted.ossRequestId,
-            retryPersistenceAvailable: persisted.retryPersistenceAvailable,
-            nextAction: 'retry_persistence',
-          } : {}),
-          mediaPersistence: persisted.mediaPersistence,
-          assetIntelligence: persisted.assetIntelligence,
-          submittedInput: 'submittedInput' in raw ? raw.submittedInput : undefined,
-          providerResponse: 'providerResponse' in raw ? raw.providerResponse : undefined,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executorKind,
+          submittedAt,
+          submittedInput,
         },
       },
+    }).catch((err: unknown) => {
+      console.warn('[api/generate/video] failed to create GenerationJob', err)
+      return null
+    })
+
+    if (!generationJob) {
+      return videoErrorResponse({
+        providerId, mode: 'real', status: 'failed',
+        errorCode: 'job_create_failed',
+        errorMessage: '视频任务创建失败，请重试。',
+        requestId: routeRequestId,
+        submittedInput,
+      })
+    }
+
+    // Fire-and-forget to cn-executor — do NOT await
+    const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
+    fetch(`${cnBaseUrl}/api/jobs/run-video`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''}`,
+      },
+      body: JSON.stringify({ generationJobId: generationJob.id }),
+      signal: AbortSignal.timeout(8_000),
+    }).catch((err: unknown) => {
+      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed:', err instanceof Error ? err.message : String(err))
+    })
+
+    return NextResponse.json({
+      success: true,
+      async: true,
+      providerId,
+      providerRegion,
+      executionRegion,
+      storageRegion,
+      executor: resolvedExecutor,
+      executorKind,
+      model: providerRow.model,
+      mode: 'real',
+      status: 'queued',
+      generationJobId: generationJob.id,
+      jobId: generationJob.id,
+      submittedAt,
+      message: '视频生成任务已提交，正在处理中',
     }, { status: 200 })
   }
 

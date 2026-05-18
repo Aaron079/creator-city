@@ -5,6 +5,7 @@ import { isAuthorized } from './auth'
 import { handleGenerateImage } from './handlers/generateImage'
 import { handleImageGenerationStatus, handleStartImageGeneration } from './handlers/imageTasks'
 import { handleRunImageJob } from './handlers/jobRunner'
+import { handleRunVideoJob } from './handlers/videoJobRunner'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
 import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 
@@ -107,6 +108,18 @@ const server = http.createServer((req, res) => {
         jsonError(res, {
           errorCode: 'internal_error',
           message: err instanceof Error ? err.message : 'Unexpected error in job runner.',
+        })
+      }
+    })
+    return
+  }
+
+  if (method === 'POST' && url === '/api/jobs/run-video') {
+    handleRunVideoJob(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in video job runner.',
         })
       }
     })

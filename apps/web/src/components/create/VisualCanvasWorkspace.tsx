@@ -1909,6 +1909,39 @@ async function pollImageGenerationTask(
   }
 }
 
+async function pollVideoGenerationTask(
+  providerId: string,
+  generationJobId: string,
+): Promise<GenerateApiResult> {
+  let response: Response
+  try {
+    const params = new URLSearchParams({ generationJobId })
+    response = await fetch(`/api/generate/video/status?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '网络请求失败'
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, generationJobId }
+  }
+  const raw = await response.text().catch(() => '')
+  if (!raw.trim()) {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `视频状态接口返回空响应（HTTP ${response.status}）`, generationJobId }
+  }
+  try {
+    const parsed = JSON.parse(raw) as GenerateApiResult
+    return {
+      ...parsed,
+      providerId: parsed.providerId || providerId,
+      generationJobId: parsed.generationJobId ?? generationJobId,
+      jobId: parsed.jobId ?? generationJobId,
+    }
+  } catch {
+    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `视频状态接口返回非 JSON 响应（HTTP ${response.status}）`, generationJobId }
+  }
+}
+
 function getTemplateFromSession(templateId: string) {
   if (typeof window === 'undefined') return null
   const raw = window.sessionStorage.getItem('creator-city-template-payload')
@@ -3891,8 +3924,17 @@ export function VisualCanvasWorkspace({
           }
         }
 
-        if (node.kind === 'video' && generateResult.async && generateResult.taskId) {
-          return workflowResultFromGenerateResult(nodeForGeneration, generateResult, prompt)
+        if (node.kind === 'video' && (generateResult.status === 'running' || generateResult.status === 'queued') && (generateResult.generationJobId || generateResult.jobId)) {
+          const generationJobId = generateResult.generationJobId ?? generateResult.jobId!
+          let polls = 0
+          while (polls < 120 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
+            await delay(5000)
+            generateResult = await pollVideoGenerationTask(providerId, generationJobId)
+            polls += 1
+          }
+          if (generateResult.status === 'running' || generateResult.status === 'queued') {
+            throw new Error(`WORKFLOW_NODE_TIMEOUT: ${generateResult.message || '视频仍在生成，请稍后检查任务状态。'}`)
+          }
         }
 
         if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
@@ -4401,15 +4443,16 @@ export function VisualCanvasWorkspace({
           }
         }
 
-        if (node.kind === 'video' && result.async && result.taskId) {
-          const taskId = result.taskId
+        if (node.kind === 'video' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
+          const generationJobId = result.generationJobId ?? result.jobId!
+          const taskId = result.taskId ?? generationJobId
           handleNodePatch(node.id, {
             status: 'running',
             resultPreview: '视频任务已提交，正在生成中',
             outputLabel: '视频生成中',
             errorMessage: undefined,
             metadataJson: {
-              ...videoSuccessMetadata(node, result, selectedProviderId),
+              ...videoSuccessMetadata(node, { ...result, generationJobId, taskId }, selectedProviderId),
               recoveryStatus: 'regenerating',
               mediaRecoveryStatus: 'regenerating',
               loading: true,
@@ -4419,21 +4462,16 @@ export function VisualCanvasWorkspace({
           })
           flushLocalSnapshot()
           scheduleCanvasSave(0)
-          showCanvasFeedback(`已提交异步生成任务：${taskId}，正在等待生成结果。`)
+          showCanvasFeedback('视频生成中')
           let polls = 0
-          while (polls < 60) {
+          while (polls < 120) {
             await delay(5000)
-            const statusResult = await pollSeedanceVideoTask(selectedProviderId, taskId, {
-              projectId: effectiveProjectId,
-              workflowId,
-              nodeId: node.id,
-              prompt,
-              compiledPrompt: prompt,
-            })
+            const statusResult = await pollVideoGenerationTask(selectedProviderId, generationJobId)
             result = {
               ...statusResult,
-              taskId,
-              jobId: statusResult.jobId ?? result.jobId,
+              generationJobId,
+              jobId: statusResult.jobId ?? generationJobId,
+              taskId: statusResult.taskId ?? taskId,
             }
             if (!statusResult.success || statusResult.status !== 'running') break
             handleNodePatch(node.id, {
@@ -4459,8 +4497,7 @@ export function VisualCanvasWorkspace({
               mode: 'real',
               status: 'failed',
               errorCode: 'generation_failed',
-              message: `视频任务 ${taskId} 在等待窗口内仍未完成，请稍后查询任务状态。`,
-              taskId,
+              message: '视频任务在等待窗口内仍未完成，请稍后查询任务状态。',
             }, selectedProviderId)
             return
           }
@@ -5894,16 +5931,10 @@ export function VisualCanvasWorkspace({
       })
       return
     }
-    if (nodeSnapshot.kind === 'video' && generationProviderId === 'volcengine-seedance-video' && nodeSnapshot.status === 'running' && currentTaskId) {
+    if (nodeSnapshot.kind === 'video' && nodeSnapshot.status === 'running' && currentGenerationJobId) {
       setDialogError(null)
       showCanvasFeedback('正在查询视频任务状态...')
-      void pollSeedanceVideoTask(generationProviderId, currentTaskId, {
-        projectId,
-        workflowId,
-        nodeId: nodeSnapshot.id,
-        prompt: nodeSnapshot.prompt,
-        compiledPrompt: typeof currentMetadata.compiledPromptPreview === 'string' ? currentMetadata.compiledPromptPreview : undefined,
-      }).then((statusResult) => {
+      void pollVideoGenerationTask(generationProviderId, currentGenerationJobId).then((statusResult) => {
         if (statusResult.status === 'running') {
           handleNodePatch(nodeSnapshot.id, {
             status: 'running',
@@ -5914,7 +5945,7 @@ export function VisualCanvasWorkspace({
               providerId: statusResult.providerId || generationProviderId,
               model: statusResult.model ?? currentMetadata.model,
               taskId: currentTaskId,
-              generationJobId: currentTaskId,
+              generationJobId: currentGenerationJobId,
             },
           })
           showCanvasFeedback('视频生成中，请稍后再查。')
@@ -5933,12 +5964,11 @@ export function VisualCanvasWorkspace({
           showCanvasFeedback(errMsg)
           return
         }
-        const videoUrl = statusResult.videoUrl ?? statusResult.result?.videoUrl
+        const videoUrl = statusResult.resultVideoUrl ?? statusResult.videoUrl ?? statusResult.result?.videoUrl
         if (!videoUrl) {
           const errMsg = 'VOLCENGINE_SEEDANCE_VIDEO_EMPTY: 视频任务已完成，但未返回视频 URL。'
           handleNodePatch(nodeSnapshot.id, {
-            status: 'error',
-            errorMessage: errMsg,
+            status: 'error', errorMessage: errMsg,
             resultPreview: nodeSnapshot.resultPreview ?? '视频任务未返回 URL',
             outputLabel: '视频任务未返回 URL',
           })
@@ -5948,38 +5978,13 @@ export function VisualCanvasWorkspace({
         }
         const metadataJson = {
           ...metadataRecord(nodeSnapshot.metadataJson),
-          providerId: statusResult.providerId || generationProviderId,
-          model: statusResult.model ?? currentMetadata.model,
-          taskId: currentTaskId,
-          generationJobId: currentTaskId,
-          assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
-          assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
-          originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
-          mediaPersistence: statusResult.mediaPersistence ?? currentMetadata.mediaPersistence,
-          assetIntelligence: statusResult.assetIntelligence ?? currentMetadata.assetIntelligence,
-          ...(statusResult.warning ? { mediaPersistenceWarning: statusResult.warning } : {}),
-          completedAt: new Date().toISOString(),
+          ...videoSuccessMetadata(nodeSnapshot, { ...statusResult, taskId: currentTaskId, generationJobId: currentGenerationJobId, resultVideoUrl: videoUrl, videoUrl }, generationProviderId),
         }
         handleNodePatch(nodeSnapshot.id, {
-          status: 'done',
-          resultVideoUrl: videoUrl,
-          resultPreview: '视频已生成',
-          outputLabel: '视频已生成',
-          errorMessage: undefined,
+          status: 'done', resultVideoUrl: videoUrl, resultPreview: '视频已生成', outputLabel: '视频已生成', errorMessage: undefined,
           metadataJson,
           preview: { type: 'remote-video', url: videoUrl, poster: videoUrl, licenseType: 'original', attribution: 'Generated by Volcengine Seedance' },
         })
-        if (!statusResult.asset?.id && !statusResult.assetId) {
-          void createGeneratedAsset({
-            nodeId: nodeSnapshot.id,
-            type: 'video',
-            title: `${nodeSnapshot.title} 视频结果`,
-            url: videoUrl,
-            providerId: generationProviderId,
-            generationJobId: currentTaskId,
-            metadataJson,
-          })
-        }
         commitEdges((current) => current.map((edge) => (
           edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
         )))
@@ -6234,16 +6239,75 @@ export function VisualCanvasWorkspace({
         }
       }
 
-      if (nodeSnapshot.kind === 'video' && result.async && result.taskId) {
-        const metadataJson = videoSuccessMetadata(generationNodeSnapshot, result, generationProviderId)
+      if (nodeSnapshot.kind === 'video' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
+        const generationJobId = result.generationJobId ?? result.jobId!
+        const taskId = result.taskId ?? generationJobId
+        const runningMeta = {
+          ...videoSuccessMetadata(generationNodeSnapshot, { ...result, generationJobId, taskId }, generationProviderId),
+          loading: true,
+          isRegenerating: true,
+          regenerating: true,
+        }
         handleNodePatch(nodeSnapshot.id, {
           status: 'running',
           resultPreview: '视频任务已提交，正在生成中',
           outputLabel: '视频生成中',
           errorMessage: undefined,
-          metadataJson,
+          metadataJson: runningMeta,
         })
         showCanvasFeedback('视频任务已提交，正在生成中')
+        let videoPolls = 0
+        const pollVideo = async () => {
+          if (videoPolls++ >= 120) return
+          const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId)
+          if (statusResult.status === 'running') {
+            handleNodePatch(nodeSnapshot.id, {
+              status: 'running',
+              resultPreview: `视频生成中，已查询 ${videoPolls} 次`,
+              outputLabel: '视频生成中',
+              metadataJson: {
+                ...videoSuccessMetadata(generationNodeSnapshot, { ...statusResult, generationJobId, taskId }, generationProviderId),
+                loading: true, isRegenerating: true, regenerating: true,
+              },
+            })
+            const timer = window.setTimeout(() => { void pollVideo() }, 5000)
+            timersRef.current.push(timer)
+            return
+          }
+          if (!statusResult.success || statusResult.status === 'failed') {
+            const errMsg = formatGenerateError(statusResult)
+            handleNodePatch(nodeSnapshot.id, {
+              status: 'error',
+              errorMessage: errMsg,
+              resultPreview: nodeSnapshot.resultPreview ?? '视频任务失败',
+              outputLabel: '视频任务失败',
+              metadataJson: videoErrorMetadata(generationNodeSnapshot, { ...statusResult, taskId }, generationProviderId),
+            })
+            setDialogError(errMsg)
+            showCanvasFeedback(errMsg)
+            return
+          }
+          const videoUrl = statusResult.resultVideoUrl ?? statusResult.videoUrl ?? statusResult.result?.videoUrl
+          if (!videoUrl) {
+            const errMsg = 'VOLCENGINE_SEEDANCE_VIDEO_EMPTY: 视频任务已完成，但未返回视频 URL。'
+            handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: errMsg, resultPreview: nodeSnapshot.resultPreview ?? '未返回 URL', outputLabel: '未返回 URL' })
+            setDialogError(errMsg)
+            showCanvasFeedback(errMsg)
+            return
+          }
+          const successMeta = videoSuccessMetadata(generationNodeSnapshot, { ...statusResult, generationJobId, taskId, resultVideoUrl: videoUrl, videoUrl }, generationProviderId)
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'done', resultVideoUrl: videoUrl, resultPreview: '视频已生成', outputLabel: '视频已生成', errorMessage: undefined,
+            metadataJson: successMeta,
+            preview: { type: 'remote-video', url: videoUrl, poster: videoUrl, licenseType: 'original', attribution: 'Generated by Volcengine Seedance' },
+          })
+          commitEdges((current) => current.map((edge) => (
+            edge.toNodeId === nodeSnapshot.id || edge.fromNodeId === nodeSnapshot.id ? { ...edge, status: 'done' } : edge
+          )))
+          showCanvasFeedback('视频生成完成')
+        }
+        const timer = window.setTimeout(() => { void pollVideo() }, 5000)
+        timersRef.current.push(timer)
         return
       }
 
