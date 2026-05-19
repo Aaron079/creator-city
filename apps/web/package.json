@@ -22,6 +22,7 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "@react-three/drei": "^9.105.4",
     "@react-three/fiber": "^8.16.8",
+    "@xyflow/react": "^12.10.2",
     "ali-oss": "^6.23.0",
     "axios": "^1.7.2",
     "bcryptjs": "^2.4.3",
@@ -40,10 +41,10 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/ali-oss": "^6.23.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.12.7",
-    "@playwright/test": "^1.52.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.164.0",

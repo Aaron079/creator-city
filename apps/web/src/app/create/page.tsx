@@ -8830,7 +8830,15 @@ export default function CreatePage() {
     <>
       <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
         {directorDeskMode === 'canvas' ? (
-          <div className="h-screen min-h-0 w-full overflow-hidden">
+          <div className="h-screen min-h-0 w-full overflow-hidden" style={{ position: 'relative' }}>
+            <a
+              href="/create-v2"
+              className="canvas-v2-beta-btn"
+              style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 9999, fontSize: '12px', padding: '6px 12px', background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: '8px', color: '#c4b5fd', textDecoration: 'none', fontWeight: 600, backdropFilter: 'blur(8px)', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span>Canvas V2</span>
+              <span style={{ fontSize: 10, padding: '1px 5px', background: 'linear-gradient(90deg,#7c3aed,#4f46e5)', borderRadius: 6, color: '#fff' }}>Beta</span>
+            </a>
             <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
               <VisualCanvasWorkspace
                 projectTitle={deliveryProjectTitle}
