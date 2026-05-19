@@ -171,7 +171,15 @@ export type SeedreamResult = SeedreamSuccess | SeedreamError
 
 function normalizeSeedreamErrorCode(status: number, message: string): string {
   const haystack = message.toLowerCase()
-  if (status === 401 || status === 403) return 'provider_auth_failed'
+  if (status === 401) return 'provider_auth_failed'
+  if (status === 403) {
+    // 403 from Volcengine is usually a permission/quota issue, not an API-key problem.
+    // Distinguish: quota/billing errors are reported separately from hard auth failures.
+    if (/quota|余额|欠费|insufficient|billing|rate.?limit|limit.?exceed/.test(haystack)) return 'provider_quota_or_billing_error'
+    // Feature permission (e.g. watermark, certain model features) → treat as invalid parameter
+    if (/permission|forbidden|not.?allow|无权|not.?support/.test(haystack)) return 'provider_invalid_parameter'
+    return 'provider_auth_failed'
+  }
   if (
     status === 404
     || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|not found|does not exist)|模型|接入点/.test(haystack)
@@ -221,12 +229,13 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
 
   // Minimal valid Volcengine ARK ImageGenerations body.
   // Do NOT include chat-only params (stream, sequential_image_generation, referenceImages, etc.).
+  // watermark is intentionally omitted — it is a premium/account-specific feature that causes 403
+  // on accounts without that permission, which maps to PROVIDER_AUTH_FAILED and masks the real error.
   const reqBody: Record<string, unknown> = {
     model,
     prompt: input.prompt,
     size,
     response_format: 'url',
-    watermark: false,
   }
 
   let response: Response
