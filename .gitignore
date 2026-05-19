@@ -35,3 +35,4 @@ coverage
 .vercel
 .env*.local
 cn-executor-deploy.zip
+apps/cn-executor/*.zip
