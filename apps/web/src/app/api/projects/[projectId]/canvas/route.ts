@@ -343,13 +343,21 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
 
     // Sequential individual writes — avoids pgBouncer interactive-transaction incompatibility.
     // Atomicity is sacrificed for reliability; the next save will correct any partial state.
-    await db.canvasWorkflow.update({
-      where: { id: workflow.id },
-      data: {
-        ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
-        updatedAt: now,
-      },
-    })
+    try {
+      await db.canvasWorkflow.update({
+        where: { id: workflow.id },
+        data: {
+          ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
+          updatedAt: now,
+        },
+      })
+    } catch (workflowErr) {
+      console.error('[canvas-api] canvasWorkflow.update failed, continuing with node saves', {
+        projectId: params.projectId,
+        workflowId: workflow.id,
+        error: workflowErr instanceof Error ? workflowErr.message : String(workflowErr),
+      })
+    }
 
     const failedNodeIds: string[] = []
     for (const node of body.nodes ?? []) {
