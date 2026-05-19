@@ -47,6 +47,9 @@ importers:
       utility:
         specifier: ^2.4.0
         version: 2.5.0
+      xml2js:
+        specifier: ^0.6.2
+        version: 0.6.2
     devDependencies:
       '@types/ali-oss':
         specifier: ^6.23.3
