@@ -23,6 +23,7 @@ function sanitizeJson(value: unknown): Prisma.InputJsonValue {
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 interface RouteContext {
   params: { projectId: string }
@@ -359,130 +360,142 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       })
     }
 
+    // Parallel node upserts — each Prisma call from Vercel to Supabase takes 2-4s.
+    // Sequential writes over N nodes = N × 4s which exceeds the serverless timeout.
     const failedNodeIds: string[] = []
-    for (const node of body.nodes ?? []) {
-      if (!node.id || !node.kind) continue
-      const providerId = node.providerId ?? node.model ?? null
-      const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
-        ? node.metadataJson as Record<string, unknown>
-        : {}
-      // Sanitize through JSON roundtrip: strips undefined, functions, circular refs.
-      const metadataJson = sanitizeJson({
-        ...nodeMetadata,
-        projectId: params.projectId,
-        workflowId: workflow.id,
-        nodeId: node.id,
-        ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
-        outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
-        preview: node.preview ?? nodeMetadata.preview ?? null,
-      })
-      try {
-        await db.canvasNode.upsert({
-          where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id } },
-          create: {
-            workflowId: workflow.id,
-            nodeId: node.id,
-            kind: node.kind,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
-            metadataJson,
-          },
-          update: {
-            kind: node.kind,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
-            metadataJson,
-            updatedAt: now,
-          },
-        })
-      } catch (nodeError) {
-        failedNodeIds.push(node.id)
-        console.error('[canvas-api] node upsert failed, continuing', {
+    const validNodes = (body.nodes ?? []).filter((node) => node.id && node.kind)
+    const nodeResults = await Promise.allSettled(
+      validNodes.map((node) => {
+        const providerId = node.providerId ?? node.model ?? null
+        const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
+          ? node.metadataJson as Record<string, unknown>
+          : {}
+        const metadataJson = sanitizeJson({
+          ...nodeMetadata,
           projectId: params.projectId,
           workflowId: workflow.id,
           nodeId: node.id,
-          error: nodeError instanceof Error ? nodeError.message : String(nodeError),
+          ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
+          outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
+          preview: node.preview ?? nodeMetadata.preview ?? null,
         })
-      }
-    }
-
-    const failedEdgeIds: string[] = []
-    for (const edge of body.edges ?? []) {
-      if (!edge.id || !edge.fromNodeId || !edge.toNodeId) continue
-      const edgeMetadata = edge.metadataJson && typeof edge.metadataJson === 'object'
-        ? edge.metadataJson as Record<string, unknown>
-        : {}
-      const metadataJson = sanitizeJson({ ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' })
-      try {
-        await db.canvasEdge.upsert({
-          where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id } },
+        return db.canvasNode.upsert({
+          where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id! } },
           create: {
             workflowId: workflow.id,
-            edgeId: edge.id,
-            sourceNodeId: edge.fromNodeId,
-            targetNodeId: edge.toNodeId,
+            nodeId: node.id!,
+            kind: node.kind!,
+            title: node.title ?? null,
+            providerId,
+            status: node.status ?? 'idle',
+            x: Number(node.x ?? 0),
+            y: Number(node.y ?? 0),
+            width: Number(node.width ?? 320),
+            height: Number(node.height ?? 220),
+            prompt: node.prompt ?? null,
+            resultText: node.resultText ?? null,
+            resultImageUrl: node.resultImageUrl ?? null,
+            resultVideoUrl: node.resultVideoUrl ?? null,
+            resultAudioUrl: node.resultAudioUrl ?? null,
+            resultPreview: node.resultPreview ?? null,
+            errorMessage: node.errorMessage ?? null,
+            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
+            metadataJson,
+          },
+          update: {
+            kind: node.kind!,
+            title: node.title ?? null,
+            providerId,
+            status: node.status ?? 'idle',
+            x: Number(node.x ?? 0),
+            y: Number(node.y ?? 0),
+            width: Number(node.width ?? 320),
+            height: Number(node.height ?? 220),
+            prompt: node.prompt ?? null,
+            resultText: node.resultText ?? null,
+            resultImageUrl: node.resultImageUrl ?? null,
+            resultVideoUrl: node.resultVideoUrl ?? null,
+            resultAudioUrl: node.resultAudioUrl ?? null,
+            resultPreview: node.resultPreview ?? null,
+            errorMessage: node.errorMessage ?? null,
+            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
+            metadataJson,
+            updatedAt: now,
+          },
+        })
+      }),
+    )
+    nodeResults.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        const nodeId = validNodes[i]?.id ?? '?'
+        failedNodeIds.push(nodeId)
+        console.error('[canvas-api] node upsert failed, continuing', {
+          projectId: params.projectId,
+          workflowId: workflow.id,
+          nodeId,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        })
+      }
+    })
+
+    // Parallel edge upserts for the same reason.
+    const failedEdgeIds: string[] = []
+    const validEdges = (body.edges ?? []).filter((edge) => edge.id && edge.fromNodeId && edge.toNodeId)
+    const edgeResults = await Promise.allSettled(
+      validEdges.map((edge) => {
+        const edgeMetadata = edge.metadataJson && typeof edge.metadataJson === 'object'
+          ? edge.metadataJson as Record<string, unknown>
+          : {}
+        const metadataJson = sanitizeJson({ ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' })
+        return db.canvasEdge.upsert({
+          where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id! } },
+          create: {
+            workflowId: workflow.id,
+            edgeId: edge.id!,
+            sourceNodeId: edge.fromNodeId!,
+            targetNodeId: edge.toNodeId!,
             type: edge.type ?? 'flow',
             metadataJson,
           },
           update: {
-            sourceNodeId: edge.fromNodeId,
-            targetNodeId: edge.toNodeId,
+            sourceNodeId: edge.fromNodeId!,
+            targetNodeId: edge.toNodeId!,
             type: edge.type ?? 'flow',
             metadataJson,
             updatedAt: now,
           },
         })
-      } catch (edgeError) {
-        failedEdgeIds.push(edge.id)
+      }),
+    )
+    edgeResults.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        const edgeId = validEdges[i]?.id ?? '?'
+        failedEdgeIds.push(edgeId)
         console.error('[canvas-api] edge upsert failed, continuing', {
           projectId: params.projectId,
           workflowId: workflow.id,
-          edgeId: edge.id,
-          error: edgeError instanceof Error ? edgeError.message : String(edgeError),
+          edgeId,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
         })
       }
-    }
+    })
 
     if (body.clearCanvas && (body.nodes ?? []).length === 0) {
-      await db.canvasEdge.deleteMany({ where: { workflowId: workflow.id } })
-      await db.canvasNode.deleteMany({ where: { workflowId: workflow.id } })
+      await Promise.allSettled([
+        db.canvasEdge.deleteMany({ where: { workflowId: workflow.id } }),
+        db.canvasNode.deleteMany({ where: { workflowId: workflow.id } }),
+      ])
     }
 
     if (body.deletedNodeIds?.length) {
       await db.canvasNode.deleteMany({
         where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
-      })
+      }).catch((e: unknown) => console.warn('[canvas-api] deletedNodes failed', e))
     }
     if (body.deletedEdgeIds?.length) {
       await db.canvasEdge.deleteMany({
         where: { workflowId: workflow.id, edgeId: { in: body.deletedEdgeIds } },
-      })
+      }).catch((e: unknown) => console.warn('[canvas-api] deletedEdges failed', e))
     }
 
     // Best-effort lastOpenedAt update — never block the save response.
