@@ -36,6 +36,7 @@ Vercel never touches Volcengine or OSS directly for China projects. It forwards 
 2. Select a China region (recommended: `cn-hangzhou` or `cn-shanghai` for Aliyun OSS proximity; `cn-beijing` for Volcengine proximity).
 3. Click **Create Service** → name it `creator-city`.
 4. Inside the service, click **Create Function**.
+   Current production function name: `reator-city-cn-executor`.
 5. Choose **Web Function** (HTTP function mode).
 6. Runtime: **Node.js 20**.
 7. Entry point: leave as default (Function Compute will call `server.js` or use the `npm start` script via a custom bootstrap).
@@ -83,6 +84,18 @@ fun deploy
 ```
 
 Or use the FC console to upload the zip directly.
+
+For the current production function, package and deploy with:
+
+```bash
+FC_FUNCTION_NAME=reator-city-cn-executor bash scripts/deploy-cn-executor.sh
+```
+
+The deploy script validates the function first:
+
+```bash
+/tmp/aliyun fc GET "/2023-03-30/functions/reator-city-cn-executor"
+```
 
 ## 6. Listening Port
 
@@ -141,7 +154,7 @@ Expected response when all env vars are set:
 ```json
 {
   "ok": true,
-  "service": "creator-city-cn-executor",
+  "service": "reator-city-cn-executor",
   "region": "cn",
   "runtime": "node",
   "env": {

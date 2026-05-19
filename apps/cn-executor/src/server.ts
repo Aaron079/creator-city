@@ -19,7 +19,7 @@ function handleHealth(res: http.ServerResponse): void {
   const missingEnv = getMissingEnv()
   jsonOk(res, {
     ok: missingEnv.length === 0,
-    service: 'creator-city-cn-executor',
+    service: 'reator-city-cn-executor',
     region: 'cn',
     runtime: 'node',
     env: envPresence,
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
   if (method === 'GET' && (url === '/' || url === '')) {
     jsonOk(res, {
       ok: true,
-      service: 'creator-city-cn-executor',
+      service: 'reator-city-cn-executor',
       message: 'CN executor is running. Use /health for diagnostics.',
     })
     return
