@@ -17,13 +17,20 @@ const STATUS_LABELS: Record<string, string> = {
 const KIND_LABELS: Record<string, string> = {
   text: '文本节点', image: '图像节点', video: '视频节点', asset: '素材节点', generation: '生成节点',
 }
+const EXECUTOR_BADGE: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  aliyun_fc: { label: '🔴 CN FC', color: '#fca5a5', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.25)' },
+  vercel: { label: '🔵 Vercel', color: '#93c5fd', bg: 'rgba(59,130,246,.12)', border: 'rgba(59,130,246,.25)' },
+}
 
 export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeProps<Node<CanvasV2NodeData>>) {
   const [imgError, setImgError] = useState(false)
   const status = data.status ?? 'idle'
   const statusColor = STATUS_COLORS[status] ?? STATUS_COLORS.idle
   const icon = KIND_ICONS[data.kind] ?? '📄'
-  const thumbnailSrc = !imgError ? (data.thumbnailUrl ?? data.resultImageUrl ?? data.resultVideoUrl) : undefined
+  const isVideo = data.kind === 'video'
+  const thumbnailSrc = !imgError && !isVideo ? (data.thumbnailUrl ?? data.resultImageUrl) : undefined
+  const hasVideo = isVideo && !!data.resultVideoUrl
+  const executor = data.executorKind ? EXECUTOR_BADGE[data.executorKind] : null
 
   return (
     <div style={{
@@ -38,44 +45,115 @@ export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeP
       overflow: 'hidden',
       fontFamily: 'system-ui,sans-serif',
       transition: 'border .15s,box-shadow .15s',
+      cursor: 'pointer',
     }}>
       <Handle type="target" position={Position.Left} style={{ background: '#7c3aed', border: '2px solid #4c1d95', width: 10, height: 10 }} />
+
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px 8px', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
         <span style={{ fontSize: 16 }}>{icon}</span>
         <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {data.title ?? KIND_LABELS[data.kind] ?? '节点'}
         </span>
-        <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, fontWeight: 600, flexShrink: 0 }}>
+        {/* Status badge with running pulse animation */}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, fontWeight: 600, flexShrink: 0 }}>
+          {status === 'running' && (
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor, flexShrink: 0, animation: 'pulse 1s ease-in-out infinite' }} />
+          )}
           {STATUS_LABELS[status] ?? status}
         </span>
       </div>
+
+      {/* Prompt (2-line clamp) */}
       {data.prompt && (
-        <div style={{ padding: '8px 12px', color: '#94a3b8', fontSize: 12, lineHeight: 1.5, borderBottom: '1px solid rgba(255,255,255,.04)' }}>
-          {data.prompt.length > 80 ? data.prompt.slice(0, 80) + '…' : data.prompt}
+        <div style={{
+          padding: '8px 12px',
+          color: '#94a3b8',
+          fontSize: 12,
+          lineHeight: 1.5,
+          borderBottom: '1px solid rgba(255,255,255,.04)',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        } as React.CSSProperties}>
+          {data.prompt}
         </div>
       )}
+
+      {/* Thumbnail (image) */}
       {thumbnailSrc && (
         <div style={{ padding: '8px 12px 0' }}>
-          <img src={thumbnailSrc} alt="result" onError={() => setImgError(true)}
-            style={{ width: '100%', borderRadius: 8, maxHeight: 160, objectFit: 'cover', display: 'block', border: '1px solid rgba(255,255,255,.08)' }} />
+          <img
+            src={thumbnailSrc}
+            alt="result"
+            onError={() => setImgError(true)}
+            style={{ width: '100%', borderRadius: 8, maxHeight: 160, objectFit: 'cover', display: 'block', border: '1px solid rgba(255,255,255,.08)' }}
+          />
         </div>
       )}
-      {(data.providerRegion || data.executionRegion) && (
+
+      {/* Video placeholder or result */}
+      {isVideo && (
+        <div style={{ padding: '8px 12px 0' }}>
+          {hasVideo ? (
+            <video
+              src={data.resultVideoUrl}
+              style={{ width: '100%', borderRadius: 8, maxHeight: 140, display: 'block', border: '1px solid rgba(255,255,255,.08)' }}
+              muted
+              playsInline
+            />
+          ) : (
+            <div style={{ width: '100%', height: 80, borderRadius: 8, background: 'rgba(124,58,237,.08)', border: '1px solid rgba(124,58,237,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 24 }}>🎬</span>
+              <span style={{ fontSize: 10, color: '#4b5563' }}>视频节点</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Region + executor badges */}
+      {(data.providerRegion || data.executionRegion || executor) && (
         <div style={{ display: 'flex', gap: 4, padding: '6px 12px', flexWrap: 'wrap' }}>
-          {data.providerRegion && <Badge label="provider" value={data.providerRegion} isCn={data.providerRegion === 'cn'} />}
-          {data.executionRegion && data.executionRegion !== data.providerRegion && <Badge label="exec" value={data.executionRegion} isCn={data.executionRegion === 'cn'} />}
+          {data.providerRegion && (
+            <Badge label="provider" value={data.providerRegion} isCn={data.providerRegion === 'cn'} />
+          )}
+          {data.executionRegion && data.executionRegion !== data.providerRegion && (
+            <Badge label="exec" value={data.executionRegion} isCn={data.executionRegion === 'cn'} />
+          )}
+          {executor && (
+            <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: executor.bg, color: executor.color, border: `1px solid ${executor.border}` }}>
+              {executor.label}
+            </span>
+          )}
         </div>
       )}
-      {status === 'failed' && data.errorMessage && (
-        <div style={{ margin: '6px 12px', padding: '6px 8px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, color: '#fca5a5', fontSize: 11 }}>
-          {String(data.errorMessage).slice(0, 120)}
+
+      {/* Error display */}
+      {status === 'failed' && (data.errorMessage || data.errorCode) && (
+        <div style={{ margin: '6px 12px', padding: '6px 8px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6 }}>
+          {data.errorCode && <div style={{ color: '#f87171', fontSize: 10, fontWeight: 700, marginBottom: 2 }}>{data.errorCode}</div>}
+          {data.errorMessage && <div style={{ color: '#fca5a5', fontSize: 11 }}>{String(data.errorMessage).slice(0, 100)}</div>}
         </div>
       )}
-      <div style={{ padding: '8px 12px', display: 'flex', borderTop: '1px solid rgba(255,255,255,.06)' }}>
+
+      {/* Footer */}
+      <div style={{ padding: '6px 12px', display: 'flex', borderTop: '1px solid rgba(255,255,255,.06)', alignItems: 'center' }}>
+        <span style={{ fontSize: 10, color: '#374151' }}>双击打开属性</span>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 10, color: '#475569' }}>{data.kind}</span>
       </div>
+
       <Handle type="source" position={Position.Right} style={{ background: '#7c3aed', border: '2px solid #4c1d95', width: 10, height: 10 }} />
+
+      {/* CSS animation for running pulse */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.8); }
+        }
+      `}</style>
     </div>
   )
 })

@@ -16,10 +16,15 @@ export type CanvasV2NodeData = {
   resultVideoUrl?: string
   thumbnailUrl?: string
   errorMessage?: string
+  errorCode?: string
   assetId?: string
   workflowId?: string
   projectId?: string
+  executorKind?: 'aliyun_fc' | 'vercel' | string
+  generationJobId?: string
+  upstreamMessage?: string
   metadataJson?: Record<string, unknown>
+  paramsJson?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -58,11 +63,38 @@ export type CanvasEdgeRecord = {
   metadataJson?: Record<string, unknown> | null
 }
 
+/**
+ * Convert nodes from the canvas GET API response (mapCanvasNode shape) to ReactFlow nodes.
+ * The GET API returns: { id, kind, title, prompt, status, x, y, resultImageUrl, resultVideoUrl,
+ * errorMessage, metadataJson, providerId, ... }
+ */
 export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] {
   return records.map((r): FlowNode => {
     const meta = (r.metadataJson && typeof r.metadataJson === 'object' && !Array.isArray(r.metadataJson))
       ? r.metadataJson as Record<string, unknown> : {}
     const params = (r.paramsJson && typeof r.paramsJson === 'object') ? r.paramsJson as Record<string, unknown> : {}
+
+    // Extract executorKind from metadataJson
+    const executorKind = typeof meta.executorKind === 'string' ? meta.executorKind
+      : typeof meta.executor_kind === 'string' ? meta.executor_kind
+      : undefined
+
+    // Extract generationJobId from metadataJson
+    const generationJobId = typeof meta.generationJobId === 'string' ? meta.generationJobId
+      : typeof meta.generation_job_id === 'string' ? meta.generation_job_id
+      : typeof meta.jobId === 'string' ? meta.jobId
+      : undefined
+
+    // Extract errorCode from metadataJson
+    const errorCode = typeof meta.errorCode === 'string' ? meta.errorCode
+      : typeof meta.error_code === 'string' ? meta.error_code
+      : undefined
+
+    // Extract upstreamMessage from metadataJson
+    const upstreamMessage = typeof meta.upstreamMessage === 'string' ? meta.upstreamMessage
+      : typeof meta.upstream_message === 'string' ? meta.upstream_message
+      : undefined
+
     return {
       id: r.nodeId,
       type: 'canvasV2Node',
@@ -81,13 +113,42 @@ export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] 
         resultVideoUrl: typeof r.resultVideoUrl === 'string' ? r.resultVideoUrl : undefined,
         thumbnailUrl: typeof meta.thumbnailUrl === 'string' ? meta.thumbnailUrl : (typeof r.resultImageUrl === 'string' ? r.resultImageUrl : undefined),
         errorMessage: typeof r.errorMessage === 'string' ? r.errorMessage : undefined,
+        errorCode,
         assetId: typeof meta.assetId === 'string' ? meta.assetId : undefined,
         workflowId: typeof meta.workflowId === 'string' ? meta.workflowId : undefined,
         projectId: typeof meta.projectId === 'string' ? meta.projectId : undefined,
+        executorKind,
+        generationJobId,
+        upstreamMessage,
         metadataJson: meta,
+        paramsJson: params,
       },
     }
   })
+}
+
+/**
+ * Convert API edge records (with fromNodeId/toNodeId shape from mapCanvasEdge) to ReactFlow edges.
+ */
+export type CanvasApiEdgeRecord = {
+  id: string
+  fromNodeId: string
+  toNodeId: string
+  type?: string | null
+  metadataJson?: Record<string, unknown>
+  status?: string
+}
+
+export function canvasApiEdgesToFlowEdges(records: CanvasApiEdgeRecord[]): FlowEdge[] {
+  return records.map((r): FlowEdge => ({
+    id: r.id,
+    source: r.fromNodeId,
+    target: r.toNodeId,
+    type: 'smoothstep',
+    animated: true,
+    style: { stroke: '#7c3aed', strokeWidth: 2 },
+    data: { edgeId: r.id, type: r.type ?? 'flow', status: r.status ?? 'active' },
+  }))
 }
 
 export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, projectId: string): CanvasNodeRecord[] {
@@ -114,6 +175,10 @@ export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, pr
       executionRegion: n.data.executionRegion,
       storageRegion: n.data.storageRegion,
       assetId: n.data.assetId,
+      executorKind: n.data.executorKind,
+      generationJobId: n.data.generationJobId,
+      errorCode: n.data.errorCode,
+      upstreamMessage: n.data.upstreamMessage,
     },
     paramsJson: { model: n.data.providerId ?? null },
   }))

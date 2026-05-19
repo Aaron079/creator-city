@@ -8,6 +8,7 @@ type Props = {
   onClose: () => void
   onSave: (nodeId: string, updates: Partial<CanvasV2NodeData>) => void
   onGenerate: (nodeId: string, kind: CanvasV2NodeKind, prompt: string, providerId?: string) => Promise<void>
+  onDeleteNode: (nodeId: string) => void
 }
 
 const PROVIDER_BY_KIND: Partial<Record<CanvasV2NodeKind, string>> = {
@@ -16,30 +17,39 @@ const PROVIDER_BY_KIND: Partial<Record<CanvasV2NodeKind, string>> = {
   generation: 'volcengine-seedream-image',
 }
 
-export function CanvasV2Inspector({ node, onClose, onSave, onGenerate }: Props) {
+const EXECUTOR_LABELS: Record<string, string> = {
+  aliyun_fc: '🔴 CN FC',
+  vercel: '🔵 Vercel',
+}
+
+export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteNode }: Props) {
   const [prompt, setPrompt] = useState('')
   const [title, setTitle] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
+  const [copyDone, setCopyDone] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (node) {
       setPrompt(node.data.prompt ?? '')
       setTitle(node.data.title ?? '')
       setError('')
+      setConfirmDelete(false)
     }
   }, [node?.id])
 
   if (!node) return null
 
-  const canGenerate = node.data.kind === 'image' || node.data.kind === 'video' || node.data.kind === 'generation'
+  const d = node.data
+  const canGenerate = d.kind === 'image' || d.kind === 'video' || d.kind === 'generation'
 
   async function handleGenerate() {
     if (!prompt.trim()) { setError('请输入 Prompt'); return }
     setError('')
     setGenerating(true)
     try {
-      await onGenerate(node!.id, node!.data.kind as CanvasV2NodeKind, prompt.trim(), PROVIDER_BY_KIND[node!.data.kind as CanvasV2NodeKind])
+      await onGenerate(node!.id, d.kind as CanvasV2NodeKind, prompt.trim(), PROVIDER_BY_KIND[d.kind as CanvasV2NodeKind])
     } catch (e) {
       setError(e instanceof Error ? e.message : '生成失败')
     } finally {
@@ -47,67 +57,198 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate }: Props) 
     }
   }
 
+  function handleSave() {
+    onSave(node!.id, { title: title.trim() || undefined, prompt: prompt.trim() || undefined })
+    onClose()
+  }
+
+  function handleCopyDiag() {
+    const payload = JSON.stringify(d, null, 2)
+    navigator.clipboard.writeText(payload).then(() => {
+      setCopyDone(true)
+      setTimeout(() => setCopyDone(false), 2000)
+    }).catch(() => {
+      // Fallback: show in prompt
+      window.prompt('复制诊断 JSON:', payload)
+    })
+  }
+
+  function handleDelete() {
+    if (!confirmDelete) { setConfirmDelete(true); return }
+    onDeleteNode(node!.id)
+    onClose()
+  }
+
+  const executorLabel = d.executorKind ? (EXECUTOR_LABELS[d.executorKind] ?? d.executorKind) : null
+
   return (
-    <div style={{ position: 'absolute', right: 16, top: 16, bottom: 16, width: 300, zIndex: 20, background: 'rgba(10,10,22,.96)', border: '1px solid rgba(124,58,237,.35)', borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 12, backdropFilter: 'blur(16px)', boxShadow: '0 8px 40px rgba(0,0,0,.6)', overflowY: 'auto', fontFamily: 'system-ui,sans-serif' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{
+      position: 'absolute', right: 16, top: 16, bottom: 16, width: 310, zIndex: 20,
+      background: 'rgba(10,10,22,.97)', border: '1px solid rgba(124,58,237,.35)', borderRadius: 16,
+      padding: 18, display: 'flex', flexDirection: 'column', gap: 10,
+      backdropFilter: 'blur(16px)', boxShadow: '0 8px 40px rgba(0,0,0,.6)',
+      overflowY: 'auto', fontFamily: 'system-ui,sans-serif',
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h3 style={{ margin: 0, color: '#e2e8f0', fontSize: 14, fontWeight: 700 }}>节点属性</h3>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6 }}>
-        <Tag text={node.data.kind} color="#c4b5fd" bg="rgba(124,58,237,.18)" border="rgba(124,58,237,.3)" />
-        <Tag text={node.data.status ?? 'idle'} color="#6ee7b7" bg="rgba(16,185,129,.12)" border="rgba(16,185,129,.25)" />
+      {/* Kind + Status badges */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+        <Tag text={d.kind} color="#c4b5fd" bg="rgba(124,58,237,.18)" border="rgba(124,58,237,.3)" />
+        <Tag
+          text={d.status ?? 'idle'}
+          color={d.status === 'succeeded' ? '#6ee7b7' : d.status === 'failed' ? '#fca5a5' : d.status === 'running' ? '#fbbf24' : '#94a3b8'}
+          bg={d.status === 'succeeded' ? 'rgba(16,185,129,.12)' : d.status === 'failed' ? 'rgba(239,68,68,.12)' : d.status === 'running' ? 'rgba(251,191,36,.12)' : 'rgba(148,163,184,.1)'}
+          border={d.status === 'succeeded' ? 'rgba(16,185,129,.25)' : d.status === 'failed' ? 'rgba(239,68,68,.3)' : d.status === 'running' ? 'rgba(251,191,36,.3)' : 'rgba(148,163,184,.2)'}
+        />
+        {executorLabel && (
+          <Tag text={executorLabel} color="#93c5fd" bg="rgba(59,130,246,.1)" border="rgba(59,130,246,.25)" />
+        )}
       </div>
 
+      {/* Title */}
       <Field label="标题">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="节点标题…"
-          style={{ width: '100%', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '7px 10px', color: '#e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="节点标题…"
+          style={inputStyle}
+        />
       </Field>
 
+      {/* Prompt */}
       <Field label="Prompt">
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="输入生成提示词…" rows={5}
-          style={{ width: '100%', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, padding: '7px 10px', color: '#e2e8f0', fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="输入生成提示词…"
+          rows={5}
+          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+        />
       </Field>
 
-      {node.data.resultImageUrl && (
+      {/* Metadata fields */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {d.providerId && <InfoRow label="Provider" value={d.providerId} />}
+        {d.providerRegion && <InfoRow label="Provider 区域" value={d.providerRegion} />}
+        {d.executionRegion && <InfoRow label="执行区域" value={d.executionRegion} />}
+        {d.storageRegion && <InfoRow label="存储区域" value={d.storageRegion} />}
+        {d.executorKind && <InfoRow label="执行器" value={executorLabel ?? d.executorKind} />}
+        {d.generationJobId && <InfoRow label="生成任务 ID" value={d.generationJobId} mono />}
+        {d.assetId && <InfoRow label="Asset ID" value={d.assetId} mono />}
+      </div>
+
+      {/* Error info */}
+      {d.status === 'failed' && (d.errorMessage || d.errorCode || d.upstreamMessage) && (
+        <div style={{ padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {d.errorCode && <span style={{ color: '#f87171', fontSize: 11, fontWeight: 700 }}>{d.errorCode}</span>}
+          {d.errorMessage && <span style={{ color: '#fca5a5', fontSize: 12 }}>{d.errorMessage}</span>}
+          {d.upstreamMessage && (
+            <details style={{ cursor: 'pointer' }}>
+              <summary style={{ color: '#f87171', fontSize: 11, fontWeight: 600 }}>上游消息</summary>
+              <span style={{ color: '#fca5a5', fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>{d.upstreamMessage}</span>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* Result preview */}
+      {d.resultImageUrl && (
         <div>
           <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, marginBottom: 6 }}>生成结果</div>
-          <img src={node.data.resultImageUrl} alt="result" style={{ width: '100%', borderRadius: 8, border: '1px solid rgba(255,255,255,.08)' }} />
+          <img src={d.resultImageUrl} alt="result" style={{ width: '100%', borderRadius: 8, border: '1px solid rgba(255,255,255,.08)' }} />
         </div>
       )}
-      {node.data.resultVideoUrl && (
+      {d.resultVideoUrl && (
         <div>
           <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, marginBottom: 6 }}>生成视频</div>
-          <video src={node.data.resultVideoUrl} controls style={{ width: '100%', borderRadius: 8 }} />
+          <video src={d.resultVideoUrl} controls style={{ width: '100%', borderRadius: 8 }} />
         </div>
       )}
 
-      {error && <div style={{ padding: '7px 10px', background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, color: '#fca5a5', fontSize: 12 }}>{error}</div>}
+      {/* Error from generate action */}
+      {error && (
+        <div style={{ padding: '7px 10px', background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, color: '#fca5a5', fontSize: 12 }}>
+          {error}
+        </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
-        <button onClick={() => { onSave(node.id, { title: title.trim() || undefined, prompt: prompt.trim() || undefined }); onClose() }}
-          style={{ flex: 1, padding: '8px 0', background: 'rgba(124,58,237,.18)', border: '1px solid rgba(124,58,237,.4)', borderRadius: 8, color: '#c4b5fd', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
-          保存
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8, flexShrink: 0 }}>
+        <button
+          onClick={handleSave}
+          style={{ flex: 1, padding: '8px 0', background: 'rgba(124,58,237,.18)', border: '1px solid rgba(124,58,237,.4)', borderRadius: 8, color: '#c4b5fd', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+        >
+          保存节点
         </button>
         {canGenerate && (
-          <button onClick={handleGenerate} disabled={generating}
-            style={{ flex: 1, padding: '8px 0', background: generating ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating ? '#6b7280' : '#fff', fontSize: 13, cursor: generating ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            style={{ flex: 1, padding: '8px 0', background: generating ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating ? '#6b7280' : '#fff', fontSize: 13, cursor: generating ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+          >
             {generating ? '生成中…' : '生成'}
           </button>
         )}
+      </div>
+
+      {/* Secondary buttons */}
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button
+          onClick={handleCopyDiag}
+          style={{ flex: 1, padding: '7px 0', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, color: copyDone ? '#6ee7b7' : '#64748b', fontSize: 12, cursor: 'pointer' }}
+        >
+          {copyDone ? '✓ 已复制' : '复制诊断 JSON'}
+        </button>
+        <button
+          onClick={handleDelete}
+          style={{ flex: 1, padding: '7px 0', background: confirmDelete ? 'rgba(239,68,68,.18)' : 'rgba(255,255,255,.04)', border: `1px solid ${confirmDelete ? 'rgba(239,68,68,.5)' : 'rgba(255,255,255,.1)'}`, borderRadius: 8, color: confirmDelete ? '#fca5a5' : '#64748b', fontSize: 12, cursor: 'pointer' }}
+          onBlur={() => setTimeout(() => setConfirmDelete(false), 300)}
+        >
+          {confirmDelete ? '确认删除？' : '删除节点'}
+        </button>
       </div>
     </div>
   )
 }
 
-function Tag({ text, color, bg, border }: { text: string; color: string; bg: string; border: string }) {
-  return <span style={{ padding: '2px 8px', background: bg, border: `1px solid ${border}`, borderRadius: 6, color, fontSize: 11, fontWeight: 600 }}>{text}</span>
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'rgba(255,255,255,.05)',
+  border: '1px solid rgba(255,255,255,.1)',
+  borderRadius: 8,
+  padding: '7px 10px',
+  color: '#e2e8f0',
+  fontSize: 13,
+  outline: 'none',
+  boxSizing: 'border-box',
 }
+
+function Tag({ text, color, bg, border }: { text: string; color: string; bg: string; border: string }) {
+  return (
+    <span style={{ padding: '2px 8px', background: bg, border: `1px solid ${border}`, borderRadius: 6, color, fontSize: 11, fontWeight: 600 }}>
+      {text}
+    </span>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
       {children}
     </label>
+  )
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <span style={{ fontSize: 11, color: '#6b7280', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: mono ? 'monospace' : 'inherit', wordBreak: 'break-all', textAlign: 'right' }}>{value}</span>
+    </div>
   )
 }
