@@ -64,11 +64,23 @@ async function fetchJob(generationJobId: string): Promise<GenerationJobRow | nul
 }
 
 async function markJobProcessing(generationJobId: string, inputJson: Record<string, unknown>): Promise<void> {
+  try {
+    await query(
+      `UPDATE "GenerationJob"
+       SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(inputJson), generationJobId],
+    )
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobProcessing failed, trying minimal', {
+      id: generationJobId,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
   await query(
-    `UPDATE "GenerationJob"
-     SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
-     WHERE id = $2`,
-    [JSON.stringify(inputJson), generationJobId],
+    `UPDATE "GenerationJob" SET status = 'PROCESSING', "updatedAt" = NOW() WHERE id = $1`,
+    [generationJobId],
   )
 }
 
@@ -77,12 +89,24 @@ async function markJobSucceeded(args: {
   outputAssetId: string
   output: Record<string, unknown>
 }): Promise<void> {
+  try {
+    await query(
+      `UPDATE "GenerationJob"
+       SET status = 'SUCCEEDED', "outputAssetId" = $1, output = $2::jsonb,
+           "completedAt" = NOW(), "updatedAt" = NOW()
+       WHERE id = $3`,
+      [args.outputAssetId, JSON.stringify(args.output), args.id],
+    )
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobSucceeded full update failed, trying minimal', {
+      id: args.id,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
   await query(
-    `UPDATE "GenerationJob"
-     SET status = 'SUCCEEDED', "outputAssetId" = $1, output = $2::jsonb,
-         "completedAt" = NOW(), "updatedAt" = NOW()
-     WHERE id = $3`,
-    [args.outputAssetId, JSON.stringify(args.output), args.id],
+    `UPDATE "GenerationJob" SET status = 'SUCCEEDED', "updatedAt" = NOW() WHERE id = $1`,
+    [args.id],
   )
 }
 
@@ -92,12 +116,27 @@ async function markJobFailed(args: {
   message: string
   output: Record<string, unknown>
 }): Promise<void> {
+  // Try full update with all optional columns first. If it fails (column missing in
+  // production DB or write-replica), fall back to minimal status-only update.
+  try {
+    await query(
+      `UPDATE "GenerationJob"
+       SET status = 'FAILED', error = $1, "errorMessage" = $2, output = $3::jsonb,
+           "completedAt" = NOW(), "updatedAt" = NOW()
+       WHERE id = $4`,
+      [args.message, args.message.slice(0, 1000), JSON.stringify(args.output), args.id],
+    )
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobFailed full update failed, trying minimal', {
+      id: args.id,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
+  // Minimal fallback — only status and updatedAt
   await query(
-    `UPDATE "GenerationJob"
-     SET status = 'FAILED', error = $1, "errorMessage" = $2, output = $3::jsonb,
-         "completedAt" = NOW(), "updatedAt" = NOW()
-     WHERE id = $4`,
-    [args.message, args.message.slice(0, 1000), JSON.stringify(args.output), args.id],
+    `UPDATE "GenerationJob" SET status = 'FAILED', "updatedAt" = NOW() WHERE id = $1`,
+    [args.id],
   )
 }
 

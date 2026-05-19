@@ -9,6 +9,7 @@ import { handleRunVideoJob } from './handlers/videoJobRunner'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
 import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 import { handleSeedreamModelProbe } from './handlers/seedreamModelProbe'
+import { handleSeedreamRealProbe } from './handlers/seedreamRealProbe'
 import { handleJobDebug } from './handlers/jobDebug'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
@@ -69,6 +70,18 @@ const server = http.createServer((req, res) => {
         jsonError(res, {
           errorCode: 'internal_error',
           message: err instanceof Error ? err.message : 'Unexpected error in network diagnostic.',
+        })
+      }
+    })
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/seedream-real-probe') {
+    handleSeedreamRealProbe(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in real probe.',
         })
       }
     })
