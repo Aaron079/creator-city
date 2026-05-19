@@ -129,20 +129,21 @@ export async function POST(request: NextRequest) {
       }, 401)
     }
 
-    const assets: ResolveBatchAsset[] = []
-    for (const assetId of assetIds) {
-      try {
-        const resolved = await resolveAssetById(assetId, user.id)
-        assets.push(resolved
-          ? resultWithNextAction(resolved)
-          : failedAsset(assetId, 'asset_not_found', 'Asset not found or not accessible for current user.'))
-      } catch (error) {
-        const errorMessage = safeErrorMessage(error, 'Asset resolve failed.')
-        const errorCode = errorCodeForResolveError(error)
-        console.error('[assets/resolve-batch] asset failed', { assetId, errorCode, errorMessage })
-        assets.push(failedAsset(assetId, errorCode, errorMessage))
-      }
-    }
+    const assets: ResolveBatchAsset[] = await Promise.all(
+      assetIds.map(async (assetId) => {
+        try {
+          const resolved = await resolveAssetById(assetId, user.id)
+          return resolved
+            ? resultWithNextAction(resolved)
+            : failedAsset(assetId, 'asset_not_found', 'Asset not found or not accessible for current user.')
+        } catch (error) {
+          const errorMessage = safeErrorMessage(error, 'Asset resolve failed.')
+          const errorCode = errorCodeForResolveError(error)
+          console.error('[assets/resolve-batch] asset failed', { assetId, errorCode, errorMessage })
+          return failedAsset(assetId, errorCode, errorMessage)
+        }
+      }),
+    )
 
     return batchResponse({ ok: true, success: true, assets })
   } catch (error) {

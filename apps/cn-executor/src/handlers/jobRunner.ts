@@ -183,7 +183,7 @@ async function createAsset(args: {
      ) VALUES (
        $1, $2, '生成图片', 'IMAGE', 'READY',
        $3, $4, $5, $6,
-       'generated', $7, $7, 'aliyun_oss', $8, $9,
+       'generated', $7, $7, 'aliyun-oss', $8, $9,
        $10, $11, $10, $12, 'image/png',
        $13, '{}', $14::jsonb, $15,
        'ready', '{}', false, 0, NOW(), NOW()
@@ -526,7 +526,7 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     assetId,
     outputAssetId: assetId,
     storageKey,
-    storageProvider: 'aliyun_oss',
+    storageProvider: 'aliyun-oss',
     storageRegion: 'cn',
     executionRegion: 'cn',
     providerRegion: 'cn',
