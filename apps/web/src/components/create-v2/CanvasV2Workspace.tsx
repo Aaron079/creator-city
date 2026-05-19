@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css'
 import { CanvasV2Node } from './CanvasV2Node'
 import { CanvasV2Toolbar } from './CanvasV2Toolbar'
 import { CanvasV2Inspector } from './CanvasV2Inspector'
+import { CanvasV2AssetLibrary } from './CanvasV2AssetLibrary'
 import {
   normalizeCanvasV2Node,
   flowNodesToCanvasNodes,
@@ -26,6 +27,7 @@ import {
   canvasApiEdgesToFlowEdges,
   type CanvasV2NodeKind,
   type CanvasV2NodeData,
+  type CanvasV2AssetItem,
   type FlowNode,
   type FlowEdge,
 } from '@/lib/canvas-v2/canvasV2Adapter'
@@ -72,6 +74,8 @@ function CanvasV2WorkspaceInner({
   const [loadState, setLoadState] = useState<LoadState>('init')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [resolvedWorkflowId, setResolvedWorkflowId] = useState<string | null>(workflowId ?? null)
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(false)
+  const [, setDraggingAsset] = useState<CanvasV2AssetItem | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rfInstanceRef = useRef<ReactFlowInstance<FlowNode, FlowEdge> | null>(null)
   const { fitView } = useReactFlow()
@@ -237,13 +241,56 @@ function CanvasV2WorkspaceInner({
   }, [saveCanvas, scheduleSave, setNodes, setEdges])
 
   const onConnect = useCallback(
-    (connection: Connection) =>
+    (connection: Connection) => {
       setEdges((eds) => {
         const result = addEdge({ ...connection, type: 'smoothstep', animated: true, style: { stroke: '#7c3aed', strokeWidth: 2 } }, eds)
-        scheduleSave()
         return result
-      }),
-    [setEdges, scheduleSave],
+      })
+
+      // Check if source is asset node and target is image/video/generation node
+      setNodes((ns) => {
+        const sourceNode = ns.find(n => n.id === connection.source)
+        const targetNode = ns.find(n => n.id === connection.target)
+
+        if (
+          sourceNode?.data.kind === 'asset' &&
+          (targetNode?.data.kind === 'image' || targetNode?.data.kind === 'video' || targetNode?.data.kind === 'generation')
+        ) {
+          const assetEntry = {
+            assetId: sourceNode.data.assetId ?? sourceNode.id,
+            url: sourceNode.data.stableUrl ?? sourceNode.data.resolvedUrl ?? '',
+            stableUrl: sourceNode.data.stableUrl,
+            kind: 'asset',
+            storageRegion: sourceNode.data.storageRegion,
+            sourceProviderRegion: sourceNode.data.sourceProviderRegion as string | undefined ?? sourceNode.data.providerRegion,
+            provider: sourceNode.data.providerId,
+            storageKey: null as string | null,
+          }
+
+          const needsBridge = !!(sourceNode.data.storageRegion && targetNode.data.executionRegion && sourceNode.data.storageRegion !== targetNode.data.executionRegion)
+          const currentInputAssets = Array.isArray(targetNode.data.inputAssets) ? targetNode.data.inputAssets : []
+          const alreadyLinked = currentInputAssets.some(a => a.assetId === assetEntry.assetId)
+
+          if (!alreadyLinked) {
+            return ns.map(n => n.id === targetNode.id ? {
+              ...n,
+              data: {
+                ...n.data,
+                inputAssets: [...currentInputAssets, assetEntry],
+                assetRegionBridgeRequired: needsBridge,
+                assetRegionBridgeReason: needsBridge
+                  ? `Asset storageRegion (${sourceNode.data.storageRegion}) ≠ target executionRegion (${targetNode.data.executionRegion})`
+                  : undefined,
+              },
+            } : n)
+          }
+        }
+        return ns
+      })
+
+      scheduleSave()
+    },
+    [setEdges, setNodes, scheduleSave],
   )
 
   const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
@@ -300,6 +347,84 @@ function CanvasV2WorkspaceInner({
     setSelectedNode((prev) => (prev?.id === nodeId ? null : prev))
     scheduleSave()
   }
+
+  function onRemoveInputAsset(nodeId: string, assetId: string) {
+    setNodes((ns) => ns.map((n) => {
+      if (n.id !== nodeId) return n
+      const inputAssets = Array.isArray(n.data.inputAssets) ? n.data.inputAssets.filter(a => a.assetId !== assetId) : []
+      return { ...n, data: { ...n.data, inputAssets, assetRegionBridgeRequired: inputAssets.length === 0 ? false : n.data.assetRegionBridgeRequired } }
+    }))
+    setSelectedNode((prev) => {
+      if (!prev || prev.id !== nodeId) return prev
+      const inputAssets = Array.isArray(prev.data.inputAssets) ? prev.data.inputAssets.filter(a => a.assetId !== assetId) : []
+      return { ...prev, data: { ...prev.data, inputAssets, assetRegionBridgeRequired: inputAssets.length === 0 ? false : prev.data.assetRegionBridgeRequired } }
+    })
+    scheduleSave()
+  }
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const raw = e.dataTransfer.getData('application/creator-city-asset')
+    if (!raw) return
+    try {
+      const asset = JSON.parse(raw) as CanvasV2AssetItem
+      const rfInstance = rfInstanceRef.current
+      const bounds = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+
+      let position: { x: number; y: number }
+      if (rfInstance && typeof rfInstance.screenToFlowPosition === 'function') {
+        // screenToFlowPosition takes client (screen) coordinates
+        position = rfInstance.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      } else {
+        // Manual fallback
+        const viewport = rfInstance?.getViewport() ?? { x: 0, y: 0, zoom: 1 }
+        position = {
+          x: (e.clientX - bounds.left - viewport.x) / viewport.zoom,
+          y: (e.clientY - bounds.top - viewport.y) / viewport.zoom,
+        }
+      }
+
+      const id = `asset-${Date.now()}`
+      const newNode: FlowNode = {
+        id,
+        type: 'canvasV2Node',
+        position,
+        data: normalizeCanvasV2Node({
+          nodeId: id,
+          kind: 'asset',
+          title: `素材 ${asset.id.slice(0, 6)}`,
+          assetId: asset.id,
+          stableUrl: asset.stableUrl || asset.url,
+          resolvedUrl: asset.stableUrl || asset.url,
+          thumbnailUrl: asset.kind === 'image' ? (asset.thumbnailUrl ?? asset.stableUrl ?? asset.url) : undefined,
+          storageRegion: (asset.storageRegion as 'cn' | 'global') ?? 'cn',
+          sourceProviderRegion: (asset.sourceProviderRegion as 'cn' | 'global') ?? 'cn',
+          providerRegion: (asset.sourceProviderRegion as 'cn' | 'global') ?? 'cn',
+          executionRegion: (asset.sourceProviderRegion as 'cn' | 'global') ?? 'cn',
+          providerId: asset.provider,
+          projectId,
+          workflowId: resolvedWorkflowId ?? undefined,
+          metadataJson: {
+            assetId: asset.id,
+            stableUrl: asset.stableUrl,
+            resolvedUrl: asset.stableUrl || asset.url,
+            storageKey: asset.storageKey,
+            storageRegion: asset.storageRegion,
+            sourceProviderRegion: asset.sourceProviderRegion,
+            provider: asset.provider,
+            kind: asset.kind,
+          },
+        }),
+      }
+      setNodes(ns => [...ns, newNode])
+      scheduleSave()
+    } catch { /* ignore parse errors */ }
+  }, [rfInstanceRef, projectId, resolvedWorkflowId, setNodes, scheduleSave])
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
 
   async function handleGenerate(nodeId: string, kind: CanvasV2NodeKind, prompt: string, providerId?: string) {
     updateNode(nodeId, { status: 'running', prompt, errorMessage: undefined })
@@ -383,6 +508,7 @@ function CanvasV2WorkspaceInner({
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', background: '#080814' }}>
+      <div style={{ width: '100%', height: '100%' }} onDrop={onDrop} onDragOver={onDragOver}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -401,8 +527,16 @@ function CanvasV2WorkspaceInner({
         <Controls style={{ background: 'rgba(10,10,20,0.9)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 10 }} />
         <MiniMap style={{ background: 'rgba(10,10,20,0.9)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 10 }} nodeColor={() => '#7c3aed'} maskColor="rgba(0,0,0,0.5)" />
       </ReactFlow>
+      </div>
 
-      <CanvasV2Toolbar onAddNode={addNode} />
+      <CanvasV2Toolbar onAddNode={addNode} onToggleAssetLibrary={() => setAssetLibraryOpen(v => !v)} assetLibraryOpen={assetLibraryOpen} />
+
+      <CanvasV2AssetLibrary
+        projectId={projectId}
+        isOpen={assetLibraryOpen}
+        onClose={() => setAssetLibraryOpen(false)}
+        onDragStart={setDraggingAsset}
+      />
 
       {selectedNode && (
         <CanvasV2Inspector
@@ -411,6 +545,7 @@ function CanvasV2WorkspaceInner({
           onSave={updateNode}
           onGenerate={handleGenerate}
           onDeleteNode={deleteNode}
+          onRemoveInputAsset={onRemoveInputAsset}
         />
       )}
 

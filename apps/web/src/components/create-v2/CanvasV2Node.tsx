@@ -24,13 +24,16 @@ const EXECUTOR_BADGE: Record<string, { label: string; color: string; bg: string;
 
 export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeProps<Node<CanvasV2NodeData>>) {
   const [imgError, setImgError] = useState(false)
+  const [assetImgError, setAssetImgError] = useState(false)
   const status = data.status ?? 'idle'
   const statusColor = STATUS_COLORS[status] ?? STATUS_COLORS.idle
   const icon = KIND_ICONS[data.kind] ?? '📄'
   const isVideo = data.kind === 'video'
-  const thumbnailSrc = !imgError && !isVideo ? (data.thumbnailUrl ?? data.resultImageUrl) : undefined
+  const isAsset = data.kind === 'asset'
+  const thumbnailSrc = !imgError && !isVideo && !isAsset ? (data.thumbnailUrl ?? data.resultImageUrl) : undefined
   const hasVideo = isVideo && !!data.resultVideoUrl
   const executor = data.executorKind ? EXECUTOR_BADGE[data.executorKind] : null
+  const assetThumbnail = isAsset && !assetImgError ? (data.thumbnailUrl ?? data.stableUrl ?? data.resolvedUrl) : undefined
 
   return (
     <div style={{
@@ -113,6 +116,25 @@ export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeP
         </div>
       )}
 
+      {/* Asset node content */}
+      {isAsset && (
+        <div style={{ padding: '8px 12px 0' }}>
+          {assetThumbnail ? (
+            <img
+              src={assetThumbnail}
+              alt="asset"
+              onError={() => setAssetImgError(true)}
+              style={{ width: '100%', borderRadius: 8, maxHeight: 120, objectFit: 'cover', display: 'block', border: '1px solid rgba(255,255,255,.08)' }}
+            />
+          ) : (
+            <div style={{ width: '100%', height: 60, borderRadius: 8, background: 'rgba(124,58,237,.08)', border: '1px solid rgba(124,58,237,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 20 }}>📦</span>
+              <span style={{ fontSize: 10, color: '#4b5563' }}>{data.assetId ? data.assetId.slice(0, 12) + '…' : '素材节点'}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Region + executor badges */}
       {(data.providerRegion || data.executionRegion || executor) && (
         <div style={{ display: 'flex', gap: 4, padding: '6px 12px', flexWrap: 'wrap' }}>
@@ -126,6 +148,16 @@ export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeP
             <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: executor.bg, color: executor.color, border: `1px solid ${executor.border}` }}>
               {executor.label}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Input assets badge */}
+      {Array.isArray(data.inputAssets) && data.inputAssets.length > 0 && (
+        <div style={{ padding: '4px 12px', borderTop: '1px solid rgba(255,255,255,.04)', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>📎 参考素材 {data.inputAssets.length} 个</span>
+          {data.assetRegionBridgeRequired && (
+            <span style={{ color: '#f59e0b', marginLeft: 4 }}>⚠ 需区域桥接</span>
           )}
         </div>
       )}

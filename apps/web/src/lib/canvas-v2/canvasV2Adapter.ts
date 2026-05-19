@@ -2,6 +2,19 @@ import type { Node, Edge } from '@xyflow/react'
 
 export type CanvasV2NodeKind = 'text' | 'image' | 'video' | 'asset' | 'generation'
 
+export type CanvasV2AssetItem = {
+  id: string
+  kind: string
+  url: string
+  stableUrl: string
+  thumbnailUrl?: string | null
+  storageKey: string | null
+  provider: string
+  storageRegion: string
+  sourceProviderRegion: string
+  createdAt: string
+}
+
 export type CanvasV2NodeData = {
   nodeId: string
   kind: CanvasV2NodeKind
@@ -25,6 +38,24 @@ export type CanvasV2NodeData = {
   upstreamMessage?: string
   metadataJson?: Record<string, unknown>
   paramsJson?: Record<string, unknown>
+  // Asset node fields
+  stableUrl?: string
+  resolvedUrl?: string
+  storageProvider?: string
+  // Input assets (for image/video nodes with reference materials)
+  inputAssets?: Array<{
+    assetId: string
+    url: string
+    stableUrl?: string
+    kind?: string
+    storageRegion?: 'cn' | 'global' | string
+    sourceProviderRegion?: 'cn' | 'global' | string
+    provider?: string
+    storageKey?: string | null
+  }>
+  // Region bridge
+  assetRegionBridgeRequired?: boolean
+  assetRegionBridgeReason?: string
   [key: string]: unknown
 }
 
@@ -120,6 +151,14 @@ export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] 
         executorKind,
         generationJobId,
         upstreamMessage,
+        // Asset node fields
+        stableUrl: typeof meta.stableUrl === 'string' ? meta.stableUrl : undefined,
+        resolvedUrl: typeof meta.resolvedUrl === 'string' ? meta.resolvedUrl : undefined,
+        storageProvider: typeof meta.storageProvider === 'string' ? meta.storageProvider : undefined,
+        // Input assets and region bridge
+        inputAssets: Array.isArray(meta.inputAssets) ? meta.inputAssets as CanvasV2NodeData['inputAssets'] : undefined,
+        assetRegionBridgeRequired: typeof meta.assetRegionBridgeRequired === 'boolean' ? meta.assetRegionBridgeRequired : undefined,
+        assetRegionBridgeReason: typeof meta.assetRegionBridgeReason === 'string' ? meta.assetRegionBridgeReason : undefined,
         metadataJson: meta,
         paramsJson: params,
       },
@@ -179,6 +218,14 @@ export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, pr
       generationJobId: n.data.generationJobId,
       errorCode: n.data.errorCode,
       upstreamMessage: n.data.upstreamMessage,
+      // Asset node fields
+      stableUrl: n.data.stableUrl,
+      resolvedUrl: n.data.resolvedUrl,
+      storageProvider: n.data.storageProvider,
+      // Input assets and region bridge
+      inputAssets: n.data.inputAssets,
+      assetRegionBridgeRequired: n.data.assetRegionBridgeRequired,
+      assetRegionBridgeReason: n.data.assetRegionBridgeReason,
     },
     paramsJson: { model: n.data.providerId ?? null },
   }))

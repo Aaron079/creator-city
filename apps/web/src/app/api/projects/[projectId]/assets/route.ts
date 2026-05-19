@@ -13,10 +13,65 @@ import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 export const dynamic = 'force-dynamic'
 
 interface RouteContext {
-  params: { projectId: string }
+  params: { projectId: string } | Promise<{ projectId: string }>
 }
 
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export async function GET(_request: NextRequest, { params }: RouteContext) {
+  try {
+    const { projectId } = params instanceof Promise ? await params : params
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 })
+
+    // Verify project access
+    const project = await db.project.findFirst({
+      where: { id: projectId, ownerId: user.id },
+      select: { id: true },
+    })
+    if (!project) return NextResponse.json({ ok: false, error: 'PROJECT_NOT_FOUND' }, { status: 404 })
+
+    const rawAssets = await db.asset.findMany({
+      where: { projectId, ownerId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        type: true,
+        url: true,
+        storageKey: true,
+        storageProvider: true,
+        provider: true,
+        thumbnailUrl: true,
+        metadataJson: true,
+        createdAt: true,
+      },
+    })
+
+    const assets = rawAssets.map((a) => {
+      const meta = (a.metadataJson && typeof a.metadataJson === 'object' && !Array.isArray(a.metadataJson))
+        ? a.metadataJson as Record<string, unknown> : {}
+      return {
+        id: a.id,
+        kind: a.type?.toLowerCase() ?? 'asset',
+        url: a.url ?? '',
+        stableUrl: (meta.stableUrl as string | undefined) ?? a.url ?? '',
+        thumbnailUrl: a.thumbnailUrl ?? (meta.thumbnailUrl as string | undefined) ?? null,
+        storageKey: a.storageKey ?? null,
+        provider: a.provider ?? a.storageProvider ?? 'unknown',
+        storageRegion: (meta.storageRegion as string | undefined) ?? 'cn',
+        sourceProviderRegion: (meta.sourceProviderRegion as string | undefined) ?? (meta.providerRegion as string | undefined) ?? 'cn',
+        metadataJson: meta,
+        createdAt: a.createdAt,
+      }
+    })
+
+    return NextResponse.json({ ok: true, assets })
+  } catch (err) {
+    console.error('[canvas-v2/assets GET]', err)
+    return NextResponse.json({ ok: false, error: 'canvas_v2_assets_load_failed' }, { status: 200 })
+  }
+}
+
+export async function POST(request: NextRequest, { params }: { params: { projectId: string } }) {
   const user = await getCurrentUser()
   if (!user) return projectJsonError('UNAUTHORIZED', '请先登录。', 401)
 

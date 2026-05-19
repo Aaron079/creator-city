@@ -9,6 +9,7 @@ type Props = {
   onSave: (nodeId: string, updates: Partial<CanvasV2NodeData>) => void
   onGenerate: (nodeId: string, kind: CanvasV2NodeKind, prompt: string, providerId?: string) => Promise<void>
   onDeleteNode: (nodeId: string) => void
+  onRemoveInputAsset?: (nodeId: string, assetId: string) => void
 }
 
 const PROVIDER_BY_KIND: Partial<Record<CanvasV2NodeKind, string>> = {
@@ -22,7 +23,7 @@ const EXECUTOR_LABELS: Record<string, string> = {
   vercel: '🔵 Vercel',
 }
 
-export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteNode }: Props) {
+export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteNode, onRemoveInputAsset }: Props) {
   const [prompt, setPrompt] = useState('')
   const [title, setTitle] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -138,8 +139,51 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
         {d.storageRegion && <InfoRow label="存储区域" value={d.storageRegion} />}
         {d.executorKind && <InfoRow label="执行器" value={executorLabel ?? d.executorKind} />}
         {d.generationJobId && <InfoRow label="生成任务 ID" value={d.generationJobId} mono />}
-        {d.assetId && <InfoRow label="Asset ID" value={d.assetId} mono />}
+        {d.assetId && <InfoRow label="Asset ID" value={d.assetId} mono copyable />}
       </div>
+
+      {/* Asset node extra fields */}
+      {d.kind === 'asset' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: 8 }}>
+          <div style={{ fontSize: 12, color: '#c4b5fd', fontWeight: 700, marginBottom: 2 }}>素材详情</div>
+          {d.stableUrl && <InfoRow label="Stable URL" value={d.stableUrl} mono copyable />}
+          {d.resolvedUrl && d.resolvedUrl !== d.stableUrl && <InfoRow label="Resolved URL" value={d.resolvedUrl} mono />}
+          {d.storageProvider && <InfoRow label="存储提供商" value={d.storageProvider} />}
+          {(d.metadataJson?.storageKey as string | undefined) && <InfoRow label="Storage Key" value={d.metadataJson?.storageKey as string} mono />}
+          {(d.metadataJson?.sourceProviderRegion as string | undefined) && <InfoRow label="来源区域" value={d.metadataJson?.sourceProviderRegion as string} />}
+        </div>
+      )}
+
+      {/* Input Assets section */}
+      {Array.isArray(d.inputAssets) && d.inputAssets.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>
+            参考素材 ({d.inputAssets.length})
+          </div>
+          {d.assetRegionBridgeRequired && (
+            <div style={{ padding: '6px 8px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, fontSize: 11, color: '#fcd34d' }}>
+              ⚠ asset_region_bridge_required
+              {d.assetRegionBridgeReason && <div style={{ color: '#fbbf24', marginTop: 2, fontSize: 10 }}>{d.assetRegionBridgeReason}</div>}
+            </div>
+          )}
+          {d.inputAssets.map((a) => (
+            <div key={a.assetId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6 }}>
+              <span style={{ fontSize: 14 }}>{a.kind === 'image' ? '🖼️' : a.kind === 'video' ? '🎬' : '📦'}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.assetId.slice(0, 12)}…</div>
+                <div style={{ fontSize: 10, color: '#6b7280' }}>{a.storageRegion ?? 'cn'} / {a.sourceProviderRegion ?? 'cn'}</div>
+              </div>
+              {onRemoveInputAsset && (
+                <button
+                  onClick={() => onRemoveInputAsset(node!.id, a.assetId)}
+                  title="删除此参考素材"
+                  style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 2 }}
+                >✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Error info */}
       {d.status === 'failed' && (d.errorMessage || d.errorCode || d.upstreamMessage) && (
@@ -244,11 +288,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function InfoRow({ label, value, mono, copyable }: { label: string; value: string; mono?: boolean; copyable?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => window.prompt('复制:', value))
+  }
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
       <span style={{ fontSize: 11, color: '#6b7280', flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: mono ? 'monospace' : 'inherit', wordBreak: 'break-all', textAlign: 'right' }}>{value}</span>
+      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+        <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: mono ? 'monospace' : 'inherit', wordBreak: 'break-all', textAlign: 'right' }}>{value.length > 40 ? value.slice(0, 38) + '…' : value}</span>
+        {copyable && (
+          <button onClick={handleCopy} title="复制" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: copied ? '#6ee7b7' : '#4b5563', padding: 0, flexShrink: 0 }}>
+            {copied ? '✓' : '⎘'}
+          </button>
+        )}
+      </span>
     </div>
   )
 }
