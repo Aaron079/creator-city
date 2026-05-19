@@ -5,6 +5,8 @@ import type { CanvasV2NodeData, CanvasV2NodeKind } from '@/lib/canvas-v2/canvasV
 
 type Props = {
   node: { id: string; data: CanvasV2NodeData } | null
+  projectId?: string
+  workflowId?: string
   onClose: () => void
   onSave: (nodeId: string, updates: Partial<CanvasV2NodeData>) => void
   onGenerate: (nodeId: string, kind: CanvasV2NodeKind, prompt: string, providerId?: string) => Promise<void>
@@ -23,7 +25,19 @@ const EXECUTOR_LABELS: Record<string, string> = {
   vercel: '🔵 Vercel',
 }
 
-export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteNode, onRemoveInputAsset }: Props) {
+const PROJECT_REQUIRED_CODE = 'canvas_v2_project_required'
+const PROJECT_REQUIRED_MESSAGE = '当前画布未关联项目，无法生成。请先创建或选择项目。'
+const PROJECT_REQUIRED_DETAIL = `错误码：${PROJECT_REQUIRED_CODE}\n说明：${PROJECT_REQUIRED_MESSAGE}\nmissingFields: ["projectId"]`
+
+function readMissingFields(d: CanvasV2NodeData) {
+  if (Array.isArray(d.missingFields)) return d.missingFields
+  const metadataMissingFields = d.metadataJson?.missingFields
+  return Array.isArray(metadataMissingFields)
+    ? metadataMissingFields.filter((value): value is string => typeof value === 'string')
+    : []
+}
+
+export function CanvasV2Inspector({ node, projectId, workflowId, onClose, onSave, onGenerate, onDeleteNode, onRemoveInputAsset }: Props) {
   const [prompt, setPrompt] = useState('')
   const [title, setTitle] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -44,8 +58,19 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
 
   const d = node.data
   const canGenerate = d.kind === 'image' || d.kind === 'video' || d.kind === 'generation'
+  const hasProjectBinding = Boolean(projectId || d.projectId)
+  const generationDisabled = canGenerate && !hasProjectBinding
+  const generationDisabledReason = PROJECT_REQUIRED_MESSAGE
+  const missingFields = readMissingFields(d)
+  const isProjectRequiredError = generationDisabled || (d.errorCode === 'missing_generation_input' && missingFields.includes('projectId'))
+  const displayErrorCode = isProjectRequiredError && d.errorCode === 'missing_generation_input' ? PROJECT_REQUIRED_CODE : d.errorCode
+  const displayErrorMessage = isProjectRequiredError ? PROJECT_REQUIRED_MESSAGE : d.errorMessage
 
   async function handleGenerate() {
+    if (!hasProjectBinding) {
+      setError(PROJECT_REQUIRED_DETAIL)
+      return
+    }
     if (!prompt.trim()) { setError('请输入 Prompt'); return }
     setError('')
     setGenerating(true)
@@ -64,7 +89,22 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
   }
 
   function handleCopyDiag() {
-    const payload = JSON.stringify(d, null, 2)
+    const diagnostic = hasProjectBinding
+      ? d
+      : {
+          ...d,
+          projectId: d.projectId ?? projectId ?? null,
+          workflowId: d.workflowId ?? workflowId ?? null,
+          errorCode: PROJECT_REQUIRED_CODE,
+          errorMessage: PROJECT_REQUIRED_MESSAGE,
+          missingFields: ['projectId'],
+          metadataJson: {
+            ...d.metadataJson,
+            errorCode: PROJECT_REQUIRED_CODE,
+            missingFields: ['projectId'],
+          },
+        }
+    const payload = JSON.stringify(diagnostic, null, 2)
     navigator.clipboard.writeText(payload).then(() => {
       setCopyDone(true)
       setTimeout(() => setCopyDone(false), 2000)
@@ -133,6 +173,8 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
 
       {/* Metadata fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <InfoRow label="Project ID" value={d.projectId ?? projectId ?? '未关联项目'} mono />
+        <InfoRow label="Workflow ID" value={d.workflowId ?? workflowId ?? '未绑定 workflow'} mono />
         {d.providerId && <InfoRow label="Provider" value={d.providerId} />}
         {d.providerRegion && <InfoRow label="Provider 区域" value={d.providerRegion} />}
         {d.executionRegion && <InfoRow label="执行区域" value={d.executionRegion} />}
@@ -185,11 +227,18 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
         </div>
       )}
 
+      {canGenerate && !hasProjectBinding && (
+        <div style={{ padding: '8px 10px', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 8, color: '#fcd34d', fontSize: 12, lineHeight: 1.5 }}>
+          <div style={{ fontWeight: 800 }}>错误码：{PROJECT_REQUIRED_CODE}</div>
+          <div>说明：{PROJECT_REQUIRED_MESSAGE}</div>
+        </div>
+      )}
+
       {/* Error info */}
       {d.status === 'failed' && (d.errorMessage || d.errorCode || d.upstreamMessage) && (
         <div style={{ padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {d.errorCode && <span style={{ color: '#f87171', fontSize: 11, fontWeight: 700 }}>{d.errorCode}</span>}
-          {d.errorMessage && <span style={{ color: '#fca5a5', fontSize: 12 }}>{d.errorMessage}</span>}
+          {displayErrorCode && <span style={{ color: '#f87171', fontSize: 11, fontWeight: 700 }}>{displayErrorCode}</span>}
+          {displayErrorMessage && <span style={{ color: '#fca5a5', fontSize: 12 }}>{displayErrorMessage}</span>}
           {d.upstreamMessage && (
             <details style={{ cursor: 'pointer' }}>
               <summary style={{ color: '#f87171', fontSize: 11, fontWeight: 600 }}>上游消息</summary>
@@ -215,7 +264,7 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
 
       {/* Error from generate action */}
       {error && (
-        <div style={{ padding: '7px 10px', background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, color: '#fca5a5', fontSize: 12 }}>
+        <div style={{ padding: '7px 10px', background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, color: '#fca5a5', fontSize: 12, whiteSpace: 'pre-line' }}>
           {error}
         </div>
       )}
@@ -231,8 +280,9 @@ export function CanvasV2Inspector({ node, onClose, onSave, onGenerate, onDeleteN
         {canGenerate && (
           <button
             onClick={handleGenerate}
-            disabled={generating}
-            style={{ flex: 1, padding: '8px 0', background: generating ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating ? '#6b7280' : '#fff', fontSize: 13, cursor: generating ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+            disabled={generating || generationDisabled}
+            title={generationDisabled ? generationDisabledReason : undefined}
+            style={{ flex: 1, padding: '8px 0', background: generating || generationDisabled ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating || generationDisabled ? '#6b7280' : '#fff', fontSize: 13, cursor: generating || generationDisabled ? 'not-allowed' : 'pointer', fontWeight: 700 }}
           >
             {generating ? '生成中…' : '生成'}
           </button>

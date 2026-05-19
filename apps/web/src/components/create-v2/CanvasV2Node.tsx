@@ -22,6 +22,14 @@ const EXECUTOR_BADGE: Record<string, { label: string; color: string; bg: string;
   vercel: { label: '🔵 Vercel', color: '#93c5fd', bg: 'rgba(59,130,246,.12)', border: 'rgba(59,130,246,.25)' },
 }
 
+const PROJECT_REQUIRED_CODE = 'canvas_v2_project_required'
+const PROJECT_REQUIRED_MESSAGE = '当前画布未关联项目，无法生成。请先创建或选择项目。'
+
+function hasProjectMissingField(data: CanvasV2NodeData) {
+  const fields = Array.isArray(data.missingFields) ? data.missingFields : data.metadataJson?.missingFields
+  return Array.isArray(fields) && fields.includes('projectId')
+}
+
 export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeProps<Node<CanvasV2NodeData>>) {
   const [imgError, setImgError] = useState(false)
   const [assetImgError, setAssetImgError] = useState(false)
@@ -34,6 +42,11 @@ export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeP
   const hasVideo = isVideo && !!data.resultVideoUrl
   const executor = data.executorKind ? EXECUTOR_BADGE[data.executorKind] : null
   const assetThumbnail = isAsset && !assetImgError ? (data.thumbnailUrl ?? data.stableUrl ?? data.resolvedUrl) : undefined
+  const canGenerate = data.kind === 'image' || data.kind === 'video' || data.kind === 'generation'
+  const needsProjectBinding = canGenerate && !data.projectId
+  const isProjectRequiredError = needsProjectBinding || (data.errorCode === 'missing_generation_input' && hasProjectMissingField(data))
+  const displayErrorCode = isProjectRequiredError && data.errorCode === 'missing_generation_input' ? PROJECT_REQUIRED_CODE : data.errorCode
+  const displayErrorMessage = isProjectRequiredError ? PROJECT_REQUIRED_MESSAGE : data.errorMessage
 
   return (
     <div style={{
@@ -162,11 +175,21 @@ export const CanvasV2Node = memo(function CanvasV2Node({ data, selected }: NodeP
         </div>
       )}
 
+      {needsProjectBinding && status !== 'failed' && (
+        <div
+          title={PROJECT_REQUIRED_MESSAGE}
+          style={{ margin: '6px 12px', padding: '6px 8px', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.28)', borderRadius: 6, color: '#fcd34d', fontSize: 11, lineHeight: 1.4 }}
+        >
+          <div style={{ fontWeight: 800 }}>{PROJECT_REQUIRED_CODE}</div>
+          <div>{PROJECT_REQUIRED_MESSAGE}</div>
+        </div>
+      )}
+
       {/* Error display */}
       {status === 'failed' && (data.errorMessage || data.errorCode) && (
         <div style={{ margin: '6px 12px', padding: '6px 8px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6 }}>
-          {data.errorCode && <div style={{ color: '#f87171', fontSize: 10, fontWeight: 700, marginBottom: 2 }}>{data.errorCode}</div>}
-          {data.errorMessage && <div style={{ color: '#fca5a5', fontSize: 11 }}>{String(data.errorMessage).slice(0, 100)}</div>}
+          {displayErrorCode && <div style={{ color: '#f87171', fontSize: 10, fontWeight: 700, marginBottom: 2 }}>{displayErrorCode}</div>}
+          {displayErrorMessage && <div style={{ color: '#fca5a5', fontSize: 11 }}>{String(displayErrorMessage).slice(0, 100)}</div>}
         </div>
       )}
 

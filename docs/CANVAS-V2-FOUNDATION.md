@@ -120,7 +120,17 @@ DB upsert via Prisma (parallel, non-transactional)
 
 ---
 
-## 5. Inspector Panel Fields
+## 5. Canvas V2 项目绑定规则
+
+1. `/create-v2?projectId=xxx` 是正式项目画布。Canvas V2 必须通过该 `projectId` 加载、保存、生成并写回同一项目下的 `CanvasWorkflow` / `CanvasNode` / `CanvasEdge`。
+2. `/create-v2` 无 `projectId` 是临时画布，只能编辑，不能生成。Image / Video / Generation 节点的生成按钮必须禁用，并提示 `canvas_v2_project_required`。
+3. 生成前必须有 `projectId`。生成请求还必须携带同一上下文中的 `workflowId`、`nodeId`、`prompt`、`providerId`、`providerRegion`、`executionRegion`、`storageRegion`、`executorKind`、`aspectRatio`、`resolution`。
+4. `/create` 的 Canvas V2 Beta 入口必须携带当前真实 `projectId`，优先使用 URL `projectId`，其次使用当前项目状态；拿不到项目时不能跳进可生成流程。
+5. 后续可以支持“从临时画布创建项目”，将临时节点迁移到新项目后再开启生成。
+
+---
+
+## 6. Inspector Panel Fields
 
 | Field | Editable | Description |
 |---|---|---|
@@ -149,7 +159,7 @@ DB upsert via Prisma (parallel, non-transactional)
 
 ---
 
-## 6. Regional Execution Fields
+## 7. Regional Execution Fields
 
 Creator City supports dual-region AI execution:
 
@@ -167,7 +177,7 @@ The node card shows region badges and an executor badge (🔴 CN FC or 🔵 Verc
 
 ---
 
-## 7. Keyboard Shortcuts
+## 8. Keyboard Shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -179,7 +189,7 @@ The node card shows region badges and an executor badge (🔴 CN FC or 🔵 Verc
 
 ---
 
-## 8. File Structure
+## 9. File Structure
 
 ```
 apps/web/src/
@@ -196,7 +206,7 @@ apps/web/src/
 
 ---
 
-## 9. Roadmap
+## 10. Roadmap
 
 1. **Auto-layout** — dagre/elk layout algorithm for imported workflows
 2. **Asset Bridge** — drag assets from the asset library onto canvas nodes

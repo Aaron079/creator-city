@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DEFAULT_NODES, DEFAULT_EDGES } from '@/components/canvas/CanvasProvider'
 import { AudioDesk } from '@/components/audio/AudioDesk'
@@ -76,6 +76,7 @@ import { buildProjectStartChecklist } from '@/lib/projects/start-checklist'
 import { useProfileStore } from '@/store/profile.store'
 import { useProjectRoleStore } from '@/store/project-role.store'
 import { useProjectTemplateStore } from '@/store/project-template.store'
+import { useProjectStore } from '@/store/project.store'
 import canvasStyles from '@/components/create/canvas.module.css'
 import {
   SHOT_FRAMES, ANGLES, MOVEMENT_GROUPS,
@@ -5874,6 +5875,60 @@ function LeftPanel({
 
 // ─── Page (three-column layout) ────────────────────────────────────────────────
 
+function CanvasV2BetaEntry({
+  deliveryProjectId,
+  hasRealProjectContext,
+}: {
+  deliveryProjectId: string
+  hasRealProjectContext: boolean
+}) {
+  const searchParams = useSearchParams()
+  const currentProject = useProjectStore((s) => s.currentProject)
+  const searchParamProjectId = searchParams.get('projectId')?.trim() ?? ''
+  const canvasV2ProjectId = searchParamProjectId || currentProject?.id || (hasRealProjectContext ? deliveryProjectId : '')
+  const canvasV2Href = canvasV2ProjectId ? `/create-v2?projectId=${encodeURIComponent(canvasV2ProjectId)}` : ''
+
+  if (!canvasV2Href) {
+    return (
+      <button
+        type="button"
+        className="canvas-v2-beta-btn"
+        disabled
+        title="请先创建或选择项目"
+        style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 9999, fontSize: '12px', padding: '6px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: 'rgba(255,255,255,0.38)', textDecoration: 'none', fontWeight: 600, backdropFilter: 'blur(8px)', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'not-allowed' }}
+      >
+        <span>先创建/选择项目后打开 Canvas V2</span>
+        <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(255,255,255,0.08)', borderRadius: 6, color: 'rgba(255,255,255,0.5)' }}>Beta</span>
+      </button>
+    )
+  }
+
+  return (
+    <a
+      href={canvasV2Href}
+      className="canvas-v2-beta-btn"
+      style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 9999, fontSize: '12px', padding: '6px 12px', background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: '8px', color: '#c4b5fd', textDecoration: 'none', fontWeight: 600, backdropFilter: 'blur(8px)', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}
+    >
+      <span>Canvas V2</span>
+      <span style={{ fontSize: 10, padding: '1px 5px', background: 'linear-gradient(90deg,#7c3aed,#4f46e5)', borderRadius: 6, color: '#fff' }}>Beta</span>
+    </a>
+  )
+}
+
+function CanvasV2BetaEntryFallback() {
+  return (
+    <button
+      type="button"
+      className="canvas-v2-beta-btn"
+      disabled
+      style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 9999, fontSize: '12px', padding: '6px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: 'rgba(255,255,255,0.38)', textDecoration: 'none', fontWeight: 600, backdropFilter: 'blur(8px)', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'not-allowed' }}
+    >
+      <span>先创建/选择项目后打开 Canvas V2</span>
+      <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(255,255,255,0.08)', borderRadius: 6, color: 'rgba(255,255,255,0.5)' }}>Beta</span>
+    </button>
+  )
+}
+
 export default function CreatePage() {
   const { roleOverride, setRoleOverride, clearRoleOverride } = useMockRoleMode('creator')
   const router = useRouter()
@@ -8831,14 +8886,9 @@ export default function CreatePage() {
       <div className={`${canvasStyles.scope} create-obsidian-bg flex h-screen overflow-hidden text-white`}>
         {directorDeskMode === 'canvas' ? (
           <div className="h-screen min-h-0 w-full overflow-hidden" style={{ position: 'relative' }}>
-            <a
-              href="/create-v2"
-              className="canvas-v2-beta-btn"
-              style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 9999, fontSize: '12px', padding: '6px 12px', background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: '8px', color: '#c4b5fd', textDecoration: 'none', fontWeight: 600, backdropFilter: 'blur(8px)', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <span>Canvas V2</span>
-              <span style={{ fontSize: 10, padding: '1px 5px', background: 'linear-gradient(90deg,#7c3aed,#4f46e5)', borderRadius: 6, color: '#fff' }}>Beta</span>
-            </a>
+            <Suspense fallback={<CanvasV2BetaEntryFallback />}>
+              <CanvasV2BetaEntry deliveryProjectId={deliveryProjectId} hasRealProjectContext={hasRealProjectContext} />
+            </Suspense>
             <Suspense fallback={<div className="p-6 text-sm text-white/50">加载创作画布...</div>}>
               <VisualCanvasWorkspace
                 projectTitle={deliveryProjectTitle}

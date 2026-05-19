@@ -36,6 +36,9 @@ export type CanvasV2NodeData = {
   executorKind?: 'aliyun_fc' | 'vercel' | string
   generationJobId?: string
   upstreamMessage?: string
+  aspectRatio?: string
+  resolution?: string
+  missingFields?: string[]
   metadataJson?: Record<string, unknown>
   paramsJson?: Record<string, unknown>
   // Asset node fields
@@ -82,6 +85,7 @@ export type CanvasNodeRecord = {
   resultImageUrl?: string | null
   resultVideoUrl?: string | null
   errorMessage?: string | null
+  providerId?: string | null
   metadataJson?: Record<string, unknown> | null
   paramsJson?: Record<string, unknown> | null
 }
@@ -125,6 +129,17 @@ export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] 
     const upstreamMessage = typeof meta.upstreamMessage === 'string' ? meta.upstreamMessage
       : typeof meta.upstream_message === 'string' ? meta.upstream_message
       : undefined
+    const missingFields = Array.isArray(meta.missingFields)
+      ? meta.missingFields.filter((value): value is string => typeof value === 'string')
+      : undefined
+    const aspectRatio = typeof meta.aspectRatio === 'string' ? meta.aspectRatio
+      : typeof params.aspectRatio === 'string' ? params.aspectRatio
+      : typeof params.ratio === 'string' ? params.ratio
+      : undefined
+    const resolution = typeof meta.resolution === 'string' ? meta.resolution
+      : typeof params.resolution === 'string' ? params.resolution
+      : typeof params.size === 'string' ? params.size
+      : undefined
 
     return {
       id: r.nodeId,
@@ -139,7 +154,7 @@ export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] 
         providerRegion: (typeof meta.providerRegion === 'string' ? meta.providerRegion : undefined) as CanvasV2NodeData['providerRegion'],
         executionRegion: (typeof meta.executionRegion === 'string' ? meta.executionRegion : undefined) as CanvasV2NodeData['executionRegion'],
         storageRegion: (typeof meta.storageRegion === 'string' ? meta.storageRegion : undefined) as CanvasV2NodeData['storageRegion'],
-        providerId: typeof meta.providerId === 'string' ? meta.providerId : (typeof params.model === 'string' ? params.model : undefined),
+        providerId: typeof meta.providerId === 'string' ? meta.providerId : (typeof r.providerId === 'string' ? r.providerId : (typeof params.model === 'string' ? params.model : undefined)),
         resultImageUrl: typeof r.resultImageUrl === 'string' ? r.resultImageUrl : undefined,
         resultVideoUrl: typeof r.resultVideoUrl === 'string' ? r.resultVideoUrl : undefined,
         thumbnailUrl: typeof meta.thumbnailUrl === 'string' ? meta.thumbnailUrl : (typeof r.resultImageUrl === 'string' ? r.resultImageUrl : undefined),
@@ -151,6 +166,9 @@ export function canvasNodesToFlowNodes(records: CanvasNodeRecord[]): FlowNode[] 
         executorKind,
         generationJobId,
         upstreamMessage,
+        aspectRatio,
+        resolution,
+        missingFields,
         // Asset node fields
         stableUrl: typeof meta.stableUrl === 'string' ? meta.stableUrl : undefined,
         resolvedUrl: typeof meta.resolvedUrl === 'string' ? meta.resolvedUrl : undefined,
@@ -195,6 +213,7 @@ export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, pr
     nodeId: n.id,
     kind: n.data.kind,
     title: n.data.title ?? null,
+    providerId: n.data.providerId ?? null,
     prompt: n.data.prompt ?? null,
     status: n.data.status ?? 'idle',
     x: n.position.x,
@@ -218,6 +237,9 @@ export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, pr
       generationJobId: n.data.generationJobId,
       errorCode: n.data.errorCode,
       upstreamMessage: n.data.upstreamMessage,
+      aspectRatio: n.data.aspectRatio,
+      resolution: n.data.resolution,
+      missingFields: n.data.missingFields,
       // Asset node fields
       stableUrl: n.data.stableUrl,
       resolvedUrl: n.data.resolvedUrl,
@@ -227,7 +249,11 @@ export function flowNodesToCanvasNodes(nodes: FlowNode[], workflowId: string, pr
       assetRegionBridgeRequired: n.data.assetRegionBridgeRequired,
       assetRegionBridgeReason: n.data.assetRegionBridgeReason,
     },
-    paramsJson: { model: n.data.providerId ?? null },
+    paramsJson: {
+      model: n.data.providerId ?? null,
+      aspectRatio: n.data.aspectRatio ?? null,
+      resolution: n.data.resolution ?? null,
+    },
   }))
 }
 

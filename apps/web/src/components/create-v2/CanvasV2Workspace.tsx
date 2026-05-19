@@ -19,6 +19,7 @@ import { CanvasV2Node } from './CanvasV2Node'
 import { CanvasV2Toolbar } from './CanvasV2Toolbar'
 import { CanvasV2Inspector } from './CanvasV2Inspector'
 import { CanvasV2AssetLibrary } from './CanvasV2AssetLibrary'
+import { CanvasV2ProjectActions } from './CanvasV2ProjectActions'
 import {
   normalizeCanvasV2Node,
   flowNodesToCanvasNodes,
@@ -41,6 +42,39 @@ const PROVIDER_BY_KIND: Partial<Record<CanvasV2NodeKind, string>> = {
   generation: 'volcengine-seedream-image',
 }
 
+const PROJECT_REQUIRED_CODE = 'canvas_v2_project_required'
+const PROJECT_REQUIRED_MESSAGE = '当前是临时画布，未关联项目，无法生成。请先创建或选择项目。'
+const DEFAULT_ASPECT_RATIO = '16:9'
+const DEFAULT_IMAGE_RESOLUTION = '1024x1024'
+const DEFAULT_VIDEO_RESOLUTION = '720p'
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function regionValue(value: unknown): 'cn' | 'global' | undefined {
+  return value === 'cn' || value === 'global' ? value : undefined
+}
+
+function defaultExecutorKind(providerRegion: 'cn' | 'global') {
+  return providerRegion === 'cn' ? 'aliyun_fc' : 'vercel'
+}
+
+function getNodeProviderContext(node: FlowNode | undefined, kind: CanvasV2NodeKind, providerId?: string) {
+  const providerRegion = regionValue(node?.data.providerRegion) ?? 'cn'
+  const executionRegion = regionValue(node?.data.executionRegion) ?? providerRegion
+  const storageRegion = regionValue(node?.data.storageRegion) ?? executionRegion
+  return {
+    providerId: providerId ?? stringValue(node?.data.providerId) ?? PROVIDER_BY_KIND[kind] ?? 'volcengine-seedream-image',
+    providerRegion,
+    executionRegion,
+    storageRegion,
+    executorKind: stringValue(node?.data.executorKind) ?? defaultExecutorKind(providerRegion),
+    aspectRatio: stringValue(node?.data.aspectRatio) ?? stringValue(node?.data.paramsJson?.aspectRatio) ?? DEFAULT_ASPECT_RATIO,
+    resolution: stringValue(node?.data.resolution) ?? stringValue(node?.data.paramsJson?.resolution) ?? (kind === 'video' ? DEFAULT_VIDEO_RESOLUTION : DEFAULT_IMAGE_RESOLUTION),
+  }
+}
+
 type LoadState = 'init' | 'loading' | 'loaded' | 'error' | 'no-project'
 
 type CanvasApiResponse = {
@@ -49,6 +83,50 @@ type CanvasApiResponse = {
   edges?: unknown[]
   workflowId?: string
   project?: unknown
+}
+
+type GenerationApiResponse = {
+  success?: boolean
+  status?: string
+  async?: boolean
+  resultImageUrl?: string
+  resultVideoUrl?: string
+  stableUrl?: string
+  assetId?: string
+  model?: string
+  providerId?: string
+  providerRegion?: string
+  executionRegion?: string
+  storageRegion?: string
+  executorKind?: string
+  generationJobId?: string
+  jobId?: string
+  errorCode?: string
+  message?: string
+  upstreamMessage?: string
+  missingFields?: string[]
+  missing?: string[]
+}
+
+function generationMissingFields(data: GenerationApiResponse) {
+  const fields = Array.isArray(data.missingFields) ? data.missingFields : data.missing
+  return Array.isArray(fields) ? fields.filter((value): value is string => typeof value === 'string') : []
+}
+
+function generationErrorForCanvasV2(data: GenerationApiResponse) {
+  const missingFields = generationMissingFields(data)
+  if (data.errorCode === 'missing_generation_input' && missingFields.includes('projectId')) {
+    return {
+      errorCode: PROJECT_REQUIRED_CODE,
+      errorMessage: '当前画布未关联项目，无法生成。请先创建或选择项目。',
+      missingFields,
+    }
+  }
+  return {
+    errorCode: data.errorCode ?? 'generation_failed',
+    errorMessage: data.message ?? data.errorCode ?? '生成失败',
+    missingFields,
+  }
 }
 
 type Props = {
@@ -140,6 +218,10 @@ function CanvasV2WorkspaceInner({
             id: n.nodeId,
             kind: n.kind,
             title: n.title,
+            projectId,
+            workflowId: wfId,
+            providerId: n.providerId,
+            model: n.providerId,
             prompt: n.prompt,
             status: n.status,
             x: n.x,
@@ -149,6 +231,9 @@ function CanvasV2WorkspaceInner({
             resultImageUrl: n.resultImageUrl,
             resultVideoUrl: n.resultVideoUrl,
             errorMessage: n.errorMessage,
+            aspectRatio: n.metadataJson?.aspectRatio,
+            resolution: n.metadataJson?.resolution,
+            assetId: n.metadataJson?.assetId,
             metadataJson: n.metadataJson,
             paramsJson: n.paramsJson,
           })),
@@ -217,12 +302,24 @@ function CanvasV2WorkspaceInner({
           if (selected.length === 0) return ns
           const copies: FlowNode[] = selected.map((n) => {
             const newId = `${n.data.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const nextWorkflowId = resolvedWorkflowId ?? workflowId
             return {
               ...n,
               id: newId,
               position: { x: n.position.x + 40, y: n.position.y + 40 },
               selected: false,
-              data: { ...n.data, nodeId: newId },
+              data: {
+                ...n.data,
+                nodeId: newId,
+                projectId: projectId ?? n.data.projectId,
+                workflowId: nextWorkflowId ?? n.data.workflowId,
+                metadataJson: {
+                  ...n.data.metadataJson,
+                  nodeId: newId,
+                  projectId: projectId ?? n.data.projectId,
+                  workflowId: nextWorkflowId ?? n.data.workflowId,
+                },
+              },
             }
           })
           scheduleSave()
@@ -238,7 +335,7 @@ function CanvasV2WorkspaceInner({
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [saveCanvas, scheduleSave, setNodes, setEdges])
+  }, [projectId, resolvedWorkflowId, saveCanvas, scheduleSave, setNodes, setEdges, workflowId])
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -311,6 +408,8 @@ function CanvasV2WorkspaceInner({
     const jitter = () => (Math.random() - 0.5) * 120
 
     const id = `${kind}-${Date.now()}`
+    const wfId = resolvedWorkflowId ?? workflowId
+    const generative = kind === 'image' || kind === 'video' || kind === 'generation'
     const kindTitles: Record<CanvasV2NodeKind, string> = {
       text: '文本节点', image: '图像节点', video: '视频节点', asset: '素材节点', generation: '生成节点',
     }
@@ -326,8 +425,25 @@ function CanvasV2WorkspaceInner({
         providerRegion: (kind === 'image' || kind === 'video' || kind === 'generation') ? 'cn' : undefined,
         executionRegion: (kind === 'image' || kind === 'video' || kind === 'generation') ? 'cn' : undefined,
         storageRegion: (kind === 'image' || kind === 'video' || kind === 'generation') ? 'cn' : undefined,
+        executorKind: generative ? 'aliyun_fc' : undefined,
+        aspectRatio: generative ? DEFAULT_ASPECT_RATIO : undefined,
+        resolution: generative ? (kind === 'video' ? DEFAULT_VIDEO_RESOLUTION : DEFAULT_IMAGE_RESOLUTION) : undefined,
         projectId,
-        workflowId: resolvedWorkflowId ?? workflowId,
+        workflowId: wfId,
+        metadataJson: {
+          nodeId: id,
+          projectId,
+          workflowId: wfId,
+          providerId: PROVIDER_BY_KIND[kind],
+          ...(generative ? {
+            providerRegion: 'cn',
+            executionRegion: 'cn',
+            storageRegion: 'cn',
+            executorKind: 'aliyun_fc',
+            aspectRatio: DEFAULT_ASPECT_RATIO,
+            resolution: kind === 'video' ? DEFAULT_VIDEO_RESOLUTION : DEFAULT_IMAGE_RESOLUTION,
+          } : {}),
+        },
       }),
     }
     setNodes((ns) => [...ns, newNode])
@@ -336,8 +452,51 @@ function CanvasV2WorkspaceInner({
   }
 
   function updateNode(nodeId: string, updates: Partial<CanvasV2NodeData>) {
-    setNodes((ns) => ns.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n))
-    setSelectedNode((prev) => prev?.id === nodeId ? { ...prev, data: { ...prev.data, ...updates } } : prev)
+    const contextualWorkflowId = resolvedWorkflowId ?? workflowId ?? updates.workflowId
+    const contextUpdates: Partial<CanvasV2NodeData> = projectId
+      ? {
+          projectId,
+          ...(contextualWorkflowId ? { workflowId: contextualWorkflowId } : {}),
+          metadataJson: {
+            ...updates.metadataJson,
+            projectId,
+            ...(contextualWorkflowId ? { workflowId: contextualWorkflowId } : {}),
+            nodeId,
+          },
+        }
+      : {}
+    setNodes((ns) => ns.map((n) => {
+      if (n.id !== nodeId) return n
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          ...updates,
+          ...contextUpdates,
+          metadataJson: {
+            ...n.data.metadataJson,
+            ...updates.metadataJson,
+            ...contextUpdates.metadataJson,
+          },
+        },
+      }
+    }))
+    setSelectedNode((prev) => {
+      if (!prev || prev.id !== nodeId) return prev
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          ...updates,
+          ...contextUpdates,
+          metadataJson: {
+            ...prev.data.metadataJson,
+            ...updates.metadataJson,
+            ...contextUpdates.metadataJson,
+          },
+        },
+      }
+    })
     scheduleSave()
   }
 
@@ -427,52 +586,215 @@ function CanvasV2WorkspaceInner({
   }, [])
 
   async function handleGenerate(nodeId: string, kind: CanvasV2NodeKind, prompt: string, providerId?: string) {
-    updateNode(nodeId, { status: 'running', prompt, errorMessage: undefined })
     const node = nodes.find((n) => n.id === nodeId)
-    const pid = node?.data.projectId ?? projectId ?? ''
-    const wid = node?.data.workflowId ?? resolvedWorkflowId ?? workflowId ?? ''
+    const pid = projectId ?? node?.data.projectId ?? ''
+    if (!pid) {
+      throw new Error(`错误码：${PROJECT_REQUIRED_CODE}\n说明：${PROJECT_REQUIRED_MESSAGE}\nmissingFields: ["projectId"]`)
+    }
+
+    const metadataWorkflowId = stringValue(node?.data.metadataJson?.workflowId)
+    const workflowCandidates = [
+      { value: stringValue(node?.data.workflowId), source: 'node.data.workflowId' },
+      { value: resolvedWorkflowId ?? undefined, source: 'resolvedWorkflowId' },
+      { value: workflowId ?? undefined, source: 'url.workflowId' },
+      { value: metadataWorkflowId, source: 'metadataJson.workflowId' },
+      { value: pid, source: 'projectId_fallback' },
+    ]
+    const workflowContext = workflowCandidates.find((candidate) => candidate.value)
+    const wid = workflowContext?.value ?? pid
+    const providerContext = getNodeProviderContext(node, kind, providerId)
+    const generationPayload = {
+      projectId: pid,
+      workflowId: wid,
+      nodeId,
+      prompt,
+      providerId: providerContext.providerId,
+      providerRegion: providerContext.providerRegion,
+      executionRegion: providerContext.executionRegion,
+      storageRegion: providerContext.storageRegion,
+      executorKind: providerContext.executorKind,
+      aspectRatio: providerContext.aspectRatio,
+      resolution: providerContext.resolution,
+    }
+    const generationDiagnostic = {
+      projectId: pid,
+      workflowId: wid,
+      workflowIdSource: workflowContext?.source ?? 'projectId_fallback',
+      nodeId,
+      providerId: providerContext.providerId,
+      providerRegion: providerContext.providerRegion,
+      executionRegion: providerContext.executionRegion,
+      storageRegion: providerContext.storageRegion,
+      executorKind: providerContext.executorKind,
+      aspectRatio: providerContext.aspectRatio,
+      resolution: providerContext.resolution,
+      submittedAt: new Date().toISOString(),
+    }
+
+    updateNode(nodeId, {
+      status: 'running',
+      prompt,
+      errorMessage: undefined,
+      errorCode: undefined,
+      missingFields: undefined,
+      projectId: pid,
+      workflowId: wid,
+      providerId: providerContext.providerId,
+      providerRegion: providerContext.providerRegion,
+      executionRegion: providerContext.executionRegion,
+      storageRegion: providerContext.storageRegion,
+      executorKind: providerContext.executorKind,
+      aspectRatio: providerContext.aspectRatio,
+      resolution: providerContext.resolution,
+      metadataJson: {
+        ...node?.data.metadataJson,
+        ...generationDiagnostic,
+        canvasV2GenerationContext: generationDiagnostic,
+      },
+      paramsJson: {
+        ...node?.data.paramsJson,
+        model: providerContext.providerId,
+        aspectRatio: providerContext.aspectRatio,
+        resolution: providerContext.resolution,
+      },
+    })
     try {
       if (kind === 'video') {
         const resp = await fetch('/api/generate/video', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-          body: JSON.stringify({ prompt, providerId: providerId ?? 'volcengine-seedance-video', projectId: pid || undefined, nodeId, workflowId: wid || undefined }),
+          body: JSON.stringify(generationPayload),
         })
-        const data = await resp.json() as { success?: boolean; resultVideoUrl?: string; stableUrl?: string; assetId?: string; errorCode?: string; message?: string }
+        const data = await resp.json() as GenerationApiResponse
         if (data.success && (data.resultVideoUrl ?? data.stableUrl)) {
-          updateNode(nodeId, { status: 'succeeded', resultVideoUrl: data.resultVideoUrl ?? data.stableUrl, assetId: data.assetId })
+          updateNode(nodeId, {
+            status: 'succeeded',
+            resultVideoUrl: data.resultVideoUrl ?? data.stableUrl,
+            assetId: data.assetId,
+            generationJobId: data.generationJobId ?? data.jobId,
+            providerId: data.providerId ?? data.model ?? providerContext.providerId,
+            providerRegion: (data.providerRegion as 'cn' | 'global') ?? providerContext.providerRegion,
+            executionRegion: (data.executionRegion as 'cn' | 'global') ?? providerContext.executionRegion,
+            storageRegion: (data.storageRegion as 'cn' | 'global') ?? providerContext.storageRegion,
+            executorKind: data.executorKind ?? providerContext.executorKind,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              canvasV2GenerationContext: generationDiagnostic,
+              generationResult: data,
+            },
+          })
+        } else if (data.success && (data.status === 'queued' || data.async)) {
+          updateNode(nodeId, {
+            status: 'running',
+            generationJobId: data.generationJobId ?? data.jobId,
+            providerId: data.providerId ?? data.model ?? providerContext.providerId,
+            providerRegion: (data.providerRegion as 'cn' | 'global') ?? providerContext.providerRegion,
+            executionRegion: (data.executionRegion as 'cn' | 'global') ?? providerContext.executionRegion,
+            storageRegion: (data.storageRegion as 'cn' | 'global') ?? providerContext.storageRegion,
+            executorKind: data.executorKind ?? providerContext.executorKind,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              canvasV2GenerationContext: generationDiagnostic,
+              generationResult: data,
+            },
+          })
         } else {
-          updateNode(nodeId, { status: 'failed', errorMessage: data.message ?? data.errorCode ?? '视频生成失败', errorCode: data.errorCode })
+          const error = generationErrorForCanvasV2(data)
+          updateNode(nodeId, {
+            status: 'failed',
+            errorMessage: error.errorMessage,
+            errorCode: error.errorCode,
+            missingFields: error.missingFields,
+            generationJobId: data.generationJobId ?? data.jobId,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              errorCode: error.errorCode,
+              missingFields: error.missingFields,
+              canvasV2GenerationContext: generationDiagnostic,
+              lastError: data,
+            },
+          })
         }
       } else {
         const resp = await fetch('/api/generate/image', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-          body: JSON.stringify({ prompt, providerId: providerId ?? 'volcengine-seedream-image', projectId: pid || undefined, nodeId, workflowId: wid || undefined }),
+          body: JSON.stringify(generationPayload),
         })
-        const data = await resp.json() as {
-          success?: boolean; resultImageUrl?: string; stableUrl?: string; assetId?: string
-          model?: string; errorCode?: string; message?: string
-          providerRegion?: string; executionRegion?: string; storageRegion?: string
-          executorKind?: string; generationJobId?: string
-        }
+        const data = await resp.json() as GenerationApiResponse
         if (data.success && (data.resultImageUrl ?? data.stableUrl)) {
           updateNode(nodeId, {
             status: 'succeeded',
             resultImageUrl: data.resultImageUrl ?? data.stableUrl,
             thumbnailUrl: data.resultImageUrl ?? data.stableUrl,
             assetId: data.assetId,
-            providerId: data.model ?? providerId,
-            providerRegion: (data.providerRegion as 'cn' | 'global') ?? 'cn',
-            executionRegion: (data.executionRegion as 'cn' | 'global') ?? 'cn',
-            storageRegion: (data.storageRegion as 'cn' | 'global') ?? 'cn',
-            executorKind: data.executorKind,
-            generationJobId: data.generationJobId,
+            providerId: data.providerId ?? data.model ?? providerContext.providerId,
+            providerRegion: (data.providerRegion as 'cn' | 'global') ?? providerContext.providerRegion,
+            executionRegion: (data.executionRegion as 'cn' | 'global') ?? providerContext.executionRegion,
+            storageRegion: (data.storageRegion as 'cn' | 'global') ?? providerContext.storageRegion,
+            executorKind: data.executorKind ?? providerContext.executorKind,
+            generationJobId: data.generationJobId ?? data.jobId,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              canvasV2GenerationContext: generationDiagnostic,
+              generationResult: data,
+            },
+          })
+        } else if (data.success && (data.status === 'queued' || data.async)) {
+          updateNode(nodeId, {
+            status: 'running',
+            generationJobId: data.generationJobId ?? data.jobId,
+            providerId: data.providerId ?? data.model ?? providerContext.providerId,
+            providerRegion: (data.providerRegion as 'cn' | 'global') ?? providerContext.providerRegion,
+            executionRegion: (data.executionRegion as 'cn' | 'global') ?? providerContext.executionRegion,
+            storageRegion: (data.storageRegion as 'cn' | 'global') ?? providerContext.storageRegion,
+            executorKind: data.executorKind ?? providerContext.executorKind,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              canvasV2GenerationContext: generationDiagnostic,
+              generationResult: data,
+            },
           })
         } else {
-          updateNode(nodeId, { status: 'failed', errorMessage: data.message ?? data.errorCode ?? '生成失败', errorCode: data.errorCode })
+          const error = generationErrorForCanvasV2(data)
+          updateNode(nodeId, {
+            status: 'failed',
+            errorMessage: error.errorMessage,
+            errorCode: error.errorCode,
+            missingFields: error.missingFields,
+            generationJobId: data.generationJobId ?? data.jobId,
+            metadataJson: {
+              ...node?.data.metadataJson,
+              ...generationDiagnostic,
+              generationJobId: data.generationJobId ?? data.jobId,
+              errorCode: error.errorCode,
+              missingFields: error.missingFields,
+              canvasV2GenerationContext: generationDiagnostic,
+              lastError: data,
+            },
+          })
         }
       }
     } catch (err) {
-      updateNode(nodeId, { status: 'failed', errorMessage: err instanceof Error ? err.message : '生成请求失败' })
+      updateNode(nodeId, {
+        status: 'failed',
+        errorMessage: err instanceof Error ? err.message : '生成请求失败',
+        errorCode: 'canvas_v2_generate_request_failed',
+        metadataJson: {
+          ...node?.data.metadataJson,
+          ...generationDiagnostic,
+          errorCode: 'canvas_v2_generate_request_failed',
+          canvasV2GenerationContext: generationDiagnostic,
+        },
+      })
     }
   }
 
@@ -538,9 +860,21 @@ function CanvasV2WorkspaceInner({
         onDragStart={setDraggingAsset}
       />
 
+      {!projectId && (
+        <div style={{ position: 'absolute', top: 58, left: '50%', transform: 'translateX(-50%)', zIndex: 12, width: 'min(680px, calc(100% - 32px))', background: 'rgba(10,10,22,.94)', border: '1px solid rgba(245,158,11,.32)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 10px 32px rgba(0,0,0,.35)', backdropFilter: 'blur(14px)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ color: '#fcd34d', fontSize: 13, fontWeight: 800 }}>临时画布 · 未关联项目</span>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>请先选择或创建项目后再生成</span>
+          </div>
+          <CanvasV2ProjectActions variant="panel" />
+        </div>
+      )}
+
       {selectedNode && (
         <CanvasV2Inspector
           node={selectedNode}
+          projectId={projectId}
+          workflowId={resolvedWorkflowId ?? workflowId}
           onClose={() => setSelectedNode(null)}
           onSave={updateNode}
           onGenerate={handleGenerate}
@@ -556,6 +890,7 @@ function CanvasV2WorkspaceInner({
         {saveError && <span style={{ color: '#fca5a5', fontSize: 11 }}>— {saveError}</span>}
         {!projectId && <span style={{ color: '#4b5563', fontSize: 11 }}>· 临时画布</span>}
         {loadState === 'no-project' && <span style={{ color: '#4b5563', fontSize: 11 }}>· 未关联项目</span>}
+        {!projectId && <span style={{ color: '#fcd34d', fontSize: 11 }}>· 请先选择或创建项目后再生成</span>}
       </div>
 
       {/* Keyboard hints */}
