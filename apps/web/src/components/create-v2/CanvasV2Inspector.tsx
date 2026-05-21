@@ -171,18 +171,23 @@ export function CanvasV2Inspector({ node, projectId, workflowId, onClose, onSave
         />
       </Field>
 
-      {/* Metadata fields */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <InfoRow label="Project ID" value={d.projectId ?? projectId ?? '未关联项目'} mono />
-        <InfoRow label="Workflow ID" value={d.workflowId ?? workflowId ?? '未绑定 workflow'} mono />
-        {d.providerId && <InfoRow label="Provider" value={d.providerId} />}
-        {d.providerRegion && <InfoRow label="Provider 区域" value={d.providerRegion} />}
-        {d.executionRegion && <InfoRow label="执行区域" value={d.executionRegion} />}
-        {d.storageRegion && <InfoRow label="存储区域" value={d.storageRegion} />}
-        {d.executorKind && <InfoRow label="执行器" value={executorLabel ?? d.executorKind} />}
-        {d.generationJobId && <InfoRow label="生成任务 ID" value={d.generationJobId} mono />}
-        {d.assetId && <InfoRow label="Asset ID" value={d.assetId} mono copyable />}
-      </div>
+      {/* Metadata fields — collapsed by default */}
+      <details style={{ borderRadius: 8, border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden' }}>
+        <summary style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 11, color: '#6b7280', fontWeight: 600, background: 'rgba(255,255,255,.03)', userSelect: 'none', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span>▸</span> 元数据
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px' }}>
+          <InfoRow label="Project ID" value={d.projectId ?? projectId ?? '未关联项目'} mono />
+          <InfoRow label="Workflow ID" value={d.workflowId ?? workflowId ?? '未绑定 workflow'} mono />
+          {d.providerId && <InfoRow label="Provider" value={d.providerId} />}
+          {d.providerRegion && <InfoRow label="Provider 区域" value={d.providerRegion} />}
+          {d.executionRegion && <InfoRow label="执行区域" value={d.executionRegion} />}
+          {d.storageRegion && <InfoRow label="存储区域" value={d.storageRegion} />}
+          {d.executorKind && <InfoRow label="执行器" value={executorLabel ?? d.executorKind} />}
+          {d.generationJobId && <InfoRow label="生成任务 ID" value={d.generationJobId} mono />}
+          {d.assetId && <InfoRow label="Asset ID" value={d.assetId} mono copyable />}
+        </div>
+      </details>
 
       {/* Asset node extra fields */}
       {d.kind === 'asset' && (
@@ -269,41 +274,41 @@ export function CanvasV2Inspector({ node, projectId, workflowId, onClose, onSave
         </div>
       )}
 
-      {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8, flexShrink: 0 }}>
-        <button
-          onClick={handleSave}
-          style={{ flex: 1, padding: '8px 0', background: 'rgba(124,58,237,.18)', border: '1px solid rgba(124,58,237,.4)', borderRadius: 8, color: '#c4b5fd', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
-        >
-          保存节点
-        </button>
+      {/* Primary action: 生成 */}
+      <div style={{ marginTop: 'auto', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
         {canGenerate && (
           <button
             onClick={handleGenerate}
             disabled={generating || generationDisabled}
             title={generationDisabled ? generationDisabledReason : undefined}
-            style={{ flex: 1, padding: '8px 0', background: generating || generationDisabled ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating || generationDisabled ? '#6b7280' : '#fff', fontSize: 13, cursor: generating || generationDisabled ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+            style={{ width: '100%', padding: '10px 0', background: generating || generationDisabled ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)', border: '1px solid rgba(124,58,237,.5)', borderRadius: 8, color: generating || generationDisabled ? '#6b7280' : '#fff', fontSize: 13, cursor: generating || generationDisabled ? 'not-allowed' : 'pointer', fontWeight: 700, letterSpacing: '0.02em' }}
           >
             {generating ? '生成中…' : '生成'}
           </button>
         )}
-      </div>
 
-      {/* Secondary buttons */}
-      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-        <button
-          onClick={handleCopyDiag}
-          style={{ flex: 1, padding: '7px 0', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, color: copyDone ? '#6ee7b7' : '#64748b', fontSize: 12, cursor: 'pointer' }}
-        >
-          {copyDone ? '✓ 已复制' : '复制诊断 JSON'}
-        </button>
-        <button
-          onClick={handleDelete}
-          style={{ flex: 1, padding: '7px 0', background: confirmDelete ? 'rgba(239,68,68,.18)' : 'rgba(255,255,255,.04)', border: `1px solid ${confirmDelete ? 'rgba(239,68,68,.5)' : 'rgba(255,255,255,.1)'}`, borderRadius: 8, color: confirmDelete ? '#fca5a5' : '#64748b', fontSize: 12, cursor: 'pointer' }}
-          onBlur={() => setTimeout(() => setConfirmDelete(false), 300)}
-        >
-          {confirmDelete ? '确认删除？' : '删除节点'}
-        </button>
+        {/* Secondary row: 保存 + 诊断 + 删除 */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={handleSave}
+            style={{ flex: 1, padding: '6px 0', background: 'none', border: '1px solid rgba(255,255,255,.1)', borderRadius: 7, color: '#94a3b8', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+          >
+            保存
+          </button>
+          <button
+            onClick={handleCopyDiag}
+            style={{ flex: 1, padding: '6px 0', background: 'none', border: '1px solid rgba(255,255,255,.1)', borderRadius: 7, color: copyDone ? '#6ee7b7' : '#64748b', fontSize: 11, cursor: 'pointer' }}
+          >
+            {copyDone ? '✓ 已复制' : '诊断'}
+          </button>
+          <button
+            onClick={handleDelete}
+            style={{ flex: 1, padding: '6px 0', background: confirmDelete ? 'rgba(239,68,68,.12)' : 'none', border: `1px solid ${confirmDelete ? 'rgba(239,68,68,.4)' : 'rgba(255,255,255,.08)'}`, borderRadius: 7, color: confirmDelete ? '#fca5a5' : '#6b7280', fontSize: 11, cursor: 'pointer' }}
+            onBlur={() => setTimeout(() => setConfirmDelete(false), 300)}
+          >
+            {confirmDelete ? '确认?' : '删除'}
+          </button>
+        </div>
       </div>
     </div>
   )

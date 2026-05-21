@@ -25,18 +25,10 @@ import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 
-const LINKS = [
-  { href: '/', label: '首页' },
-  { href: '/create', label: 'AI 画布' },
-  { href: '/projects?new=1', label: '新建项目' },
-  { href: '/templates', label: '模板库' },
+const LINKS: Array<{ href: string; label: string; isCanvasV2?: boolean }> = [
+  { href: '/create', label: '创作' },
+  { href: '/create-v2', label: 'Canvas V2', isCanvasV2: true },
   { href: '/projects', label: '工作空间' },
-  { href: '/explore', label: '探索' },
-  { href: '/community', label: '社群' },
-  { href: '/tools', label: '工具 / API' },
-  { href: '/billing', label: '购买积分' },
-  { href: '/account/credits', label: '积分' },
-  { href: '/me', label: '我的' },
 ]
 
 export function TopNavigation() {
@@ -138,6 +130,16 @@ export function TopNavigation() {
     router.push('/projects')
   }, [router])
 
+  const handleCanvasV2Click = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    let href = '/create-v2'
+    try {
+      const lastId = window.localStorage.getItem('creator-city:last-project-id')
+      if (lastId) href = `/create-v2?projectId=${encodeURIComponent(lastId)}`
+    } catch (_) { /* private mode */ }
+    router.push(href)
+  }, [router])
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
@@ -151,11 +153,18 @@ export function TopNavigation() {
               const navClass = `rounded-xl px-2.5 py-1.5 text-[12px] transition ${
                 active ? 'bg-white/[0.08] text-white' : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
               }`
-              // The canvas link reads localStorage to reopen the last project directly
               if (link.href === '/create') {
                 return (
                   <a key={link.href} href="/create" onClick={handleCreateClick} className={navClass}>
                     {link.label}
+                  </a>
+                )
+              }
+              if (link.isCanvasV2) {
+                return (
+                  <a key={link.href} href="/create-v2" onClick={handleCanvasV2Click} className={navClass}>
+                    {link.label}
+                    <span className="ml-1 rounded-full bg-violet-500/20 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">Beta</span>
                   </a>
                 )
               }
@@ -176,13 +185,6 @@ export function TopNavigation() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="hidden rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white/60 transition hover:border-white/20 hover:text-white lg:inline-flex"
-          >
-            ZH / EN
-          </button>
-
           <CommandPalette
             portfolio={portfolio}
             workQueue={workQueue}

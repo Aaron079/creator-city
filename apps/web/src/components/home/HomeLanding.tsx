@@ -72,19 +72,7 @@ export function HomeLanding() {
                 onClick={handleOpenProject}
                 className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
               >
-                打开项目
-              </Link>
-              <Link
-                href="/projects?new=1"
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
-              >
-                新建项目
-              </Link>
-              <Link
-                href="/explore"
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
-              >
-                探索创作者
+                工作空间
               </Link>
             </div>
           </div>

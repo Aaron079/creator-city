@@ -24,29 +24,24 @@ export default async function CreateV2Page({ searchParams }: PageProps) {
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#080814', overflow: 'hidden' }}>
-      <header style={{ minHeight: projectId ? 52 : 76, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18, padding: '10px 20px', background: 'rgba(8,8,20,0.98)', borderBottom: '1px solid rgba(124,58,237,0.2)', flexShrink: 0, zIndex: 100 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', minWidth: 0 }}>
-          <a href={`/create${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`} style={{ color: '#6b7280', textDecoration: 'none', fontSize: 13 }}>
-            ← 返回旧画布
-          </a>
-          <span style={{ color: '#1e1b4b' }}>|</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>Creator City</span>
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', background: 'linear-gradient(90deg,#7c3aed,#4f46e5)', borderRadius: 10, color: '#fff', letterSpacing: 0.5 }}>Canvas V2 Beta</span>
+      <header style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '0 16px', background: 'rgba(8,8,20,0.98)', borderBottom: '1px solid rgba(124,58,237,0.18)', flexShrink: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <a href="/projects" style={{ color: '#4b5563', textDecoration: 'none', fontSize: 12, whiteSpace: 'nowrap' }}>← 返回</a>
+          <span style={{ color: '#1e1b4b', fontSize: 16, lineHeight: 1 }}>|</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', whiteSpace: 'nowrap' }}>Canvas V2</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', background: 'rgba(124,58,237,0.3)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: 6, color: '#c4b5fd', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>Beta</span>
           {projectId ? (
-            <span style={{ fontSize: 12, color: '#a7f3d0', fontWeight: 700 }}>已关联项目：{shortProjectId}</span>
+            <span style={{ fontSize: 11, color: '#6ee7b7', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>#{shortProjectId}</span>
           ) : (
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 12, color: '#fcd34d', fontWeight: 800 }}>临时画布 · 未关联项目</span>
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>请先选择或创建项目后再生成</span>
-            </span>
+            <span style={{ fontSize: 11, color: '#f59e0b', whiteSpace: 'nowrap' }}>未关联项目</span>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {!projectId && <CanvasV2ProjectActions />}
           {userEmail ? (
-            <span style={{ fontSize: 12, color: '#6b7280' }}>{userEmail}</span>
+            <span style={{ fontSize: 11, color: '#4b5563', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</span>
           ) : (
-            <a href="/auth/login" style={{ fontSize: 12, color: '#7c3aed', textDecoration: 'none', fontWeight: 600 }}>登录</a>
+            <a href="/auth/login" style={{ fontSize: 11, color: '#7c3aed', textDecoration: 'none', fontWeight: 600 }}>登录</a>
           )}
         </div>
       </header>
