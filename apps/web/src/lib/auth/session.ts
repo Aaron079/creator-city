@@ -31,17 +31,27 @@ export async function createSession(
 
 export async function getSession(token: string) {
   const tokenHash = hashToken(token)
-  const session = await db.session.findUnique({
-    where: { tokenHash },
-    include: { user: { include: { profile: true } } },
-  })
-  if (!session) return null
-  if (session.expiresAt < new Date()) {
-    await db.session.delete({ where: { tokenHash } })
+  let session
+  try {
+    session = await db.session.findUnique({
+      where: { tokenHash },
+      include: { user: { include: { profile: true } } },
+    })
+  } catch (err) {
+    console.error('[auth/session] db.session.findUnique failed — treating as unauthenticated', err)
     return null
   }
-  // Refresh lastUsedAt
-  await db.session.update({ where: { tokenHash }, data: { lastUsedAt: new Date() } })
+  if (!session) return null
+  if (session.expiresAt < new Date()) {
+    db.session.delete({ where: { tokenHash } }).catch((err) => {
+      console.error('[auth/session] failed to delete expired session', err)
+    })
+    return null
+  }
+  // Refresh lastUsedAt (best-effort, do not block or throw)
+  db.session.update({ where: { tokenHash }, data: { lastUsedAt: new Date() } }).catch((err) => {
+    console.error('[auth/session] failed to refresh lastUsedAt', err)
+  })
   return session
 }
 

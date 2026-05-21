@@ -282,13 +282,14 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteContext) {
+  // getCurrentUser() now never throws (session.ts wraps DB errors), but keep
+  // the catch here as a safety net. Auth failures return 401, not 500.
   let user
   try {
     user = await getCurrentUser()
   } catch (error) {
-    const msg = safeErrorMessage(error)
-    console.error('[canvas-api] auth failed before save', { projectId: params.projectId, error })
-    return jsonError('CANVAS_SAVE_FAILED', `保存画布失败：${msg}`, 500)
+    console.error('[canvas-api] unexpected auth error before save', { projectId: params.projectId, error })
+    return jsonError('UNAUTHORIZED', '认证异常，请刷新页面后重试。', 401)
   }
   if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
