@@ -546,8 +546,11 @@ export async function POST(request: NextRequest) {
           errorCode: (typeof cnResult.errorCode === 'string' ? cnResult.errorCode : null) ?? 'image_generation_failed',
           message: (typeof cnResult.message === 'string' ? cnResult.message : null) ?? 'Image generation failed.',
           upstreamMessage: cnResult.upstreamMessage,
+          upstreamStatus: cnResult.upstreamStatus,
+          providerHttpStatus: cnResult.providerHttpStatus,
           requestId: cnResult.requestId,
-          submittedInput,
+          providerResponse: cnResult.providerResponse,
+          submittedInput: cnResult.submittedInput ?? submittedInput,
         }, { status: 200 })
       }
 
