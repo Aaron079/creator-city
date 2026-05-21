@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       : await verifyPassword(password, dummyHash).then(() => false)
 
     if (!user || !passwordOk) {
-      return NextResponse.json({ message: '邮箱或密码错误。' }, { status: 401 })
+      return NextResponse.json({ message: '邮箱或密码错误。', errorCode: 'INVALID_CREDENTIALS' }, { status: 401 })
     }
 
     if (user.status === 'BANNED') {

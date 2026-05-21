@@ -48,21 +48,53 @@ interface MappedError {
   userMessage: string
 }
 
+const DB_UNAVAILABLE: MappedError = {
+  httpStatus: 503,
+  errorCode: 'AUTH_DB_UNAVAILABLE',
+  userMessage: '数据库暂时不可用，请稍后重试。',
+}
+
 const PRISMA_MAP: Record<string, MappedError> = {
-  P1000: { httpStatus: 500, errorCode: 'DB_AUTH_FAILED',        userMessage: '数据库认证失败，请联系管理员。' },
-  P1001: { httpStatus: 500, errorCode: 'DB_UNREACHABLE',        userMessage: '无法连接数据库，请稍后重试。' },
-  P1002: { httpStatus: 500, errorCode: 'DB_TIMEOUT',            userMessage: '数据库连接超时，请稍后重试。' },
-  P1012: { httpStatus: 500, errorCode: 'DB_CONFIG_MISSING',     userMessage: '数据库配置缺失，请联系管理员。' },
-  P2002: { httpStatus: 409, errorCode: 'EMAIL_EXISTS',          userMessage: '该邮箱已注册。' },
+  P1000: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库认证失败，请联系管理员。' },
+  P1001: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '无法连接数据库，请稍后重试。' },
+  P1002: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库连接超时，请稍后重试。' },
+  P1003: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库不存在，请联系管理员。' },
+  P1008: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库操作超时，请稍后重试。' },
+  P1012: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库配置缺失，请联系管理员。' },
+  P1017: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库连接被关闭，请稍后重试。' },
+  P2002: { httpStatus: 409, errorCode: 'USER_ALREADY_EXISTS',   userMessage: '该邮箱已注册。' },
   P2003: { httpStatus: 500, errorCode: 'DB_RELATION_FAILED',    userMessage: '数据关联失败，请联系管理员。' },
   P2011: { httpStatus: 500, errorCode: 'DB_NULL_CONSTRAINT',    userMessage: '必填字段为空，请联系管理员。' },
   P2014: { httpStatus: 500, errorCode: 'DB_RELATION_VIOLATION', userMessage: '数据关联冲突，请联系管理员。' },
-  P2021: { httpStatus: 500, errorCode: 'DB_SCHEMA_MISSING',     userMessage: '数据库表结构未初始化，请联系管理员。' },
-  P2022: { httpStatus: 500, errorCode: 'DB_COLUMN_MISSING',     userMessage: '数据库字段缺失，请联系管理员。' },
+  P2021: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库表结构未初始化，请联系管理员。' },
+  P2022: { httpStatus: 503, errorCode: 'AUTH_DB_UNAVAILABLE',   userMessage: '数据库字段缺失，请联系管理员。' },
 }
 
+// Message fragments that indicate DB connectivity/pooler issues even if
+// Prisma doesn't surface a standard P1xxx code (e.g. PgBouncer errors).
+const DB_CONNECTIVITY_PATTERNS = [
+  'prepared statement',
+  'connection',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'SSL',
+  'TLS',
+  'pooler',
+  'pgbouncer',
+  'max_client_conn',
+  'too many clients',
+]
+
 export function mapPrismaError(safe: SafeError): MappedError | null {
-  return PRISMA_MAP[safe.code] ?? null
+  const mapped = PRISMA_MAP[safe.code]
+  if (mapped) return mapped
+  // PrismaClientUnknownRequestError / raw DB errors — detect by message pattern
+  const lower = safe.message.toLowerCase()
+  if (DB_CONNECTIVITY_PATTERNS.some((p) => lower.includes(p.toLowerCase()))) {
+    return DB_UNAVAILABLE
+  }
+  return null
 }
 
 export function logAndRespond(

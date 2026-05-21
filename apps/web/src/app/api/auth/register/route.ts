@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const existing = await db.user.findUnique({ where: { email } })
     if (existing) {
-      return NextResponse.json({ message: '该邮箱已注册。' }, { status: 409 })
+      return NextResponse.json({ message: '该邮箱已注册。', errorCode: 'USER_ALREADY_EXISTS' }, { status: 409 })
     }
 
     const passwordHash = await hashPassword(password)
