@@ -1,5 +1,23 @@
 const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
+export function getSeedanceConfigDebugPayload(): Record<string, unknown> {
+  const apiKey = process.env.VOLCENGINE_ARK_API_KEY?.trim() ?? ''
+  const model = process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() ?? ''
+  const baseUrl = (process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const endpoint = `${baseUrl}/contents/generations/tasks`
+  return {
+    ok: Boolean(apiKey && model),
+    provider: 'volcengine_seedance',
+    endpoint,
+    apiKey: { present: Boolean(apiKey), keyPreview: apiKey ? `${apiKey.slice(0, 6)}...` : '' },
+    model: { present: Boolean(model), valuePreview: model },
+    notes: [
+      'model must be a Volcengine Ark video generation model ID or endpoint ID',
+      'VOLCENGINE_ARK_API_KEY is shared with Seedream',
+    ],
+  }
+}
+
 function seedanceTaskEndpoint(baseUrl: string): string {
   const base = baseUrl.replace(/\/+$/, '')
   return /\/contents\/generations\/tasks$/i.test(base) ? base : `${base}/contents/generations/tasks`
@@ -173,7 +191,7 @@ export async function submitSeedanceTask(input: SeedanceSubmitInput): Promise<Se
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: input.prompt.trim() }]
   if (input.imageUrl) content.push({ type: 'image_url', image_url: { url: input.imageUrl } })
 
-  const body: Record<string, unknown> = { model, content, ratio, duration, watermark: false }
+  const body: Record<string, unknown> = { model, content, ratio, duration }
   if (resolution) body.resolution = resolution
 
   const submittedInput: Record<string, unknown> = {

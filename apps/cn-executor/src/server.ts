@@ -7,6 +7,7 @@ import { handleImageGenerationStatus, handleStartImageGeneration } from './handl
 import { handleRunImageJob } from './handlers/jobRunner'
 import { handleRunVideoJob } from './handlers/videoJobRunner'
 import { handleSeedreamConfigDebug } from './handlers/seedreamConfig'
+import { handleSeedanceConfigDebug } from './handlers/seedanceConfig'
 import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 import { handleSeedreamModelProbe } from './handlers/seedreamModelProbe'
 import { handleSeedreamRealProbe } from './handlers/seedreamRealProbe'
@@ -61,6 +62,11 @@ const server = http.createServer((req, res) => {
 
   if (method === 'GET' && url === '/debug/seedream-config') {
     handleSeedreamConfigDebug(req, res)
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/seedance-config') {
+    handleSeedanceConfigDebug(req, res)
     return
   }
 

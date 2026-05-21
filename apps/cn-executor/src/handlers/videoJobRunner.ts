@@ -256,17 +256,24 @@ export async function handleRunVideoJob(req: IncomingMessage, res: ServerRespons
     return
   }
 
-  // Respond immediately — Vercel fires-and-forgets, cn-executor runs async after response
-  jsonOk(res, { success: true, message: 'Video job received, executing.', generationJobId })
-
-  setImmediate(() => {
-    runVideoJob(generationJobId).catch((err: unknown) => {
-      console.error('[cn-executor][videoJobRunner] unhandled error in runVideoJob', {
-        generationJobId,
-        error: err instanceof Error ? err.message : String(err),
-      })
+  // Run synchronously — keeps Aliyun FC alive for the full job duration.
+  // Caller (Vercel) uses fire-and-forget with an 8s timeout; the HTTP response
+  // may not be received by Vercel, but the job runs to completion on FC.
+  try {
+    await runVideoJob(generationJobId)
+  } catch (err) {
+    console.error('[cn-executor][videoJobRunner] unhandled error in runVideoJob', {
+      generationJobId,
+      error: err instanceof Error ? err.message : String(err),
     })
-  })
+  }
+
+  // Best-effort response — Vercel caller may have already timed out.
+  try {
+    jsonOk(res, { success: true, message: 'Video job completed.', generationJobId })
+  } catch {
+    // Client disconnected — normal for fire-and-forget pattern.
+  }
 }
 
 async function runVideoJob(generationJobId: string): Promise<void> {
