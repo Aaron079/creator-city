@@ -525,6 +525,7 @@ export async function POST(request: NextRequest) {
           stableUrl: cnResult.stableUrl,
           assetId: cnResult.assetId,
           submittedInput,
+          stageTrace: cnResult.stageTrace,
           message: '图片生成完成',
         }, { status: 200 })
       }
@@ -544,6 +545,7 @@ export async function POST(request: NextRequest) {
           generationJobId,
           jobId: generationJobId,
           errorCode: (typeof cnResult.errorCode === 'string' ? cnResult.errorCode : null) ?? 'image_generation_failed',
+          errorStage: cnResult.errorStage,
           message: (typeof cnResult.message === 'string' ? cnResult.message : null) ?? 'Image generation failed.',
           upstreamMessage: cnResult.upstreamMessage,
           upstreamStatus: cnResult.upstreamStatus,
@@ -551,6 +553,7 @@ export async function POST(request: NextRequest) {
           requestId: cnResult.requestId,
           providerResponse: cnResult.providerResponse,
           submittedInput: cnResult.submittedInput ?? submittedInput,
+          stageTrace: cnResult.stageTrace,
         }, { status: 200 })
       }
 

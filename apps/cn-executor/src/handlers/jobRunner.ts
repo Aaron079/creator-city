@@ -42,6 +42,7 @@ type ImageJobResult = {
   assetId?: string
   model?: string | null
   errorCode?: string
+  errorStage?: string
   message?: string
   submittedInput?: Record<string, unknown> | null
   upstreamMessage?: unknown
@@ -52,6 +53,7 @@ type ImageJobResult = {
   executionRegion?: string
   storageRegion?: string
   executorKind?: string
+  stageTrace?: Array<{ stage: string; ok: boolean; durationMs: number; providerHttpStatus?: number }>
 }
 
 async function fetchJob(generationJobId: string): Promise<GenerationJobRow | null> {
@@ -434,12 +436,14 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     const errMsg = result.message ?? 'Image generation failed.'
     const errorOutput: Record<string, unknown> = {
       errorCode: errCode,
+      errorStage: result.errorStage,
       message: errMsg,
       providerRegion: 'cn',
       executionRegion: 'cn',
       storageRegion: 'cn',
       executorKind: 'aliyun_fc',
       submittedInput,
+      stageTrace: result.stageTrace,
     }
     if ('upstreamMessage' in result) errorOutput.upstreamMessage = result.upstreamMessage
     if ('upstreamStatus' in result) errorOutput.upstreamStatus = result.upstreamStatus
@@ -448,7 +452,7 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     if ('requestId' in result) errorOutput.requestId = result.requestId
     if ('providerResponse' in result) errorOutput.providerResponse = result.providerResponse
 
-    console.error('[cn-executor][jobRunner] job failed, writing FAILED to DB', { generationJobId, errorCode: errCode, message: errMsg.slice(0, 300) })
+    console.error('[cn-executor][jobRunner] job failed, writing FAILED to DB', { generationJobId, errorCode: errCode, errorStage: result.errorStage, message: errMsg.slice(0, 300), stageTrace: result.stageTrace })
     try {
       await markJobFailed({ id: generationJobId, errorCode: errCode, message: errMsg, output: errorOutput })
       console.log('[cn-executor][jobRunner] FAILED written to DB', { generationJobId })
@@ -464,12 +468,14 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
       status: 'failed',
       generationJobId,
       errorCode: errCode,
+      errorStage: result.errorStage,
       message: errMsg,
       submittedInput,
       upstreamMessage: 'upstreamMessage' in result ? result.upstreamMessage : undefined,
       upstreamStatus: 'upstreamStatus' in result ? result.upstreamStatus : undefined,
       requestId: 'requestId' in result ? result.requestId : undefined,
       providerResponse: 'providerResponse' in result ? result.providerResponse : undefined,
+      stageTrace: result.stageTrace,
     }
   }
 
@@ -534,6 +540,7 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     model: modelUsed,
     submittedInput,
     providerResponse: result.providerResponse,
+    stageTrace: result.stageTrace,
   }
 
   console.log('[cn-executor][jobRunner] writing SUCCEEDED to DB', { generationJobId, assetId })
@@ -598,5 +605,6 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     executionRegion: 'cn',
     providerRegion: 'cn',
     executorKind: 'aliyun_fc',
+    stageTrace: result.stageTrace,
   }
 }

@@ -235,6 +235,7 @@ export async function GET(request: NextRequest) {
       storageRegion,
       executorKind,
       errorCode: stringValue(failOutput.errorCode) || 'image_generation_failed',
+      errorStage: failOutput.errorStage,
       message: generationJob.errorMessage || generationJob.error || 'Image generation failed.',
       upstreamMessage: failOutput.upstreamMessage,
       upstreamStatus: failOutput.upstreamStatus,
@@ -243,6 +244,7 @@ export async function GET(request: NextRequest) {
       providerHttpStatus: failOutput.providerHttpStatus,
       submittedInput: failOutput.submittedInput,
       providerResponse: failOutput.providerResponse,
+      stageTrace: failOutput.stageTrace,
     }, { status: 200 })
   }
 

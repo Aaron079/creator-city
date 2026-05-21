@@ -49,9 +49,17 @@ export type ImageExecutionInput = {
   nodeId?: string
 }
 
+export type StageTrace = {
+  stage: string
+  ok: boolean
+  durationMs: number
+  providerHttpStatus?: number
+}
+
 export type ImageExecutionResult = {
   success: boolean
   errorCode?: string
+  errorStage?: string
   message?: string
   provider?: string
   model?: string
@@ -66,6 +74,7 @@ export type ImageExecutionResult = {
   submittedInput?: Record<string, unknown>
   providerResponse?: unknown
   providerOriginalUrl?: string | null
+  stageTrace?: StageTrace[]
 }
 
 export function parseImageExecutionInput(body: Record<string, unknown>): ImageExecutionInput | { errorCode: string; message: string } {
@@ -86,12 +95,19 @@ export function parseImageExecutionInput(body: Record<string, unknown>): ImageEx
 
 export async function executeImageGeneration(input: ImageExecutionInput): Promise<ImageExecutionResult> {
   const logCtx = { providerId: input.providerId, aspectRatio: input.aspectRatio }
+  const stageTrace: StageTrace[] = []
 
   // 1. Generate via Volcengine Seedream
   console.log('[cn-executor][executeImage] step 1/3: calling Seedream', logCtx)
   const t0 = Date.now()
   const genResult = await generateSeedreamImage(input)
   const seedreamMs = Date.now() - t0
+  stageTrace.push({
+    stage: 'seedream_provider',
+    ok: genResult.success,
+    durationMs: seedreamMs,
+    ...(!genResult.success && genResult.providerHttpStatus !== undefined ? { providerHttpStatus: genResult.providerHttpStatus } : {}),
+  })
   if (!genResult.success) {
     console.error('[cn-executor][executeImage] step 1/3 FAILED: Seedream error', {
       ...logCtx,
@@ -103,8 +119,10 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
     return {
       success: false,
       errorCode: genResult.errorCode,
+      errorStage: 'seedream_provider',
       message: genResult.message,
       provider: 'volcengine_seedream',
+      stageTrace,
       ...(genResult.upstreamStatus !== undefined ? { upstreamStatus: genResult.upstreamStatus } : {}),
       ...(genResult.upstreamMessage !== undefined ? { upstreamMessage: genResult.upstreamMessage } : {}),
       ...(genResult.providerEndpoint !== undefined ? { providerEndpoint: genResult.providerEndpoint } : {}),
@@ -127,6 +145,7 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
   let contentType = 'image/png'
   const providerOriginalUrl = genResult.providerOriginalUrl
 
+  const t1 = Date.now()
   if (genResult.isBase64 && genResult.dataUrl) {
     console.log('[cn-executor][executeImage] step 2/3: decoding base64 image', logCtx)
     const parsed = parseDataUrl(genResult.dataUrl)
@@ -137,19 +156,21 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
     console.log('[cn-executor][executeImage] step 2/3 base64', { ...logCtx, ok: Boolean(imageBuffer), bytes: imageBuffer?.byteLength })
   } else {
     console.log('[cn-executor][executeImage] step 2/3: downloading image from provider URL', { ...logCtx, urlLen: genResult.imageUrl?.length })
-    const t1 = Date.now()
     imageBuffer = await downloadBuffer(genResult.imageUrl)
     console.log('[cn-executor][executeImage] step 2/3 download', { ...logCtx, ok: Boolean(imageBuffer), bytes: imageBuffer?.byteLength, durationMs: Date.now() - t1 })
   }
+  stageTrace.push({ stage: 'provider_image_download', ok: Boolean(imageBuffer && imageBuffer.byteLength > 0), durationMs: Date.now() - t1 })
 
   if (!imageBuffer || imageBuffer.byteLength === 0) {
     console.error('[cn-executor][executeImage] step 2/3 FAILED: image buffer empty or download failed', logCtx)
     return {
       success: false,
       errorCode: 'provider_media_download_failed',
+      errorStage: 'provider_image_download',
       message: 'Failed to download generated image from provider.',
       providerOriginalUrl: providerOriginalUrl ?? null,
       submittedInput: genResult.submittedInput,
+      stageTrace,
     }
   }
 
@@ -159,6 +180,7 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
   const t2 = Date.now()
   const uploadResult = await uploadToOss(ossKey, imageBuffer, contentType)
   const ossMs = Date.now() - t2
+  stageTrace.push({ stage: 'oss_upload', ok: uploadResult.success, durationMs: ossMs })
   if (!uploadResult.success) {
     console.error('[cn-executor][executeImage] step 3/3 FAILED: OSS upload error', {
       ...logCtx,
@@ -169,9 +191,11 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
     return {
       success: false,
       errorCode: uploadResult.errorCode,
+      errorStage: 'oss_upload',
       message: uploadResult.message,
       providerOriginalUrl: providerOriginalUrl ?? null,
       submittedInput: genResult.submittedInput,
+      stageTrace,
     }
   }
   console.log('[cn-executor][executeImage] step 3/3 OK: OSS upload success', {
@@ -194,6 +218,7 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
     },
     providerOriginalUrl: providerOriginalUrl ?? null,
     submittedInput: genResult.submittedInput,
+    stageTrace,
   }
 }
 
