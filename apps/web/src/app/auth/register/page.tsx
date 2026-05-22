@@ -34,7 +34,7 @@ export default function RegisterPage() {
         level: 1,
         credits: 0,
       })
-      router.push('/me')
+      router.push('/create')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '注册失败')
     } finally {

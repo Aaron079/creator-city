@@ -31,7 +31,7 @@ function LoginForm() {
         level: 1,
         credits: 0,
       })
-      const next = searchParams.get('next') ?? '/me'
+      const next = searchParams.get('next') ?? '/create'
       router.push(next)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '登录失败')

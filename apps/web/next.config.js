@@ -3,6 +3,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@creator-city/shared"],
+  async redirects() {
+    return [
+      // Canonical login/register shortcuts → actual auth pages.
+      // Middleware redirects to /auth/login; these aliases make /login work too.
+      { source: '/login', destination: '/auth/login', permanent: false },
+      { source: '/register', destination: '/auth/register', permanent: false },
+      { source: '/signin', destination: '/auth/login', permanent: false },
+      { source: '/signup', destination: '/auth/register', permanent: false },
+    ]
+  },
   experimental: {
     // Exclude the webpack build cache from Lambda bundles.
     // .next/cache/ is ~580 MB and not needed at runtime — it caused every
