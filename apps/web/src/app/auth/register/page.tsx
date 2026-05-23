@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
 import { clientRegister } from '@/lib/auth/client'
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { setAuth } = useAuthStore()
   const [form, setForm] = useState({ displayName: '', email: '', password: '', confirmPassword: '' })
   const [error, setError] = useState('')
@@ -34,7 +35,8 @@ export default function RegisterPage() {
         level: 1,
         credits: 0,
       })
-      router.push('/create')
+      const next = searchParams.get('next') ?? '/create'
+      router.push(next)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '注册失败')
     } finally {
@@ -125,5 +127,13 @@ export default function RegisterPage() {
         </form>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   )
 }

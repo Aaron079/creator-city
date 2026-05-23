@@ -67,8 +67,9 @@ ep-20260517143936-zhwnc is not accessible to this key.
 - [x] Step 2: Run live health/config diagnostics
 - [x] Step 3: Confirm routing path and error propagation
 - [x] Step 4: Identify diagnostic gap: upstreamStatus/providerResponse not forwarded
-- [ ] Step 5: Fix route.ts — forward upstreamStatus, providerHttpStatus, providerResponse in cn-executor failure path
-- [ ] Step 6: Build and deploy web fix
+- [x] Step 5: Fix route.ts — forward upstreamStatus, providerHttpStatus, providerResponse in cn-executor failure path (commit d4d5e8b)
+- [x] Step 5b: Add stageTrace + errorStage to cn-executor pipeline; forward through route.ts and status route (commit ce9393c); cn-executor redeployed to Aliyun FC (2026-05-21 14:33 UTC+8)
+- [x] Step 6: Build and deploy web fix — pushed, Vercel auto-deploys
 - [ ] Step 7: User retries — reads Network panel response to get actual Volcengine error
 - [ ] Step 8: Based on HTTP status:
   - 401 → VOLCENGINE_ARK_API_KEY is invalid/expired. User must rotate key in Volcengine ARK console, update Aliyun FC env var, redeploy cn-executor.
