@@ -54,8 +54,7 @@ import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/generation-tasks'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
-import { buildEdgeDirectivesForNode, getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
-import { compileNodePrompt, type CompiledNodePrompt } from '@/lib/prompt'
+import { getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { buildStoryboardFromCanvas } from '@/lib/storyboard'
 import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
 import {
@@ -297,9 +296,8 @@ const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }>
   upload: { width: 360, height: 280 },
 }
 
-// When NEXT_PUBLIC_GENERATION_BASIC_MODE=true: skip style-bible/skills/inputAssets
-// and send the minimum prompt payload to help isolate provider-layer failures.
-const GENERATION_BASIC_MODE = process.env.NEXT_PUBLIC_GENERATION_BASIC_MODE === 'true'
+const ASSET_RECOVERY_TOOLS_ENABLED = false
+const STORYBOARD_TOOLS_ENABLED = false
 
 const WORKSPACE_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const MIN_CANVAS_ZOOM = 0.35
@@ -549,6 +547,9 @@ type GenerateApiResult = GenerateResponse & {
   errorMessage?: string
   upstreamStatus?: number
   upstreamMessage?: string
+  errorStage?: string
+  stageTrace?: unknown
+  executorKind?: string
   generationStage?: string
   stage?: string
     rawCode?: string
@@ -654,8 +655,12 @@ function formatGenerateError(result: GenerateApiResult) {
     requestMethod ? `method: ${requestMethod}` : '',
     missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
     result.missingFields?.length ? `missingFields: ${result.missingFields.join(', ')}` : '',
+    result.generationJobId ? `generationJobId: ${result.generationJobId}` : '',
+    result.executorKind ? `executorKind: ${result.executorKind}` : '',
     result.model ? `model: ${result.model}` : '',
+    result.errorStage ? `errorStage: ${result.errorStage}` : '',
     result.generationStage || result.stage ? `generationStage: ${result.generationStage || result.stage}` : '',
+    result.stageTrace ? `stageTrace: ${compactText(JSON.stringify(result.stageTrace), 500)}` : '',
     typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
     typeof result.generationHttpStatus === 'number' ? `generationHttpStatus: ${result.generationHttpStatus}` : '',
       result.generationFetchError ? `fetchError: ${result.generationFetchError}` : '',
@@ -671,6 +676,7 @@ function formatGenerateError(result: GenerateApiResult) {
     typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
     result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
     result.generationResponseTextPreview ? `responsePreview: ${result.generationResponseTextPreview.slice(0, 200)}` : '',
+    result.submittedInput ? `submittedInput: ${compactText(JSON.stringify(result.submittedInput), 500)}` : '',
     result.requestId ? `requestId: ${result.requestId}` : '',
   ].filter(Boolean).join(' · ') || '生成失败'
 }
@@ -1015,25 +1021,10 @@ function recoveryResolveResultFromPatch(patch: Partial<VisualCanvasNode>): Canva
   }
 }
 
-function isPromptCompilerNodeKind(kind: VisualCanvasNodeKind): kind is 'text' | 'image' | 'video' {
-  return kind === 'text' || kind === 'image' || kind === 'video'
-}
 
 function compactText(value: string | undefined, limit: number) {
   const text = value?.trim() ?? ''
   return text.length > limit ? `${text.slice(0, limit)}...` : text
-}
-
-function compiledPromptMetadata(metadataJson: unknown, compiled: CompiledNodePrompt) {
-  return {
-    ...metadataRecord(metadataJson),
-    compiledPromptPreview: compactText(compiled.prompt, 1600),
-    compiledPromptDebug: {
-      ...compiled.debug,
-      userPrompt: compactText(compiled.debug.userPrompt, 300),
-    },
-    compiledAt: new Date().toISOString(),
-  }
 }
 
 function normalizeStyleBible(input: unknown): ProjectStyleBible {
@@ -1370,7 +1361,7 @@ function imageRunningMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'errorStage' | 'stageTrace' | 'executorKind' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'generationJobId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
   const requestMethod = result.generationRequestMethod || result.method
@@ -1389,6 +1380,10 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     requestUrl,
     method: requestMethod,
     hint: result.hint,
+    generationJobId: result.generationJobId,
+    executorKind: result.executorKind,
+    errorStage: result.errorStage,
+    stageTrace: result.stageTrace,
     generationStage: result.generationStage || result.stage,
     stage: result.stage || result.generationStage,
     upstreamStatus: result.upstreamStatus,
@@ -1417,6 +1412,8 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     ...metadataRecord(node.metadataJson),
     providerId: result.providerId || providerId,
     model: result.model,
+    generationJobId: result.generationJobId,
+    executorKind: result.executorKind,
     recoveryStatus: visibleErrorCode,
     mediaRecoveryStatus: 'generation_failed',
     nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' || visibleErrorCode === 'auth_required' || visibleErrorCode === 'api_error' ? 'manual_debug' : 'regenerate_from_prompt',
@@ -1432,6 +1429,8 @@ function imageErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     generationHttpStatus,
     generationFetchError: result.generationFetchError,
     generationResponseTextPreview: result.generationResponseTextPreview,
+    errorStage: result.errorStage,
+    stageTrace: result.stageTrace,
     generationStage: result.generationStage || result.stage,
     stage: result.stage || result.generationStage,
     upstreamStatus: result.upstreamStatus,
@@ -1547,7 +1546,7 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
-function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
+function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'errorStage' | 'stageTrace' | 'executorKind' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'generationJobId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
   const requestMethod = result.generationRequestMethod || result.method
@@ -1566,6 +1565,10 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     requestUrl,
     method: requestMethod,
     hint: result.hint,
+    generationJobId: result.generationJobId,
+    executorKind: result.executorKind,
+    errorStage: result.errorStage,
+    stageTrace: result.stageTrace,
     generationStage: result.generationStage || result.stage,
     stage: result.stage || result.generationStage,
     upstreamStatus: result.upstreamStatus,
@@ -1595,7 +1598,8 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     providerId: result.providerId || providerId,
     model: result.model,
     taskId: result.taskId,
-    generationJobId: result.taskId,
+    generationJobId: result.generationJobId ?? result.taskId,
+    executorKind: result.executorKind,
     recoveryStatus: visibleErrorCode,
     mediaRecoveryStatus: 'generation_failed',
     nextAction: visibleErrorCode === 'missing_generation_input' || visibleErrorCode === 'provider_env_missing' || visibleErrorCode === 'auth_required' || visibleErrorCode === 'api_error' ? 'manual_debug' : 'regenerate_from_prompt',
@@ -1611,6 +1615,8 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
     generationHttpStatus,
     generationFetchError: result.generationFetchError,
     generationResponseTextPreview: result.generationResponseTextPreview,
+    errorStage: result.errorStage,
+    stageTrace: result.stageTrace,
     generationStage: result.generationStage || result.stage,
     stage: result.stage || result.generationStage,
     upstreamStatus: result.upstreamStatus,
@@ -1666,7 +1672,6 @@ async function callGenerationApi(
     console.info('[canvas-generate] submit', { nodeType, providerId })
   }
 
-  const firstImageUrl = inputAssets?.find((asset) => asset.type === 'image' && asset.url)?.url
   const aspectRatio = typeof params?.aspectRatio === 'string'
     ? params.aspectRatio
     : typeof params?.ratio === 'string'
@@ -1680,36 +1685,47 @@ async function callGenerationApi(
       : typeof params?.quality === 'string'
         ? params.quality
         : undefined
-  const requestBody = {
-    providerId,
-    provider: providerId,
-    model,
-    nodeType,
-    kind: nodeType,
-    prompt,
-    compiledPrompt: prompt,
-    system,
-    params: {
-      ...(params ?? {}),
-      ...(model ? { model } : {}),
-    },
-    maxTokens,
-    nodeId,
-    inputAssets,
-    projectId,
-    workflowId,
-    aspectRatio,
-    duration,
-    resolution,
-    ...(nodeType === 'video'
+  const requestBody = nodeType === 'image'
+    ? {
+        prompt,
+        providerId,
+        aspectRatio: aspectRatio ?? '16:9',
+        projectId,
+        workflowId,
+        nodeId,
+      }
+    : nodeType === 'video'
       ? {
-          imageUrl: firstImageUrl,
-          duration: duration ?? 5,
+          prompt,
+          providerId,
           aspectRatio: aspectRatio ?? '16:9',
+          duration: duration ?? 5,
+          projectId,
+          workflowId,
+          nodeId,
+        }
+      : {
+          providerId,
+          provider: providerId,
+          model,
+          nodeType,
+          kind: nodeType,
+          prompt,
+          compiledPrompt: prompt,
+          system,
+          params: {
+            ...(params ?? {}),
+            ...(model ? { model } : {}),
+          },
+          maxTokens,
+          nodeId,
+          inputAssets,
+          projectId,
+          workflowId,
+          aspectRatio,
+          duration,
           resolution,
         }
-      : {}),
-  }
 
   let response: Response
   try {
@@ -3845,7 +3861,7 @@ export function VisualCanvasWorkspace({
       onNodeUpdate: (_nodeId, _patch, nextNodes) => {
         commitNodes(nextNodes)
       },
-      runNode: async ({ node, upstreamNodes, incomingEdges, upstreamText, inputAssets }) => {
+      runNode: async ({ node, upstreamNodes: _upstreamNodes, incomingEdges: _incomingEdges, upstreamText, inputAssets }) => {
         if (isReusableAssetNode(node)) {
           return passthroughWorkflowResult(node)
         }
@@ -3853,51 +3869,8 @@ export function VisualCanvasWorkspace({
         const nodeType = getProviderNodeType(node.kind)
         const providerId = normalizeProviderId(node.providerId || node.model || NODE_META[node.kind]?.model || NODE_META.text.model)
         const userPrompt = workflowPromptForNode(node, upstreamText)
-        const upstreamImageUrl = inputAssets.find((asset) => asset.type === 'image' && asset.url)?.url
-        const edgeDirectives = buildEdgeDirectivesForNode({
-          targetNodeId: node.id,
-          nodes: [node, ...upstreamNodes],
-          edges: incomingEdges,
-        })
-        const characterContext = resolveCharacterPromptContext({
-          node,
-          upstreamNodes,
-          incomingEdges,
-          characterBible,
-        })
-        const sceneContext = resolveScenePromptContext({
-          node,
-          upstreamNodes,
-          incomingEdges,
-          sceneBible,
-        })
-        const compiled = (!GENERATION_BASIC_MODE && isPromptCompilerNodeKind(node.kind))
-          ? compileNodePrompt({
-              nodeKind: node.kind,
-              userPrompt: node.prompt?.trim() || userPrompt,
-              upstreamText,
-              upstreamImageUrl,
-              styleBible,
-              enabledSkills: enabledCreatorSkills,
-              providerId,
-              edgeDirectives,
-              characters: characterContext.characters,
-              scenes: sceneContext.scenes,
-              sceneEdits: getSceneEdits(node.metadataJson),
-              edgeCharacterDirectives: {
-                inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
-                lockCharacterConsistency: characterContext.lockCharacterConsistency,
-              },
-              edgeSceneDirectives: {
-                inheritedSceneIdsFromEdges: sceneContext.inheritedSceneIdsFromEdges,
-                lockSceneConsistency: sceneContext.lockSceneConsistency,
-              },
-            })
-          : null
-        const prompt = compiled?.prompt ?? userPrompt
-        const nodeForGeneration = compiled
-          ? { ...node, metadataJson: compiledPromptMetadata(node.metadataJson, compiled) }
-          : node
+        const prompt = userPrompt
+        const nodeForGeneration = node
         if (!prompt.trim()) {
           throw new Error('WORKFLOW_NODE_PROMPT_REQUIRED: 节点缺少 prompt 或上游文本。')
         }
@@ -3906,14 +3879,14 @@ export function VisualCanvasWorkspace({
           nodeType,
           providerId,
           prompt,
-          GENERATION_BASIC_MODE
-            ? { ratio: node.ratio ?? '16:9' }
-            : { ratio: node.ratio ?? '16:9', stage: node.stage ?? 'draft', workflowRun: true },
+          node.kind === 'video'
+            ? { ratio: node.ratio ?? '16:9', duration: 5 }
+            : { ratio: node.ratio ?? '16:9' },
           node.id,
-          GENERATION_BASIC_MODE ? [] : workflowInputAssets(inputAssets),
+          node.kind === 'image' || node.kind === 'video' ? [] : workflowInputAssets(inputAssets),
           projectId,
           workflowId,
-          GENERATION_BASIC_MODE ? undefined : compiled?.system,
+          undefined,
           providerId,
         )
 
@@ -4604,6 +4577,7 @@ export function VisualCanvasWorkspace({
     .join('|'), [nodes])
 
   useEffect(() => {
+    if (!ASSET_RECOVERY_TOOLS_ENABLED) return
     if (!projectId || !hasHydratedCanvasRef.current) return
     const mediaNodes = latestNodesRef.current.filter((node) => node.kind === 'image' || node.kind === 'video')
     if (!mediaNodes.length) return
@@ -5218,26 +5192,6 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(null)
   }, [flushLocalSnapshot, showCanvasFeedback])
 
-  const handleOpenHistoryPanel = useCallback(() => {
-    flushLocalSnapshot()
-    setActivePanel((current) => (current === 'history' ? null : 'history'))
-    setCommentsEnabled(false)
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-    setContextMenu(null)
-    setNodeAddMenu(null)
-  }, [flushLocalSnapshot])
-
-  const handleOpenSkillPanel = useCallback(() => {
-    flushLocalSnapshot()
-    setActivePanel((current) => (current === 'skills' ? null : 'skills'))
-    setCommentsEnabled(false)
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-    setContextMenu(null)
-    setNodeAddMenu(null)
-  }, [flushLocalSnapshot])
-
   const handleAddNodeToDirector = useCallback((node: CanvasNodeCardNode) => {
     setDirectorState((current) => {
       const thumbnailUrl = node.kind === 'image' ? (node.resultImageUrl ?? undefined) : node.kind === 'video' ? (node.resultVideoUrl ?? undefined) : undefined
@@ -5412,16 +5366,6 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback('场景替换完成，已创建新的 Image 节点并连接原图。')
   }, [commitEdges, commitNodes, flushLocalSnapshot, promptStage, scheduleCanvasSave, showCanvasFeedback])
 
-  const handleOpenImageEditor = useCallback(() => {
-    flushLocalSnapshot()
-    setHasStarted(true)
-    setEditingNodeId(null)
-    setActivePanel((current) => (current === 'image-editor' ? null : 'image-editor'))
-    setCommentsEnabled(false)
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-    showCanvasFeedback(activeNode?.kind === 'image' ? '已打开当前图片节点的编辑器。' : '请选择一个高级编辑功能。')
-  }, [activeNode, flushLocalSnapshot, showCanvasFeedback])
 
   const handleAddProjectAssetToCanvas = useCallback((asset: ProjectAssetItem) => {
     setHasStarted(true)
@@ -6017,7 +5961,6 @@ export function VisualCanvasWorkspace({
         if (!imageUrl || !isProviderAccessibleUrl(imageUrl)) return []
         return [{ id: upstreamNode.id, type: 'image', url: imageUrl }]
       })
-    const upstreamImageUrl = upstreamImageAssets.find((asset) => asset.url)?.url
     if (!generationPrompt && !(nodeSnapshot.kind === 'video' && upstreamImageAssets.length > 0)) {
       const errMsg = nodeSnapshot.kind === 'image'
         ? '请先输入图片 prompt，或连接一个已有文本结果的 Text 节点。'
@@ -6139,50 +6082,9 @@ export function VisualCanvasWorkspace({
       }
     }
 
-    const edgeDirectives = buildEdgeDirectivesForNode({
-      targetNodeId: nodeSnapshot.id,
-      nodes: [nodeSnapshot, ...upstreamNodes],
-      edges: incomingEdges,
-    })
-    const characterContext = resolveCharacterPromptContext({
-      node: nodeSnapshot,
-      upstreamNodes,
-      incomingEdges,
-      characterBible,
-    })
-    const sceneContext = resolveScenePromptContext({
-      node: nodeSnapshot,
-      upstreamNodes,
-      incomingEdges,
-      sceneBible,
-    })
-    const compiled = isPromptCompilerNodeKind(nodeSnapshot.kind)
-      ? compileNodePrompt({
-          nodeKind: nodeSnapshot.kind,
-          userPrompt: trimmedPrompt || generationPrompt || '根据上游素材生成内容。',
-          upstreamText: upstreamTextPrompt,
-          upstreamImageUrl,
-          styleBible,
-          enabledSkills: enabledCreatorSkills,
-          providerId: generationProviderId,
-          edgeDirectives,
-          characters: characterContext.characters,
-          scenes: sceneContext.scenes,
-          sceneEdits: getSceneEdits(nodeSnapshot.metadataJson),
-          edgeCharacterDirectives: {
-            inheritedCharacterIdsFromEdges: characterContext.inheritedCharacterIdsFromEdges,
-            lockCharacterConsistency: characterContext.lockCharacterConsistency,
-          },
-          edgeSceneDirectives: {
-            inheritedSceneIdsFromEdges: sceneContext.inheritedSceneIdsFromEdges,
-            lockSceneConsistency: sceneContext.lockSceneConsistency,
-          },
-        })
-      : null
-    const compiledMetadata = compiled ? compiledPromptMetadata(nodeSnapshot.metadataJson, compiled) : nodeSnapshot.metadataJson
     const generationNodeSnapshot: VisualCanvasNode = {
       ...nodeSnapshot,
-      metadataJson: compiledMetadata,
+      metadataJson: nodeSnapshot.metadataJson,
     }
 
     setDialogError(null)
@@ -6194,19 +6096,21 @@ export function VisualCanvasWorkspace({
       ratio: editingNode.ratio ? promptRatio : editingNode.ratio,
       status: 'generating',
       errorMessage: undefined,
-      metadataJson: compiledMetadata,
+      metadataJson: nodeSnapshot.metadataJson,
     })
 
     void callGenerationApi(
       nodeType,
       generationProviderId,
-      compiled?.prompt ?? generationPrompt,
-      { ratio: promptRatio, stage: promptStage, parameter: promptParameter },
+      generationPrompt,
+      nodeSnapshot.kind === 'video'
+        ? { ratio: promptRatio, duration: 5 }
+        : { ratio: promptRatio },
       nodeSnapshot.id,
-      upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
+      nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video' ? [] : upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
       nodeType === 'image' || nodeType === 'video' ? projectId : undefined,
       nodeType === 'image' || nodeType === 'video' ? workflowId : undefined,
-      compiled?.system,
+      undefined,
       generationProviderId,
     ).then(async (result) => {
       if (nodeSnapshot.kind === 'image' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
@@ -7207,30 +7111,34 @@ export function VisualCanvasWorkspace({
                   ? '保存失败，重试'
                     : '保存'}
             </button>
-            <button
-              type="button"
-              className="canvas-secondary-button"
-              title="扫描当前画布并按 assetId 恢复历史图片/视频资产"
-              disabled={assetRecoverBatchStatus === 'running' || !projectId || nodes.length === 0}
-              onClick={() => { void handleRecoverCanvasAssets() }}
-            >
-              {assetRecoverBatchStatus === 'running'
-                ? '恢复中...'
-                : assetRecoverBatchStatus === 'done'
-                  ? '已扫描恢复'
-                  : assetRecoverBatchStatus === 'failed'
-                    ? '恢复失败，重试'
-                    : '扫描并恢复历史资产'}
-            </button>
-            <button
-              type="button"
-              className="canvas-secondary-button"
-              title="诊断当前画布真实图片/视频节点，并逐节点 resolve、恢复、重新导入或导出诊断 JSON"
-              disabled={!projectId}
-              onClick={() => setP0MediaDebugOpen(true)}
-            >
-              P0 媒体自检
-            </button>
+            {ASSET_RECOVERY_TOOLS_ENABLED ? (
+              <>
+                <button
+                  type="button"
+                  className="canvas-secondary-button"
+                  title="扫描当前画布并按 assetId 恢复历史图片/视频资产"
+                  disabled={assetRecoverBatchStatus === 'running' || !projectId || nodes.length === 0}
+                  onClick={() => { void handleRecoverCanvasAssets() }}
+                >
+                  {assetRecoverBatchStatus === 'running'
+                    ? '恢复中...'
+                    : assetRecoverBatchStatus === 'done'
+                      ? '已扫描恢复'
+                      : assetRecoverBatchStatus === 'failed'
+                        ? '恢复失败，重试'
+                        : '扫描并恢复历史资产'}
+                </button>
+                <button
+                  type="button"
+                  className="canvas-secondary-button"
+                  title="诊断当前画布真实图片/视频节点，并逐节点 resolve、恢复、重新导入或导出诊断 JSON"
+                  disabled={!projectId}
+                  onClick={() => setP0MediaDebugOpen(true)}
+                >
+                  P0 媒体自检
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               className="canvas-secondary-button"
@@ -7258,29 +7166,33 @@ export function VisualCanvasWorkspace({
               <span className="canvas-generation-tasks-badge">{runningGenerationTaskCount}</span>
             ) : null}
           </button>
-          <button
-            type="button"
-            className="canvas-secondary-button canvas-generation-tasks-trigger"
-            title="按连接顺序查看 Storyboard Timeline"
-            disabled={nodes.length === 0}
-            onClick={() => setStoryboardPreviewOpen(true)}
-          >
-            组合预览
-            {storyboardShotCount > 0 ? (
-              <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            className="canvas-secondary-button"
-            title="打开分镜导演"
-            onClick={() => setStoryboardDirectorOpen(true)}
-          >
-            分镜
-            {directorState.shots.length > 0 ? (
-              <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
-            ) : null}
-          </button>
+          {STORYBOARD_TOOLS_ENABLED ? (
+            <>
+              <button
+                type="button"
+                className="canvas-secondary-button canvas-generation-tasks-trigger"
+                title="按连接顺序查看 Storyboard Timeline"
+                disabled={nodes.length === 0}
+                onClick={() => setStoryboardPreviewOpen(true)}
+              >
+                组合预览
+                {storyboardShotCount > 0 ? (
+                  <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                className="canvas-secondary-button"
+                title="打开分镜导演"
+                onClick={() => setStoryboardDirectorOpen(true)}
+              >
+                分镜
+                {directorState.shots.length > 0 ? (
+                  <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
+                ) : null}
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => setNewProjectOpen(true)}
@@ -7398,9 +7310,6 @@ export function VisualCanvasWorkspace({
           onOpenAssetsPanel={handleOpenAssetsPanel}
           onOpenTemplatePanel={handleOpenTemplatePanel}
           onToggleCommentsPanel={handleToggleCommentsPanel}
-          onOpenHistoryPanel={handleOpenHistoryPanel}
-          onOpenImageEditor={handleOpenImageEditor}
-          onOpenSkillPanel={handleOpenSkillPanel}
         />
       ) : null}
 
@@ -7640,16 +7549,16 @@ export function VisualCanvasWorkspace({
                 onEdit={() => focusPromptForNode(node)}
                 onOpenPreview={(type) => openNodePreview(node, type)}
                 onOpenPromptInspector={() => openPromptInspector(node.id)}
-                onOpenMediaDiagnostics={(type) => openMediaDiagnostics(node.id, type)}
-                onCreateStableCopy={() => createStableCopyFromExpiredNode(node)}
-                onRecoverMedia={handleMediaRecoveryPatch}
-                onRegenerateFromPrompt={() => handleRegenerateNodeFromPrompt(node)}
-                enabledSkillCount={enabledCreatorSkills.filter((skill) => isPromptCompilerNodeKind(node.kind) && skill.appliesTo.includes(node.kind)).length}
-                onOpenSkillPanel={handleOpenSkillPanel}
+                onOpenMediaDiagnostics={ASSET_RECOVERY_TOOLS_ENABLED ? (type) => openMediaDiagnostics(node.id, type) : undefined}
+                onCreateStableCopy={ASSET_RECOVERY_TOOLS_ENABLED ? () => createStableCopyFromExpiredNode(node) : undefined}
+                onRecoverMedia={ASSET_RECOVERY_TOOLS_ENABLED ? handleMediaRecoveryPatch : undefined}
+                onRegenerateFromPrompt={ASSET_RECOVERY_TOOLS_ENABLED ? () => handleRegenerateNodeFromPrompt(node) : undefined}
+                enabledSkillCount={0}
+                onOpenSkillPanel={undefined}
                 creativeAssetLabel={creativeAssetLabelForNode(node)}
                 onOpenCreativeAssets={() => openCreativeAssets(node.id)}
                 onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
-                onAddToStoryboard={() => handleAddNodeToDirector(node)}
+                onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
                 generationHealth={generationHealth}
               />
             </div>
@@ -7673,34 +7582,38 @@ export function VisualCanvasWorkspace({
         onPatchEdge={handleEdgePatch}
       />
 
-      <StoryboardPreviewPanel
-        open={storyboardPreviewOpen}
-        nodes={nodes}
-        edges={edges}
-        projectId={projectId}
-        onClose={() => setStoryboardPreviewOpen(false)}
-        onOpenPromptInspector={(nodeId) => {
-          setStoryboardPreviewOpen(false)
-          openPromptInspector(nodeId)
-        }}
-      />
+      {STORYBOARD_TOOLS_ENABLED ? (
+        <>
+          <StoryboardPreviewPanel
+            open={storyboardPreviewOpen}
+            nodes={nodes}
+            edges={edges}
+            projectId={projectId}
+            onClose={() => setStoryboardPreviewOpen(false)}
+            onOpenPromptInspector={(nodeId) => {
+              setStoryboardPreviewOpen(false)
+              openPromptInspector(nodeId)
+            }}
+          />
 
-      <StoryboardDirectorPanel
-        open={storyboardDirectorOpen}
-        state={directorState}
-        activeShotId={directorActiveShotId}
-        projectId={projectId}
-        canvasNodes={nodes.map((n) => ({
-          id: n.id,
-          kind: n.kind,
-          title: n.title,
-          resultImageUrl: n.resultImageUrl,
-          resultVideoUrl: n.resultVideoUrl,
-        }))}
-        onStateChange={(next) => setDirectorState(next)}
-        onActiveShotChange={(id) => setDirectorActiveShotId(id)}
-        onClose={() => setStoryboardDirectorOpen(false)}
-      />
+          <StoryboardDirectorPanel
+            open={storyboardDirectorOpen}
+            state={directorState}
+            activeShotId={directorActiveShotId}
+            projectId={projectId}
+            canvasNodes={nodes.map((n) => ({
+              id: n.id,
+              kind: n.kind,
+              title: n.title,
+              resultImageUrl: n.resultImageUrl,
+              resultVideoUrl: n.resultVideoUrl,
+            }))}
+            onStateChange={(next) => setDirectorState(next)}
+            onActiveShotChange={(id) => setDirectorActiveShotId(id)}
+            onClose={() => setStoryboardDirectorOpen(false)}
+          />
+        </>
+      ) : null}
 
       <PromptInspectorPanel
         open={Boolean(activeInspectorNode)}
@@ -7713,25 +7626,29 @@ export function VisualCanvasWorkspace({
         onClose={closePromptInspector}
       />
 
-      <MediaDiagnosticsPanel
-        open={Boolean(activeMediaDiagnostics && activeMediaDiagnosticsNode)}
-        node={activeMediaDiagnosticsNode}
-        mediaType={activeMediaDiagnostics?.type ?? 'image'}
-        mediaUrl={activeMediaDiagnosticsUrl}
-        projectId={projectId}
-        onClose={closeMediaDiagnostics}
-        onPatchNode={handleMediaDiagnosticsPatch}
-      />
+      {ASSET_RECOVERY_TOOLS_ENABLED ? (
+        <>
+          <MediaDiagnosticsPanel
+            open={Boolean(activeMediaDiagnostics && activeMediaDiagnosticsNode)}
+            node={activeMediaDiagnosticsNode}
+            mediaType={activeMediaDiagnostics?.type ?? 'image'}
+            mediaUrl={activeMediaDiagnosticsUrl}
+            projectId={projectId}
+            onClose={closeMediaDiagnostics}
+            onPatchNode={handleMediaDiagnosticsPatch}
+          />
 
-      <P0MediaDebugPanel
-        open={p0MediaDebugOpen}
-        projectId={projectId}
-        workflowId={workflowId}
-        nodes={nodes}
-        generationHealth={generationHealth}
-        onClose={() => setP0MediaDebugOpen(false)}
-        onPatchNode={handleMediaRecoveryPatch}
-      />
+          <P0MediaDebugPanel
+            open={p0MediaDebugOpen}
+            projectId={projectId}
+            workflowId={workflowId}
+            nodes={nodes}
+            generationHealth={generationHealth}
+            onClose={() => setP0MediaDebugOpen(false)}
+            onPatchNode={handleMediaRecoveryPatch}
+          />
+        </>
+      ) : null}
 
       {activeCreativeAssetsNode ? (
         <CreativeAssetsPanel

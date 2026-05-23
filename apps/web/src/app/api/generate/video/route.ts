@@ -35,8 +35,6 @@ async function getVideoProviderRows() {
 
 function defaultVideoProviderId(rows: Awaited<ReturnType<typeof getVideoProviderRows>>) {
   return rows.find((row) => row.providerId === 'volcengine-seedance-video' && row.available)?.providerId
-    ?? rows.find((row) => row.providerId === 'custom-video-gateway' && row.available)?.providerId
-    ?? rows.find((row) => row.available)?.providerId
     ?? null
 }
 
@@ -158,15 +156,6 @@ function classifyVideoException(error: unknown) {
   return { errorCode: 'generation_failed', message }
 }
 
-
-function numberParam(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value.replace(/s$/i, ''))
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-  return undefined
-}
 
 function stringParam(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
@@ -489,7 +478,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
+  const prompt = body.prompt?.trim() || ''
   const projectId = stringInput(body.projectId)
   const nodeId = stringInput(body.nodeId)
   const workflowId = stringInput(body.workflowId)
@@ -524,9 +513,7 @@ export async function POST(request: NextRequest) {
     }))
   }
 
-  const requestModel = typeof body.model === 'string' && body.model.trim()
-    ? body.model.trim()
-    : providerRow?.model ?? providerId
+  const requestModel = providerRow?.model ?? providerId
   const generationContext = await prepareGenerationContext({
     userId: currentUser.id,
     projectId,
@@ -557,18 +544,11 @@ export async function POST(request: NextRequest) {
   body.nodeId = generationContext.nodeId
 
   if (providerId === 'volcengine-seedance-video') {
-    const params = body.params ?? {}
     const requestedDuration = body.duration
-      ?? numberParam(params.duration)
       ?? 5
     const requestedAspectRatio = body.aspectRatio
-      ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
-      ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
       ?? '16:9'
-    const requestedResolution = stringParam(params.resolution)
-      ?? body.resolution
-      ?? stringParam(params.quality)
-      ?? stringParam(params.size)
+    const requestedResolution = body.resolution
     const duration = normalizeSeedanceRouteDuration(requestedDuration)
     const aspectRatio = normalizeSeedanceRouteAspectRatio(requestedAspectRatio)
     const resolution = normalizeSeedanceRouteResolution(requestedResolution)
@@ -640,6 +620,13 @@ export async function POST(request: NextRequest) {
     const submittedAt = new Date().toISOString()
     const submittedInput = {
       providerId, model: providerRow.model,
+      projectId: body.projectId ?? null,
+      workflowId: body.workflowId ?? null,
+      nodeId: body.nodeId ?? null,
+      providerRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
       promptChars: prompt.length,
       hasImageUrl: Boolean(imageUrl),
       imageUrl: summarizeInputUrl(imageUrl),
@@ -693,6 +680,46 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget to cn-executor — do NOT await
     const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
     const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
+    if (!cnBaseUrl) {
+      const output = {
+        errorCode: 'cn_executor_url_not_configured',
+        errorStage: 'executor_dispatch',
+        stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
+        message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。请在 Vercel 环境变量中设置阿里云 FC 函数的 URL。',
+        submittedInput,
+        executorKind,
+      }
+      await db.generationJob.update({
+        where: { id: generationJob.id },
+        data: {
+          status: 'FAILED',
+          errorMessage: output.message,
+          output,
+        },
+      }).catch((err: unknown) => {
+        console.warn('[api/generate/video] failed to mark job failed after missing cn executor url', err)
+      })
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        errorCode: output.errorCode,
+        errorMessage: output.message,
+        requestId: routeRequestId,
+        submittedInput,
+        details: {
+          generationJobId: generationJob.id,
+          jobId: generationJob.id,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          errorStage: output.errorStage,
+          stageTrace: output.stageTrace,
+        },
+      })
+    }
     fetch(`${cnBaseUrl}/api/jobs/run-video`, {
       method: 'POST',
       headers: {
@@ -722,6 +749,7 @@ export async function POST(request: NextRequest) {
       generationJobId: generationJob.id,
       jobId: generationJob.id,
       submittedAt,
+      submittedInput,
       message: '视频生成任务已提交，正在处理中',
     }, { status: 200 })
   }
@@ -767,7 +795,12 @@ export async function POST(request: NextRequest) {
     nodeType: 'video',
     prompt,
     inputAssets: body.inputAssets,
-    params: body.params,
+    params: {
+      ratio: body.aspectRatio ?? '16:9',
+      aspectRatio: body.aspectRatio ?? '16:9',
+      duration: body.duration ?? 5,
+      ...(body.resolution ? { resolution: body.resolution } : {}),
+    },
     projectId: body.projectId,
     nodeId: body.nodeId,
   })
@@ -855,6 +888,10 @@ export async function POST(request: NextRequest) {
       assetId: persisted.assetId,
       outputAssetId: persisted.assetId,
       generationJobId: result.billingJobId ?? result.jobId,
+      submittedInput: safeVideoSubmittedInput(body, {
+        providerId,
+        model: resultModel,
+      }),
       asset: persisted.asset,
       originalProviderVideoUrl: providerVideoUrl,
       providerOriginalUrl: providerVideoUrl,
@@ -953,6 +990,10 @@ export async function POST(request: NextRequest) {
       status: 'failed',
       upstreamMessage: classified.message,
       submittedInput: safeVideoSubmittedInput(body),
+      details: {
+        errorStage: 'api_route_exception',
+        stageTrace: ['api_route_exception'],
+      },
     })
   }
 }

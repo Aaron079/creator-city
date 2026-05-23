@@ -36,8 +36,6 @@ async function getImageProviderRows() {
 
 function defaultImageProviderId(rows: Awaited<ReturnType<typeof getImageProviderRows>>) {
   return rows.find((row) => row.providerId === 'volcengine-seedream-image' && row.available)?.providerId
-    ?? rows.find((row) => row.providerId === 'jimeng-image' && row.available)?.providerId
-    ?? rows.find((row) => row.providerId === 'openai-image' && row.available)?.providerId
     ?? null
 }
 
@@ -189,8 +187,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  let body: ImageGenerateBody | undefined
   try {
-    let body: ImageGenerateBody
     try {
       body = await request.json() as ImageGenerateBody
     } catch {
@@ -208,7 +206,7 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
 
-    const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
+    const prompt = body.prompt?.trim() || ''
     const projectId = stringInput(body.projectId)
     const nodeId = stringInput(body.nodeId)
     const workflowId = stringInput(body.workflowId)
@@ -258,17 +256,10 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    const params = body.params ?? {}
-    const aspectRatio = body.aspectRatio
-      ?? (typeof params.ratio === 'string' ? params.ratio : undefined)
-      ?? (typeof params.aspectRatio === 'string' ? params.aspectRatio : undefined)
-    const size = body.size ?? (typeof params.size === 'string' ? params.size : undefined)
-    const referenceImages = body.inputAssets
-      ?.filter((asset) => asset.type === 'image' && asset.url)
-      .map((asset) => asset.url as string)
-    const requestModel = typeof body.model === 'string' && body.model.trim()
-      ? body.model.trim()
-      : providerRow?.model ?? null
+    const aspectRatio = body!.aspectRatio ?? '16:9'
+    const size = body.size
+    const referenceImages: string[] = []
+    const requestModel = providerRow?.model ?? null
     const submittedModel = providerId === 'volcengine-seedream-image'
       ? (process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() || requestModel)
       : requestModel
@@ -417,7 +408,11 @@ export async function POST(request: NextRequest) {
             projectId: body.projectId ?? null,
             workflowId: body.workflowId ?? null,
             nodeId: body.nodeId ?? null,
-            params,
+            params: {
+              ratio: aspectRatio,
+              aspectRatio,
+              ...(size ? { size } : {}),
+            },
             model: requestModel ?? null,
             aspectRatio: aspectRatio ?? null,
             size: size ?? null,
@@ -622,7 +617,11 @@ export async function POST(request: NextRequest) {
         nodeType: 'image',
         prompt,
         inputAssets: body.inputAssets,
-        params: body.params,
+        params: {
+          ratio: aspectRatio,
+          aspectRatio,
+          ...(size ? { size } : {}),
+        },
         projectId: body.projectId,
         nodeId: body.nodeId,
       }, currentUser?.id)
@@ -859,12 +858,30 @@ export async function POST(request: NextRequest) {
         providerEndpoint: raw.providerEndpoint,
         providerRequestMethod: raw.providerRequestMethod,
         providerHttpStatus: raw.providerHttpStatus,
-        providerFetchError: raw.providerFetchError,
-        providerFetchCause: raw.providerFetchCause,
+      providerFetchError: raw.providerFetchError,
+      providerFetchCause: raw.providerFetchCause,
+      submittedInput: raw.submittedInput ?? submittedInput,
+      providerResponse: raw.providerResponse,
       }, { status: 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/image]', err)
-    return NextResponse.json({ success: false, message, errorCode: 'generation_failed' }, { status: 200 })
+    return NextResponse.json({
+      success: false,
+      message,
+      errorMessage: message,
+      errorCode: 'generation_failed',
+      errorStage: 'api_route_exception',
+      stageTrace: ['api_route_exception'],
+      submittedInput: body ? {
+        providerId: body.providerId ?? null,
+        projectId: body.projectId ?? null,
+        workflowId: body.workflowId ?? null,
+        nodeId: body.nodeId ?? null,
+        promptChars: body.prompt?.trim().length ?? 0,
+        aspectRatio: body.aspectRatio ?? null,
+        size: body.size ?? null,
+      } : null,
+    }, { status: 200 })
   }
 }

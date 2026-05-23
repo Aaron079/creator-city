@@ -162,6 +162,17 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
+function displayValue(value: unknown) {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value == null) return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function stringArrayValue(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : []
 }
@@ -374,6 +385,9 @@ type MediaDiagnosticPayload = {
   persistenceError: string | null
   upstreamStatus: number | null
   upstreamMessage: string | null
+  errorStage: string | null
+  stageTrace?: unknown
+  executorKind: string | null
   generationStage: string | null
   errorCode: string | null
   errorMessage: string | null
@@ -1632,6 +1646,13 @@ export function CanvasNodeCard({
       || stringValue(mediaPersistence.generationStage)
       || stringValue(mediaPersistence.stage)
       || null
+    const errorStage = stringValue(lastGenerationError.errorStage)
+      || stringValue(nodeMetadata.errorStage)
+      || null
+    const stageTrace = lastGenerationError.stageTrace ?? nodeMetadata.stageTrace ?? null
+    const executorKind = stringValue(lastGenerationError.executorKind)
+      || stringValue(nodeMetadata.executorKind)
+      || null
     const requestId = stringValue(lastResolveResult.requestId)
       || stringValue(lastGenerationError.requestId)
       || null
@@ -1792,6 +1813,9 @@ export function CanvasNodeCard({
       persistenceError: nullableString(diagnosticPersistenceError),
       upstreamStatus,
       upstreamMessage,
+      errorStage,
+      stageTrace: sanitizeDiagnosticValue(stageTrace),
+      executorKind,
       generationStage,
       errorCode,
       errorMessage,
@@ -2676,9 +2700,24 @@ export function CanvasNodeCard({
           errorCode: {mediaDiagnosticPayload.errorCode}
         </span>
       ) : null}
+      {mediaDiagnosticPayload?.generationJobId ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          generationJobId: {mediaDiagnosticPayload.generationJobId}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.errorStage ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
+          errorStage: {mediaDiagnosticPayload.errorStage}
+        </span>
+      ) : null}
       {mediaDiagnosticPayload?.generationStage ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
           stage: {mediaDiagnosticPayload.generationStage}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.executorKind ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+          executorKind: {mediaDiagnosticPayload.executorKind}
         </span>
       ) : null}
       {mediaDiagnosticPayload?.errorMessage ? (
@@ -2764,6 +2803,16 @@ export function CanvasNodeCard({
         {mediaDiagnosticPayload?.generationResponseTextPreview ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
           generationResponseTextPreview: {mediaDiagnosticPayload.generationResponseTextPreview}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.stageTrace ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          stageTrace: {displayValue(mediaDiagnosticPayload.stageTrace).slice(0, 240)}
+        </span>
+      ) : null}
+      {mediaDiagnosticPayload?.submittedInput ? (
+        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
+          submittedInput: {displayValue(mediaDiagnosticPayload.submittedInput).slice(0, 240)}
         </span>
       ) : null}
       {failedRenderUrl ? (

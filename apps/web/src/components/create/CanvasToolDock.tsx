@@ -6,13 +6,10 @@ import {
   AudioLines,
   Boxes,
   Folder,
-  History,
   ImageIcon,
-  ImagePlus,
   ListPlus,
   MessageCircle,
   Plus,
-  Sparkles,
   Text,
   Upload,
   UserRound,
@@ -30,9 +27,6 @@ interface CanvasToolDockProps {
   onOpenAssetsPanel: () => void
   onOpenTemplatePanel: () => void
   onToggleCommentsPanel: () => void
-  onOpenHistoryPanel: () => void
-  onOpenImageEditor: () => void
-  onOpenSkillPanel: () => void
 }
 
 const TOOLS = [
@@ -40,9 +34,6 @@ const TOOLS = [
   { id: 'assets', label: '素材库', icon: Folder },
   { id: 'templates', label: '模板', icon: ListPlus },
   { id: 'comments', label: '打开评论模式', icon: MessageCircle },
-  { id: 'history', label: '历史', icon: History },
-  { id: 'skills', label: '风格圣经', icon: Sparkles },
-  { id: 'image-editor', label: '高级编辑', icon: ImagePlus },
 ] as const
 
 const NODE_OPTIONS: Array<{
@@ -71,9 +62,6 @@ export function CanvasToolDock({
   onOpenAssetsPanel,
   onOpenTemplatePanel,
   onToggleCommentsPanel,
-  onOpenHistoryPanel,
-  onOpenImageEditor,
-  onOpenSkillPanel,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
 
@@ -95,17 +83,6 @@ export function CanvasToolDock({
     if (toolId === 'comments') {
       onToggleCommentsPanel()
       return
-    }
-    if (toolId === 'history') {
-      onOpenHistoryPanel()
-      return
-    }
-    if (toolId === 'skills') {
-      onOpenSkillPanel()
-      return
-    }
-    if (toolId === 'image-editor') {
-      onOpenImageEditor()
     }
   }
 
