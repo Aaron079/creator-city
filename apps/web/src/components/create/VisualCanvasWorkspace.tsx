@@ -297,6 +297,10 @@ const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }>
   upload: { width: 360, height: 280 },
 }
 
+// When NEXT_PUBLIC_GENERATION_BASIC_MODE=true: skip style-bible/skills/inputAssets
+// and send the minimum prompt payload to help isolate provider-layer failures.
+const GENERATION_BASIC_MODE = process.env.NEXT_PUBLIC_GENERATION_BASIC_MODE === 'true'
+
 const WORKSPACE_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const MIN_CANVAS_ZOOM = 0.35
 const MAX_CANVAS_ZOOM = 1.8
@@ -3867,7 +3871,7 @@ export function VisualCanvasWorkspace({
           incomingEdges,
           sceneBible,
         })
-        const compiled = isPromptCompilerNodeKind(node.kind)
+        const compiled = (!GENERATION_BASIC_MODE && isPromptCompilerNodeKind(node.kind))
           ? compileNodePrompt({
               nodeKind: node.kind,
               userPrompt: node.prompt?.trim() || userPrompt,
@@ -3902,12 +3906,14 @@ export function VisualCanvasWorkspace({
           nodeType,
           providerId,
           prompt,
-          { ratio: node.ratio ?? '16:9', stage: node.stage ?? 'draft', workflowRun: true },
+          GENERATION_BASIC_MODE
+            ? { ratio: node.ratio ?? '16:9' }
+            : { ratio: node.ratio ?? '16:9', stage: node.stage ?? 'draft', workflowRun: true },
           node.id,
-          workflowInputAssets(inputAssets),
+          GENERATION_BASIC_MODE ? [] : workflowInputAssets(inputAssets),
           projectId,
           workflowId,
-          compiled?.system,
+          GENERATION_BASIC_MODE ? undefined : compiled?.system,
           providerId,
         )
 
