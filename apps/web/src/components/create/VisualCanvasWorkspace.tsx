@@ -274,7 +274,7 @@ type MediaReviewWindow = {
 
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
   text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'openai-text' },
-  image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'openai-image', ratio: '16:9' },
+  image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'volcengine-seedream-image', ratio: '16:9' },
   video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'volcengine-seedance-video', ratio: '16:9' },
   audio: { title: '音频', subtitle: '补充音乐、旁白和声音氛围。', model: 'elevenlabs' },
   asset: { title: '素材', subtitle: '导入图片、视频或音频参考素材。', model: 'asset-drop' },
@@ -5811,9 +5811,14 @@ export function VisualCanvasWorkspace({
     const selectedVideoStatusForGenerate = nodeSnapshot.kind === 'video'
       ? getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
       : null
-    const generationProviderId = nodeSnapshot.kind === 'video' && selectedVideoStatusForGenerate !== 'available' && defaultVideoProviderId
-      ? defaultVideoProviderId
-      : normalizedPromptModel
+    const selectedImageStatusForGenerate = nodeSnapshot.kind === 'image'
+      ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      : null
+    const generationProviderId = nodeSnapshot.kind === 'image' && selectedImageStatusForGenerate !== 'available' && defaultImageProviderId
+      ? defaultImageProviderId
+      : nodeSnapshot.kind === 'video' && selectedVideoStatusForGenerate !== 'available' && defaultVideoProviderId
+        ? defaultVideoProviderId
+        : normalizedPromptModel
     if (nodeSnapshot.kind === 'image' && nodeSnapshot.status === 'running' && currentGenerationJobId) {
       setDialogError(null)
       showCanvasFeedback('正在查询图片任务状态...')
@@ -6020,20 +6025,20 @@ export function VisualCanvasWorkspace({
       return
     }
     if (nodeSnapshot.kind === 'image') {
-      const selectedProviderInfo = imageProviderStatusMap.get(normalizedPromptModel)
-      const selectedProviderStatus = getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
+      const selectedProviderInfo = imageProviderStatusMap.get(generationProviderId)
+      const selectedProviderStatus = getImageProviderStatus(imageProviderStatusMap, generationProviderId, liveStatusMap, liveStatusLoading)
       // Only block when the server has explicitly told us this provider is unavailable.
       // 'unknown' / 'checking' means the status map hasn't loaded yet — let the API validate instead.
       const definitivelyUnavailable = (selectedProviderStatus === 'not-configured' || selectedProviderStatus === 'coming-soon' || selectedProviderStatus === 'disabled') && imageProviderStatusMap.size > 0
       if (definitivelyUnavailable) {
-        const errMsg = imageProviderUnavailableMessage(normalizedPromptModel, selectedProviderInfo)
+        const errMsg = imageProviderUnavailableMessage(generationProviderId, selectedProviderInfo)
         const missingEnv = selectedProviderInfo?.missingEnvKeys?.length ? selectedProviderInfo.missingEnvKeys : selectedProviderInfo?.missingEnv
         const result: GenerateApiResult = {
           success: false,
-          providerId: normalizedPromptModel,
+          providerId: generationProviderId,
           mode: 'unavailable',
           status: 'not-configured',
-          errorCode: 'PROVIDER_NOT_CONFIGURED',
+          errorCode: 'generation_post_not_sent',
           message: errMsg,
           missingEnv,
           missingEnvKeys: missingEnv,
@@ -6044,7 +6049,7 @@ export function VisualCanvasWorkspace({
           errorMessage: errMsg,
           resultPreview: '请先选择并配置可用图片 Provider。',
           outputLabel: '图片 Provider 未配置',
-          metadataJson: imageErrorMetadata(nodeSnapshot, result, normalizedPromptModel),
+          metadataJson: imageErrorMetadata(nodeSnapshot, result, generationProviderId),
         })
         showCanvasFeedback(errMsg)
         return
@@ -6113,6 +6118,22 @@ export function VisualCanvasWorkspace({
       undefined,
       generationProviderId,
     ).then(async (result) => {
+      if (nodeSnapshot.kind === 'image' && result.success && (result.status === 'running' || result.status === 'queued') && !(result.generationJobId || result.jobId)) {
+        handleNodePatch(nodeSnapshot.id, { status: 'running', resultPreview: '图片任务已提交，等待任务 ID...', outputLabel: '图片生成中' })
+        const missingJobIdTimer = window.setTimeout(() => {
+          const errMsg = 'missing_generation_job_id: 任务已提交但未返回任务 ID，无法追踪进度。'
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: '任务 ID 缺失',
+            outputLabel: '任务 ID 缺失',
+            metadataJson: imageErrorMetadata(generationNodeSnapshot, { ...result, errorCode: 'missing_generation_job_id' }, generationProviderId),
+          })
+          setDialogError(errMsg)
+        }, 30_000)
+        timersRef.current.push(missingJobIdTimer)
+        return
+      }
       if (nodeSnapshot.kind === 'image' && (result.status === 'running' || result.status === 'queued') && (result.generationJobId || result.jobId)) {
         const generationJobId = result.generationJobId ?? result.jobId!
         const taskId = result.taskId ?? generationJobId
@@ -7020,7 +7041,9 @@ export function VisualCanvasWorkspace({
   const selectedVideoProviderStatus = editingNode?.kind === 'video'
     ? getVideoProviderStatus(videoProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
     : null
-  const imageGenerateDisabled = editingNode?.kind === 'image' && selectedImageProviderStatus !== 'available'
+  const imageGenerateDisabled = editingNode?.kind === 'image'
+    && selectedImageProviderStatus !== 'available'
+    && !defaultImageProviderId
   const videoGenerateDisabled = editingNode?.kind === 'video'
     && selectedVideoProviderStatus !== 'available'
     && !defaultVideoProviderId
