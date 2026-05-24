@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
 
   if (generationJob.status === 'SUCCEEDED') {
     const asset = await findExistingVideoAsset(generationJob.id, generationJob.outputAssetId)
-    const videoUrl = asset?.url ?? stringValue(record(generationJob.output).stableUrl) ?? stringValue(record(generationJob.output).resultVideoUrl)
+    const videoUrl = asset?.url || stringValue(record(generationJob.output).stableUrl) || stringValue(record(generationJob.output).resultVideoUrl)
     const assetId = asset?.id ?? generationJob.outputAssetId
     if (videoUrl && assetId) {
       await writeCanvasNodeVideoResult({

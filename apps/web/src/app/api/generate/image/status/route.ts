@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
 
   if (generationJob.status === 'SUCCEEDED') {
     const asset = await findExistingAsset(generationJob.id, generationJob.outputAssetId)
-    const imageUrl = asset?.url ?? stringValue(record(generationJob.output).stableUrl) ?? stringValue(record(generationJob.output).resultImageUrl)
+    const imageUrl = asset?.url || stringValue(record(generationJob.output).stableUrl) || stringValue(record(generationJob.output).resultImageUrl)
     const assetId = asset?.id ?? generationJob.outputAssetId
     if (imageUrl && assetId) {
       await writeCanvasNodeResult({

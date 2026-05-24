@@ -6448,7 +6448,7 @@ export function VisualCanvasWorkspace({
         })
         showCanvasFeedback('视频任务已提交，正在生成中')
         let videoPolls = 0
-        while (videoPolls < 12) {
+        while (videoPolls < 24) {
           await delay(5000, generationController?.signal)
           const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId, generationController?.signal)
           videoPolls += 1
@@ -6499,11 +6499,11 @@ export function VisualCanvasWorkspace({
         }
         handleNodePatch(nodeSnapshot.id, {
           status: 'failed',
-          errorMessage: '视频生成超时：轮询 12 次未完成，请手动检查任务状态。',
-          metadataJson: videoErrorMetadata(generationNodeSnapshot, { providerId: generationProviderId, errorCode: 'generation_polling_timeout', message: '视频生成超时：轮询 12 次未完成', taskId, generationJobId }, generationProviderId),
+          errorMessage: '视频生成超时（2 分钟未完成）：任务仍在后台运行，刷新页面后查看结果。',
+          metadataJson: videoErrorMetadata(generationNodeSnapshot, { providerId: generationProviderId, errorCode: 'generation_polling_timeout', message: '视频生成超时：轮询 24 次未完成', taskId, generationJobId }, generationProviderId),
         })
-        setDialogError('视频生成超时，请手动检查任务状态。')
-        showCanvasFeedback('视频生成超时，请手动检查任务状态。')
+        setDialogError('视频生成超时（2 分钟内未完成轮询），任务仍在后台运行，刷新页面后查看结果。')
+        showCanvasFeedback('视频生成超时，任务仍在后台运行，刷新页面后可查看结果。')
         return
       }
 

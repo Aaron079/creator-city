@@ -742,6 +742,13 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(8_000),
     }).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
+      const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+      if (isTimeout) {
+        // 8s timeout fired before cn-executor HTTP response — job is still running on Aliyun FC.
+        // Do NOT mark FAILED: cn-executor marks SUCCEEDED when done; stall detection handles true hangs.
+        console.warn('[api/generate/video] cn-executor fire-and-forget timed out (job still running on FC)', { generationJobId: generationJob.id })
+        return
+      }
       const output = {
         errorCode: 'executor_trigger_failed',
         errorStage: 'executor_dispatch',
@@ -750,7 +757,7 @@ export async function POST(request: NextRequest) {
         submittedInput,
         executorKind,
       }
-      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed:', message)
+      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed (network error):', message)
       void db.generationJob.update({
         where: { id: generationJob.id },
         data: { status: 'FAILED', errorMessage: output.message, output },
