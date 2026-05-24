@@ -268,6 +268,8 @@ export async function GET(request: NextRequest) {
       storageRegion,
       executorKind,
       generationJobId: generationJob.id,
+      errorStage: stallOutput.errorStage ?? 'status_polling',
+      stageTrace: stallOutput.stageTrace ?? ['status_polling', 'generation_job_stalled'],
       jobStatus: generationJob.status,
       updatedAt: generationJob.updatedAt.toISOString(),
       ageMs,

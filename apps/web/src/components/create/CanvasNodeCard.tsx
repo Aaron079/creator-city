@@ -10,7 +10,7 @@ import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
-export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'done' | 'error'
+export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
 export type CanvasNodePreviewType = 'text' | 'image' | 'video'
 export type VisualCanvasNodePreview = {
   type: 'none' | 'placeholder-video' | 'remote-video'
@@ -134,10 +134,11 @@ function getResultPreviewClass(kind: VisualCanvasNodeKind) {
 }
 
 function getStatusLabel(status: VisualCanvasNodeStatus) {
-  if (status === 'queued') return '排队中'
-  if (status === 'running' || status === 'generating') return '运行中'
+  if (status === 'queued' || status === 'pending') return '排队中'
+  if (status === 'running' || status === 'generating' || status === 'processing') return '运行中'
   if (status === 'done') return '完成'
-  if (status === 'error') return '失败'
+  if (status === 'error' || status === 'failed') return '失败'
+  if (status === 'cancelled') return '已停止'
   return '待运行'
 }
 
@@ -1469,6 +1470,8 @@ export function CanvasNodeCard({
     (node.kind === 'image' || node.kind === 'video') &&
     (
       node.status === 'error' ||
+      node.status === 'failed' ||
+      node.status === 'cancelled' ||
       activeMedia?.loadFailed ||
       recoveryReason ||
       statusFromRecord(nodeMetadata.lastError) ||
@@ -1477,19 +1480,21 @@ export function CanvasNodeCard({
     ),
   )
   const textResult = node.resultText?.trim() ? node.resultText : ''
-  const textErrorSummary = node.status === 'error' ? summarizeTextError(node.errorMessage) : ''
-  const textDisplay = node.status === 'queued'
+  const textErrorSummary = node.status === 'error' || node.status === 'failed' || node.status === 'cancelled'
+    ? summarizeTextError(node.errorMessage)
+    : ''
+  const textDisplay = node.status === 'queued' || node.status === 'pending'
     ? '排队中...'
-    : node.status === 'running' || node.status === 'generating'
+    : node.status === 'running' || node.status === 'generating' || node.status === 'processing'
       ? '正在生成文本...'
       : textResult || textErrorSummary || '生成结果会显示在这里。'
-  const textIsPlaceholder = !textResult && !textErrorSummary && node.status !== 'queued' && node.status !== 'running' && node.status !== 'generating'
+  const textIsPlaceholder = !textResult && !textErrorSummary && node.status !== 'queued' && node.status !== 'pending' && node.status !== 'running' && node.status !== 'generating' && node.status !== 'processing'
   const className = [
     'canvas-node-card',
     `node-${node.kind}`,
     active ? 'is-active' : '',
     dragging ? 'is-dragging' : '',
-    node.status === 'generating' || node.status === 'running' ? 'is-generating' : '',
+    node.status === 'generating' || node.status === 'running' || node.status === 'processing' ? 'is-generating' : '',
   ].filter(Boolean).join(' ')
   const imageAspectRatioValue = node.kind === 'image' ? resolveImageAspectRatio(node, imageNaturalRatio) : 16 / 9
   const imageAspectRatioCssValue = aspectRatioCss(imageAspectRatioValue)
@@ -3006,7 +3011,7 @@ export function CanvasNodeCard({
             <button
               type="button"
               data-no-node-drag="true"
-              className={`canvas-node-text-result ${textIsPlaceholder ? 'is-placeholder' : ''} ${node.status === 'error' ? 'is-error' : ''}`}
+              className={`canvas-node-text-result ${textIsPlaceholder ? 'is-placeholder' : ''} ${node.status === 'error' || node.status === 'failed' || node.status === 'cancelled' ? 'is-error' : ''}`}
               onPointerDown={(event) => {
                 event.stopPropagation()
               }}
@@ -3031,7 +3036,7 @@ export function CanvasNodeCard({
               }}
               aria-label="查看或编辑文本结果"
             >
-              {node.status === 'error' && textResult ? (
+              {(node.status === 'error' || node.status === 'failed' || node.status === 'cancelled') && textResult ? (
                 <span className="canvas-node-text-error">{textErrorSummary}</span>
               ) : null}
               <span className="canvas-node-text-copy">{textDisplay}</span>
@@ -3138,20 +3143,20 @@ export function CanvasNodeCard({
                 ) : null}
               </div>
             </div>
-          ) : node.status === 'generating' || node.status === 'running' || node.status === 'queued' ? (
+          ) : node.status === 'generating' || node.status === 'running' || node.status === 'queued' || node.status === 'pending' || node.status === 'processing' ? (
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
               <div className="canvas-node-preview-copy">
                 {node.kind === 'video'
-                  ? (node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '视频生成中，请稍后查询结果'))
-                  : node.resultPreview || node.outputLabel || (node.status === 'queued' ? '排队中...' : '运行中...')}
+                  ? (node.resultPreview || node.outputLabel || (node.status === 'queued' || node.status === 'pending' ? '排队中...' : '视频生成中，请稍后查询结果'))
+                  : node.resultPreview || node.outputLabel || (node.status === 'queued' || node.status === 'pending' ? '排队中...' : '运行中...')}
               </div>
             </div>
           ) : mediaNeedsAttention && (node.kind === 'image' || node.kind === 'video') ? (
             <div className={`canvas-node-preview preview-${node.kind} is-error-preview`}>
               {renderMediaFailurePanel(node.kind)}
             </div>
-          ) : node.status === 'error' ? (
+          ) : node.status === 'error' || node.status === 'failed' || node.status === 'cancelled' ? (
             <div className="canvas-node-preview is-error-preview">
               <div className="canvas-node-preview-copy">{node.errorMessage || '生成失败，点击重试。'}</div>
             </div>

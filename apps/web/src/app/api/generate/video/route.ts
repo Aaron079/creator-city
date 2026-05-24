@@ -692,7 +692,7 @@ export async function POST(request: NextRequest) {
     const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
     if (!cnBaseUrl) {
       const output = {
-        errorCode: 'cn_executor_url_not_configured',
+        errorCode: 'executor_trigger_failed',
         errorStage: 'executor_dispatch',
         stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
         message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。请在 Vercel 环境变量中设置阿里云 FC 函数的 URL。',
@@ -741,7 +741,22 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ generationJobId: generationJob.id }),
       signal: AbortSignal.timeout(8_000),
     }).catch((err: unknown) => {
-      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed:', err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      const output = {
+        errorCode: 'executor_trigger_failed',
+        errorStage: 'executor_dispatch',
+        stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
+        message: `cn-executor 触发失败：${message}`,
+        submittedInput,
+        executorKind,
+      }
+      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed:', message)
+      void db.generationJob.update({
+        where: { id: generationJob.id },
+        data: { status: 'FAILED', errorMessage: output.message, output },
+      }).catch((updateErr: unknown) => {
+        console.warn('[api/generate/video] failed to mark job failed after executor trigger failure', updateErr)
+      })
     })
 
     return NextResponse.json({

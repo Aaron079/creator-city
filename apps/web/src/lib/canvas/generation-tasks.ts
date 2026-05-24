@@ -41,7 +41,7 @@ function stringValue(value: unknown) {
 }
 
 function taskStatus(node: CanvasGenerationTaskNode, metadata: Record<string, unknown>): GenerationTaskStatus {
-  if (node.status === 'error') return 'error'
+  if (node.status === 'error' || node.status === 'failed' || node.status === 'cancelled') return 'error'
   if (node.status === 'done' || node.resultVideoUrl || metadata.completedAt) return 'done'
   return 'running'
 }

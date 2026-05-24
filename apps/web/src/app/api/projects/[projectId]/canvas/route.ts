@@ -132,14 +132,26 @@ async function ensureWorkflow(projectId: string) {
   if (workflow) return workflow
 
   // Auto-create if project exists but has no workflow yet.
-  return db.canvasWorkflow.create({
-    data: {
-      projectId,
-      name: 'Main Canvas',
-      viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
-    },
-    select: WORKFLOW_SELECT,
-  })
+  // Guard against race condition (two concurrent saves → both try to create):
+  // if create fails with unique-constraint violation, retry the find.
+  try {
+    return await db.canvasWorkflow.create({
+      data: {
+        projectId,
+        name: 'Main Canvas',
+        viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
+      },
+      select: WORKFLOW_SELECT,
+    })
+  } catch (createErr) {
+    const createErrMsg = createErr instanceof Error ? createErr.message : String(createErr)
+    // P2002 = unique constraint violation (race: another request created the workflow first)
+    if (createErrMsg.includes('P2002') || createErrMsg.includes('Unique constraint')) {
+      const { workflow: retried } = await selectCanvasWorkflow(projectId)
+      if (retried) return retried
+    }
+    throw createErr
+  }
 }
 
 async function selectCanvasWorkflow(projectId: string) {
@@ -529,7 +541,21 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     const msg = safeErrorMessage(error)
-    console.error('[canvas-api] save failed', { projectId: params.projectId, error: msg })
+    const prismaCode = (error as { code?: string }).code ?? ''
+    console.error('[canvas-api] save failed', { projectId: params.projectId, prismaCode, error: msg })
+    // Classify common Prisma error codes into informative responses
+    if (prismaCode === 'P2025') {
+      return jsonError('CANVAS_DB_ERROR', `保存失败：目标记录不存在（可能已被删除）：${msg}`, 409)
+    }
+    if (prismaCode === 'P2002') {
+      return jsonError('CANVAS_DB_ERROR', `保存失败：并发写入冲突，请稍后重试：${msg}`, 409)
+    }
+    if (prismaCode === 'P2024' || msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('timed out')) {
+      return jsonError('CANVAS_DB_TIMEOUT', `保存超时：数据库响应超时，请稍后重试：${msg}`, 503)
+    }
+    if (prismaCode.startsWith('P1')) {
+      return jsonError('CANVAS_DB_CONNECTION', `数据库连接失败，请稍后重试：${msg}`, 503)
+    }
     return jsonError('CANVAS_SAVE_FAILED', `保存画布失败：${msg}`, 500)
   }
 }
