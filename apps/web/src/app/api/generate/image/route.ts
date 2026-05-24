@@ -187,6 +187,16 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (process.env.GENERATION_DISABLED === 'true') {
+    return NextResponse.json({
+      success: false,
+      errorCode: 'GENERATION_DISABLED',
+      message: 'Generation is temporarily disabled to prevent token drain.',
+      mode: 'unavailable',
+      status: 'failed',
+    }, { status: 200 })
+  }
+
   let body: ImageGenerateBody | undefined
   try {
     try {

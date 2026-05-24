@@ -2807,9 +2807,28 @@ export function VisualCanvasWorkspace({
       if (!projectTitleEditing) setProjectTitleDraft(args.title)
     }
     skipNextAutosaveRef.current = true
-    latestNodesRef.current = args.nodes
+    // On page load, downgrade any stuck generating/running/queued nodes to error
+    // so they don't show as spinning and don't auto-resume polling.
+    const STUCK_STATUSES = new Set(['generating', 'running', 'queued'])
+    const sanitizedNodes = args.nodes.map((node) => {
+      if (!STUCK_STATUSES.has(node.status)) return node
+      return {
+        ...node,
+        status: 'error' as const,
+        errorMessage: 'Generation was stopped after page reload to prevent token drain.',
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          errorCode: 'generation_stopped_on_reload',
+          errorMessage: 'Generation was stopped after page reload to prevent token drain.',
+          loading: false,
+          isRegenerating: false,
+          regenerating: false,
+        },
+      }
+    })
+    latestNodesRef.current = sanitizedNodes
     latestEdgesRef.current = args.edges
-    commitNodes(args.nodes)
+    commitNodes(sanitizedNodes)
     commitEdges(args.edges)
     const viewport = args.viewport as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
     if (viewport?.zoom) setCanvasZoom(Number(viewport.zoom))
@@ -3898,7 +3917,7 @@ export function VisualCanvasWorkspace({
         if (node.kind === 'image' && (generateResult.status === 'running' || generateResult.status === 'queued') && (generateResult.generationJobId || generateResult.jobId)) {
           const generationJobId = generateResult.generationJobId ?? generateResult.jobId!
           let polls = 0
-          while (polls < 60 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
+          while (polls < 12 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
             await delay(5000)
             generateResult = await pollImageGenerationTask(providerId, generationJobId)
             polls += 1
@@ -3911,7 +3930,7 @@ export function VisualCanvasWorkspace({
         if (node.kind === 'video' && (generateResult.status === 'running' || generateResult.status === 'queued') && (generateResult.generationJobId || generateResult.jobId)) {
           const generationJobId = generateResult.generationJobId ?? generateResult.jobId!
           let polls = 0
-          while (polls < 120 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
+          while (polls < 12 && (generateResult.status === 'running' || generateResult.status === 'queued')) {
             await delay(5000)
             generateResult = await pollVideoGenerationTask(providerId, generationJobId)
             polls += 1
@@ -4403,7 +4422,7 @@ export function VisualCanvasWorkspace({
           scheduleCanvasSave(0)
           showCanvasFeedback('图片生成中')
           let polls = 0
-          while (polls < 60) {
+          while (polls < 12) {
             await delay(5000)
             const statusResult = await pollImageGenerationTask(selectedProviderId, generationJobId)
             result = {
@@ -4422,7 +4441,12 @@ export function VisualCanvasWorkspace({
             polls += 1
           }
           if (result.success && result.status === 'running') {
-            showCanvasFeedback('图片仍在生成中，请稍后再查。')
+            handleNodePatch(node.id, {
+              status: 'error',
+              errorMessage: '图片生成超时：轮询 12 次未完成，请手动检查任务状态。',
+              metadataJson: imageErrorMetadata(node, { ...result, errorCode: 'generation_polling_timeout' }, selectedProviderId),
+            })
+            showCanvasFeedback('图片生成超时，请手动检查任务状态。')
             return
           }
         }
@@ -4448,7 +4472,7 @@ export function VisualCanvasWorkspace({
           scheduleCanvasSave(0)
           showCanvasFeedback('视频生成中')
           let polls = 0
-          while (polls < 120) {
+          while (polls < 12) {
             await delay(5000)
             const statusResult = await pollVideoGenerationTask(selectedProviderId, generationJobId)
             result = {
@@ -6151,7 +6175,7 @@ export function VisualCanvasWorkspace({
         })
         showCanvasFeedback('图片生成中')
         let polls = 0
-        while (polls < 60) {
+        while (polls < 12) {
           await delay(5000)
           const statusResult = await pollImageGenerationTask(generationProviderId, generationJobId)
           result = {
@@ -6170,7 +6194,16 @@ export function VisualCanvasWorkspace({
           polls += 1
         }
         if (result.success && result.status === 'running') {
-          showCanvasFeedback('图片仍在生成中，请稍后再查。')
+          const errMsg = '图片生成超时：轮询 12 次未完成，请手动点击"重试"检查任务状态。'
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'error',
+            errorMessage: errMsg,
+            resultPreview: '生成超时',
+            outputLabel: '生成超时',
+            metadataJson: imageErrorMetadata(generationNodeSnapshot, { ...result, errorCode: 'generation_polling_timeout' }, generationProviderId),
+          })
+          setDialogError(errMsg)
+          showCanvasFeedback(errMsg)
           return
         }
       }
@@ -6194,7 +6227,15 @@ export function VisualCanvasWorkspace({
         showCanvasFeedback('视频任务已提交，正在生成中')
         let videoPolls = 0
         const pollVideo = async () => {
-          if (videoPolls++ >= 120) return
+          if (videoPolls++ >= 12) {
+            handleNodePatch(nodeSnapshot.id, {
+              status: 'error',
+              errorMessage: '视频生成超时：轮询 12 次未完成，请手动检查任务状态。',
+              metadataJson: videoErrorMetadata(generationNodeSnapshot, { providerId: generationProviderId, errorCode: 'generation_polling_timeout', message: '视频生成超时：轮询 12 次未完成', taskId, generationJobId }, generationProviderId),
+            })
+            setDialogError('视频生成超时，请手动检查任务状态。')
+            return
+          }
           const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId)
           if (statusResult.status === 'running') {
             handleNodePatch(nodeSnapshot.id, {
@@ -7054,6 +7095,36 @@ export function VisualCanvasWorkspace({
     && !defaultVideoProviderId
     && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
 
+  const handleStopAllGenerations = useCallback(() => {
+    const STUCK_STATUSES = new Set(['generating', 'running', 'queued'])
+    timersRef.current.forEach((timer) => window.clearTimeout(timer))
+    timersRef.current = []
+    commitNodes((current) => current.map((node) => {
+      if (!STUCK_STATUSES.has(node.status)) return node
+      return {
+        ...node,
+        status: 'error' as const,
+        errorMessage: 'Generation cancelled by user.',
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          errorCode: 'generation_cancelled_by_user',
+          errorMessage: 'Generation cancelled by user.',
+          loading: false,
+          isRegenerating: false,
+          regenerating: false,
+        },
+      }
+    }))
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('已停止所有生成中的节点。')
+  }, [commitNodes, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
+
+  const hasActiveGenerations = useMemo(
+    () => nodes.some((node) => node.status === 'generating' || node.status === 'running' || node.status === 'queued'),
+    [nodes],
+  )
+
   return (
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
@@ -7182,6 +7253,17 @@ export function VisualCanvasWorkspace({
                   ? '部分失败'
                   : '运行工作流'}
           </button>
+          {hasActiveGenerations ? (
+            <button
+              type="button"
+              className="canvas-secondary-button"
+              style={{ color: '#f87171', borderColor: '#f87171' }}
+              title="停止当前所有生成中的节点，清空 timers，节点标记为 cancelled"
+              onClick={handleStopAllGenerations}
+            >
+              停止所有生成
+            </button>
+          ) : null}
           <button
             type="button"
             className="canvas-secondary-button canvas-generation-tasks-trigger"
@@ -7749,7 +7831,7 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || editingNode.status === 'generating'}
+            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || editingNode.status === 'generating' || editingNode.status === 'running'}
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
