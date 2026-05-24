@@ -12,6 +12,7 @@ import { handleArkNetworkDiagnostic } from './handlers/arkNetworkDiagnostic'
 import { handleSeedreamModelProbe } from './handlers/seedreamModelProbe'
 import { handleSeedreamRealProbe } from './handlers/seedreamRealProbe'
 import { handleJobDebug } from './handlers/jobDebug'
+import { handleOssConfig, handleOssWriteProbe } from './handlers/ossDebug'
 
 const PORT = parseInt(process.env.PORT ?? '9000', 10)
 
@@ -173,6 +174,23 @@ const server = http.createServer((req, res) => {
 
   if (method === 'POST' && url === '/api/generate/video') {
     handleGenerateVideo(req, res)
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/oss-config') {
+    handleOssConfig(req, res)
+    return
+  }
+
+  if (method === 'GET' && url === '/debug/oss-write-probe') {
+    handleOssWriteProbe(req, res).catch((err: unknown) => {
+      if (!res.headersSent) {
+        jsonError(res, {
+          errorCode: 'internal_error',
+          message: err instanceof Error ? err.message : 'Unexpected error in OSS write probe.',
+        })
+      }
+    })
     return
   }
 

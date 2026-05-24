@@ -451,6 +451,12 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     if ('providerHttpStatus' in result) errorOutput.providerHttpStatus = result.providerHttpStatus
     if ('requestId' in result) errorOutput.requestId = result.requestId
     if ('providerResponse' in result) errorOutput.providerResponse = result.providerResponse
+    if ('ossBucket' in result) errorOutput.ossBucket = result.ossBucket
+    if ('ossRegion' in result) errorOutput.ossRegion = result.ossRegion
+    if ('ossEndpoint' in result) errorOutput.ossEndpoint = result.ossEndpoint
+    if ('ossErrorCode' in result) errorOutput.ossErrorCode = result.ossErrorCode
+    if ('ossStatusCode' in result) errorOutput.ossStatusCode = result.ossStatusCode
+    if ('ossRequestId' in result) errorOutput.ossRequestId = result.ossRequestId
 
     console.error('[cn-executor][jobRunner] job failed, writing FAILED to DB', { generationJobId, errorCode: errCode, errorStage: result.errorStage, message: errMsg.slice(0, 300), stageTrace: result.stageTrace })
     try {

@@ -75,6 +75,12 @@ export type ImageExecutionResult = {
   providerResponse?: unknown
   providerOriginalUrl?: string | null
   stageTrace?: StageTrace[]
+  ossBucket?: string
+  ossRegion?: string
+  ossEndpoint?: string
+  ossErrorCode?: string
+  ossStatusCode?: number
+  ossRequestId?: string
 }
 
 export function parseImageExecutionInput(body: Record<string, unknown>): ImageExecutionInput | { errorCode: string; message: string } {
@@ -186,6 +192,11 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
       ...logCtx,
       ossMs,
       errorCode: uploadResult.errorCode,
+      ossErrorCode: uploadResult.ossErrorCode,
+      ossStatusCode: uploadResult.ossStatusCode,
+      ossRequestId: uploadResult.ossRequestId,
+      ossBucket: uploadResult.ossBucket,
+      ossRegion: uploadResult.ossRegion,
       message: uploadResult.message?.slice(0, 300),
     })
     return {
@@ -193,6 +204,13 @@ export async function executeImageGeneration(input: ImageExecutionInput): Promis
       errorCode: uploadResult.errorCode,
       errorStage: 'oss_upload',
       message: uploadResult.message,
+      upstreamMessage: uploadResult.upstreamMessage,
+      ossBucket: uploadResult.ossBucket,
+      ossRegion: uploadResult.ossRegion,
+      ossEndpoint: uploadResult.ossEndpoint,
+      ossErrorCode: uploadResult.ossErrorCode,
+      ossStatusCode: uploadResult.ossStatusCode,
+      ossRequestId: uploadResult.ossRequestId,
       providerOriginalUrl: providerOriginalUrl ?? null,
       submittedInput: genResult.submittedInput,
       stageTrace,

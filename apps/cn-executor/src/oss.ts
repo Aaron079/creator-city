@@ -64,7 +64,40 @@ export async function readTaskStateJson(taskId: string): Promise<Record<string, 
 
 export type OssUploadResult =
   | { success: true; key: string; url: string; storageKey: string }
-  | { success: false; errorCode: string; message: string }
+  | {
+      success: false
+      errorCode: string
+      message: string
+      ossBucket?: string
+      ossRegion?: string
+      ossEndpoint?: string
+      ossStatusCode?: number
+      ossErrorCode?: string
+      ossRequestId?: string
+      upstreamMessage?: string
+    }
+
+function classifyOssError(err: unknown): { errorCode: string; ossErrorCode?: string; ossStatusCode?: number; ossRequestId?: string } {
+  const msg = String(err instanceof Error ? err.message : err).toLowerCase()
+  const e = err as { code?: string; status?: number; requestId?: string }
+  const ossErrorCode = typeof e.code === 'string' ? e.code : undefined
+  const ossStatusCode = typeof e.status === 'number' ? e.status : undefined
+  const ossRequestId = typeof e.requestId === 'string' ? e.requestId : undefined
+
+  let errorCode: string
+  if (/timeout|etimedout/.test(msg)) {
+    errorCode = 'oss_upload_timeout'
+  } else if (ossErrorCode === 'AccessDenied' || ossStatusCode === 403 || /access denied|no right|acl|permission|forbidden/.test(msg)) {
+    errorCode = 'oss_permission_error'
+  } else if (ossErrorCode === 'NoSuchBucket' || /no such bucket/.test(msg)) {
+    errorCode = 'oss_bucket_not_found'
+  } else if (ossErrorCode === 'InvalidBucketName' || ossErrorCode === 'InvalidEndpoint') {
+    errorCode = 'oss_config_error'
+  } else {
+    errorCode = 'oss_upload_error'
+  }
+  return { errorCode, ossErrorCode, ossStatusCode, ossRequestId }
+}
 
 export async function uploadToOss(
   key: string,
@@ -72,6 +105,9 @@ export async function uploadToOss(
   contentType: string,
 ): Promise<OssUploadResult> {
   const timeout = numericEnv('ALIYUN_OSS_UPLOAD_TIMEOUT_MS', numericEnv('ALIYUN_OSS_TIMEOUT_MS', 30_000))
+  const ossBucket = process.env.ALIYUN_OSS_BUCKET ?? ''
+  const ossRegion = process.env.ALIYUN_OSS_REGION ?? ''
+  const ossEndpoint = process.env.ALIYUN_OSS_ENDPOINT ?? ''
   try {
     const client = getClient()
     let attempt = 0
@@ -92,15 +128,23 @@ export async function uploadToOss(
       }
     }
     const publicUrl = buildPublicUrl(key)
-    const bucket = process.env.ALIYUN_OSS_BUCKET ?? ''
-    const region = process.env.ALIYUN_OSS_REGION ?? ''
-    const fallbackUrl = `https://${bucket}.${region}.aliyuncs.com/${key}`
+    const fallbackUrl = `https://${ossBucket}.${ossRegion}.aliyuncs.com/${key}`
     const url = publicUrl ?? fallbackUrl
     return { success: true, key, url, storageKey: key }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    const lower = msg.toLowerCase()
-    const errorCode = /timeout|etimedout/.test(lower) ? 'oss_upload_timeout' : 'oss_upload_error'
-    return { success: false, errorCode, message: `OSS upload failed: ${msg}` }
+    const { errorCode, ossErrorCode, ossStatusCode, ossRequestId } = classifyOssError(err)
+    return {
+      success: false,
+      errorCode,
+      message: `OSS upload failed: ${msg}`,
+      upstreamMessage: msg,
+      ossBucket,
+      ossRegion,
+      ossEndpoint,
+      ossErrorCode,
+      ossStatusCode,
+      ossRequestId,
+    }
   }
 }
