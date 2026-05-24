@@ -574,7 +574,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (triggerTimedOut) {
-        console.log('[api/generate/image] cn-executor trigger timed out — job delivered, Aliyun FC processing', { generationJobId })
+        console.log('[api/generate/image] cn-executor trigger timed out after 50s — job delivered to Aliyun FC, processing in background', { generationJobId })
       } else if (triggerResponse?.ok) {
         console.log('[api/generate/image] cn-executor trigger acknowledged', { generationJobId, status: triggerResponse.status })
       }
@@ -594,7 +594,8 @@ export async function POST(request: NextRequest) {
         jobId: generationJobId,
         model: submittedModel,
         submittedInput,
-        message: '图片生成任务已提交，正在处理中',
+        ...(triggerTimedOut ? { executorTriggerStatus: 'executor_trigger_timeout', executorTriggerNote: 'Trigger request timed out after 50s — job delivered to Aliyun FC.' } : {}),
+        message: triggerTimedOut ? '图片生成任务已提交，等待 cn-executor 处理（触发超时但任务已送达）' : '图片生成任务已提交，正在处理中',
       }, { status: 200 })
     } else {
       // Defense-in-depth: cn providers must never reach this branch.

@@ -852,7 +852,8 @@ export async function POST(request: NextRequest) {
       jobId: generationJob.id,
       submittedAt,
       submittedInput,
-      message: '视频生成任务已提交，正在处理中',
+      ...(videoTriggerTimedOut ? { executorTriggerStatus: 'executor_trigger_timeout', executorTriggerNote: 'Trigger request timed out after 12s — job delivered to Aliyun FC.' } : {}),
+      message: videoTriggerTimedOut ? '视频生成任务已提交，等待 cn-executor 处理（触发超时但任务已送达）' : '视频生成任务已提交，正在处理中',
     }, { status: 200 })
   }
 

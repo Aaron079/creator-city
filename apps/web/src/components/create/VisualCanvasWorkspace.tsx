@@ -650,6 +650,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (errorCode === 'oss_upload_timeout' || errorCode === 'oss_upload_error' || errorCode === 'oss_auth_error' || errorCode === 'oss_permission_error' || errorCode === 'oss_config_error') return errorCode
   if (errorCode === 'canvas_save_error') return 'canvas_save_error'
   if (errorCode === 'provider_media_download_failed' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'ASSET_DOWNLOAD_TIMEOUT' || /media download failed|download failed|external asset/.test(haystack)) return 'provider_media_download_failed'
+  if (errorCode === 'generation_post_timeout' || errorCode === 'executor_trigger_timeout' || errorCode === 'executor_not_started' || errorCode === 'generation_job_stalled') return errorCode
     if (errorCode === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
     if (errorCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
     if (errorCode === 'provider_request_failed') return 'provider_request_failed'
@@ -1755,23 +1756,26 @@ async function callGenerationApi(
         }
 
   let response: Response
-  const isGenerationEndpoint = nodeType === 'image' || nodeType === 'video'
+  // image: backend awaits cn-executor up to 50s, so frontend must exceed that
+  // video: cn-executor takes 60-180s, backend times out at 12s and returns queued
+  const postTimeoutMs = nodeType === 'image' ? 70_000 : nodeType === 'video' ? 90_000 : undefined
   try {
     response = await fetch(endpoint, {
       method,
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
-      ...(isGenerationEndpoint ? { signal: timeoutSignal(30_000, signal) } : {}),
+      ...(postTimeoutMs ? { signal: timeoutSignal(postTimeoutMs, signal) } : {}),
     })
   } catch (err) {
     const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
     const isUserAbort = Boolean(signal?.aborted)
     const reason = err instanceof Error ? err.message : String(err || '网络请求失败')
+    const timeoutSec = postTimeoutMs ? Math.round(postTimeoutMs / 1000) : 30
     const errorMessage = isUserAbort
       ? 'Generation cancelled by user.'
       : isTimeout
-      ? `POST ${endpoint} 超过 30 秒未响应，任务可能已提交但无法确认 — 请刷新页面后查看节点状态。`
+      ? `POST ${endpoint} 超过 ${timeoutSec} 秒未响应，任务可能已提交但无法确认 — 请刷新页面后查看节点状态。`
       : `${method} ${endpoint} fetch failed: ${reason}`
     return {
       success: false,
