@@ -3942,7 +3942,7 @@ export function VisualCanvasWorkspace({
 
         if ((generateResult.status === 'queued' || generateResult.status === 'running') && generateResult.jobId) {
           let polls = 0
-          while (polls < 60 && generateResult.jobId && (generateResult.status === 'queued' || generateResult.status === 'running')) {
+          while (polls < 12 && generateResult.jobId && (generateResult.status === 'queued' || generateResult.status === 'running')) {
             await delay(5000)
             generateResult = await pollGenerationJob(generateResult.jobId)
             polls += 1
@@ -5848,6 +5848,32 @@ export function VisualCanvasWorkspace({
       : nodeSnapshot.kind === 'video' && selectedVideoStatusForGenerate !== 'available' && defaultVideoProviderId
         ? defaultVideoProviderId
         : normalizedPromptModel
+    // Guard: queued nodes cannot re-POST (they are already waiting for a job)
+    if ((nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video') && nodeSnapshot.status === 'queued') {
+      const errMsg = 'generation_already_running: 该节点已在队列中，请等待任务完成，或点击"停止所有生成"后重试。'
+      setDialogError(errMsg)
+      showCanvasFeedback(errMsg)
+      return
+    }
+    // Guard: running node without a trackable jobId cannot safely re-POST
+    if ((nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video') && nodeSnapshot.status === 'running' && !currentGenerationJobId) {
+      const errMsg = 'generation_already_running: 该节点正在运行但缺少任务 ID，点击"停止所有生成"后重试。'
+      handleNodePatch(nodeSnapshot.id, {
+        status: 'error',
+        errorMessage: errMsg,
+        metadataJson: {
+          ...metadataRecord(nodeSnapshot.metadataJson),
+          errorCode: 'generation_already_running',
+          errorMessage: errMsg,
+          loading: false,
+          isRegenerating: false,
+          regenerating: false,
+        },
+      })
+      setDialogError(errMsg)
+      showCanvasFeedback(errMsg)
+      return
+    }
     if (nodeSnapshot.kind === 'image' && nodeSnapshot.status === 'running' && currentGenerationJobId) {
       setDialogError(null)
       showCanvasFeedback('正在查询图片任务状态...')
@@ -7098,7 +7124,7 @@ export function VisualCanvasWorkspace({
   const handleStopAllGenerations = useCallback(() => {
     const STUCK_STATUSES = new Set(['generating', 'running', 'queued'])
     timersRef.current.forEach((timer) => window.clearTimeout(timer))
-    timersRef.current = []
+    timersRef.current.length = 0
     commitNodes((current) => current.map((node) => {
       if (!STUCK_STATUSES.has(node.status)) return node
       return {
@@ -7831,7 +7857,7 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || editingNode.status === 'generating' || editingNode.status === 'running'}
+            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || editingNode.status === 'generating' || editingNode.status === 'running' || editingNode.status === 'queued'}
             generateLabel={
               editingNode.status === 'generating'
                 ? '生成中…'
