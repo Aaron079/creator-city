@@ -6725,7 +6725,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, enabledCreatorSkills, finishNodeGeneration, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, sceneBible, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -7487,21 +7487,7 @@ export function VisualCanvasWorkspace({
                 </button>
               </>
             ) : null}
-            <button
-              type="button"
-              className="canvas-secondary-button"
-            title={workflowRunMessage || (activeNode ? `从「${activeNode.title}」开始运行` : '从所有无入边节点开始运行')}
-            disabled={saveStatus === 'opening' || workflowRunStatus === 'running' || !projectId || nodes.length === 0}
-            onClick={() => { void handleRunWorkflow() }}
-          >
-            {workflowRunStatus === 'running'
-              ? '运行中...'
-              : workflowRunStatus === 'done'
-                ? '完成'
-                : workflowRunStatus === 'partial-failed'
-                  ? '部分失败'
-                  : '运行工作流'}
-          </button>
+            {/* 运行工作流 button hidden — prevents batch token drain on all nodes */}
           {hasActiveGenerations ? (
             <button
               type="button"
