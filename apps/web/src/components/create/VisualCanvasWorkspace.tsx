@@ -2826,6 +2826,14 @@ export function VisualCanvasWorkspace({
         },
       }
     })
+    // Never overwrite existing canvas nodes with an empty snapshot from the server.
+    // If the server returns empty nodes but we already have nodes in memory, keep what we have.
+    const existingNodeCount = latestNodesRef.current.length
+    if (sanitizedNodes.length === 0 && existingNodeCount > 0) {
+      if (args.status) setSaveStatus(args.status)
+      if (args.message !== undefined) setSaveMessage(args.message)
+      return
+    }
     latestNodesRef.current = sanitizedNodes
     latestEdgesRef.current = args.edges
     commitNodes(sanitizedNodes)
@@ -2889,7 +2897,25 @@ export function VisualCanvasWorkspace({
       }
       try { data = JSON.parse(raw) as typeof data } catch { data = {} }
       if (response.status === 401) {
-        router.replace(`/auth/login?next=${encodeURIComponent(`/create?projectId=${projectId}`)}`)
+        // Do NOT navigate away — that would lose all in-memory canvas state.
+        // Write an emergency localStorage draft so nothing is lost, then surface an error.
+        try {
+          const emergencySnap = getCanvasSnapshot()
+          window.localStorage.setItem(
+            getDraftKey(projectId),
+            JSON.stringify({
+              projectId,
+              workflowId,
+              nodes: emergencySnap.nodes,
+              edges: emergencySnap.edges,
+              viewport: emergencySnap.viewport,
+              updatedAt: new Date().toISOString(),
+              reason: 'save-401-emergency',
+            }),
+          )
+        } catch { /* localStorage unavailable — nothing we can do */ }
+        setSaveStatus('failed')
+        setSaveMessage('登录状态失效，画布暂未保存到服务器。节点已保留在本地草稿中，重新登录后可恢复。')
         return
       }
       if (!response.ok || data.success === false) {
