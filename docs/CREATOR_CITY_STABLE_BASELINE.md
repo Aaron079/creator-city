@@ -1,11 +1,37 @@
 # Creator City — Stable Generation Baseline
 
 Last confirmed working: 2026-05-25
-Status: **PRODUCTION STABLE**
+Status: **PRODUCTION STABLE — IMAGE + VIDEO**
 
 ---
 
+## Video Generation Chain (confirmed end-to-end, 2026-05-25)
+
+```
+User types prompt
+  → clicks Generate on video node
+  → POST /api/generate/video  (Vercel, maxDuration=60, frontend timeout=90s)
+    → validates: prompt, projectId, nodeId required
+    → creates GenerationJob row (status: QUEUED)
+    → await fetch cn-executor /api/jobs/run-video (AbortSignal.timeout=12s)
+      [12s timeout = just enough for TCP delivery; video runs 60-180s async]
+      → cn-executor: calls Volcengine Seedance API → gets taskId
+      → cn-executor: polls Seedance until done (or timeout)
+      → cn-executor: downloads video from provider URL
+      → cn-executor: uploads to Aliyun OSS bucket "creatorcity"
+      → cn-executor: marks GenerationJob SUCCEEDED, writes stableUrl
+    → if trigger timed out: returns { status: "queued", generationJobId } with executorTriggerNote
+    → if trigger OK:        returns { status: "queued", generationJobId }
+  → frontend polls /api/generate/video/status?generationJobId=...
+      (max 24 polls × 5s = 120s; works WITHOUT session cookie — degraded mode)
+    → on success: node shows resultVideoUrl / stableUrl + video preview/playback
+    → canvas save + localStorage draft written
+  → refresh: video still visible (loaded from saved canvas)
+```
+
 ## Image Generation Chain (confirmed end-to-end)
+
+
 
 ```
 User types prompt
@@ -25,6 +51,16 @@ User types prompt
   → refresh: image still visible (loaded from saved canvas)
 ```
 
+## Video-specific notes
+- Video generation takes 60-180s end-to-end. This is provider-imposed (Seedance). Acceptable.
+- Video status route (`/api/generate/video/status`) supports degraded (unauthenticated) lookup:
+  if session cookie is absent but `generationJobId` is a valid UUID, returns safe status fields.
+  DB writes (`writeCanvasNodeVideoResult`) only happen when authenticated.
+- Video status 401 was caused by `getSession()` DB call failing under connection pressure.
+  Fixed by moving `generationJobId` check before auth, not by removing auth.
+
+---
+
 ## What Was Fixed to Reach This State
 
 | # | Problem | Root Cause | Fix |
@@ -37,6 +73,7 @@ User types prompt
 | 6 | Prisma prepared statement error | PgBouncer incompatibility | Added `?pgbouncer=true` to connection URL |
 | 7 | Token drain / auto-batch generation | 运行工作流 button triggered all nodes | Button removed |
 | 8 | Prompt pollution / generation failure | styleBible/skills/storyboard injected into payload | Removed from handleNodeDialogGenerate dependency array |
+| 9 | Video status 401 AUTH_REQUIRED | `getSession()` DB call failed under 120s polling pressure; auth was checked before jobId | Moved generationJobId check before auth; degraded mode returns safe status without session |
 
 ## Infrastructure
 

@@ -2,14 +2,21 @@
 
 Rules that protect the stable generation chain. Read before touching any file in this list.
 
+## Confirmed Stable (2026-05-25)
+
+Both chains production-confirmed working:
+- **Image**: Seedream → OSS → stableUrl → node display → refresh persists ✅
+- **Video**: Seedance → OSS → stableUrl → node preview/playback → refresh persists ✅
+- **Video status**: degraded mode (no session cookie) returns safe status without 401 ✅
+
 ## Protected Files — Change Requires Explicit Justification
 
 | File | Risk |
 |------|------|
-| `apps/web/src/app/api/generate/image/route.ts` | Image generation main chain |
-| `apps/web/src/app/api/generate/video/route.ts` | Video generation main chain |
-| `apps/web/src/app/api/generate/image/status/route.ts` | Image polling + stall detection |
-| `apps/web/src/app/api/generate/video/status/route.ts` | Video polling + stall detection |
+| `apps/web/src/app/api/generate/image/route.ts` | Image generation main chain — FROZEN |
+| `apps/web/src/app/api/generate/video/route.ts` | Video generation main chain — FROZEN |
+| `apps/web/src/app/api/generate/image/status/route.ts` | Image polling + stall detection — FROZEN |
+| `apps/web/src/app/api/generate/video/status/route.ts` | Video polling + degraded-mode auth — FROZEN |
 | `apps/cn-executor/src/handlers/generateImage.ts` | Seedream → OSS pipeline |
 | `apps/cn-executor/src/handlers/jobRunner.ts` | Job execution orchestration |
 | `apps/cn-executor/src/oss.ts` | OSS upload with retry + error classification |
@@ -123,12 +130,25 @@ Restoring any of these requires:
 
 ---
 
+## Future Video Optimization Scope
+
+When asked to "optimize video speed" or "improve video UX", ONLY these changes are allowed:
+- Progress messages / estimated wait time display
+- Status polling interval tuning (must keep 24-poll ceiling)
+- Toast / skeleton / loading state improvements
+
+These are FORBIDDEN as "video optimization":
+- Changing POST /api/generate/video payload or response
+- Changing cn-executor /api/jobs/run-video handler
+- Changing OSS upload for video
+- Removing the degraded-mode (unauthenticated) lookup from video/status
+
 ## Regression Test Checklist
 
 Run manually after any change to protected files:
 
-- [ ] Image generation: prompt → node shows image → refresh → image still there
-- [ ] Video generation: prompt → node shows video → refresh → video still there
+- [ ] Image: prompt → generate → node shows image → refresh → image still there
+- [ ] Video: prompt → generate → node shows video with preview/playback → refresh → video still there
 - [ ] Refresh while generating: node downgrades to error (not auto-resumed)
 - [ ] Double-click Generate: only one POST sent (check network tab)
 - [ ] 12-poll timeout: after 60s of polling QUEUED, node shows `executor_not_started`
