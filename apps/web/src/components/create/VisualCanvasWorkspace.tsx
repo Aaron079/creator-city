@@ -1728,16 +1728,21 @@ async function callGenerationApi(
         }
 
   let response: Response
+  const isGenerationEndpoint = nodeType === 'image' || nodeType === 'video'
   try {
     response = await fetch(endpoint, {
       method,
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
+      ...(isGenerationEndpoint ? { signal: AbortSignal.timeout(30_000) } : {}),
     })
   } catch (err) {
+    const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
     const reason = err instanceof Error ? err.message : String(err || '网络请求失败')
-    const errorMessage = `${method} ${endpoint} fetch failed: ${reason}`
+    const errorMessage = isTimeout
+      ? `POST ${endpoint} 超过 30 秒未响应，任务可能已提交但无法确认 — 请刷新页面后查看节点状态。`
+      : `${method} ${endpoint} fetch failed: ${reason}`
     return {
       success: false,
       providerId,
@@ -1745,7 +1750,7 @@ async function callGenerationApi(
       status: 'failed',
       message: errorMessage,
       errorMessage,
-      errorCode: 'client_fetch_failed',
+      errorCode: isTimeout ? 'generation_post_timeout' : 'client_fetch_failed',
       hint: GENERATION_FETCH_HINT,
       generationFetchError: reason,
       upstreamMessage: reason,

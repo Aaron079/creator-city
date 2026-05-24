@@ -427,62 +427,25 @@ export async function POST(request: NextRequest) {
         console.warn('[api/generate/image] failed to update GenerationJob to QUEUED', error)
       })
 
-      // Await cn-executor synchronously — Vercel maxDuration=90 allows up to 90s.
-      // cn-executor executes the job within the HTTP request lifecycle (no setImmediate).
+      // Fire-and-forget to cn-executor — do NOT await (matches video route pattern).
+      // Return generationJobId immediately; frontend polls /api/generate/image/status.
       const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
-      console.log('[api/generate/image] cn-executor dispatch', {
-        generationJobId,
-        cnBaseUrlConfigured: Boolean(cnBaseUrl),
-        cnBaseUrlLength: cnBaseUrl.length,
-        secretConfigured: Boolean(process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim()),
-      })
-      let cnResult: Record<string, unknown> | null = null
+      const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
       if (!cnBaseUrl) {
-        console.error('[api/generate/image] CREATOR_CN_API_BASE_URL is not set — cn-executor cannot be reached. Job will stay QUEUED.', { generationJobId })
-      } else {
-        try {
-          const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
-          const cnResp = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              // Send both headers: Bearer for new cn-executor, x-creator-executor-secret for old code
-              Authorization: `Bearer ${cnSecret}`,
-              'x-creator-executor-secret': cnSecret,
-            },
-            body: JSON.stringify({ generationJobId }),
-            signal: AbortSignal.timeout(90_000),
-          })
-          console.log('[api/generate/image] cn-executor HTTP response', { generationJobId, httpStatus: cnResp.status })
-          const rawText = await cnResp.text()
-          // 401 = auth failure — cn-executor rejected the secret. Do NOT stay QUEUED.
-          if (cnResp.status === 401) {
-            console.error('[api/generate/image] cn-executor rejected auth (401). Check CREATOR_EXECUTOR_SHARED_SECRET matches on both Vercel and Aliyun FC.', { generationJobId, preview: rawText.slice(0, 200) })
-            cnResult = { status: 'failed', errorCode: 'cn_executor_auth_rejected', message: 'cn-executor 返回 401：共享密钥不匹配。请检查 Vercel 和阿里云 FC 的 CREATOR_EXECUTOR_SHARED_SECRET 是否一致。' }
-          } else {
-            try {
-              const parsed = JSON.parse(rawText)
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                cnResult = parsed as Record<string, unknown>
-                console.log('[api/generate/image] cn-executor result', { generationJobId, status: cnResult.status, ok: cnResult.ok, errorCode: cnResult.errorCode })
-              }
-            } catch {
-              console.warn('[api/generate/image] cn-executor returned non-JSON', { generationJobId, httpStatus: cnResp.status, preview: rawText.slice(0, 200) })
-            }
-          }
-        } catch (err: unknown) {
-          const errMsg = err instanceof Error ? err.message : String(err)
-          console.warn('[api/generate/image] cn-executor request failed (timeout or network):', errMsg, { generationJobId })
-          cnResult = {
-            status: 'failed',
-            errorCode: errMsg.includes('timeout') || errMsg.includes('AbortError') ? 'cn_executor_timeout' : 'cn_executor_network_error',
-            message: `cn-executor 无法连接：${errMsg}`,
-          }
+        const output = {
+          errorCode: 'cn_executor_url_not_configured',
+          errorStage: 'executor_dispatch',
+          stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
+          message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。请在 Vercel 环境变量中设置阿里云 FC 函数的 URL。',
+          submittedInput,
+          executorKind,
         }
-      }
-
-      // If URL is not configured, fail immediately with a clear error instead of QUEUED forever
-      if (!cnBaseUrl) {
+        await db.generationJob.update({
+          where: { id: generationJobId },
+          data: { status: 'FAILED', errorMessage: output.message, output },
+        }).catch((err: unknown) => {
+          console.warn('[api/generate/image] failed to mark job failed after missing cn executor url', err)
+        })
         return NextResponse.json({
           success: false,
           providerId,
@@ -493,90 +456,29 @@ export async function POST(request: NextRequest) {
           executorKind,
           mode: 'unavailable',
           status: 'failed',
-          errorCode: 'cn_executor_url_not_configured',
+          errorCode: output.errorCode,
           generationJobId,
           jobId: generationJobId,
-          message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。请在 Vercel 环境变量中设置阿里云 FC 函数的 URL。',
+          message: output.message,
           submittedInput,
         }, { status: 200 })
       }
+      fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cnSecret}`,
+          'x-creator-executor-secret': cnSecret,
+        },
+        body: JSON.stringify({ generationJobId }),
+        signal: AbortSignal.timeout(8_000),
+      }).catch((err: unknown) => {
+        console.warn('[api/generate/image] cn-executor run-image fire-and-forget failed:', err instanceof Error ? err.message : String(err))
+      })
 
-      if (cnResult?.status === 'succeeded') {
-        return NextResponse.json({
-          success: true,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executor: resolvedExecutor,
-          executorKind,
-          mode: 'real',
-          status: 'succeeded',
-          async: false,
-          generationJobId,
-          jobId: generationJobId,
-          model: (typeof cnResult.model === 'string' ? cnResult.model : null) ?? submittedModel,
-          resultImageUrl: cnResult.resultImageUrl,
-          stableUrl: cnResult.stableUrl,
-          assetId: cnResult.assetId,
-          submittedInput,
-          stageTrace: cnResult.stageTrace,
-          message: '图片生成完成',
-        }, { status: 200 })
-      }
-
-      if (cnResult?.status === 'failed') {
-        return NextResponse.json({
-          success: false,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executor: resolvedExecutor,
-          executorKind,
-          mode: 'real',
-          status: 'failed',
-          async: false,
-          generationJobId,
-          jobId: generationJobId,
-          errorCode: (typeof cnResult.errorCode === 'string' ? cnResult.errorCode : null) ?? 'image_generation_failed',
-          errorStage: cnResult.errorStage,
-          message: (typeof cnResult.message === 'string' ? cnResult.message : null) ?? 'Image generation failed.',
-          upstreamMessage: cnResult.upstreamMessage,
-          upstreamStatus: cnResult.upstreamStatus,
-          providerHttpStatus: cnResult.providerHttpStatus,
-          requestId: cnResult.requestId,
-          providerResponse: cnResult.providerResponse,
-          submittedInput: cnResult.submittedInput ?? submittedInput,
-          stageTrace: cnResult.stageTrace,
-        }, { status: 200 })
-      }
-
-      // cn-executor returned HTTP 200 but no status field — old cn-executor format (uses setImmediate, never completes on Aliyun FC)
-      // Treat as immediate failure so the user sees a clear error, not QUEUED forever.
-      if (cnResult && typeof cnResult === 'object' && cnResult.ok === true && !cnResult.status) {
-        console.error('[api/generate/image] cn-executor returned old fire-and-forget format (no status field). Upload new cn-executor ZIP to Aliyun FC.', { generationJobId, cnResult })
-        return NextResponse.json({
-          success: false,
-          providerId,
-          providerRegion,
-          executionRegion,
-          storageRegion,
-          executor: resolvedExecutor,
-          executorKind,
-          mode: 'real',
-          status: 'failed',
-          errorCode: 'cn_executor_outdated',
-          generationJobId,
-          jobId: generationJobId,
-          message: 'cn-executor 运行旧版本代码（使用了 setImmediate，任务无法在阿里云 FC 上完成）。请将新版 ZIP 上传至阿里云 FC 函数并重新部署。文件位置：~/Downloads/cn-executor.zip',
-          submittedInput,
-        }, { status: 200 })
-      }
-
-      // cn-executor timed out or returned unexpected status — frontend polls DB
       return NextResponse.json({
         success: true,
+        async: true,
         providerId,
         providerRegion,
         executionRegion,
@@ -585,7 +487,6 @@ export async function POST(request: NextRequest) {
         executorKind,
         mode: 'real',
         status: 'queued',
-        async: true,
         generationJobId,
         jobId: generationJobId,
         model: submittedModel,
