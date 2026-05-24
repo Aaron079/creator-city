@@ -248,20 +248,34 @@ export async function GET(request: NextRequest) {
     }, { status: 200 })
   }
 
-  // QUEUED or PROCESSING — detect stalled jobs (cn-executor did not respond within 5 min)
-  const STALL_TIMEOUT_MS = 5 * 60 * 1000
+  // Detect stalled jobs: QUEUED >2 min = executor never started; PROCESSING >5 min = executor hung
   const ageMs = Date.now() - new Date(generationJob.updatedAt).getTime()
-  if (ageMs > STALL_TIMEOUT_MS) {
+  if (generationJob.status === 'QUEUED' && ageMs > 2 * 60 * 1000) {
+    return NextResponse.json({
+      success: false,
+      status: 'failed',
+      errorCode: 'executor_not_started',
+      errorStage: 'executor_dispatch',
+      stageTrace: ['executor_dispatch', 'executor_not_started'],
+      message: 'Image job stayed QUEUED for >2 min — cn-executor never started. Check: (1) CREATOR_CN_API_BASE_URL is set, (2) shared secret matches, (3) Aliyun FC function is running.',
+      providerId,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      generationJobId: generationJob.id,
+      jobStatus: generationJob.status,
+      updatedAt: generationJob.updatedAt.toISOString(),
+      ageMs,
+    }, { status: 200 })
+  }
+  if (ageMs > 5 * 60 * 1000) {
     const stallOutput = record(generationJob.output)
-    const stallMessage =
-      generationJob.status === 'QUEUED'
-        ? 'Job stuck in QUEUED — cn-executor never started. Check: (1) CREATOR_CN_API_BASE_URL is set, (2) shared secret matches, (3) Aliyun FC function is running.'
-        : 'Job stuck in PROCESSING — cn-executor started but did not finish. Check Aliyun FC function logs for this job.'
     return NextResponse.json({
       success: false,
       status: 'failed',
       errorCode: 'generation_job_stalled',
-      message: stallMessage,
+      message: 'Image job stuck in PROCESSING — cn-executor started but did not finish. Check Aliyun FC function logs for this job.',
       providerId,
       providerRegion: sourceProviderRegion,
       executionRegion,

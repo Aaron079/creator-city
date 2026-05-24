@@ -475,40 +475,109 @@ export async function POST(request: NextRequest) {
           submittedInput,
         }, { status: 200 })
       }
-      fetch(`${cnBaseUrl}/api/jobs/run-image`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cnSecret}`,
-          'x-creator-executor-secret': cnSecret,
-        },
-        body: JSON.stringify({ generationJobId }),
-        signal: AbortSignal.timeout(8_000),
-      }).catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-        if (isTimeout) {
-          // 8s timeout fired before cn-executor HTTP response — job is still running on Aliyun FC.
-          // Do NOT mark FAILED: cn-executor marks SUCCEEDED when done; stall detection handles true hangs.
-          console.warn('[api/generate/image] cn-executor fire-and-forget timed out (job still running on FC)', { generationJobId })
-          return
-        }
-        const output = {
+      // Await the trigger — bare fetch() without await is dropped when Vercel terminates the function.
+      // cn-executor /run-image runs synchronously, so we wait up to 50s for a response.
+      // On timeout: request was delivered and cn-executor is processing — return queued.
+      // On network error: cn-executor unreachable — mark FAILED and return error.
+      let triggerResponse: Response | null = null
+      let triggerError: unknown = null
+      try {
+        triggerResponse = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cnSecret}`,
+            'x-creator-executor-secret': cnSecret,
+          },
+          body: JSON.stringify({ generationJobId }),
+          signal: AbortSignal.timeout(50_000),
+        })
+      } catch (err) {
+        triggerError = err
+      }
+
+      const triggerTimedOut = triggerError instanceof Error && (triggerError.name === 'TimeoutError' || triggerError.name === 'AbortError')
+
+      if (triggerError && !triggerTimedOut) {
+        // Network failure (ECONNREFUSED, DNS, etc.) — cn-executor unreachable
+        const errMsg = triggerError instanceof Error ? triggerError.message : String(triggerError)
+        const failOutput = {
           errorCode: 'executor_trigger_failed',
           errorStage: 'executor_dispatch',
           stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
-          message: `cn-executor 触发失败：${message}`,
+          message: `cn-executor 触发失败（网络错误）：${errMsg}`,
           submittedInput,
           executorKind,
         }
-        console.warn('[api/generate/image] cn-executor run-image fire-and-forget failed (network error):', message)
-        void db.generationJob.update({
+        console.warn('[api/generate/image] cn-executor trigger network error:', errMsg, { generationJobId })
+        await db.generationJob.update({
           where: { id: generationJobId },
-          data: { status: 'FAILED', errorMessage: output.message, output },
-        }).catch((updateErr: unknown) => {
-          console.warn('[api/generate/image] failed to mark job failed after executor trigger failure', updateErr)
-        })
-      })
+          data: { status: 'FAILED', errorMessage: failOutput.message, output: failOutput },
+        }).catch((e: unknown) => { console.warn('[api/generate/image] failed to mark FAILED after trigger error', e) })
+        return NextResponse.json({
+          success: false,
+          async: false,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'real',
+          status: 'failed',
+          errorCode: failOutput.errorCode,
+          errorStage: failOutput.errorStage,
+          stageTrace: failOutput.stageTrace,
+          generationJobId,
+          jobId: generationJobId,
+          message: failOutput.message,
+          submittedInput,
+        }, { status: 200 })
+      }
+
+      if (triggerResponse && !triggerResponse.ok) {
+        // cn-executor returned 4xx / 5xx
+        const httpStatus = triggerResponse.status
+        const failOutput = {
+          errorCode: 'executor_trigger_failed',
+          errorStage: 'executor_dispatch',
+          stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
+          message: `cn-executor 返回 HTTP ${httpStatus}，触发失败`,
+          providerHttpStatus: httpStatus,
+          submittedInput,
+          executorKind,
+        }
+        console.warn('[api/generate/image] cn-executor returned non-2xx', { httpStatus, generationJobId })
+        await db.generationJob.update({
+          where: { id: generationJobId },
+          data: { status: 'FAILED', errorMessage: failOutput.message, output: failOutput },
+        }).catch((e: unknown) => { console.warn('[api/generate/image] failed to mark FAILED after trigger HTTP error', e) })
+        return NextResponse.json({
+          success: false,
+          async: false,
+          providerId,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          mode: 'real',
+          status: 'failed',
+          errorCode: failOutput.errorCode,
+          errorStage: failOutput.errorStage,
+          stageTrace: failOutput.stageTrace,
+          generationJobId,
+          jobId: generationJobId,
+          message: failOutput.message,
+          submittedInput,
+        }, { status: 200 })
+      }
+
+      if (triggerTimedOut) {
+        console.log('[api/generate/image] cn-executor trigger timed out — job delivered, Aliyun FC processing', { generationJobId })
+      } else if (triggerResponse?.ok) {
+        console.log('[api/generate/image] cn-executor trigger acknowledged', { generationJobId, status: triggerResponse.status })
+      }
 
       return NextResponse.json({
         success: true,

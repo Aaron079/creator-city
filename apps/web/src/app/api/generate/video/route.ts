@@ -730,41 +730,111 @@ export async function POST(request: NextRequest) {
         },
       })
     }
-    fetch(`${cnBaseUrl}/api/jobs/run-video`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Send both headers: Bearer for new cn-executor, x-creator-executor-secret for old code
-        Authorization: `Bearer ${cnSecret}`,
-        'x-creator-executor-secret': cnSecret,
-      },
-      body: JSON.stringify({ generationJobId: generationJob.id }),
-      signal: AbortSignal.timeout(8_000),
-    }).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err)
-      const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-      if (isTimeout) {
-        // 8s timeout fired before cn-executor HTTP response — job is still running on Aliyun FC.
-        // Do NOT mark FAILED: cn-executor marks SUCCEEDED when done; stall detection handles true hangs.
-        console.warn('[api/generate/video] cn-executor fire-and-forget timed out (job still running on FC)', { generationJobId: generationJob.id })
-        return
-      }
-      const output = {
+    // Await the trigger — bare fetch() without await is dropped when Vercel terminates the function.
+    // Video generation takes 60-180s, so we only wait 12s for TCP delivery confirmation.
+    // On timeout: request was delivered and cn-executor is processing — return queued.
+    // On network error: cn-executor unreachable — mark FAILED and return error.
+    let videoTriggerResponse: Response | null = null
+    let videoTriggerError: unknown = null
+    try {
+      videoTriggerResponse = await fetch(`${cnBaseUrl}/api/jobs/run-video`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cnSecret}`,
+          'x-creator-executor-secret': cnSecret,
+        },
+        body: JSON.stringify({ generationJobId: generationJob.id }),
+        signal: AbortSignal.timeout(12_000),
+      })
+    } catch (err) {
+      videoTriggerError = err
+    }
+
+    const videoTriggerTimedOut = videoTriggerError instanceof Error && (videoTriggerError.name === 'TimeoutError' || videoTriggerError.name === 'AbortError')
+
+    if (videoTriggerError && !videoTriggerTimedOut) {
+      // Network failure — cn-executor unreachable
+      const errMsg = videoTriggerError instanceof Error ? videoTriggerError.message : String(videoTriggerError)
+      const failOutput = {
         errorCode: 'executor_trigger_failed',
         errorStage: 'executor_dispatch',
         stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
-        message: `cn-executor 触发失败：${message}`,
+        message: `cn-executor 触发失败（网络错误）：${errMsg}`,
         submittedInput,
         executorKind,
       }
-      console.warn('[api/generate/video] cn-executor run-video fire-and-forget failed (network error):', message)
-      void db.generationJob.update({
+      console.warn('[api/generate/video] cn-executor trigger network error:', errMsg, { generationJobId: generationJob.id })
+      await db.generationJob.update({
         where: { id: generationJob.id },
-        data: { status: 'FAILED', errorMessage: output.message, output },
-      }).catch((updateErr: unknown) => {
-        console.warn('[api/generate/video] failed to mark job failed after executor trigger failure', updateErr)
+        data: { status: 'FAILED', errorMessage: failOutput.message, output: failOutput },
+      }).catch((e: unknown) => { console.warn('[api/generate/video] failed to mark FAILED after trigger error', e) })
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        errorCode: failOutput.errorCode,
+        errorMessage: failOutput.message,
+        requestId: routeRequestId,
+        submittedInput,
+        details: {
+          generationJobId: generationJob.id,
+          jobId: generationJob.id,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          errorStage: failOutput.errorStage,
+          stageTrace: failOutput.stageTrace,
+        },
       })
-    })
+    }
+
+    if (videoTriggerResponse && !videoTriggerResponse.ok) {
+      // cn-executor returned 4xx / 5xx
+      const httpStatus = videoTriggerResponse.status
+      const failOutput = {
+        errorCode: 'executor_trigger_failed',
+        errorStage: 'executor_dispatch',
+        stageTrace: ['api_route', 'create_generation_job', 'executor_dispatch'],
+        message: `cn-executor 返回 HTTP ${httpStatus}，触发失败`,
+        providerHttpStatus: httpStatus,
+        submittedInput,
+        executorKind,
+      }
+      console.warn('[api/generate/video] cn-executor returned non-2xx', { httpStatus, generationJobId: generationJob.id })
+      await db.generationJob.update({
+        where: { id: generationJob.id },
+        data: { status: 'FAILED', errorMessage: failOutput.message, output: failOutput },
+      }).catch((e: unknown) => { console.warn('[api/generate/video] failed to mark FAILED after trigger HTTP error', e) })
+      return videoErrorResponse({
+        providerId,
+        mode: 'real',
+        status: 'failed',
+        errorCode: failOutput.errorCode,
+        errorMessage: failOutput.message,
+        requestId: routeRequestId,
+        submittedInput,
+        details: {
+          generationJobId: generationJob.id,
+          jobId: generationJob.id,
+          providerRegion,
+          executionRegion,
+          storageRegion,
+          executor: resolvedExecutor,
+          executorKind,
+          errorStage: failOutput.errorStage,
+          stageTrace: failOutput.stageTrace,
+        },
+      })
+    }
+
+    if (videoTriggerTimedOut) {
+      console.log('[api/generate/video] cn-executor trigger timed out after 12s — job delivered, Aliyun FC processing', { generationJobId: generationJob.id })
+    } else if (videoTriggerResponse?.ok) {
+      console.log('[api/generate/video] cn-executor trigger acknowledged', { generationJobId: generationJob.id, status: videoTriggerResponse.status })
+    }
 
     return NextResponse.json({
       success: true,
