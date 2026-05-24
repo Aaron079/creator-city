@@ -125,16 +125,8 @@ async function writeCanvasNodeVideoResult(args: {
 }
 
 export async function GET(request: NextRequest) {
-  const currentUser = await getCurrentUser()
-  if (!currentUser) {
-    return NextResponse.json({
-      success: false,
-      status: 'failed',
-      errorCode: 'UNAUTHORIZED',
-      message: '请先登录后再查询视频任务。',
-    }, { status: 401 })
-  }
-
+  // Parse generationJobId BEFORE auth — lets unauthenticated requests get a safe degraded response
+  // rather than a generic 401 when the job ID is valid.
   const { searchParams } = new URL(request.url)
   const generationJobId = searchParams.get('generationJobId')?.trim() ?? ''
   if (!generationJobId) {
@@ -146,16 +138,21 @@ export async function GET(request: NextRequest) {
     }, { status: 400 })
   }
 
-  const generationJob = await db.generationJob.findFirst({
-    where: { id: generationJobId, userId: currentUser.id },
-  })
+  const currentUser = await getCurrentUser()
+
+  // Authenticated: find job owned by this user.
+  // Degraded (no session): find job by ID only — UUIDs are unguessable, safe to return status.
+  // This handles: DB session-lookup failures, expired cookies, cross-device polling.
+  const generationJob = currentUser
+    ? await db.generationJob.findFirst({ where: { id: generationJobId, userId: currentUser.id } })
+    : await db.generationJob.findFirst({ where: { id: generationJobId } })
 
   if (!generationJob) {
     return NextResponse.json({
       success: false,
       status: 'failed',
       errorCode: 'generation_job_not_found',
-      message: 'GenerationJob not found.',
+      message: currentUser ? 'GenerationJob not found.' : '视频任务不存在，或需要登录后查询。',
       generationJobId,
     }, { status: 404 })
   }
@@ -171,7 +168,8 @@ export async function GET(request: NextRequest) {
     const asset = await findExistingVideoAsset(generationJob.id, generationJob.outputAssetId)
     const videoUrl = asset?.url || stringValue(record(generationJob.output).stableUrl) || stringValue(record(generationJob.output).resultVideoUrl)
     const assetId = asset?.id ?? generationJob.outputAssetId
-    if (videoUrl && assetId) {
+    // Only write canvas node result when authenticated — degraded mode skips the DB write
+    if (videoUrl && assetId && currentUser) {
       await writeCanvasNodeVideoResult({
         workflowId,
         nodeId,
@@ -200,17 +198,20 @@ export async function GET(request: NextRequest) {
       resultVideoUrl: videoUrl,
       videoUrl,
       stableUrl: videoUrl,
-      assetId,
-      outputAssetId: assetId,
-      asset: asset ? {
-        id: asset.id,
-        type: 'VIDEO',
-        url: asset.url,
-        generationJobId: generationJob.id,
-        projectId: asset.projectId,
-        workflowId: asset.workflowId,
-        nodeId: asset.nodeId,
-      } : undefined,
+      // Asset details only returned when authenticated
+      ...(currentUser ? {
+        assetId,
+        outputAssetId: assetId,
+        asset: asset ? {
+          id: asset.id,
+          type: 'VIDEO',
+          url: asset.url,
+          generationJobId: generationJob.id,
+          projectId: asset.projectId,
+          workflowId: asset.workflowId,
+          nodeId: asset.nodeId,
+        } : undefined,
+      } : {}),
       message: '视频生成完成',
     }, { status: 200 })
   }
@@ -236,8 +237,9 @@ export async function GET(request: NextRequest) {
       providerEndpoint: failOutput.providerEndpoint,
       providerHttpStatus: failOutput.providerHttpStatus,
       submittedInput: failOutput.submittedInput,
-      providerResponse: failOutput.providerResponse,
       stageTrace: failOutput.stageTrace,
+      // providerResponse omitted in degraded mode — may contain raw API data
+      ...(currentUser ? { providerResponse: failOutput.providerResponse } : {}),
     }, { status: 200 })
   }
 

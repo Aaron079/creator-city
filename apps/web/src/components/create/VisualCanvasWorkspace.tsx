@@ -650,7 +650,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (errorCode === 'oss_upload_timeout' || errorCode === 'oss_upload_error' || errorCode === 'oss_auth_error' || errorCode === 'oss_permission_error' || errorCode === 'oss_config_error') return errorCode
   if (errorCode === 'canvas_save_error') return 'canvas_save_error'
   if (errorCode === 'provider_media_download_failed' || errorCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || errorCode === 'MEDIA_FETCH_FAILED' || errorCode === 'ASSET_DOWNLOAD_FAILED' || errorCode === 'ASSET_DOWNLOAD_ERROR' || errorCode === 'ASSET_DOWNLOAD_TIMEOUT' || /media download failed|download failed|external asset/.test(haystack)) return 'provider_media_download_failed'
-  if (errorCode === 'generation_post_timeout' || errorCode === 'executor_trigger_timeout' || errorCode === 'executor_not_started' || errorCode === 'generation_job_stalled') return errorCode
+  if (errorCode === 'generation_post_timeout' || errorCode === 'executor_trigger_timeout' || errorCode === 'executor_not_started' || errorCode === 'generation_job_stalled' || errorCode === 'video_status_auth_required') return errorCode
     if (errorCode === 'provider_timeout' || /timeout|abort/.test(haystack)) return 'provider_timeout'
     if (errorCode === 'provider_network_failed' || /fetch failed|failed to fetch|network|econn|enotfound|dns/.test(haystack)) return 'provider_network_failed'
     if (errorCode === 'provider_request_failed') return 'provider_request_failed'
