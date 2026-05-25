@@ -25,6 +25,41 @@ import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 
+const EXPLORE_NAV: Array<{ group: string; items: Array<{ label: string; href: string }> }> = [
+  {
+    group: '平台',
+    items: [
+      { label: '路线图', href: '/roadmap' },
+      { label: '商业模式', href: '/pricing-preview' },
+      { label: '协议版权', href: '/terms-preview' },
+    ],
+  },
+  {
+    group: '部署与企业',
+    items: [
+      { label: '本地部署', href: '/local-deploy-preview' },
+      { label: '企业版', href: '/enterprise-preview' },
+    ],
+  },
+  {
+    group: '工作区',
+    items: [
+      { label: '项目中心', href: '/projects' },
+      { label: '资产中心', href: '/assets' },
+      { label: '生成任务', href: '/tasks' },
+      { label: 'API 中心', href: '/providers' },
+    ],
+  },
+  {
+    group: '社区与帮助',
+    items: [
+      { label: '社区', href: '/community' },
+      { label: '诊断帮助', href: '/help' },
+      { label: '工作台', href: '/dashboard' },
+    ],
+  },
+]
+
 const ENTERPRISE_NAV: Array<{ label: string; href: string }> = [
   { label: '企业版总览', href: '/enterprise-preview' },
   { label: '客户对象', href: '/enterprise-preview#target-customers' },
@@ -121,6 +156,18 @@ export function TopNavigation() {
   )
 
   const notificationHref = getActionTarget({ actionType: 'dashboard-notifications' }).actionHref
+
+  const [exploreOpen, setExploreOpen] = useState(false)
+  const exploreTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleExploreEnter = useCallback(() => {
+    if (exploreTimer.current) clearTimeout(exploreTimer.current)
+    setExploreOpen(true)
+  }, [])
+
+  const handleExploreLeave = useCallback(() => {
+    exploreTimer.current = setTimeout(() => setExploreOpen(false), 150)
+  }, [])
 
   const [enterpriseOpen, setEnterpriseOpen] = useState(false)
   const enterpriseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -224,6 +271,43 @@ export function TopNavigation() {
               waitingProjects={portfolio.waitingProjects}
               compact
             />
+          </div>
+
+          {/* Explore nav — hover dropdown, no API calls */}
+          <div
+            className="relative hidden md:block"
+            onMouseEnter={handleExploreEnter}
+            onMouseLeave={handleExploreLeave}
+          >
+            <button className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] font-medium text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white">
+              Explore
+              <span className="text-[9px] text-white/30">▾</span>
+            </button>
+
+            {exploreOpen && (
+              <div
+                className="absolute right-0 top-full z-[200] mt-1.5 w-[280px] rounded-2xl border border-white/[0.09] bg-[#0c0e1c]/96 py-2 shadow-2xl backdrop-blur-2xl"
+                onMouseEnter={handleExploreEnter}
+                onMouseLeave={handleExploreLeave}
+              >
+                {EXPLORE_NAV.map((group) => (
+                  <div key={group.group}>
+                    <div className="px-3.5 pb-0.5 pt-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/25 first:pt-1">
+                      {group.group}
+                    </div>
+                    {group.items.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="block px-3.5 py-1.5 text-[11px] text-white/55 transition hover:bg-white/[0.05] hover:text-white"
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Enterprise preview nav — hover dropdown, no API calls */}
