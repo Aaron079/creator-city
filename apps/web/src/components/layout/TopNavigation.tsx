@@ -286,8 +286,8 @@ export function TopNavigation() {
 
             {exploreOpen && (
               <div
-                className="absolute right-0 top-full z-[200] mt-1.5 w-[272px] overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-950/92 shadow-2xl ring-1 ring-white/[0.06] backdrop-blur-xl"
-                style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}
+                className="absolute right-0 top-full z-[200] mt-2 w-[272px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/90 ring-1 ring-white/[0.06] backdrop-blur-xl"
+                style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
                 onMouseEnter={handleExploreEnter}
                 onMouseLeave={handleExploreLeave}
               >
@@ -326,8 +326,8 @@ export function TopNavigation() {
 
             {enterpriseOpen && (
               <div
-                className="absolute right-0 top-full z-[200] mt-1.5 w-[230px] overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-950/92 py-1.5 shadow-2xl ring-1 ring-white/[0.06] backdrop-blur-xl"
-                style={{ maxHeight: '420px', overflowY: 'auto' }}
+                className="absolute right-0 top-full z-[200] mt-2 w-[220px] overflow-hidden rounded-2xl border border-violet-400/[0.15] bg-black/90 py-1.5 ring-1 ring-violet-400/[0.08] backdrop-blur-xl"
+                style={{ maxHeight: '360px', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
                 onMouseEnter={handleEnterpriseEnter}
                 onMouseLeave={handleEnterpriseLeave}
               >
@@ -335,7 +335,7 @@ export function TopNavigation() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="block px-3.5 py-[7px] text-[11px] text-white/55 transition hover:bg-violet-500/[0.1] hover:text-violet-200"
+                    className="block px-3 py-[7px] text-[12px] text-white/55 transition hover:bg-violet-500/[0.1] hover:text-violet-200"
                   >
                     {item.label}
                   </Link>

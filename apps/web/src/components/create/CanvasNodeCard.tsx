@@ -1132,6 +1132,17 @@ function failureDiagnosis(args: {
   const generationMessage = generationFailureMessage(lastError)
   if (generationMessage) {
     const code = normalizeGenerationFailureCode(lastError)
+    // If a renderable URL exists and the failure is from the proxy/load stage (not generation),
+    // show a transient-friendly message instead of prompting re-login + re-generation.
+    if (code === 'auth_required' && candidates.length > 0 && loadFailed) {
+      return {
+        code: 'proxy_load_failed',
+        title: 'proxy_load_failed',
+        detail: '媒体代理暂时无法加载（网络波动或会话短暂中断），视频 URL 仍保留。',
+        nextAction: '刷新页面后视频通常自动恢复，无需重新生成。',
+        canRecover: true,
+      }
+    }
     return {
       code,
       title: code,

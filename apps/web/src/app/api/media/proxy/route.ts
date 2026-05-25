@@ -1,7 +1,36 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import type { CurrentUser } from '@/lib/auth/current-user'
+import { getSessionToken } from '@/lib/auth/cookies'
+import { hashToken } from '@/lib/auth/session'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
+
+// Module-level session cache — reduces pgBouncer pressure from concurrent video Range requests.
+// A single video stream triggers 10-15 parallel Range requests; without caching, each hits the DB.
+// TTL of 60s is well within the 30-day session lifetime and safe for read-only media access.
+const PROXY_SESSION_CACHE_TTL_MS = 60_000
+const proxySessionCache = new Map<string, { user: CurrentUser | null; expiresAt: number }>()
+
+function getCachedProxySession(tokenHash: string): CurrentUser | null | undefined {
+  const entry = proxySessionCache.get(tokenHash)
+  if (!entry) return undefined
+  if (entry.expiresAt < Date.now()) {
+    proxySessionCache.delete(tokenHash)
+    return undefined
+  }
+  return entry.user
+}
+
+function setCachedProxySession(tokenHash: string, user: CurrentUser | null) {
+  if (proxySessionCache.size > 500) {
+    const now = Date.now()
+    for (const [k, v] of proxySessionCache) {
+      if (v.expiresAt < now) proxySessionCache.delete(k)
+    }
+  }
+  proxySessionCache.set(tokenHash, { user, expiresAt: Date.now() + PROXY_SESSION_CACHE_TTL_MS })
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -155,10 +184,23 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const user = await getCurrentUser().catch((error) => {
-    console.error('[media-proxy] auth lookup failed', error)
-    return null
-  })
+  const rawToken = getSessionToken()
+  const tokenHash = rawToken ? hashToken(rawToken) : ''
+  let user: CurrentUser | null
+  if (tokenHash) {
+    const cached = getCachedProxySession(tokenHash)
+    if (cached !== undefined) {
+      user = cached
+    } else {
+      user = await getCurrentUser().catch((error) => {
+        console.error('[media-proxy] auth lookup failed', error)
+        return null
+      })
+      setCachedProxySession(tokenHash, user)
+    }
+  } else {
+    user = null
+  }
   if (!user) {
     return proxyError('proxy_auth_required', 401, 'Login is required to proxy media URLs.', {
       receivedUrl: rawUrl,
