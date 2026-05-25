@@ -1393,14 +1393,14 @@ export function CanvasNodeCard({
     const candidate = selectedImageSource && imageCandidateUrls.some((c) => c.url === selectedImageSource.url)
       ? selectedImageSource
       : (imageCandidateUrls[0] ?? null)
-    if (!candidate?.url || !isRenderableMediaUrl(candidate.url).ok) return { url: '', source: '' }
+    if (!candidate?.url || !isRenderableMediaUrl(candidate.url, { source: candidate.source }).ok) return { url: '', source: '' }
     return candidate
   })()
   const videoSource = (() => {
     const candidate = selectedVideoSource && videoCandidateUrls.some((c) => c.url === selectedVideoSource.url)
       ? selectedVideoSource
       : (videoCandidateUrls[0] ?? null)
-    if (!candidate?.url || !isRenderableMediaUrl(candidate.url).ok) return { url: '', source: '' }
+    if (!candidate?.url || !isRenderableMediaUrl(candidate.url, { source: candidate.source }).ok) return { url: '', source: '' }
     return candidate
   })()
   const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
