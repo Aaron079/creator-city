@@ -590,6 +590,16 @@ export default function DashboardPage() {
             cta="查看 API 中心"
             loading={false}
           />
+          <OverviewCard
+            title="帮助/诊断"
+            lines={[
+              { label: '错误码参考', value: '14 条', accent: true },
+              { label: '常见问题', value: '10 类' },
+            ]}
+            href="/help"
+            cta="打开诊断中心"
+            loading={false}
+          />
         </div>
 
         {/* Recent projects + assets */}
