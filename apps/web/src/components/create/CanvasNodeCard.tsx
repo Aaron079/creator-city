@@ -3085,26 +3085,10 @@ export function CanvasNodeCard({
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div
                   className="canvas-node-video-button"
-                  data-no-node-drag="true"
                   data-testid="media-preview-video"
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
-                  aria-label="双击放大视频预览"
-                  onPointerDown={(event) => {
-                    // Stop propagation to prevent the parent motion.div's onPointerDown
-                    // from calling event.preventDefault(), which would suppress dblclick.
-                    event.stopPropagation()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!videoMedia.loadFailed && videoProxiedSrc) {
-                      console.info('[MediaLightbox] open', { type: 'video', url: videoProxiedSrc })
-                      setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
-                    } else {
-                      console.warn('[MediaLightbox] missing media url', { type: 'video', nodeId: node.id, loadFailed: videoMedia.loadFailed, url: videoProxiedSrc })
-                    }
-                  }}
+                  aria-label="视频预览拖动区域"
                 >
                   {videoMedia.loadFailed ? (
                     renderMediaFailurePanel('video')
@@ -3124,6 +3108,44 @@ export function CanvasNodeCard({
                         onCanPlay={() => setVideoLoadFailed(false)}
                       />
                       <span className="canvas-node-video-play" aria-hidden="true">▶</span>
+                      {/* Expand button — a <button> is in isInteractiveTarget list, so clicking it
+                          bypasses the parent onPointerDown's event.preventDefault(), which normally
+                          suppresses dblclick. This is the reliable lightbox trigger. */}
+                      <button
+                        type="button"
+                        data-node-action="true"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (!videoMedia.loadFailed && videoProxiedSrc) {
+                            console.info('[MediaLightbox] open', { type: 'video', url: videoProxiedSrc })
+                            setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+                          } else {
+                            console.warn('[MediaLightbox] missing url', { type: 'video', nodeId: node.id })
+                          }
+                        }}
+                        aria-label="放大视频预览"
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          zIndex: 5,
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255,255,255,0.22)',
+                          background: 'rgba(0,0,0,0.52)',
+                          color: 'rgba(255,255,255,0.82)',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backdropFilter: 'blur(8px)',
+                        }}
+                      >
+                        ⤢
+                      </button>
                     </>
                   )}
                 </div>
@@ -3131,44 +3153,68 @@ export function CanvasNodeCard({
               {node.kind === 'image' && imagePreviewUrl ? (
                 <div
                   className="canvas-node-image-button"
-                  data-no-node-drag="true"
                   data-testid="media-preview-image"
-                  aria-label="双击放大图片预览"
-                  onPointerDown={(event) => {
-                    // Stop propagation to prevent the parent motion.div's onPointerDown
-                    // from calling event.preventDefault(), which would suppress dblclick.
-                    event.stopPropagation()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!imageMedia.loadFailed && imageProxiedSrc) {
-                      console.info('[MediaLightbox] open', { type: 'image', url: imageProxiedSrc })
-                      setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
-                    } else {
-                      console.warn('[MediaLightbox] missing media url', { type: 'image', nodeId: node.id, loadFailed: imageMedia.loadFailed, url: imageProxiedSrc })
-                    }
-                  }}
+                  aria-label="图片预览拖动区域"
                 >
                   {imageMedia.loadFailed ? (
                     renderMediaFailurePanel('image')
                   ) : (
-                    <img
-                      src={imageProxiedSrc}
-                      alt={node.title}
-                      className="canvas-node-preview-image"
-                      loading="lazy"
-                      draggable={false}
-                      style={{ pointerEvents: 'none' }}
-                      onLoad={(event) => {
-                        setImageLoadFailed(false)
-                        const { naturalWidth, naturalHeight } = event.currentTarget
-                        if (naturalWidth > 0 && naturalHeight > 0) {
-                          setImageNaturalRatio(naturalWidth / naturalHeight)
-                        }
-                      }}
-                      onError={selectNextImageCandidate}
-                    />
+                    <>
+                      <img
+                        src={imageProxiedSrc}
+                        alt={node.title}
+                        className="canvas-node-preview-image"
+                        loading="lazy"
+                        draggable={false}
+                        style={{ pointerEvents: 'none' }}
+                        onLoad={(event) => {
+                          setImageLoadFailed(false)
+                          const { naturalWidth, naturalHeight } = event.currentTarget
+                          if (naturalWidth > 0 && naturalHeight > 0) {
+                            setImageNaturalRatio(naturalWidth / naturalHeight)
+                          }
+                        }}
+                        onError={selectNextImageCandidate}
+                      />
+                      {/* Expand button — a <button> is in isInteractiveTarget list, so clicking it
+                          bypasses the parent onPointerDown's event.preventDefault(), which normally
+                          suppresses dblclick. This is the reliable lightbox trigger. */}
+                      <button
+                        type="button"
+                        data-node-action="true"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (!imageMedia.loadFailed && imageProxiedSrc) {
+                            console.info('[MediaLightbox] open', { type: 'image', url: imageProxiedSrc })
+                            setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+                          } else {
+                            console.warn('[MediaLightbox] missing url', { type: 'image', nodeId: node.id })
+                          }
+                        }}
+                        aria-label="放大图片预览"
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          zIndex: 5,
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255,255,255,0.22)',
+                          background: 'rgba(0,0,0,0.52)',
+                          color: 'rgba(255,255,255,0.82)',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backdropFilter: 'blur(8px)',
+                        }}
+                      >
+                        ⤢
+                      </button>
+                    </>
                   )}
                 </div>
               ) : null}
