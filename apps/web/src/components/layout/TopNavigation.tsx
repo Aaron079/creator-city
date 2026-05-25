@@ -286,26 +286,29 @@ export function TopNavigation() {
 
             {exploreOpen && (
               <div
-                className="absolute right-0 top-full z-[200] mt-1.5 w-[280px] rounded-2xl border border-white/[0.09] bg-[#0c0e1c]/96 py-2 shadow-2xl backdrop-blur-2xl"
+                className="absolute right-0 top-full z-[200] mt-1.5 w-[272px] overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-950/92 shadow-2xl ring-1 ring-white/[0.06] backdrop-blur-xl"
+                style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}
                 onMouseEnter={handleExploreEnter}
                 onMouseLeave={handleExploreLeave}
               >
-                {EXPLORE_NAV.map((group) => (
-                  <div key={group.group}>
-                    <div className="px-3.5 pb-0.5 pt-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/25 first:pt-1">
-                      {group.group}
+                <div className="py-2">
+                  {EXPLORE_NAV.map((group) => (
+                    <div key={group.group}>
+                      <div className="px-3.5 pb-0.5 pt-2.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/30 first:pt-1.5">
+                        {group.group}
+                      </div>
+                      {group.items.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="block px-3.5 py-[7px] text-[11px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
                     </div>
-                    {group.items.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className="block px-3.5 py-1.5 text-[11px] text-white/55 transition hover:bg-white/[0.05] hover:text-white"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -323,7 +326,8 @@ export function TopNavigation() {
 
             {enterpriseOpen && (
               <div
-                className="absolute right-0 top-full z-[200] mt-1.5 min-w-[160px] rounded-2xl border border-white/[0.09] bg-[#0c0e1c]/96 py-1.5 shadow-2xl backdrop-blur-2xl"
+                className="absolute right-0 top-full z-[200] mt-1.5 w-[230px] overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-950/92 py-1.5 shadow-2xl ring-1 ring-white/[0.06] backdrop-blur-xl"
+                style={{ maxHeight: '420px', overflowY: 'auto' }}
                 onMouseEnter={handleEnterpriseEnter}
                 onMouseLeave={handleEnterpriseLeave}
               >
@@ -331,7 +335,7 @@ export function TopNavigation() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="block px-3.5 py-1.5 text-[11px] text-white/55 transition hover:bg-violet-500/[0.08] hover:text-violet-200"
+                    className="block px-3.5 py-[7px] text-[11px] text-white/55 transition hover:bg-violet-500/[0.1] hover:text-violet-200"
                   >
                     {item.label}
                   </Link>
