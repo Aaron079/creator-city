@@ -157,3 +157,31 @@ Run manually after any change to protected files:
 - [ ] No auto-POST on page load (check network tab on fresh load)
 - [ ] `pnpm --filter web type-check` passes
 - [ ] `pnpm --filter web build` passes
+
+---
+
+## UI/UX Evidence-Based Acceptance Rule (Added 2026-05-25)
+
+> Implementation is not acceptance.
+
+Every UI/UX change must include browser verification steps in the format:
+
+```
+Step N: [操作]
+Expected: [肉眼可见结果]
+```
+
+And a Network anti-regression check:
+- No POST /api/generate/image
+- No POST /api/generate/video
+
+For modal/overlay/lightbox specifically:
+- Must use `createPortal(…, document.body)`
+- Must use `z-[99999]` (not z-[9999])
+- Must use `fixed inset-0` (not affected by canvas transform)
+- Media must have explicit `width + height + maxWidth + maxHeight` for `object-contain` to work
+
+Full checklist: `docs/UI_ACCEPTANCE_CHECKLIST.md`
+
+If AI cannot test in real browser, must state explicitly:
+"我无法真实浏览器验收，请用户按以下步骤验收。"

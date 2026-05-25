@@ -164,3 +164,57 @@ curl -H "Authorization: Bearer $CN_EXECUTOR_SECRET" https://<fc-endpoint>/debug/
 - Trigger URL in `/api/generate/image/route.ts`
 
 All three must point to the same function endpoint.
+
+---
+
+## Evidence-Based UI Acceptance (Mandatory — Added 2026-05-25)
+
+> Implementation is not acceptance.
+> 代码实现完成 ≠ 功能完成。
+
+### Rule
+
+**AI cannot claim a UI/UX task is complete based on code alone.**
+
+After every UI/UX change, the AI must:
+
+1. **Provide browser verification steps** — numbered Step N / Expected format, specific enough for the user to follow and confirm within 2 minutes.
+2. **Provide anti-regression checks** — explicit Network tab checks (no unexpected POSTs).
+3. **Explicitly declare if browser testing was not performed** — write: "我无法真实浏览器验收，请用户按以下步骤验收。"
+
+### Forbidden statements
+
+❌ "已完成并验收通过" (without browser evidence)
+❌ "type-check 通过所以功能正确"
+❌ "代码逻辑正确所以视觉效果正确"
+
+### Required in every UI task final report
+
+```
+## 浏览器验收步骤（用户自测）
+
+Step 1: [具体操作]
+Expected: [肉眼可见的结果]
+
+Step 2: ...
+
+## 反证检查
+- Network → 无 POST /api/generate/image ✓
+- Network → 无 POST /api/generate/video ✓
+- 原节点未被清空 ✓
+
+## AI 声明
+我无法真实浏览器验收，以上步骤请用户在 /create 页面自行验证。
+```
+
+### Common failure modes to declare
+
+| Feature | Common Trap | Correct Check |
+|---------|-------------|---------------|
+| Modal/Lightbox | z-index not above canvas | Must use z-[99999] + createPortal to body |
+| Fixed overlay | Affected by parent transform | createPortal escapes canvas transform context |
+| object-contain | No explicit width/height → no effect | Set `width + height + maxWidth + maxHeight` |
+| ESC close | listener not cleaned up | useEffect cleanup removes listener on unmount |
+| Video controls | Click-to-close breaks controls | stopPropagation on video element |
+
+Full checklist: see `docs/UI_ACCEPTANCE_CHECKLIST.md`
