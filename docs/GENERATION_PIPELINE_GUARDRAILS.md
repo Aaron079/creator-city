@@ -143,6 +143,34 @@ These are FORBIDDEN as "video optimization":
 - Changing OSS upload for video
 - Removing the degraded-mode (unauthenticated) lookup from video/status
 
+## Auth Layer Guardrails (Added 2026-05-25)
+
+### Session expiry — root cause of UNAUTHORIZED on generation
+
+`getSession()` in `apps/web/src/lib/auth/session.ts` is **allowed** to be modified.
+The video/image generation routes are **frozen** — any session issue must be fixed in the auth layer, not the route.
+
+**Hard rules:**
+- Middleware (`middleware.ts`) only checks cookie *presence*, not DB session validity. A user can reach the canvas with an expired DB session. Generation will return UNAUTHORIZED.
+- **Never fix UNAUTHORIZED by adding auth bypass in the generation routes.** Fix the session layer.
+- Sliding expiry is implemented: on each valid session use, `expiresAt` is extended by `SESSION_DAYS` from now.
+- `getSession()` retries once on transient DB connection errors before returning null.
+
+**For readonly/navigation pages (dashboard, projects, overview):**
+- These pages MUST NOT import from or modify generation routes or auth middleware.
+- GET-only pages are safe. POST-only concerns: never call generation routes from page-level code.
+- If a deployment of a readonly page breaks generation, the cause is almost always a session expiry coincidence, not a code regression.
+
+### Diagnosing UNAUTHORIZED in production
+1. `errorCode: UNAUTHORIZED` in generation response → `getCurrentUser()` returned null
+2. Check: does `/api/auth/me` return `authenticated: false`?
+   - Yes → session expired. **Fix: user logs out and back in.**
+   - No → DB connection issue. Check Supabase session pooler logs.
+3. `model: null` in `submittedInput` is expected when body doesn't include `model` (all minimal payloads). It is NOT an indicator of provider misconfiguration.
+4. `mode: unavailable` is always set in the UNAUTHORIZED path — not a provider status indicator.
+
+---
+
 ## Regression Test Checklist
 
 Run manually after any change to protected files:
