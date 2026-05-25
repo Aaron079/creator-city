@@ -7,7 +7,6 @@ import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { CanvasNodeCard, type CanvasNodePreviewType, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
-import { CanvasGroupedNav } from '@/components/create/CanvasGroupedNav'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
 import { CanvasHistoryPanel, type CanvasHistoryItem } from '@/components/create/CanvasHistoryPanel'
 import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
@@ -7300,7 +7299,23 @@ export function VisualCanvasWorkspace({
             新建项目
             <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
           </button>
-          <CanvasGroupedNav onOpenProjects={handleOpenProjects} />
+          <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表" data-flush-canvas-before-nav="true">
+            项目
+            <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
+          </button>
+          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
+            社区
+            <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
+          </a>
+          <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
+            资产中心
+          </a>
+          <a href="/projects" className="canvas-nav-link" title="项目中心" aria-label="项目中心">
+            项目中心
+          </a>
+          <a href="/dashboard" className="canvas-nav-link" title="工作台" aria-label="工作台">
+            工作台
+          </a>
           {canOpenClientDelivery ? (
             <button
               type="button"
