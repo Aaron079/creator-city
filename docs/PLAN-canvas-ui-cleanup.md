@@ -33,11 +33,11 @@ Minimal, targeted frontend-only cleanup of the canvas UI. Frozen generation chai
 ## Steps
 
 - [x] Step 0: Audit existing state — confirms above list
-- [ ] Step 1: CanvasToolDock — remove audio/world/upload from NODE_OPTIONS (keep text/image/video only); remove Assets/Templates/Comments from TOOLS; add 停止生成 conditional button; clean up props
-- [ ] Step 2: CanvasNodeCard — getStatusLabel: 'done' → '已生成', default fallback → '待生成'
-- [ ] Step 3: VisualCanvasWorkspace — update CanvasToolDock call site (new props); friendlier save-failure message (remove raw error detail prefix)
-- [ ] Step 4: pnpm --filter web type-check && pnpm --filter web build && pnpm lint
-- [ ] Step 5: git add + commit + push origin main; verify Vercel deploy
+- [x] Step 1: CanvasToolDock — remove audio/world/upload from NODE_OPTIONS (keep text/image/video only); remove Assets/Templates/Comments from TOOLS; add 停止生成 conditional button; clean up props
+- [x] Step 2: CanvasNodeCard — getStatusLabel: 'done' → '已生成', default fallback → '待生成'
+- [x] Step 3: VisualCanvasWorkspace — update CanvasToolDock call site (new props); friendlier save-failure message (remove raw error detail prefix)
+- [x] Step 4: pnpm --filter web type-check && pnpm --filter web build — both pass
+- [x] Step 5: commit e9e5137 pushed to origin main
 
 ## Definition of done
 - type-check passes

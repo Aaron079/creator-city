@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
+import { MediaLightbox, type MediaLightboxState } from '@/components/create/MediaLightbox'
 import { CHAR_REF_DRAG_MIME, type CharacterReferenceDragPayload } from './CharacterReferenceCard'
 import { getNodeImageUrlSources, getNodeVideoUrlSources, type MediaUrlSource } from '@/lib/canvas/media-urls'
 import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
@@ -1363,6 +1364,7 @@ export function CanvasNodeCard({
   const [selectedImageSource, setSelectedImageSource] = useState<MediaUrlSource | null>(null)
   const [selectedVideoSource, setSelectedVideoSource] = useState<MediaUrlSource | null>(null)
   const recoveryAttemptKeyRef = useRef('')
+  const [lightbox, setLightbox] = useState<MediaLightboxState | null>(null)
 
   function handleVideoPreviewEnter() {
     const video = videoPreviewRef.current
@@ -2835,6 +2837,7 @@ export function CanvasNodeCard({
   }
 
   return (
+    <>
     <motion.div
       role="button"
       tabIndex={0}
@@ -3085,6 +3088,13 @@ export function CanvasNodeCard({
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
                   aria-label="视频预览拖动区域"
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!videoMedia.loadFailed && videoProxiedSrc) {
+                      setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+                    }
+                  }}
                 >
                   {videoMedia.loadFailed ? (
                     renderMediaFailurePanel('video')
@@ -3112,6 +3122,13 @@ export function CanvasNodeCard({
                 <div
                   className="canvas-node-image-button"
                   aria-label="图片预览拖动区域"
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!imageMedia.loadFailed && imageProxiedSrc) {
+                      setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+                    }
+                  }}
                 >
                   {imageMedia.loadFailed ? (
                     renderMediaFailurePanel('image')
@@ -3295,5 +3312,14 @@ export function CanvasNodeCard({
         </div>
       ) : null}
     </motion.div>
+    {lightbox ? (
+      <MediaLightbox
+        type={lightbox.type}
+        url={lightbox.url}
+        title={lightbox.title}
+        onClose={() => setLightbox(null)}
+      />
+    ) : null}
+    </>
   )
 }
