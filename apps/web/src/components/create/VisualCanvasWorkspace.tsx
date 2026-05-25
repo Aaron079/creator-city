@@ -7307,6 +7307,9 @@ export function VisualCanvasWorkspace({
             社区
             <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
           </a>
+          <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
+            资产中心
+          </a>
           {canOpenClientDelivery ? (
             <button
               type="button"
