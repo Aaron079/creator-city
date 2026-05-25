@@ -14,38 +14,115 @@ interface MediaLightboxProps extends MediaLightboxState {
 }
 
 export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps) {
-  // ESC to close — listener attached when lightbox mounts, removed when it unmounts
   useEffect(() => {
+    console.info('[MediaLightbox] mounted', { type, url })
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        console.info('[MediaLightbox] close via ESC')
+        onClose()
+      }
     }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
+    return () => {
+      document.removeEventListener('keydown', handler)
+      console.info('[MediaLightbox] unmounted')
+    }
+  }, [onClose, type, url])
 
-  // Skip during SSR — lightbox only ever opens from a client click anyway
+  // Skip during SSR
   if (typeof document === 'undefined') return null
 
   return createPortal(
     <div
-      // Full-viewport fixed overlay — always above canvas, toolbar, AI button
-      // bg-black/80 = rgba(0,0,0,0.80), a safe standard Tailwind value
-      className="fixed inset-0 z-[99999] flex cursor-pointer items-center justify-center bg-black/80"
-      onClick={onClose}
+      // Full-viewport overlay. zIndex is forced via inline style (not just Tailwind)
+      // to guarantee it survives any CSS specificity war or purge.
+      // bg is also inline for the same reason.
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 999999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.88)',
+        cursor: 'pointer',
+      }}
+      onClick={() => {
+        console.info('[MediaLightbox] close via backdrop click')
+        onClose()
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={title ?? '媒体预览'}
     >
+      {/* Debug label — visible proof that the lightbox actually opened.
+          Remove after user confirms feature works. */}
+      <span
+        style={{
+          position: 'absolute',
+          top: '12px',
+          left: '14px',
+          zIndex: 10,
+          fontSize: '10px',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          color: 'rgba(255,255,255,0.55)',
+          background: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.18)',
+          borderRadius: '4px',
+          padding: '3px 8px',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+      >
+        MEDIA LIGHTBOX OPEN
+      </span>
+
+      {/* Close button — top right, always visible */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          console.info('[MediaLightbox] close via ✕ button')
+          onClose()
+        }}
+        aria-label="关闭预览"
+        style={{
+          position: 'absolute',
+          top: '14px',
+          right: '14px',
+          zIndex: 10,
+          width: '34px',
+          height: '34px',
+          borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.22)',
+          background: 'rgba(0,0,0,0.55)',
+          color: 'rgba(255,255,255,0.85)',
+          fontSize: '16px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        ✕
+      </button>
+
       {type === 'image' ? (
-        // Image — clicks on image also close
-        // width/height auto + max constraints → natural aspect ratio, fills up to 92vw × 88vh
-        // No object-fit needed: browser preserves ratio naturally with auto dimensions
+        // Clicking the image also closes — this is the main close affordance.
+        // width/height auto + max constraints → natural aspect ratio preserved.
+        // objectFit: contain is present but redundant with auto dimensions;
+        // the browser preserves ratio naturally. Inline style = no Tailwind purge risk.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={url}
           alt={title ?? ''}
           draggable={false}
-          onClick={onClose}
+          onClick={(e) => {
+            e.stopPropagation()
+            console.info('[MediaLightbox] close via image click')
+            onClose()
+          }}
           style={{
             display: 'block',
             width: 'auto',
@@ -59,46 +136,20 @@ export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps)
           }}
         />
       ) : (
-        // Video — clicking video body does NOT close (controls must work)
-        // Only backdrop click, ESC, or ✕ button closes it
+        // Video: clicking the video body must NOT close (controls need to work).
+        // Only backdrop, ESC, or ✕ close.
         <div
           style={{ position: 'relative', lineHeight: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* ✕ close button — always visible top-right */}
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭预览"
-            style={{
-              position: 'absolute',
-              top: '-14px',
-              right: '-14px',
-              zIndex: 10,
-              width: '30px',
-              height: '30px',
-              borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: 'rgba(0,0,0,0.6)',
-              color: 'rgba(255,255,255,0.75)',
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            ✕
-          </button>
-
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             src={url}
             controls
             playsInline
+            autoPlay={false}
             style={{
               display: 'block',
-              // width: min(92vw, 1280px) → fills screen up to 1280px, shrinks on small screens
               width: 'min(92vw, 1280px)',
               height: 'auto',
               maxWidth: '92vw',
@@ -111,7 +162,7 @@ export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps)
         </div>
       )}
 
-      {/* Hint — stays at viewport bottom, never overlaps media */}
+      {/* Hint text — stays at viewport bottom */}
       <span
         style={{
           position: 'absolute',
@@ -119,13 +170,15 @@ export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps)
           left: '50%',
           transform: 'translateX(-50%)',
           fontSize: '10px',
-          color: 'rgba(255,255,255,0.35)',
+          color: 'rgba(255,255,255,0.38)',
           pointerEvents: 'none',
           userSelect: 'none',
           whiteSpace: 'nowrap',
         }}
       >
-        {type === 'video' ? '单击空白处 / ✕ / ESC 返回画布' : '单击图片或空白处 / ESC 返回画布'}
+        {type === 'video'
+          ? '单击空白处 / ✕ / ESC 返回画布'
+          : '单击图片或空白处 / ESC 返回画布'}
       </span>
     </div>,
     document.body,

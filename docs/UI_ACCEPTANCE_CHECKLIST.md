@@ -188,3 +188,27 @@ Expected:
 ✅ 必须写："我无法真实浏览器验收，只能提供代码级保证，请用户按以下步骤验收"
 ✅ 必须提供逐步验收步骤（Step N / Expected）
 ✅ 必须提供反证检查（Network 无 POST）
+
+---
+
+## 硬规则：弹框/预览/拖拽/画布 UI 改动调试要求
+
+任何弹框/预览/拖拽/画布 UI 改动，如果 AI 无法真实浏览器验收，最终报告**必须写**：
+
+> 未真实浏览器验收，不能写验收通过。
+
+对于 lightbox 类功能，**必须提供**：
+- `data-testid` 属性（便于 DevTools 查找 DOM 节点）
+- `console.info` 打点（open/close，便于 DevTools Console 确认事件触发）
+- 可见调试标签（如 "MEDIA LIGHTBOX OPEN"，直到用户确认功能可用后再移除）
+
+**根因定位规则（onDoubleClick 失效排查）**：
+
+`onDoubleClick` 在 React Flow 画布节点内失效的常见根因是：
+父节点的 `onPointerDown` 调用了 `event.preventDefault()`，这会在浏览器层面抑制后续的 mouse 兼容事件，包括 `dblclick`。
+
+解决方案：
+1. 在媒体预览容器上添加 `data-no-node-drag="true"`（使 `isInteractiveTarget` 返回 true）
+2. 在媒体预览容器上添加 `onPointerDown={(e) => e.stopPropagation()}`（阻止冒泡到父节点的 `onPointerDown`）
+
+这两步结合可以确保父节点的 `onPointerDown` 不会调用 `preventDefault()`，从而允许 `dblclick` 正常触发。

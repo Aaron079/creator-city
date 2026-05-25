@@ -3085,14 +3085,24 @@ export function CanvasNodeCard({
               {node.kind === 'video' && videoPreviewUrl ? (
                 <div
                   className="canvas-node-video-button"
+                  data-no-node-drag="true"
+                  data-testid="media-preview-video"
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
-                  aria-label="视频预览拖动区域"
+                  aria-label="双击放大视频预览"
+                  onPointerDown={(event) => {
+                    // Stop propagation to prevent the parent motion.div's onPointerDown
+                    // from calling event.preventDefault(), which would suppress dblclick.
+                    event.stopPropagation()
+                  }}
                   onDoubleClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
                     if (!videoMedia.loadFailed && videoProxiedSrc) {
+                      console.info('[MediaLightbox] open', { type: 'video', url: videoProxiedSrc })
                       setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+                    } else {
+                      console.warn('[MediaLightbox] missing media url', { type: 'video', nodeId: node.id, loadFailed: videoMedia.loadFailed, url: videoProxiedSrc })
                     }
                   }}
                 >
@@ -3121,12 +3131,22 @@ export function CanvasNodeCard({
               {node.kind === 'image' && imagePreviewUrl ? (
                 <div
                   className="canvas-node-image-button"
-                  aria-label="图片预览拖动区域"
+                  data-no-node-drag="true"
+                  data-testid="media-preview-image"
+                  aria-label="双击放大图片预览"
+                  onPointerDown={(event) => {
+                    // Stop propagation to prevent the parent motion.div's onPointerDown
+                    // from calling event.preventDefault(), which would suppress dblclick.
+                    event.stopPropagation()
+                  }}
                   onDoubleClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
                     if (!imageMedia.loadFailed && imageProxiedSrc) {
+                      console.info('[MediaLightbox] open', { type: 'image', url: imageProxiedSrc })
                       setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+                    } else {
+                      console.warn('[MediaLightbox] missing media url', { type: 'image', nodeId: node.id, loadFailed: imageMedia.loadFailed, url: imageProxiedSrc })
                     }
                   }}
                 >
