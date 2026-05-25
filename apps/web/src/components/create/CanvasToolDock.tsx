@@ -114,6 +114,7 @@ export function CanvasToolDock({
                   <a href="/me" className="canvas-user-menu-item">我的工作台</a>
                   <a href="/projects" className="canvas-user-menu-item">项目</a>
                   <a href="/assets" className="canvas-user-menu-item">资产中心</a>
+                  <a href="/projects" className="canvas-user-menu-item">项目中心</a>
                   <a href="/tasks" className="canvas-user-menu-item">生成任务</a>
                   <a href="/providers" className="canvas-user-menu-item">API 中心</a>
                   <a href="/" className="canvas-user-menu-item">退出当前画布</a>

@@ -7310,6 +7310,9 @@ export function VisualCanvasWorkspace({
           <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
             资产中心
           </a>
+          <a href="/projects" className="canvas-nav-link" title="项目中心" aria-label="项目中心">
+            项目中心
+          </a>
           {canOpenClientDelivery ? (
             <button
               type="button"
