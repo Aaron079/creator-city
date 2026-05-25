@@ -2,7 +2,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
@@ -24,6 +24,19 @@ import { useVersionHistoryStore } from '@/store/version-history.store'
 import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
+
+const ENTERPRISE_NAV: Array<{ label: string; href: string }> = [
+  { label: '企业版总览', href: '/enterprise-preview' },
+  { label: '客户对象', href: '/enterprise-preview#target-customers' },
+  { label: '核心能力', href: '/enterprise-preview#capabilities' },
+  { label: '企业工作流', href: '/enterprise-preview#workflow' },
+  { label: '权限矩阵', href: '/enterprise-preview#permissions' },
+  { label: '数据安全', href: '/enterprise-preview#security' },
+  { label: '企业套餐', href: '/enterprise-preview#plans' },
+  { label: '企业价值', href: '/enterprise-preview#value' },
+  { label: '接入流程', href: '/enterprise-preview#onboarding' },
+  { label: '风险边界', href: '/enterprise-preview#risks' },
+]
 
 const LINKS: Array<{ href: string; label: string; isCanvasV2?: boolean }> = [
   { href: '/create', label: '创作' },
@@ -108,6 +121,18 @@ export function TopNavigation() {
   )
 
   const notificationHref = getActionTarget({ actionType: 'dashboard-notifications' }).actionHref
+
+  const [enterpriseOpen, setEnterpriseOpen] = useState(false)
+  const enterpriseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleEnterpriseEnter = useCallback(() => {
+    if (enterpriseTimer.current) clearTimeout(enterpriseTimer.current)
+    setEnterpriseOpen(true)
+  }, [])
+
+  const handleEnterpriseLeave = useCallback(() => {
+    enterpriseTimer.current = setTimeout(() => setEnterpriseOpen(false), 150)
+  }, [])
 
   const handleLogout = async () => {
     await clientLogout()
@@ -199,6 +224,36 @@ export function TopNavigation() {
               waitingProjects={portfolio.waitingProjects}
               compact
             />
+          </div>
+
+          {/* Enterprise preview nav — hover dropdown, no API calls */}
+          <div
+            className="relative hidden md:block"
+            onMouseEnter={handleEnterpriseEnter}
+            onMouseLeave={handleEnterpriseLeave}
+          >
+            <button className="inline-flex items-center gap-1 rounded-xl border border-violet-500/30 bg-violet-500/[0.08] px-2.5 py-1.5 text-[12px] font-semibold text-violet-300 transition hover:border-violet-400/50 hover:bg-violet-500/[0.14] hover:text-violet-200">
+              企业版预览
+              <span className="text-[9px] text-violet-400/60">▾</span>
+            </button>
+
+            {enterpriseOpen && (
+              <div
+                className="absolute right-0 top-full z-[200] mt-1.5 min-w-[160px] rounded-2xl border border-white/[0.09] bg-[#0c0e1c]/96 py-1.5 shadow-2xl backdrop-blur-2xl"
+                onMouseEnter={handleEnterpriseEnter}
+                onMouseLeave={handleEnterpriseLeave}
+              >
+                {ENTERPRISE_NAV.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="block px-3.5 py-1.5 text-[11px] text-white/55 transition hover:bg-violet-500/[0.08] hover:text-violet-200"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           <Link

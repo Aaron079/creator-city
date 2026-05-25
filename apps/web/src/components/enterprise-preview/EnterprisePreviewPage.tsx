@@ -90,9 +90,9 @@ function CapStatusChip({ status }: { status: '规划中' | '企业版预览' }) 
   )
 }
 
-function Section({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+function Section({ children, style, id }: { children: React.ReactNode; style?: React.CSSProperties; id?: string }) {
   return (
-    <section style={{ maxWidth: 1040, margin: '0 auto', padding: '0 24px', ...style }}>
+    <section id={id} style={{ maxWidth: 1040, margin: '0 auto', padding: '0 24px', scrollMarginTop: '80px', ...style }}>
       {children}
     </section>
   )
@@ -183,7 +183,7 @@ function Hero() {
 
 function TargetCustomersSection() {
   return (
-    <Section>
+    <Section id="target-customers">
       <SectionLabel>企业客户对象</SectionLabel>
       <div style={{
         display: 'grid',
@@ -227,7 +227,7 @@ function TargetCustomersSection() {
 
 function CapabilitiesSection() {
   return (
-    <Section>
+    <Section id="capabilities">
       <SectionLabel>企业版核心能力</SectionLabel>
       <div style={{
         display: 'grid',
@@ -252,7 +252,7 @@ function CapabilitiesSection() {
 
 function WorkflowSection() {
   return (
-    <Section>
+    <Section id="workflow">
       <SectionLabel>企业工作流示例</SectionLabel>
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)', marginBottom: 24, marginTop: -12 }}>
         静态流程示例，不调用 API，不触发生成。
@@ -300,7 +300,7 @@ function WorkflowSection() {
 
 function PermissionMatrixSection() {
   return (
-    <Section>
+    <Section id="permissions">
       <SectionLabel>企业权限模型预览</SectionLabel>
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)', marginBottom: 18, marginTop: -12 }}>
         静态权限矩阵，不写 DB。窄屏可横向滚动。
@@ -371,7 +371,7 @@ function PermissionMatrixSection() {
 
 function SecuritySection() {
   return (
-    <Section>
+    <Section id="security">
       <SectionLabel>企业数据与安全</SectionLabel>
       <div style={{
         display: 'grid',
@@ -396,7 +396,7 @@ function SecuritySection() {
 
 function EnterprisePlansSection() {
   return (
-    <Section>
+    <Section id="plans">
       <SectionLabel>企业方案套餐预览</SectionLabel>
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)', marginBottom: 22, marginTop: -12 }}>
         价格和正式服务未开放，需后续商务确认。所有按钮均不接支付。
@@ -466,7 +466,7 @@ function EnterprisePlansSection() {
 
 function ValueSection() {
   return (
-    <Section>
+    <Section id="value">
       <SectionLabel>企业价值</SectionLabel>
       <div style={{
         display: 'grid',
@@ -489,7 +489,7 @@ function ValueSection() {
 
 function OnboardingSection() {
   return (
-    <Section>
+    <Section id="onboarding">
       <SectionLabel>接入流程预览</SectionLabel>
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)', marginBottom: 22, marginTop: -12 }}>
         当前只是流程预览，不创建任何表单或订单。
@@ -530,7 +530,7 @@ function OnboardingSection() {
 
 function RisksSection() {
   return (
-    <Section>
+    <Section id="risks">
       <SectionLabel>风险与边界</SectionLabel>
       <div style={{ ...glassLighter, padding: '20px 24px', borderLeft: '3px solid rgba(251,146,60,0.40)' }}>
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -550,7 +550,7 @@ function RisksSection() {
 
 function QuickLinksSection() {
   return (
-    <Section style={{ paddingBottom: 80 }}>
+    <Section id="quick-links" style={{ paddingBottom: 80 }}>
       <SectionLabel>快速链接</SectionLabel>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {quickLinks.map((link) => (
