@@ -10,6 +10,7 @@ import {
   Video,
 } from 'lucide-react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { SettingsHoverMenu } from '@/components/navigation/SettingsHoverMenu'
 
 interface CanvasToolDockProps {
   onAddNode: (kind: VisualCanvasNodeKind, presetTitle?: string) => void
@@ -124,6 +125,11 @@ export function CanvasToolDock({
               ) : null}
             </AnimatePresence>
           </div>
+
+          <div className="canvas-toolbar-divider" />
+
+          {/* Settings hover menu */}
+          <SettingsHoverMenu />
         </div>
       </div>
 
