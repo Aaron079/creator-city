@@ -138,12 +138,12 @@ function getStatusLabel(status: VisualCanvasNodeStatus, nodeKind?: string) {
   if (status === 'running' || status === 'generating' || status === 'processing') {
     if (nodeKind === 'image') return '图片生成中'
     if (nodeKind === 'video') return '视频生成中'
-    return '运行中'
+    return '生成中'
   }
-  if (status === 'done') return '完成'
+  if (status === 'done') return '已生成'
   if (status === 'error' || status === 'failed') return '失败'
   if (status === 'cancelled') return '已停止'
-  return '待运行'
+  return '待生成'
 }
 
 function summarizeTextError(errorMessage?: string) {

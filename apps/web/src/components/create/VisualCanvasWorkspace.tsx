@@ -2930,8 +2930,7 @@ export function VisualCanvasWorkspace({
       if ((error as { name?: string }).name === 'AbortError') return
       flushLocalSnapshot()
       setSaveStatus('failed')
-      const detail = error instanceof Error ? error.message : '保存失败'
-      setSaveMessage(`canvas_save_failed: ${detail}；已保留本地草稿`)
+      setSaveMessage('保存失败，结果已保留在本地草稿中')
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
     }
@@ -5142,41 +5141,6 @@ export function VisualCanvasWorkspace({
     setActivePanel(null)
   }, [])
 
-  const handleOpenAssetsPanel = useCallback(() => {
-    flushLocalSnapshot()
-    setActivePanel((current) => (current === 'assets' ? null : 'assets'))
-    setCommentsEnabled(false)
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-    setContextMenu(null)
-    setNodeAddMenu(null)
-  }, [flushLocalSnapshot])
-
-  const handleOpenTemplatePanel = useCallback(() => {
-    flushLocalSnapshot()
-    setActivePanel((current) => (current === 'templates' ? null : 'templates'))
-    setCommentsEnabled(false)
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-    setContextMenu(null)
-    setNodeAddMenu(null)
-  }, [flushLocalSnapshot])
-
-  const handleToggleCommentsPanel = useCallback(() => {
-    flushLocalSnapshot()
-    setCommentsEnabled((current) => {
-      const next = !current
-      if (next) {
-        setActivePanel(null)
-        showCanvasFeedback('评论模式已开启。')
-      } else {
-        showCanvasFeedback('评论模式已关闭。')
-      }
-      return next
-    })
-    setIsAddMenuOpen(false)
-    setEditingNodeId(null)
-  }, [flushLocalSnapshot, showCanvasFeedback])
 
   const handleAddNodeToDirector = useCallback((node: CanvasNodeCardNode) => {
     setDirectorState((current) => {
@@ -7436,10 +7400,8 @@ export function VisualCanvasWorkspace({
           onToolSelect={setActiveTool}
           isAddMenuOpen={isAddMenuOpen}
           onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
-          commentsEnabled={commentsEnabled}
-          onOpenAssetsPanel={handleOpenAssetsPanel}
-          onOpenTemplatePanel={handleOpenTemplatePanel}
-          onToggleCommentsPanel={handleToggleCommentsPanel}
+          hasActiveGenerations={hasActiveGenerations}
+          onStopAllGenerations={handleStopAllGenerations}
         />
       ) : null}
 

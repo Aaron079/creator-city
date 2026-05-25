@@ -3,16 +3,10 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  AudioLines,
-  Boxes,
-  Folder,
   ImageIcon,
-  ListPlus,
-  MessageCircle,
   Plus,
+  Square,
   Text,
-  Upload,
-  UserRound,
   Video,
 } from 'lucide-react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -23,18 +17,9 @@ interface CanvasToolDockProps {
   onToolSelect: (tool: string) => void
   isAddMenuOpen: boolean
   onToggleAddMenu: () => void
-  commentsEnabled: boolean
-  onOpenAssetsPanel: () => void
-  onOpenTemplatePanel: () => void
-  onToggleCommentsPanel: () => void
+  hasActiveGenerations: boolean
+  onStopAllGenerations: () => void
 }
-
-const TOOLS = [
-  { id: 'add', label: '添加节点', icon: Plus },
-  { id: 'assets', label: '素材库', icon: Folder },
-  { id: 'templates', label: '模板', icon: ListPlus },
-  { id: 'comments', label: '打开评论模式', icon: MessageCircle },
-] as const
 
 const NODE_OPTIONS: Array<{
   id: string
@@ -42,14 +27,10 @@ const NODE_OPTIONS: Array<{
   icon: typeof Text
   label: string
   hint: string
-  presetTitle?: string
 }> = [
   { id: 'text', kind: 'text', icon: Text, label: '文本', hint: '脚本、广告词、品牌文案' },
   { id: 'image', kind: 'image', icon: ImageIcon, label: '图片', hint: '关键画面、角色、场景图' },
   { id: 'video', kind: 'video', icon: Video, label: '视频', hint: '生成镜头、动作和转场' },
-  { id: 'audio', kind: 'audio', icon: AudioLines, label: '音频', hint: '音乐、音效与旁白' },
-  { id: 'world', kind: 'world', icon: Boxes, label: '3D 世界', hint: '空间、场景与世界观搭建' },
-  { id: 'upload', kind: 'upload', icon: Upload, label: '上传', hint: '导入图片、视频与参考素材' },
 ]
 
 export function CanvasToolDock({
@@ -58,58 +39,54 @@ export function CanvasToolDock({
   onToolSelect,
   isAddMenuOpen,
   onToggleAddMenu,
-  commentsEnabled,
-  onOpenAssetsPanel,
-  onOpenTemplatePanel,
-  onToggleCommentsPanel,
+  hasActiveGenerations,
+  onStopAllGenerations,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
-
-  const handleToolAction = (toolId: (typeof TOOLS)[number]['id']) => {
-    onToolSelect(toolId)
-    setIsUserMenuOpen(false)
-    if (toolId === 'add') {
-      onToggleAddMenu()
-      return
-    }
-    if (toolId === 'assets') {
-      onOpenAssetsPanel()
-      return
-    }
-    if (toolId === 'templates') {
-      onOpenTemplatePanel()
-      return
-    }
-    if (toolId === 'comments') {
-      onToggleCommentsPanel()
-      return
-    }
-  }
 
   return (
     <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
       <div className="canvas-toolbar-shell">
         <div className="flex flex-col gap-2">
-          {TOOLS.map((tool) => {
-            const active = activeTool === tool.id
-            const tooltip = tool.id === 'comments' && commentsEnabled ? '关闭评论模式' : tool.label
-            const Icon = tool.icon
-            return (
-              <button
-                key={tool.id}
-                type="button"
-                onClick={() => handleToolAction(tool.id)}
-                className={`canvas-toolbar-button ${active || (tool.id === 'add' && isAddMenuOpen) || (tool.id === 'comments' && commentsEnabled) ? 'is-active' : ''}`}
-                title={tooltip}
-                aria-label={tooltip}
-                data-tooltip={tooltip}
-              >
-                <Icon size={24} strokeWidth={2.35} />
-                <span className="canvas-hover-tooltip" aria-hidden="true">{tooltip}</span>
-              </button>
-            )
-          })}
+          {/* Add node */}
+          <button
+            type="button"
+            onClick={() => {
+              onToolSelect('add')
+              setIsUserMenuOpen(false)
+              onToggleAddMenu()
+            }}
+            className={`canvas-toolbar-button ${activeTool === 'add' || isAddMenuOpen ? 'is-active' : ''}`}
+            title="添加节点"
+            aria-label="添加节点"
+            data-tooltip="添加节点"
+          >
+            <Plus size={24} strokeWidth={2.35} />
+            <span className="canvas-hover-tooltip" aria-hidden="true">添加节点</span>
+          </button>
+
+          {/* Stop all generations — shown only when active */}
+          {hasActiveGenerations ? (
+            <button
+              type="button"
+              onClick={() => {
+                onToolSelect('stop')
+                onStopAllGenerations()
+              }}
+              className="canvas-toolbar-button"
+              style={{ color: '#f87171' }}
+              title="停止所有生成"
+              aria-label="停止所有生成"
+              data-tooltip="停止所有生成"
+            >
+              <Square size={22} strokeWidth={2.5} fill="currentColor" />
+              <span className="canvas-hover-tooltip" aria-hidden="true">停止所有生成</span>
+            </button>
+          ) : null}
+
           <div className="canvas-toolbar-divider" />
+
+          {/* User menu */}
           <div className="canvas-toolbar-user-wrap">
             <button
               type="button"
@@ -122,7 +99,7 @@ export function CanvasToolDock({
                 onToolSelect('user')
               }}
             >
-              <span className="canvas-toolbar-avatar"><UserRound size={18} strokeWidth={2.2} /></span>
+              <span className="canvas-toolbar-avatar" style={{ fontSize: 16, fontWeight: 700, lineHeight: 1 }}>U</span>
               <span className="canvas-hover-tooltip" aria-hidden="true">当前用户</span>
             </button>
             <AnimatePresence>
@@ -165,7 +142,7 @@ export function CanvasToolDock({
                     key={option.id}
                     type="button"
                     onClick={() => {
-                      onAddNode(option.kind, option.presetTitle)
+                      onAddNode(option.kind)
                       onToggleAddMenu()
                     }}
                     className="canvas-add-option"
