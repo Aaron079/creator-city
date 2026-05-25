@@ -133,9 +133,13 @@ function getResultPreviewClass(kind: VisualCanvasNodeKind) {
   return ''
 }
 
-function getStatusLabel(status: VisualCanvasNodeStatus) {
+function getStatusLabel(status: VisualCanvasNodeStatus, nodeKind?: string) {
   if (status === 'queued' || status === 'pending') return '排队中'
-  if (status === 'running' || status === 'generating' || status === 'processing') return '运行中'
+  if (status === 'running' || status === 'generating' || status === 'processing') {
+    if (nodeKind === 'image') return '图片生成中'
+    if (nodeKind === 'video') return '视频生成中'
+    return '运行中'
+  }
   if (status === 'done') return '完成'
   if (status === 'error' || status === 'failed') return '失败'
   if (status === 'cancelled') return '已停止'
@@ -2990,7 +2994,7 @@ export function CanvasNodeCard({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`canvas-node-status-text status-${node.status}`}>{getStatusLabel(node.status)}</span>
+            <span className={`canvas-node-status-text status-${node.status}`}>{getStatusLabel(node.status, node.kind)}</span>
             <span className={`canvas-node-status-dot status-${node.status}`} aria-hidden="true" />
             <button
               type="button"
@@ -3147,10 +3151,18 @@ export function CanvasNodeCard({
             <div className="canvas-node-preview is-generating-preview">
               <div className="canvas-node-loading-bar" />
               <div className="canvas-node-preview-copy">
-                {node.kind === 'video'
-                  ? (node.resultPreview || node.outputLabel || (node.status === 'queued' || node.status === 'pending' ? '排队中...' : '视频生成中，请稍后查询结果'))
-                  : node.resultPreview || node.outputLabel || (node.status === 'queued' || node.status === 'pending' ? '排队中...' : '运行中...')}
+                {node.resultPreview || node.outputLabel || (() => {
+                  const isQueued = node.status === 'queued' || node.status === 'pending'
+                  if (node.kind === 'video') return isQueued ? '视频排队中，等待调度...' : '视频生成中...'
+                  if (node.kind === 'image') return isQueued ? '图片排队中...' : '图片生成中...'
+                  return isQueued ? '排队中...' : '运行中...'
+                })()}
               </div>
+              {node.kind === 'video' && (node.status === 'running' || node.status === 'generating' || node.status === 'processing') ? (
+                <div className="mt-1.5 text-center text-[10px] leading-snug text-white/50">
+                  视频生成通常需要 1–3 分钟，请勿重复点击
+                </div>
+              ) : null}
             </div>
           ) : mediaNeedsAttention && (node.kind === 'image' || node.kind === 'video') ? (
             <div className={`canvas-node-preview preview-${node.kind} is-error-preview`}>
