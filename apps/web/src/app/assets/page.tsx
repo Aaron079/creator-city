@@ -1,308 +1,431 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { DashboardShell } from '@/components/layout/DashboardShell'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-type AssetItem = {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AssetItem {
   id: string
   name: string
   title?: string | null
-  projectId?: string | null
   type: string
+  status?: string | null
   url: string
   dataUrl?: string | null
+  thumbnailUrl?: string | null
+  resolvedUrl?: string | null
   mimeType: string
   sizeBytes?: number | null
+  width?: number | null
+  height?: number | null
+  duration?: number | null
+  prompt?: string | null
   providerId?: string | null
-  metadata?: unknown
-  metadataJson?: unknown
+  generationJobId?: string | null
+  projectId?: string | null
+  nodeId?: string | null
   createdAt: string
   project?: { id: string; title: string } | null
 }
 
-type ProjectItem = {
-  id: string
-  title: string
+interface ApiResponse {
+  assets?: AssetItem[]
+  message?: string
+  errorCode?: string
 }
 
-function assetTypeLabel(type: string) {
-  if (type === 'IMAGE') return '图片'
-  if (type === 'VIDEO') return '视频'
-  if (type === 'AUDIO') return '音频'
-  if (type === 'SCRIPT') return '文本'
-  return '文档'
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function bestUrl(asset: AssetItem): string {
+  return asset.resolvedUrl || asset.url || asset.dataUrl || ''
 }
 
-function getAssetContentText(asset: AssetItem) {
-  const metadata = asset.metadataJson && typeof asset.metadataJson === 'object'
-    ? asset.metadataJson as Record<string, unknown>
-    : asset.metadata && typeof asset.metadata === 'object'
-      ? asset.metadata as Record<string, unknown>
-      : {}
-  return typeof metadata.contentText === 'string' ? metadata.contentText : null
+function formatDate(iso: string) {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return iso
+  return d.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function formatDuration(sec?: number | null) {
+  if (!sec) return null
+  if (sec < 60) return `${sec.toFixed(0)}s`
+  return `${Math.floor(sec / 60)}m${Math.floor(sec % 60)}s`
 }
 
 function formatBytes(size?: number | null) {
-  if (!size) return ''
+  if (!size) return null
   if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-async function readJson<T>(response: Response): Promise<T> {
-  const raw = await response.text().catch(() => '')
-  if (!raw) return {} as T
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return { message: '接口返回了非 JSON 内容。' } as T
-  }
+function shortId(id: string) {
+  return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id
 }
 
-export default function AssetsPage() {
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const [assets, setAssets] = useState<AssetItem[]>([])
-  const [projects, setProjects] = useState<ProjectItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [bindingAssetId, setBindingAssetId] = useState<string | null>(null)
-  const [openPickerAssetId, setOpenPickerAssetId] = useState<string | null>(null)
-  const [message, setMessage] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null)
+function promptPreview(prompt?: string | null) {
+  if (!prompt) return null
+  return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt
+}
 
-  async function loadAssets() {
+// ─── Style constants ──────────────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
+  IMAGE: { label: '图片', bg: 'rgba(167,139,250,0.12)', color: '#a78bfa' },
+  VIDEO: { label: '视频', bg: 'rgba(251,146,60,0.1)', color: '#fb923c' },
+  AUDIO: { label: '音频', bg: 'rgba(52,211,153,0.08)', color: '#34d399' },
+  SCRIPT: { label: '文本', bg: 'rgba(148,163,184,0.1)', color: '#94a3b8' },
+  DOCUMENT: { label: '文件', bg: 'rgba(148,163,184,0.1)', color: '#94a3b8' },
+}
+
+const SELECT_STYLE: React.CSSProperties = {
+  padding: '7px 12px',
+  borderRadius: '8px',
+  border: '1px solid rgba(255,255,255,0.1)',
+  background: 'rgba(255,255,255,0.05)',
+  color: 'rgba(255,255,255,0.7)',
+  fontSize: '13px',
+  cursor: 'pointer',
+  outline: 'none',
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function TypeChip({ type }: { type: string }) {
+  const cfg = TYPE_CONFIG[type] ?? { label: type, bg: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)' }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: 600, background: cfg.bg, color: cfg.color }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const copy = () => {
+    void navigator.clipboard?.writeText(text)
+    setCopied(true)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 1800)
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={label}
+      style={{ padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: copied ? '#34d399' : 'rgba(255,255,255,0.45)', fontSize: '11px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
+    >
+      {copied ? '已复制' : '复制'}
+    </button>
+  )
+}
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '16px 20px', minWidth: '100px' }}>
+      <div style={{ fontSize: '24px', fontWeight: 700, color: accent ?? '#e8e8f0', letterSpacing: '-0.03em' }}>{value}</div>
+      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.38)', marginTop: '4px' }}>{label}</div>
+    </div>
+  )
+}
+
+function ImagePreview({ asset }: { asset: AssetItem }) {
+  const url = bestUrl(asset)
+  if (!url) {
+    return (
+      <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(167,139,250,0.06)', color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>
+        暂无预览
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={asset.title ?? asset.name}
+      style={{ display: 'block', width: '100%', height: '160px', objectFit: 'cover', background: 'rgba(255,255,255,0.04)' }}
+    />
+  )
+}
+
+function VideoPreview({ asset }: { asset: AssetItem }) {
+  const url = bestUrl(asset)
+  if (!url) {
+    return (
+      <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(251,146,60,0.06)', color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>
+        暂无预览
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <video
+      src={url}
+      controls
+      playsInline
+      preload="metadata"
+      style={{ display: 'block', width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
+    />
+  )
+}
+
+function AssetCard({ asset }: { asset: AssetItem }) {
+  const url = bestUrl(asset)
+  const preview = promptPreview(asset.prompt)
+  const bytes = formatBytes(asset.sizeBytes)
+  const dur = formatDuration(asset.duration)
+  const wh = asset.width && asset.height ? `${asset.width}×${asset.height}` : null
+
+  return (
+    <article
+      style={{
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* Media preview */}
+      {asset.type === 'IMAGE' ? <ImagePreview asset={asset} /> : null}
+      {asset.type === 'VIDEO' ? <VideoPreview asset={asset} /> : null}
+
+      {/* Card body */}
+      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+        {/* Top row: type chip + date */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <TypeChip type={asset.type} />
+          {dur ? <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>{dur}</span> : null}
+          <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{formatDate(asset.createdAt)}</span>
+        </div>
+
+        {/* Title */}
+        {asset.title || asset.name ? (
+          <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#e8e8f0', lineHeight: '1.4', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+            {asset.title ?? asset.name}
+          </p>
+        ) : null}
+
+        {/* Prompt preview */}
+        {preview ? (
+          <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.45)', lineHeight: '1.5', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+            {preview}
+          </p>
+        ) : null}
+
+        {/* Meta row */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {asset.providerId ? (
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
+              <span style={{ color: 'rgba(255,255,255,0.18)' }}>Provider </span>{asset.providerId}
+            </div>
+          ) : null}
+          {wh || bytes ? (
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
+              {[wh, bytes].filter(Boolean).join(' · ')}
+            </div>
+          ) : null}
+          {asset.project ? (
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
+              <span style={{ color: 'rgba(255,255,255,0.18)' }}>项目 </span>{asset.project.title}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Action row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          {url ? (
+            <>
+              <CopyButton text={url} label="复制 URL" />
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.45)', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              >
+                打开 ↗
+              </a>
+            </>
+          ) : null}
+          {asset.generationJobId ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+              <code style={{ fontFamily: 'ui-monospace,monospace', fontSize: '10px', color: 'rgba(255,255,255,0.25)' }}>
+                {shortId(asset.generationJobId)}
+              </code>
+              <CopyButton text={asset.generationJobId} label="复制任务 ID" />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+// ─── Filter options ───────────────────────────────────────────────────────────
+
+const TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: 'IMAGE', label: '图片' },
+  { value: 'VIDEO', label: '视频' },
+]
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function AssetsPage() {
+  const [assets, setAssets] = useState<AssetItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [typeFilter, setTypeFilter] = useState('')
+  const [search, setSearch] = useState('')
+
+  const fetchAssets = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
-      const response = await fetch('/api/assets', {
+      const params = new URLSearchParams({ limit: '80' })
+      if (typeFilter) params.set('type', typeFilter)
+      const res = await fetch(`/api/assets?${params.toString()}`, {
         credentials: 'include',
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data = await readJson<{ assets?: AssetItem[]; message?: string }>(response)
-      if (response.status === 401) {
-        setMessage({ type: 'error', text: '请先登录后查看素材。' })
+      const data: ApiResponse = await res.json() as ApiResponse
+      if (res.status === 401) {
+        setError('请先登录后查看资产。')
         setAssets([])
         return
       }
-      if (!response.ok) throw new Error(data.message ?? '加载素材失败')
+      if (!res.ok) {
+        setError(data.message ?? data.errorCode ?? '加载资产失败')
+        setAssets([])
+        return
+      }
       setAssets(data.assets ?? [])
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : '加载素材失败' })
+    } catch {
+      setError('网络错误，请稍后重试')
     } finally {
       setLoading(false)
     }
-  }
+  }, [typeFilter])
 
-  async function loadProjects() {
-    try {
-      const response = await fetch('/api/projects?limit=20', {
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
-      })
-      const data = await readJson<{ projects?: ProjectItem[] }>(response)
-      if (response.ok) setProjects(data.projects ?? [])
-    } catch (error) {
-      console.warn('[assets] failed to load projects', error)
-    }
-  }
+  useEffect(() => { void fetchAssets() }, [fetchAssets])
 
-  useEffect(() => {
-    void loadAssets()
-    void loadProjects()
-  }, [])
+  // Client-side search filter on prompt / title / name
+  const searchLower = search.trim().toLowerCase()
+  const displayed = searchLower
+    ? assets.filter((a) =>
+        (a.prompt ?? '').toLowerCase().includes(searchLower)
+        || (a.title ?? '').toLowerCase().includes(searchLower)
+        || a.name.toLowerCase().includes(searchLower)
+      )
+    : assets
 
-  async function bindAsset(assetId: string, projectId: string | null) {
-    setBindingAssetId(assetId)
-    setMessage(null)
-    try {
-      const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ projectId }),
-      })
-      const data = await readJson<{
-        success?: boolean
-        asset?: AssetItem
-        errorCode?: string
-        message?: string
-      }>(response)
-      if (!response.ok || !data.success || !data.asset) {
-        throw new Error(`${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '绑定项目失败'}`)
-      }
-      setAssets((current) => current.map((asset) => asset.id === assetId ? data.asset! : asset))
-      setOpenPickerAssetId(null)
-      setMessage({ type: 'success', text: projectId ? '素材已绑定项目。' : '素材已取消项目关联。' })
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : '绑定项目失败' })
-    } finally {
-      setBindingAssetId(null)
-    }
-  }
-
-  async function uploadFile(file: File) {
-    setUploading(true)
-    setMessage({ type: 'info', text: '正在上传素材...' })
-    try {
-      const formData = new FormData()
-      formData.set('file', file)
-      formData.set('title', file.name)
-      const response = await fetch('/api/assets/upload', {
-        method: 'POST',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
-        body: formData,
-      })
-      const data = await readJson<{
-        success?: boolean
-        asset?: AssetItem
-        errorCode?: string
-        message?: string
-      }>(response)
-      if (!response.ok || !data.success || !data.asset) {
-        const text = data.errorCode === 'STORAGE_NOT_CONFIGURED'
-          ? '对象存储未配置，请在 /admin/china 配置 OSS/COS。'
-          : `${data.errorCode ? `[${data.errorCode}] ` : ''}${data.message ?? '上传素材失败'}`
-        throw new Error(text)
-      }
-      setAssets((current) => [data.asset!, ...current.filter((asset) => asset.id !== data.asset!.id)])
-      setMessage({ type: 'success', text: '素材已上传。' })
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : '上传素材失败' })
-    } finally {
-      setUploading(false)
-      if (inputRef.current) inputRef.current.value = ''
-    }
+  // Stats (over all loaded assets, ignoring type/search filter for stat cards)
+  const [allAssets, setAllAssets] = useState<AssetItem[]>([])
+  useEffect(() => { if (!typeFilter) setAllAssets(assets) }, [assets, typeFilter])
+  const statsSource = allAssets.length > 0 ? allAssets : assets
+  const stats = {
+    total: statsSource.length,
+    images: statsSource.filter((a) => a.type === 'IMAGE').length,
+    videos: statsSource.filter((a) => a.type === 'VIDEO').length,
   }
 
   return (
-    <DashboardShell>
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-white">素材库</h1>
-            <p className="mt-2 text-sm text-white/50">自动保存的生成结果和上传素材，可加入项目交付链接。</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <input
-              ref={inputRef}
-              type="file"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void uploadFile(file)
-              }}
-            />
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => inputRef.current?.click()}
-              className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {uploading ? '上传中...' : '上传素材'}
-            </button>
-            <a href="/create" className="rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white/75 hover:border-white/20 hover:text-white">
-              去生成
-            </a>
-          </div>
+    <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif' }}>
+      {/* Header */}
+      <header style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '16px', padding: '0 32px', height: '60px', background: 'rgba(10,10,15,0.9)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', padding: '6px 10px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}>
+          ← 返回画布
+        </a>
+        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)' }} />
+        <h1 style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', margin: 0 }}>资产中心</h1>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.22)' }}>只读 · 不触发生成</span>
+          <button
+            type="button"
+            onClick={() => { void fetchAssets() }}
+            disabled={loading}
+            style={{ padding: '5px 12px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.55)', fontSize: '12px', cursor: loading ? 'not-allowed' : 'pointer' }}
+          >
+            {loading ? '加载中…' : '刷新'}
+          </button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '40px 24px 80px' }}>
+        {/* Title */}
+        <div style={{ marginBottom: '32px' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#e8e8f0', margin: '0 0 6px', letterSpacing: '-0.02em' }}>资产中心</h2>
+          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.38)', margin: 0 }}>集中管理已生成图片、视频与可复用创作素材</p>
         </div>
 
-        {message ? (
-          <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${
-            message.type === 'error'
-              ? 'border-red-400/25 bg-red-400/10 text-red-200'
-              : message.type === 'success'
-                ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'
-                : 'border-sky-400/25 bg-sky-400/10 text-sky-100'
-          }`}>
-            {message.text}
+        {/* Stats */}
+        {!loading && !error ? (
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '32px' }}>
+            <StatCard label="全部资产" value={stats.total} />
+            <StatCard label="图片资产" value={stats.images} accent={stats.images > 0 ? '#a78bfa' : undefined} />
+            <StatCard label="视频资产" value={stats.videos} accent={stats.videos > 0 ? '#fb923c' : undefined} />
           </div>
         ) : null}
 
+        {/* Filters */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px', alignItems: 'center' }}>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={SELECT_STYLE} aria-label="按类型筛选">
+            {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索 prompt / 标题…"
+            style={{ ...SELECT_STYLE, minWidth: '200px', flex: 1, maxWidth: '320px' }}
+            aria-label="搜索资产"
+          />
+          {displayed.length > 0 ? (
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.28)', marginLeft: 'auto' }}>
+              显示 {displayed.length} 条
+            </span>
+          ) : null}
+        </div>
+
+        {/* Content */}
         {loading ? (
-          <section className="rounded-lg border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-white/45">
-            正在加载素材...
-          </section>
-        ) : assets.length === 0 ? (
-          <section className="rounded-lg border border-white/10 bg-white/[0.03] p-8 text-center">
-            <h2 className="text-base font-semibold text-white">还没有素材</h2>
-            <p className="mt-2 text-sm text-white/45">生成文本、图片或上传文件后，素材会出现在这里。</p>
-          </section>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0', color: 'rgba(255,255,255,0.28)', fontSize: '14px' }}>
+            加载中…
+          </div>
+        ) : error ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '12px' }}>
+            <div style={{ fontSize: '14px', color: 'rgba(248,113,113,0.8)' }}>无法读取资产列表，请稍后重试</div>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.28)' }}>{error}</div>
+            <button
+              type="button"
+              onClick={() => { void fetchAssets() }}
+              style={{ marginTop: '8px', padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', fontSize: '13px', cursor: 'pointer' }}
+            >
+              重试
+            </button>
+          </div>
+        ) : displayed.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '8px' }}>
+            <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.3)' }}>暂无资产</div>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.18)' }}>
+              {typeFilter || search ? '当前筛选条件下没有匹配的资产' : '请先在画布生成图片或视频，资产将自动出现在这里'}
+            </div>
+            <a
+              href="/create"
+              style={{ marginTop: '12px', padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', fontSize: '13px', textDecoration: 'none' }}
+            >
+              去画布生成 →
+            </a>
+          </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {assets.map((asset) => {
-              const contentText = getAssetContentText(asset)
-              const previewUrl = asset.url || asset.dataUrl || ''
-              return (
-                <article key={asset.id} className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
-                  {asset.type === 'IMAGE' && previewUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={previewUrl} alt={asset.title ?? asset.name} className="h-48 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-48 items-center justify-center bg-white/[0.04] px-5 text-sm leading-6 text-white/55">
-                      <p className="line-clamp-6 whitespace-pre-wrap">{contentText ?? asset.name}</p>
-                    </div>
-                  )}
-                  <div className="p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-xs text-sky-200">{assetTypeLabel(asset.type)}</span>
-                      <span className="text-xs text-white/35">{new Date(asset.createdAt).toLocaleDateString('zh-CN')}</span>
-                    </div>
-                    <h2 className="line-clamp-2 text-sm font-semibold text-white">{asset.title ?? asset.name}</h2>
-                    <p className="mt-2 text-xs text-white/40">
-                      {asset.project ? `项目：${asset.project.title}` : '未关联项目'}
-                      {formatBytes(asset.sizeBytes) ? ` · ${formatBytes(asset.sizeBytes)}` : ''}
-                    </p>
-                    {asset.providerId ? <p className="mt-1 text-xs text-white/25">Provider: {asset.providerId}</p> : null}
-                    <div className="mt-3">
-                      {openPickerAssetId === asset.id ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            value={asset.project?.id ?? ''}
-                            disabled={bindingAssetId === asset.id}
-                            onChange={(event) => void bindAsset(asset.id, event.target.value || null)}
-                            className="min-w-0 flex-1 rounded-md border border-white/10 bg-slate-950 px-2 py-1.5 text-xs text-white disabled:opacity-50"
-                          >
-                            <option value="">未关联项目</option>
-                            {projects.map((project) => (
-                              <option key={project.id} value={project.id}>{project.title}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setOpenPickerAssetId(null)}
-                            className="rounded-md border border-white/10 px-2 py-1.5 text-xs text-white/65 hover:border-white/25 hover:text-white"
-                          >
-                            取消
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setOpenPickerAssetId(asset.id)}
-                          className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/75 hover:border-white/25 hover:text-white"
-                        >
-                          绑定项目
-                        </button>
-                      )}
-                      {openPickerAssetId === asset.id && projects.length === 0 ? (
-                        <p className="mt-2 text-xs text-white/35">暂无可绑定项目。</p>
-                      ) : null}
-                    </div>
-                    {previewUrl && asset.type !== 'IMAGE' ? (
-                      <a href={previewUrl} className="mt-3 inline-flex text-xs font-semibold text-cyan-200 underline" target="_blank" rel="noreferrer">
-                        打开文件
-                      </a>
-                    ) : null}
-                  </div>
-                </article>
-              )
-            })}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+            {displayed.map((asset) => <AssetCard key={asset.id} asset={asset} />)}
           </div>
         )}
       </main>
-    </DashboardShell>
+    </div>
   )
 }

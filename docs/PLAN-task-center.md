@@ -17,13 +17,13 @@
 
 - [x] Read required docs (STABLE_BASELINE, GUARDRAILS, AI_AGENT_WORKFLOW_RULES, UI_ACCEPTANCE_CHECKLIST, memory)
 - [x] Explore GenerationJob schema and existing query patterns
-- [ ] Create `apps/web/src/app/api/generation-tasks/route.ts` — GET only, auth-gated, safe fields only
-- [ ] Create `apps/web/src/app/tasks/page.tsx` — client page with fetch + filter + task cards
-- [ ] Update `apps/web/src/components/create/CanvasToolDock.tsx` — add "生成任务" link
-- [ ] `pnpm --filter web type-check` — must pass
-- [ ] `pnpm --filter web build` — must pass
-- [ ] `git add` specific files + commit + push
-- [ ] Confirm Vercel production ready
+- [x] Create `apps/web/src/app/api/generation-tasks/route.ts` — GET only, auth-gated, safe fields only
+- [x] Create `apps/web/src/app/tasks/page.tsx` — client page with fetch + filter + task cards
+- [x] Update `apps/web/src/components/create/CanvasToolDock.tsx` — add "生成任务" link
+- [x] `pnpm --filter web type-check` — passed
+- [x] `pnpm --filter web build` — passed
+- [x] `git add` specific files + commit 721af98 + push
+- [ ] Confirm Vercel production ready (awaiting deploy)
 
 ## Files Changed
 
