@@ -250,7 +250,7 @@ export async function GET(request: NextRequest) {
   const out = new Headers()
   out.set('Content-Type', contentType)
   out.set('Access-Control-Allow-Origin', '*')
-  out.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=60')
+  out.set('Cache-Control', 'private, max-age=300')
   out.set('x-media-proxy-upstream-status', String(upstream.status))
   out.set('x-media-proxy-url-exact-match', rawUrl === target.toString() ? 'true' : 'false')
   for (const h of ['content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {

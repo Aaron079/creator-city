@@ -38,16 +38,25 @@ export async function getSession(token: string) {
       include: { user: { include: { profile: true } } },
     })
   } catch (err) {
-    // Retry once on transient connection errors (e.g. Supabase pooler timeout)
-    console.warn('[auth/session] db.session.findUnique failed — retrying once', err)
+    console.warn('[auth/session] db.session.findUnique failed — retrying (1/2)', err)
+    await new Promise((resolve) => setTimeout(resolve, 50))
     try {
       session = await db.session.findUnique({
         where: { tokenHash },
         include: { user: { include: { profile: true } } },
       })
-    } catch (retryErr) {
-      console.error('[auth/session] db.session.findUnique retry failed — treating as unauthenticated', retryErr)
-      return null
+    } catch (err2) {
+      console.warn('[auth/session] retry 1 failed — retrying (2/2)', err2)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      try {
+        session = await db.session.findUnique({
+          where: { tokenHash },
+          include: { user: { include: { profile: true } } },
+        })
+      } catch (retryErr) {
+        console.error('[auth/session] all retries failed — treating as unauthenticated', retryErr)
+        return null
+      }
     }
   }
   if (!session) return null
