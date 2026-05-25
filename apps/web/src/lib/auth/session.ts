@@ -38,8 +38,17 @@ export async function getSession(token: string) {
       include: { user: { include: { profile: true } } },
     })
   } catch (err) {
-    console.error('[auth/session] db.session.findUnique failed — treating as unauthenticated', err)
-    return null
+    // Retry once on transient connection errors (e.g. Supabase pooler timeout)
+    console.warn('[auth/session] db.session.findUnique failed — retrying once', err)
+    try {
+      session = await db.session.findUnique({
+        where: { tokenHash },
+        include: { user: { include: { profile: true } } },
+      })
+    } catch (retryErr) {
+      console.error('[auth/session] db.session.findUnique retry failed — treating as unauthenticated', retryErr)
+      return null
+    }
   }
   if (!session) return null
   if (session.expiresAt < new Date()) {
@@ -48,9 +57,11 @@ export async function getSession(token: string) {
     })
     return null
   }
-  // Refresh lastUsedAt (best-effort, do not block or throw)
-  db.session.update({ where: { tokenHash }, data: { lastUsedAt: new Date() } }).catch((err) => {
-    console.error('[auth/session] failed to refresh lastUsedAt', err)
+  // Sliding expiry: extend expiresAt from now so active users stay logged in.
+  // Also refresh lastUsedAt. Both are best-effort — never block or throw.
+  const newExpiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000)
+  db.session.update({ where: { tokenHash }, data: { lastUsedAt: new Date(), expiresAt: newExpiresAt } }).catch((err) => {
+    console.error('[auth/session] failed to refresh session expiry', err)
   })
   return session
 }
