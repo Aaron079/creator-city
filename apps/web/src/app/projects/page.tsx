@@ -150,6 +150,7 @@ function ProjectCard({ project, onPrefetch }: { project: ProjectListItem; onPref
   const canvasHref = `/create?projectId=${encodeURIComponent(project.id)}`
   const tasksHref = `/tasks?projectId=${encodeURIComponent(project.id)}`
   const assetsHref = `/assets?projectId=${encodeURIComponent(project.id)}`
+  const detailHref = `/projects/${encodeURIComponent(project.id)}/overview`
   const lastActive = project.lastOpenedAt ?? project.updatedAt
 
   function handleEnterCanvas(e: React.MouseEvent) {
@@ -216,6 +217,23 @@ function ProjectCard({ project, onPrefetch }: { project: ProjectListItem; onPref
 
         {/* Right: action buttons */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+          <a
+            href={detailHref}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.55)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.04)',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            详情
+          </a>
           <a
             href={assetsHref}
             onClick={(e) => e.stopPropagation()}

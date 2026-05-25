@@ -307,6 +307,7 @@ function RecentProjects({ projects, loading }: { projects: ProjectItem[]; loadin
                 <a href={`/create?projectId=${encodeURIComponent(p.id)}`} style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.7)', textDecoration: 'none', padding: '3px 8px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>进入画布</a>
                 <a href={`/assets?projectId=${encodeURIComponent(p.id)}`} style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textDecoration: 'none', padding: '3px 8px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4 }}>资产</a>
                 <a href={`/tasks?projectId=${encodeURIComponent(p.id)}`} style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textDecoration: 'none', padding: '3px 8px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4 }}>任务</a>
+                <a href={`/projects/${encodeURIComponent(p.id)}/overview`} style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textDecoration: 'none', padding: '3px 8px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4 }}>详情</a>
               </div>
             </div>
           ))}
