@@ -111,11 +111,13 @@ export function CanvasToolDock({
                   transition={{ duration: 0.16 }}
                   className="canvas-user-menu"
                 >
+                  <a href="/dashboard" className="canvas-user-menu-item" style={{ fontWeight: 600 }}>工作台</a>
                   <a href="/me" className="canvas-user-menu-item">我的工作台</a>
-                  <a href="/projects" className="canvas-user-menu-item">项目</a>
-                  <a href="/assets" className="canvas-user-menu-item">资产中心</a>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '4px 8px' }} />
                   <a href="/projects" className="canvas-user-menu-item">项目中心</a>
+                  <a href="/assets" className="canvas-user-menu-item">资产中心</a>
                   <a href="/tasks" className="canvas-user-menu-item">生成任务</a>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '4px 8px' }} />
                   <a href="/providers" className="canvas-user-menu-item">API 中心</a>
                   <a href="/" className="canvas-user-menu-item">退出当前画布</a>
                 </motion.div>
