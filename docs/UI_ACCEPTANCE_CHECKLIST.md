@@ -40,7 +40,7 @@ If failed: [失败时的表现 / 可能原因]
 
 ## MediaLightbox 专项验收步骤
 
-> 适用于 commit 6cfbe51 之后的版本（含本次修复）
+> 适用于 MediaLightbox 返工版本（createPortal + auto 尺寸 + 92vw/88vh 约束）
 
 ### 前置条件
 - 在 /create 页面

@@ -14,6 +14,7 @@ interface MediaLightboxProps extends MediaLightboxState {
 }
 
 export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps) {
+  // ESC to close — listener attached when lightbox mounts, removed when it unmounts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -22,79 +23,110 @@ export function MediaLightbox({ type, url, title, onClose }: MediaLightboxProps)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
+  // Skip during SSR — lightbox only ever opens from a client click anyway
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    // Backdrop — click anywhere on it to close
     <div
-      className="fixed inset-0 z-[99999] flex cursor-pointer items-center justify-center bg-black/82"
+      // Full-viewport fixed overlay — always above canvas, toolbar, AI button
+      // bg-black/80 = rgba(0,0,0,0.80), a safe standard Tailwind value
+      className="fixed inset-0 z-[99999] flex cursor-pointer items-center justify-center bg-black/80"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={title ?? '媒体预览'}
     >
-      {/* Media container — stops clicks from propagating so only backdrop closes */}
-      <div
-        className="relative"
-        style={{ maxWidth: '88vw', maxHeight: '88vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close button — always visible, top-right */}
-        <button
-          type="button"
+      {type === 'image' ? (
+        // Image — clicks on image also close
+        // width/height auto + max constraints → natural aspect ratio, fills up to 92vw × 88vh
+        // No object-fit needed: browser preserves ratio naturally with auto dimensions
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt={title ?? ''}
+          draggable={false}
           onClick={onClose}
-          className="absolute -right-3 -top-3 z-10 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white/70 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
-          aria-label="关闭预览"
-          style={{ pointerEvents: 'auto' }}
+          style={{
+            display: 'block',
+            width: 'auto',
+            height: 'auto',
+            maxWidth: '92vw',
+            maxHeight: '88vh',
+            objectFit: 'contain',
+            borderRadius: '10px',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+            cursor: 'pointer',
+          }}
+        />
+      ) : (
+        // Video — clicking video body does NOT close (controls must work)
+        // Only backdrop click, ESC, or ✕ button closes it
+        <div
+          style={{ position: 'relative', lineHeight: 0 }}
+          onClick={(e) => e.stopPropagation()}
         >
-          ✕
-        </button>
-
-        {type === 'image' ? (
-          // Image: click image body also closes
-          // explicit width + height + object-contain so it fills up to 88vw×88vh
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={url}
-            alt={title ?? ''}
-            draggable={false}
+          {/* ✕ close button — always visible top-right */}
+          <button
+            type="button"
             onClick={onClose}
-            className="block cursor-pointer rounded-xl shadow-2xl"
+            aria-label="关闭预览"
             style={{
-              objectFit: 'contain',
-              width: '88vw',
-              height: '88vh',
-              maxWidth: '88vw',
-              maxHeight: '88vh',
+              position: 'absolute',
+              top: '-14px',
+              right: '-14px',
+              zIndex: 10,
+              width: '30px',
+              height: '30px',
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: 'rgba(0,0,0,0.6)',
+              color: 'rgba(255,255,255,0.75)',
+              fontSize: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-          />
-        ) : (
-          // Video: click on video itself does NOT close (controls are there)
-          // Backdrop click (above) and X button close it
-          // eslint-disable-next-line jsx-a11y/media-has-caption
+          >
+            ✕
+          </button>
+
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             src={url}
             controls
             playsInline
-            className="block rounded-xl shadow-2xl"
             style={{
-              objectFit: 'contain',
-              width: '88vw',
-              height: '88vh',
-              maxWidth: '88vw',
+              display: 'block',
+              // width: min(92vw, 1280px) → fills screen up to 1280px, shrinks on small screens
+              width: 'min(92vw, 1280px)',
+              height: 'auto',
+              maxWidth: '92vw',
               maxHeight: '88vh',
+              objectFit: 'contain',
+              borderRadius: '10px',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
             }}
           />
-        )}
+        </div>
+      )}
 
-        {/* Hint label */}
-        <span
-          className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/50 px-3 py-1 text-[10px] leading-none text-white/45 select-none"
-          aria-hidden="true"
-        >
-          {type === 'video' ? '单击遮罩 / ✕ / ESC 关闭' : '单击图片或遮罩 / ESC 关闭'}
-        </span>
-      </div>
+      {/* Hint — stays at viewport bottom, never overlaps media */}
+      <span
+        style={{
+          position: 'absolute',
+          bottom: '18px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          fontSize: '10px',
+          color: 'rgba(255,255,255,0.35)',
+          pointerEvents: 'none',
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {type === 'video' ? '单击空白处 / ✕ / ESC 返回画布' : '单击图片或空白处 / ESC 返回画布'}
+      </span>
     </div>,
     document.body,
   )
