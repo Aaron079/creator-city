@@ -3089,6 +3089,13 @@ export function CanvasNodeCard({
                   onMouseEnter={handleVideoPreviewEnter}
                   onMouseLeave={handleVideoPreviewLeave}
                   aria-label="视频预览拖动区域"
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!videoMedia.loadFailed && videoProxiedSrc) {
+                      setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+                    }
+                  }}
                 >
                   {videoMedia.loadFailed ? (
                     renderMediaFailurePanel('video')
@@ -3155,6 +3162,13 @@ export function CanvasNodeCard({
                   className="canvas-node-image-button"
                   data-testid="media-preview-image"
                   aria-label="图片预览拖动区域"
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!imageMedia.loadFailed && imageProxiedSrc) {
+                      setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+                    }
+                  }}
                 >
                   {imageMedia.loadFailed ? (
                     renderMediaFailurePanel('image')
