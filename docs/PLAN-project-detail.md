@@ -26,13 +26,15 @@
 
 - [x] Read required docs (STABLE_BASELINE, GUARDRAILS, AI_AGENT_WORKFLOW_RULES, UI_ACCEPTANCE_CHECKLIST, memory)
 - [x] Explore: routing structure, schema, existing APIs
-- [ ] Create `apps/web/src/app/api/projects/[projectId]/summary/route.ts`
-- [ ] Create `apps/web/src/app/projects/[id]/overview/page.tsx`
-- [ ] Update `apps/web/src/app/projects/page.tsx` — add "详情" link (additive only)
-- [ ] Update `apps/web/src/app/dashboard/page.tsx` — add "详情" link to RecentProjects (additive only)
-- [ ] `pnpm --filter web type-check` — must pass
-- [ ] `pnpm --filter web build` — must pass
-- [ ] git add + commit + push
+- [x] Create `apps/web/src/app/api/projects/[projectId]/summary/route.ts` — committed 86178d7
+- [x] Create `apps/web/src/app/projects/[id]/overview/page.tsx` — committed 86178d7
+- [x] Update `apps/web/src/app/projects/page.tsx` — added "详情" link — committed 86178d7
+- [x] Update `apps/web/src/app/dashboard/page.tsx` — added "详情" link to RecentProjects — committed 1c4c76f
+- [x] `pnpm --filter web type-check` — PASSED 2026-05-25
+- [x] `pnpm --filter web build` — PASSED 2026-05-25 (/projects/[id]/overview in build output, 4.24 kB)
+- [x] git add + commit + push — deployed on Vercel (commit 86178d7 + 1c4c76f)
+
+## Status: COMPLETE — All steps done, in production.
 
 ## Files Changed
 

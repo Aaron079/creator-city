@@ -29,7 +29,7 @@
 - [x] Update `apps/web/src/components/create/VisualCanvasWorkspace.tsx` — add "工作台" top nav link
 - [x] `pnpm --filter web type-check` — passed
 - [x] `pnpm --filter web build` — passed
-- [ ] git add + commit + push
+- [x] git add + commit 1c4c76f + push origin main
 - [ ] Provide browser verification steps (required per UI_ACCEPTANCE_CHECKLIST)
 
 ## Files Changed
