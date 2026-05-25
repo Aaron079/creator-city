@@ -2886,6 +2886,15 @@ export function CanvasNodeCard({
         event.preventDefault()
         event.stopPropagation()
         if (isInteractiveTarget(event.target)) return
+        // Image/video nodes with results: double-click anywhere on the node opens lightbox
+        if (node.kind === 'image' && hasMediaResult && !imageMedia.loadFailed && imageProxiedSrc) {
+          setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+          return
+        }
+        if (node.kind === 'video' && hasMediaResult && !videoMedia.loadFailed && videoProxiedSrc) {
+          setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+          return
+        }
         onEdit()
       }}
       onKeyDown={(event) => {
