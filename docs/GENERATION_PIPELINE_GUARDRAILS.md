@@ -213,3 +213,18 @@ Full checklist: `docs/UI_ACCEPTANCE_CHECKLIST.md`
 
 If AI cannot test in real browser, must state explicitly:
 "我无法真实浏览器验收，请用户按以下步骤验收。"
+
+---
+
+## Nav Link → Page.tsx Rule (Added 2026-05-25)
+
+> A nav link without a backing page.tsx causes a 404 in production.
+
+**Rule:** Before adding any nav link (in `SettingsHoverMenu.tsx`, `TopNavigation.tsx`, `LINKS` arrays, or any other navigation component) that points to a new route, the corresponding `apps/web/src/app/<route>/page.tsx` file **MUST exist and be committed in the same PR/commit**.
+
+**Violation that caused this rule:** Commit `86447d4` added `/settings` to `SettingsHoverMenu` without creating `apps/web/src/app/settings/page.tsx`, resulting in a `/settings 404` in production.
+
+**Enforcement checklist before committing any nav change:**
+- [ ] For every `href` added or changed in a nav component, verify the target `page.tsx` exists in `apps/web/src/app/`
+- [ ] Run `git status` to confirm the page file is tracked
+- [ ] If the page does not yet exist, create a minimal placeholder before or in the same commit as the nav link
