@@ -26,6 +26,11 @@ const MENU_ITEMS = [
     label: '任务中心',
     desc: '查看图片/视频生成记录',
   },
+  {
+    href: '/marketplace',
+    label: '创作者市场',
+    desc: '浏览创作者服务与项目需求',
+  },
 ] as const
 
 export function SettingsHoverMenu() {

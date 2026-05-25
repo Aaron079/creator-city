@@ -29,6 +29,7 @@ const LINKS: Array<{ href: string; label: string; isCanvasV2?: boolean }> = [
   { href: '/create', label: '创作' },
   { href: '/create-v2', label: 'Canvas V2', isCanvasV2: true },
   { href: '/projects', label: '工作空间' },
+  { href: '/marketplace', label: '市场' },
 ]
 
 export function TopNavigation() {
