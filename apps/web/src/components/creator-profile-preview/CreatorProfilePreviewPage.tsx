@@ -49,16 +49,18 @@ export default function CreatorProfilePreviewPage() {
         padding: '0 0 6rem',
       }}
     >
-      <MarketPreviewBackLink current="creator-profile" />
       {/* ── Hero ── */}
       <div
         style={{
           background: 'linear-gradient(180deg, #0d1422 0%, #09090b 100%)',
           borderBottom: '1px solid #1e1e24',
-          padding: '4rem 1.5rem 3rem',
+          padding: '2rem 1.5rem 3rem',
         }}
       >
         <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+          <div style={{ marginBottom: '1.75rem' }}>
+            <MarketPreviewBackLink current="creator-profile" />
+          </div>
 
           {/* Status chips */}
           <div

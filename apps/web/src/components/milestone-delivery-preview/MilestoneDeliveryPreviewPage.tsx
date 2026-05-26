@@ -67,16 +67,18 @@ export default function MilestoneDeliveryPreviewPage() {
         padding: '0 0 6rem',
       }}
     >
-      <MarketPreviewBackLink current="milestone-delivery" />
       {/* ── Hero ── */}
       <div
         style={{
           background: 'linear-gradient(180deg, #0d1422 0%, #09090b 100%)',
           borderBottom: '1px solid #1e1e24',
-          padding: '5rem 1.5rem 4.5rem',
+          padding: '2.5rem 1.5rem 4.5rem',
           textAlign: 'center',
         }}
       >
+        <div style={{ maxWidth: '880px', margin: '0 auto 2rem', textAlign: 'left' }}>
+          <MarketPreviewBackLink current="milestone-delivery" />
+        </div>
         <div
           style={{
             display: 'flex',
