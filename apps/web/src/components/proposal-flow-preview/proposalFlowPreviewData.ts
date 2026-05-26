@@ -254,6 +254,7 @@ export const QUICK_LINKS: Array<{ label: string; href: string; description: stri
   { label: '创作者市场预览', href: '/marketplace-preview', description: '了解整体创作者市场规划' },
   { label: '创作者主页预览', href: '/creator-profile-preview', description: '查看创作者如何展示作品集' },
   { label: '需求广场预览', href: '/demand-board-preview', description: '查看项目方如何发布需求' },
+  { label: '阶段交付预览', href: '/milestone-delivery-preview', description: '方案确认后如何拆解为可验收里程碑' },
   { label: '项目中心', href: '/projects', description: '管理我的项目' },
   { label: '生成任务', href: '/tasks', description: '查看 AI 生成任务状态' },
   { label: '社区', href: '/community', description: '与创作者交流' },

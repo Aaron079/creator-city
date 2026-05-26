@@ -411,6 +411,26 @@ export default function ProposalFlowPreviewPage() {
               </div>
             ))}
           </div>
+          {/* CTA → milestone-delivery-preview */}
+          <Link
+            href="/milestone-delivery-preview"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: '#1a1508', border: '1px solid #d9770640',
+              borderRadius: '12px', padding: '1rem 1.25rem',
+              textDecoration: 'none', marginTop: '1rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fbbf24', marginBottom: '0.2rem' }}>
+                查看阶段交付预览
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#78716c', lineHeight: 1.5 }}>
+                方案确认后，项目如何拆解为需求确认 → 风格样片 → 第一版 → 修改 → 最终交付 → 授权归档的里程碑节点。（预览，尚未上线）
+              </div>
+            </div>
+            <span style={{ color: '#d97706', fontSize: '1.1rem', marginLeft: '1rem', flexShrink: 0 }}>→</span>
+          </Link>
         </Section>
 
         {/* Trust */}
