@@ -54,6 +54,7 @@ const EXPLORE_NAV: Array<{ group: string; items: Array<{ label: string; href: st
     group: '社区与帮助',
     items: [
       { label: '社区', href: '/community' },
+      { label: '创作者市场', href: '/marketplace-preview' },
       { label: '诊断帮助', href: '/help' },
       { label: '工作台', href: '/dashboard' },
     ],
