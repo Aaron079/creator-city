@@ -373,12 +373,16 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       })
     }
 
-    // Parallel node upserts — each Prisma call from Vercel to Supabase takes 2-4s.
-    // Sequential writes over N nodes = N × 4s which exceeds the serverless timeout.
+    // Batched node upserts: BATCH_SIZE nodes run in parallel per batch, batches are serial.
+    // Pure parallel over many nodes saturates the single pgBouncer connection (connection_limit=1)
+    // and stretches total latency past the 60s Vercel timeout for large canvases.
+    const BATCH_SIZE = 5
     const failedNodeIds: string[] = []
     const validNodes = (body.nodes ?? []).filter((node) => node.id && node.kind)
-    const nodeResults = await Promise.allSettled(
-      validNodes.map((node) => {
+    const nodeResults: PromiseSettledResult<unknown>[] = []
+    for (let batchStart = 0; batchStart < validNodes.length; batchStart += BATCH_SIZE) {
+      const batchResults = await Promise.allSettled(
+        validNodes.slice(batchStart, batchStart + BATCH_SIZE).map((node) => {
         const providerId = node.providerId ?? node.model ?? null
         const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
           ? node.metadataJson as Record<string, unknown>
@@ -447,7 +451,9 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
           },
         })
       }),
-    )
+      )
+      nodeResults.push(...batchResults)
+    }
     nodeResults.forEach((result, i) => {
       if (result.status === 'rejected') {
         const nodeId = validNodes[i]?.id ?? '?'

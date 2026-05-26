@@ -2388,6 +2388,10 @@ export function VisualCanvasWorkspace({
   const skipNextAutosaveRef = useRef(false)
   const providerStatusPerfStartedRef = useRef(false)
   const saveTimerRef = useRef<number | null>(null)
+  const saveInFlightRef = useRef(false)
+  const pendingSaveRef = useRef(false)
+  const saveRetryTimerRef = useRef<number | null>(null)
+  const saveRetryAttemptRef = useRef(0)
   const deletedNodeIdsRef = useRef<string[]>([])
   const deletedEdgeIdsRef = useRef<string[]>([])
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
@@ -2429,6 +2433,7 @@ export function VisualCanvasWorkspace({
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer))
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+      if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current)
       generationAbortControllersRef.current.forEach((controller) => controller.abort())
       generationAbortControllersRef.current.clear()
       activeGenerationNodeIdsRef.current.clear()
@@ -2470,6 +2475,10 @@ export function VisualCanvasWorkspace({
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
+      }
+      if (saveRetryTimerRef.current) {
+        window.clearTimeout(saveRetryTimerRef.current)
+        saveRetryTimerRef.current = null
       }
       saveAbortRef.current?.abort()
     }
@@ -2871,13 +2880,21 @@ export function VisualCanvasWorkspace({
 
   const saveCanvas = useCallback(async () => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
+    // In-flight lock: instead of aborting the current save, queue one pending save.
+    // This eliminates the "canceled" requests visible in Network and reduces server concurrency.
+    if (saveInFlightRef.current) {
+      pendingSaveRef.current = true
+      return
+    }
+    saveInFlightRef.current = true
     const snapshot = getCanvasSnapshot()
     flushLocalSnapshot()
     setSaveStatus('saving')
     setSaveMessage('')
-    saveAbortRef.current?.abort()
+    // AbortController is kept only for unmount / project-switch, not for save-vs-save cancellation.
     const controller = new AbortController()
     saveAbortRef.current = controller
+    let lastResponseStatus = 0
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -2894,6 +2911,7 @@ export function VisualCanvasWorkspace({
           deletedEdgeIds: deletedEdgeIdsRef.current,
         }),
       })
+      lastResponseStatus = response.status
       const raw = await response.text()
       let data: {
         errorCode?: string
@@ -2933,6 +2951,7 @@ export function VisualCanvasWorkspace({
       if (data.skipped) {
         setSaveStatus('saved')
         setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : '已保存')
+        saveRetryAttemptRef.current = 0
         return
       }
       deletedNodeIdsRef.current = []
@@ -2940,13 +2959,28 @@ export function VisualCanvasWorkspace({
       flushLocalSnapshot(data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString())
       setSaveStatus('saved')
       setSaveMessage('已保存')
+      saveRetryAttemptRef.current = 0
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') return
+      // 503/504: one automatic retry after 2 s to handle transient DB timeout / overload
+      if ((lastResponseStatus === 503 || lastResponseStatus === 504) && saveRetryAttemptRef.current < 1) {
+        saveRetryAttemptRef.current++
+        if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current)
+        saveRetryTimerRef.current = window.setTimeout(() => { void saveCanvas() }, 2000)
+      }
       flushLocalSnapshot()
       setSaveStatus('failed')
       setSaveMessage('保存失败，结果已保留在本地草稿中')
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
+      saveInFlightRef.current = false
+      // If a save was requested while we were in-flight, fire it now with the latest snapshot.
+      if (pendingSaveRef.current && !isSwitchingProjectRef.current) {
+        pendingSaveRef.current = false
+        if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+        setSaveStatus('dirty')
+        saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, 300)
+      }
     }
   }, [getCanvasSnapshot, projectId, router, workflowId, flushLocalSnapshot])
 
@@ -7142,6 +7176,10 @@ export function VisualCanvasWorkspace({
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
+    }
+    if (saveRetryTimerRef.current) {
+      window.clearTimeout(saveRetryTimerRef.current)
+      saveRetryTimerRef.current = null
     }
     clearGenerationTimersAndRequests()
     saveAbortRef.current?.abort()
