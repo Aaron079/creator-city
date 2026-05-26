@@ -516,6 +516,26 @@ export default function MilestoneDeliveryPreviewPage() {
               )
             })}
           </div>
+          {/* CTA → escrow-preview */}
+          <Link
+            href="/escrow-preview"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: '#150f1a', border: '1px solid #7c3aed30',
+              borderRadius: '12px', padding: '1rem 1.25rem',
+              textDecoration: 'none', marginTop: '1rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#c4b5fd', marginBottom: '0.2rem' }}>
+                查看托管与结算预览
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.5 }}>
+                阶段验收通过后，项目如何进入托管、按规则释放款、处理退款与争议。（预览，尚未上线）
+              </div>
+            </div>
+            <span style={{ color: '#7c3aed', fontSize: '1.1rem', marginLeft: '1rem', flexShrink: 0 }}>→</span>
+          </Link>
         </Section>
 
         {/* Quick links */}
