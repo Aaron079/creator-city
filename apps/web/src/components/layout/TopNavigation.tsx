@@ -1,32 +1,15 @@
 'use client'
 
-import React from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useCallback, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { CommandPalette } from '@/components/command/CommandPalette'
-import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
-import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
-import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
-import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
-import { buildNotificationSummary, useNotificationsStore } from '@/store/notifications.store'
-import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
-import { useDeliveryPackageStore } from '@/store/delivery-package.store'
-import { useDirectorNotesStore } from '@/store/director-notes.store'
-import { useJobsStore } from '@/store/jobs.store'
-import { useOrderStore } from '@/store/order.store'
-import { useProfileStore } from '@/store/profile.store'
-import { useProjectRoleStore } from '@/store/project-role.store'
-import { useTaskStore } from '@/store/task.store'
-import { useTeamStore } from '@/store/team.store'
-import { useVersionHistoryStore } from '@/store/version-history.store'
-import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 type NavItem = { label: string; href: string; badge?: string }
 type NavGroup = { label: string; key: string; items: NavItem[] }
+type SearchItem = { label: string; href: string; group: string; keywords: string[] }
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -76,6 +59,46 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+const NAV_SEARCH_ITEMS: SearchItem[] = [
+  { label: 'AI 画布', href: '/create', group: '创作', keywords: ['创作', '生成', '画布', 'canvas', 'image', 'video'] },
+  { label: '生成任务', href: '/tasks', group: '创作', keywords: ['任务', '生成', 'status'] },
+  { label: 'API 中心', href: '/providers', group: '创作', keywords: ['api', 'provider', '模型'] },
+  { label: '市场总览', href: '/marketplace-preview', group: '市场', keywords: ['市场', '交易', '创作者市场'] },
+  { label: '创作者主页', href: '/creator-profile-preview', group: '市场', keywords: ['创作者', '作品集', '主页'] },
+  { label: '需求广场', href: '/demand-board-preview', group: '市场', keywords: ['需求', 'brief', '项目方'] },
+  { label: '报价方案', href: '/proposal-flow-preview', group: '市场', keywords: ['报价', '方案', 'proposal'] },
+  { label: '阶段交付', href: '/milestone-delivery-preview', group: '市场', keywords: ['交付', '里程碑', '验收'] },
+  { label: '托管结算', href: '/escrow-preview', group: '市场', keywords: ['托管', '结算', '抽佣', '支付预览'] },
+  { label: '项目中心', href: '/projects', group: '工作台', keywords: ['项目', 'project'] },
+  { label: '资产中心', href: '/assets', group: '工作台', keywords: ['资产', '素材', 'asset'] },
+  { label: 'Dashboard', href: '/dashboard', group: '工作台', keywords: ['dashboard', '控制台'] },
+  { label: '路线图', href: '/roadmap', group: '平台', keywords: ['路线图', 'roadmap'] },
+  { label: '商业模式', href: '/pricing-preview', group: '平台', keywords: ['商业', '价格', 'pricing'] },
+  { label: '协议版权', href: '/terms-preview', group: '平台', keywords: ['协议', '版权', 'terms'] },
+  { label: '本地部署', href: '/local-deploy-preview', group: '平台', keywords: ['本地', '部署'] },
+  { label: '企业版', href: '/enterprise-preview', group: '平台', keywords: ['企业', '权限'] },
+  { label: '社区', href: '/community', group: '社区与帮助', keywords: ['社区', 'community'] },
+  { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
+]
+
+const SEARCH_DEFAULTS = new Set(['/create', '/marketplace-preview', '/demand-board-preview', '/projects', '/assets'])
+
+function getUserInitial(displayName?: string | null, email?: string | null): string {
+  const name = displayName?.trim()
+  if (name) return ([...name][0] ?? 'U').toUpperCase()
+  const e = email?.trim()
+  if (e) return (e[0] ?? 'U').toUpperCase()
+  return 'U'
+}
+
+function getUserShortName(displayName?: string | null, email?: string | null): string {
+  const name = displayName?.trim()
+  if (name) return name
+  const e = email?.trim()
+  if (e) return e.split('@')[0] ?? e
+  return '用户'
+}
+
 export function TopNavigation() {
   const pathname = usePathname()
   const router = useRouter()
@@ -83,44 +106,6 @@ export function TopNavigation() {
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
   const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
   const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
-  const currentProfileId = useProfileStore((s) => s.currentUserId)
-  const approvals = useApprovalStore((s) => s.approvals)
-  const approvalGates = useApprovalStore((s) => s.gates)
-  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
-  const notes = useDirectorNotesStore((s) => s.notes)
-  const jobs = useJobsStore((s) => s.jobs)
-  const notifications = useNotificationsStore((s) => s.items)
-  const orders = useOrderStore((s) => s.orders)
-  const assignments = useProjectRoleStore((s) => s.assignments)
-  const tasks = useTaskStore((s) => s.tasks)
-  const teams = useTeamStore((s) => s.teams)
-  const invitations = useTeamStore((s) => s.invitations)
-  const versions = useVersionHistoryStore((s) => s.versions)
-
-  const currentUserId = effectiveUser?.id ?? currentProfileId ?? 'user-me'
-  const profileId = currentProfileId ?? currentUserId
-
-  const dashboard = useMemo(
-    () => aggregateProducerDashboard({ teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions }),
-    [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions],
-  )
-
-  const workQueue = useMemo(
-    () => buildPersonalWorkQueue({ userId: currentUserId, profileId, invitations, assignments, tasks, teams, approvals, deliveryPackages, notifications }),
-    [approvals, assignments, currentUserId, deliveryPackages, invitations, notifications, profileId, tasks, teams],
-  )
-
-  const portfolio = useMemo(
-    () => buildWorkspacePortfolio({ userId: currentUserId, profileId, assignments, teams, invitations, dashboard, workQueue, notifications, deliveryPackages, approvals }),
-    [approvals, assignments, currentUserId, dashboard, deliveryPackages, invitations, notifications, profileId, teams, workQueue],
-  )
-
-  const notificationSummary = useMemo(
-    () => buildNotificationSummary(notifications),
-    [notifications],
-  )
-
-  const notificationHref = getActionTarget({ actionType: 'dashboard-notifications' }).actionHref
 
   // Unified hover dropdown — single open key + 150 ms close delay
   const [openMenu, setOpenMenu] = useState<string | null>(null)
@@ -134,6 +119,40 @@ export function TopNavigation() {
   const handleMenuLeave = useCallback(() => {
     menuTimer.current = setTimeout(() => setOpenMenu(null), 150)
   }, [])
+
+  // Local search state — no fetch, no API
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!searchOpen) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery('') }
+    }
+    const handleClick = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false); setSearchQuery('')
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    document.addEventListener('mousedown', handleClick)
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+      document.removeEventListener('mousedown', handleClick)
+    }
+  }, [searchOpen])
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return NAV_SEARCH_ITEMS.filter((i) => SEARCH_DEFAULTS.has(i.href))
+    return NAV_SEARCH_ITEMS.filter((item) =>
+      item.label.toLowerCase().includes(q) ||
+      item.group.toLowerCase().includes(q) ||
+      item.href.toLowerCase().includes(q) ||
+      item.keywords.some((k) => k.toLowerCase().includes(q)),
+    )
+  }, [searchQuery])
 
   const handleLogout = async () => {
     await clientLogout()
@@ -186,9 +205,7 @@ export function TopNavigation() {
                 >
                   <button
                     className={`inline-flex items-center gap-0.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${
-                      isActive
-                        ? 'bg-white/[0.08] text-white'
-                        : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
+                      isActive ? 'bg-white/[0.08] text-white' : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
                     }`}
                   >
                     {group.label}
@@ -229,47 +246,68 @@ export function TopNavigation() {
           </nav>
         </div>
 
-        {/* Right: tools + compact notifications + user */}
+        {/* Right: search + user */}
         <div className="flex items-center gap-2">
-          <CommandPalette
-            portfolio={portfolio}
-            workQueue={workQueue}
-            notifications={notifications}
-          />
 
-          <div className="hidden xl:block">
-            <WorkspaceSwitcher
-              recentProjects={portfolio.recentProjects}
-              highPriorityProjects={portfolio.highPriorityProjects}
-              waitingProjects={portfolio.waitingProjects}
-              compact
-            />
+          {/* Local search — no fetch, static data only */}
+          <div className="relative" ref={searchRef}>
+            <button
+              onClick={() => setSearchOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/55 transition hover:border-white/20 hover:text-white"
+            >
+              <span>🔍</span>
+              <span className="hidden sm:inline">搜索</span>
+            </button>
+
+            {searchOpen && (
+              <div
+                className="absolute right-0 top-full z-[200] mt-2 w-[320px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/95 ring-1 ring-white/[0.06] backdrop-blur-xl"
+                style={{ boxShadow: '0 24px 80px rgba(0,0,0,0.72)' }}
+              >
+                <div className="p-2.5">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索页面入口…"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-[13px] text-white placeholder-white/30 outline-none focus:border-white/20"
+                  />
+                </div>
+                <div className="max-h-[300px] overflow-y-auto pb-2">
+                  {filteredItems.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-[12px] text-white/30">没有找到入口</div>
+                  ) : (
+                    filteredItems.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+                        className="flex items-center justify-between px-4 py-2.5 transition hover:bg-white/[0.07]"
+                      >
+                        <span className="text-[13px] text-white/80">{item.label}</span>
+                        <span className="text-[10px] text-white/30">{item.group}</span>
+                      </Link>
+                    ))
+                  )}
+                </div>
+                {!searchQuery && (
+                  <div className="border-t border-white/[0.06] px-4 py-2 text-[10px] text-white/25">
+                    常用入口 · 输入关键词搜索
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Notifications — compact icon, always visible */}
-          <Link
-            href={notificationHref}
-            className="inline-flex items-center gap-1 rounded-xl border border-white/8 bg-white/[0.03] px-2 py-1.5 text-[11px] text-white/45 transition hover:border-white/18 hover:text-white/80"
-          >
-            <span>🔔</span>
-            {notificationSummary.unreadCount > 0 && (
-              <span className="text-white/60">{notificationSummary.unreadCount}</span>
-            )}
-            {notificationSummary.strongCount > 0 && (
-              <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[9px] text-rose-300">
-                {notificationSummary.strongCount}
-              </span>
-            )}
-          </Link>
-
+          {/* User area */}
           {effectiveIsAuthenticated && effectiveUser ? (
             <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
               <div className="h-7 w-7 shrink-0 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
-                {effectiveUser.displayName[0]?.toUpperCase() ?? '?'}
+                {getUserInitial(effectiveUser.displayName, effectiveUser.email)}
               </div>
-              <div className="min-w-0">
-                <div className="truncate text-[12px] font-medium text-white">{effectiveUser.displayName}</div>
-                <div className="truncate text-[10px] text-white/40">{effectiveUser.email}</div>
+              <div className="max-w-[80px] truncate text-[12px] font-medium text-white">
+                {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
               </div>
               <Link href="/account" className="px-1 text-xs text-white/40 transition hover:text-white/70" title="账号设置">⚙</Link>
               <button
