@@ -6,6 +6,8 @@ import {
   ROLE_PERSPECTIVES,
   TRUST_PILLARS,
 } from './marketplacePreviewData'
+import { MarketPreviewBackLink } from '../market-preview/MarketPreviewBackLink'
+import { MarketPreviewNotice } from '../market-preview/MarketPreviewNotice'
 
 const card: React.CSSProperties = {
   background: '#111117',
@@ -64,6 +66,7 @@ export default function MarketplacePreviewPage() {
         padding: '0 0 6rem',
       }}
     >
+      <MarketPreviewBackLink current="marketplace" />
       {/* ── Hero ── */}
       <div
         style={{
@@ -385,31 +388,7 @@ export default function MarketplacePreviewPage() {
         </section>
 
         {/* Preview disclaimer */}
-        <div
-          style={{
-            background: '#111117',
-            border: '1px solid #27272a',
-            borderLeft: '3px solid #a16207',
-            borderRadius: '10px',
-            padding: '1rem 1.25rem',
-            marginBottom: '2rem',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              color: '#ca8a04',
-              marginBottom: '0.3rem',
-            }}
-          >
-            当前为预览页
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.65 }}>
-            本页面所有数据均为示例，不接支付、不创建订单、不写数据库。
-            市场功能尚在规划阶段，正式上线时间以路线图为准。
-          </div>
-        </div>
+        <MarketPreviewNotice text="本页面所有数据均为示例，不接支付、不创建订单、不写数据库。市场功能尚在规划阶段，正式上线时间以路线图为准。" />
 
         {/* Footer */}
         <div

@@ -8,8 +8,10 @@ import {
   PORTFOLIO_ITEMS,
   SERVICE_OFFERINGS,
   TRUST_CHAIN,
-  MARKET_CHAIN_LINKS,
 } from './creatorProfilePreviewData'
+import { MarketPreviewBackLink } from '../market-preview/MarketPreviewBackLink'
+import { MarketChainNav } from '../market-preview/MarketChainNav'
+import { MarketPreviewNotice } from '../market-preview/MarketPreviewNotice'
 
 const card: CSSProperties = {
   background: '#111117',
@@ -47,6 +49,7 @@ export default function CreatorProfilePreviewPage() {
         padding: '0 0 6rem',
       }}
     >
+      <MarketPreviewBackLink current="creator-profile" />
       {/* ── Hero ── */}
       <div
         style={{
@@ -607,106 +610,11 @@ export default function CreatorProfilePreviewPage() {
         {/* Market chain quick links */}
         <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
           <SectionHeader title="市场链路" sub="从创作者主页出发，完整交易闭环" />
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '0.5rem',
-              alignItems: 'center',
-            }}
-          >
-            {MARKET_CHAIN_LINKS.flatMap((link, i) => {
-              const indexStr = String(link.index).padStart(2, '0')
-              const node = link.current ? (
-                <span
-                  key={link.href}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    padding: '0.45rem 0.9rem',
-                    background: '#7c3aed18',
-                    border: '1px solid #7c3aed50',
-                    borderRadius: '8px',
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    color: '#a78bfa',
-                  }}
-                >
-                  <span style={{ fontSize: '10px', color: '#7c3aed80', fontWeight: 700 }}>
-                    {indexStr}
-                  </span>
-                  {link.label}
-                  <span
-                    style={{
-                      fontSize: '9px',
-                      color: '#a78bfa',
-                      background: '#7c3aed25',
-                      borderRadius: '4px',
-                      padding: '1px 5px',
-                    }}
-                  >
-                    当前
-                  </span>
-                </span>
-              ) : (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    padding: '0.45rem 0.9rem',
-                    background: '#111117',
-                    border: '1px solid #1e1e24',
-                    borderRadius: '8px',
-                    fontSize: '0.82rem',
-                    color: '#a1a1aa',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '10px', color: '#3f3f46', fontWeight: 700 }}>
-                    {indexStr}
-                  </span>
-                  {link.label}
-                </Link>
-              )
-
-              if (i < MARKET_CHAIN_LINKS.length - 1) {
-                return [
-                  node,
-                  <span key={`arrow-${i}`} style={{ fontSize: '12px', color: '#3f3f46' }}>
-                    →
-                  </span>,
-                ]
-              }
-              return [node]
-            })}
-          </div>
+          <MarketChainNav current="creator-profile" />
         </section>
 
         {/* Preview disclaimer */}
-        <div
-          style={{
-            background: '#111117',
-            border: '1px solid #27272a',
-            borderLeft: '3px solid #a16207',
-            borderRadius: '10px',
-            padding: '1rem 1.25rem',
-            marginBottom: '2rem',
-          }}
-        >
-          <div
-            style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ca8a04', marginBottom: '0.3rem' }}
-          >
-            当前为预览页
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.65 }}>
-            本页面所有数据均为示例，不接支付、不创建订单、不写数据库。
-            创作者主页功能尚在规划阶段，正式上线时间以路线图为准。
-          </div>
-        </div>
+        <MarketPreviewNotice text="本页面所有数据均为示例，不接支付、不创建订单、不写数据库。创作者主页功能尚在规划阶段，正式上线时间以路线图为准。" />
 
         {/* Footer */}
         <div

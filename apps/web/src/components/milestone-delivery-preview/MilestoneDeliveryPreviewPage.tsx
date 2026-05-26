@@ -5,8 +5,10 @@ import {
   DELIVERY_STAGES,
   DELIVERABLE_TYPES,
   ACCEPTANCE_BOUNDARIES,
-  MARKET_CHAIN_LINKS,
 } from './milestoneDeliveryPreviewData'
+import { MarketPreviewBackLink } from '../market-preview/MarketPreviewBackLink'
+import { MarketChainNav } from '../market-preview/MarketChainNav'
+import { MarketPreviewNotice } from '../market-preview/MarketPreviewNotice'
 
 const card: React.CSSProperties = {
   background: '#111117',
@@ -65,6 +67,7 @@ export default function MilestoneDeliveryPreviewPage() {
         padding: '0 0 6rem',
       }}
     >
+      <MarketPreviewBackLink current="milestone-delivery" />
       {/* ── Hero ── */}
       <div
         style={{
@@ -445,84 +448,11 @@ export default function MilestoneDeliveryPreviewPage() {
             title="市场链路"
             sub="阶段交付是创作者市场 6 个环节中的第 5 环"
           />
-          <div
-            style={{
-              ...card,
-              padding: '1.5rem 1.25rem',
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: '0',
-            }}
-          >
-            {MARKET_CHAIN_LINKS.flatMap((node, i) => [
-              <Link
-                key={node.href}
-                href={node.href}
-                style={{
-                  display: 'inline-flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: '10px',
-                  background: node.current ? '#0891b218' : 'transparent',
-                  border: node.current ? '1px solid #0891b240' : '1px solid transparent',
-                  textDecoration: 'none',
-                  minWidth: '76px',
-                  textAlign: 'center',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '9px',
-                    fontWeight: 700,
-                    color: node.current ? '#0891b2' : '#3f3f46',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {String(node.index).padStart(2, '0')}
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.78rem',
-                    fontWeight: node.current ? 700 : 500,
-                    color: node.current ? '#22d3ee' : '#71717a',
-                  }}
-                >
-                  {node.label}
-                </span>
-                {node.current && (
-                  <span style={{ fontSize: '9px', color: '#0891b2', fontWeight: 600 }}>← 当前</span>
-                )}
-              </Link>,
-              i < MARKET_CHAIN_LINKS.length - 1 && (
-                <span key={`arrow-${i}`} style={{ fontSize: '12px', color: '#27272a', padding: '0 0.15rem' }}>
-                  →
-                </span>
-              ),
-            ])}
-          </div>
+          <MarketChainNav current="milestone-delivery" />
         </section>
 
         {/* ── Disclaimer ── */}
-        <div
-          style={{
-            ...card,
-            borderLeft: '3px solid #a16207',
-            borderRadius: '10px',
-            padding: '1rem 1.25rem',
-            marginBottom: '2rem',
-          }}
-        >
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ca8a04', marginBottom: '0.3rem' }}>
-            当前为预览页
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.65 }}>
-            本页面所有数据均为示例，不提交真实交付、不触发验收、不接支付、不创建订单、不写数据库。
-            阶段交付功能尚在规划阶段，正式上线时间以路线图为准。
-          </div>
-        </div>
+        <MarketPreviewNotice text="本页面所有数据均为示例，不提交真实交付、不触发验收、不接支付、不创建订单、不写数据库。阶段交付功能尚在规划阶段，正式上线时间以路线图为准。" />
 
         {/* Footer */}
         <div
