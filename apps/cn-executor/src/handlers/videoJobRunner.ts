@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import { isAuthorized } from '../auth'
 import { readBody } from './generateImage'
 import { jsonError, jsonOk, jsonUnauthorized } from '../response'
-import { query } from '../db'
+import { query, writeQuery } from '../db'
 import { submitSeedanceTask, pollSeedanceTaskUntilDone, buildVideoOssKey, downloadVideoBuffer } from '../seedance'
 import { uploadToOss } from '../oss'
 
@@ -43,16 +43,34 @@ async function fetchJob(generationJobId: string): Promise<VideoJobRow | null> {
 }
 
 async function markJobProcessing(generationJobId: string, inputJson: Record<string, unknown>): Promise<void> {
-  await query(
-    `UPDATE "GenerationJob"
-     SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
-     WHERE id = $2`,
-    [JSON.stringify(inputJson), generationJobId],
+  try {
+    const rowCount = await writeQuery(
+      `UPDATE "GenerationJob"
+       SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
+       WHERE id = $2`,
+      [JSON.stringify(inputJson), generationJobId],
+    )
+    if (rowCount === 0) {
+      console.warn('[cn-executor][db] markJobProcessing: 0 rows updated — RLS may be blocking writes', { id: generationJobId })
+    }
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobProcessing failed, trying minimal', {
+      id: generationJobId,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
+  const fallbackCount = await writeQuery(
+    `UPDATE "GenerationJob" SET status = 'PROCESSING', "updatedAt" = NOW() WHERE id = $1`,
+    [generationJobId],
   )
+  if (fallbackCount === 0) {
+    console.warn('[cn-executor][db] markJobProcessing minimal fallback: 0 rows updated — RLS may be blocking writes', { id: generationJobId })
+  }
 }
 
 async function storeProviderTaskId(generationJobId: string, taskId: string): Promise<void> {
-  await query(
+  await writeQuery(
     `UPDATE "GenerationJob"
      SET "providerJobId" = $1, "updatedAt" = NOW()
      WHERE id = $2`,
@@ -69,13 +87,31 @@ async function markJobSucceeded(args: {
   outputAssetId: string
   output: Record<string, unknown>
 }): Promise<void> {
-  await query(
-    `UPDATE "GenerationJob"
-     SET status = 'SUCCEEDED', "outputAssetId" = $1, output = $2::jsonb,
-         "completedAt" = NOW(), "updatedAt" = NOW()
-     WHERE id = $3`,
-    [args.outputAssetId, JSON.stringify(args.output), args.id],
+  try {
+    const rowCount = await writeQuery(
+      `UPDATE "GenerationJob"
+       SET status = 'SUCCEEDED', "outputAssetId" = $1, output = $2::jsonb,
+           "completedAt" = NOW(), "updatedAt" = NOW()
+       WHERE id = $3`,
+      [args.outputAssetId, JSON.stringify(args.output), args.id],
+    )
+    if (rowCount === 0) {
+      console.warn('[cn-executor][db] markJobSucceeded: 0 rows updated — RLS may be blocking writes', { id: args.id })
+    }
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobSucceeded full update failed, trying minimal', {
+      id: args.id,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
+  const fallbackCount = await writeQuery(
+    `UPDATE "GenerationJob" SET status = 'SUCCEEDED', "updatedAt" = NOW() WHERE id = $1`,
+    [args.id],
   )
+  if (fallbackCount === 0) {
+    console.warn('[cn-executor][db] markJobSucceeded minimal fallback: 0 rows updated — RLS may be blocking writes', { id: args.id })
+  }
 }
 
 async function markJobFailed(args: {
@@ -84,13 +120,31 @@ async function markJobFailed(args: {
   message: string
   output: Record<string, unknown>
 }): Promise<void> {
-  await query(
-    `UPDATE "GenerationJob"
-     SET status = 'FAILED', error = $1, "errorMessage" = $2, output = $3::jsonb,
-         "completedAt" = NOW(), "updatedAt" = NOW()
-     WHERE id = $4`,
-    [args.message, args.message.slice(0, 1000), JSON.stringify(args.output), args.id],
+  try {
+    const rowCount = await writeQuery(
+      `UPDATE "GenerationJob"
+       SET status = 'FAILED', error = $1, "errorMessage" = $2, output = $3::jsonb,
+           "completedAt" = NOW(), "updatedAt" = NOW()
+       WHERE id = $4`,
+      [args.message, args.message.slice(0, 1000), JSON.stringify(args.output), args.id],
+    )
+    if (rowCount === 0) {
+      console.warn('[cn-executor][db] markJobFailed: 0 rows updated — RLS may be blocking writes', { id: args.id })
+    }
+    return
+  } catch (fullErr) {
+    console.error('[cn-executor][db] markJobFailed full update failed, trying minimal', {
+      id: args.id,
+      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
+    })
+  }
+  const fallbackCount = await writeQuery(
+    `UPDATE "GenerationJob" SET status = 'FAILED', "updatedAt" = NOW() WHERE id = $1`,
+    [args.id],
   )
+  if (fallbackCount === 0) {
+    console.warn('[cn-executor][db] markJobFailed minimal fallback: 0 rows updated — RLS may be blocking writes', { id: args.id })
+  }
 }
 
 async function createVideoAsset(args: {
@@ -107,7 +161,7 @@ async function createVideoAsset(args: {
   providerId: string
   metadataJson: Record<string, unknown>
 }): Promise<void> {
-  await query(
+  await writeQuery(
     `INSERT INTO "Asset" (
        id, name, title, type, status,
        "ownerId", "projectId", "workflowId", "nodeId",
@@ -222,7 +276,7 @@ async function updateCanvasNodeForVideo(args: {
     },
   }
 
-  await query(
+  const rowCount = await writeQuery(
     `UPDATE "CanvasNode"
      SET status = 'done',
          "resultVideoUrl" = $1,
@@ -233,6 +287,11 @@ async function updateCanvasNodeForVideo(args: {
      WHERE id = $3`,
     [args.videoUrl, JSON.stringify(newMeta), node.id],
   )
+  if (rowCount === 0) {
+    console.warn('[cn-executor][db] updateCanvasNodeForVideo: 0 rows updated — RLS may be blocking writes', {
+      workflowId: args.workflowId, nodeId: args.nodeId,
+    })
+  }
 }
 
 export async function handleRunVideoJob(req: IncomingMessage, res: ServerResponse): Promise<void> {
