@@ -22,19 +22,37 @@ export function HomeLanding() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020408]">
 
-      {/* ── Cinema background asset ── */}
+      {/* ── Real photo background ── */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('/brand/home-cinema-portal-bg.svg')" }}
+        style={{ backgroundImage: "url('/brand/home-cinema-portal-bg.jpg')" }}
       />
 
-      {/* ── Overlay: center text lift — ensures title readable over tower ── */}
+      {/* ── Dark overlay: top → nav area ── */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
-          background: 'radial-gradient(ellipse 52% 44% at 50% 44%, rgba(2,6,14,0.28) 0%, transparent 100%)',
+          background: 'linear-gradient(180deg, rgba(1,2,6,0.55) 0%, rgba(1,2,6,0.10) 28%, transparent 55%)',
+        }}
+      />
+
+      {/* ── Dark overlay: bottom → ground merge ── */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: 'linear-gradient(0deg, rgba(2,4,8,0.92) 0%, rgba(2,4,8,0.40) 28%, transparent 58%)',
+        }}
+      />
+
+      {/* ── Center text lift — title readability ── */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: 'radial-gradient(ellipse 60% 40% at 50% 42%, rgba(1,2,8,0.38) 0%, transparent 100%)',
         }}
       />
 
