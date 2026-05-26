@@ -392,6 +392,17 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
           outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
           preview: node.preview ?? nodeMetadata.preview ?? null,
         })
+        // Only write resultImageUrl/resultVideoUrl when the frontend has a non-empty value.
+        // This prevents a stale null in frontend state from overwriting a valid URL already
+        // written to DB by cn-executor (race: poll hasn't returned yet when save fires).
+        const mediaResultPatch = {
+          ...(typeof node.resultImageUrl === 'string' && node.resultImageUrl.trim().length > 0
+            ? { resultImageUrl: node.resultImageUrl }
+            : {}),
+          ...(typeof node.resultVideoUrl === 'string' && node.resultVideoUrl.trim().length > 0
+            ? { resultVideoUrl: node.resultVideoUrl }
+            : {}),
+        }
         return db.canvasNode.upsert({
           where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id! } },
           create: {
@@ -426,8 +437,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
             height: Number(node.height ?? 220),
             prompt: node.prompt ?? null,
             resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
+            ...mediaResultPatch,
             resultAudioUrl: node.resultAudioUrl ?? null,
             resultPreview: node.resultPreview ?? null,
             errorMessage: node.errorMessage ?? null,
