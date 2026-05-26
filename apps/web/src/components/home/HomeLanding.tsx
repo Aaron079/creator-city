@@ -15,12 +15,12 @@ import {
 } from '@/lib/home/content'
 
 const MARKET_LINKS = [
-  { href: '/marketplace-preview', label: '市场总览', hint: '创作者市场、30% 平台抽佣模型、服务类型和交易边界。' },
-  { href: '/creator-profile-preview', label: '创作者主页', hint: '创作者如何展示作品集、技能、套餐、报价和信任保障。' },
-  { href: '/demand-board-preview', label: '需求广场', hint: '项目方如何发布结构化 brief，创作者如何浏览需求。' },
-  { href: '/proposal-flow-preview', label: '报价方案', hint: '创作者如何提交方案、报价、周期、修改轮次和授权边界。' },
-  { href: '/milestone-delivery-preview', label: '阶段交付', hint: '项目如何按里程碑交付、验收、修改和归档。' },
-  { href: '/escrow-preview', label: '托管结算', hint: '托管机制、平台服务费、阶段释放款和争议边界。' },
+  { href: '/marketplace-preview', label: '市场总览', hint: '了解创作者市场、服务类型、交易边界和平台模型。' },
+  { href: '/creator-profile-preview', label: '创作者主页', hint: '查看创作者如何展示作品、技能、套餐、报价和信任保障。' },
+  { href: '/demand-board-preview', label: '需求广场', hint: '查看项目方如何发布结构化 Brief，创作者如何浏览需求。' },
+  { href: '/proposal-flow-preview', label: '报价方案', hint: '查看创作者如何提交方案、报价、周期、修改轮次和授权边界。' },
+  { href: '/milestone-delivery-preview', label: '阶段交付', hint: '查看项目如何按里程碑交付、验收、修改和归档。' },
+  { href: '/escrow-preview', label: '托管结算', hint: '查看托管、平台服务费、阶段释放款、退款和争议边界。' },
 ]
 
 const PORTAL_LINKS = [
@@ -104,6 +104,32 @@ export function HomeLanding() {
         </div>
       </section>
 
+      {/* 创作者市场主链路 — Hero 正下方，首屏可见 */}
+      <section className="mt-8 rounded-[28px] border border-amber-500/12 bg-amber-500/[0.025] p-6 md:p-8">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.24em] text-amber-400/60">Marketplace · 主链路预览</div>
+            <h2 className="mt-2 text-2xl font-light tracking-[-0.04em] text-white">创作者市场</h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-white/45">
+            从需求发布、报价方案、阶段交付到托管结算，预览 Creator City 的创作交易主链路。（预览中，尚未上线）
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {MARKET_LINKS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-[20px] border border-amber-500/14 bg-black/25 p-5 transition hover:border-amber-500/28 hover:bg-amber-500/[0.04]"
+            >
+              <div className="text-sm font-semibold text-white/90">{item.label}</div>
+              <div className="mt-2 text-xs leading-[1.65] text-white/42">{item.hint}</div>
+              <div className="mt-4 text-[11px] font-medium text-amber-400/60">查看预览 →</div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       <section className="mt-10">
         <FeaturedCarousel items={HOME_FEATURED_ITEMS} />
       </section>
@@ -131,31 +157,6 @@ export function HomeLanding() {
             >
               <div className="text-sm font-medium text-white">{item.label}</div>
               <div className="mt-3 text-xs leading-6 text-white/46">{item.hint}</div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">Marketplace</div>
-            <h2 className="mt-3 text-2xl font-light tracking-[-0.04em] text-white">创作者市场</h2>
-          </div>
-          <p className="max-w-2xl text-sm leading-7 text-white/50">
-            从需求发布到报价、阶段交付和创作者展示，把 AI 影视创作变成可协作、可验收、可沉淀的交易流程。（预览中，尚未上线）
-          </p>
-        </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {MARKET_LINKS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-[24px] border border-amber-500/10 bg-amber-500/[0.02] p-5 transition hover:border-amber-500/22 hover:bg-amber-500/[0.05]"
-            >
-              <div className="text-sm font-medium text-white">{item.label}</div>
-              <div className="mt-3 text-xs leading-6 text-white/46">{item.hint}</div>
-              <div className="mt-4 text-[11px] text-amber-500/55">查看预览 →</div>
             </Link>
           ))}
         </div>
