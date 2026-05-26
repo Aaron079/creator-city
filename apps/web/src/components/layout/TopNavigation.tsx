@@ -81,7 +81,14 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
 ]
 
-const SEARCH_DEFAULTS = new Set(['/create', '/marketplace-preview', '/demand-board-preview', '/projects', '/assets'])
+const SEARCH_DEFAULTS = new Set([
+  '/create',
+  '/marketplace-preview',
+  '/demand-board-preview',
+  '/proposal-flow-preview',
+  '/milestone-delivery-preview',
+  '/escrow-preview',
+])
 
 function getUserInitial(displayName?: string | null, email?: string | null): string {
   const name = displayName?.trim()
@@ -261,7 +268,7 @@ export function TopNavigation() {
 
             {searchOpen && (
               <div
-                className="absolute right-0 top-full z-[200] mt-2 w-[320px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/95 ring-1 ring-white/[0.06] backdrop-blur-xl"
+                className="absolute right-0 top-full z-[200] mt-2 w-[380px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/95 ring-1 ring-white/[0.06] backdrop-blur-xl"
                 style={{ boxShadow: '0 24px 80px rgba(0,0,0,0.72)' }}
               >
                 <div className="p-2.5">
@@ -270,7 +277,7 @@ export function TopNavigation() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="搜索页面入口…"
+                    placeholder="搜索页面、功能或流程…"
                     className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-[13px] text-white placeholder-white/30 outline-none focus:border-white/20"
                   />
                 </div>
@@ -283,19 +290,20 @@ export function TopNavigation() {
                         key={item.href}
                         href={item.href}
                         onClick={() => { setSearchOpen(false); setSearchQuery('') }}
-                        className="flex items-center justify-between px-4 py-2.5 transition hover:bg-white/[0.07]"
+                        className="flex items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-white/[0.08] hover:text-white"
                       >
-                        <span className="text-[13px] text-white/80">{item.label}</span>
-                        <span className="text-[10px] text-white/30">{item.group}</span>
+                        <div className="min-w-0">
+                          <div className="text-[13px] text-white/80">{item.label}</div>
+                          <div className="truncate font-mono text-[10px] text-white/28">{item.href}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-white/35">{item.group}</span>
                       </Link>
                     ))
                   )}
                 </div>
-                {!searchQuery && (
-                  <div className="border-t border-white/[0.06] px-4 py-2 text-[10px] text-white/25">
-                    常用入口 · 输入关键词搜索
-                  </div>
-                )}
+                <div className="border-t border-white/[0.06] px-4 py-2 text-[10px] text-white/25">
+                  仅搜索已开放页面，不触发生成或保存。
+                </div>
               </div>
             )}
           </div>
