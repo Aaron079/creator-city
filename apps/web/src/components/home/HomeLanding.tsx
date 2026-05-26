@@ -3,38 +3,10 @@
 import Link from 'next/link'
 import { useCallback, type MouseEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ContentCard } from '@/components/home/ContentCard'
-import { ContentRails } from '@/components/home/ContentRail'
-import { FeaturedCarousel } from '@/components/home/FeaturedCarousel'
-import { FeatureGrid } from '@/components/home/FeatureGrid'
-import {
-  HOME_CONTENT_RAILS,
-  HOME_FEATURED_ITEMS,
-  HOME_FEATURE_ENTRIES,
-  HOME_RECOMMENDATIONS,
-} from '@/lib/home/content'
-
-const MARKET_LINKS = [
-  { href: '/marketplace-preview', label: '市场总览', hint: '了解创作者市场、服务类型、交易边界和平台模型。' },
-  { href: '/creator-profile-preview', label: '创作者主页', hint: '查看创作者如何展示作品、技能、套餐、报价和信任保障。' },
-  { href: '/demand-board-preview', label: '需求广场', hint: '查看项目方如何发布结构化 Brief，创作者如何浏览需求。' },
-  { href: '/proposal-flow-preview', label: '报价方案', hint: '查看创作者如何提交方案、报价、周期、修改轮次和授权边界。' },
-  { href: '/milestone-delivery-preview', label: '阶段交付', hint: '查看项目如何按里程碑交付、验收、修改和归档。' },
-  { href: '/escrow-preview', label: '托管结算', hint: '查看托管、平台服务费、阶段释放款、退款和争议边界。' },
-]
-
-const PORTAL_LINKS = [
-  { href: '/create', label: '进入 AI 画布', hint: '自由创作、节点生成和素材推进。' },
-  { href: '/templates', label: '模板库', hint: '从广告片、短片、Vlog 等流程开始。' },
-  { href: '/projects', label: '工作空间 / 项目', hint: '管理项目、团队、审批和交付。' },
-  { href: '/explore', label: '探索', hint: '发现创作者、案例和灵感。' },
-  { href: '/community', label: '社群', hint: '查看动态、讨论和创作者内容。' },
-  { href: '/tools', label: '工具 / API', hint: '查看工具、模型、API 的真实状态。' },
-  { href: '/me', label: '我的', hint: '个人工作台、邀请和待办。' },
-]
 
 export function HomeLanding() {
   const router = useRouter()
+
   const handleCanvasEntry = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
     let href = '/create'
@@ -47,140 +19,89 @@ export function HomeLanding() {
     router.push(href)
   }, [router])
 
-  const handleOpenProject = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault()
-    router.push('/projects')
-  }, [router])
-
   return (
-    <main className="mx-auto max-w-7xl px-6 pb-16 pt-24">
-      <section className="relative overflow-hidden rounded-[36px] border border-white/10 bg-white/[0.03] p-7 backdrop-blur-[28px] md:p-9">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(118,160,255,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,164,92,0.08),transparent_28%)]" />
-        <div className="relative z-10 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div>
-            <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-white/42">
-              Creator City Platform
-            </div>
-            <h1 className="mt-5 text-3xl font-light tracking-[-0.05em] text-white md:text-5xl">
-              AI 影视创作工作台
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/58">
-              从灵感、画面、视频、声音到审片与交付，用一个协作平台完成。
-            </p>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#05060a]">
 
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href="/create"
-                onClick={handleCanvasEntry}
-                className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:scale-[1.01]"
-              >
-                进入 AI 画布
-              </Link>
-              <Link
-                href="/projects"
-                onClick={handleOpenProject}
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white/82 transition hover:border-white/20 hover:text-white"
-              >
-                工作空间
-              </Link>
-            </div>
-          </div>
+      {/* ── Background layer 1: top indigo ambient ── */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_55%_at_50%_-8%,rgba(99,102,241,0.22),transparent)]" />
 
-          <div className="grid gap-3">
-            {[
-              '画布只负责自由创作，模板、社区、工具和项目在独立页面各自展开。',
-              '首页先给你精选内容、推荐模板和内容流，而不是一上来就塞进复杂流程图。',
-              'Tools / API 页面明确标注 available、mock、bridge-only 和 not-configured。',
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-[24px] border border-white/8 bg-black/20 p-5"
-              >
-                <div className="text-[10px] uppercase tracking-[0.22em] text-white/32">产品结构</div>
-                <div className="mt-3 text-[13px] leading-6 text-white/64">{item}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── Background layer 2: center deep-blue glow ── */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_55%_at_50%_48%,rgba(59,130,246,0.07),transparent)]" />
 
-      {/* 创作者市场主链路 — Hero 正下方，首屏可见 */}
-      <section className="mt-8 rounded-[28px] border border-amber-500/12 bg-amber-500/[0.025] p-6 md:p-8">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.24em] text-amber-400/60">Marketplace · 主链路预览</div>
-            <h2 className="mt-2 text-2xl font-light tracking-[-0.04em] text-white">创作者市场</h2>
-          </div>
-          <p className="max-w-xl text-sm leading-6 text-white/45">
-            从需求发布、报价方案、阶段交付到托管结算，预览 Creator City 的创作交易主链路。（预览中，尚未上线）
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {MARKET_LINKS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-[20px] border border-amber-500/14 bg-black/25 p-5 transition hover:border-amber-500/28 hover:bg-amber-500/[0.04]"
-            >
-              <div className="text-sm font-semibold text-white/90">{item.label}</div>
-              <div className="mt-2 text-xs leading-[1.65] text-white/42">{item.hint}</div>
-              <div className="mt-4 text-[11px] font-medium text-amber-400/60">查看预览 →</div>
-            </Link>
-          ))}
-        </div>
-      </section>
+      {/* ── Background layer 3: bottom violet horizon ── */}
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-56 bg-[radial-gradient(ellipse_100%_100%_at_50%_100%,rgba(109,40,217,0.13),transparent)]" />
 
-      <section className="mt-10">
-        <FeaturedCarousel items={HOME_FEATURED_ITEMS} />
-      </section>
+      {/* ── Background layer 4: perspective grid ── */}
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-[42%] opacity-[0.065]"
+        style={{
+          backgroundImage: [
+            'linear-gradient(to right, rgba(139,92,246,0.7) 1px, transparent 1px)',
+            'linear-gradient(to bottom, rgba(139,92,246,0.7) 1px, transparent 1px)',
+          ].join(', '),
+          backgroundSize: '64px 64px',
+          maskImage: 'linear-gradient(to top, rgba(0,0,0,1) 0%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,1) 0%, transparent 100%)',
+        }}
+      />
 
-      <FeatureGrid items={HOME_FEATURE_ENTRIES} />
+      {/* ── Background layer 5: city silhouette ── */}
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex items-end justify-around opacity-[0.055]">
+        {[24, 40, 32, 56, 36, 72, 48, 64, 40, 32, 52, 36, 68, 44, 28, 60, 38, 50, 30, 44].map((h, i) => (
+          <div
+            key={i}
+            className="flex-1 bg-gradient-to-t from-violet-300 to-violet-400"
+            style={{ height: `${h}px` }}
+          />
+        ))}
+      </div>
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">Portal</div>
-            <h2 className="mt-3 text-2xl font-light tracking-[-0.04em] text-white">平台入口</h2>
-          </div>
-          <p className="max-w-2xl text-sm leading-7 text-white/50">
-            首页只做门户和内容分发；创作画布、模板、项目、社区和工具状态各自进入独立页面。
-          </p>
+      {/* ── Background layer 6: subtle star field ── */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.055]"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)',
+          backgroundSize: '200px 200px',
+        }}
+      />
+
+      {/* ── Content ── */}
+      <div className="relative z-10 flex flex-col items-center px-6 pb-24 pt-16 text-center">
+
+        {/* Platform eyebrow */}
+        <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-1 text-[10px] uppercase tracking-[0.30em] text-white/30">
+          Creator City
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {PORTAL_LINKS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={item.href === '/create' ? handleCanvasEntry : item.href === '/projects' ? handleOpenProject : undefined}
-              className="rounded-[24px] border border-white/8 bg-white/[0.035] p-5 transition hover:border-white/18 hover:bg-white/[0.055]"
-            >
-              <div className="text-sm font-medium text-white">{item.label}</div>
-              <div className="mt-3 text-xs leading-6 text-white/46">{item.hint}</div>
-            </Link>
-          ))}
-        </div>
-      </section>
+        {/* Hero title */}
+        <h1
+          className="font-extralight leading-[1.06] tracking-[-0.05em] text-white"
+          style={{ fontSize: 'clamp(48px, 9.5vw, 106px)' }}
+        >
+          AI 影视创作
+          <br />
+          <span className="text-gradient">工作台</span>
+        </h1>
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.24em] text-white/35">For You</div>
-            <h2 className="mt-3 text-2xl font-light tracking-[-0.04em] text-white">为你推荐</h2>
-          </div>
-          <p className="max-w-2xl text-sm leading-7 text-white/50">
-            首页用内容流把项目、案例、模板和教程混合呈现，让用户先理解平台里有什么，再决定去哪里创作。
-          </p>
-        </div>
+        {/* Tagline */}
+        <p
+          className="mt-7 font-light tracking-[0.01em] text-white/38"
+          style={{ fontSize: 'clamp(14px, 1.7vw, 19px)' }}
+        >
+          为下一代影像创作者构建。
+        </p>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {HOME_RECOMMENDATIONS.map((item) => (
-            <ContentCard key={item.id} item={item} />
-          ))}
+        {/* Primary CTA */}
+        <div className="mt-11">
+          <Link
+            href="/create"
+            onClick={handleCanvasEntry}
+            className="inline-flex h-[54px] items-center justify-center rounded-full border border-white/18 bg-white px-10 text-[15px] font-medium text-black transition hover:scale-[1.02] hover:bg-white/90 active:scale-[0.98]"
+          >
+            进入 AI 画布创作
+          </Link>
         </div>
-      </section>
-
-      <ContentRails rails={HOME_CONTENT_RAILS} />
+      </div>
     </main>
   )
 }
