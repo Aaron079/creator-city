@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { CreatorCityLogo } from '@/components/brand/CreatorCityLogo'
 import { useAuthStore } from '@/store/auth.store'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
@@ -194,8 +195,8 @@ export function TopNavigation() {
 
         {/* Left: logo + 5 dropdown nav groups */}
         <div className="flex items-center gap-3">
-          <Link href="/" className="shrink-0 text-xs font-bold tracking-[0.02em] text-gradient">
-            Creator City
+          <Link href="/" className="shrink-0">
+            <CreatorCityLogo size="sm" />
           </Link>
 
           <nav className="hidden items-center gap-0.5 md:flex">
