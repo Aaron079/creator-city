@@ -1807,13 +1807,13 @@
   height: 28px;
   width: 28px;
   flex: 0 0 auto;
-  border-radius: 10px;
-  background:
-    radial-gradient(circle at 30% 25%, #ffe27a, transparent 35%),
-    radial-gradient(circle at 68% 30%, #72fbff, transparent 36%),
-    radial-gradient(circle at 44% 72%, #8d65ff, transparent 38%),
-    rgba(255, 255, 255, 0.88);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.92);
+  background-image: url('/brand/creator-city-logo.png');
+  background-size: 78%;
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
 .scope :global(.canvas-topbar-label),
