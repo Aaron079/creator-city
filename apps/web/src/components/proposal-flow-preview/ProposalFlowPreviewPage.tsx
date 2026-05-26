@@ -1,56 +1,20 @@
-// No POST, no PUT, no DELETE. Static data only. Not connected to navigation.
-// All proposals are mock/preview. No real orders, no payments, no DB writes, no generation triggers.
+// No POST, no PUT, no DELETE. Static data only. Not connected to generation.
 import Link from 'next/link'
 import {
   HERO,
-  REASONS,
-  PROPOSAL_STRUCTURE_FIELDS,
-  MOCK_PROPOSALS,
-  QUOTE_BREAKDOWN_FIELDS,
-  CREATOR_FLOW,
-  COMPARE_FIELDS,
-  MILESTONES,
-  TRUST_ITEMS,
-  RISKS_AND_BOUNDARIES,
-  ROADMAP,
-  QUICK_LINKS,
+  PROPOSAL_FIELDS,
+  SERVICE_TIERS,
+  COMPARE_DIMENSIONS,
+  MARKET_CHAIN_LINKS,
 } from './proposalFlowPreviewData'
 
-function Section({
-  id,
-  children,
-  style,
-}: {
-  id?: string
-  children: React.ReactNode
-  style?: React.CSSProperties
-}) {
-  return (
-    <section id={id} style={{ scrollMarginTop: '80px', marginBottom: '3.5rem', ...style }}>
-      {children}
-    </section>
-  )
+const card: React.CSSProperties = {
+  background: '#111117',
+  border: '1px solid #1e1e24',
+  borderRadius: '14px',
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2
-      style={{
-        fontSize: '1.15rem',
-        fontWeight: 700,
-        color: '#f4f4f5',
-        marginBottom: '1.25rem',
-        letterSpacing: '-0.01em',
-        borderLeft: '3px solid #7c3aed',
-        paddingLeft: '0.75rem',
-      }}
-    >
-      {children}
-    </h2>
-  )
-}
-
-function Chip({ label, color }: { label: string; color: string }) {
+function StatusChip({ label, color }: { label: string; color: string }) {
   return (
     <span
       style={{
@@ -64,7 +28,6 @@ function Chip({ label, color }: { label: string; color: string }) {
         background: `${color}18`,
         border: `1px solid ${color}40`,
         letterSpacing: '0.02em',
-        whiteSpace: 'nowrap',
       }}
     >
       {label}
@@ -72,20 +35,21 @@ function Chip({ label, color }: { label: string; color: string }) {
   )
 }
 
-function InfoNote({ children }: { children: React.ReactNode }) {
+function SectionHeader({ title, sub }: { title: string; sub: string }) {
   return (
-    <div
-      style={{
-        background: '#18181b',
-        border: '1px solid #3f3f46',
-        borderRadius: '10px',
-        padding: '0.625rem 0.875rem',
-        marginBottom: '1rem',
-        fontSize: '0.78rem',
-        color: '#71717a',
-      }}
-    >
-      {children}
+    <div style={{ marginBottom: '1.75rem' }}>
+      <h2
+        style={{
+          fontSize: '1.05rem',
+          fontWeight: 700,
+          color: '#f4f4f5',
+          marginBottom: '0.3rem',
+          letterSpacing: '-0.01em',
+        }}
+      >
+        {title}
+      </h2>
+      <p style={{ fontSize: '0.78rem', color: '#52525b' }}>{sub}</p>
     </div>
   )
 }
@@ -98,445 +62,469 @@ export default function ProposalFlowPreviewPage() {
         background: '#09090b',
         color: '#a1a1aa',
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        padding: '0 0 5rem',
+        padding: '0 0 6rem',
       }}
     >
-      {/* Hero */}
-      <Section id="hero" style={{ marginBottom: 0 }}>
+      {/* ── Hero ── */}
+      <div
+        style={{
+          background: 'linear-gradient(180deg, #0d1422 0%, #09090b 100%)',
+          borderBottom: '1px solid #1e1e24',
+          padding: '5rem 1.5rem 4.5rem',
+          textAlign: 'center',
+        }}
+      >
         <div
           style={{
-            background: 'linear-gradient(135deg, #18181b 0%, #0f0a1e 60%, #09090b 100%)',
-            borderBottom: '1px solid #27272a',
-            padding: '3.5rem 2rem 2.5rem',
-            textAlign: 'center',
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            marginBottom: '1.5rem',
+            flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-            {HERO.statusChips.map((chip) => (
-              <Chip key={chip.label} label={chip.label} color={chip.color} />
-            ))}
-          </div>
-          <h1
+          {HERO.statusChips.map((chip) => (
+            <StatusChip key={chip.label} label={chip.label} color={chip.color} />
+          ))}
+        </div>
+
+        <p
+          style={{
+            fontSize: '10px',
+            letterSpacing: '0.20em',
+            textTransform: 'uppercase',
+            color: '#3f3f46',
+            marginBottom: '1rem',
+          }}
+        >
+          Creator City · 市场体系 · 04
+        </p>
+
+        <h1
+          style={{
+            fontSize: 'clamp(2rem, 5vw, 3rem)',
+            fontWeight: 700,
+            color: '#f4f4f5',
+            letterSpacing: '-0.025em',
+            lineHeight: 1.08,
+            marginBottom: '1.25rem',
+          }}
+        >
+          {HERO.title}
+        </h1>
+
+        <p
+          style={{
+            maxWidth: '520px',
+            margin: '0 auto 2.75rem',
+            fontSize: '0.9rem',
+            color: '#71717a',
+            lineHeight: 1.8,
+          }}
+        >
+          {HERO.tagline}
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.75rem',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            href="/milestone-delivery-preview"
             style={{
-              fontSize: 'clamp(1.6rem, 4vw, 2.6rem)',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #fff 30%, #a78bfa 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              marginBottom: '0.75rem',
-              letterSpacing: '-0.03em',
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0.625rem 1.5rem',
+              background: '#d97706',
+              color: '#fff',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              textDecoration: 'none',
             }}
           >
-            {HERO.title}
-          </h1>
-          <p style={{ fontSize: '0.9rem', color: '#71717a', maxWidth: '520px', margin: '0 auto 1.75rem', lineHeight: 1.65 }}>
-            {HERO.tagline}
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <a
-              href="#proposal-structure"
-              style={{
-                display: 'inline-flex', alignItems: 'center', padding: '0.5rem 1.1rem',
-                background: '#7c3aed', color: '#fff', borderRadius: '9px',
-                fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none', border: '1px solid #7c3aed',
-              }}
-            >
-              查看方案结构
-            </a>
-            <a
-              href="#proposal-flow"
-              style={{
-                display: 'inline-flex', alignItems: 'center', padding: '0.5rem 1.1rem',
-                background: 'transparent', color: '#a78bfa', borderRadius: '9px',
-                fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none', border: '1px solid #7c3aed50',
-              }}
-            >
-              查看报价流程
-            </a>
-          </div>
+            查看阶段交付
+          </Link>
+          <Link
+            href="/demand-board-preview"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0.625rem 1.5rem',
+              background: 'transparent',
+              color: '#a1a1aa',
+              border: '1px solid #27272a',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              textDecoration: 'none',
+            }}
+          >
+            返回需求广场
+          </Link>
         </div>
-      </Section>
+      </div>
 
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '3rem 1.5rem 0' }}>
+      {/* ── Main content ── */}
+      <div style={{ maxWidth: '880px', margin: '0 auto', padding: '4.5rem 1.5rem 0' }}>
 
-        {/* Why */}
-        <Section id="why">
-          <SectionTitle>为什么需要报价与方案流程</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.875rem' }}>
-            {REASONS.map((r) => (
-              <div key={r.title} style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1.1rem' }}>
-                <div style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>{r.icon}</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.3rem' }}>{r.title}</div>
-                <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.6 }}>{r.description}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
+        {/* ── Section 1: 方案结构模板 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="方案结构模板"
+            sub="创作者提交报价前需填写以下字段，帮助项目方快速评估方案"
+          />
 
-        {/* Proposal structure */}
-        <Section id="proposal-structure">
-          <SectionTitle>方案结构预览（{PROPOSAL_STRUCTURE_FIELDS.length} 个字段）</SectionTitle>
-          <InfoNote>专业方案应包含以下所有必填项，选填项视项目情况决定。当前为结构预览，不保存任何数据。</InfoNote>
-          <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '14px', overflow: 'hidden' }}>
-            {PROPOSAL_STRUCTURE_FIELDS.map((f, i) => (
+          <div
+            style={{
+              ...card,
+              overflow: 'hidden',
+              marginBottom: '0.75rem',
+            }}
+          >
+            {/* Header row */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                padding: '0.625rem 1.25rem',
+                borderBottom: '1px solid #1e1e24',
+                background: '#0d0d12',
+              }}
+            >
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#52525b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>字段</span>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#52525b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>示例</span>
+            </div>
+            {PROPOSAL_FIELDS.map((f, i) => (
               <div
                 key={f.field}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '140px 1fr',
-                  gap: '0.75rem',
-                  padding: '0.625rem 1rem',
-                  borderBottom: i < PROPOSAL_STRUCTURE_FIELDS.length - 1 ? '1px solid #27272a' : 'none',
-                  background: i % 2 === 0 ? 'transparent' : '#09090b30',
+                  gridTemplateColumns: '1fr 1fr',
+                  padding: '0.7rem 1.25rem',
+                  borderBottom: i < PROPOSAL_FIELDS.length - 1 ? '1px solid #1e1e24' : 'none',
+                  background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.014)',
                   alignItems: 'start',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#d4d4d8' }}>{f.field}</span>
-                  {f.required && <span style={{ fontSize: '9px', color: '#dc2626', fontWeight: 700 }}>*</span>}
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.55 }}>{f.description}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: '0.5rem', fontSize: '10px', color: '#52525b' }}>* 必填 · 以上为规划中的方案模板字段，当前不保存</div>
-        </Section>
-
-        {/* Mock proposals */}
-        <Section id="mock-proposals">
-          <SectionTitle>Mock 方案卡片（4 类）</SectionTitle>
-          <InfoNote>以下均为 Mock 数据，不代表真实创作者或真实报价。不提供真实接单功能。</InfoNote>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '1rem' }}>
-            {MOCK_PROPOSALS.map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  background: '#18181b',
-                  border: `1px solid ${p.typeColor}35`,
-                  borderRadius: '14px',
-                  padding: '1.25rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.6rem',
-                  position: 'relative',
-                }}
-              >
-                {/* Type badge */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '10px', color: p.typeColor, background: `${p.typeColor}18`, border: `1px solid ${p.typeColor}40`, borderRadius: '6px', padding: '2px 8px', fontWeight: 700 }}>
-                    {p.type}
-                  </span>
-                  <span style={{ fontSize: '9px', color: '#a78bfa', background: '#a78bfa15', border: '1px solid #a78bfa35', borderRadius: '9999px', padding: '1px 6px', fontWeight: 600 }}>
-                    {p.creatorLevel}
-                  </span>
-                  <span style={{ fontSize: '9px', color: '#6b7280', background: '#6b728015', border: '1px solid #6b728040', borderRadius: '9999px', padding: '1px 6px' }}>
-                    MOCK
-                  </span>
-                </div>
-                {/* Title */}
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', lineHeight: 1.4 }}>{p.title}</div>
-                {/* Price + days */}
-                <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '1px' }}>报价</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f4f4f5' }}>¥{p.budgetRmb.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '1px' }}>周期</div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#d4d4d8' }}>{p.deliveryDays} 天</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '1px' }}>修改</div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#d4d4d8' }}>{p.modificationRounds} 轮</div>
-                  </div>
-                </div>
-                {/* Highlights */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  {p.highlights.map((h) => (
-                    <div key={h} style={{ fontSize: '0.75rem', color: '#a1a1aa', display: 'flex', gap: '5px', alignItems: 'flex-start' }}>
-                      <span style={{ color: p.typeColor, fontSize: '10px', marginTop: '2px', flexShrink: 0 }}>✓</span>
-                      {h}
-                    </div>
-                  ))}
-                </div>
-                {/* Tools */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                  {p.tools.map((t) => (
-                    <span key={t} style={{ fontSize: '10px', color: '#71717a', background: '#27272a', borderRadius: '6px', padding: '2px 7px' }}>{t}</span>
-                  ))}
-                </div>
-                {/* Rights row */}
-                <div style={{ display: 'flex', gap: '0.625rem', paddingTop: '0.25rem', borderTop: '1px solid #27272a' }}>
-                  <span style={{ fontSize: '10px', color: p.includesSource ? '#22c55e' : '#52525b' }}>
-                    {p.includesSource ? '✓' : '✗'} 含源文件
-                  </span>
-                  <span style={{ fontSize: '10px', color: p.includesCommercialRights ? '#22c55e' : '#52525b' }}>
-                    {p.includesCommercialRights ? '✓' : '✗'} 商业授权
-                  </span>
-                </div>
-                {/* No real action */}
-                <div style={{ padding: '0.45rem 0.75rem', background: '#27272a', borderRadius: '8px', fontSize: '11px', color: '#71717a', textAlign: 'center' }}>
-                  查看方案结构预览 · 不可真实提交
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Quote breakdown */}
-        <Section id="quote-breakdown">
-          <SectionTitle>报价明细结构</SectionTitle>
-          <InfoNote>当前只是结构预览，不计算真实价格，不创建支付。</InfoNote>
-          <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '14px', overflow: 'hidden' }}>
-            {QUOTE_BREAKDOWN_FIELDS.map((f, i) => (
-              <div
-                key={f.item}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 130px',
-                  gap: '0.625rem',
-                  padding: '0.625rem 1rem',
-                  borderBottom: i < QUOTE_BREAKDOWN_FIELDS.length - 1 ? '1px solid #27272a' : 'none',
-                  background: i % 2 === 0 ? 'transparent' : '#09090b30',
-                  alignItems: 'start',
-                }}
-              >
-                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#d4d4d8' }}>{f.item}</span>
-                <span style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.5 }}>{f.description}</span>
-                <span style={{ fontSize: '0.75rem', color: '#a16207', textAlign: 'right', whiteSpace: 'nowrap' }}>{f.typical ?? ''}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Creator flow */}
-        <Section id="proposal-flow">
-          <SectionTitle>创作者提交方案流程（8 步）</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-            {CREATOR_FLOW.map((step) => (
-              <div
-                key={step.step}
-                style={{
-                  display: 'flex', gap: '0.875rem', alignItems: 'flex-start',
-                  background: '#18181b', border: '1px solid #27272a', borderRadius: '10px', padding: '0.875rem 1rem',
-                }}
-              >
-                <div
-                  style={{
-                    minWidth: '26px', height: '26px', borderRadius: '50%',
-                    background: '#7c3aed20', border: '1px solid #7c3aed50',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '10px', fontWeight: 700, color: '#a78bfa', flexShrink: 0,
-                  }}
-                >
-                  {step.step}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.2rem' }}>
-                    {step.icon} {step.title}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.55 }}>{step.description}</div>
-                  {step.note && (
-                    <div style={{ marginTop: '0.3rem', fontSize: '10px', color: '#a16207', background: '#a1620710', borderRadius: '5px', padding: '2px 7px', display: 'inline-block' }}>
-                      {step.note}
-                    </div>
+                  {f.required && (
+                    <span style={{ fontSize: '9px', color: '#dc2626', fontWeight: 700, lineHeight: 1 }}>*</span>
                   )}
                 </div>
+                <span style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.55 }}>{f.example}</span>
               </div>
             ))}
           </div>
-        </Section>
+          <p style={{ fontSize: '10px', color: '#3f3f46' }}>
+            * 必填 · 当前为预览模板，不提交真实方案，不创建订单
+          </p>
+        </section>
 
-        {/* Compare fields */}
-        <Section id="compare-view">
-          <SectionTitle>项目方比较方案维度（{COMPARE_FIELDS.length} 项）</SectionTitle>
-          <InfoNote>以下为静态维度预览，未来将在平台内支持多方案并排比较，当前不实现真实比较功能。</InfoNote>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {COMPARE_FIELDS.map((field, i) => (
-              <div
-                key={field}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  background: '#18181b', border: '1px solid #27272a', borderRadius: '9px',
-                  padding: '0.5rem 0.875rem',
-                }}
-              >
-                <span style={{ fontSize: '10px', color: '#52525b', fontWeight: 700, minWidth: '16px' }}>
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <span style={{ fontSize: '0.82rem', color: '#d4d4d8' }}>{field}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
+        {/* ── Section 2: 报价方案卡 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="报价方案参考"
+            sub="3 档方案结构，项目方可按需求复杂度选择对应区间"
+          />
 
-        {/* Milestones */}
-        <Section id="milestones">
-          <SectionTitle>里程碑预览（{MILESTONES.length} 节点）</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {MILESTONES.map((m) => (
-              <div
-                key={m.index}
-                style={{
-                  display: 'flex', gap: '0.875rem', alignItems: 'flex-start',
-                  background: '#18181b',
-                  border: `1px solid ${m.triggerPayment ? '#16a34a40' : '#27272a'}`,
-                  borderRadius: '10px', padding: '0.75rem 1rem',
-                }}
-              >
-                <div
-                  style={{
-                    minWidth: '24px', height: '24px', borderRadius: '50%',
-                    background: m.triggerPayment ? '#16a34a20' : '#27272a',
-                    border: `1px solid ${m.triggerPayment ? '#16a34a60' : '#3f3f46'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '10px', fontWeight: 700,
-                    color: m.triggerPayment ? '#4ade80' : '#71717a', flexShrink: 0,
-                  }}
-                >
-                  {m.index}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.15rem' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7' }}>{m.title}</span>
-                    {m.triggerPayment && (
-                      <span style={{ fontSize: '9px', color: '#22c55e', background: '#16a34a15', border: '1px solid #16a34a35', borderRadius: '9999px', padding: '1px 6px', fontWeight: 600 }}>
-                        触发付款（规划）
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.5 }}>{m.description}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {/* CTA → milestone-delivery-preview */}
-          <Link
-            href="/milestone-delivery-preview"
+          <div
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              background: '#1a1508', border: '1px solid #d9770640',
-              borderRadius: '12px', padding: '1rem 1.25rem',
-              textDecoration: 'none', marginTop: '1rem',
+              ...card,
+              padding: '0.625rem 1.125rem',
+              marginBottom: '1.25rem',
+              borderLeft: '3px solid #a16207',
+              borderRadius: '10px',
+              fontSize: '0.78rem',
+              color: '#71717a',
             }}
           >
-            <div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fbbf24', marginBottom: '0.2rem' }}>
-                查看阶段交付预览
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#78716c', lineHeight: 1.5 }}>
-                方案确认后，项目如何拆解为需求确认 → 风格样片 → 第一版 → 修改 → 最终交付 → 授权归档的里程碑节点。（预览，尚未上线）
-              </div>
-            </div>
-            <span style={{ color: '#d97706', fontSize: '1.1rem', marginLeft: '1rem', flexShrink: 0 }}>→</span>
-          </Link>
-        </Section>
-
-        {/* Trust */}
-        <Section id="trust">
-          <SectionTitle>信任与争议预防</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.875rem' }}>
-            {TRUST_ITEMS.map((item) => (
-              <div key={item.title} style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1rem' }}>
-                <div style={{ fontSize: '1.25rem', marginBottom: '0.4rem' }}>{item.icon}</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.25rem' }}>{item.title}</div>
-                <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.55 }}>{item.description}</div>
-              </div>
-            ))}
+            <span style={{ fontWeight: 600, color: '#ca8a04' }}>Mock 数据 · </span>
+            以下方案均为演示数据，不代表真实创作者报价。不提供接单、支付、创建订单功能。
           </div>
-        </Section>
 
-        {/* Risks */}
-        <Section id="risks">
-          <SectionTitle>风险与边界声明</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {RISKS_AND_BOUNDARIES.map((item) => (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(248px, 1fr))',
+              gap: '1rem',
+            }}
+          >
+            {SERVICE_TIERS.map((tier) => (
               <div
-                key={item.title}
+                key={tier.id}
                 style={{
-                  background: '#18181b',
-                  border: `1px solid ${item.level === 'warning' ? '#a1620740' : '#27272a'}`,
-                  borderLeft: `3px solid ${item.level === 'warning' ? '#a16207' : '#3f3f46'}`,
-                  borderRadius: '10px', padding: '0.875rem 1.125rem',
+                  ...card,
+                  padding: '1.375rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.875rem',
+                  position: 'relative',
+                  borderColor: tier.popular ? '#d9770640' : '#1e1e24',
                 }}
               >
-                <div style={{ fontSize: '0.83rem', fontWeight: 600, color: item.level === 'warning' ? '#ca8a04' : '#a1a1aa', marginBottom: '0.3rem' }}>
-                  {item.title}
+                {tier.popular && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-1px',
+                      right: '1.25rem',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      color: '#fbbf24',
+                      background: '#d9770620',
+                      border: '1px solid #d9770640',
+                      borderTop: 'none',
+                      borderRadius: '0 0 7px 7px',
+                      padding: '2px 8px',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    推荐
+                  </span>
+                )}
+
+                {/* Title + price */}
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#71717a', marginBottom: '0.3rem' }}>
+                    {tier.title}
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f4f4f5', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                    {tier.priceLabel}
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.6 }}>{item.content}</div>
+
+                {/* Scenario */}
+                <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.6 }}>
+                  {tier.scenario}
+                </div>
+
+                {/* Key metrics */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: '8px',
+                    border: '1px solid #1e1e24',
+                  }}
+                >
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '2px' }}>周期</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8' }}>{tier.deliveryDays}天</div>
+                  </div>
+                  <div style={{ textAlign: 'center', borderLeft: '1px solid #1e1e24', borderRight: '1px solid #1e1e24' }}>
+                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '2px' }}>修改</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8' }}>{tier.modificationRounds}轮</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '2px' }}>起价</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8' }}>¥{(tier.priceRmb / 1000).toFixed(1)}k</div>
+                  </div>
+                </div>
+
+                {/* Deliverables */}
+                <div>
+                  <div style={{ fontSize: '10px', color: '#52525b', marginBottom: '6px' }}>交付物</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {tier.deliverables.map((d) => (
+                      <div key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.75rem', color: '#a1a1aa', lineHeight: 1.5 }}>
+                        <span style={{ color: '#d97706', flexShrink: 0, marginTop: '1px' }}>✓</span>
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* License */}
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#71717a',
+                    padding: '0.4rem 0.625rem',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid #1e1e24',
+                    borderRadius: '6px',
+                  }}
+                >
+                  授权 · {tier.license}
+                </div>
+
+                {/* CTA */}
+                <Link
+                  href="/milestone-delivery-preview"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0.5rem',
+                    background: 'transparent',
+                    border: '1px solid #27272a',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    color: '#71717a',
+                    textDecoration: 'none',
+                    gap: '0.35rem',
+                    marginTop: 'auto',
+                  }}
+                >
+                  查看阶段交付 →
+                </Link>
               </div>
             ))}
           </div>
-        </Section>
+        </section>
 
-        {/* Roadmap */}
-        <Section id="roadmap">
-          <SectionTitle>未来版本计划（{ROADMAP.length} 阶段）</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {ROADMAP.map((stage) => {
-              const statusColor = stage.status === 'done' ? '#22c55e' : stage.status === 'active' ? '#a78bfa' : '#52525b'
-              const statusLabel = stage.status === 'done' ? '已完成' : stage.status === 'active' ? '当前' : '规划中'
-              return (
-                <div
-                  key={stage.stage}
+        {/* ── Section 3: 项目方比较维度 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="项目方比较维度"
+            sub="收到多个方案后，项目方按以下维度评估哪个方案更适合"
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+              gap: '0.75rem',
+            }}
+          >
+            {COMPARE_DIMENSIONS.map((dim, i) => (
+              <div
+                key={dim.label}
+                style={{
+                  ...card,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.875rem',
+                  padding: '0.875rem 1.125rem',
+                }}
+              >
+                <span
                   style={{
-                    display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.75rem 1rem',
-                    background: '#18181b', border: `1px solid ${stage.status === 'active' ? '#7c3aed40' : '#27272a'}`, borderRadius: '10px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: '#3f3f46',
+                    minWidth: '22px',
+                    paddingTop: '2px',
                   }}
                 >
-                  <div
-                    style={{
-                      minWidth: '22px', height: '22px', borderRadius: '50%',
-                      background: `${statusColor}20`, border: `1px solid ${statusColor}60`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '10px', fontWeight: 700, color: statusColor, flexShrink: 0,
-                    }}
-                  >
-                    {stage.stage}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: stage.status === 'active' ? 700 : 500, color: stage.status === 'planned' ? '#71717a' : '#d4d4d8', marginRight: '0.5rem' }}>
-                      {stage.title}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#52525b' }}>{stage.description}</span>
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#52525b', whiteSpace: 'nowrap' }}>{stage.quarter}</div>
-                  <span
-                    style={{
-                      fontSize: '9px', fontWeight: 600, color: statusColor,
-                      background: `${statusColor}15`, border: `1px solid ${statusColor}35`,
-                      borderRadius: '9999px', padding: '1px 7px', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {statusLabel}
-                  </span>
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.2rem' }}>{dim.label}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.55 }}>{dim.description}</div>
                 </div>
-              )
-            })}
-          </div>
-        </Section>
-
-        {/* Quick links */}
-        <Section id="quick-links">
-          <SectionTitle>快速链接</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.75rem' }}>
-            {QUICK_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                style={{ display: 'block', background: '#18181b', border: '1px solid #27272a', borderRadius: '10px', padding: '0.875rem 1rem', textDecoration: 'none' }}
-              >
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.2rem' }}>{link.label}</div>
-                <div style={{ fontSize: '0.75rem', color: '#71717a' }}>{link.description}</div>
-              </Link>
+              </div>
             ))}
           </div>
-        </Section>
+          <p style={{ marginTop: '1rem', fontSize: '10px', color: '#3f3f46' }}>
+            以上为静态维度 · 正式版将支持多方案并排比较视图
+          </p>
+        </section>
+
+        {/* ── Section 4: 市场链路 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="市场链路"
+            sub="报价方案是创作者市场 6 个环节中的第 4 环"
+          />
+          <div
+            style={{
+              ...card,
+              padding: '1.5rem 1.25rem',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '0',
+            }}
+          >
+            {MARKET_CHAIN_LINKS.flatMap((node, i) => [
+              <Link
+                key={node.href}
+                href={node.href}
+                style={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '10px',
+                  background: node.current ? '#d9770618' : 'transparent',
+                  border: node.current ? '1px solid #d9770640' : '1px solid transparent',
+                  textDecoration: 'none',
+                  minWidth: '76px',
+                  textAlign: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    color: node.current ? '#d97706' : '#3f3f46',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {String(node.index).padStart(2, '0')}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: node.current ? 700 : 500,
+                    color: node.current ? '#fbbf24' : '#71717a',
+                  }}
+                >
+                  {node.label}
+                </span>
+                {node.current && (
+                  <span style={{ fontSize: '9px', color: '#d97706', fontWeight: 600 }}>← 当前</span>
+                )}
+              </Link>,
+              i < MARKET_CHAIN_LINKS.length - 1 && (
+                <span key={`arrow-${i}`} style={{ fontSize: '12px', color: '#27272a', padding: '0 0.15rem' }}>
+                  →
+                </span>
+              ),
+            ])}
+          </div>
+        </section>
+
+        {/* ── Disclaimer ── */}
+        <div
+          style={{
+            ...card,
+            borderLeft: '3px solid #a16207',
+            borderRadius: '10px',
+            padding: '1rem 1.25rem',
+            marginBottom: '2rem',
+          }}
+        >
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ca8a04', marginBottom: '0.3rem' }}>
+            当前为预览页
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.65 }}>
+            本页面所有数据均为示例，不提交真实方案、不接支付、不创建订单、不写数据库。
+            报价方案功能尚在规划阶段，正式上线时间以路线图为准。
+          </div>
+        </div>
 
         {/* Footer */}
-        <div style={{ borderTop: '1px solid #27272a', paddingTop: '1.5rem', textAlign: 'center', fontSize: '11px', color: '#3f3f46' }}>
-          /proposal-flow-preview · 静态预览 · 不提交真实报价 · 不创建订单 · 不接支付 · 不写数据库 · 不触发生成
+        <div
+          style={{
+            borderTop: '1px solid #1e1e24',
+            paddingTop: '1.25rem',
+            textAlign: 'center',
+            fontSize: '11px',
+            color: '#3f3f46',
+          }}
+        >
+          /proposal-flow-preview · 静态预览页 · 不提交方案 · 不接支付 · 不创建订单 · 不写数据库
         </div>
       </div>
     </div>
