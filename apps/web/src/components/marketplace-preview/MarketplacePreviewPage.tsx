@@ -385,6 +385,32 @@ export default function MarketplacePreviewPage() {
               </div>
             ))}
           </div>
+          {/* CTA — link to creator profile preview */}
+          <Link
+            href="/creator-profile-preview"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '1rem',
+              padding: '0.875rem 1.25rem',
+              background: '#1c1028',
+              border: '1px solid #7c3aed40',
+              borderRadius: '12px',
+              textDecoration: 'none',
+              gap: '0.75rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#c4b5fd', marginBottom: '0.2rem' }}>
+                查看创作者主页预览
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.5 }}>
+                了解未来创作者如何展示作品集、服务套餐、技能标签与信任保障（预览页，示例数据）
+              </div>
+            </div>
+            <span style={{ fontSize: '1rem', color: '#7c3aed', flexShrink: 0 }}>→</span>
+          </Link>
         </Section>
 
         {/* Mock demand cards */}
