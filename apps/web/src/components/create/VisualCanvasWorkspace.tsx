@@ -2333,6 +2333,8 @@ export function VisualCanvasWorkspace({
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
   const [assetRecoverBatchStatus, setAssetRecoverBatchStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle')
+  const [recoverNodeStatus, setRecoverNodeStatus] = useState<'idle' | 'running' | 'done-recovered' | 'done-empty' | 'failed'>('idle')
+  const [recoverNodeCount, setRecoverNodeCount] = useState(0)
   const [styleBible, setStyleBible] = useState<ProjectStyleBible>({})
   const [characterBible, setCharacterBible] = useState<CharacterBible>({ characters: [] })
   const [sceneBible, setSceneBible] = useState<SceneBible>({ scenes: [] })
@@ -4776,6 +4778,60 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback(error instanceof Error ? error.message : '批量恢复资产失败。')
     }
   }, [commitNodes, scheduleCanvasSave, showCanvasFeedback, writeUnifiedLocalSnapshot])
+
+  const handleRecoverCanvasNodes = useCallback(async () => {
+    if (!projectId) return
+    setRecoverNodeStatus('running')
+    setRecoverNodeCount(0)
+    try {
+      const resp = await fetch(
+        `/api/assets/recover-canvas-nodes?projectId=${encodeURIComponent(projectId)}`,
+        { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } }
+      )
+      const data = await resp.json().catch(() => ({})) as {
+        recovered?: number
+        items?: Array<{ nodeId: string; kind: string; url: string; assetId: string }>
+      }
+      if (!resp.ok) throw new Error('恢复接口返回错误')
+      const items = data.items ?? []
+      const recoveredMap = new Map(items.map((i) => [i.nodeId, i]))
+      const patches = new Map<string, VisualCanvasNode>()
+      for (const node of latestNodesRef.current) {
+        const hit = recoveredMap.get(node.id)
+        if (!hit) continue
+        if (hit.kind === 'image' && node.resultImageUrl) continue // already has URL
+        if (hit.kind === 'video' && node.resultVideoUrl) continue // already has URL
+        const meta = metadataRecord(node.metadataJson)
+        patches.set(node.id, {
+          ...node,
+          status: 'done' as const,
+          errorMessage: undefined,
+          resultImageUrl: hit.kind === 'image' ? hit.url : node.resultImageUrl,
+          resultVideoUrl: hit.kind === 'video' ? hit.url : node.resultVideoUrl,
+          metadataJson: {
+            ...meta,
+            reloadRecoveryPending: undefined,
+            recoveryStatus: 'ready',
+            assetId: hit.assetId,
+            loading: false,
+            errorCode: null,
+            errorMessage: null,
+          },
+        })
+      }
+      if (patches.size > 0) {
+        commitNodes((current) => current.map((node) => patches.get(node.id) ?? node))
+        scheduleCanvasSave(0)
+      }
+      setRecoverNodeCount(patches.size)
+      setRecoverNodeStatus(patches.size > 0 ? 'done-recovered' : 'done-empty')
+      showCanvasFeedback(patches.size > 0 ? `已恢复 ${patches.size} 个历史素材。` : '暂无可恢复素材。')
+    } catch {
+      // Network or HTTP error — do not touch nodes, do not mark anything failed
+      setRecoverNodeStatus('failed')
+      showCanvasFeedback('恢复历史素材失败，请稍后重试。')
+    }
+  }, [commitNodes, projectId, scheduleCanvasSave, showCanvasFeedback])
 
   const handleEdgePatch = useCallback((edgeId: string, patch: Partial<CanvasEdge>) => {
     commitEdges((current) => current.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)))
@@ -7277,6 +7333,23 @@ export function VisualCanvasWorkspace({
                 : saveStatus === 'failed'
                   ? '保存失败，重试'
                     : '保存'}
+            </button>
+            <button
+              type="button"
+              className="canvas-secondary-button"
+              title="从数据库补回当前项目已生成但未写入画布的历史素材"
+              disabled={recoverNodeStatus === 'running' || !projectId}
+              onClick={() => { void handleRecoverCanvasNodes() }}
+            >
+              {recoverNodeStatus === 'running'
+                ? '恢复中…'
+                : recoverNodeStatus === 'done-recovered'
+                  ? `已恢复 ${recoverNodeCount} 个素材`
+                  : recoverNodeStatus === 'done-empty'
+                    ? '暂无可恢复素材'
+                    : recoverNodeStatus === 'failed'
+                      ? '恢复失败，请稍后重试'
+                      : '恢复历史素材'}
             </button>
             {ASSET_RECOVERY_TOOLS_ENABLED ? (
               <>
