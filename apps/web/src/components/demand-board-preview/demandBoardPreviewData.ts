@@ -246,6 +246,7 @@ export const ROADMAP: RoadmapStage[] = [
 export const QUICK_LINKS: Array<{ label: string; href: string; description: string }> = [
   { label: '创作者市场预览', href: '/marketplace-preview', description: '了解整体创作者市场规划' },
   { label: '创作者主页预览', href: '/creator-profile-preview', description: '查看创作者如何展示作品集' },
+  { label: '报价与方案流程预览', href: '/proposal-flow-preview', description: '查看创作者如何提交方案与报价' },
   { label: '项目中心', href: '/projects', description: '管理我的项目' },
   { label: '生成任务', href: '/tasks', description: '查看 AI 生成任务状态' },
   { label: '社区', href: '/community', description: '与创作者交流' },

@@ -448,6 +448,32 @@ export default function DemandBoardPreviewPage() {
               </div>
             ))}
           </div>
+          {/* CTA — link to proposal flow preview */}
+          <Link
+            href="/proposal-flow-preview"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '1rem',
+              padding: '0.875rem 1.25rem',
+              background: '#0f1a1a',
+              border: '1px solid #0e749040',
+              borderRadius: '12px',
+              textDecoration: 'none',
+              gap: '0.75rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#67e8f9', marginBottom: '0.2rem' }}>
+                查看报价与方案流程预览
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.5 }}>
+                了解未来创作者如何根据需求 Brief 提交方案、报价、修改轮次和交付边界（预览页，Mock 数据）
+              </div>
+            </div>
+            <span style={{ fontSize: '1rem', color: '#0e7490', flexShrink: 0 }}>→</span>
+          </Link>
         </Section>
 
         {/* Filter preview */}
