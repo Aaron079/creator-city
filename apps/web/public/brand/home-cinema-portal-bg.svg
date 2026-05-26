@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+
+    <!-- Sky base gradient -->
+    <linearGradient id="bgSky" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#0f2236"/>
+      <stop offset="28%"  stop-color="#091828"/>
+      <stop offset="60%"  stop-color="#050e1c"/>
+      <stop offset="100%" stop-color="#020408"/>
+    </linearGradient>
+
+    <!-- Atmospheric top glow — center -->
+    <radialGradient id="atmoCtr" cx="960" cy="0" r="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#4a7090" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#4a7090" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Atmospheric fog — left -->
+    <radialGradient id="atmoLeft" cx="280" cy="100" r="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#6890b0" stop-opacity="0.11"/>
+      <stop offset="100%" stop-color="#6890b0" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Atmospheric fog — right -->
+    <radialGradient id="atmoRight" cx="1680" cy="80" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#507898" stop-opacity="0.09"/>
+      <stop offset="100%" stop-color="#507898" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Mid-sky depth -->
+    <radialGradient id="midSky" cx="960" cy="260" r="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#3a6080" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#3a6080" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Tower face gradient (front surface, slightly lighter center) -->
+    <linearGradient id="towerFace" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#405870" stop-opacity="0.10"/>
+      <stop offset="30%"  stop-color="#6888a8" stop-opacity="0.22"/>
+      <stop offset="55%"  stop-color="#7898b8" stop-opacity="0.26"/>
+      <stop offset="80%"  stop-color="#607888" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#3a5068" stop-opacity="0.08"/>
+    </linearGradient>
+
+    <!-- Tower upper face -->
+    <linearGradient id="towerUpper" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#4a6880" stop-opacity="0.12"/>
+      <stop offset="45%"  stop-color="#80a0c0" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#4a6880" stop-opacity="0.10"/>
+    </linearGradient>
+
+    <!-- Horizon fog band -->
+    <linearGradient id="horizonBand" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#2a4460" stop-opacity="0"/>
+      <stop offset="42%"  stop-color="#2a4460" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#2a4460" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Ground shadow -->
+    <linearGradient id="groundShadow" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#010306" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#010306" stop-opacity="0.75"/>
+    </linearGradient>
+
+    <!-- Vignette -->
+    <radialGradient id="vignette" cx="960" cy="540" r="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0"/>
+      <stop offset="52%"  stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#010306" stop-opacity="0.96"/>
+    </radialGradient>
+
+    <!-- Top nav darkening -->
+    <linearGradient id="topDark" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0.30"/>
+      <stop offset="18%"  stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Blur for fog layers -->
+    <filter id="fogBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="36"/>
+    </filter>
+
+    <!-- Soft blur for tower — keeps edges from being too sharp -->
+    <filter id="towerSoft" x="-8%" y="-2%" width="116%" height="104%">
+      <feGaussianBlur stdDeviation="1.4"/>
+    </filter>
+
+    <!-- Light blur for horizon -->
+    <filter id="horizonSoft" x="-5%" y="-60%" width="110%" height="220%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+
+    <!-- Film grain -->
+    <filter id="grain" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="linearRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.70" numOctaves="4" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+      <feComposite in="grayNoise" in2="SourceGraphic" operator="in"/>
+    </filter>
+
+  </defs>
+
+  <!-- ── 1. Sky base ── -->
+  <rect width="1920" height="1080" fill="url(#bgSky)"/>
+
+  <!-- ── 2. Atmospheric layers ── -->
+  <rect width="1920" height="1080" fill="url(#atmoCtr)"/>
+  <rect width="1920" height="1080" fill="url(#atmoLeft)" filter="url(#fogBlur)"/>
+  <rect width="1920" height="1080" fill="url(#atmoRight)" filter="url(#fogBlur)"/>
+  <rect width="1920" height="1080" fill="url(#midSky)"/>
+
+  <!-- ── 3. Horizon fog band (at ~72% height) ── -->
+  <rect x="0" y="720" width="1920" height="130" fill="url(#horizonBand)" filter="url(#horizonSoft)"/>
+
+  <!-- ── 4. Distant low skyline haze — just a faint smear, no blocks ── -->
+  <ellipse cx="960" cy="820" rx="860" ry="28" fill="#203852" opacity="0.10" filter="url(#horizonSoft)"/>
+  <ellipse cx="600" cy="830" rx="420" ry="16" fill="#1c3048" opacity="0.07" filter="url(#horizonSoft)"/>
+  <ellipse cx="1340" cy="826" rx="380" ry="14" fill="#1c3048" opacity="0.07" filter="url(#horizonSoft)"/>
+
+  <!-- ── 5. Central tower ── -->
+  <g filter="url(#towerSoft)">
+    <!-- Wide base body -->
+    <rect x="886" y="730" width="148" height="350" fill="url(#towerFace)"/>
+
+    <!-- Setback 1 -->
+    <rect x="904" y="618" width="112" height="130" fill="url(#towerFace)"/>
+
+    <!-- Setback 2 — narrower -->
+    <rect x="922" y="530" width="76" height="106" fill="url(#towerUpper)"/>
+
+    <!-- Upper shaft -->
+    <rect x="934" y="455" width="52" height="90" fill="url(#towerUpper)"/>
+
+    <!-- Narrow upper tower -->
+    <rect x="944" y="385" width="32" height="88" fill="#7898b8" opacity="0.20"/>
+
+    <!-- Spire base -->
+    <rect x="953" y="318" width="14" height="80" fill="#90b0d0" opacity="0.18"/>
+
+    <!-- Spire shaft -->
+    <rect x="957" y="218" width="6" height="112" fill="#a8c4e0" opacity="0.16"/>
+
+    <!-- Antenna tip -->
+    <rect x="959" y="192" width="2" height="32" fill="#c0d8f0" opacity="0.20"/>
+  </g>
+
+  <!-- Spire tip glow -->
+  <ellipse cx="960" cy="194" rx="14" ry="9" fill="#a8c8f0" opacity="0.18" filter="url(#towerSoft)"/>
+
+  <!-- Tower base ground merge -->
+  <ellipse cx="960" cy="1080" rx="130" ry="22" fill="#0a1830" opacity="0.22"/>
+
+  <!-- ── 6. Ground darkness ── -->
+  <rect x="0" y="870" width="1920" height="210" fill="url(#groundShadow)"/>
+
+  <!-- ── 7. Film grain ── -->
+  <rect width="1920" height="1080" fill="white" opacity="0.032" filter="url(#grain)"/>
+
+  <!-- ── 8. Vignette ── -->
+  <rect width="1920" height="1080" fill="url(#vignette)"/>
+
+  <!-- ── 9. Top nav area darkening ── -->
+  <rect width="1920" height="1080" fill="url(#topDark)"/>
+
+</svg>
