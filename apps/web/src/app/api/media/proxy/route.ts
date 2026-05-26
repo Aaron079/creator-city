@@ -210,6 +210,13 @@ export async function GET(request: NextRequest) {
   }
 
   const rangeHeader = request.headers.get('range')
+  // Video streams send 10-15 parallel Range requests across a high-latency cross-region link
+  // (Vercel global → OSS cn-hangzhou). Give them 30 s; keep images at 15 s.
+  const isVideoRequest =
+    Boolean(rangeHeader) ||
+    rawUrl.toLowerCase().includes('.mp4') ||
+    rawUrl.toLowerCase().includes('video')
+  const timeoutMs = isVideoRequest ? 30_000 : 15_000
   const upstreamHeaders: Record<string, string> = {
     Accept: 'image/*,video/*,audio/*,*/*;q=0.5',
     'User-Agent': 'Mozilla/5.0 (compatible; CreatorCity/1.0)',
@@ -219,7 +226,7 @@ export async function GET(request: NextRequest) {
   let upstream: Response
   try {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 15_000)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       upstream = await fetch(target.toString(), {
         method: 'GET',
@@ -292,7 +299,7 @@ export async function GET(request: NextRequest) {
   const out = new Headers()
   out.set('Content-Type', contentType)
   out.set('Access-Control-Allow-Origin', '*')
-  out.set('Cache-Control', 'private, max-age=300')
+  out.set('Cache-Control', isVideoRequest ? 'private, max-age=3600' : 'private, max-age=300')
   out.set('x-media-proxy-upstream-status', String(upstream.status))
   out.set('x-media-proxy-url-exact-match', rawUrl === target.toString() ? 'true' : 'false')
   for (const h of ['content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
