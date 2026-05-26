@@ -377,6 +377,7 @@ export const ROADMAP_STAGES: Array<{ stage: number; title: string; status: 'done
 
 export const QUICK_LINKS: Array<{ label: string; href: string; description: string }> = [
   { label: '创作者主页预览', href: '/creator-profile-preview', description: '查看创作者如何展示作品集与服务' },
+  { label: '需求广场预览', href: '/demand-board-preview', description: '查看项目方如何发布结构化需求' },
   { label: '工作台', href: '/create', description: '开始 AI 视频创作' },
   { label: '项目中心', href: '/projects', description: '管理我的项目' },
   { label: '企业版预览', href: '/enterprise-preview', description: '了解企业部署方案' },

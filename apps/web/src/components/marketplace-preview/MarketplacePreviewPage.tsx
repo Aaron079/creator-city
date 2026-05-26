@@ -455,6 +455,32 @@ export default function MarketplacePreviewPage() {
               </div>
             ))}
           </div>
+          {/* CTA — link to demand board preview */}
+          <Link
+            href="/demand-board-preview"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '1rem',
+              padding: '0.875rem 1.25rem',
+              background: '#0f1a12',
+              border: '1px solid #16a34a40',
+              borderRadius: '12px',
+              textDecoration: 'none',
+              gap: '0.75rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#86efac', marginBottom: '0.2rem' }}>
+                查看需求广场预览
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.5 }}>
+                了解未来项目方如何发布结构化 Brief，创作者如何浏览预算、周期、角色后提交方案（预览页，Mock 数据）
+              </div>
+            </div>
+            <span style={{ fontSize: '1rem', color: '#22c55e', flexShrink: 0 }}>→</span>
+          </Link>
         </Section>
 
         {/* Trust & delivery */}
