@@ -2814,6 +2814,18 @@ export function VisualCanvasWorkspace({
     skipNextAutosaveRef.current = true
     const sanitizedNodes = args.nodes.map((node) => {
       if (!isActiveGenerationStatus(node.status)) return node
+      const meta = metadataRecord(node.metadataJson)
+      const hasJobId = typeof meta.generationJobId === 'string' && meta.generationJobId.length > 0
+      if (hasJobId) {
+        // A generationJobId exists — the Asset may already be READY in the DB even though
+        // CanvasNode was not updated (cn-executor race). Keep the node alive with its current
+        // status so the one-shot recover effect can resolve it. Do NOT mark failed here.
+        return {
+          ...node,
+          metadataJson: { ...meta, reloadRecoveryPending: true },
+        }
+      }
+      // No jobId — no way to recover; downgrade immediately.
       return {
         ...node,
         status: 'failed' as const,
@@ -3456,6 +3468,63 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   }, [clearGenerationTimersAndRequests, flushLocalSnapshot, projectId, workflowId])
+
+  // One-shot DB recovery: after canvas loads, for each node flagged reloadRecoveryPending=true,
+  // check if a READY Asset already exists in the DB (cn-executor may have written Asset but
+  // failed to back-fill CanvasNode). Recovered nodes → done + URL. Non-recovered or network
+  // failure → leave in current active status unchanged (do NOT mark failed).
+  const reloadRecoveryDoneRef = useRef(false)
+  useEffect(() => {
+    if (!projectId || !workflowId) return
+    if (reloadRecoveryDoneRef.current) return
+    const pendingNodes = latestNodesRef.current.filter(
+      (n) => metadataRecord(n.metadataJson).reloadRecoveryPending === true
+    )
+    if (pendingNodes.length === 0) return
+    reloadRecoveryDoneRef.current = true
+    void (async () => {
+      try {
+        const resp = await fetch(
+          `/api/assets/recover-canvas-nodes?projectId=${encodeURIComponent(projectId)}`,
+          { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } }
+        )
+        if (!resp.ok) return // network/auth error → leave all nodes in current active status
+        const data = await resp.json() as { items?: Array<{ nodeId: string; kind: string; url: string; assetId: string }> }
+        const recoveredMap = new Map((data.items ?? []).map((i) => [i.nodeId, i]))
+        // Only patch nodes that were actually recovered — leave the rest untouched (still active).
+        const anyRecovered = (data.items ?? []).length > 0
+        if (!anyRecovered) return
+        commitNodes((current) =>
+          current.map((node) => {
+            if (metadataRecord(node.metadataJson).reloadRecoveryPending !== true) return node
+            const hit = recoveredMap.get(node.id)
+            if (!hit) return node // not recovered → keep active status as-is
+            const meta = metadataRecord(node.metadataJson)
+            return {
+              ...node,
+              status: 'done' as const,
+              errorMessage: undefined,
+              resultImageUrl: hit.kind === 'image' ? hit.url : node.resultImageUrl,
+              resultVideoUrl: hit.kind === 'video' ? hit.url : node.resultVideoUrl,
+              metadataJson: {
+                ...meta,
+                reloadRecoveryPending: undefined,
+                recoveryStatus: 'ready',
+                assetId: hit.assetId,
+                loading: false,
+                errorCode: null,
+                errorMessage: null,
+              },
+            }
+          })
+        )
+        scheduleCanvasSave(0)
+      } catch {
+        // Network error → keep all pending nodes in their current active status, no action.
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, workflowId])
 
   const setZoomAroundPoint = useCallback((nextZoomInput: number, clientPoint?: { x: number; y: number }) => {
     const nextZoom = clampCanvasZoom(nextZoomInput)
