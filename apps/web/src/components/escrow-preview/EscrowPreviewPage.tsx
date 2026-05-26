@@ -1,418 +1,494 @@
-// No POST, no PUT, no DELETE. Static data only. Not connected to navigation.
-// All amounts, orders, escrow accounts and settlements are mock/preview only. No real payments, orders, or DB writes.
+// No POST, no PUT, no DELETE. Static data only. Not connected to generation.
 import Link from 'next/link'
 import {
   HERO,
-  REASONS,
-  ESCROW_FLOW,
-  COMMISSION_MODEL,
-  STAGED_RELEASE_EXAMPLE,
-  SETTLEMENT_STATUSES,
-  PROJECT_OWNER_PROTECTIONS,
-  CREATOR_PROTECTIONS,
-  REFUND_AND_DISPUTE_SCENARIOS,
-  PROOF_ARCHIVE,
-  RISKS_AND_BOUNDARIES,
-  ROADMAP,
-  QUICK_LINKS,
+  ESCROW_FLOW_NODES,
+  PARTY_RIGHTS,
+  DISPUTE_MECHANISMS,
+  MARKET_CHAIN_LINKS,
 } from './escrowPreviewData'
 
-const PAGE_BG = '#09090b'
-const SURFACE = '#18181b'
-const BORDER = '#27272a'
-const TEXT_PRIMARY = '#e4e4e7'
-const TEXT_SECONDARY = '#a1a1aa'
-const TEXT_MUTED = '#71717a'
+const card: React.CSSProperties = {
+  background: '#111117',
+  border: '1px solid #1e1e24',
+  borderRadius: '14px',
+}
 
-function Section({ id, children }: { id?: string; children: React.ReactNode }) {
+function StatusChip({ label, color }: { label: string; color: string }) {
   return (
-    <section
-      id={id}
-      style={{ scrollMarginTop: '80px', marginBottom: '3rem' }}
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 10px',
+        borderRadius: '9999px',
+        fontSize: '11px',
+        fontWeight: 600,
+        color,
+        background: `${color}18`,
+        border: `1px solid ${color}40`,
+        letterSpacing: '0.02em',
+      }}
     >
-      {children}
-    </section>
+      {label}
+    </span>
   )
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+function SectionHeader({ title, sub }: { title: string; sub: string }) {
   return (
-    <h2 style={{
-      fontSize: '1rem', fontWeight: 700, color: TEXT_PRIMARY,
-      marginBottom: '1.25rem', borderBottom: `1px solid ${BORDER}`, paddingBottom: '0.5rem',
-    }}>
-      {children}
-    </h2>
+    <div style={{ marginBottom: '1.75rem' }}>
+      <h2
+        style={{
+          fontSize: '1.05rem',
+          fontWeight: 700,
+          color: '#f4f4f5',
+          marginBottom: '0.3rem',
+          letterSpacing: '-0.01em',
+        }}
+      >
+        {title}
+      </h2>
+      <p style={{ fontSize: '0.78rem', color: '#52525b' }}>{sub}</p>
+    </div>
   )
 }
 
 export default function EscrowPreviewPage() {
   return (
-    <div style={{ background: PAGE_BG, minHeight: '100vh', color: TEXT_PRIMARY, fontFamily: 'system-ui, sans-serif' }}>
-      {/* Static disclaimer banner */}
-      <div style={{
-        background: '#1c1008', borderBottom: '1px solid #92400e40',
-        padding: '0.5rem 1rem', textAlign: 'center',
-        fontSize: '11px', color: '#78716c', letterSpacing: '0.01em',
-      }}>
-        静态预览页 · 不接真实支付 · 不创建订单 · 不收款 · 不打款 · 不写数据库 · 不触发生成 · 所有金额为 mock 示例
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#09090b',
+        color: '#a1a1aa',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        padding: '0 0 6rem',
+      }}
+    >
+      {/* ── Hero ── */}
+      <div
+        style={{
+          background: 'linear-gradient(180deg, #0d0f22 0%, #09090b 100%)',
+          borderBottom: '1px solid #1e1e24',
+          padding: '5rem 1.5rem 4.5rem',
+          textAlign: 'center',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            marginBottom: '1.5rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          {HERO.statusChips.map((chip) => (
+            <StatusChip key={chip.label} label={chip.label} color={chip.color} />
+          ))}
+        </div>
+
+        <p
+          style={{
+            fontSize: '10px',
+            letterSpacing: '0.20em',
+            textTransform: 'uppercase',
+            color: '#3f3f46',
+            marginBottom: '1rem',
+          }}
+        >
+          Creator City · 市场体系 · 06
+        </p>
+
+        <h1
+          style={{
+            fontSize: 'clamp(2rem, 5vw, 3rem)',
+            fontWeight: 700,
+            color: '#f4f4f5',
+            letterSpacing: '-0.025em',
+            lineHeight: 1.08,
+            marginBottom: '1.25rem',
+          }}
+        >
+          {HERO.title}
+        </h1>
+
+        <p
+          style={{
+            maxWidth: '520px',
+            margin: '0 auto 2.75rem',
+            fontSize: '0.9rem',
+            color: '#71717a',
+            lineHeight: 1.8,
+          }}
+        >
+          {HERO.tagline}
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.75rem',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            href="/marketplace-preview"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0.625rem 1.5rem',
+              background: '#6366f1',
+              color: '#fff',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            返回市场总览
+          </Link>
+          <Link
+            href="/milestone-delivery-preview"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0.625rem 1.5rem',
+              background: 'transparent',
+              color: '#a1a1aa',
+              border: '1px solid #27272a',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              textDecoration: 'none',
+            }}
+          >
+            查看阶段交付
+          </Link>
+        </div>
       </div>
 
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 1.25rem 4rem' }}>
+      {/* ── Main content ── */}
+      <div style={{ maxWidth: '880px', margin: '0 auto', padding: '4.5rem 1.5rem 0' }}>
 
-        {/* Hero */}
-        <Section id="hero">
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1rem' }}>
-              {HERO.statusChips.map((chip) => (
-                <span
-                  key={chip.label}
-                  style={{
-                    fontSize: '10px', fontWeight: 600, padding: '2px 8px',
-                    borderRadius: '9999px', border: `1px solid ${chip.color}40`,
-                    color: chip.color, background: `${chip.color}12`,
-                  }}
-                >
-                  {chip.label}
-                </span>
-              ))}
-            </div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: TEXT_PRIMARY, marginBottom: '0.5rem', lineHeight: 1.25 }}>
-              {HERO.title}
-            </h1>
-            <p style={{ fontSize: '0.95rem', color: TEXT_SECONDARY, lineHeight: 1.65, maxWidth: '640px', marginBottom: '1.25rem' }}>
-              {HERO.tagline}
-            </p>
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              {HERO.ctas.map((cta) => (
-                <a
-                  key={cta.anchor}
-                  href={cta.anchor}
-                  style={{
-                    fontSize: '0.8rem', fontWeight: 600, color: '#fbbf24',
-                    background: '#1c1a08', border: '1px solid #d9770630',
-                    borderRadius: '8px', padding: '0.45rem 1rem',
-                    textDecoration: 'none',
-                  }}
-                >
-                  {cta.label} ↓
-                </a>
-              ))}
-            </div>
-          </div>
-        </Section>
+        {/* ── Section 1: 托管流程 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="托管流程"
+            sub="6 个规则节点，从预算确认到合作记录，每个节点有项目方与创作者的权益边界"
+          />
 
-        {/* Why */}
-        <Section id="why">
-          <SectionTitle>为什么需要托管与结算</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.875rem' }}>
-            {REASONS.map((r) => (
-              <div key={r.title} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '1rem' }}>
-                <div style={{ fontSize: '1.25rem', marginBottom: '0.4rem' }}>{r.icon}</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: TEXT_PRIMARY, marginBottom: '0.25rem' }}>{r.title}</div>
-                <div style={{ fontSize: '0.78rem', color: TEXT_MUTED, lineHeight: 1.6 }}>{r.description}</div>
-              </div>
-            ))}
+          <div
+            style={{
+              ...card,
+              padding: '0.625rem 1.125rem',
+              marginBottom: '1.25rem',
+              borderLeft: '3px solid #a16207',
+              borderRadius: '10px',
+              fontSize: '0.78rem',
+              color: '#71717a',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#ca8a04' }}>静态预览 · </span>
+            以下节点均为规则预览，不接支付、不创建订单、不执行结算、不退款、不写数据库。
           </div>
-        </Section>
 
-        {/* Escrow Flow */}
-        <Section id="escrow-flow">
-          <SectionTitle>托管流程预览（{ESCROW_FLOW.length} 步）</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-            {ESCROW_FLOW.map((step) => (
-              <div
-                key={step.index}
-                style={{
-                  display: 'flex', gap: '0.875rem', alignItems: 'flex-start',
-                  background: SURFACE, border: `1px solid ${BORDER}`,
-                  borderRadius: '10px', padding: '0.75rem 1rem',
-                }}
-              >
-                <div style={{
-                  minWidth: '24px', height: '24px', borderRadius: '50%',
-                  background: '#1e3a5f', border: '1px solid #3b82f660',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '10px', fontWeight: 700, color: '#60a5fa', flexShrink: 0,
-                }}>
-                  {step.index}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: TEXT_PRIMARY, marginBottom: '0.15rem' }}>{step.title}</div>
-                  <div style={{ fontSize: '0.78rem', color: TEXT_MUTED, lineHeight: 1.55, marginBottom: step.note ? '0.3rem' : 0 }}>{step.description}</div>
-                  {step.note && (
-                    <div style={{ fontSize: '10px', color: '#d97706', background: '#1c1208', border: '1px solid #92400e30', borderRadius: '6px', padding: '3px 8px', display: 'inline-block' }}>
-                      {step.note}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Commission Model */}
-        <Section id="commission-model">
-          <SectionTitle>平台 30% 抽佣模型预览</SectionTitle>
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '12px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-            {COMMISSION_MODEL.rows.map((row, i) => (
-              <div
-                key={row.label}
-                style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                  padding: '0.75rem 1.125rem',
-                  borderBottom: i < COMMISSION_MODEL.rows.length - 1 ? `1px solid ${BORDER}` : 'none',
-                  background: row.highlight ? '#0d2818' : 'transparent',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.83rem', color: row.highlight ? '#4ade80' : TEXT_SECONDARY, fontWeight: row.highlight ? 700 : 400 }}>{row.label}</div>
-                  {row.note && <div style={{ fontSize: '10px', color: TEXT_MUTED, marginTop: '2px' }}>{row.note}</div>}
-                </div>
-                <div style={{ fontSize: '0.9rem', fontWeight: row.highlight ? 800 : 600, color: row.highlight ? '#22c55e' : TEXT_MUTED, whiteSpace: 'nowrap', marginLeft: '1rem' }}>
-                  {row.value}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize: '10px', color: TEXT_MUTED, background: '#18181b', border: `1px solid ${BORDER}`, borderRadius: '8px', padding: '0.5rem 0.875rem' }}>
-            {COMMISSION_MODEL.disclaimer}
-          </div>
-        </Section>
-
-        {/* Staged Release */}
-        <Section id="staged-release">
-          <SectionTitle>阶段释放款预览</SectionTitle>
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '12px', padding: '1.125rem 1.25rem', marginBottom: '0.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: TEXT_PRIMARY }}>{STAGED_RELEASE_EXAMPLE.projectName}</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fbbf24' }}>
-                ¥{STAGED_RELEASE_EXAMPLE.totalAmount.toLocaleString()}
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {STAGED_RELEASE_EXAMPLE.stages.map((stage) => {
-                const creatorAmount = Math.round(stage.amount * (1 - STAGED_RELEASE_EXAMPLE.platformFeeRate))
-                return (
-                  <div key={stage.index} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                    <div style={{
-                      minWidth: '22px', height: '22px', borderRadius: '50%',
-                      background: '#1e3a5f', border: '1px solid #3b82f640',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '9px', fontWeight: 700, color: '#60a5fa', flexShrink: 0,
-                    }}>
-                      {stage.index}
-                    </div>
-                    <div style={{ flex: 1, fontSize: '0.83rem', color: TEXT_PRIMARY }}>{stage.name}</div>
-                    <div style={{ fontSize: '10px', color: TEXT_MUTED, whiteSpace: 'nowrap' }}>
-                      {Math.round(stage.ratio * 100)}%
-                    </div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fbbf24', whiteSpace: 'nowrap', minWidth: '60px', textAlign: 'right' }}>
-                      ¥{stage.amount.toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#4ade80', whiteSpace: 'nowrap', minWidth: '80px', textAlign: 'right' }}>
-                      到手 ¥{creatorAmount.toLocaleString()}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          <div style={{ fontSize: '10px', color: TEXT_MUTED, background: '#18181b', border: `1px solid ${BORDER}`, borderRadius: '8px', padding: '0.5rem 0.875rem' }}>
-            {STAGED_RELEASE_EXAMPLE.platformFeeNote}
-          </div>
-        </Section>
-
-        {/* Settlement Statuses */}
-        <Section id="settlement-status">
-          <SectionTitle>结算状态系统</SectionTitle>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.625rem' }}>
-            {SETTLEMENT_STATUSES.map((s) => (
-              <span
-                key={s.label}
-                style={{
-                  fontSize: '0.8rem', fontWeight: 600, padding: '4px 12px',
-                  borderRadius: '9999px',
-                  color: s.color,
-                  background: s.bg,
-                  border: `1px solid ${s.color}40`,
-                }}
-              >
-                {s.label}
-              </span>
-            ))}
-          </div>
-          <div style={{ fontSize: '10px', color: TEXT_MUTED }}>全部为静态展示，不改变真实状态。</div>
-        </Section>
-
-        {/* Protections — two columns */}
-        <Section id="protections">
-          <SectionTitle>双方保护机制</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1rem' }}>
-            {/* Project Owner */}
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#60a5fa', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>对项目方的保护</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {PROJECT_OWNER_PROTECTIONS.map((p) => (
-                  <div key={p.title} style={{ display: 'flex', gap: '0.625rem', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '10px', padding: '0.75rem' }}>
-                    <span style={{ fontSize: '1rem', flexShrink: 0 }}>{p.icon}</span>
-                    <div>
-                      <div style={{ fontSize: '0.83rem', fontWeight: 600, color: TEXT_PRIMARY, marginBottom: '0.15rem' }}>{p.title}</div>
-                      <div style={{ fontSize: '0.76rem', color: TEXT_MUTED, lineHeight: 1.55 }}>{p.description}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {/* Creator */}
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#4ade80', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>对创作者的保护</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {CREATOR_PROTECTIONS.map((p) => (
-                  <div key={p.title} style={{ display: 'flex', gap: '0.625rem', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '10px', padding: '0.75rem' }}>
-                    <span style={{ fontSize: '1rem', flexShrink: 0 }}>{p.icon}</span>
-                    <div>
-                      <div style={{ fontSize: '0.83rem', fontWeight: 600, color: TEXT_PRIMARY, marginBottom: '0.15rem' }}>{p.title}</div>
-                      <div style={{ fontSize: '0.76rem', color: TEXT_MUTED, lineHeight: 1.55 }}>{p.description}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Section>
-
-        {/* Refund & Dispute */}
-        <Section id="refund-dispute">
-          <SectionTitle>退款与争议预览</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            {REFUND_AND_DISPUTE_SCENARIOS.map((s) => (
-              <div
-                key={s.scenario}
-                style={{
-                  background: SURFACE, border: '1px solid #a1620730',
-                  borderLeft: '3px solid #a16207',
-                  borderRadius: '10px', padding: '0.875rem 1rem',
-                }}
-              >
-                <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#ca8a04', marginBottom: '0.3rem' }}>{s.scenario}</div>
-                <div style={{ fontSize: '0.73rem', color: TEXT_MUTED, lineHeight: 1.55 }}>{s.note}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Proof Archive */}
-        <Section id="proof-archive">
-          <SectionTitle>凭证与归档</SectionTitle>
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '12px', overflow: 'hidden' }}>
-            {PROOF_ARCHIVE.map((item, i) => (
-              <div
-                key={item}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.625rem 1.125rem',
-                  borderBottom: i < PROOF_ARCHIVE.length - 1 ? `1px solid ${BORDER}` : 'none',
-                }}
-              >
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3f3f46', flexShrink: 0 }} />
-                <span style={{ fontSize: '0.83rem', color: TEXT_SECONDARY }}>{item}</span>
-                <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#3f3f46' }}>规划中</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize: '10px', color: TEXT_MUTED, marginTop: '0.5rem' }}>以上凭证记录均为未来规划，当前不创建任何真实记录。</div>
-        </Section>
-
-        {/* Risks */}
-        <Section id="risks">
-          <SectionTitle>风险与边界声明</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {RISKS_AND_BOUNDARIES.map((item) => (
-              <div
-                key={item.title}
-                style={{
-                  background: SURFACE,
-                  border: `1px solid ${item.level === 'warning' ? '#a1620740' : BORDER}`,
-                  borderLeft: `3px solid ${item.level === 'warning' ? '#a16207' : '#3f3f46'}`,
-                  borderRadius: '10px', padding: '0.875rem 1.125rem',
-                }}
-              >
-                <div style={{ fontSize: '0.83rem', fontWeight: 600, color: item.level === 'warning' ? '#ca8a04' : TEXT_SECONDARY, marginBottom: '0.3rem' }}>
-                  {item.title}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: TEXT_MUTED, lineHeight: 1.6 }}>{item.content}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Roadmap */}
-        <Section id="roadmap">
-          <SectionTitle>未来版本计划（{ROADMAP.length} 阶段）</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {ROADMAP.map((stage) => {
-              const statusColor = stage.status === 'done' ? '#22c55e' : stage.status === 'active' ? '#fbbf24' : '#52525b'
-              const statusLabel = stage.status === 'done' ? '已完成' : stage.status === 'active' ? '当前' : '规划中'
-              return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            {ESCROW_FLOW_NODES.map((node) => (
+              <div key={node.index} style={{ ...card, padding: '1.25rem' }}>
+                {/* Node header */}
                 <div
-                  key={stage.stage}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: '0.875rem',
-                    padding: '0.75rem 1rem',
-                    background: SURFACE,
-                    border: `1px solid ${stage.status === 'active' ? '#d9770640' : BORDER}`,
-                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    marginBottom: '0.875rem',
                   }}
                 >
-                  <div style={{
-                    minWidth: '22px', height: '22px', borderRadius: '50%',
-                    background: `${statusColor}20`, border: `1px solid ${statusColor}60`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '10px', fontWeight: 700, color: statusColor, flexShrink: 0,
-                  }}>
-                    {stage.stage}
+                  <div
+                    style={{
+                      minWidth: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: '#6366f118',
+                      border: '1px solid #6366f140',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: '#818cf8',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {String(node.index).padStart(2, '0')}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: stage.status === 'active' ? 700 : 500, color: stage.status === 'planned' ? TEXT_MUTED : TEXT_PRIMARY, marginRight: '0.5rem' }}>
-                      {stage.title}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#52525b' }}>{stage.description}</span>
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#52525b', whiteSpace: 'nowrap' }}>{stage.quarter}</div>
-                  <span style={{
-                    fontSize: '9px', fontWeight: 600, color: statusColor,
-                    background: `${statusColor}15`, border: `1px solid ${statusColor}35`,
-                    borderRadius: '9999px', padding: '1px 7px', whiteSpace: 'nowrap',
-                  }}>
-                    {statusLabel}
+                  <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#e4e4e7' }}>
+                    {node.title}
                   </span>
                 </div>
-              )
-            })}
-          </div>
-        </Section>
 
-        {/* Quick Links */}
-        <Section id="quick-links">
-          <SectionTitle>快速链接</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.75rem' }}>
-            {QUICK_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                style={{ display: 'block', background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: '10px', padding: '0.875rem 1rem', textDecoration: 'none' }}
-              >
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: TEXT_PRIMARY, marginBottom: '0.2rem' }}>{link.label}</div>
-                <div style={{ fontSize: '0.75rem', color: TEXT_MUTED }}>{link.description}</div>
-              </Link>
+                {/* Two-column: 项目方 / 创作者 */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '0.875rem',
+                    marginBottom: '0.75rem',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: '#52525b',
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        marginBottom: '0.4rem',
+                      }}
+                    >
+                      项目方
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.55 }}>
+                      {node.forOwner}
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: '#52525b',
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        marginBottom: '0.4rem',
+                      }}
+                    >
+                      创作者
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.55 }}>
+                      {node.forCreator}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Boundary */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '11px',
+                    color: '#a16207',
+                    background: '#a1620710',
+                    border: '1px solid #a1620725',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                  }}
+                >
+                  <span>⚠</span>
+                  {node.boundary}
+                </div>
+              </div>
             ))}
           </div>
-        </Section>
+        </section>
+
+        {/* ── Section 2: 双方权益 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="双方权益"
+            sub="托管结算对项目方和创作者分别提供的规则保障"
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+              gap: '1rem',
+            }}
+          >
+            {PARTY_RIGHTS.map((party) => (
+              <div key={party.party} style={{ ...card, padding: '1.25rem' }}>
+                <div
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: party.color,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    marginBottom: '1rem',
+                  }}
+                >
+                  {party.party}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {party.items.map((item) => (
+                    <div key={item.title} style={{ display: 'flex', gap: '0.625rem' }}>
+                      <span style={{ fontSize: '1.1rem', flexShrink: 0, marginTop: '1px' }}>{item.icon}</span>
+                      <div>
+                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#e4e4e7', marginBottom: '0.15rem' }}>
+                          {item.title}
+                        </div>
+                        <div style={{ fontSize: '0.73rem', color: '#71717a', lineHeight: 1.6 }}>
+                          {item.description}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Section 3: 风险与争议 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="风险与争议"
+            sub="4 类常见争议情形及对应的处理路径，全部为静态规则说明"
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+              gap: '0.875rem',
+            }}
+          >
+            {DISPUTE_MECHANISMS.map((d) => (
+              <div
+                key={d.title}
+                style={{
+                  ...card,
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.625rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{d.icon}</span>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#e4e4e7' }}>{d.title}</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#71717a', lineHeight: 1.65 }}>
+                  {d.description}
+                </div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#818cf8',
+                    background: '#6366f112',
+                    border: '1px solid #6366f128',
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {d.resolution}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Section 4: 市场链路 ── */}
+        <section style={{ scrollMarginTop: '80px', marginBottom: '4.5rem' }}>
+          <SectionHeader
+            title="市场链路"
+            sub="托管结算是创作者市场 6 个环节中的第 6 环，市场闭环在此完成"
+          />
+          <div
+            style={{
+              ...card,
+              padding: '1.5rem 1.25rem',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '0',
+            }}
+          >
+            {MARKET_CHAIN_LINKS.flatMap((node, i) => [
+              <Link
+                key={node.href}
+                href={node.href}
+                style={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '10px',
+                  background: node.current ? '#6366f118' : 'transparent',
+                  border: node.current ? '1px solid #6366f140' : '1px solid transparent',
+                  textDecoration: 'none',
+                  minWidth: '76px',
+                  textAlign: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    color: node.current ? '#6366f1' : '#3f3f46',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {String(node.index).padStart(2, '0')}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: node.current ? 700 : 500,
+                    color: node.current ? '#818cf8' : '#71717a',
+                  }}
+                >
+                  {node.label}
+                </span>
+                {node.current && (
+                  <span style={{ fontSize: '9px', color: '#6366f1', fontWeight: 600 }}>← 当前</span>
+                )}
+              </Link>,
+              i < MARKET_CHAIN_LINKS.length - 1 && (
+                <span key={`arrow-${i}`} style={{ fontSize: '12px', color: '#27272a', padding: '0 0.15rem' }}>
+                  →
+                </span>
+              ),
+            ])}
+          </div>
+        </section>
+
+        {/* ── Disclaimer ── */}
+        <div
+          style={{
+            ...card,
+            borderLeft: '3px solid #a16207',
+            borderRadius: '10px',
+            padding: '1rem 1.25rem',
+            marginBottom: '2rem',
+          }}
+        >
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ca8a04', marginBottom: '0.3rem' }}>
+            当前为预览页
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.65 }}>
+            本页面所有数据均为示例规则说明，不接支付、不创建订单、不执行结算、不退款、不写数据库。
+            托管结算功能尚在规划阶段，正式上线时间以路线图为准。
+          </div>
+        </div>
 
         {/* Footer */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: '1.5rem', textAlign: 'center', fontSize: '11px', color: '#3f3f46' }}>
-          /escrow-preview · 静态预览 · 不接真实支付 · 不创建订单 · 不收款 · 不打款 · 不写数据库 · 不触发生成
+        <div
+          style={{
+            borderTop: '1px solid #1e1e24',
+            paddingTop: '1.25rem',
+            textAlign: 'center',
+            fontSize: '11px',
+            color: '#3f3f46',
+          }}
+        >
+          /escrow-preview · 静态预览页 · 预览规则 · 不接支付 · 不创建订单 · 不执行结算 · 不退款 · 不写数据库
         </div>
       </div>
     </div>
