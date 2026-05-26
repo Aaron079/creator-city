@@ -25,60 +25,55 @@ import { getActionTarget } from '@/lib/routing/actions'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 
-const EXPLORE_NAV: Array<{ group: string; items: Array<{ label: string; href: string }> }> = [
+type NavItem = { label: string; href: string; badge?: string }
+type NavGroup = { label: string; key: string; items: NavItem[] }
+
+const NAV_GROUPS: NavGroup[] = [
   {
-    group: '平台',
+    label: '创作', key: 'create',
     items: [
-      { label: '路线图', href: '/roadmap' },
-      { label: '商业模式', href: '/pricing-preview' },
-      { label: '协议版权', href: '/terms-preview' },
-    ],
-  },
-  {
-    group: '部署与企业',
-    items: [
-      { label: '本地部署', href: '/local-deploy-preview' },
-      { label: '企业版', href: '/enterprise-preview' },
-    ],
-  },
-  {
-    group: '工作区',
-    items: [
-      { label: '项目中心', href: '/projects' },
-      { label: '资产中心', href: '/assets' },
+      { label: 'AI 画布', href: '/create' },
+      { label: 'Canvas V2', href: '/create-v2', badge: 'Beta' },
       { label: '生成任务', href: '/tasks' },
       { label: 'API 中心', href: '/providers' },
     ],
   },
   {
-    group: '社区与帮助',
+    label: '市场', key: 'market',
     items: [
-      { label: '社区', href: '/community' },
-      { label: '创作者市场', href: '/marketplace-preview' },
-      { label: '诊断帮助', href: '/help' },
-      { label: '工作台', href: '/dashboard' },
+      { label: '市场总览', href: '/marketplace-preview' },
+      { label: '创作者主页', href: '/creator-profile-preview' },
+      { label: '需求广场', href: '/demand-board-preview' },
+      { label: '报价方案', href: '/proposal-flow-preview' },
+      { label: '阶段交付', href: '/milestone-delivery-preview' },
+      { label: '托管结算', href: '/escrow-preview' },
     ],
   },
-]
-
-const ENTERPRISE_NAV: Array<{ label: string; href: string }> = [
-  { label: '企业版总览', href: '/enterprise-preview' },
-  { label: '客户对象', href: '/enterprise-preview#target-customers' },
-  { label: '核心能力', href: '/enterprise-preview#capabilities' },
-  { label: '企业工作流', href: '/enterprise-preview#workflow' },
-  { label: '权限矩阵', href: '/enterprise-preview#permissions' },
-  { label: '数据安全', href: '/enterprise-preview#security' },
-  { label: '企业套餐', href: '/enterprise-preview#plans' },
-  { label: '企业价值', href: '/enterprise-preview#value' },
-  { label: '接入流程', href: '/enterprise-preview#onboarding' },
-  { label: '风险边界', href: '/enterprise-preview#risks' },
-]
-
-const LINKS: Array<{ href: string; label: string; isCanvasV2?: boolean }> = [
-  { href: '/create', label: '创作' },
-  { href: '/create-v2', label: 'Canvas V2', isCanvasV2: true },
-  { href: '/projects', label: '工作空间' },
-  { href: '/marketplace', label: '市场' },
+  {
+    label: '工作台', key: 'workspace',
+    items: [
+      { label: '项目中心', href: '/projects' },
+      { label: '资产中心', href: '/assets' },
+      { label: 'Dashboard', href: '/dashboard' },
+    ],
+  },
+  {
+    label: '平台', key: 'platform',
+    items: [
+      { label: '路线图', href: '/roadmap' },
+      { label: '商业模式', href: '/pricing-preview' },
+      { label: '协议版权', href: '/terms-preview' },
+      { label: '本地部署', href: '/local-deploy-preview' },
+      { label: '企业版', href: '/enterprise-preview' },
+    ],
+  },
+  {
+    label: '社区与帮助', key: 'community',
+    items: [
+      { label: '社区', href: '/community' },
+      { label: '诊断帮助', href: '/help' },
+    ],
+  },
 ]
 
 export function TopNavigation() {
@@ -106,48 +101,17 @@ export function TopNavigation() {
   const profileId = currentProfileId ?? currentUserId
 
   const dashboard = useMemo(
-    () => aggregateProducerDashboard({
-      teams,
-      approvals,
-      approvalGates,
-      notes,
-      tasks,
-      orders,
-      jobs,
-      deliveryPackages,
-      versions,
-    }),
+    () => aggregateProducerDashboard({ teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions }),
     [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions],
   )
 
   const workQueue = useMemo(
-    () => buildPersonalWorkQueue({
-      userId: currentUserId,
-      profileId,
-      invitations,
-      assignments,
-      tasks,
-      teams,
-      approvals,
-      deliveryPackages,
-      notifications,
-    }),
+    () => buildPersonalWorkQueue({ userId: currentUserId, profileId, invitations, assignments, tasks, teams, approvals, deliveryPackages, notifications }),
     [approvals, assignments, currentUserId, deliveryPackages, invitations, notifications, profileId, tasks, teams],
   )
 
   const portfolio = useMemo(
-    () => buildWorkspacePortfolio({
-      userId: currentUserId,
-      profileId,
-      assignments,
-      teams,
-      invitations,
-      dashboard,
-      workQueue,
-      notifications,
-      deliveryPackages,
-      approvals,
-    }),
+    () => buildWorkspacePortfolio({ userId: currentUserId, profileId, assignments, teams, invitations, dashboard, workQueue, notifications, deliveryPackages, approvals }),
     [approvals, assignments, currentUserId, dashboard, deliveryPackages, invitations, notifications, profileId, teams, workQueue],
   )
 
@@ -158,28 +122,17 @@ export function TopNavigation() {
 
   const notificationHref = getActionTarget({ actionType: 'dashboard-notifications' }).actionHref
 
-  const [exploreOpen, setExploreOpen] = useState(false)
-  const exploreTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Unified hover dropdown — single open key + 150 ms close delay
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const menuTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleExploreEnter = useCallback(() => {
-    if (exploreTimer.current) clearTimeout(exploreTimer.current)
-    setExploreOpen(true)
+  const handleMenuEnter = useCallback((key: string) => {
+    if (menuTimer.current) clearTimeout(menuTimer.current)
+    setOpenMenu(key)
   }, [])
 
-  const handleExploreLeave = useCallback(() => {
-    exploreTimer.current = setTimeout(() => setExploreOpen(false), 150)
-  }, [])
-
-  const [enterpriseOpen, setEnterpriseOpen] = useState(false)
-  const enterpriseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleEnterpriseEnter = useCallback(() => {
-    if (enterpriseTimer.current) clearTimeout(enterpriseTimer.current)
-    setEnterpriseOpen(true)
-  }, [])
-
-  const handleEnterpriseLeave = useCallback(() => {
-    enterpriseTimer.current = setTimeout(() => setEnterpriseOpen(false), 150)
+  const handleMenuLeave = useCallback(() => {
+    menuTimer.current = setTimeout(() => setOpenMenu(null), 150)
   }, [])
 
   const handleLogout = async () => {
@@ -188,7 +141,7 @@ export function TopNavigation() {
     router.push('/')
   }
 
-  // Navigate to last-opened canvas project, or fall back to /create (which auto-resolves)
+  // Preserve localStorage-aware canvas navigation
   const handleCreateClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     let href = '/create'
@@ -197,11 +150,6 @@ export function TopNavigation() {
       if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
     } catch (_) { /* private mode — fall back to /create */ }
     router.push(href)
-  }, [router])
-
-  const handleProjectsClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    router.push('/projects')
   }, [router])
 
   const handleCanvasV2Click = useCallback((e: React.MouseEvent) => {
@@ -217,47 +165,71 @@ export function TopNavigation() {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#0a0f1a]/88 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
+
+        {/* Left: logo + 5 dropdown nav groups */}
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs font-bold tracking-[0.02em] text-gradient">
+          <Link href="/" className="shrink-0 text-xs font-bold tracking-[0.02em] text-gradient">
             Creator City
           </Link>
+
           <nav className="hidden items-center gap-0.5 md:flex">
-            {LINKS.map((link) => {
-              const active = pathname === link.href || pathname.startsWith(`${link.href}/`)
-              const navClass = `rounded-xl px-2.5 py-1.5 text-[12px] transition ${
-                active ? 'bg-white/[0.08] text-white' : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
-              }`
-              if (link.href === '/create') {
-                return (
-                  <a key={link.href} href="/create" onClick={handleCreateClick} className={navClass}>
-                    {link.label}
-                  </a>
-                )
-              }
-              if (link.isCanvasV2) {
-                return (
-                  <a key={link.href} href="/create-v2" onClick={handleCanvasV2Click} className={navClass}>
-                    {link.label}
-                    <span className="ml-1 rounded-full bg-violet-500/20 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">Beta</span>
-                  </a>
-                )
-              }
-              if (link.href === '/projects') {
-                return (
-                  <a key={link.href} href="/projects" onClick={handleProjectsClick} className={navClass}>
-                    {link.label}
-                  </a>
-                )
-              }
+            {NAV_GROUPS.map((group) => {
+              const isActive = group.items.some(
+                (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+              )
               return (
-                <Link key={link.href} href={link.href} className={navClass}>
-                  {link.label}
-                </Link>
+                <div
+                  key={group.key}
+                  className="relative"
+                  onMouseEnter={() => handleMenuEnter(group.key)}
+                  onMouseLeave={handleMenuLeave}
+                >
+                  <button
+                    className={`inline-flex items-center gap-0.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${
+                      isActive
+                        ? 'bg-white/[0.08] text-white'
+                        : 'text-white/55 hover:bg-white/[0.04] hover:text-white'
+                    }`}
+                  >
+                    {group.label}
+                    <span className="text-[8px] text-white/22">▾</span>
+                  </button>
+
+                  {openMenu === group.key && (
+                    <div
+                      className="absolute left-0 top-full z-[200] mt-2 w-[176px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/90 py-1.5 ring-1 ring-white/[0.06] backdrop-blur-xl"
+                      style={{ boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
+                      onMouseEnter={() => handleMenuEnter(group.key)}
+                      onMouseLeave={handleMenuLeave}
+                    >
+                      {group.items.map((item) => {
+                        const isCreate = item.href === '/create'
+                        const isV2 = item.href === '/create-v2'
+                        return (
+                          <a
+                            key={item.href}
+                            href={item.href}
+                            onClick={isCreate ? handleCreateClick : isV2 ? handleCanvasV2Click : undefined}
+                            className="flex items-center gap-2 px-3.5 py-[7px] text-[12px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
+                          >
+                            {item.label}
+                            {item.badge && (
+                              <span className="rounded-full bg-violet-500/20 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">
+                                {item.badge}
+                              </span>
+                            )}
+                          </a>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </nav>
         </div>
 
+        {/* Right: tools + compact notifications + user */}
         <div className="flex items-center gap-2">
           <CommandPalette
             portfolio={portfolio}
@@ -274,100 +246,32 @@ export function TopNavigation() {
             />
           </div>
 
-          {/* Explore nav — hover dropdown, no API calls */}
-          <div
-            className="relative hidden md:block"
-            onMouseEnter={handleExploreEnter}
-            onMouseLeave={handleExploreLeave}
-          >
-            <button className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] font-medium text-white/70 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white">
-              Explore
-              <span className="text-[9px] text-white/30">▾</span>
-            </button>
-
-            {exploreOpen && (
-              <div
-                className="absolute right-0 top-full z-[200] mt-2 w-[272px] overflow-hidden rounded-2xl border border-white/[0.12] bg-black/90 ring-1 ring-white/[0.06] backdrop-blur-xl"
-                style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
-                onMouseEnter={handleExploreEnter}
-                onMouseLeave={handleExploreLeave}
-              >
-                <div className="py-2">
-                  {EXPLORE_NAV.map((group) => (
-                    <div key={group.group}>
-                      <div className="px-3.5 pb-0.5 pt-2.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/30 first:pt-1.5">
-                        {group.group}
-                      </div>
-                      {group.items.map((item) => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          className="block px-3.5 py-[7px] text-[11px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
-                        >
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Enterprise preview nav — hover dropdown, no API calls */}
-          <div
-            className="relative hidden md:block"
-            onMouseEnter={handleEnterpriseEnter}
-            onMouseLeave={handleEnterpriseLeave}
-          >
-            <button className="inline-flex items-center gap-1 rounded-xl border border-violet-500/30 bg-violet-500/[0.08] px-2.5 py-1.5 text-[12px] font-semibold text-violet-300 transition hover:border-violet-400/50 hover:bg-violet-500/[0.14] hover:text-violet-200">
-              企业版预览
-              <span className="text-[9px] text-violet-400/60">▾</span>
-            </button>
-
-            {enterpriseOpen && (
-              <div
-                className="absolute right-0 top-full z-[200] mt-2 w-[220px] overflow-hidden rounded-2xl border border-violet-400/[0.15] bg-black/90 py-1.5 ring-1 ring-violet-400/[0.08] backdrop-blur-xl"
-                style={{ maxHeight: '360px', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
-                onMouseEnter={handleEnterpriseEnter}
-                onMouseLeave={handleEnterpriseLeave}
-              >
-                {ENTERPRISE_NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="block px-3 py-[7px] text-[12px] text-white/55 transition hover:bg-violet-500/[0.1] hover:text-violet-200"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
+          {/* Notifications — compact icon, always visible */}
           <Link
             href={notificationHref}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/75 transition hover:border-white/20 hover:text-white"
+            className="inline-flex items-center gap-1 rounded-xl border border-white/8 bg-white/[0.03] px-2 py-1.5 text-[11px] text-white/45 transition hover:border-white/18 hover:text-white/80"
           >
-            <span>Notifications</span>
-            <span className="text-white/35">{notificationSummary.unreadCount}</span>
-            {notificationSummary.strongCount > 0 ? (
-              <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-rose-300">
-                {notificationSummary.strongCount} High
+            <span>🔔</span>
+            {notificationSummary.unreadCount > 0 && (
+              <span className="text-white/60">{notificationSummary.unreadCount}</span>
+            )}
+            {notificationSummary.strongCount > 0 && (
+              <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[9px] text-rose-300">
+                {notificationSummary.strongCount}
               </span>
-            ) : null}
+            )}
           </Link>
 
           {effectiveIsAuthenticated && effectiveUser ? (
             <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
-              <div className="h-7 w-7 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white shrink-0">
+              <div className="h-7 w-7 shrink-0 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
                 {effectiveUser.displayName[0]?.toUpperCase() ?? '?'}
               </div>
               <div className="min-w-0">
                 <div className="truncate text-[12px] font-medium text-white">{effectiveUser.displayName}</div>
                 <div className="truncate text-[10px] text-white/40">{effectiveUser.email}</div>
               </div>
-              <Link href="/account" className="text-xs text-white/40 transition hover:text-white/70 px-1" title="账号设置">⚙</Link>
+              <Link href="/account" className="px-1 text-xs text-white/40 transition hover:text-white/70" title="账号设置">⚙</Link>
               <button
                 onClick={() => void handleLogout()}
                 className="text-xs text-white/40 transition hover:text-white/80"
@@ -386,7 +290,7 @@ export function TopNavigation() {
               </Link>
               <Link
                 href="/auth/register"
-                className="rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 px-3 py-1.5 text-[12px] text-white font-medium transition"
+                className="rounded-xl border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[12px] font-medium text-white transition hover:border-white/20 hover:bg-white/[0.12]"
               >
                 注册
               </Link>
