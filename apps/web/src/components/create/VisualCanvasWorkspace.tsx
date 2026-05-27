@@ -1762,7 +1762,7 @@ async function callGenerationApi(
   try {
     response = await fetch(endpoint, {
       method,
-      credentials: 'same-origin',
+      credentials: 'include',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
       ...(postTimeoutMs ? { signal: timeoutSignal(postTimeoutMs, signal) } : {}),
