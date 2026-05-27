@@ -607,9 +607,9 @@
   content: '';
   position: absolute;
   inset: 0;
-  padding: 1px;
+  padding: 1.5px;
   border-radius: inherit;
-  background: conic-gradient(from 0deg, #8a2be2, #00ffff, #00ff7f, #8a2be2);
+  background: conic-gradient(from 0deg, #6a0dad, #00e5ff, #00ff88, #6a0dad);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -618,8 +618,8 @@
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: createIridescentSpin 4.8s linear infinite;
-  opacity: 0.78;
+  animation: createIridescentSpin 3.6s linear infinite;
+  opacity: 0.88;
   pointer-events: none;
 }
 
@@ -641,25 +641,50 @@
   font-weight: 760;
 }
 
-.scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.26); }
-.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 255, 255, 0.22); }
+.scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.32); }
+.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 220, 255, 0.30); }
 
 .scope :global(.canvas-node-card.node-image .canvas-node-body) {
   align-items: center;
   justify-content: center;
 }
-.scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(138, 43, 226, 0.24); }
-.scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.22); }
-.scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.18); }
-.scope :global(.canvas-node-card.node-world) { --canvas-glow: rgba(0, 255, 255, 0.18); }
-.scope :global(.canvas-node-card.node-upload) { --canvas-glow: rgba(255, 255, 255, 0.16); }
+/* Image node: cyan-tinted hover border */
+.scope :global(.canvas-node-card.node-image:hover) {
+  border-color: rgba(0, 220, 255, 0.20);
+}
+.scope :global(.canvas-node-card.node-image.is-active) {
+  border-color: rgba(0, 220, 255, 0.28);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(0, 220, 255, 0.18),
+    0 0 32px rgba(0, 220, 255, 0.08);
+}
+
+.scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(160, 60, 255, 0.32); }
+/* Video node: purple-tinted hover border */
+.scope :global(.canvas-node-card.node-video:hover) {
+  border-color: rgba(160, 60, 255, 0.20);
+}
+.scope :global(.canvas-node-card.node-video.is-active) {
+  border-color: rgba(160, 60, 255, 0.28);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(160, 60, 255, 0.18),
+    0 0 32px rgba(160, 60, 255, 0.08);
+}
+
+.scope :global(.canvas-node-card.node-audio) { --canvas-glow: rgba(0, 255, 127, 0.26); }
+.scope :global(.canvas-node-card.node-delivery) { --canvas-glow: rgba(0, 255, 127, 0.20); }
+.scope :global(.canvas-node-card.node-world) { --canvas-glow: rgba(0, 255, 255, 0.20); }
+.scope :global(.canvas-node-card.node-upload) { --canvas-glow: rgba(255, 255, 255, 0.18); }
 
 .scope :global(.canvas-node-topline) {
   position: absolute;
   inset-inline: 0;
   top: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--canvas-glow), transparent);
+  height: 2px;
+  background: linear-gradient(90deg, transparent 5%, var(--canvas-glow) 40%, var(--canvas-glow) 60%, transparent 95%);
+  opacity: 0.9;
 }
 
 .scope :global(.canvas-node-icon) {
@@ -2711,6 +2736,18 @@
   box-shadow: 0 0 18px rgba(255, 107, 138, 0.26);
 }
 
+.scope :global(.canvas-node-status-dot.status-failed),
+.scope :global(.canvas-node-status-dot.status-cancelled) {
+  background: #ff8566;
+  box-shadow: 0 0 14px rgba(255, 133, 102, 0.24);
+}
+
+.scope :global(.canvas-node-status-dot.status-pending),
+.scope :global(.canvas-node-status-dot.status-processing) {
+  background: #f0c040;
+  box-shadow: 0 0 14px rgba(240, 192, 64, 0.24);
+}
+
 .scope :global(.canvas-node-status-text) {
   max-width: 58px;
   overflow: hidden;
@@ -2732,6 +2769,16 @@
 
 .scope :global(.canvas-node-status-text.status-error) {
   color: #ffb3c0;
+}
+
+.scope :global(.canvas-node-status-text.status-failed),
+.scope :global(.canvas-node-status-text.status-cancelled) {
+  color: #ffb89e;
+}
+
+.scope :global(.canvas-node-status-text.status-pending),
+.scope :global(.canvas-node-status-text.status-processing) {
+  color: #f5d882;
 }
 
 .scope :global(.canvas-node-more) {
@@ -5847,16 +5894,23 @@
   position: relative;
   z-index: 2;
   display: inline-grid;
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(0, 0, 0, 0.44);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.58);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 18px;
   line-height: 1;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42), 0 0 0 6px rgba(255, 255, 255, 0.04);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.scope :global(.canvas-node-video-button:hover .canvas-node-video-play) {
+  transform: scale(1.08);
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .scope :global(.canvas-node-preview-image) {
@@ -5865,7 +5919,7 @@
   height: 100%;
   width: 100%;
   object-fit: cover;
-  opacity: 0.92;
+  opacity: 1;
 }
 
 .scope :global(.canvas-node-image-button) {
