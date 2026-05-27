@@ -165,9 +165,48 @@ export async function GET(request: NextRequest) {
   const { providerRegion: sourceProviderRegion, executionRegion, storageRegion, executorKind } = getExecutorForProvider(providerId)
 
   if (generationJob.status === 'SUCCEEDED') {
-    const asset = await findExistingVideoAsset(generationJob.id, generationJob.outputAssetId)
-    const videoUrl = asset?.url || stringValue(record(generationJob.output).stableUrl) || stringValue(record(generationJob.output).resultVideoUrl)
-    const assetId = asset?.id ?? generationJob.outputAssetId
+    let asset = await findExistingVideoAsset(generationJob.id, generationJob.outputAssetId)
+    const output = record(generationJob.output)
+    const videoUrl = asset?.url || stringValue(output.stableUrl) || stringValue(output.resultVideoUrl)
+    let assetId: string | null = asset?.id ?? generationJob.outputAssetId ?? null
+
+    // Recovery: cn-executor may have marked the job SUCCEEDED but failed to INSERT the Asset row.
+    // Create it here so CanvasNodeCard can resolve the assetId without showing "记录不存在".
+    if (!asset && videoUrl && currentUser) {
+      const recoveryId = assetId ?? crypto.randomUUID()
+      try {
+        asset = await db.asset.upsert({
+          where: { id: recoveryId },
+          create: {
+            id: recoveryId,
+            name: `generated-video-${generationJob.id}.mp4`,
+            type: 'VIDEO',
+            status: 'READY',
+            ownerId: currentUser.id,
+            projectId: generationJob.projectId ?? null,
+            workflowId: workflowId || null,
+            nodeId: nodeId || null,
+            source: 'generated',
+            provider: providerId,
+            providerId,
+            storageProvider: 'aliyun_oss',
+            url: videoUrl,
+            originalUrl: stringValue(output.providerOriginalUrl) || null,
+            mimeType: 'video/mp4',
+            prompt: generationJob.prompt || null,
+            metadataJson: jsonValue(output),
+            generationJobId: generationJob.id,
+            recoveryStatus: 'recovered',
+            tags: [],
+          },
+          update: {},
+        })
+        assetId = asset.id
+      } catch (recoveryErr) {
+        console.warn('[api/generate/video/status] Asset recovery upsert failed', recoveryErr)
+      }
+    }
+
     // Only write canvas node result when authenticated — degraded mode skips the DB write
     if (videoUrl && assetId && currentUser) {
       await writeCanvasNodeVideoResult({
@@ -178,8 +217,8 @@ export async function GET(request: NextRequest) {
         generationJobId: generationJob.id,
         assetId,
         videoUrl,
-        storageKey: stringValue(record(generationJob.output).storageKey),
-        providerOriginalUrl: stringValue(record(generationJob.output).providerOriginalUrl),
+        storageKey: stringValue(output.storageKey),
+        providerOriginalUrl: stringValue(output.providerOriginalUrl),
         providerRegion: sourceProviderRegion,
         executionRegion,
         storageRegion,

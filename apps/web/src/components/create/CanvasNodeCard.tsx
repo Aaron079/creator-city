@@ -1543,6 +1543,7 @@ export function CanvasNodeCard({
   const lastResolveResult = metadataRecord(nodeMetadata.p0LastResolveResult || nodeMetadata.p0LastRecoveryResult || nodeMetadata.assetResolveResult)
   const lastGenerationError = metadataRecord(nodeMetadata.lastGenerationError || nodeMetadata.lastError)
   const mediaDiagnosticPayload = useMemo<MediaDiagnosticPayload | null>(() => {
+    try {
     if (node.kind !== 'image' && node.kind !== 'video') return null
     const originalUrl = stringValue(nodeMetadata.originalUrl)
       || getOriginalProviderUrl(nodeMetadata, node.kind)
@@ -1869,8 +1870,12 @@ export function CanvasNodeCard({
       metadataJson: node.metadataJson,
     }
     const omittedFields = REQUIRED_MEDIA_DIAGNOSTIC_FIELDS.filter((field) => !(field in diagnostic))
-    if (omittedFields.length) diagnostic.missingFields = [...new Set([...diagnostic.missingFields, ...omittedFields])]
+    if (omittedFields.length) diagnostic.missingFields = [...new Set([...(Array.isArray(diagnostic.missingFields) ? diagnostic.missingFields : []), ...omittedFields])]
     return diagnostic
+    } catch (e) {
+      console.error('[CanvasNodeCard] mediaDiagnosticPayload computation failed', e)
+      return null
+    }
   }, [
     activeCandidates,
     activeRenderFailures,

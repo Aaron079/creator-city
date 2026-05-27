@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
@@ -73,6 +73,47 @@ import {
 } from '@/lib/scenes'
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
+
+class CanvasNodeErrorBoundary extends Component<
+  { children: ReactNode; nodeId: string },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode; nodeId: string }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  override componentDidCatch(error: Error) {
+    console.error('[CanvasNodeCard] render error, nodeId:', this.props.nodeId, error)
+  }
+  override render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            minWidth: 220,
+            padding: '12px 16px',
+            background: 'rgba(30,0,0,0.88)',
+            border: '1px solid rgba(255,60,60,0.35)',
+            borderRadius: 12,
+            color: '#ffa0a0',
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>节点渲染异常（已隔离）</div>
+          <div style={{ opacity: 0.72, wordBreak: 'break-all' }}>
+            {this.state.error.message?.slice(0, 160) ?? '未知错误'}
+          </div>
+          <div style={{ marginTop: 6, opacity: 0.5, fontSize: 10 }}>nodeId: {this.props.nodeId}</div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
@@ -7801,34 +7842,36 @@ export function VisualCanvasWorkspace({
                 zIndex: draggingNodeId === node.id ? 12 : activeNodeId === node.id ? 8 : 4,
               }}
             >
-              <CanvasNodeCard
-                node={node}
-                active={node.id === activeNode?.id}
-                projectId={projectId}
-                workflowId={workflowId}
-                dragging={draggingNodeId === node.id}
-                onSelect={() => {
-                  selectNodeForMove(node)
-                }}
-                onAddPrev={(event) => startConnectionDrag(node.id, 'in', event)}
-                onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
-                onDragStart={(event) => handleNodeDragStart(node.id, event)}
-                onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
-                onEdit={() => focusPromptForNode(node)}
-                onOpenPreview={(type) => openNodePreview(node, type)}
-                onOpenPromptInspector={() => openPromptInspector(node.id)}
-                onOpenMediaDiagnostics={ASSET_RECOVERY_TOOLS_ENABLED ? (type) => openMediaDiagnostics(node.id, type) : undefined}
-                onCreateStableCopy={ASSET_RECOVERY_TOOLS_ENABLED ? () => createStableCopyFromExpiredNode(node) : undefined}
-                onRecoverMedia={ASSET_RECOVERY_TOOLS_ENABLED ? handleMediaRecoveryPatch : undefined}
-                onRegenerateFromPrompt={ASSET_RECOVERY_TOOLS_ENABLED ? () => handleRegenerateNodeFromPrompt(node) : undefined}
-                enabledSkillCount={0}
-                onOpenSkillPanel={undefined}
-                creativeAssetLabel={creativeAssetLabelForNode(node)}
-                onOpenCreativeAssets={() => openCreativeAssets(node.id)}
-                onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
-                onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
-                generationHealth={generationHealth}
-              />
+              <CanvasNodeErrorBoundary nodeId={node.id}>
+                <CanvasNodeCard
+                  node={node}
+                  active={node.id === activeNode?.id}
+                  projectId={projectId}
+                  workflowId={workflowId}
+                  dragging={draggingNodeId === node.id}
+                  onSelect={() => {
+                    selectNodeForMove(node)
+                  }}
+                  onAddPrev={(event) => startConnectionDrag(node.id, 'in', event)}
+                  onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
+                  onDragStart={(event) => handleNodeDragStart(node.id, event)}
+                  onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
+                  onEdit={() => focusPromptForNode(node)}
+                  onOpenPreview={(type) => openNodePreview(node, type)}
+                  onOpenPromptInspector={() => openPromptInspector(node.id)}
+                  onOpenMediaDiagnostics={ASSET_RECOVERY_TOOLS_ENABLED ? (type) => openMediaDiagnostics(node.id, type) : undefined}
+                  onCreateStableCopy={ASSET_RECOVERY_TOOLS_ENABLED ? () => createStableCopyFromExpiredNode(node) : undefined}
+                  onRecoverMedia={ASSET_RECOVERY_TOOLS_ENABLED ? handleMediaRecoveryPatch : undefined}
+                  onRegenerateFromPrompt={ASSET_RECOVERY_TOOLS_ENABLED ? () => handleRegenerateNodeFromPrompt(node) : undefined}
+                  enabledSkillCount={0}
+                  onOpenSkillPanel={undefined}
+                  creativeAssetLabel={creativeAssetLabelForNode(node)}
+                  onOpenCreativeAssets={() => openCreativeAssets(node.id)}
+                  onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
+                  onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
+                  generationHealth={generationHealth}
+                />
+              </CanvasNodeErrorBoundary>
             </div>
           ))}
         </div>
