@@ -2847,6 +2847,22 @@ export function CanvasNodeCard({
     )
   }
 
+  const paramModel = (node.kind === 'image' || node.kind === 'video' || node.kind === 'audio')
+    ? modelForNode(node, nodeMetadata)
+    : ''
+  const paramModelLabel = paramModel.length > 20
+    ? (paramModel.split('/').pop() ?? paramModel.split(':').pop() ?? paramModel)
+    : paramModel
+  const paramRatio = (node.kind === 'image' || node.kind === 'video')
+    ? (stringValue(paramValue(nodeMetadata, node, 'aspectRatio'))
+        || stringValue(paramValue(nodeMetadata, node, 'ratio'))
+        || stringValue(node.ratio))
+    : ''
+  const paramDuration = (node.kind === 'video' || node.kind === 'audio')
+    ? (numberValue(paramValue(nodeMetadata, node, 'duration')) ?? null)
+    : null
+  const hasParamRow = Boolean(paramModelLabel || paramRatio || typeof paramDuration === 'number')
+
   return (
     <>
     <motion.div
@@ -3032,6 +3048,20 @@ export function CanvasNodeCard({
             </button>
           </div>
         </div>
+
+        {hasParamRow ? (
+          <div className="canvas-node-params">
+            {paramModelLabel ? (
+              <span className="canvas-node-param-tag" title={paramModel}>{paramModelLabel}</span>
+            ) : null}
+            {paramRatio ? (
+              <span className="canvas-node-param-tag">{paramRatio}</span>
+            ) : null}
+            {typeof paramDuration === 'number' ? (
+              <span className="canvas-node-param-tag">{paramDuration}s</span>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="canvas-node-body">
           {node.kind === 'text' ? (

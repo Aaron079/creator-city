@@ -539,10 +539,12 @@
   position: relative;
   overflow: hidden;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(18, 20, 24, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(14, 16, 20, 0.84);
   backdrop-filter: blur(28px);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: grab;
   transition:
     transform 0.18s ease,
@@ -565,6 +567,34 @@
   cursor: grabbing;
 }
 
+.scope :global(.canvas-node-params) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px 7px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.scope :global(.canvas-node-param-tag) {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
 .scope :global(.canvas-node-body) {
   display: flex;
   min-height: 0;
@@ -583,15 +613,19 @@
 
 .scope :global(.canvas-node-card:hover) {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 22px 52px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
 }
 
 .scope :global(.canvas-node-card.is-active) {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
   box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.3),
+    0 20px 48px rgba(0, 0, 0, 0.34),
     0 0 0 1px var(--canvas-glow),
-    0 0 28px rgba(124, 255, 234, 0.08);
+    0 0 32px rgba(124, 255, 234, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
 }
 
 .scope :global(.canvas-node-card.is-dragging) {
@@ -642,6 +676,17 @@
 }
 
 .scope :global(.canvas-node-card.node-text) { --canvas-glow: rgba(138, 43, 226, 0.32); }
+.scope :global(.canvas-node-card.node-text:hover) {
+  border-color: rgba(180, 150, 220, 0.16);
+}
+.scope :global(.canvas-node-card.node-text.is-active) {
+  border-color: rgba(138, 43, 226, 0.28);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(138, 43, 226, 0.16),
+    0 0 28px rgba(138, 43, 226, 0.08),
+    inset 0 1px 0 rgba(180, 150, 220, 0.09);
+}
 .scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 220, 255, 0.30); }
 
 .scope :global(.canvas-node-card.node-image .canvas-node-body) {
@@ -684,7 +729,7 @@
   top: 0;
   height: 2px;
   background: linear-gradient(90deg, transparent 5%, var(--canvas-glow) 40%, var(--canvas-glow) 60%, transparent 95%);
-  opacity: 0.9;
+  opacity: 0.96;
 }
 
 .scope :global(.canvas-node-icon) {
@@ -694,16 +739,16 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .scope :global(.canvas-node-kind) {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(255, 255, 255, 0.40);
 }
 
 .scope :global(.canvas-node-title) {
@@ -2199,17 +2244,19 @@
 
 .scope :global(.canvas-node-footer-button) {
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.05);
   padding: 5px 9px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.68);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .scope :global(.canvas-node-footer-button:hover),
 .scope :global(.canvas-node-footer-button.is-confirm) {
-  border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.20);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .scope :global(.canvas-node-connector) {
@@ -2806,7 +2853,7 @@
 .scope :global(.canvas-node-empty) {
   font-size: 13px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.48);
+  color: rgba(255, 255, 255, 0.52);
 }
 
 .scope :global(.canvas-node-preview.is-image-result)::before,
@@ -5843,13 +5890,19 @@
   overflow: hidden;
   min-height: 0;
   border-radius: 13px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(0, 220, 255, 0.22);
   background: rgba(20, 20, 20, 0.92);
   padding: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 4px 18px rgba(0, 0, 0, 0.44);
 }
 
 .scope :global(.canvas-node-card.node-image.is-active .canvas-node-preview.is-image-result) {
-  border-color: rgba(124, 255, 234, 0.62);
+  border-color: rgba(0, 220, 255, 0.52);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 220, 255, 0.10),
+    0 4px 22px rgba(0, 0, 0, 0.50);
 }
 
 .scope :global(.canvas-node-card.node-video .canvas-node-preview.is-video-result) {
@@ -5858,8 +5911,12 @@
   overflow: hidden;
   min-height: 0;
   border-radius: 13px;
+  border: 1px solid rgba(160, 60, 255, 0.22);
   background: rgba(0, 0, 0, 0.46);
   padding: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(160, 60, 255, 0.06),
+    0 4px 18px rgba(0, 0, 0, 0.52);
 }
 
 .scope :global(.canvas-node-card.node-video .canvas-node-preview.is-video-result)::after {
@@ -5898,13 +5955,16 @@
   height: 48px;
   place-items: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(0, 0, 0, 0.58);
-  color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(0, 0, 0, 0.60);
+  color: rgba(255, 255, 255, 0.96);
   font-size: 18px;
   line-height: 1;
   backdrop-filter: blur(18px);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42), 0 0 0 6px rgba(255, 255, 255, 0.04);
+  box-shadow:
+    0 4px 22px rgba(0, 0, 0, 0.52),
+    0 0 0 6px rgba(255, 255, 255, 0.05),
+    0 0 22px rgba(160, 60, 255, 0.16);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
@@ -6640,13 +6700,13 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
-    rgba(0, 0, 0, 0.24);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+    rgba(0, 0, 0, 0.26);
   padding: 12px;
   text-align: left;
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .scope :global(.canvas-node-text-result:hover),
