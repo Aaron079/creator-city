@@ -7723,3 +7723,76 @@
   background: rgba(175, 130, 255, 0.68);
   color: #180e28;
 }
+
+/* P0e-UX-1 extended: generation panel additional refinements */
+
+/* Pulse animation: generating status dot breathes to signal active work */
+@keyframes generatingDotPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 18px rgba(142, 247, 255, 0.36); }
+  50%       { opacity: 0.52; box-shadow: 0 0 6px rgba(142, 247, 255, 0.10); }
+}
+
+.scope :global(.canvas-node-status-dot.status-generating),
+.scope :global(.canvas-node-status-dot.status-running) {
+  animation: generatingDotPulse 1.5s ease-in-out infinite;
+}
+
+/* Scan-line loading bar: left-to-right sweep over dark track */
+@keyframes loadingBarScan {
+  0%   { transform: translateX(-200%); }
+  100% { transform: translateX(400%); }
+}
+
+.scope :global(.canvas-node-loading-bar) {
+  width: min(200px, 76%);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.scope :global(.canvas-node-loading-bar)::before {
+  width: 28%;
+  background: linear-gradient(90deg, transparent, rgba(110, 247, 230, 0.80), transparent);
+  animation: loadingBarScan 1.7s ease-in-out infinite;
+  background-position: unset;
+}
+
+/* Topbar / prompt separator: hairline beneath the tools row */
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+/* Model panel: cyan left-border indicator for the active model */
+.scope :global(.canvas-prompt-footer-panel.is-model-panel .canvas-choice-button.is-active) {
+  background: rgba(45, 173, 230, 0.07);
+  border: 1px solid rgba(45, 173, 230, 0.13);
+  border-left: 2px solid rgba(45, 173, 230, 0.48);
+}
+
+/* Model panel: cyan hover (non-active) */
+.scope :global(.canvas-prompt-footer-panel.is-model-panel .canvas-choice-button:not(.is-active):hover) {
+  background: rgba(110, 247, 230, 0.05);
+  border: 1px solid rgba(110, 247, 230, 0.08);
+}
+
+/* Model icon: structured border */
+.scope :global(.canvas-prompt-footer-panel.is-model-panel .canvas-choice-icon) {
+  background: rgba(255, 255, 255, 0.038);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Param segment active: violet — matches the generate button CTA palette */
+.scope :global(.canvas-param-segment-button.is-active) {
+  background: rgba(130, 70, 240, 0.13);
+  color: rgba(205, 170, 255, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(130, 70, 240, 0.20);
+}
+
+/* Param labels: cinema-grade section header (like DaVinci / Resolve panels) */
+.scope :global(.canvas-param-label) {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.34);
+}
