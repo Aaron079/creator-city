@@ -7357,185 +7357,157 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          {/* Group 1: Status & Recovery */}
-          <div className="canvas-topbar-group">
-            <button
-              type="button"
-              className={`canvas-topbar-status-pill${saveStatus === 'saving' ? ' is-saving' : saveStatus === 'failed' ? ' is-error' : ' is-saved'}`}
-              title={saveMessage || '立即保存画布'}
-              disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
-              onClick={handleManualSave}
-            >
-              {saveStatus === 'saving'
-                ? '保存中...'
-                : saveStatus === 'saved'
-                  ? '已保存'
-                  : saveStatus === 'failed'
-                    ? '保存失败，重试'
-                    : '保存'}
-            </button>
-            <button
-              type="button"
-              className="canvas-secondary-button"
-              title="从数据库补回当前项目已生成但未写入画布的历史素材"
-              disabled={recoverNodeStatus === 'running' || !projectId}
-              onClick={() => { void handleRecoverCanvasNodes() }}
-            >
-              {recoverNodeStatus === 'running'
-                ? '恢复中…'
-                : recoverNodeStatus === 'done-recovered'
-                  ? `已恢复 ${recoverNodeCount} 个素材`
-                  : recoverNodeStatus === 'done-empty'
-                    ? '暂无可恢复素材'
-                    : recoverNodeStatus === 'failed'
-                      ? '恢复失败，请稍后重试'
-                      : '恢复历史素材'}
-            </button>
-            {ASSET_RECOVERY_TOOLS_ENABLED ? (
-              <>
-                <button
-                  type="button"
-                  className="canvas-secondary-button"
-                  title="扫描当前画布并按 assetId 恢复历史图片/视频资产"
-                  disabled={assetRecoverBatchStatus === 'running' || !projectId || nodes.length === 0}
-                  onClick={() => { void handleRecoverCanvasAssets() }}
-                >
-                  {assetRecoverBatchStatus === 'running'
-                    ? '恢复中...'
-                    : assetRecoverBatchStatus === 'done'
-                      ? '已扫描恢复'
-                      : assetRecoverBatchStatus === 'failed'
-                        ? '恢复失败，重试'
-                        : '扫描并恢复历史资产'}
-                </button>
-                <button
-                  type="button"
-                  className="canvas-secondary-button"
-                  title="诊断当前画布真实图片/视频节点，并逐节点 resolve、恢复、重新导入或导出诊断 JSON"
-                  disabled={!projectId}
-                  onClick={() => setP0MediaDebugOpen(true)}
-                >
-                  P0 媒体自检
-                </button>
-              </>
-            ) : null}
-          </div>
+          {/* Save status pill */}
+          <button
+            type="button"
+            className={`canvas-topbar-status-pill${saveStatus === 'saving' ? ' is-saving' : saveStatus === 'failed' ? ' is-error' : ' is-saved'}`}
+            title={saveMessage || '立即保存画布'}
+            disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
+            onClick={handleManualSave}
+          >
+            {saveStatus === 'saving'
+              ? '保存中...'
+              : saveStatus === 'saved'
+                ? '已保存'
+                : saveStatus === 'failed'
+                  ? '保存失败，重试'
+                  : '保存'}
+          </button>
 
-          <span className="canvas-topbar-divider" aria-hidden="true" />
+          {/* Link share — direct primary action */}
+          <button
+            type="button"
+            onClick={() => { void handleShareCanvasLink() }}
+            className="canvas-nav-link"
+            title="复制画布链接"
+            aria-label="复制画布链接"
+          >
+            {shareCopied ? '已复制' : '链接分享'}
+          </button>
 
-          {/* Group 2: Project Operations */}
-          <div className="canvas-topbar-group">
-            {hasActiveGenerations ? (
-              <button
-                type="button"
-                className="canvas-secondary-button"
-                style={{ color: '#f87171', borderColor: '#f87171' }}
-                title="停止当前所有生成中的节点，清空 timers，节点标记为 cancelled"
-                onClick={handleStopAllGenerations}
-              >
-                停止所有生成
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="canvas-secondary-button canvas-generation-tasks-trigger"
-              title="查看当前画布异步生成任务"
-              disabled={nodes.length === 0}
-              onClick={() => setGenerationTasksOpen(true)}
-            >
-              生成任务
-              {runningGenerationTaskCount > 0 ? (
-                <span className="canvas-generation-tasks-badge">{runningGenerationTaskCount}</span>
-              ) : null}
+          {/* Community — direct platform entry */}
+          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群">
+            社区
+          </a>
+
+          {/* More — collapsed dropdown for all secondary entries */}
+          <div className="canvas-topbar-more-wrap">
+            <button type="button" className="canvas-nav-link canvas-topbar-more-trigger" aria-label="更多功能" aria-haspopup="menu">
+              其它
             </button>
-            {STORYBOARD_TOOLS_ENABLED ? (
-              <>
+            <div className="canvas-topbar-more-menu" role="menu">
+              {/* A: Project ops */}
+              <div className="canvas-topbar-more-group">
+                <span className="canvas-topbar-more-label">项目</span>
+                <button type="button" onClick={() => setNewProjectOpen(true)} className="canvas-topbar-more-item" title="新建项目">
+                  新建项目
+                </button>
+                <button type="button" onClick={handleOpenProjects} className="canvas-topbar-more-item" title="打开项目列表" data-flush-canvas-before-nav="true">
+                  项目
+                </button>
+                <a href="/projects" className="canvas-topbar-more-item" title="项目中心">
+                  项目中心
+                </a>
+              </div>
+              {/* B: Production & assets */}
+              <div className="canvas-topbar-more-group">
+                <span className="canvas-topbar-more-label">生产与资产</span>
                 <button
                   type="button"
-                  className="canvas-secondary-button canvas-generation-tasks-trigger"
-                  title="按连接顺序查看 Storyboard Timeline"
+                  className="canvas-topbar-more-item canvas-generation-tasks-trigger"
                   disabled={nodes.length === 0}
-                  onClick={() => setStoryboardPreviewOpen(true)}
+                  onClick={() => setGenerationTasksOpen(true)}
+                  title="查看当前画布异步生成任务"
                 >
-                  组合预览
-                  {storyboardShotCount > 0 ? (
-                    <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
-                  ) : null}
+                  生成任务
+                  {runningGenerationTaskCount > 0 ? <span className="canvas-generation-tasks-badge">{runningGenerationTaskCount}</span> : null}
                 </button>
                 <button
                   type="button"
-                  className="canvas-secondary-button"
-                  title="打开分镜导演"
-                  onClick={() => setStoryboardDirectorOpen(true)}
+                  className="canvas-topbar-more-item"
+                  disabled={recoverNodeStatus === 'running' || !projectId}
+                  onClick={() => { void handleRecoverCanvasNodes() }}
+                  title="从数据库补回当前项目已生成但未写入画布的历史素材"
                 >
-                  分镜
-                  {directorState.shots.length > 0 ? (
-                    <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
-                  ) : null}
+                  {recoverNodeStatus === 'running' ? '恢复中…' : recoverNodeStatus === 'done-recovered' ? `已恢复 ${recoverNodeCount} 个素材` : recoverNodeStatus === 'done-empty' ? '暂无可恢复素材' : recoverNodeStatus === 'failed' ? '恢复失败，请稍后重试' : '恢复历史素材'}
                 </button>
-              </>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setNewProjectOpen(true)}
-              className="canvas-secondary-button"
-              title="新建项目"
-              aria-label="新建项目"
-              data-tooltip="新建项目"
-              data-flush-canvas-before-nav="true"
-            >
-              新建项目
-              <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => { void handleShareCanvasLink() }}
-              className="canvas-secondary-button"
-              title="复制画布链接"
-              aria-label="复制画布链接"
-              data-tooltip="复制画布链接"
-              data-flush-canvas-before-nav="true"
-            >
-              {shareCopied ? '已复制' : '链接分享'}
-              <span className="canvas-hover-tooltip" aria-hidden="true">复制画布链接</span>
-            </button>
-          </div>
-
-          <span className="canvas-topbar-divider" aria-hidden="true" />
-
-          {/* Group 3: Navigation */}
-          <div className="canvas-topbar-group">
-            <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表" data-flush-canvas-before-nav="true">
-              项目
-              <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
-            </button>
-            <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
-              社区
-              <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
-            </a>
-            <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
-              资产中心
-            </a>
-            <a href="/projects" className="canvas-nav-link" title="项目中心" aria-label="项目中心">
-              项目中心
-            </a>
-            <a href="/dashboard" className="canvas-nav-link" title="工作台" aria-label="工作台">
-              工作台
-            </a>
-            {canOpenClientDelivery ? (
-              <button
-                type="button"
-                onClick={handleOpenClientDelivery}
-                className="canvas-nav-link"
-                title="客户交付"
-                aria-label="打开客户交付界面"
-                data-tooltip="客户交付"
-                data-flush-canvas-before-nav="true"
-              >
-                客户
-                <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
-              </button>
-            ) : null}
+                <a href="/assets" className="canvas-topbar-more-item" title="资产中心">
+                  资产中心
+                </a>
+              </div>
+              {/* C: Workspace entries */}
+              <div className="canvas-topbar-more-group">
+                <span className="canvas-topbar-more-label">工作入口</span>
+                <a href="/dashboard" className="canvas-topbar-more-item" title="工作台">工作台</a>
+                {canOpenClientDelivery ? (
+                  <button type="button" onClick={handleOpenClientDelivery} className="canvas-topbar-more-item" title="客户交付" data-flush-canvas-before-nav="true">
+                    客户
+                  </button>
+                ) : null}
+              </div>
+              {/* D: Debug / advanced (conditional) */}
+              {(hasActiveGenerations || ASSET_RECOVERY_TOOLS_ENABLED || STORYBOARD_TOOLS_ENABLED) ? (
+                <div className="canvas-topbar-more-group">
+                  <span className="canvas-topbar-more-label">调试</span>
+                  {hasActiveGenerations ? (
+                    <button
+                      type="button"
+                      className="canvas-topbar-more-item"
+                      style={{ color: '#f87171' }}
+                      title="停止当前所有生成中的节点，清空 timers，节点标记为 cancelled"
+                      onClick={handleStopAllGenerations}
+                    >
+                      停止所有生成
+                    </button>
+                  ) : null}
+                  {ASSET_RECOVERY_TOOLS_ENABLED ? (
+                    <>
+                      <button
+                        type="button"
+                        className="canvas-topbar-more-item"
+                        disabled={assetRecoverBatchStatus === 'running' || !projectId || nodes.length === 0}
+                        onClick={() => { void handleRecoverCanvasAssets() }}
+                        title="扫描当前画布并按 assetId 恢复历史图片/视频资产"
+                      >
+                        {assetRecoverBatchStatus === 'running' ? '恢复中...' : assetRecoverBatchStatus === 'done' ? '已扫描恢复' : assetRecoverBatchStatus === 'failed' ? '恢复失败，重试' : '扫描并恢复历史资产'}
+                      </button>
+                      <button
+                        type="button"
+                        className="canvas-topbar-more-item"
+                        disabled={!projectId}
+                        onClick={() => setP0MediaDebugOpen(true)}
+                        title="诊断当前画布真实图片/视频节点"
+                      >
+                        P0 媒体自检
+                      </button>
+                    </>
+                  ) : null}
+                  {STORYBOARD_TOOLS_ENABLED ? (
+                    <>
+                      <button
+                        type="button"
+                        className="canvas-topbar-more-item canvas-generation-tasks-trigger"
+                        disabled={nodes.length === 0}
+                        onClick={() => setStoryboardPreviewOpen(true)}
+                        title="按连接顺序查看 Storyboard Timeline"
+                      >
+                        组合预览
+                        {storyboardShotCount > 0 ? <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span> : null}
+                      </button>
+                      <button
+                        type="button"
+                        className="canvas-topbar-more-item"
+                        onClick={() => setStoryboardDirectorOpen(true)}
+                        title="打开分镜导演"
+                      >
+                        分镜
+                        {directorState.shots.length > 0 ? <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span> : null}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

@@ -7462,3 +7462,264 @@
 .scope :global(.canvas-zoom-controls:hover .canvas-zoom-slider) {
   opacity: 1;
 }
+
+/* P0e-UI-5: Topbar nav condensed + Logo/brand spacing */
+
+/* Logo-link: add gap between deer icon and "Creator City" text */
+.scope :global(.canvas-topbar-logo-link) {
+  gap: 9px;
+}
+
+/* Logo: slightly larger */
+.scope :global(.canvas-topbar-logo) {
+  height: 32px;
+  width: 32px;
+}
+
+/* Home-link: reset gap — spacing is handled via separator below */
+.scope :global(.canvas-topbar-home-link) {
+  gap: 0;
+}
+
+/* Project name area: left separator + padding to separate from "Creator City" */
+.scope :global(.canvas-topbar-home-copy) {
+  padding-left: 14px;
+  margin-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Project title button: dimmer, clearly secondary */
+.scope :global(.canvas-project-title-button) {
+  color: rgba(255, 255, 255, 0.50);
+  font-size: 11px;
+}
+
+.scope :global(.canvas-project-title-button:hover) {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* "其它" dropdown wrapper */
+.scope :global(.canvas-topbar-more-wrap) {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* Dropdown menu: dark glass panel, hidden by default */
+.scope :global(.canvas-topbar-more-menu) {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 400;
+  min-width: 192px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(10, 11, 14, 0.95);
+  padding: 8px;
+  backdrop-filter: blur(28px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 64px rgba(0, 0, 0, 0.50);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.13s ease, transform 0.13s ease;
+}
+
+/* Show on hover or when focus is inside */
+.scope :global(.canvas-topbar-more-wrap:hover .canvas-topbar-more-menu),
+.scope :global(.canvas-topbar-more-wrap:focus-within .canvas-topbar-more-menu) {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Group container */
+.scope :global(.canvas-topbar-more-group) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.scope :global(.canvas-topbar-more-group:last-child) {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Group label */
+.scope :global(.canvas-topbar-more-label) {
+  display: block;
+  padding: 4px 8px 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.24);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Menu item (button and a) */
+.scope :global(.canvas-topbar-more-item) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  width: 100%;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.scope :global(.canvas-topbar-more-item:hover:not(:disabled)) {
+  background: rgba(110, 247, 230, 0.07);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.scope :global(.canvas-topbar-more-item:disabled) {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+
+/* P0e-UX-1: Node generation panel — director parameter panel refinement */
+
+/* Dialog: deeper cinema glass, backdrop blur */
+.scope :global(.canvas-node-dialog.create-floating-console) {
+  background: rgba(12, 13, 16, 0.97);
+  border-color: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(28px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 32px 80px rgba(0, 0, 0, 0.58);
+}
+
+/* Topbar tools: flat transparent default */
+.scope :global(.canvas-node-dialog-tool) {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+/* Hover/focus: cyan micro-glow, consistent with left dock */
+.scope :global(.canvas-node-dialog-tool:hover),
+.scope :global(.canvas-node-dialog-tool:focus-visible) {
+  background: rgba(110, 247, 230, 0.07);
+  border-color: rgba(110, 247, 230, 0.14);
+  color: rgba(110, 247, 230, 0.88);
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+/* Active tool (content-edit): slightly brighter white */
+.scope :global(.canvas-node-dialog-tool.is-active) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.90);
+}
+
+/* Solid tools (generate + reference shortcuts): violet signal */
+.scope :global(.canvas-node-dialog-tool.is-solid) {
+  background: rgba(130, 70, 240, 0.10);
+  border-color: rgba(130, 70, 240, 0.18);
+  color: rgba(175, 130, 255, 0.82);
+}
+
+.scope :global(.canvas-node-dialog-tool.is-solid:hover) {
+  background: rgba(130, 70, 240, 0.16);
+  border-color: rgba(130, 70, 240, 0.26);
+  color: rgba(205, 170, 255, 0.94);
+  box-shadow: 0 0 14px rgba(130, 70, 240, 0.14);
+  transform: translateY(-1px);
+}
+
+/* Prompt input: editorial letterform */
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: -0.015em;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input::placeholder) {
+  color: rgba(255, 255, 255, 0.27);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Footer divider: ultra-subtle */
+.scope :global(.canvas-node-dialog-footer-divider) {
+  background: rgba(255, 255, 255, 0.065);
+}
+
+/* Model pill: cyan provider indicator */
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-primary-pill) {
+  height: 30px;
+  border: 1px solid rgba(45, 173, 230, 0.15);
+  background: rgba(45, 173, 230, 0.055);
+  border-radius: 999px;
+  padding: 0 10px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-primary-pill:hover) {
+  background: rgba(45, 173, 230, 0.10);
+  border-color: rgba(45, 173, 230, 0.22);
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-primary-pill .canvas-footer-button-value) {
+  color: rgba(110, 200, 255, 0.86);
+}
+
+/* Reference/params pill: subtle warm glass */
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-reference-pill) {
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  background: rgba(255, 255, 255, 0.028);
+  border-radius: 999px;
+  padding: 0 10px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.scope :global(.canvas-node-dialog .canvas-footer-button.is-reference-pill:hover) {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+/* Credits display: amber cost-awareness tint */
+.scope :global(.canvas-credit-pill) {
+  color: rgba(255, 205, 90, 0.78);
+}
+
+/* Generate button: violet CTA with depth */
+.scope :global(.canvas-node-dialog .canvas-generate-button) {
+  background: rgba(130, 70, 240, 0.20);
+  box-shadow:
+    inset 0 0 0 1px rgba(130, 70, 240, 0.26),
+    0 0 18px rgba(130, 70, 240, 0.10);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.14s ease;
+}
+
+.scope :global(.canvas-node-dialog .canvas-generate-button:not(:disabled):hover) {
+  background: rgba(130, 70, 240, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(130, 70, 240, 0.34),
+    0 0 26px rgba(130, 70, 240, 0.18);
+  transform: translateY(-1px);
+}
+
+/* Send icon: violet-tinted arrow circle */
+.scope :global(.canvas-send-icon) {
+  background: rgba(175, 130, 255, 0.68);
+  color: #180e28;
+}
