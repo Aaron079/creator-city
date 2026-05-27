@@ -3723,8 +3723,8 @@
 
 /* Navigation and popover parity with the reference canvas. */
 .scope :global(.canvas-topbar-actions) {
-  gap: 6px;
-  max-width: min(420px, calc(100vw - 180px));
+  gap: 4px;
+  max-width: min(720px, calc(100vw - 240px));
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -3732,6 +3732,68 @@
 
 .scope :global(.canvas-topbar-actions::-webkit-scrollbar) {
   display: none;
+}
+
+.scope :global(.canvas-topbar-group) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.scope :global(.canvas-topbar-divider) {
+  display: block;
+  width: 1px;
+  height: 16px;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 1px;
+  margin: 0 2px;
+}
+
+.scope :global(.canvas-topbar-status-pill) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.36);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.scope :global(.canvas-topbar-status-pill.is-saved) {
+  pointer-events: none;
+  cursor: default;
+}
+
+.scope :global(.canvas-topbar-status-pill.is-saving) {
+  border-color: rgba(240, 192, 50, 0.20);
+  color: rgba(240, 192, 64, 0.78);
+  animation: createStatusPulse 1.6s ease-in-out infinite;
+}
+
+.scope :global(.canvas-topbar-status-pill.is-error) {
+  border-color: rgba(255, 110, 80, 0.28);
+  color: rgba(255, 150, 120, 0.92);
+  pointer-events: auto;
+}
+
+.scope :global(.canvas-topbar-status-pill.is-error:hover) {
+  border-color: rgba(255, 140, 110, 0.45);
+  color: rgba(255, 175, 155, 1);
+}
+
+@keyframes createStatusPulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.48; }
 }
 
 .scope :global(.canvas-nav-group) {

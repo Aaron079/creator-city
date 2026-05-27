@@ -7357,19 +7357,21 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          <button
-            type="button"
-            className="canvas-secondary-button"
-            title={saveMessage || '立即保存画布'}
-            disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
-            onClick={handleManualSave}
-          >
-            {saveStatus === 'saving'
-              ? '保存中...'
-              : saveStatus === 'saved'
-                ? '已保存'
-                : saveStatus === 'failed'
-                  ? '保存失败，重试'
+          {/* Group 1: Status & Recovery */}
+          <div className="canvas-topbar-group">
+            <button
+              type="button"
+              className={`canvas-topbar-status-pill${saveStatus === 'saving' ? ' is-saving' : saveStatus === 'failed' ? ' is-error' : ' is-saved'}`}
+              title={saveMessage || '立即保存画布'}
+              disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
+              onClick={handleManualSave}
+            >
+              {saveStatus === 'saving'
+                ? '保存中...'
+                : saveStatus === 'saved'
+                  ? '已保存'
+                  : saveStatus === 'failed'
+                    ? '保存失败，重试'
                     : '保存'}
             </button>
             <button
@@ -7417,111 +7419,124 @@ export function VisualCanvasWorkspace({
                 </button>
               </>
             ) : null}
-          {hasActiveGenerations ? (
-            <button
-              type="button"
-              className="canvas-secondary-button"
-              style={{ color: '#f87171', borderColor: '#f87171' }}
-              title="停止当前所有生成中的节点，清空 timers，节点标记为 cancelled"
-              onClick={handleStopAllGenerations}
-            >
-              停止所有生成
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="canvas-secondary-button canvas-generation-tasks-trigger"
-            title="查看当前画布异步生成任务"
-            disabled={nodes.length === 0}
-            onClick={() => setGenerationTasksOpen(true)}
-          >
-            生成任务
-            {runningGenerationTaskCount > 0 ? (
-              <span className="canvas-generation-tasks-badge">{runningGenerationTaskCount}</span>
-            ) : null}
-          </button>
-          {STORYBOARD_TOOLS_ENABLED ? (
-            <>
-              <button
-                type="button"
-                className="canvas-secondary-button canvas-generation-tasks-trigger"
-                title="按连接顺序查看 Storyboard Timeline"
-                disabled={nodes.length === 0}
-                onClick={() => setStoryboardPreviewOpen(true)}
-              >
-                组合预览
-                {storyboardShotCount > 0 ? (
-                  <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
-                ) : null}
-              </button>
+          </div>
+
+          <span className="canvas-topbar-divider" aria-hidden="true" />
+
+          {/* Group 2: Project Operations */}
+          <div className="canvas-topbar-group">
+            {hasActiveGenerations ? (
               <button
                 type="button"
                 className="canvas-secondary-button"
-                title="打开分镜导演"
-                onClick={() => setStoryboardDirectorOpen(true)}
+                style={{ color: '#f87171', borderColor: '#f87171' }}
+                title="停止当前所有生成中的节点，清空 timers，节点标记为 cancelled"
+                onClick={handleStopAllGenerations}
               >
-                分镜
-                {directorState.shots.length > 0 ? (
-                  <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
-                ) : null}
+                停止所有生成
               </button>
-            </>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setNewProjectOpen(true)}
-            className="canvas-secondary-button"
-            title="新建项目"
-            aria-label="新建项目"
-            data-tooltip="新建项目"
-            data-flush-canvas-before-nav="true"
-          >
-            新建项目
-            <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
-          </button>
-          <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表" data-flush-canvas-before-nav="true">
-            项目
-            <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
-          </button>
-          <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
-            社区
-            <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
-          </a>
-          <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
-            资产中心
-          </a>
-          <a href="/projects" className="canvas-nav-link" title="项目中心" aria-label="项目中心">
-            项目中心
-          </a>
-          <a href="/dashboard" className="canvas-nav-link" title="工作台" aria-label="工作台">
-            工作台
-          </a>
-          {canOpenClientDelivery ? (
+            ) : null}
             <button
               type="button"
-              onClick={handleOpenClientDelivery}
+              className="canvas-secondary-button canvas-generation-tasks-trigger"
+              title="查看当前画布异步生成任务"
+              disabled={nodes.length === 0}
+              onClick={() => setGenerationTasksOpen(true)}
+            >
+              生成任务
+              {runningGenerationTaskCount > 0 ? (
+                <span className="canvas-generation-tasks-badge">{runningGenerationTaskCount}</span>
+              ) : null}
+            </button>
+            {STORYBOARD_TOOLS_ENABLED ? (
+              <>
+                <button
+                  type="button"
+                  className="canvas-secondary-button canvas-generation-tasks-trigger"
+                  title="按连接顺序查看 Storyboard Timeline"
+                  disabled={nodes.length === 0}
+                  onClick={() => setStoryboardPreviewOpen(true)}
+                >
+                  组合预览
+                  {storyboardShotCount > 0 ? (
+                    <span className="canvas-generation-tasks-badge">{storyboardShotCount}</span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  className="canvas-secondary-button"
+                  title="打开分镜导演"
+                  onClick={() => setStoryboardDirectorOpen(true)}
+                >
+                  分镜
+                  {directorState.shots.length > 0 ? (
+                    <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span>
+                  ) : null}
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setNewProjectOpen(true)}
               className="canvas-secondary-button"
-              title="客户交付"
-              aria-label="打开客户交付界面"
-              data-tooltip="客户交付"
+              title="新建项目"
+              aria-label="新建项目"
+              data-tooltip="新建项目"
               data-flush-canvas-before-nav="true"
             >
-              客户
-              <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
+              新建项目
+              <span className="canvas-hover-tooltip" aria-hidden="true">保存当前画布并创建新项目</span>
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => { void handleShareCanvasLink() }}
-            className="canvas-secondary-button"
-            title="复制画布链接"
-            aria-label="复制画布链接"
-            data-tooltip="复制画布链接"
-            data-flush-canvas-before-nav="true"
-          >
-            {shareCopied ? '已复制' : '链接分享'}
-            <span className="canvas-hover-tooltip" aria-hidden="true">复制画布链接</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => { void handleShareCanvasLink() }}
+              className="canvas-secondary-button"
+              title="复制画布链接"
+              aria-label="复制画布链接"
+              data-tooltip="复制画布链接"
+              data-flush-canvas-before-nav="true"
+            >
+              {shareCopied ? '已复制' : '链接分享'}
+              <span className="canvas-hover-tooltip" aria-hidden="true">复制画布链接</span>
+            </button>
+          </div>
+
+          <span className="canvas-topbar-divider" aria-hidden="true" />
+
+          {/* Group 3: Navigation */}
+          <div className="canvas-topbar-group">
+            <button type="button" onClick={handleOpenProjects} className="canvas-nav-link" title="打开项目列表" aria-label="打开项目列表" data-tooltip="打开项目列表" data-flush-canvas-before-nav="true">
+              项目
+              <span className="canvas-hover-tooltip" aria-hidden="true">打开项目列表</span>
+            </button>
+            <a href="/community" className="canvas-nav-link" title="进入社群" aria-label="进入社群" data-tooltip="进入社群">
+              社区
+              <span className="canvas-hover-tooltip" aria-hidden="true">进入社群</span>
+            </a>
+            <a href="/assets" className="canvas-nav-link" title="资产中心" aria-label="资产中心">
+              资产中心
+            </a>
+            <a href="/projects" className="canvas-nav-link" title="项目中心" aria-label="项目中心">
+              项目中心
+            </a>
+            <a href="/dashboard" className="canvas-nav-link" title="工作台" aria-label="工作台">
+              工作台
+            </a>
+            {canOpenClientDelivery ? (
+              <button
+                type="button"
+                onClick={handleOpenClientDelivery}
+                className="canvas-nav-link"
+                title="客户交付"
+                aria-label="打开客户交付界面"
+                data-tooltip="客户交付"
+                data-flush-canvas-before-nav="true"
+              >
+                客户
+                <span className="canvas-hover-tooltip" aria-hidden="true">客户交付</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
