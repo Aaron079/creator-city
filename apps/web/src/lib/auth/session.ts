@@ -54,8 +54,8 @@ export async function getSession(token: string) {
           include: { user: { include: { profile: true } } },
         })
       } catch (retryErr) {
-        console.error('[auth/session] all retries failed — treating as unauthenticated', retryErr)
-        return null
+        console.error('[auth/session] all retries failed — session DB unavailable', retryErr)
+        throw Object.assign(new Error('Session DB temporarily unavailable'), { code: 'SESSION_DB_UNAVAILABLE', cause: retryErr })
       }
     }
   }

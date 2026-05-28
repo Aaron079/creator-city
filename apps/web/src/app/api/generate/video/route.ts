@@ -745,7 +745,7 @@ export async function POST(request: NextRequest) {
           'x-creator-executor-secret': cnSecret,
         },
         body: JSON.stringify({ generationJobId: generationJob.id }),
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(45_000),
       })
     } catch (err) {
       videoTriggerError = err

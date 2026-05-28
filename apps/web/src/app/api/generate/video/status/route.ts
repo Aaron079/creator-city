@@ -282,9 +282,11 @@ export async function GET(request: NextRequest) {
     }, { status: 200 })
   }
 
-  // Detect stalled jobs: QUEUED >2 min = executor never started; PROCESSING >5 min = executor hung
+  // Detect stalled jobs only when providerJobId is absent (FC never submitted to Seedance).
+  // When providerJobId is set, FC already submitted the task to the provider — do not fire stall
+  // errors that would poison CanvasNode.status even though the video may still be generating.
   const ageMs = Date.now() - new Date(generationJob.updatedAt).getTime()
-  if (generationJob.status === 'QUEUED' && ageMs > 2 * 60 * 1000) {
+  if (generationJob.status === 'QUEUED' && ageMs > 2 * 60 * 1000 && !generationJob.providerJobId) {
     return NextResponse.json({
       success: false,
       status: 'failed',
@@ -304,7 +306,7 @@ export async function GET(request: NextRequest) {
       ageMs,
     }, { status: 200 })
   }
-  if (ageMs > 5 * 60 * 1000) {
+  if (ageMs > 5 * 60 * 1000 && !generationJob.providerJobId) {
     const stallOutput = record(generationJob.output)
     return NextResponse.json({
       success: false,
@@ -323,6 +325,26 @@ export async function GET(request: NextRequest) {
       jobStatus: generationJob.status,
       updatedAt: generationJob.updatedAt.toISOString(),
       ageMs,
+    }, { status: 200 })
+  }
+  // providerJobId is set: FC already submitted to the provider, result still pending.
+  // Return running so frontend keeps polling without writing error to CanvasNode.
+  if (ageMs > 5 * 60 * 1000 && generationJob.providerJobId) {
+    return NextResponse.json({
+      success: true,
+      providerId,
+      status: 'running',
+      taskId: taskId || null,
+      generationJobId: generationJob.id,
+      providerJobId: generationJob.providerJobId,
+      providerRegion: sourceProviderRegion,
+      executionRegion,
+      storageRegion,
+      executorKind,
+      jobStatus: generationJob.status,
+      updatedAt: generationJob.updatedAt.toISOString(),
+      ageMs,
+      message: '视频已提交至火山引擎，等待结果中',
     }, { status: 200 })
   }
 

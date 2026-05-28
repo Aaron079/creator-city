@@ -3160,7 +3160,7 @@ export function CanvasNodeCard({
                         ref={videoPreviewRef}
                         className="canvas-node-preview-video"
                         src={videoProxiedSrc}
-                        poster={node.preview?.poster}
+                        poster={node.preview?.poster ? getProxiedMediaUrl(node.preview.poster) : undefined}
                         muted
                         playsInline
                         preload="metadata"
