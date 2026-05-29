@@ -619,7 +619,7 @@ export function CanvasPromptBox({
       ) : null}
 
       <div className="canvas-prompt-footer-nav">
-        <div className="canvas-prompt-footer-left">
+        <div className="canvas-prompt-footer-row1">
           {providerItem ? (
             <button
               ref={(element) => { footerButtonRefs.current[providerItem.id] = element }}
@@ -631,7 +631,21 @@ export function CanvasPromptBox({
               <span className="canvas-footer-button-value">{modelLabel}</span>
             </button>
           ) : null}
-          <span className="canvas-node-dialog-footer-divider" aria-hidden="true" />
+          {onGenerate ? (
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={generateDisabled}
+              className="create-iridescent-button canvas-generate-button"
+              aria-label={generateLabel}
+            >
+              <span className="canvas-credit-pill">{generateLabel === '生成' ? `◉ ${estimatedCredits ?? 112}` : generateLabel}</span>
+              <span className="canvas-send-icon">↑</span>
+            </button>
+          ) : null}
+        </div>
+
+        <div className="canvas-prompt-footer-row2">
           <button
             ref={(element) => { footerButtonRefs.current.params = element }}
             type="button"
@@ -640,33 +654,12 @@ export function CanvasPromptBox({
             aria-label="参数"
             title="参数"
           >
-            <span className="canvas-footer-button-value">参数 · {ratio ?? '16:9'} · {paramQuality} · {paramDuration}{paramAudio ? ' · ♫' : ''}</span>
+            <span className="canvas-footer-param-chip">{ratio ?? '16:9'}</span>
+            <span className="canvas-footer-param-chip">{paramQuality}</span>
+            <span className="canvas-footer-param-chip">{paramDuration}</span>
+            {paramAudio ? <span className="canvas-footer-param-chip">♫</span> : null}
           </button>
-        </div>
-
-        <div className="canvas-prompt-footer-right">
-          <button type="button" className="canvas-icon-button" aria-label="语音输入">
-            ♫
-          </button>
-          <span className="canvas-node-dialog-footer-divider" aria-hidden="true" />
-          <button type="button" className="canvas-footer-button is-count-pill">
-            <span className="canvas-footer-button-value">1×</span>
-          </button>
-          <span className="canvas-footer-button is-credit-pill">
-            <span className="canvas-footer-button-value">{estimatedCredits ?? 112} credits</span>
-          </span>
-            {onGenerate ? (
-              <button
-                type="button"
-                onClick={onGenerate}
-                disabled={generateDisabled}
-                className="create-iridescent-button canvas-generate-button"
-                aria-label={generateLabel}
-              >
-              <span className="canvas-credit-pill">{generateLabel === '生成' ? `◉ ${estimatedCredits ?? 112}` : generateLabel}</span>
-              <span className="canvas-send-icon">↑</span>
-            </button>
-          ) : null}
+          <span className="canvas-footer-chip-pill">{estimatedCredits ?? 112} credits</span>
         </div>
       </div>
     </div>

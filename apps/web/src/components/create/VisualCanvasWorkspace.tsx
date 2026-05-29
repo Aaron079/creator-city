@@ -13,6 +13,9 @@ import { CanvasTemplatePanel } from '@/components/create/CanvasTemplatePanel'
 import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { CreativeAssetsPanel } from '@/components/create/CreativeAssetsPanel'
 import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
+import { DirectorControlPanel } from '@/components/create/DirectorControlPanel'
+import { compileDirectorPrompt, hasDirectorControls } from '@/lib/director-controls/compileDirectorPrompt'
+import type { DirectorControlParams } from '@/lib/director-controls/types'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
@@ -2353,6 +2356,7 @@ export function VisualCanvasWorkspace({
   const [preferredKind, setPreferredKind] = useState<VisualCanvasNodeKind>('video')
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
   const [promptAssetMode, setPromptAssetMode] = useState<(typeof ASSET_OPTIONS)[number]['value']>('none')
+  const [directorControls, setDirectorControls] = useState<DirectorControlParams>({})
   const [promptParameter, setPromptParameter] = useState<(typeof PARAMETER_OPTIONS)[number]['value']>('16:9-balanced')
   const [hasStarted, setHasStarted] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
@@ -4211,6 +4215,7 @@ export function VisualCanvasWorkspace({
     if (activeNode.ratio) {
       setPromptRatio(activeNode.ratio)
     }
+    setDirectorControls({})
   }, [activeNode])
 
   useEffect(() => {
@@ -6151,7 +6156,12 @@ export function VisualCanvasWorkspace({
           .join('\n\n')
           .trim()
       : ''
-    const generationPrompt = trimmedPrompt || upstreamTextPrompt
+    const rawPrompt = trimmedPrompt || upstreamTextPrompt
+    const directorActive = (nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video') && hasDirectorControls(directorControls)
+    const directorResult = directorActive
+      ? compileDirectorPrompt({ basePrompt: rawPrompt, ...directorControls, target: nodeSnapshot.kind === 'video' ? 'video' : 'image' })
+      : null
+    const generationPrompt = directorResult?.finalPrompt ?? rawPrompt
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
         const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl
@@ -6281,7 +6291,9 @@ export function VisualCanvasWorkspace({
 
     const generationNodeSnapshot: VisualCanvasNode = {
       ...nodeSnapshot,
-      metadataJson: nodeSnapshot.metadataJson,
+      metadataJson: directorResult
+        ? { ...(typeof nodeSnapshot.metadataJson === 'object' && nodeSnapshot.metadataJson !== null && !Array.isArray(nodeSnapshot.metadataJson) ? nodeSnapshot.metadataJson as Record<string, unknown> : {}), directorControls: { ...directorControls, finalPrompt: directorResult.finalPrompt, ...directorResult.metadata } }
+        : nodeSnapshot.metadataJson,
     }
 
     const generationController = nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video'
@@ -6675,7 +6687,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, directorControls, edges, editingNode, finishNodeGeneration, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -7263,7 +7275,7 @@ export function VisualCanvasWorkspace({
 
     const viewportMargin = 24
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const dialogWidth = Math.max(320, Math.min(640, window.innerWidth - viewportMargin * 2))
+    const dialogWidth = Math.max(320, Math.min(860, window.innerWidth - viewportMargin * 2))
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
@@ -8010,7 +8022,7 @@ export function VisualCanvasWorkspace({
       {editingNode && nodeDialogStyle ? (
         <div
           className="canvas-node-dialog create-floating-console"
-          style={nodeDialogStyle}
+          style={{ ...nodeDialogStyle, height: 'auto', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <CanvasPromptBox
@@ -8061,6 +8073,14 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setEditingNodeId(null)}
           />
+          {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
+            <DirectorControlPanel
+              controls={directorControls}
+              onChange={setDirectorControls}
+              basePrompt={canvasPrompt}
+              target={editingNode.kind === 'video' ? 'video' : 'image'}
+            />
+          )}
         </div>
       ) : null}
 

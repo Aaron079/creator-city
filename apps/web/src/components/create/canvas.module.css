@@ -3327,8 +3327,8 @@
 
 .scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr) 42px;
-  height: 100%;
+  grid-template-rows: 38px minmax(60px, auto) auto;
+  height: auto;
   min-height: 0;
   gap: 0;
 }
@@ -3529,11 +3529,27 @@
 
 .scope :global(.canvas-node-dialog .canvas-prompt-footer-nav) {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: visible;
+  gap: 8px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-row1) {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 42px;
-  overflow: visible;
-  gap: 12px;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-footer-row2) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
 }
 
 .scope :global(.canvas-node-dialog .canvas-prompt-footer-left),
@@ -3572,7 +3588,17 @@
 }
 
 .scope :global(.canvas-node-dialog .canvas-footer-button.is-reference-pill) {
-  max-width: min(300px, 30vw);
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  max-width: none;
+  min-width: 0;
+  overflow: visible;
+  height: auto;
+  border-radius: 12px;
+  padding: 5px 8px;
 }
 
 .scope :global(.canvas-node-dialog .canvas-footer-button-value) {
@@ -7795,4 +7821,240 @@
   letter-spacing: 0.10em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.34);
+}
+
+/* ═══════════════════════════════════════════════════════
+   Director Control Panel
+   ═══════════════════════════════════════════════════════ */
+
+.scope :global(.director-control-panel) {
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.scope :global(.director-control-toggle) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.40);
+  text-align: left;
+  transition: color 0.15s;
+  border-radius: 6px;
+}
+
+.scope :global(.director-control-toggle:hover) {
+  color: rgba(255, 255, 255, 0.70);
+}
+
+.scope :global(.director-control-toggle.is-open) {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+.scope :global(.director-control-toggle.has-active) {
+  color: rgba(180, 140, 255, 0.85);
+}
+
+.scope :global(.director-control-toggle-icon) {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.scope :global(.director-active-summary) {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(180, 140, 255, 0.70);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.scope :global(.director-active-dot) {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(180, 140, 255, 0.85);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.scope :global(.director-control-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 2px 4px;
+}
+
+.scope :global(.director-control-group) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scope :global(.director-control-group-label) {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.30);
+}
+
+.scope :global(.director-control-chips) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scope :global(.director-chip) {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.scope :global(.director-chip:hover) {
+  background: rgba(180, 140, 255, 0.10);
+  border-color: rgba(180, 140, 255, 0.25);
+  color: rgba(220, 190, 255, 0.90);
+}
+
+.scope :global(.director-chip.is-active) {
+  background: rgba(130, 70, 240, 0.18);
+  border-color: rgba(180, 140, 255, 0.40);
+  color: rgba(220, 190, 255, 0.95);
+  font-weight: 600;
+}
+
+.scope :global(.director-prompt-preview) {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(180, 140, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scope :global(.director-prompt-preview-label) {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(180, 140, 255, 0.60);
+  letter-spacing: 0.04em;
+}
+
+.scope :global(.director-prompt-preview-text) {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.75);
+  word-break: break-word;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.scope :global(.director-prompt-preview-actions) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.scope :global(.director-prompt-copy-btn),
+.scope :global(.director-prompt-reset-btn) {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.scope :global(.director-prompt-copy-btn:hover) {
+  background: rgba(130, 70, 240, 0.15);
+  color: rgba(220, 190, 255, 0.95);
+  border-color: rgba(180, 140, 255, 0.30);
+}
+
+.scope :global(.director-prompt-reset-btn:hover) {
+  background: rgba(255, 60, 60, 0.10);
+  color: rgba(255, 140, 140, 0.90);
+  border-color: rgba(255, 60, 60, 0.20);
+}
+
+.scope :global(.director-empty-hint) {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.28);
+  font-style: italic;
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* Node card director summary tags */
+.scope :global(.director-node-summary) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.scope :global(.director-node-tag) {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(130, 70, 240, 0.12);
+  border: 1px solid rgba(180, 140, 255, 0.18);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: rgba(200, 165, 255, 0.80);
+  white-space: nowrap;
+}
+
+/* Footer param chips — individual parameter tags in footer row 2 */
+.scope :global(.canvas-footer-param-chip) {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope :global(.canvas-footer-chip-pill) {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 205, 90, 0.08);
+  border: 1px solid rgba(255, 205, 90, 0.14);
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 205, 90, 0.72);
+  white-space: nowrap;
 }

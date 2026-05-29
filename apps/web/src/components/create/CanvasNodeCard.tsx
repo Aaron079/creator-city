@@ -3079,6 +3079,20 @@ export function CanvasNodeCard({
             ) : null}
           </div>
         ) : null}
+        {(() => {
+          const dc = nodeMetadata.directorControls && typeof nodeMetadata.directorControls === 'object' && !Array.isArray(nodeMetadata.directorControls)
+            ? nodeMetadata.directorControls as Record<string, unknown>
+            : null
+          const summary = dc && typeof dc.summarySentence === 'string' ? dc.summarySentence : null
+          if (!summary || (node.kind !== 'image' && node.kind !== 'video')) return null
+          return (
+            <div className="director-node-summary">
+              {summary.split(' · ').filter(Boolean).map((tag) => (
+                <span key={tag} className="director-node-tag">{tag}</span>
+              ))}
+            </div>
+          )
+        })()}
 
         <div className="canvas-node-body">
           {node.kind === 'text' ? (
