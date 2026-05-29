@@ -1,4 +1,4 @@
-import type { ShotType, CameraMovement, DirectorStyle, Lighting, Color, Rhythm } from './types'
+import type { ShotType, CameraMovement, DirectorStyle, Lighting, Color, Rhythm, CameraBody, LensType, FocalLength, Aperture } from './types'
 
 type Preset = {
   label: string
@@ -159,6 +159,113 @@ export const RHYTHM_PRESETS: Record<Rhythm, Preset> = {
   },
 }
 
+export const CAMERA_BODY_PRESETS: Record<CameraBody, Preset> = {
+  'cinema': {
+    label: '电影机',
+    positives: ['large format cinema camera', 'film-grade sensor quality', 'anamorphic optics character', 'ARRI or RED equivalent', 'cinema-grade image rendition'],
+    negatives: ['consumer camera', 'phone camera', 'amateur gear'],
+  },
+  'handheld': {
+    label: '手持',
+    positives: ['handheld camera feel', 'organic camera movement', 'documentary energy', 'intimate handheld framing', 'natural camera breathing'],
+    negatives: ['locked-off tripod', 'perfect stability', 'sterile camera motion'],
+  },
+  'drone': {
+    label: '无人机',
+    positives: ['aerial drone shot', 'UAV perspective', 'stabilized aerial movement', 'sweeping aerial vista', 'elevated bird-eye angle'],
+    negatives: ['ground level', 'eye-level shot', 'low angle'],
+  },
+  'studio': {
+    label: '摄影棚',
+    positives: ['studio camera setup', 'controlled studio environment', 'precision studio lighting', 'commercial studio aesthetic', 'clean studio background'],
+    negatives: ['outdoor location', 'natural environment', 'documentary rough'],
+  },
+}
+
+export const LENS_TYPE_PRESETS: Record<LensType, Preset> = {
+  'wide-angle': {
+    label: '广角',
+    positives: ['wide-angle lens', 'exaggerated perspective', 'environmental context', 'expanded field of view', 'distorted foreground depth'],
+    negatives: ['telephoto compression', 'narrow field of view', 'background isolation'],
+  },
+  'standard': {
+    label: '标准',
+    positives: ['standard lens', 'natural perspective', '50mm equivalent focal length', 'true-to-eye field of view', 'neutral perspective rendition'],
+    negatives: ['distorted wide angle', 'telephoto compression'],
+  },
+  'telephoto': {
+    label: '长焦',
+    positives: ['telephoto lens', 'compressed perspective', 'subject isolation', 'background bokeh', 'telephoto reach', 'shallow depth of field'],
+    negatives: ['wide-angle distortion', 'expanded field of view', 'environmental context'],
+  },
+  'macro': {
+    label: '微距',
+    positives: ['macro lens', 'extreme close-up detail', 'razor-thin depth of field', 'micro texture visible', 'magnified subject detail'],
+    negatives: ['wide shot', 'environmental context', 'deep depth of field'],
+  },
+}
+
+export const FOCAL_LENGTH_PRESETS: Record<FocalLength, Preset> = {
+  '14mm': {
+    label: '14mm',
+    positives: ['14mm ultra-wide lens', 'extreme environmental context', 'maximum field of view', 'ultra-wide perspective'],
+    negatives: ['telephoto reach', 'compressed perspective'],
+  },
+  '24mm': {
+    label: '24mm',
+    positives: ['24mm wide lens', 'environmental storytelling', 'minimal distortion wide', 'reportage wide angle'],
+    negatives: ['telephoto compression', 'narrow focus'],
+  },
+  '35mm': {
+    label: '35mm',
+    positives: ['35mm lens', 'classic cinema focal length', 'natural wide perspective', 'street photography feel'],
+    negatives: ['telephoto compression', 'extreme wide distortion'],
+  },
+  '50mm': {
+    label: '50mm',
+    positives: ['50mm standard lens', 'true-to-eye perspective', 'neutral natural look', 'classic portrait distance'],
+    negatives: ['distorted wide angle', 'telephoto reach'],
+  },
+  '85mm': {
+    label: '85mm',
+    positives: ['85mm portrait lens', 'flattering facial compression', 'beautiful background separation', 'classic portrait focal length'],
+    negatives: ['wide environmental context', 'distorted perspective'],
+  },
+  '135mm': {
+    label: '135mm',
+    positives: ['135mm telephoto lens', 'extreme background compression', 'dream-like bokeh', 'subject lifted from background'],
+    negatives: ['wide environmental context', 'minimal compression'],
+  },
+}
+
+export const APERTURE_PRESETS: Record<Aperture, Preset> = {
+  'f1.4': {
+    label: 'f/1.4',
+    positives: ['f/1.4 wide aperture', 'razor-thin depth of field', 'extreme bokeh', 'dreamy lens character', 'maximum light gathering'],
+    negatives: ['deep depth of field', 'everything in focus', 'closed aperture'],
+  },
+  'f2.8': {
+    label: 'f/2.8',
+    positives: ['f/2.8 aperture', 'shallow depth of field', 'beautiful background separation', 'creamy bokeh', 'cinematic subject isolation'],
+    negatives: ['deep depth of field', 'landscape sharpness'],
+  },
+  'f4': {
+    label: 'f/4',
+    positives: ['f/4 aperture', 'moderate depth of field', 'balanced sharpness and bokeh', 'versatile exposure'],
+    negatives: ['extreme bokeh', 'fully deep focus'],
+  },
+  'f8': {
+    label: 'f/8',
+    positives: ['f/8 aperture', 'deep depth of field', 'landscape sharpness', 'foreground to background in focus'],
+    negatives: ['shallow bokeh', 'subject isolation', 'dreamy soft focus'],
+  },
+  'f11': {
+    label: 'f/11',
+    positives: ['f/11 aperture', 'maximum depth of field', 'everything in sharp focus', 'landscape and architecture photography style', 'diffraction-limited sharpness'],
+    negatives: ['bokeh', 'shallow depth', 'subject isolation', 'dreamy lens character'],
+  },
+}
+
 export const CONTROL_GROUP_LABELS = {
   shotType: '镜头类型',
   cameraMovement: '镜头运动',
@@ -166,6 +273,10 @@ export const CONTROL_GROUP_LABELS = {
   lighting: '光线',
   color: '色彩',
   rhythm: '节奏',
+  cameraBody: '机身',
+  lensType: '镜头',
+  focalLength: '焦距',
+  aperture: '光圈',
 } as const
 
 export const CONTROL_GROUP_TOOLTIPS: Record<string, string> = {
@@ -196,4 +307,23 @@ export const CONTROL_GROUP_TOOLTIPS: Record<string, string> = {
   'slow-motion': '慢动作：动作悬停、优雅流畅',
   'fast-paced': '快节奏：动感、高能量、快速节奏',
   'stable-shot': '稳定镜头：无抖动、稳定器质感、平滑移动',
+  cinema: '电影机：大底电影传感器、变形镜头质感、院线级画质',
+  handheld: '手持：有机摄影机运动、纪录片质感、亲密感',
+  drone: '无人机：航拍视角、稳定空中运动、俯瞰全景',
+  studio: '摄影棚：精准布光、商业级画质、受控环境',
+  'wide-angle': '广角：夸张透视、宽阔视野、环境感强',
+  standard: '标准：自然视角、50mm等效、接近人眼',
+  telephoto: '长焦：压缩透视、背景虚化、主体隔离',
+  macro: '微距：极近细节、极浅景深、材质纹理可见',
+  '14mm': '14mm超广：最大视野、建筑/风景常用',
+  '24mm': '24mm广角：纪实摄影、轻微畸变',
+  '35mm': '35mm：经典电影焦距、自然视角略宽',
+  '50mm': '50mm：人眼视角、最自然透视',
+  '85mm': '85mm：人像首选、背景漂亮分离',
+  '135mm': '135mm：极致压缩、梦幻虚化、主体飘离背景',
+  'f1.4': 'f/1.4：极浅景深、虚化极强、追求电影梦幻感',
+  'f2.8': 'f/2.8：浅景深、背景美丽分离、电影感',
+  f4: 'f/4：适中景深、虚化与清晰平衡',
+  f8: 'f/8：大景深、前后都清晰、风景常用',
+  f11: 'f/11：最大景深、一切锐利，建筑/风景摄影风格',
 }

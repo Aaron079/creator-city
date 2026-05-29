@@ -14,7 +14,7 @@ import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { CreativeAssetsPanel } from '@/components/create/CreativeAssetsPanel'
 import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { DirectorControlPanel } from '@/components/create/DirectorControlPanel'
-import { compileDirectorPrompt, hasDirectorControls } from '@/lib/director-controls/compileDirectorPrompt'
+import { compileDirectorPrompt, hasDirectorControls, compileAssetPreview } from '@/lib/director-controls/compileDirectorPrompt'
 import type { DirectorControlParams } from '@/lib/director-controls/types'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
 import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
@@ -356,7 +356,7 @@ const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string;
 const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }> = {
   text: { width: 360, height: 300 },
   image: { width: 380, height: 320 },
-  video: { width: 288, height: 162 },
+  video: { width: 380, height: 320 },
   audio: { width: 360, height: 260 },
   asset: { width: 360, height: 280 },
   template: { width: 360, height: 280 },
@@ -7882,6 +7882,7 @@ export function VisualCanvasWorkspace({
                   onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
                   onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
                   generationHealth={generationHealth}
+                  directorPreview={node.id === editingNodeId && (node.kind === 'image' || node.kind === 'video') ? compileAssetPreview(directorControls) : undefined}
                 />
               </CanvasNodeErrorBoundary>
             </div>

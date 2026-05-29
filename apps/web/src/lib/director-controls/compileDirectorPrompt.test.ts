@@ -1,4 +1,4 @@
-import { compileDirectorPrompt, hasDirectorControls } from './compileDirectorPrompt'
+import { compileDirectorPrompt, hasDirectorControls, compileAssetPreview } from './compileDirectorPrompt'
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(`FAIL: ${message}`)
@@ -131,6 +131,85 @@ function run() {
     assert(result.finalPrompt.includes('close shot'), 'empty base + shotType: directives should be finalPrompt')
     assert(!result.finalPrompt.startsWith(','), 'no leading comma when base is empty')
     console.log('✓ empty basePrompt + controls → directives only, no leading comma')
+  }
+
+  // 15. cameraBody: cinema
+  {
+    const result = compileDirectorPrompt({ basePrompt: 'warrior', cameraBody: 'cinema', target: 'image' })
+    assert(result.finalPrompt.includes('cinema camera'), 'cinema: should include "cinema camera"')
+    assert(result.metadata.cameraBodyLabel === '电影机', 'cinema: label should be 电影机')
+    console.log('✓ cameraBody=cinema → 电影机, includes "cinema camera"')
+  }
+
+  // 16. lensType: telephoto
+  {
+    const result = compileDirectorPrompt({ basePrompt: 'portrait', lensType: 'telephoto', target: 'image' })
+    assert(result.finalPrompt.includes('telephoto lens'), 'telephoto: should include "telephoto lens"')
+    assert(result.metadata.lensTypeLabel === '长焦', 'telephoto: label should be 长焦')
+    console.log('✓ lensType=telephoto → 长焦, includes "telephoto lens"')
+  }
+
+  // 17. focalLength: 85mm
+  {
+    const result = compileDirectorPrompt({ basePrompt: 'portrait', focalLength: '85mm', target: 'image' })
+    assert(result.finalPrompt.includes('85mm'), 'focalLength=85mm: should include "85mm"')
+    assert(result.metadata.focalLengthLabel === '85mm', 'focalLength=85mm: label should be 85mm')
+    console.log('✓ focalLength=85mm → label 85mm, directive included')
+  }
+
+  // 18. aperture: f1.4
+  {
+    const result = compileDirectorPrompt({ basePrompt: 'bokeh shot', aperture: 'f1.4', target: 'image' })
+    assert(result.finalPrompt.includes('f/1.4'), 'f1.4: should include "f/1.4"')
+    assert(result.metadata.apertureLabel === 'f/1.4', 'f1.4: label should be f/1.4')
+    console.log('✓ aperture=f1.4 → f/1.4, includes directive')
+  }
+
+  // 19. hasDirectorControls now detects new fields
+  {
+    assert(hasDirectorControls({ cameraBody: 'drone' }), 'cameraBody=drone: hasDirectorControls should be true')
+    assert(hasDirectorControls({ lensType: 'macro' }), 'lensType=macro: hasDirectorControls should be true')
+    assert(hasDirectorControls({ focalLength: '35mm' }), 'focalLength=35mm: hasDirectorControls should be true')
+    assert(hasDirectorControls({ aperture: 'f8' }), 'aperture=f8: hasDirectorControls should be true')
+    assert(!hasDirectorControls({}), 'empty: hasDirectorControls should be false')
+    console.log('✓ hasDirectorControls detects all new fields')
+  }
+
+  // 20. compileAssetPreview: color=cool → CSS filter
+  {
+    const preview = compileAssetPreview({ color: 'cool' })
+    assert(typeof preview.filter === 'string' && preview.filter.includes('saturate'), 'cool: filter should include saturate')
+    assert(preview.playbackRate === undefined, 'cool: no playbackRate without rhythm')
+    console.log('✓ compileAssetPreview color=cool → CSS filter with saturate')
+  }
+
+  // 21. compileAssetPreview: rhythm=slow-motion → playbackRate 0.5
+  {
+    const preview = compileAssetPreview({ rhythm: 'slow-motion' })
+    assert(preview.playbackRate === 0.5, 'slow-motion: playbackRate should be 0.5')
+    console.log('✓ compileAssetPreview rhythm=slow-motion → playbackRate 0.5')
+  }
+
+  // 22. compileAssetPreview: cameraMovement=push-in → animation
+  {
+    const preview = compileAssetPreview({ cameraMovement: 'push-in' })
+    assert(typeof preview.animation === 'string' && preview.animation.includes('dc-push-in'), 'push-in: animation should include dc-push-in')
+    console.log('✓ compileAssetPreview cameraMovement=push-in → dc-push-in animation')
+  }
+
+  // 23. summarySentence includes cameraBody/lensType/focalLength/aperture when set
+  {
+    const result = compileDirectorPrompt({
+      basePrompt: 'test',
+      cameraBody: 'cinema',
+      focalLength: '85mm',
+      aperture: 'f2.8',
+      target: 'image',
+    })
+    assert(result.metadata.summarySentence.includes('电影机'), 'summarySentence: should include 电影机')
+    assert(result.metadata.summarySentence.includes('85mm'), 'summarySentence: should include 85mm')
+    assert(result.metadata.summarySentence.includes('f/2.8'), 'summarySentence: should include f/2.8')
+    console.log('✓ summarySentence includes new camera fields')
   }
 
   console.log('\n✅ All tests passed')

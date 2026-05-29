@@ -9,6 +9,7 @@ import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
+import type { AssetPreviewConfig } from '@/lib/director-controls/types'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -77,6 +78,7 @@ interface CanvasNodeCardProps {
   onAddToStoryboard?: () => void
   dragging?: boolean
   generationHealth?: GenerationHealthResponse | null
+  directorPreview?: AssetPreviewConfig
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1369,6 +1371,7 @@ export function CanvasNodeCard({
   onAddToStoryboard,
   dragging = false,
   generationHealth = null,
+  directorPreview,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -2575,6 +2578,17 @@ export function CanvasNodeCard({
     setRetryPersistenceStatus('idle')
   }, [videoPreviewUrl])
 
+  useEffect(() => {
+    const video = videoPreviewRef.current
+    if (!video) return
+    const rate = directorPreview?.playbackRate
+    if (typeof rate === 'number' && rate > 0) {
+      video.playbackRate = rate
+    } else {
+      video.playbackRate = 1.0
+    }
+  }, [directorPreview?.playbackRate])
+
   const renderRetryPersistenceButton = (mediaKind: 'image' | 'video', compact = false) => retryPersistenceAvailable ? (
     <button
       type="button"
@@ -3190,11 +3204,24 @@ export function CanvasNodeCard({
                         muted
                         playsInline
                         preload="metadata"
-                        style={{ pointerEvents: 'none' }}
+                        style={{
+                          pointerEvents: 'none',
+                          ...(directorPreview?.filter ? { filter: directorPreview.filter } : {}),
+                          ...(directorPreview?.animation ? { animation: directorPreview.animation } : {}),
+                        }}
                         onError={selectNextVideoCandidate}
                         onLoadedMetadata={() => setVideoLoadFailed(false)}
                         onCanPlay={() => setVideoLoadFailed(false)}
                       />
+                      {directorPreview?.overlayGradient && (
+                        <div
+                          aria-hidden="true"
+                          style={{
+                            position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
+                            background: directorPreview.overlayGradient,
+                          }}
+                        />
+                      )}
                       <span className="canvas-node-video-play" aria-hidden="true">▶</span>
                       {/* Expand button — a <button> is in isInteractiveTarget list, so clicking it
                           bypasses the parent onPointerDown's event.preventDefault(), which normally
@@ -3261,7 +3288,11 @@ export function CanvasNodeCard({
                         className="canvas-node-preview-image"
                         loading="lazy"
                         draggable={false}
-                        style={{ pointerEvents: 'none' }}
+                        style={{
+                          pointerEvents: 'none',
+                          ...(directorPreview?.filter ? { filter: directorPreview.filter } : {}),
+                          ...(directorPreview?.animation ? { animation: directorPreview.animation } : {}),
+                        }}
                         onLoad={(event) => {
                           setImageLoadFailed(false)
                           const { naturalWidth, naturalHeight } = event.currentTarget
@@ -3271,6 +3302,15 @@ export function CanvasNodeCard({
                         }}
                         onError={selectNextImageCandidate}
                       />
+                      {directorPreview?.overlayGradient && (
+                        <div
+                          aria-hidden="true"
+                          style={{
+                            position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
+                            background: directorPreview.overlayGradient,
+                          }}
+                        />
+                      )}
                       {/* Expand button — a <button> is in isInteractiveTarget list, so clicking it
                           bypasses the parent onPointerDown's event.preventDefault(), which normally
                           suppresses dblclick. This is the reliable lightbox trigger. */}

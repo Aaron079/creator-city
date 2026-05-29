@@ -1,4 +1,4 @@
-import type { DirectorControlInput, DirectorControlOutput } from './types'
+import type { DirectorControlInput, DirectorControlOutput, DirectorControlParams, AssetPreviewConfig } from './types'
 import {
   SHOT_TYPE_PRESETS,
   CAMERA_MOVEMENT_PRESETS,
@@ -6,10 +6,17 @@ import {
   LIGHTING_PRESETS,
   COLOR_PRESETS,
   RHYTHM_PRESETS,
+  CAMERA_BODY_PRESETS,
+  LENS_TYPE_PRESETS,
+  FOCAL_LENGTH_PRESETS,
+  APERTURE_PRESETS,
 } from './presets'
 
 export function compileDirectorPrompt(input: DirectorControlInput): DirectorControlOutput {
-  const { basePrompt, shotType, cameraMovement, style, lighting, color, rhythm, target = 'image' } = input
+  const {
+    basePrompt, shotType, cameraMovement, style, lighting, color, rhythm,
+    cameraBody, lensType, focalLength, aperture, target = 'image',
+  } = input
 
   const positives: string[] = []
   const negatives: string[] = []
@@ -20,6 +27,10 @@ export function compileDirectorPrompt(input: DirectorControlInput): DirectorCont
     lightingLabel: '',
     colorLabel: '',
     rhythmLabel: '',
+    cameraBodyLabel: '',
+    lensTypeLabel: '',
+    focalLengthLabel: '',
+    apertureLabel: '',
     summarySentence: '',
   }
 
@@ -65,6 +76,34 @@ export function compileDirectorPrompt(input: DirectorControlInput): DirectorCont
     metadata.rhythmLabel = p.label
   }
 
+  if (cameraBody && CAMERA_BODY_PRESETS[cameraBody]) {
+    const p = CAMERA_BODY_PRESETS[cameraBody]
+    positives.push(...p.positives)
+    negatives.push(...p.negatives)
+    metadata.cameraBodyLabel = p.label
+  }
+
+  if (lensType && LENS_TYPE_PRESETS[lensType]) {
+    const p = LENS_TYPE_PRESETS[lensType]
+    positives.push(...p.positives)
+    negatives.push(...p.negatives)
+    metadata.lensTypeLabel = p.label
+  }
+
+  if (focalLength && FOCAL_LENGTH_PRESETS[focalLength]) {
+    const p = FOCAL_LENGTH_PRESETS[focalLength]
+    positives.push(...p.positives)
+    negatives.push(...p.negatives)
+    metadata.focalLengthLabel = p.label
+  }
+
+  if (aperture && APERTURE_PRESETS[aperture]) {
+    const p = APERTURE_PRESETS[aperture]
+    positives.push(...p.positives)
+    negatives.push(...p.negatives)
+    metadata.apertureLabel = p.label
+  }
+
   const deduped = [...new Set(positives)]
 
   // For video, directives appear after the base prompt — better for Chinese video models like Seedance.
@@ -86,12 +125,16 @@ export function compileDirectorPrompt(input: DirectorControlInput): DirectorCont
   }
 
   const labels = [
+    metadata.cameraBodyLabel,
     metadata.shotTypeLabel,
     metadata.cameraMovementLabel,
     metadata.styleLabel,
     metadata.lightingLabel,
     metadata.colorLabel,
     metadata.rhythmLabel,
+    metadata.lensTypeLabel,
+    metadata.focalLengthLabel,
+    metadata.apertureLabel,
   ].filter(Boolean)
   metadata.summarySentence = labels.join(' · ')
 
@@ -99,5 +142,91 @@ export function compileDirectorPrompt(input: DirectorControlInput): DirectorCont
 }
 
 export function hasDirectorControls(params: Omit<DirectorControlInput, 'basePrompt'>): boolean {
-  return Boolean(params.shotType || params.cameraMovement || params.style || params.lighting || params.color || params.rhythm)
+  return Boolean(
+    params.shotType || params.cameraMovement || params.style || params.lighting ||
+    params.color || params.rhythm || params.cameraBody || params.lensType ||
+    params.focalLength || params.aperture,
+  )
+}
+
+/**
+ * Computes CSS-level preview effects from director controls.
+ * These affect the visual appearance of existing media nodes in real time
+ * without triggering re-generation.
+ */
+export function compileAssetPreview(params: DirectorControlParams): AssetPreviewConfig {
+  const config: AssetPreviewConfig = {}
+
+  // Color → CSS filter
+  if (params.color) {
+    switch (params.color) {
+      case 'cool':
+        config.filter = 'saturate(0.8) hue-rotate(15deg) brightness(0.97)'
+        break
+      case 'warm':
+        config.filter = 'saturate(1.15) sepia(0.18) brightness(1.03)'
+        break
+      case 'high-contrast':
+        config.filter = 'contrast(1.35) brightness(0.95)'
+        break
+      case 'low-saturation':
+        config.filter = 'saturate(0.35) brightness(1.04)'
+        break
+    }
+  }
+
+  // Lighting → overlay gradient
+  if (params.lighting) {
+    switch (params.lighting) {
+      case 'backlight':
+        config.overlayGradient = 'radial-gradient(ellipse at center, transparent 40%, rgba(255,200,100,0.18) 100%)'
+        break
+      case 'rembrandt':
+        config.overlayGradient = 'linear-gradient(to right, rgba(0,0,0,0.32) 0%, transparent 55%)'
+        break
+      case 'neon':
+        config.overlayGradient = 'linear-gradient(135deg, rgba(0,200,255,0.10) 0%, rgba(255,0,200,0.10) 100%)'
+        break
+      case 'natural':
+        config.overlayGradient = 'linear-gradient(to bottom, rgba(255,220,150,0.07) 0%, transparent 50%)'
+        break
+    }
+  }
+
+  // CameraMovement → CSS animation name (keyframes defined in canvas.module.css)
+  if (params.cameraMovement) {
+    switch (params.cameraMovement) {
+      case 'push-in':
+        config.animation = 'dc-push-in 3s ease-in-out forwards'
+        break
+      case 'pull-out':
+        config.animation = 'dc-pull-out 3s ease-in-out forwards'
+        break
+      case 'pan':
+        config.animation = 'dc-pan 4s ease-in-out infinite alternate'
+        break
+      case 'dolly':
+        config.animation = 'dc-dolly 4s ease-in-out infinite alternate'
+        break
+      default:
+        break
+    }
+  }
+
+  // Rhythm → video playback rate
+  if (params.rhythm) {
+    switch (params.rhythm) {
+      case 'slow-motion':
+        config.playbackRate = 0.5
+        break
+      case 'fast-paced':
+        config.playbackRate = 1.5
+        break
+      case 'stable-shot':
+        config.playbackRate = 1.0
+        break
+    }
+  }
+
+  return config
 }
