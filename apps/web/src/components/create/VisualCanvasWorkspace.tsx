@@ -391,9 +391,6 @@ const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
 const REVIEW_WINDOW_MIN_WIDTH = 320
 const REVIEW_WINDOW_MIN_HEIGHT = 240
-// Image-to-video tasks take 3-5+ minutes; 72 × 5s = 360s = 6 min gives enough headroom
-// before cn-executor's own 96-poll / 8-min ceiling fires.
-const VIDEO_GENERATION_FRONTEND_MAX_POLLS = 72
 const REVIEW_WINDOW_IMAGE_WIDTH = 520
 const REVIEW_WINDOW_VIDEO_WIDTH = 640
 const STAGE_OPTIONS = [
@@ -6425,14 +6422,24 @@ export function VisualCanvasWorkspace({
         })
         showCanvasFeedback('视频任务已提交，正在生成中')
         let videoPolls = 0
-        while (videoPolls < VIDEO_GENERATION_FRONTEND_MAX_POLLS) {
+        const videoStartMs = Date.now()
+        // No hard poll ceiling — stop only when provider returns success/failure,
+        // user cancels (AbortSignal), or the page unloads.
+        while (!generationController?.signal.aborted) {
           await delay(5000, generationController?.signal)
           const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId, generationController?.signal)
           videoPolls += 1
           if (statusResult.success && isActiveGenerationStatus(statusResult.status)) {
+            const elapsedMs = Date.now() - videoStartMs
+            const elapsedMin = Math.floor(elapsedMs / 60000)
+            const waitingPreview = elapsedMs > 8 * 60 * 1000
+              ? `仍在等待 provider 返回结果（已等待约 ${elapsedMin} 分钟）。若后台最终失败，会显示具体错误。`
+              : elapsedMs > 2 * 60 * 1000
+                ? `视频仍在生成中（已等待约 ${elapsedMin} 分钟）。Seedance 图生视频可能需要较长时间，请保持页面打开。`
+                : `视频生成中，已查询 ${videoPolls} 次`
             handleNodePatch(nodeSnapshot.id, {
               status: 'running',
-              resultPreview: `视频生成中，已查询 ${videoPolls} 次`,
+              resultPreview: waitingPreview,
               outputLabel: '视频生成中',
               metadataJson: {
                 ...videoSuccessMetadata(generationNodeSnapshot, { ...statusResult, generationJobId, taskId }, generationProviderId),
@@ -6474,13 +6481,8 @@ export function VisualCanvasWorkspace({
           showCanvasFeedback('视频生成完成')
           return
         }
-        handleNodePatch(nodeSnapshot.id, {
-          status: 'failed',
-          errorMessage: '视频生成超时（6 分钟未完成）：任务仍在后台运行，刷新页面后查看结果。',
-          metadataJson: videoErrorMetadata(generationNodeSnapshot, { providerId: generationProviderId, errorCode: 'generation_polling_timeout', message: `视频生成超时：轮询 ${VIDEO_GENERATION_FRONTEND_MAX_POLLS} 次未完成`, taskId, generationJobId }, generationProviderId),
-        })
-        setDialogError('视频生成超时（6 分钟内未完成轮询），任务仍在后台运行，刷新页面后查看结果。')
-        showCanvasFeedback('视频生成超时，任务仍在后台运行，刷新页面后可查看结果。')
+        // Loop exited because abort signal fired between poll intervals.
+        // The outer .catch() handler on callGenerationApi already suppresses AbortErrors silently.
         return
       }
 
