@@ -74,6 +74,17 @@ The full stack already supports `imageUrl` with no changes required:
 | `src/components/create/CanvasPromptBox.tsx` | VideoModeInfo type + mode bar JSX |
 | `src/components/create/canvas.module.css` | .canvas-video-mode-bar styles |
 
+## Aspect ratio display
+
+Seedance image-to-video follows the **reference image's aspect ratio**, not the `aspectRatio` parameter sent in the payload. A portrait reference image produces a portrait video even when `aspectRatio: "16:9"` is requested.
+
+The canvas node container uses `aspect-ratio: var(--video-aspect-ratio, 16/9)` (resolved from node metadata), so a portrait video inside a landscape container would be cropped by `object-fit: cover`. To prevent clipping:
+
+- `.canvas-node-preview-video` uses `object-fit: contain` — video is letterboxed / pillarboxed inside the container
+- The container background is `radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 48%), #050507` — a near-black with a subtle center glow
+
+Portrait videos will show pillarbox bars on either side; landscape videos fill the container edge-to-edge.
+
 ## Constraints
 
 - v1 uses only the **first** connected upstream image node
