@@ -7823,211 +7823,6 @@
   color: rgba(255, 255, 255, 0.34);
 }
 
-/* ═══════════════════════════════════════════════════════
-   Director Control Panel
-   ═══════════════════════════════════════════════════════ */
-
-.scope :global(.director-control-panel) {
-  width: 100%;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 6px;
-  padding-top: 4px;
-}
-
-.scope :global(.director-control-toggle) {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 2px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.40);
-  text-align: left;
-  transition: color 0.15s;
-  border-radius: 6px;
-}
-
-.scope :global(.director-control-toggle:hover) {
-  color: rgba(255, 255, 255, 0.70);
-}
-
-.scope :global(.director-control-toggle.is-open) {
-  color: rgba(255, 255, 255, 0.60);
-}
-
-.scope :global(.director-control-toggle.has-active) {
-  color: rgba(180, 140, 255, 0.85);
-}
-
-.scope :global(.director-control-toggle-icon) {
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
-.scope :global(.director-active-summary) {
-  font-size: 10px;
-  font-weight: 500;
-  color: rgba(180, 140, 255, 0.70);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
-}
-
-.scope :global(.director-active-dot) {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(180, 140, 255, 0.85);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.scope :global(.director-control-body) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 2px 4px;
-}
-
-.scope :global(.director-control-group) {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.scope :global(.director-control-group-label) {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.30);
-}
-
-.scope :global(.director-control-chips) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.scope :global(.director-chip) {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 11px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.55);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-  white-space: nowrap;
-}
-
-.scope :global(.director-chip:hover) {
-  background: rgba(180, 140, 255, 0.10);
-  border-color: rgba(180, 140, 255, 0.25);
-  color: rgba(220, 190, 255, 0.90);
-}
-
-.scope :global(.director-chip.is-active) {
-  background: rgba(130, 70, 240, 0.18);
-  border-color: rgba(180, 140, 255, 0.40);
-  color: rgba(220, 190, 255, 0.95);
-  font-weight: 600;
-}
-
-.scope :global(.director-prompt-preview) {
-  margin-top: 4px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(180, 140, 255, 0.12);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.scope :global(.director-prompt-preview-label) {
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(180, 140, 255, 0.60);
-  letter-spacing: 0.04em;
-}
-
-.scope :global(.director-prompt-preview-text) {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.75);
-  word-break: break-word;
-  max-height: 72px;
-  overflow-y: auto;
-}
-
-.scope :global(.director-prompt-preview-actions) {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.scope :global(.director-prompt-copy-btn),
-.scope :global(.director-prompt-reset-btn) {
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.55);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.scope :global(.director-prompt-copy-btn:hover) {
-  background: rgba(130, 70, 240, 0.15);
-  color: rgba(220, 190, 255, 0.95);
-  border-color: rgba(180, 140, 255, 0.30);
-}
-
-.scope :global(.director-prompt-reset-btn:hover) {
-  background: rgba(255, 60, 60, 0.10);
-  color: rgba(255, 140, 140, 0.90);
-  border-color: rgba(255, 60, 60, 0.20);
-}
-
-.scope :global(.director-empty-hint) {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.28);
-  font-style: italic;
-  text-align: center;
-  padding: 4px 0;
-}
-
-/* Node card director summary tags */
-.scope :global(.director-node-summary) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 4px;
-}
-
-.scope :global(.director-node-tag) {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: rgba(130, 70, 240, 0.12);
-  border: 1px solid rgba(180, 140, 255, 0.18);
-  font-size: 9.5px;
-  font-weight: 600;
-  color: rgba(200, 165, 255, 0.80);
-  white-space: nowrap;
-}
 
 /* Footer param chips — individual parameter tags in footer row 2 */
 .scope :global(.canvas-footer-param-chip) {
@@ -8059,186 +7854,168 @@
   white-space: nowrap;
 }
 
-/* ═══════════════════════════════════════════════════════
-   Director Control Panel — Tab Navigation
-   ═══════════════════════════════════════════════════════ */
+/* ── Asset Agent Toolbar ─────────────────────────────────────── */
 
-.scope :global(.director-tabs) {
+.scope :global(.asset-agent-toolbar) {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
   display: flex;
+  align-items: center;
   gap: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 8px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(8, 8, 12, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.52), 0 1px 0 rgba(255,255,255,0.05) inset;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform: translateX(-50%) translateY(4px);
 }
 
-.scope :global(.director-tab) {
+.scope :global(.canvas-node-card:hover .asset-agent-toolbar),
+.scope :global(.canvas-node-card.is-active .asset-agent-toolbar) {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.scope :global(.asset-agent-toolbar-group) {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.scope :global(.asset-agent-btn) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 4px 8px 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
   font-size: 11px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.38);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
-  white-space: nowrap;
-}
-
-.scope :global(.director-tab:hover) {
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.scope :global(.director-tab.is-active) {
-  color: rgba(200, 165, 255, 0.95);
-  border-bottom-color: rgba(180, 140, 255, 0.70);
-  font-weight: 600;
-}
-
-.scope :global(.director-tab.has-dot) {
-  color: rgba(180, 140, 255, 0.80);
-}
-
-.scope :global(.director-tab-dot) {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: rgba(180, 140, 255, 0.85);
-  flex-shrink: 0;
-}
-
-.scope :global(.director-tab-content) {
-  min-height: 60px;
-}
-
-.scope :global(.director-tab-section-stack) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* ═══════════════════════════════════════════════════════
-   Director Control Panel — Section Labels
-   ═══════════════════════════════════════════════════════ */
-
-.scope :global(.director-section-label) {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: rgba(180, 140, 255, 0.45);
-  margin-bottom: 6px;
-}
-
-.scope :global(.director-section-label--asset) {
-  color: rgba(100, 200, 255, 0.50);
-  margin-top: 10px;
-}
-
-.scope :global(.director-asset-section) {
-  border-top: 1px solid rgba(100, 200, 255, 0.08);
-  margin-top: 8px;
-  padding-top: 6px;
-}
-
-.scope :global(.director-asset-hint) {
-  font-size: 10.5px;
-  color: rgba(100, 200, 255, 0.55);
-  line-height: 1.45;
-  font-style: italic;
-}
-
-/* ═══════════════════════════════════════════════════════
-   Director Control Panel — Camera Body Cards
-   ═══════════════════════════════════════════════════════ */
-
-.scope :global(.director-camera-cards) {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.scope :global(.director-camera-card) {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 10px 8px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-  text-align: center;
-}
-
-.scope :global(.director-camera-card:hover) {
-  background: rgba(180, 140, 255, 0.07);
-  border-color: rgba(180, 140, 255, 0.20);
-}
-
-.scope :global(.director-camera-card.is-active) {
-  background: rgba(130, 70, 240, 0.14);
-  border-color: rgba(180, 140, 255, 0.42);
-}
-
-.scope :global(.director-camera-icon) {
-  font-size: 18px;
+  transition: background 0.12s ease, color 0.12s ease;
   line-height: 1;
 }
 
-.scope :global(.director-camera-label) {
+.scope :global(.asset-agent-btn:hover) {
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 1);
+}
+
+.scope :global(.asset-agent-btn.is-active) {
+  background: rgba(0, 220, 255, 0.14);
+  color: rgba(0, 220, 255, 0.96);
+  border: 1px solid rgba(0, 220, 255, 0.22);
+}
+
+.scope :global(.asset-agent-btn.is-success) {
+  background: rgba(0, 220, 120, 0.14);
+  color: rgba(0, 220, 120, 0.96);
+}
+
+.scope :global(.asset-agent-btn.is-error-state) {
+  background: rgba(255, 80, 80, 0.12);
+  color: rgba(255, 120, 120, 0.9);
+}
+
+.scope :global(.asset-agent-btn.is-coming-soon) {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.scope :global(.asset-agent-btn-icon) {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.scope :global(.asset-agent-btn-label) {
   font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
+  line-height: 1;
 }
 
-.scope :global(.director-camera-desc) {
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, 0.38);
-  line-height: 1.3;
+.scope :global(.asset-agent-soon-badge) {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgba(255, 200, 80, 0.14);
+  color: rgba(255, 200, 80, 0.72);
+  margin-left: 1px;
+  line-height: 1.2;
 }
 
-.scope :global(.director-camera-card.is-active .director-camera-label) {
-  color: rgba(220, 190, 255, 0.95);
+.scope :global(.asset-agent-toolbar-divider) {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.10);
+  margin: 0 3px;
+  flex-shrink: 0;
 }
 
-/* ═══════════════════════════════════════════════════════
-   Director Control Panel — Disclaimer
-   ═══════════════════════════════════════════════════════ */
-
-.scope :global(.director-disclaimer) {
-  margin-top: 8px;
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, 0.22);
-  line-height: 1.4;
-  font-style: italic;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  padding-top: 6px;
+/* Reframe popover */
+.scope :global(.asset-agent-reframe-popover) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(8, 8, 12, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  min-width: 90px;
 }
 
-/* ═══════════════════════════════════════════════════════
-   Director Asset Preview — CSS Keyframe Animations
-   ═══════════════════════════════════════════════════════ */
-
-@keyframes dc-push-in {
-  0% { transform: scale(1.0); }
-  100% { transform: scale(1.08); }
+.scope :global(.asset-agent-reframe-title) {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.36);
+  padding: 0 4px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  margin-bottom: 2px;
 }
 
-@keyframes dc-pull-out {
-  0% { transform: scale(1.08); }
-  100% { transform: scale(1.0); }
+.scope :global(.asset-agent-reframe-chip) {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
-@keyframes dc-pan {
-  0% { transform: translateX(-3%); }
-  100% { transform: translateX(3%); }
+.scope :global(.asset-agent-reframe-chip:hover) {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 1);
 }
 
-@keyframes dc-dolly {
-  0% { transform: translateX(-2%) scale(1.02); }
-  100% { transform: translateX(2%) scale(1.02); }
+.scope :global(.asset-agent-reframe-chip.is-selected) {
+  background: rgba(0, 220, 255, 0.12);
+  border-color: rgba(0, 220, 255, 0.22);
+  color: rgba(0, 220, 255, 0.96);
 }
