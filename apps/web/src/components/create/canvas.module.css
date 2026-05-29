@@ -7856,30 +7856,39 @@
 
 /* ── Asset Agent Toolbar ─────────────────────────────────────── */
 
+/* Wrapper: sits outside canvas-node-card so overflow:hidden doesn't clip */
+.scope :global(.asset-agent-node-wrapper) {
+  position: relative;
+  display: inline-block;
+  /* no overflow: hidden — toolbar can escape above */
+}
+
 .scope :global(.asset-agent-toolbar) {
   position: absolute;
-  bottom: 10px;
+  /* Float above the node card */
+  bottom: calc(100% + 8px);
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 12;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 4px 6px;
   border-radius: 999px;
-  background: rgba(8, 8, 12, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.52), 0 1px 0 rgba(255,255,255,0.05) inset;
+  background: rgba(8, 8, 12, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.60), 0 1px 0 rgba(255,255,255,0.06) inset;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
-  transform: translateX(-50%) translateY(4px);
+  max-width: calc(100vw - 48px);
 }
 
-.scope :global(.canvas-node-card:hover .asset-agent-toolbar),
-.scope :global(.canvas-node-card.is-active .asset-agent-toolbar) {
+/* Show on hover of the wrapper (covers both card and toolbar hover) */
+.scope :global(.asset-agent-node-wrapper:hover .asset-agent-toolbar),
+.scope :global(.asset-agent-node-wrapper.is-active .asset-agent-toolbar) {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%) translateY(0);
@@ -7964,13 +7973,13 @@
   flex-shrink: 0;
 }
 
-/* Reframe popover */
+/* Reframe popover — opens downward (toward card) to avoid top-of-viewport overflow */
 .scope :global(.asset-agent-reframe-popover) {
   position: absolute;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 20;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 3px;

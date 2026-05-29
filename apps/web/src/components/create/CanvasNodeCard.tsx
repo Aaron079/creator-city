@@ -2884,6 +2884,24 @@ export function CanvasNodeCard({
 
   return (
     <>
+    <div className={`asset-agent-node-wrapper${active ? ' is-active' : ''}`}>
+      {(node.kind === 'image' || node.kind === 'video') && hasMediaResult ? (
+        <AssetAgentToolbar
+          nodeKind={node.kind}
+          mediaUrl={selectedRenderSrc || selectedRenderUrl}
+          nodeTitle={node.title}
+          reframeMode={reframeMode}
+          onReframeChange={setReframeMode}
+          onFullscreen={() => {
+            if (node.kind === 'video' && !videoMedia.loadFailed && videoProxiedSrc) {
+              setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
+            } else if (node.kind === 'image' && !imageMedia.loadFailed && imageProxiedSrc) {
+              setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
+            }
+          }}
+          videoRef={node.kind === 'video' ? videoPreviewRef : undefined}
+        />
+      ) : null}
     <motion.div
       role="button"
       tabIndex={0}
@@ -3311,23 +3329,6 @@ export function CanvasNodeCard({
                   </span>
                 ) : null}
               </div>
-              {(node.kind === 'image' || node.kind === 'video') ? (
-                <AssetAgentToolbar
-                  nodeKind={node.kind}
-                  mediaUrl={selectedRenderSrc || selectedRenderUrl}
-                  nodeTitle={node.title}
-                  reframeMode={reframeMode}
-                  onReframeChange={setReframeMode}
-                  onFullscreen={() => {
-                    if (node.kind === 'video' && !videoMedia.loadFailed && videoProxiedSrc) {
-                      setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
-                    } else if (node.kind === 'image' && !imageMedia.loadFailed && imageProxiedSrc) {
-                      setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
-                    }
-                  }}
-                  videoRef={node.kind === 'video' ? videoPreviewRef : undefined}
-                />
-              ) : null}
             </div>
           ) : node.status === 'generating' || node.status === 'running' || node.status === 'queued' || node.status === 'pending' || node.status === 'processing' ? (
             <div className="canvas-node-preview is-generating-preview">
@@ -3477,6 +3478,7 @@ export function CanvasNodeCard({
         </div>
       ) : null}
     </motion.div>
+    </div>
     {lightbox ? (
       <MediaLightbox
         type={lightbox.type}
