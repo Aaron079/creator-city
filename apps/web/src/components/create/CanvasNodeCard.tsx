@@ -9,7 +9,7 @@ import { getAssetIntelligenceTagCount } from '@/lib/asset-intelligence'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
-import { AssetAgentToolbar, getReframeStyle, type ReframeMode } from '@/components/create/AssetAgentToolbar'
+import { getReframeStyle, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -78,6 +78,7 @@ interface CanvasNodeCardProps {
   onAddToStoryboard?: () => void
   dragging?: boolean
   generationHealth?: GenerationHealthResponse | null
+  reframeMode?: ReframeMode
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1370,6 +1371,7 @@ export function CanvasNodeCard({
   onAddToStoryboard,
   dragging = false,
   generationHealth = null,
+  reframeMode = 'original',
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -1389,7 +1391,6 @@ export function CanvasNodeCard({
   const [selectedVideoSource, setSelectedVideoSource] = useState<MediaUrlSource | null>(null)
   const recoveryAttemptKeyRef = useRef('')
   const [lightbox, setLightbox] = useState<MediaLightboxState | null>(null)
-  const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
 
   function handleVideoPreviewEnter() {
     const video = videoPreviewRef.current
@@ -2884,24 +2885,6 @@ export function CanvasNodeCard({
 
   return (
     <>
-    <div className={`asset-agent-node-wrapper${active ? ' is-active' : ''}`}>
-      {(node.kind === 'image' || node.kind === 'video') && hasMediaResult ? (
-        <AssetAgentToolbar
-          nodeKind={node.kind}
-          mediaUrl={selectedRenderSrc || selectedRenderUrl}
-          nodeTitle={node.title}
-          reframeMode={reframeMode}
-          onReframeChange={setReframeMode}
-          onFullscreen={() => {
-            if (node.kind === 'video' && !videoMedia.loadFailed && videoProxiedSrc) {
-              setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
-            } else if (node.kind === 'image' && !imageMedia.loadFailed && imageProxiedSrc) {
-              setLightbox({ type: 'image', url: imageProxiedSrc, title: node.title })
-            }
-          }}
-          videoRef={node.kind === 'video' ? videoPreviewRef : undefined}
-        />
-      ) : null}
     <motion.div
       role="button"
       tabIndex={0}
@@ -3478,7 +3461,6 @@ export function CanvasNodeCard({
         </div>
       ) : null}
     </motion.div>
-    </div>
     {lightbox ? (
       <MediaLightbox
         type={lightbox.type}

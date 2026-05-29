@@ -7855,43 +7855,28 @@
 }
 
 /* ── Asset Agent Toolbar ─────────────────────────────────────── */
-
-/* Wrapper: sits outside canvas-node-card so overflow:hidden doesn't clip */
-.scope :global(.asset-agent-node-wrapper) {
-  position: relative;
-  display: inline-block;
-  /* no overflow: hidden — toolbar can escape above */
-}
+/* Rendered at canvas-surface level (VisualCanvasWorkspace) above the active
+   node — avoids canvas-viewport overflow:hidden and card overflow:hidden */
 
 .scope :global(.asset-agent-toolbar) {
-  position: absolute;
-  /* Float above the node card */
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  z-index: 30;
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 4px 6px;
   border-radius: 999px;
-  background: rgba(8, 8, 12, 0.88);
+  background: rgba(8, 8, 12, 0.90);
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(20px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.60), 0 1px 0 rgba(255,255,255,0.06) inset;
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.64), 0 1px 0 rgba(255,255,255,0.06) inset;
   white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  max-width: calc(100vw - 48px);
+  max-width: min(720px, calc(100vw - 48px));
+  animation: asset-toolbar-fadein 0.14s ease forwards;
 }
 
-/* Show on hover of the wrapper (covers both card and toolbar hover) */
-.scope :global(.asset-agent-node-wrapper:hover .asset-agent-toolbar),
-.scope :global(.asset-agent-node-wrapper.is-active .asset-agent-toolbar) {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+@keyframes asset-toolbar-fadein {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .scope :global(.asset-agent-toolbar-group) {

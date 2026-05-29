@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties, type RefObject } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 export type ReframeMode = 'original' | 'wide' | 'medium' | 'close' | 'extreme-close'
 
@@ -31,10 +31,7 @@ export interface AssetAgentToolbarProps {
   onFullscreen: () => void
   reframeMode: ReframeMode
   onReframeChange: (mode: ReframeMode) => void
-  videoRef?: RefObject<HTMLVideoElement | null>
 }
-
-type ScreenshotStatus = 'idle' | 'ok' | 'cors-error' | 'error'
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
   e.stopPropagation()
@@ -48,14 +45,11 @@ export function AssetAgentToolbar({
   onFullscreen,
   reframeMode,
   onReframeChange,
-  videoRef,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
-  const [screenshotStatus, setScreenshotStatus] = useState<ScreenshotStatus>('idle')
 
   function handleDownload(e: React.MouseEvent) {
     stopEvent(e)
-    // Try anchor download first; browser may redirect to same-origin for cross-origin
     const a = document.createElement('a')
     a.href = mediaUrl
     a.download = `${nodeTitle || 'creator-city-asset'}`
@@ -64,46 +58,6 @@ export function AssetAgentToolbar({
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-  }
-
-  function handleScreenshot(e: React.MouseEvent) {
-    stopEvent(e)
-    const video = videoRef?.current
-    if (!video) return
-    const w = video.videoWidth || 1280
-    const h = video.videoHeight || 720
-    const cvs = document.createElement('canvas')
-    cvs.width = w
-    cvs.height = h
-    const ctx = cvs.getContext('2d')
-    if (!ctx) return
-    try {
-      ctx.drawImage(video, 0, 0, w, h)
-      cvs.toBlob((blob) => {
-        if (!blob) { setScreenshotStatus('error'); setTimeout(() => setScreenshotStatus('idle'), 2500); return }
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${nodeTitle || 'frame'}-screenshot.png`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        setScreenshotStatus('ok')
-        setTimeout(() => setScreenshotStatus('idle'), 2500)
-      }, 'image/png')
-    } catch {
-      // Canvas tainted by CORS — video is cross-origin and not flagged crossorigin
-      setScreenshotStatus('cors-error')
-      setTimeout(() => setScreenshotStatus('idle'), 3000)
-    }
-  }
-
-  const screenshotLabel: Record<ScreenshotStatus, string> = {
-    idle: '截图',
-    ok: '已截图 ✓',
-    'cors-error': '跨域受限',
-    error: '截图失败',
   }
 
   return (
@@ -144,17 +98,18 @@ export function AssetAgentToolbar({
         ) : null}
       </div>
 
-      {/* Screenshot — video only, enabled */}
+      {/* Screenshot — coming soon (requires in-player video ref) */}
       {nodeKind === 'video' ? (
         <button
           type="button"
           data-no-node-drag="true"
-          className={`asset-agent-btn${screenshotStatus === 'ok' ? ' is-success' : screenshotStatus !== 'idle' ? ' is-error-state' : ''}`}
-          onClick={handleScreenshot}
-          title={screenshotStatus === 'cors-error' ? '视频跨域限制，无法截帧。稍后支持服务端截图。' : '截取当前帧为 PNG'}
+          className="asset-agent-btn is-coming-soon"
+          disabled
+          title="截图 Agent — 即将上线"
         >
           <span className="asset-agent-btn-icon">◉</span>
-          <span className="asset-agent-btn-label">{screenshotLabel[screenshotStatus]}</span>
+          <span className="asset-agent-btn-label">截图</span>
+          <span className="asset-agent-soon-badge">soon</span>
         </button>
       ) : null}
 

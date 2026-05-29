@@ -73,6 +73,7 @@ import {
 } from '@/lib/scenes'
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
+import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -263,6 +264,12 @@ type VisualCanvasNode = CanvasNodeCardNode & {
   resultAudioUrl?: string
   resultText?: string
   metadataJson?: unknown
+}
+
+function nodeHasMediaResult(node: VisualCanvasNode): boolean {
+  if (node.kind === 'image') return Boolean(node.resultImageUrl?.trim())
+  if (node.kind === 'video') return Boolean(node.resultVideoUrl?.trim())
+  return false
 }
 
 const ACTIVE_GENERATION_STATUSES = new Set(['generating', 'running', 'queued', 'pending', 'processing'])
@@ -2344,6 +2351,7 @@ export function VisualCanvasWorkspace({
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string>('add')
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
@@ -4202,6 +4210,10 @@ export function VisualCanvasWorkspace({
       { id: 'mock-params', title: '高级镜头参数', detail: `当前参数为 ${parameterLabel}，可继续套用到新镜头。`, type: 'video' },
     ]
   }, [nodes, parameterLabel])
+
+  useEffect(() => {
+    setReframeMode('original')
+  }, [activeNodeId])
 
   useEffect(() => {
     if (!activeNode) return
@@ -6987,6 +6999,11 @@ export function VisualCanvasWorkspace({
     return () => el.removeEventListener('wheel', handler)
   }, [setZoomAroundPoint])
 
+  const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canStartCanvasPan(event.target)) return
+    setActiveNodeId(null)
+  }, [canStartCanvasPan])
+
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !canStartCanvasPan(event.target)) return
 
@@ -7744,6 +7761,7 @@ export function VisualCanvasWorkspace({
         onPointerUp={handleCanvasPointerUp}
         onPointerCancel={handleCanvasPointerUp}
         onDoubleClick={handleCanvasDoubleClick}
+        onClick={handleCanvasClick}
       >
         {saveStatus !== 'opening' && !hasStarted && nodes.length === 0 ? (
           <div className="canvas-empty-overlay">
@@ -7871,10 +7889,40 @@ export function VisualCanvasWorkspace({
                   onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
                   onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
                   generationHealth={generationHealth}
+                  reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
                 />
               </CanvasNodeErrorBoundary>
             </div>
           ))}
+
+          {/* Asset Agent Toolbar — floats above the active image/video node on the canvas surface */}
+          {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) ? (
+            <div
+              className="absolute"
+              style={{
+                left: activeNode.x + activeNode.width / 2,
+                top: activeNode.y - 12,
+                transform: 'translateX(-50%) translateY(-100%)',
+                zIndex: 50,
+                pointerEvents: 'auto',
+              }}
+              data-no-node-drag="true"
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <AssetAgentToolbar
+                nodeKind={activeNode.kind}
+                mediaUrl={getProxiedMediaUrl(
+                  activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
+                )}
+                nodeTitle={activeNode.title}
+                reframeMode={reframeMode}
+                onReframeChange={setReframeMode}
+                onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
