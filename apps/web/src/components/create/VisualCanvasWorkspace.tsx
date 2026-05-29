@@ -8174,7 +8174,7 @@ export function VisualCanvasWorkspace({
           >
             <video
               src={activePreviewVideoDisplayUrl}
-              poster={activePreviewNode.preview?.poster}
+              poster={activePreviewNode.preview?.poster ? getProxiedMediaUrl(activePreviewNode.preview.poster) : undefined}
               className="canvas-video-preview-media"
               controls
               autoPlay
