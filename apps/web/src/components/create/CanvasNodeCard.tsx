@@ -538,6 +538,7 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'signing_error',
   'proxy_error',
   'generation_failed',
+  'content_policy_rejected',
 ])
 const PROMPT_REBUILD_DETAIL = '历史 Asset 记录不存在，需要用原 Prompt 重建。'
 const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
@@ -970,6 +971,7 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   if (code === 'provider_model_invalid' || /model.*(not exist|not found|invalid|does not exist)|endpoint.*(not exist|does not exist)|模型|接入点/.test(haystack)) return 'provider_model_invalid'
   if (upstreamStatus === 402 || upstreamStatus === 429 || /quota|billing|credits|insufficient|余额|额度|rate limit/.test(haystack)) return 'provider_quota_or_billing_error'
   if (/invalid parameter|invalid_param|invalid request|bad request|parameter/i.test(haystack)) return 'provider_invalid_parameter'
+  if (code === 'SEEDANCE_TASK_FAILED' || code === 'SEEDANCE_TASK_CREATE_FAILED') return 'content_policy_rejected'
   if (/prompt.*reject|rejected|sensitive|违规|不合规|blocked/.test(haystack)) return 'prompt_rejected_or_invalid'
   if (code === 'provider_no_download_url' || code === 'PROVIDER_NO_DOWNLOAD_URL' || code === 'VIDEO_URL_EMPTY' || code === 'IMAGE_URL_EMPTY' || code.includes('URL_MISSING') || code.includes('URL_EMPTY')) return 'provider_no_download_url'
   if (code === 'MEDIA_UPLOAD_FAILED' || code === 'oss_upload_error') return 'oss_upload_error'
@@ -1021,6 +1023,7 @@ function generationFailureMessage(error: Record<string, unknown>) {
   if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'content_policy_rejected') return `内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。${diagnosticSuffix}`
   if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${diagnosticSuffix}`
   if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}${diagnosticSuffix}`
   if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}${diagnosticSuffix}`
@@ -1141,6 +1144,15 @@ function failureDiagnosis(args: {
         detail: '媒体代理暂时无法加载（网络波动或会话短暂中断），视频 URL 仍保留。',
         nextAction: '刷新页面后视频通常自动恢复，无需重新生成。',
         canRecover: true,
+      }
+    }
+    if (code === 'content_policy_rejected') {
+      return {
+        code,
+        title: '内容审核/版权限制',
+        detail: generationMessage,
+        nextAction: '修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。',
+        canRecover: false,
       }
     }
     return {
@@ -1760,7 +1772,7 @@ export function CanvasNodeCard({
       isAssetRecordMissingCode(errorCode)
       || isAssetRecordMissingCode(recoveryStatus)
       || isAssetRecordMissingCode(resolveBatchStatus)
-      || (!nodeAssetId && !resolvedUrl && !storageKey && !activeCandidates.length),
+      || (!nodeAssetId && !resolvedUrl && !storageKey && !activeCandidates.length && !errorCode),
     )
     const nextAction = diagnosticNextAction({
       missingEnv,
