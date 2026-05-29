@@ -7858,25 +7858,29 @@
 /* Rendered at canvas-surface level (VisualCanvasWorkspace) above the active
    node — avoids canvas-viewport overflow:hidden and card overflow:hidden */
 
+/* ── Asset Agent Toolbar ── */
 .scope :global(.asset-agent-toolbar) {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 3px;
+  padding: 5px 8px;
   border-radius: 999px;
-  background: rgba(8, 8, 12, 0.90);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.64), 0 1px 0 rgba(255,255,255,0.06) inset;
+  background: rgba(16, 16, 20, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.52),
+    0 2px 8px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
   white-space: nowrap;
   max-width: min(720px, calc(100vw - 48px));
-  animation: asset-toolbar-fadein 0.14s ease forwards;
+  animation: asset-toolbar-fadein 0.16s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes asset-toolbar-fadein {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(5px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)  scale(1); }
 }
 
 .scope :global(.asset-agent-toolbar-group) {
@@ -7888,128 +7892,138 @@
 .scope :global(.asset-agent-btn) {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 8px;
+  gap: 5px;
+  height: 34px;
+  padding: 0 11px;
   border-radius: 999px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-  line-height: 1;
-}
-
-.scope :global(.asset-agent-btn:hover) {
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 1);
-}
-
-.scope :global(.asset-agent-btn.is-active) {
-  background: rgba(0, 220, 255, 0.14);
-  color: rgba(0, 220, 255, 0.96);
-  border: 1px solid rgba(0, 220, 255, 0.22);
-}
-
-.scope :global(.asset-agent-btn.is-success) {
-  background: rgba(0, 220, 120, 0.14);
-  color: rgba(0, 220, 120, 0.96);
-}
-
-.scope :global(.asset-agent-btn.is-error-state) {
-  background: rgba(255, 80, 80, 0.12);
-  color: rgba(255, 120, 120, 0.9);
-}
-
-.scope :global(.asset-agent-btn.is-coming-soon) {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-.scope :global(.asset-agent-btn-icon) {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.scope :global(.asset-agent-btn-label) {
-  font-size: 11px;
-  line-height: 1;
-}
-
-.scope :global(.asset-agent-soon-badge) {
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 1px 3px;
-  border-radius: 3px;
-  background: rgba(255, 200, 80, 0.14);
-  color: rgba(255, 200, 80, 0.72);
-  margin-left: 1px;
-  line-height: 1.2;
-}
-
-.scope :global(.asset-agent-toolbar-divider) {
-  width: 1px;
-  height: 16px;
-  background: rgba(255, 255, 255, 0.10);
-  margin: 0 3px;
-  flex-shrink: 0;
-}
-
-/* Reframe popover — opens downward (toward card) to avoid top-of-viewport overflow */
-.scope :global(.asset-agent-reframe-popover) {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px;
-  border-radius: 12px;
-  background: rgba(8, 8, 12, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
-  min-width: 90px;
-}
-
-.scope :global(.asset-agent-reframe-title) {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.36);
-  padding: 0 4px 4px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  margin-bottom: 2px;
-}
-
-.scope :global(.asset-agent-reframe-chip) {
-  display: block;
-  width: 100%;
-  padding: 5px 10px;
-  border-radius: 7px;
   border: 1px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.scope :global(.asset-agent-btn:hover:not(:disabled)) {
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 1);
+}
+
+.scope :global(.asset-agent-btn:active:not(:disabled)) {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.scope :global(.asset-agent-btn.is-active) {
+  background: rgba(0, 210, 255, 0.13);
+  color: rgba(0, 210, 255, 0.95);
+  border-color: rgba(0, 210, 255, 0.20);
+}
+
+.scope :global(.asset-agent-btn.is-success) {
+  background: rgba(0, 210, 120, 0.13);
+  color: rgba(0, 210, 120, 0.95);
+}
+
+.scope :global(.asset-agent-btn.is-error-state) {
+  background: rgba(255, 80, 80, 0.10);
+  color: rgba(255, 120, 120, 0.88);
+}
+
+.scope :global(.asset-agent-btn.is-coming-soon) {
+  opacity: 0.30;
+  cursor: not-allowed;
+}
+
+.scope :global(.asset-agent-btn-icon) {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.scope :global(.asset-agent-btn-label) {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.scope :global(.asset-agent-soon-badge) {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 196, 64, 0.12);
+  color: rgba(255, 196, 64, 0.60);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.scope :global(.asset-agent-toolbar-divider) {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.09);
+  margin: 0 4px;
+  flex-shrink: 0;
+  border-radius: 1px;
+}
+
+/* Reframe popover — opens downward toward the card */
+.scope :global(.asset-agent-reframe-popover) {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(14, 14, 18, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.64), inset 0 1px 0 rgba(255,255,255,0.06);
+  min-width: 96px;
+  animation: asset-toolbar-fadein 0.13s ease forwards;
+}
+
+.scope :global(.asset-agent-reframe-title) {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 2px;
+}
+
+.scope :global(.asset-agent-reframe-chip) {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
   text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition: background 0.10s ease, color 0.10s ease;
 }
 
 .scope :global(.asset-agent-reframe-chip:hover) {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 1);
 }
 
 .scope :global(.asset-agent-reframe-chip.is-selected) {
-  background: rgba(0, 220, 255, 0.12);
-  border-color: rgba(0, 220, 255, 0.22);
-  color: rgba(0, 220, 255, 0.96);
+  background: rgba(0, 210, 255, 0.11);
+  border-color: rgba(0, 210, 255, 0.20);
+  color: rgba(0, 210, 255, 0.94);
 }

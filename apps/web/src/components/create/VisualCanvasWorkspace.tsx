@@ -7296,11 +7296,10 @@ export function VisualCanvasWorkspace({
     const aboveTop = nodeTop - NODE_DIALOG_GAP - visualDialogHeight
     const hasRoomBelow = belowTop + visualDialogHeight <= window.innerHeight - viewportMargin
     const hasRoomAbove = aboveTop >= viewportMargin
-    const top = hasRoomBelow
-      ? belowTop
-      : hasRoomAbove
-        ? aboveTop
-        : clampNumber(belowTop, viewportMargin, Math.max(viewportMargin, window.innerHeight - visualDialogHeight - viewportMargin))
+    // Default to below; only flip above if the node bottom is at the screen edge AND there's room above
+    const top = (!hasRoomBelow && belowTop >= window.innerHeight - viewportMargin && hasRoomAbove)
+      ? aboveTop
+      : clampNumber(belowTop, viewportMargin, window.innerHeight - visualDialogHeight - viewportMargin)
 
     return {
       left: clampNumber(nodeCenterX - visualDialogWidth / 2, viewportMargin, window.innerWidth - visualDialogWidth - viewportMargin),
@@ -7311,6 +7310,27 @@ export function VisualCanvasWorkspace({
       width: dialogWidth,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
+
+  // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
+  const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
+    const node = activeNode
+    if (!node || (node.kind !== 'image' && node.kind !== 'video') || !nodeHasMediaResult(node)) return undefined
+    if (typeof window === 'undefined') return undefined
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!rect) return undefined
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+    const centerX = rect.left + surfaceOffset.left + canvasPan.x + (node.x + node.width / 2) * canvasZoom
+    const nodeScreenTop = rect.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
+    return {
+      position: 'fixed' as const,
+      left: Math.round(centerX),
+      top: Math.round(nodeScreenTop - 14),
+      transform: 'translateX(-50%) translateY(-100%)',
+      zIndex: 90,
+      pointerEvents: 'auto',
+    }
+  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom])
+
   const selectedImageProviderStatus = editingNode?.kind === 'image'
     ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
     : null
@@ -7895,36 +7915,30 @@ export function VisualCanvasWorkspace({
             </div>
           ))}
 
-          {/* Asset Agent Toolbar — floats above the active image/video node on the canvas surface */}
-          {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) ? (
-            <div
-              className="absolute"
-              style={{
-                left: activeNode.x + activeNode.width / 2,
-                top: activeNode.y - 12,
-                transform: 'translateX(-50%) translateY(-100%)',
-                zIndex: 50,
-                pointerEvents: 'auto',
-              }}
-              data-no-node-drag="true"
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <AssetAgentToolbar
-                nodeKind={activeNode.kind}
-                mediaUrl={getProxiedMediaUrl(
-                  activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
-                )}
-                nodeTitle={activeNode.title}
-                reframeMode={reframeMode}
-                onReframeChange={setReframeMode}
-                onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
-              />
-            </div>
-          ) : null}
         </div>
       </div>
+
+      {/* Asset Agent Toolbar — position:fixed to escape canvas-viewport overflow:hidden */}
+      {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) && toolbarFixedStyle ? (
+        <div
+          style={toolbarFixedStyle}
+          data-no-node-drag="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <AssetAgentToolbar
+            nodeKind={activeNode.kind}
+            mediaUrl={getProxiedMediaUrl(
+              activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
+            )}
+            nodeTitle={activeNode.title}
+            reframeMode={reframeMode}
+            onReframeChange={setReframeMode}
+            onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
+          />
+        </div>
+      ) : null}
 
       <GenerationTasksPanel
         open={generationTasksOpen}
