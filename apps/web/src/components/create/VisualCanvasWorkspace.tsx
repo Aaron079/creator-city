@@ -74,6 +74,7 @@ import {
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
 import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAgentToolbar'
+import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -1779,6 +1780,7 @@ async function callGenerationApi(
           projectId,
           workflowId,
           nodeId,
+          ...(typeof params?.imageUrl === 'string' && params.imageUrl ? { imageUrl: params.imageUrl } : {}),
         }
       : {
           providerId,
@@ -6319,12 +6321,21 @@ export function VisualCanvasWorkspace({
       metadataJson: nodeSnapshot.metadataJson,
     })
 
+    // Resolve upstream image for image-to-video workflow
+    const videoImageResolution = nodeSnapshot.kind === 'video'
+      ? resolveImageInputForVideoNode({ videoNode: nodeSnapshot, allNodes: nodes, edges })
+      : null
+
     void callGenerationApi(
       nodeType,
       generationProviderId,
       generationPrompt,
       nodeSnapshot.kind === 'video'
-        ? { ratio: promptRatio, duration: 5 }
+        ? {
+            ratio: promptRatio,
+            duration: 5,
+            ...(videoImageResolution?.imageUrl ? { imageUrl: videoImageResolution.imageUrl } : {}),
+          }
         : { ratio: promptRatio },
       nodeSnapshot.id,
       nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video' ? [] : upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
@@ -7331,6 +7342,32 @@ export function VisualCanvasWorkspace({
     }
   }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom])
 
+  // Resolve upstream image for video node editing dialog
+  const videoModeInfo = useMemo(() => {
+    if (!editingNode || editingNode.kind !== 'video') return undefined
+    const resolved = resolveImageInputForVideoNode({
+      videoNode: editingNode,
+      allNodes: nodes,
+      edges,
+    })
+    if (resolved.mode === 'image-to-video') {
+      const sourceNode = nodes.find((n) => n.id === resolved.sourceImageNodeId)
+      return {
+        mode: 'image-to-video' as const,
+        thumbnailUrl: getProxiedMediaUrl(resolved.imageUrl),
+        sourceNodeTitle: sourceNode?.title ?? 'Image',
+      }
+    }
+    if (resolved.reason === 'upstream_image_missing_url') {
+      const sourceNode = nodes.find((n) => n.id === resolved.sourceImageNodeId)
+      return {
+        mode: 'image-missing' as const,
+        sourceNodeTitle: sourceNode?.title,
+      }
+    }
+    return { mode: 'text-to-video' as const }
+  }, [editingNode, nodes, edges])
+
   const selectedImageProviderStatus = editingNode?.kind === 'image'
     ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
     : null
@@ -8119,6 +8156,7 @@ export function VisualCanvasWorkspace({
             }
             estimatedCredits={estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))}
             footerItems={promptFooterItems}
+            videoModeInfo={editingNode.kind === 'video' ? videoModeInfo : undefined}
             inputRef={(element) => {
               promptInputRef.current = element
             }}

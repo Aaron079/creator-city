@@ -21,6 +21,11 @@ export interface CanvasPromptFooterItem {
   onSelect: (value: string) => void
 }
 
+export type VideoModeInfo =
+  | { mode: 'image-to-video'; thumbnailUrl?: string; sourceNodeTitle?: string }
+  | { mode: 'text-to-video' }
+  | { mode: 'image-missing'; sourceNodeTitle?: string }
+
 interface CanvasPromptBoxProps {
   prompt: string
   onPromptChange: (value: string) => void
@@ -48,6 +53,7 @@ interface CanvasPromptBoxProps {
   extraPills?: string[]
   showAllModelsInline?: boolean
   footerItems?: CanvasPromptFooterItem[]
+  videoModeInfo?: VideoModeInfo
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
 }
@@ -103,6 +109,7 @@ export function CanvasPromptBox({
   onToggleDetails: _onToggleDetails,
   extraPills: _extraPills = [],
   footerItems = [],
+  videoModeInfo,
   inputRef,
   onClose,
 }: CanvasPromptBoxProps) {
@@ -601,6 +608,42 @@ export function CanvasPromptBox({
           </button>
         ) : null}
       </div>
+
+      {videoModeInfo ? (
+        <div className={`canvas-video-mode-bar${videoModeInfo.mode === 'image-to-video' ? ' is-image-to-video' : videoModeInfo.mode === 'image-missing' ? ' is-warning' : ''}`}>
+          {videoModeInfo.mode === 'image-to-video' ? (
+            <>
+              {videoModeInfo.thumbnailUrl ? (
+                <img
+                  src={videoModeInfo.thumbnailUrl}
+                  alt="参考图"
+                  className="canvas-video-mode-thumb"
+                />
+              ) : <span className="canvas-video-mode-icon">▦</span>}
+              <div className="canvas-video-mode-text">
+                <span className="canvas-video-mode-label">图生视频</span>
+                <span className="canvas-video-mode-desc">参考图：{videoModeInfo.sourceNodeTitle ?? 'Image'}</span>
+              </div>
+            </>
+          ) : videoModeInfo.mode === 'image-missing' ? (
+            <>
+              <span className="canvas-video-mode-icon">⚠</span>
+              <div className="canvas-video-mode-text">
+                <span className="canvas-video-mode-label">参考图缺失</span>
+                <span className="canvas-video-mode-desc">上游图片尚无可用 URL，请先生成图片</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="canvas-video-mode-icon">⊡</span>
+              <div className="canvas-video-mode-text">
+                <span className="canvas-video-mode-label">文生视频</span>
+                <span className="canvas-video-mode-desc">未连接参考图，将根据 Prompt 直接生成</span>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div className="canvas-prompt-input-wrap">
         {promptInput}
