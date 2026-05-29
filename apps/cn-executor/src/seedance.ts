@@ -245,10 +245,15 @@ export async function submitSeedanceTask(input: SeedanceSubmitInput): Promise<Se
     }
   }
 
+  console.log('[cn-executor][seedance] submit response sample', {
+    taskId, httpStatus: response.status, model, endpoint,
+    hasImageUrl: Boolean(input.imageUrl), duration, ratio,
+    responseBody: JSON.stringify(data).slice(0, 1500),
+  })
   return { success: true, taskId, model, endpoint, submittedInput }
 }
 
-export async function pollSeedanceTask(taskId: string): Promise<SeedancePollResult> {
+export async function pollSeedanceTask(taskId: string, _pollIndex?: number): Promise<SeedancePollResult> {
   const apiKey = process.env.VOLCENGINE_ARK_API_KEY?.trim()
   const baseUrl = (process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL).replace(/\/+$/, '')
   const endpoint = seedanceTaskStatusEndpoint(baseUrl, taskId)
@@ -274,6 +279,13 @@ export async function pollSeedanceTask(taskId: string): Promise<SeedancePollResu
   let data: unknown
   try { data = await response.json() } catch {
     return { success: false, taskId, errorCode: 'provider_invalid_response', message: `HTTP ${response.status} non-JSON` }
+  }
+
+  if (_pollIndex === undefined || _pollIndex === 0 || _pollIndex % 10 === 0) {
+    console.log('[cn-executor][seedance] poll response sample', {
+      taskId, pollIndex: _pollIndex, httpStatus: response.status,
+      responseBody: JSON.stringify(data).slice(0, 1500),
+    })
   }
 
   if (!response.ok) {
@@ -309,11 +321,12 @@ export async function pollSeedanceTaskUntilDone(
   let polls = 0
   while (polls < maxPolls) {
     await new Promise((r) => setTimeout(r, intervalMs))
-    const result = await pollSeedanceTask(taskId)
+    const result = await pollSeedanceTask(taskId, polls)
     polls += 1
     if (!result.success) return result
     if (result.status === 'done') return result
     console.log(`[cn-executor][seedance] polling task ${taskId} (${polls}/${maxPolls}): still running`)
   }
+  console.log('[cn-executor][seedance] provider timeout summary', { taskId, totalPolls: polls, maxPolls })
   return { success: false, taskId, errorCode: 'provider_timeout', message: `Seedance task ${taskId} timed out after ${maxPolls} polls.` }
 }
