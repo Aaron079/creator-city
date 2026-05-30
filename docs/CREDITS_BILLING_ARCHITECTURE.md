@@ -133,6 +133,52 @@ will allow live price changes without deploys.
 **Not changed**: reserve/settle transactions, image/video generate routes, cn-executor,
 DB schema, billing-middleware, env, packages.
 
+### Phase 2C-lite — Package Display + Manual Grant Operations (2026-05-30)
+
+**Context**: No real payment gateway yet. This phase builds the operational tooling for
+the test period: admins can grant credits directly; users see the package tiers.
+
+**Added**:
+
+`GET /api/credits/packages` — updated to return `success: true` envelope, `label`,
+`status: 'soon'`, `priceUsd`, `bonusCredits` per package. First 5 packages returned:
+Starter 500 ($6.99) / Creator 1500 ($14.99) / Studio 5500 ($49.99) /
+Team 15000 ($129.99) / Enterprise 50000 ($399.99). Static config — no DB read.
+
+`POST /api/admin/credits/grant` — enhanced with:
+- **Mode C**: `targetUserEmail + amountCredits` — looks up user by email (DB unique
+  index), then calls `adminDirectGrant()`. Returns `{ success, userId, creditsGranted,
+  availableCredits }`.
+- Stricter response envelope: `success: true/false` + `errorCode` on all paths.
+- Range limit narrowed from 1–1,000,000 to 1–100,000 per grant.
+- Auth unchanged: `user.role === 'ADMIN'` from session cookie.
+
+`CreditPackagesPanel.tsx` — reusable client component. Fetches `/api/credits/packages`,
+renders N cards (default 3). Each card shows name, total credits (base + bonus),
+label, price, "Soon" badge. Loading skeleton shown while fetching.
+
+`CreditInsufficientModal.tsx` — updated:
+- Uses `CreditPackagesPanel` (was inline static cards).
+- Shows credit gap: `requiredCredits − availableCredits` highlighted in red.
+- Updated notice: "支付接入即将开放。当前测试期请联系管理员充值 credits."
+- Button: "购买积分" (disabled + Soon) + "稍后再说" (close).
+
+**Manual grant ops workflow (test period)**:
+```bash
+# Admin grants credits to a user by email
+curl -X POST https://[domain]/api/admin/credits/grant \
+  -H "Content-Type: application/json" \
+  -H "Cookie: [admin session cookie]" \
+  -d '{"targetUserEmail": "user@example.com", "amountCredits": 500, "note": "test grant"}'
+# Response: { "success": true, "userId": "...", "creditsGranted": 500, "availableCredits": 500 }
+```
+
+After grant: user refreshes canvas, CreditBalanceBadge shows new balance, can generate.
+CreditLedger records `type = ADMIN_ADJUSTMENT`, delta = +500.
+
+**Not changed**: reserve/settle, generate routes, cn-executor, DB schema, env, packages.
+**Not wired to user UI**: admin grant is a curl/ops endpoint only.
+
 ---
 
 ## Phase Roadmap
@@ -142,6 +188,7 @@ DB schema, billing-middleware, env, packages.
 | 1.5 | Unified credit rules (shared-cost-rules.ts) | ✅ Done |
 | 2A | Read-only wallet balance API + canvas badge | ✅ Done |
 | 2B-lite | Insufficient credits modal (no real payment) | ✅ Done |
+| 2C-lite | Package display + manual admin grant (test period ops) | ✅ Done |
 | 2B | Stripe Checkout (global) + credit package page | Pending |
 | 2C | Insufficient credits → auto open top-up modal | ✅ Done (via 2B-lite) |
 | 2D | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
