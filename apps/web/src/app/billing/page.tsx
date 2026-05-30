@@ -333,8 +333,8 @@ export default function BillingPage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-white">购买 Creator City Credits</h1>
-            <p className="mt-2 text-sm text-white/50">积分只用于平台内生成，不可提现、转让或交易。</p>
+            <h1 className="text-2xl font-semibold text-white">Creator City Credits 充值</h1>
+            <p className="mt-2 text-sm text-white/50">Credits 仅用于平台内生成，不可提现、转让或交易。当前中国区支持转账充值，自动支付正在接入中。</p>
           </div>
           <a href="/account/credits" className="rounded-lg border border-white/10 px-3 py-2 text-sm text-white/70 hover:text-white">我的账单</a>
         </div>
