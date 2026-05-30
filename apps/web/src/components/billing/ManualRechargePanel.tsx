@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import type { CreditPackage } from '@/lib/billing/types'
 
+// Fallback when packages not yet loaded from API
 const PACKAGE_REFS = [
   { name: 'Starter', credits: 500, label: '轻量体验' },
   { name: 'Creator', credits: 1500, label: '日常创作' },
@@ -29,7 +31,19 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export function ManualRechargePanel({ orderId }: { orderId?: string }) {
+export function ManualRechargePanel({
+  orderId,
+  packages,
+  onSubmit,
+  buyingId,
+}: {
+  orderId?: string
+  packages?: CreditPackage[]
+  onSubmit?: (packageId: string) => void
+  buyingId?: string | null
+}) {
+  const hasSubmittable = (packages?.length ?? 0) > 0 && !!onSubmit
+
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm">
 
@@ -49,7 +63,7 @@ export function ManualRechargePanel({ orderId }: { orderId?: string }) {
       {/* Step flow */}
       <div className="mb-5 grid gap-2">
         {[
-          { step: '1', text: '在下方选择套餐，点击"购买"提交充值申请' },
+          { step: '1', text: '在下方选择套餐，提交转账充值申请' },
           { step: '2', text: '记录申请编号，通过微信/支付宝/银行转账打款' },
           { step: '3', text: '转账备注填写申请编号或注册邮箱' },
           { step: '4', text: '联系管理员，管理员确认到账后发放 credits' },
@@ -103,23 +117,54 @@ export function ManualRechargePanel({ orderId }: { orderId?: string }) {
         </div>
       </div>
 
-      {/* Package reference */}
+      {/* Package selection — interactive if packages + onSubmit provided, else static reference */}
       <div className="mb-5">
         <p className="mb-3 text-xs font-medium uppercase tracking-wider text-white/30">
-          套餐参考（请在下方选择套餐后提交申请）
+          {hasSubmittable ? '选择套餐并提交申请' : '套餐参考'}
         </p>
-        <div className="grid gap-1.5 sm:grid-cols-5">
-          {PACKAGE_REFS.map((pkg) => (
-            <div
-              key={pkg.name}
-              className="rounded-md border border-white/8 bg-white/[0.02] px-2.5 py-2 text-center"
-            >
-              <div className="text-xs font-semibold text-white/70">{pkg.name}</div>
-              <div className="mt-0.5 text-sm font-bold text-cyan-200/90">{pkg.credits.toLocaleString()}</div>
-              <div className="mt-0.5 text-xs text-white/30">{pkg.label}</div>
-            </div>
-          ))}
-        </div>
+
+        {hasSubmittable ? (
+          <div className="grid gap-2 sm:grid-cols-5">
+            {packages!.map((pkg) => {
+              const total = pkg.credits + pkg.bonusCredits
+              const isSubmitting = buyingId === pkg.id
+              const anyBuying = !!buyingId
+              return (
+                <div
+                  key={pkg.id}
+                  className="flex flex-col rounded-md border border-white/10 bg-white/[0.02] px-2.5 py-3 text-center"
+                >
+                  <div className="text-xs font-semibold text-white/70">{pkg.name}</div>
+                  <div className="mt-0.5 text-sm font-bold text-cyan-200/90">
+                    {total.toLocaleString()}
+                  </div>
+                  <div className="mb-3 mt-0.5 text-xs text-white/30">credits</div>
+                  <button
+                    type="button"
+                    disabled={anyBuying}
+                    onClick={() => onSubmit!(pkg.id)}
+                    className="mt-auto rounded-md border border-white/15 bg-white/[0.04] px-2 py-1.5 text-xs text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isSubmitting ? '提交中...' : '提交充值申请'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="grid gap-1.5 sm:grid-cols-5">
+            {PACKAGE_REFS.map((pkg) => (
+              <div
+                key={pkg.name}
+                className="rounded-md border border-white/8 bg-white/[0.02] px-2.5 py-2 text-center"
+              >
+                <div className="text-xs font-semibold text-white/70">{pkg.name}</div>
+                <div className="mt-0.5 text-sm font-bold text-cyan-200/90">{pkg.credits.toLocaleString()}</div>
+                <div className="mt-0.5 text-xs text-white/30">{pkg.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Admin contact notice */}

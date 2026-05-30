@@ -385,7 +385,16 @@ export default function BillingPage() {
             <a href="/auth/login?next=/billing" className="ml-3 font-semibold underline">去登录</a>
           </div>
         ) : null}
-        {provider === 'manual' ? <div className="mb-5"><ManualRechargePanel orderId={manualOrderId} /></div> : null}
+        {provider === 'manual' ? (
+          <div className="mb-5">
+            <ManualRechargePanel
+              orderId={manualOrderId}
+              packages={packages}
+              onSubmit={buy}
+              buyingId={buyingId ?? payingPackageId}
+            />
+          </div>
+        ) : null}
 
         {/* Provider content area
             manual     → null (ManualRechargePanel above handles everything)
