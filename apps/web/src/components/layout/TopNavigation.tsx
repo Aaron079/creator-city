@@ -170,25 +170,17 @@ export function TopNavigation() {
     router.push('/')
   }
 
-  // Preserve localStorage-aware canvas navigation
+  // Canvas entry points navigate directly — do not read last-project-id.
+  // That key may belong to a previously logged-in user; /create and /create-v2
+  // call /api/projects/ensure which always returns the current user's own project.
   const handleCreateClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    let href = '/create'
-    try {
-      const lastId = window.localStorage.getItem('creator-city:last-project-id')
-      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
-    } catch (_) { /* private mode — fall back to /create */ }
-    router.push(href)
+    router.push('/create')
   }, [router])
 
   const handleCanvasV2Click = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    let href = '/create-v2'
-    try {
-      const lastId = window.localStorage.getItem('creator-city:last-project-id')
-      if (lastId) href = `/create-v2?projectId=${encodeURIComponent(lastId)}`
-    } catch (_) { /* private mode */ }
-    router.push(href)
+    router.push('/create-v2')
   }, [router])
 
   return (

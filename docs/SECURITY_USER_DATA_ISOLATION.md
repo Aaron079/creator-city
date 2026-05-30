@@ -62,6 +62,27 @@ On every app mount, when `/api/auth/me` returns a user:
 
 This covers the case where User A's session expired (or the browser was closed) without an explicit logout — the new user's first app load will wipe all stale keys from User A's session.
 
+### Canvas entry points — must NOT read `last-project-id`
+
+All canvas entry points navigate to `/create` (or `/create-v2`) **without a projectId**. The canvas calls `/api/projects/ensure` which always returns the current user's own project.
+
+The following entry points were previously reading `last-project-id` from localStorage and are now fixed:
+
+| Entry point | File | Fix applied |
+|-------------|------|-------------|
+| Home CTA button | `HomeLanding.tsx` | Always pushes `/create` |
+| Nav "AI 画布" | `TopNavigation.tsx` `handleCreateClick` | Always pushes `/create` |
+| Nav "Canvas V2" | `TopNavigation.tsx` `handleCanvasV2Click` | Always pushes `/create-v2` |
+| Canvas init no-projectId branch | `VisualCanvasWorkspace.tsx` | Removed `last-project-id` fallback |
+
+**Rule**: Never add `last-project-id` reads to navigation entry points. The `last-project-id` key is only written (by canvas on successful load) and cleared (on logout and userId change). It is intentionally never read at entry — `/api/projects/ensure` is the safe path.
+
+### Canvas init — no `last-project-id` fallback
+
+When `/create` is opened without a `?projectId=` query param, the canvas **must not** fall back to reading `last-project-id` from localStorage. It proceeds directly to `POST /api/projects/ensure` which returns the current user's own project.
+
+Previous behavior (removed): if `resolvedProjectId` was empty, the canvas read `last-project-id` from localStorage and redirected to that project URL. This was the primary vector for cross-account 403 errors after account switching.
+
 ### Cross-account project navigation — prohibited
 
 `creator-city:last-project-id` must be cleared on logout so a newly logged-in user is never silently redirected to a previous user's project URL. Clearing this key at logout (and on userId change) breaks the navigation chain before the canvas API's 403 guard is even reached.
@@ -72,14 +93,18 @@ If the canvas API returns 401 (session invalid), the canvas must NOT display loc
 
 File: `VisualCanvasWorkspace.tsx` 401 handler — `hasHydratedCanvasRef.current = false`, no `local-draft` status.
 
-### 403 / PROJECT_NOT_FOUND response — must clear project-scoped draft
+### 403 / PROJECT_NOT_FOUND response — must clear project-scoped draft and canvas state
 
 If the canvas API returns 403 (FORBIDDEN) or PROJECT_NOT_FOUND, the canvas:
 1. Calls `clearProjectScopedLocalState(resolvedProjectId)` — removes all per-project localStorage keys for that projectId.
 2. Removes `creator-city:last-project-id` if it still points to this project.
-3. Redirects to `/create`.
+3. Calls `commitNodes([])` and `commitEdges([])` to immediately clear all visible canvas state.
+4. Resets `hasHydratedCanvasRef.current = false` and `isInitializingRef.current = false`.
+5. Redirects to `/create`.
 
-Without this, a stale canvas draft for another user's project persists in localStorage and leaks on every subsequent visit to that project URL.
+Without step 1, a stale canvas draft for another user's project persists in localStorage and leaks on every subsequent visit to that project URL.
+
+Without steps 3–4, stale nodes from the previous account remain visible in the canvas during the brief window before the redirect completes.
 
 The per-project helper `clearProjectScopedLocalState(projectId)` in `lib/client-storage/clearUserLocalState.ts` handles this targeted cleanup.
 
@@ -120,9 +145,9 @@ To verify isolation is working correctly:
 3. **Without clicking Logout**, navigate directly to the login page and log in as Account B.
 4. Confirm `AuthProvider` detects userId change — `creator-city:last-project-id` and all `creator-city-canvas-draft:*` keys must be cleared automatically.
 5. Confirm TopNavigation shows Account B's display name.
-6. Click "AI 画布" — must NOT navigate to Account A's projectId.
+6. Click "AI 画布" — must navigate to `/create` without a `?projectId=` query param. Canvas calls `/api/projects/ensure` and returns Account B's own project. No `?projectId=<Account A's projectId>` in the URL.
 7. Canvas shows empty state or Account B's own project — NOT Account A's nodes.
-8. Manually open `/create?projectId=<Account A's projectId>` — canvas must NOT briefly show Account A's draft. API returns 403, all project-scoped keys for that projectId are cleared, redirect to `/create`.
+8. Manually open `/create?projectId=<Account A's projectId>` — canvas must NOT briefly show Account A's draft. API returns 403, all project-scoped keys for that projectId are cleared, canvas nodes cleared immediately, redirect to `/create`.
 9. Visit `/projects` — shows loading state then Account B's projects only (no flash of Account A's list).
 10. `/api/credits/balance` returns Account B's wallet balance.
 

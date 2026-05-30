@@ -9,14 +9,10 @@ export function HomeLanding() {
 
   const handleCanvasEntry = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
-    let href = '/create'
-    try {
-      const lastId = window.localStorage.getItem('creator-city:last-project-id')
-      if (lastId) href = `/create?projectId=${encodeURIComponent(lastId)}`
-    } catch {
-      // localStorage may be unavailable; /create will ensure the active project.
-    }
-    router.push(href)
+    // Do not read last-project-id here — it may belong to a previously logged-in
+    // user. Entry points always navigate to /create without a projectId; the canvas
+    // calls /api/projects/ensure which returns the current user's own project.
+    router.push('/create')
   }, [router])
 
   return (

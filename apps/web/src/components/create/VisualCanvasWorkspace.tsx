@@ -3260,16 +3260,10 @@ export function VisualCanvasWorkspace({
 
         if (!resolvedProjectId) {
           setSaveMessage('正在打开项目...')
-          try {
-            devPerf('read-last-project')
-            const lastId = window.localStorage.getItem('creator-city:last-project-id')
-            if (lastId) {
-              router.replace(`/create?projectId=${encodeURIComponent(lastId)}`)
-              return
-            }
-          } catch (_) {
-            // localStorage may be unavailable; fall through to server ensure.
-          }
+          // Do NOT fall back to last-project-id from localStorage here.
+          // That key may belong to a previously logged-in user and would cause
+          // a cross-account 403 before the entry-point fix could prevent it.
+          // /api/projects/ensure always returns the current user's own project.
           devPerf('canvas-fetch', 'start')
           const ensureRes = await fetch('/api/projects/ensure?includeCanvas=1', {
             method: 'POST',
@@ -3362,6 +3356,11 @@ export function VisualCanvasWorkspace({
           } catch (_) {
             // Fall through to server ensure through /create.
           }
+          // Immediately clear canvas state so no stale nodes are visible during redirect.
+          commitNodes([])
+          commitEdges([])
+          hasHydratedCanvasRef.current = false
+          isInitializingRef.current = false
           router.replace('/create')
           return
         }
