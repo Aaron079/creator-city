@@ -163,8 +163,7 @@ export function CreditInsufficientModal({
           background: 'rgba(255,255,255,0.03)',
         }}>
           <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.65', color: 'rgba(255,255,255,0.45)' }}>
-            支付接入即将开放。<br />
-            当前测试期请联系管理员充值 credits。
+            测试期可通过线下转账充值。提交申请后联系管理员确认，积分将在确认后发放。
           </p>
         </div>
 
@@ -172,22 +171,17 @@ export function CreditInsufficientModal({
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             type="button"
-            disabled
+            onClick={() => { window.location.href = '/billing?region=CN&method=manual' }}
             style={{
               flex: 1, height: '40px', borderRadius: '10px',
-              border: '1px solid rgba(160,60,255,0.2)',
-              background: 'rgba(160,60,255,0.1)',
-              color: 'rgba(200,160,255,0.45)', fontSize: '13px', fontWeight: 500,
-              cursor: 'not-allowed',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              border: '1px solid rgba(160,60,255,0.35)',
+              background: 'rgba(160,60,255,0.18)',
+              color: 'rgba(200,160,255,0.9)', fontSize: '13px', fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
-            购买积分
-            <span style={{
-              fontSize: '9px', background: 'rgba(160,60,255,0.18)',
-              border: '1px solid rgba(160,60,255,0.25)', borderRadius: '4px',
-              padding: '1px 5px', letterSpacing: '0.06em', textTransform: 'uppercase',
-            }}>Soon</span>
+            前往转账充值
           </button>
           <button
             type="button"

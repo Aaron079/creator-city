@@ -133,6 +133,42 @@ will allow live price changes without deploys.
 **Not changed**: reserve/settle transactions, image/video generate routes, cn-executor,
 DB schema, billing-middleware, env, packages.
 
+### Phase 2B — Stripe Checkout Test Mode (2026-05-30)
+
+**Context**: Purchase flow previously depended on NestJS (`createPaymentOrder` → `api/v1/credits/orders`, `fulfillOrder` → `api/v1/credits/internal/fulfill-order`). Also used Bearer token auth on the checkout route while the billing page sent session cookies — causing 401 for all purchases.
+
+**Fix**:
+1. Rewrote `POST /api/billing/checkout`:
+   - Auth: `getCurrentUser()` session cookie (was: `extractBearerToken`)
+   - Package lookup: server-side `getCreditPackage(packageId)` — user cannot specify credits/price
+   - Creates `PaymentOrder` via Prisma directly (was: NestJS call)
+   - Calls `createCheckoutSession` (raw fetch to Stripe API, no SDK)
+   - Updates `PaymentOrder.stripeSessionId` after session created
+   - Returns `{ success: true, checkoutUrl, paymentOrderId }`
+   - If Stripe not configured: `{ success: false, errorCode: 'STRIPE_NOT_CONFIGURED' }`
+2. Rewrote `POST /api/webhooks/stripe`:
+   - Keeps HMAC-SHA256 signature verification (no SDK)
+   - Replaces `fulfillOrder` (NestJS) with Prisma direct transaction
+   - Idempotency: `updateMany(where: { status: PENDING })` — `count === 0` means already claimed
+   - Transaction: PaymentOrder PENDING→PAID + wallet balance++ + `CreditLedger(type=PURCHASE)`
+   - No NestJS dependency, no INTERNAL_API_SECRET
+3. Added `systemGrantPurchasedCredits` to `lib/credits/server.ts`:
+   - `CreditLedgerType.PURCHASE` (not ADMIN_ADJUSTMENT)
+   - Atomic Prisma transaction
+   - No admin role required (server-only webhook path)
+4. Fixed `createCheckoutSession` URL bug: success_url `?` → `&` separator
+5. Added `metadata[paymentOrderId]` + `metadata[credits]` to Stripe session
+
+**Env vars required**:
+- `STRIPE_ENABLED=true`
+- `STRIPE_SECRET_KEY=sk_test_...`
+- `STRIPE_WEBHOOK_SECRET=whsec_...`
+- `APP_URL=https://creator-city-vert.vercel.app`
+
+**No changes**: generate routes, cn-executor, canvas route, DB schema, package.json.
+
+**Test card**: `4242 4242 4242 4242`, any future date/CVV. Full guide: `docs/STRIPE_CHECKOUT_TEST_MODE.md`.
+
 ### Phase 2C-lite — Package Display + Manual Grant Operations (2026-05-30)
 
 **Context**: No real payment gateway yet. This phase builds the operational tooling for
@@ -179,6 +215,43 @@ CreditLedger records `type = ADMIN_ADJUSTMENT`, delta = +500.
 **Not changed**: reserve/settle, generate routes, cn-executor, DB schema, env, packages.
 **Not wired to user UI**: admin grant is a curl/ops endpoint only.
 
+### Phase 2D — CN Manual Recharge UI (2026-05-30)
+
+**Context**: Test period operational recharge path. Users can submit a transfer request from
+the billing page; admins confirm and grant credits via the Admin Grant API.
+
+**Added/Updated**:
+
+`ManualRechargePanel.tsx` — Rewritten with:
+- 4-step transfer instructions
+- `orderId` confirmation box with one-click copy button (shown after purchase submitted)
+- Payment method placeholders (WeChat/Alipay/Bank — no real account info in code)
+- Package reference table (5 tiers: Starter/Creator/Studio/Team/Enterprise)
+- Admin contact notice
+
+`PaymentMethodSelector.tsx` — Updated for CN region:
+- manual label: "转账充值" (was "人工充值"), subtitle: "联系管理员确认到账"
+- alipay subtitle when unconfigured: "待商户配置"
+- wechat subtitle when unconfigured: "开发中"
+- CN region provider order: manual first (default selected)
+
+`billing/page.tsx` — Added URL param reading on mount:
+- `?region=CN&method=manual` → pre-selects CN region + manual payment method
+- Default CN provider changed from `alipay` to `manual`
+
+`CreditInsufficientModal.tsx` — Updated action buttons:
+- "购买积分 Soon" (disabled) → "前往转账充值" (active, navigates to `/billing?region=CN&method=manual`)
+- Notice text updated to describe transfer-based recharge
+
+`docs/CN_MANUAL_RECHARGE_OPERATIONS.md` — Created. Full admin ops guide:
+- User flow end-to-end
+- Admin Grant API curl commands
+- Package credit reference with RMB pricing guide
+- SQL verification queries
+- All UI entry points
+
+**Not changed**: reserve/settle, generate routes, cn-executor, DB schema, env, Stripe, Alipay API.
+
 ---
 
 ## Phase Roadmap
@@ -189,10 +262,11 @@ CreditLedger records `type = ADMIN_ADJUSTMENT`, delta = +500.
 | 2A | Read-only wallet balance API + canvas badge | ✅ Done |
 | 2B-lite | Insufficient credits modal (no real payment) | ✅ Done |
 | 2C-lite | Package display + manual admin grant (test period ops) | ✅ Done |
-| 2B | Stripe Checkout (global) + credit package page | Pending |
+| 2B | Stripe Checkout Test Mode (Prisma direct, no NestJS) | ✅ Done |
 | 2C | Insufficient credits → auto open top-up modal | ✅ Done (via 2B-lite) |
-| 2D | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
-| 2E | ProviderCostLedger write on settle | Pending |
+| 2D | CN Manual Recharge UI (transfer + admin confirm flow) | ✅ Done |
+| 2E | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
+| 2F | ProviderCostLedger write on settle | Pending |
 | 3A | Activate ProviderPricingRule DB (replace hardcoded rules) | Pending |
 | 3B | Alipay recharge (CN users) | Pending |
 | 3C | Provider budget circuit breaker (ProviderAccount) | Pending |

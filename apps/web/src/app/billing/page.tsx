@@ -95,7 +95,7 @@ export default function BillingPage() {
     manual: { enabled: true, configured: true, missing: [] },
   })
   const [region, setRegion] = useState<BillingRegion>('CN')
-  const [provider, setProvider] = useState<PaymentProvider>('alipay')
+  const [provider, setProvider] = useState<PaymentProvider>('manual')
   const [buyingId, setBuyingId] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ type: 'info' | 'success' | 'error'; message: string; errorCode?: string } | null>(null)
   const [manualOrderId, setManualOrderId] = useState<string | undefined>()
@@ -197,9 +197,23 @@ export default function BillingPage() {
     })()
   }, [refreshAuthStatus])
 
+  // Read ?region=CN|GLOBAL&method=manual|alipay|... from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const regionParam = params.get('region') as BillingRegion | null
+    const methodParam = params.get('method') as PaymentProvider | null
+    if (regionParam === 'CN' || regionParam === 'GLOBAL') {
+      setRegion(regionParam)
+      if (methodParam) setProvider(methodParam)
+      else setProvider(regionParam === 'CN' ? 'manual' : 'stripe')
+    } else if (methodParam) {
+      setProvider(methodParam)
+    }
+  }, [])
+
   const changeRegion = (next: BillingRegion) => {
     setRegion(next)
-    setProvider(next === 'CN' ? 'alipay' : 'stripe')
+    setProvider(next === 'CN' ? 'manual' : 'stripe')
     setNotice(null)
   }
 
