@@ -108,6 +108,31 @@ will allow live price changes without deploys.
 
 **Not done this phase**: payment UI, top-up button, reserve/settle changes, DB schema changes.
 
+### Phase 2B-lite — Insufficient Credits Modal (2026-05-30)
+
+**Context**: generation routes already return `INSUFFICIENT_CREDITS` (HTTP 402) with
+`requiredCredits` and `availableCredits` fields. Previously the frontend wrote the node to
+`status: 'error'` and showed a toast. The node was left in an error state requiring retry.
+
+**Added**:
+- `CreditInsufficientModal.tsx` — dark glass modal (createPortal, z-index 99999).
+  Shows `requiredCredits` / `availableCredits` from the API response, or generic text
+  if fields are absent. Fetches fresh balance from `/api/credits/balance` on open.
+  Shows 3 plan cards (Starter 500 / Creator 1500 / Studio 5500) with "Soon" badges.
+  "了解充值方案" button is disabled. "稍后再说" closes. Escape key works.
+- Intercepted `INSUFFICIENT_CREDITS` at **both** error paths in `VisualCanvasWorkspace`:
+  - Polling path (text/image job poll result)
+  - Immediate result path (image/video sync response)
+- For `INSUFFICIENT_CREDITS`: node is **not** written to `status: 'error'`. Instead it is
+  restored to `nodeSnapshot.status` (the state before clicking Generate), leaving it
+  in a retryable state. The modal opens. `setDialogError(null)` clears any dialog error.
+- All other error codes (`SEEDANCE_TASK_FAILED`, `content_policy_rejected`,
+  `provider_timeout`, `OPENAI_RATE_LIMITED`, `PROVIDER_NOT_CONFIGURED`, etc.) continue
+  to use the original error handling path unchanged.
+
+**Not changed**: reserve/settle transactions, image/video generate routes, cn-executor,
+DB schema, billing-middleware, env, packages.
+
 ---
 
 ## Phase Roadmap
@@ -116,8 +141,9 @@ will allow live price changes without deploys.
 |-------|---------|--------|
 | 1.5 | Unified credit rules (shared-cost-rules.ts) | ✅ Done |
 | 2A | Read-only wallet balance API + canvas badge | ✅ Done |
+| 2B-lite | Insufficient credits modal (no real payment) | ✅ Done |
 | 2B | Stripe Checkout (global) + credit package page | Pending |
-| 2C | Insufficient credits → auto open top-up modal | Pending |
+| 2C | Insufficient credits → auto open top-up modal | ✅ Done (via 2B-lite) |
 | 2D | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
 | 2E | ProviderCostLedger write on settle | Pending |
 | 3A | Activate ProviderPricingRule DB (replace hardcoded rules) | Pending |
