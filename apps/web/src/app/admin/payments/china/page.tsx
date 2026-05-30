@@ -116,8 +116,30 @@ export default async function AdminChinaPaymentsPage() {
           </div>
         )}
 
+        {/* ── 区块 A：人工充值申请（需管理员逐笔审批）── */}
+        <div className="mt-8">
+          <div className="mb-1 flex items-center gap-2">
+            <div className="h-px flex-1 bg-white/8" />
+            <span className="text-[11px] uppercase tracking-widest text-white/25">人工审批通道</span>
+            <div className="h-px flex-1 bg-white/8" />
+          </div>
+          <p className="mb-1 text-xs text-white/30">
+            用户通过 /billing?region=CN&amp;method=manual 提交转账充值申请，由管理员核对线下到账后逐笔审批发放。
+          </p>
+        </div>
         <ManualRechargeAdminPanel />
 
+        {/* ── 区块 B：自动支付 / 沙箱订单（支付宝/微信回调自动入账）── */}
+        <div className="mt-10">
+          <div className="mb-1 flex items-center gap-2">
+            <div className="h-px flex-1 bg-white/8" />
+            <span className="text-[11px] uppercase tracking-widest text-white/25">自动支付通道</span>
+            <div className="h-px flex-1 bg-white/8" />
+          </div>
+          <p className="mb-1 text-xs text-white/30">
+            支付宝 / 微信自动支付订单，验签通过后由 webhook 自动入账，无需人工操作。沙箱期间可由管理员触发模拟入账验证链路。
+          </p>
+        </div>
         <AdminChinaPaymentsClient orders={orders} simulationEnabled={simulationEnabled} />
       </main>
     </DashboardShell>

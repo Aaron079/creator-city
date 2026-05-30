@@ -1,15 +1,17 @@
 import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { db } from '@/lib/db'
 
 type CardProps = {
   href: string
   title: string
   description: string
   badge?: string
+  alertBadge?: string
 }
 
-function AdminCard({ href, title, description, badge }: CardProps) {
+function AdminCard({ href, title, description, badge, alertBadge }: CardProps) {
   return (
     <Link
       href={href}
@@ -17,7 +19,12 @@ function AdminCard({ href, title, description, badge }: CardProps) {
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-sm font-semibold text-white group-hover:text-white/90">{title}</span>
-        {badge && (
+        {alertBadge && (
+          <span className="shrink-0 rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+            {alertBadge}
+          </span>
+        )}
+        {!alertBadge && badge && (
           <span className="shrink-0 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-200">
             {badge}
           </span>
@@ -30,6 +37,17 @@ function AdminCard({ href, title, description, badge }: CardProps) {
 
 export default async function AdminIndexPage() {
   const user = await getCurrentUser()
+
+  let pendingManualCount = 0
+  if (user?.role === 'ADMIN') {
+    try {
+      pendingManualCount = await db.paymentOrder.count({
+        where: { provider: 'manual', status: 'PENDING' },
+      })
+    } catch {
+      // non-fatal — badge will not show count
+    }
+  }
 
   if (!user) {
     return (
@@ -81,7 +99,8 @@ export default async function AdminIndexPage() {
               href="/admin/payments/china"
               title="待处理充值"
               description="查看转账充值申请，确认到账并发放 credits。"
-              badge="主要入口"
+              alertBadge={pendingManualCount > 0 ? `${pendingManualCount} 待审核` : undefined}
+              badge={pendingManualCount === 0 ? '主要入口' : undefined}
             />
             <AdminCard
               href="/admin/credits"

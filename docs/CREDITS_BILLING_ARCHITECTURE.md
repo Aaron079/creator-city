@@ -319,6 +319,39 @@ Admins had to memorize direct URLs. Admin entry deliberately kept out of user-fa
 
 ---
 
+### Phase 1 Admin Payment Ops Clarity (2026-05-31)
+
+**Context**: `/admin/payments/china` mixed manual recharge approval and alipay/wechat sandbox orders in an unclear layout. Admins might confuse "沙箱模拟入账" with manual approval, or miss pending manual orders.
+
+**Changes**:
+
+`/admin/page.tsx` — PENDING badge on "待处理充值" card:
+- Queries `db.paymentOrder.count({ provider: 'manual', status: 'PENDING' })` server-side
+- If count > 0: amber badge showing `N 待审核`
+- If count = 0 or query fails: original cyan "主要入口" badge (non-fatal fallback)
+- Added `alertBadge` prop to `AdminCard` for this pattern
+
+`AdminChinaPaymentsClient.tsx` — Section renamed and labeled:
+- Section title: "最近中国支付订单" → "自动支付 / 沙箱订单"
+- Subtitle updated: clarifies this is alipay/wechat auto-payment orders, not manual transfers
+- Added info box: "人工转账申请请在上方处理，两者互不干扰"
+- Simulate button: "模拟支付成功" → "沙箱模拟入账" (title attr also updated)
+
+`/admin/payments/china/page.tsx` — Visual section dividers:
+- Added `── 人工审批通道 ──` separator with explanatory text above `ManualRechargeAdminPanel`
+- Added `── 自动支付通道 ──` separator with explanatory text above `AdminChinaPaymentsClient`
+
+`docs/CN_MANUAL_RECHARGE_OPERATIONS.md` — Fully rewritten:
+- Comparison table: manual vs auto payment
+- Clearer admin approval steps with PENDING badge reference
+- ⚠️ note: two sections must not be confused
+- Alipay auto-payment launch checklist (5 prerequisites)
+- Future main flow diagram
+
+**Not changed**: `fulfillChinaPaymentOrder`, `approveManualRecharge`, `adminDirectGrant`, all payment APIs, billing transaction logic, generate routes, cn-executor, DB schema, env, package.json, `PaymentMethodSelector.tsx` CN_COMING_SOON hard-lock.
+
+---
+
 ## Phase Roadmap
 
 | Phase | Content | Status |
@@ -332,6 +365,7 @@ Admins had to memorize direct URLs. Admin entry deliberately kept out of user-fa
 | 2D | CN Manual Recharge UI (transfer + admin confirm flow) | ✅ Done |
 | 2E-admin | CN Manual Recharge Admin Approval UI | ✅ Done |
 | 2E-index | Standalone Admin Console index + storage/china guard | ✅ Done |
+| Phase 1 Admin Ops Clarity | Admin payment page clarity: section separation, PENDING badge, sandbox labeling | ✅ Done |
 | 2F | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
 | 2F | ProviderCostLedger write on settle | Pending |
 | 3A | Activate ProviderPricingRule DB (replace hardcoded rules) | Pending |

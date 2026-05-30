@@ -81,17 +81,21 @@ export function AdminChinaPaymentsClient({ orders, simulationEnabled }: Props) {
   }
 
   return (
-    <section className="mt-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <section className="mt-8">
+      <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-white">最近中国支付订单</h2>
+          <h2 className="text-base font-semibold text-white">自动支付 / 沙箱订单</h2>
           <p className="mt-1 text-sm text-white/45">
-            沙箱 iOS 暂无法扫码时，可由管理员模拟支付成功，用于验证到账链路。
+            支付宝 / 微信自动支付订单。支付回调验签通过后自动入账，无需人工审批。
           </p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs ${simulationEnabled ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-white/45'}`}>
           {simulationEnabled ? 'simulation enabled' : '未开启支付模拟模式'}
         </span>
+      </div>
+      <div className="mb-4 rounded-md border border-white/8 bg-white/[0.02] px-3 py-2.5 text-xs leading-relaxed text-white/40">
+        此区域显示支付宝 / 微信自动支付订单，沙箱期间可能出现管理员模拟入账记录（settlementSource: sandbox_simulation）。
+        <span className="font-medium text-amber-200/60"> 人工转账充值申请请在上方&ldquo;人工充值申请 — 待审核&rdquo;区块处理，两者互不干扰。</span>
       </div>
 
       {message ? (
@@ -148,12 +152,12 @@ export function AdminChinaPaymentsClient({ orders, simulationEnabled }: Props) {
                       {order.status === 'PENDING' ? (
                         <button
                           type="button"
-                          title={disabledReason || '模拟支付成功'}
+                          title={disabledReason || '沙箱模拟：标记该自动支付订单为已支付（不影响人工充值审批）'}
                           disabled={!canSimulate || pendingOutTradeNo === order.outTradeNo || isRefreshing}
                           onClick={() => order.outTradeNo ? void simulatePaid(order.outTradeNo) : undefined}
                           className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
                         >
-                          {pendingOutTradeNo === order.outTradeNo ? '模拟中...' : '模拟支付成功'}
+                          {pendingOutTradeNo === order.outTradeNo ? '模拟中...' : '沙箱模拟入账'}
                         </button>
                       ) : (
                         <span className="text-xs text-white/35">-</span>
