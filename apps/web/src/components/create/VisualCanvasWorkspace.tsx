@@ -42,6 +42,7 @@ import {
 import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
+import { CreditBalanceBadge } from './CreditBalanceBadge'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType, type ToolProviderStatus } from '@/lib/tools/provider-catalog'
 import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
@@ -7478,6 +7479,8 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
+          {/* Credits balance — read-only display */}
+          <CreditBalanceBadge />
           {/* Save status pill */}
           <button
             type="button"
