@@ -387,43 +387,80 @@ export default function BillingPage() {
         ) : null}
         {provider === 'manual' ? <div className="mb-5"><ManualRechargePanel orderId={manualOrderId} /></div> : null}
 
-        {region === 'CN' && (provider === 'alipay' || provider === 'wechat') ? (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6">
-            <div className="mb-2 text-base font-semibold text-white">
-              {provider === 'alipay' ? '支付宝自动支付待商户配置' : '微信支付开发中'}
-            </div>
-            <p className="mb-5 text-sm leading-relaxed text-white/55">
-              {provider === 'alipay'
-                ? '支付宝当面付正在接入中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'
-                : '微信支付正在开发中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'}
-            </p>
-            <button
-              type="button"
-              onClick={() => setProvider('manual')}
-              className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/30 hover:text-white"
-            >
-              使用转账充值
-            </button>
-          </div>
-        ) : packages.length > 0 ? (
-          <>
-            {packagesHydratedFromCache ? (
-              <p className="mb-3 text-xs text-white/35">已先显示本地缓存套餐，正在后台同步最新状态。</p>
-            ) : null}
-            <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
-          </>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div key={index} className="min-h-[190px] animate-pulse rounded-lg border border-white/10 bg-white/[0.04] p-4">
-                <div className="h-4 w-28 rounded bg-white/10" />
-                <div className="mt-5 h-8 w-24 rounded bg-white/10" />
-                <div className="mt-3 h-3 w-36 rounded bg-white/10" />
-                <div className="mt-8 h-9 rounded-lg bg-white/10" />
+        {/* Provider content area
+            manual     → null (ManualRechargePanel above handles everything)
+            CN alipay  → coming-soon card
+            CN wechat  → coming-soon card
+            configured → CreditPackageGrid (with skeleton while loading)
+            else       → not-configured card */}
+        {provider === 'manual'
+          ? null
+          : region === 'CN' && (provider === 'alipay' || provider === 'wechat')
+            ? (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6">
+                <div className="mb-2 text-base font-semibold text-white">
+                  {provider === 'alipay' ? '支付宝自动支付待商户配置' : '微信支付开发中'}
+                </div>
+                <p className="mb-5 text-sm leading-relaxed text-white/55">
+                  {provider === 'alipay'
+                    ? '支付宝当面付正在接入中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'
+                    : '微信支付 Native 正在开发中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setProvider('manual')}
+                  className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/30 hover:text-white"
+                >
+                  使用转账充值
+                </button>
               </div>
-            ))}
-          </div>
-        )}
+            )
+            : statuses[provider]?.configured
+              ? packages.length > 0
+                ? (
+                  <>
+                    {packagesHydratedFromCache ? (
+                      <p className="mb-3 text-xs text-white/35">已先显示本地缓存套餐，正在后台同步最新状态。</p>
+                    ) : null}
+                    <CreditPackageGrid packages={packages} region={region} provider={provider} buyingId={buyingId ?? payingPackageId} onBuy={buy} />
+                  </>
+                )
+                : (
+                  <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <div key={index} className="min-h-[190px] animate-pulse rounded-lg border border-white/10 bg-white/[0.04] p-4">
+                        <div className="h-4 w-28 rounded bg-white/10" />
+                        <div className="mt-5 h-8 w-24 rounded bg-white/10" />
+                        <div className="mt-3 h-3 w-36 rounded bg-white/10" />
+                        <div className="mt-8 h-9 rounded-lg bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                )
+              : (
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6">
+                  <div className="mb-2 text-base font-semibold text-white">
+                    {provider === 'stripe' ? 'Stripe 需要配置'
+                      : provider === 'paddle' ? 'Paddle 需要配置'
+                      : `${provider} 尚未配置`}
+                  </div>
+                  <p className="mb-5 text-sm leading-relaxed text-white/55">
+                    {provider === 'stripe'
+                      ? '海外支付通道尚未配置。当前中国账户请使用"中国大陆 / 转账充值"。'
+                      : provider === 'paddle'
+                        ? 'Paddle 海外支付通道尚未配置。当前请使用"中国大陆 / 转账充值"。'
+                        : '该支付方式尚未配置。'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => changeRegion('CN')}
+                    className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/30 hover:text-white"
+                  >
+                    使用中国区转账充值
+                  </button>
+                </div>
+              )
+        }
       </main>
       <AlipayQrPaymentModal
         payment={qrPayment}
