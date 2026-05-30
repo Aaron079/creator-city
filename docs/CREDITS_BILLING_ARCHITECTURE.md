@@ -254,6 +254,47 @@ the billing page; admins confirm and grant credits via the Admin Grant API.
 
 ---
 
+### Phase 2E — CN Manual Recharge Admin Approval UI (2026-05-30)
+
+**Context**: Closes the admin side of the manual recharge loop. Admins can now view all PENDING
+manual recharge orders and approve them in a single click from the `/admin/payments/china` page.
+
+**Added**:
+
+`GET /api/admin/payments/china` — New admin API route:
+- ADMIN role guard (session cookie)
+- Queries `provider=manual` orders via `listManualOrders` with status filter
+- Returns success envelope with `{ id, externalOrderId, userId, userEmail, userDisplayName, credits, amount, currency, status, createdAt, paidAt, rawNotifyJson }`
+
+`POST /api/admin/payments/china/approve` — New idempotent approve route:
+- ADMIN role guard
+- Pre-checks order status before calling `approveManualRecharge`
+- Already-PAID → returns `{ success: true, idempotent: true }` (no double credit)
+- Non-PENDING/PAID → returns 409
+- Non-manual order → returns 400
+- Credits amount taken from `PaymentOrder.credits` (not from request body)
+- Records `approvedBy` admin userId in `rawNotifyJson` (via existing `approveManualRecharge`)
+- CreditLedger type: `ADMIN_ADJUSTMENT` (correct per schema comment)
+
+`ManualRechargeAdminPanel.tsx` — New client component:
+- Fetches from `GET /api/admin/payments/china?status=PENDING` on mount
+- Refresh button (re-fetches on demand)
+- Table: orderId (with copy button), user email, credits, status, createdAt
+- High-amount warning badge for orders >= 15,000 credits
+- Inline confirm dialog: "确认该订单已线下到账？确认后将立即发放 X credits 给 user@email.com"
+- Extra warning in dialog for high-amount orders
+- "确认中..." button state while POSTing; prevent double-click
+- Success/error inline message per order row
+- Empty state: "暂无待确认充值申请"
+
+`admin/payments/china/page.tsx` — Added `ManualRechargeAdminPanel` render above existing alipay/wechat simulation section.
+
+`docs/CN_MANUAL_RECHARGE_OPERATIONS.md` — Updated with admin approval flow via the UI.
+
+**Not changed**: `approveManualRecharge` in server.ts (stable), reserve/settle, generate routes, cn-executor, DB schema, env, Stripe, Alipay API.
+
+---
+
 ## Phase Roadmap
 
 | Phase | Content | Status |
@@ -265,7 +306,8 @@ the billing page; admins confirm and grant credits via the Admin Grant API.
 | 2B | Stripe Checkout Test Mode (Prisma direct, no NestJS) | ✅ Done |
 | 2C | Insufficient credits → auto open top-up modal | ✅ Done (via 2B-lite) |
 | 2D | CN Manual Recharge UI (transfer + admin confirm flow) | ✅ Done |
-| 2E | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
+| 2E-admin | CN Manual Recharge Admin Approval UI | ✅ Done |
+| 2F | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
 | 2F | ProviderCostLedger write on settle | Pending |
 | 3A | Activate ProviderPricingRule DB (replace hardcoded rules) | Pending |
 | 3B | Alipay recharge (CN users) | Pending |

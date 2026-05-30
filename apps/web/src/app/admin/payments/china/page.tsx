@@ -2,6 +2,7 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { getChinaPaymentConfigurations } from '@/lib/payment/china/gateway'
+import { ManualRechargeAdminPanel } from '@/components/admin/ManualRechargeAdminPanel'
 import { AdminChinaPaymentsClient, type AdminChinaPaymentOrder } from './AdminChinaPaymentsClient'
 
 function StatusBadge({ configured }: { configured: boolean }) {
@@ -102,6 +103,8 @@ export default async function AdminChinaPaymentsPage() {
           Stripe / Paddle 仍保留为海外兼容路径，但不再作为中国大陆生产主方案。中国生产支付应走
           ChinaPaymentGateway，并在验签完成后再把 PaymentOrder 入账到 UserCreditWallet 与 CreditLedger。
         </section>
+
+        <ManualRechargeAdminPanel />
 
         <AdminChinaPaymentsClient orders={orders} simulationEnabled={simulationEnabled} />
       </main>
