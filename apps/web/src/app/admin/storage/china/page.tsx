@@ -1,4 +1,5 @@
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { getCurrentUser } from '@/lib/auth/current-user'
 import { getChinaStorageConfigurations, getConfiguredChinaStorageProvider } from '@/lib/storage/china/gateway'
 
 function StatusBadge({ configured }: { configured: boolean }) {
@@ -9,7 +10,25 @@ function StatusBadge({ configured }: { configured: boolean }) {
   )
 }
 
-export default function AdminChinaStoragePage() {
+export default async function AdminChinaStoragePage() {
+  const user = await getCurrentUser()
+
+  if (!user) {
+    return (
+      <DashboardShell>
+        <div className="p-8 text-sm text-amber-300">请先登录管理员账户。</div>
+      </DashboardShell>
+    )
+  }
+
+  if (user.role !== 'ADMIN') {
+    return (
+      <DashboardShell>
+        <div className="p-8 text-sm text-red-400">403：仅管理员可访问。</div>
+      </DashboardShell>
+    )
+  }
+
   const configs = getChinaStorageConfigurations()
   const activeProvider = getConfiguredChinaStorageProvider()
 

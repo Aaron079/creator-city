@@ -21,9 +21,20 @@
 
 ## Admin Approval Flow（推荐：页面操作）
 
+### 管理员入口
+
+管理员后台不在普通用户导航中展示。ADMIN 用户直接访问以下路径：
+
+| 路径 | 说明 |
+|------|------|
+| `/admin` | Admin Console 首页，列出所有管理入口 |
+| `/admin/payments/china` | 待处理充值申请（主要入口） |
+| `/admin/credits` | Credits 管理（直接发放） |
+| `/admin/users` | 用户列表 |
+
 ### 管理员审批步骤
 
-1. 打开 `/admin/payments/china`（需登录 ADMIN 账户）。
+1. 打开 `/admin`（Admin Console 首页），或直接访问 `/admin/payments/china`（需登录 ADMIN 账户）。
 2. 在"人工充值申请 — 待审核"表格中找到用户提供的 `orderId`（申请编号）。
 3. 核对用户发来的微信/支付宝/银行到账截图。
 4. 核对金额与套餐是否吻合。

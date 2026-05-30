@@ -295,6 +295,30 @@ manual recharge orders and approve them in a single click from the `/admin/payme
 
 ---
 
+### Phase 2E-index — Standalone Admin Console Index (2026-05-30)
+
+**Context**: Admin pages existed as isolated islands with no shared navigation or index.
+Admins had to memorize direct URLs. Admin entry deliberately kept out of user-facing nav.
+
+**Added**:
+
+`/admin/page.tsx` — New server-component admin console index:
+- ADMIN guard: `getCurrentUser()` → non-ADMIN sees 403, unauthenticated sees login prompt
+- Shows logged-in admin's email for confirmation
+- Explicit notice: "此页面不在普通用户导航中展示，仅管理员直接访问"
+- Card grid linking to all 8 admin sub-pages, organized into two groups:
+  - 核心运营: payments/china (primary, badged), credits, users
+  - 系统与配置: providers, billing, china, storage/china, health
+- Static links only — no API calls on the index page
+
+`/admin/storage/china/page.tsx` — Added ADMIN guard (was missing):
+- `getCurrentUser()` → unauthenticated: amber warning; non-ADMIN: red 403
+- No change to existing storage config display logic
+
+**Not changed**: TopNavigation, any user-facing nav, approve logic, payment APIs, generate routes, cn-executor, DB schema, env, Stripe.
+
+---
+
 ## Phase Roadmap
 
 | Phase | Content | Status |
@@ -307,6 +331,7 @@ manual recharge orders and approve them in a single click from the `/admin/payme
 | 2C | Insufficient credits → auto open top-up modal | ✅ Done (via 2B-lite) |
 | 2D | CN Manual Recharge UI (transfer + admin confirm flow) | ✅ Done |
 | 2E-admin | CN Manual Recharge Admin Approval UI | ✅ Done |
+| 2E-index | Standalone Admin Console index + storage/china guard | ✅ Done |
 | 2F | Text Agent (/api/agents/text) billing integration (5 cr/call) | Pending |
 | 2F | ProviderCostLedger write on settle | Pending |
 | 3A | Activate ProviderPricingRule DB (replace hardcoded rules) | Pending |
