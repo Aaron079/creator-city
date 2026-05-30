@@ -77,6 +77,7 @@ import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
 import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
+import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -3321,23 +3322,10 @@ export function VisualCanvasWorkspace({
           return
         }
 
+        // Do NOT render local draft before API authorization is confirmed.
+        // A stale draft from a previous user session would leak cross-account canvas data
+        // if shown before the server returns 403/401.
         const localPreview = readBestLocalCanvasSnapshot(resolvedProjectId)
-        if (localPreview?.value.workflowId) {
-          applyCanvasSnapshot({
-            projectId: resolvedProjectId,
-            workflowId: localPreview.value.workflowId,
-            title: localPreview.value.title,
-            nodes: localPreview.value.nodes,
-            edges: localPreview.value.edges,
-            viewport: localPreview.value.viewport,
-            status: 'restored-draft',
-            message: '已恢复本地草稿，正在同步服务器...',
-          })
-          canvasLoadedRef.current = true
-          hasHydratedCanvasRef.current = true
-          isInitializingRef.current = false
-          devPerf('first-render')
-        }
 
         devPerf('canvas-fetch', 'start')
         const response = await fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
@@ -3363,6 +3351,9 @@ export function VisualCanvasWorkspace({
         }
         if (data.errorCode === 'DB_SCHEMA_MISSING') throw new Error('项目表未同步，请执行 project-canvas-setup.sql')
         if (!response.ok && (data.errorCode === 'PROJECT_NOT_FOUND' || data.errorCode === 'FORBIDDEN')) {
+          // Clear all local state for this project — it belongs to a different user.
+          // Without this, a stale draft persists in localStorage and leaks on the next visit.
+          clearProjectScopedLocalState(resolvedProjectId)
           try {
             if (window.localStorage.getItem('creator-city:last-project-id') === resolvedProjectId) {
               window.localStorage.removeItem('creator-city:last-project-id')

@@ -17,6 +17,8 @@ All project and canvas data APIs enforce ownership at the database level:
 | `GET /api/credits/balance` | `getOrCreateWallet(currentUser.id)` |
 | `POST /api/credits/manual-recharge` | order attributed to `currentUser.id` |
 | `GET /api/auth/me` | session cookie → DB session → returns only current user |
+| `GET /api/assets` | `WHERE ownerId = currentUser.id` |
+| `GET /api/generation-tasks` | `WHERE userId = currentUser.id` |
 
 **Rule**: never remove or bypass ownership guards in these routes.
 
@@ -32,6 +34,7 @@ The helper `clearUserScopedLocalState()` in `lib/client-storage/clearUserLocalSt
 - `creator-city:last-project-id` — last opened project
 - `creator-city:last-workflow-id` — last opened workflow
 - `creator-city:projects-cache` — project list cache
+- `creator-city:last-auth-user-id` — userId sentinel for cross-account detection
 
 **Prefix-matched keys (clears all projectIds):**
 - `creator-city-canvas-draft:<projectId>`
@@ -48,15 +51,45 @@ The helper `clearUserScopedLocalState()` in `lib/client-storage/clearUserLocalSt
 
 `handleLogout` in `TopNavigation.tsx` calls this after `clientLogout()` and `logout()`.
 
+### userId change on login — `AuthProvider` sentinel guard
+
+`AuthProvider.tsx` stores `creator-city:last-auth-user-id` in localStorage.
+
+On every app mount, when `/api/auth/me` returns a user:
+1. The provider reads `last-auth-user-id` from localStorage.
+2. If a previous userId exists and **differs** from the current user's id, `clearUserScopedLocalState()` is called before hydrating the new user's state.
+3. `last-auth-user-id` is then written with the current user's id.
+
+This covers the case where User A's session expired (or the browser was closed) without an explicit logout — the new user's first app load will wipe all stale keys from User A's session.
+
 ### Cross-account project navigation — prohibited
 
-`creator-city:last-project-id` must be cleared on logout so a newly logged-in user is never silently redirected to a previous user's project URL. Clearing this key at logout breaks the navigation chain before the canvas API's 403 guard is even reached.
+`creator-city:last-project-id` must be cleared on logout so a newly logged-in user is never silently redirected to a previous user's project URL. Clearing this key at logout (and on userId change) breaks the navigation chain before the canvas API's 403 guard is even reached.
 
 ### 401 response — never show local draft
 
 If the canvas API returns 401 (session invalid), the canvas must NOT display local draft data. The session is unverified — the local draft may belong to a different user who was previously logged in. The correct behavior is to clear the project pointer and show an "please re-login" error.
 
 File: `VisualCanvasWorkspace.tsx` 401 handler — `hasHydratedCanvasRef.current = false`, no `local-draft` status.
+
+### 403 / PROJECT_NOT_FOUND response — must clear project-scoped draft
+
+If the canvas API returns 403 (FORBIDDEN) or PROJECT_NOT_FOUND, the canvas:
+1. Calls `clearProjectScopedLocalState(resolvedProjectId)` — removes all per-project localStorage keys for that projectId.
+2. Removes `creator-city:last-project-id` if it still points to this project.
+3. Redirects to `/create`.
+
+Without this, a stale canvas draft for another user's project persists in localStorage and leaks on every subsequent visit to that project URL.
+
+The per-project helper `clearProjectScopedLocalState(projectId)` in `lib/client-storage/clearUserLocalState.ts` handles this targeted cleanup.
+
+### Canvas draft — must not render before authorization
+
+`VisualCanvasWorkspace.tsx` must NOT apply a local canvas snapshot to the UI before the `/api/projects/[id]/canvas` call returns HTTP 200.
+
+Previous versions called `readBestLocalCanvasSnapshot()` and applied the result via `applyCanvasSnapshot()` before the API response arrived. This caused User A's draft to briefly flash on screen for User B when B navigated to A's project URL (before the subsequent 403 triggered a redirect).
+
+Current behavior: `readBestLocalCanvasSnapshot()` is called to capture `localPreview` (used only for the server/local merge decision on 200 success), but `applyCanvasSnapshot()` is NOT called until after the API returns 200 and authorization is confirmed.
 
 ### Projects cache — not user-scoped
 
@@ -66,21 +99,32 @@ File: `VisualCanvasWorkspace.tsx` 401 handler — `hasHydratedCanvasRef.current 
 
 ---
 
+## `attachCurrentUserProjectMemberWithEvidence` — pending server-side audit
+
+**Location:** `apps/web/src/app/api/projects/[projectId]/canvas/route.ts`
+
+This function is called when a user tries to access a project they don't own. It checks whether the user has an asset or generation job linked to that project in the DB. If evidence is found, it automatically grants membership.
+
+**Risk:** If any DB record incorrectly links User B's userId to User A's project (e.g., due to a prior data error), the canvas API would grant User B access to User A's project (returning 200 instead of 403).
+
+**Status:** Not modified in this round. Flagged for a separate server-side audit task. Do NOT modify `canvas/route.ts` without completing that audit first.
+
+---
+
 ## Dual-Account Verification Steps
 
 To verify isolation is working correctly:
 
 1. Log in as Account A, open `/create`, generate some canvas nodes.
-2. Open DevTools → Application → Local Storage — confirm `creator-city:last-project-id` is set.
-3. Click Logout.
-4. Confirm in DevTools that `creator-city:last-project-id` and all `creator-city-canvas-draft:*` keys are removed.
-5. Log in as Account B (without clearing browser data).
-6. Confirm TopNavigation shows Account B's display name.
-7. Click "AI 画布" — should NOT navigate to Account A's projectId.
-8. If canvas API returns 403 for any residual URL, `last-project-id` is cleared and user is redirected to `/create`.
-9. Canvas shows empty state or Account B's own project — NOT Account A's nodes.
-10. Visit `/projects` — shows loading state then Account B's projects only (no flash of Account A's list).
-11. `/api/credits/balance` returns Account B's wallet balance.
+2. Open DevTools → Application → Local Storage — confirm `creator-city:last-project-id` is set and `creator-city-canvas-draft:<projectId>` contains canvas data.
+3. **Without clicking Logout**, navigate directly to the login page and log in as Account B.
+4. Confirm `AuthProvider` detects userId change — `creator-city:last-project-id` and all `creator-city-canvas-draft:*` keys must be cleared automatically.
+5. Confirm TopNavigation shows Account B's display name.
+6. Click "AI 画布" — must NOT navigate to Account A's projectId.
+7. Canvas shows empty state or Account B's own project — NOT Account A's nodes.
+8. Manually open `/create?projectId=<Account A's projectId>` — canvas must NOT briefly show Account A's draft. API returns 403, all project-scoped keys for that projectId are cleared, redirect to `/create`.
+9. Visit `/projects` — shows loading state then Account B's projects only (no flash of Account A's list).
+10. `/api/credits/balance` returns Account B's wallet balance.
 
 ---
 
@@ -89,3 +133,4 @@ To verify isolation is working correctly:
 - Server-side session isolation: handled by `session.ts` (tokenHash → userId)
 - Payment/credits server logic: handled per `getCurrentUser()` in all API routes
 - Admin role guard: handled by `user.role !== 'ADMIN'` in all `/api/admin/**` routes
+- `attachCurrentUserProjectMemberWithEvidence` server-side audit: pending separate task

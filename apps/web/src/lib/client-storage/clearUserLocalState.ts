@@ -8,6 +8,7 @@ const USER_SCOPED_EXACT_KEYS = [
   'creator-city:last-project-id',
   'creator-city:last-workflow-id',
   'creator-city:projects-cache',
+  'creator-city:last-auth-user-id',
 ] as const
 
 // Per-project data is keyed as "<prefix><projectId>".
@@ -25,6 +26,32 @@ const USER_SCOPED_KEY_PREFIXES = [
   'creator-city:scene-bible:',
   'creator-city:character-bible:',
 ] as const
+
+const PROJECT_SCOPED_KEY_PREFIXES = [
+  'creator-city-canvas-draft:',
+  'creator-city:draft:',
+  'creator-city:canvas-cache:',
+  'creator-city:canvas-snapshot:',
+  'creator-city:style-bible:',
+  'creator-city:enabled-skills:',
+  'creator-city:canvas-comments-cache:',
+  'creator-city:canvas-comments-pending:',
+  'creator-city:storyboard:director:',
+  'creator-city:scene-bible:',
+  'creator-city:character-bible:',
+] as const
+
+export function clearProjectScopedLocalState(projectId: string): void {
+  if (typeof window === 'undefined') return
+  if (!projectId) return
+  try {
+    for (const prefix of PROJECT_SCOPED_KEY_PREFIXES) {
+      window.localStorage.removeItem(`${prefix}${projectId}`)
+    }
+  } catch {
+    // Private/incognito mode or storage quota error — non-fatal.
+  }
+}
 
 export function clearUserScopedLocalState(): void {
   if (typeof window === 'undefined') return
