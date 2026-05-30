@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
+import { formatAdminDateTime } from '@/lib/format/adminDate'
 
 type ProviderStatus = 'configured' | 'not-configured' | 'error'
 type AvailabilityStatus = 'available' | 'disabled' | 'not-configured' | 'error'
@@ -450,7 +451,7 @@ export default function AdminProvidersPage() {
                       <td className="px-4 py-3">
                         <div className="text-xs text-white/60">{testResult ? (testResult.ok ? 'passed' : 'failed') : testLabel(provider.lastTestStatus)}</div>
                         <div className="mt-1 max-w-[220px] text-xs text-white/34">
-                          {testResult?.message ?? (provider.lastCheckedAt ? new Date(provider.lastCheckedAt).toLocaleString('zh-CN') : 'never')}
+                          {testResult?.message ?? (provider.lastCheckedAt ? formatAdminDateTime(provider.lastCheckedAt) : 'never')}
                         </div>
                         {testResult?.model ? (
                           <div className="mt-1 max-w-[220px] break-words text-xs text-white/34">model: {testResult.model}</div>

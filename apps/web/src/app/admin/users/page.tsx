@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
+import { formatAdminDate } from '@/lib/format/adminDate'
 
 interface AdminUser {
   id: string
@@ -111,10 +112,10 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-white/45 text-xs">
-                      {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString('zh-CN') : '—'}
+                      {formatAdminDate(u.lastLoginAt)}
                     </td>
                     <td className="px-4 py-3 text-white/45 text-xs">
-                      {new Date(u.createdAt).toLocaleDateString('zh-CN')}
+                      {formatAdminDate(u.createdAt)}
                     </td>
                   </tr>
                 ))}

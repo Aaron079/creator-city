@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { formatAdminDate } from '@/lib/format/adminDate'
 
 interface RechargeOrder {
   id: string
@@ -190,7 +191,7 @@ export default function AdminCreditsPage() {
                       <td className="px-4 py-3 font-semibold text-white">{o.amountCredits.toLocaleString()}</td>
                       <td className="px-4 py-3 max-w-xs truncate text-white/50">{o.note ?? '—'}</td>
                       <td className="px-4 py-3 text-white/40 whitespace-nowrap">
-                        {new Date(o.createdAt).toLocaleDateString('zh-CN')}
+                        {formatAdminDate(o.createdAt)}
                       </td>
                       {tab === 'PENDING' && (
                         <td className="px-4 py-3">
