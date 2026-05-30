@@ -20,6 +20,10 @@ const AVAILABLE_SUBTITLE: Partial<Record<PaymentProvider, string>> = {
   manual: '联系管理员确认到账',
 }
 
+// In CN: alipay/wechat env may be set but merchant onboarding is not complete.
+// Hard-lock them as coming-soon on the frontend regardless of bootstrap response.
+const CN_COMING_SOON = new Set<PaymentProvider>(['alipay', 'wechat'])
+
 export function PaymentMethodSelector({
   region,
   value,
@@ -35,11 +39,14 @@ export function PaymentMethodSelector({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       {providers.map((p) => {
+        const comingSoon = region === 'CN' && CN_COMING_SOON.has(p)
         const configured = statuses[p]?.configured
-        const disabled = p !== 'manual' && !configured
-        const subtitle = disabled
-          ? (DISABLED_SUBTITLE[p] ?? '需要配置')
-          : (AVAILABLE_SUBTITLE[p] ?? 'available')
+        const disabled = !comingSoon && p !== 'manual' && !configured
+        const subtitle = comingSoon
+          ? (DISABLED_SUBTITLE[p] ?? '即将开放')
+          : disabled
+            ? (DISABLED_SUBTITLE[p] ?? '需要配置')
+            : (AVAILABLE_SUBTITLE[p] ?? 'available')
         return (
           <button
             key={p}
@@ -47,7 +54,13 @@ export function PaymentMethodSelector({
             disabled={disabled}
             onClick={() => onChange(p)}
             className={`rounded-lg border px-4 py-3 text-left text-sm transition ${
-              value === p ? 'border-cyan-300/50 bg-cyan-300/10 text-white' : 'border-white/10 bg-white/[0.03] text-white/70'
+              value === p && comingSoon
+                ? 'border-amber-300/30 bg-amber-300/[0.06] text-white/70'
+                : value === p
+                  ? 'border-cyan-300/50 bg-cyan-300/10 text-white'
+                  : comingSoon
+                    ? 'border-white/8 bg-white/[0.02] text-white/40'
+                    : 'border-white/10 bg-white/[0.03] text-white/70'
             } ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:border-white/25'}`}
           >
             <span className="block font-medium">{LABELS[p]}</span>

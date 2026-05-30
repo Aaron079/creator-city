@@ -387,7 +387,25 @@ export default function BillingPage() {
         ) : null}
         {provider === 'manual' ? <div className="mb-5"><ManualRechargePanel orderId={manualOrderId} /></div> : null}
 
-        {packages.length > 0 ? (
+        {region === 'CN' && (provider === 'alipay' || provider === 'wechat') ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6">
+            <div className="mb-2 text-base font-semibold text-white">
+              {provider === 'alipay' ? '支付宝自动支付待商户配置' : '微信支付开发中'}
+            </div>
+            <p className="mb-5 text-sm leading-relaxed text-white/55">
+              {provider === 'alipay'
+                ? '支付宝当面付正在接入中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'
+                : '微信支付正在开发中。当前请先使用"转账充值"，提交充值申请后联系管理员确认到账。'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setProvider('manual')}
+              className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/30 hover:text-white"
+            >
+              使用转账充值
+            </button>
+          </div>
+        ) : packages.length > 0 ? (
           <>
             {packagesHydratedFromCache ? (
               <p className="mb-3 text-xs text-white/35">已先显示本地缓存套餐，正在后台同步最新状态。</p>
