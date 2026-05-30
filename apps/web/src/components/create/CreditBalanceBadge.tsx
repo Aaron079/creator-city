@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 
 type BalanceState =
   | { status: 'loading' }
@@ -60,11 +61,13 @@ export function CreditBalanceBadge() {
   }
 
   return (
-    <span
+    <Link
+      href="/billing?region=CN&method=manual"
       className="canvas-credit-badge"
-      title={`可用积分: ${state.availableCredits.toLocaleString()}`}
+      style={{ pointerEvents: 'auto', cursor: 'pointer', textDecoration: 'none' }}
+      title={`可用积分: ${state.availableCredits.toLocaleString()} — 点击充值`}
     >
       ◎ {state.availableCredits.toLocaleString()}
-    </span>
+    </Link>
   )
 }

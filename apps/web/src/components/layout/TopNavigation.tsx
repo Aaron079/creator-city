@@ -257,6 +257,15 @@ export function TopNavigation() {
         {/* Right: search + user */}
         <div className="flex items-center gap-2">
 
+          {/* Credits top-up shortcut */}
+          <Link
+            href="/billing?region=CN&method=manual"
+            className="hidden rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-2.5 py-1.5 text-[12px] text-amber-200/70 transition hover:border-amber-300/35 hover:text-amber-200 sm:inline-flex items-center gap-1"
+          >
+            <span>◎</span>
+            <span>充值</span>
+          </Link>
+
           {/* Local search — no fetch, static data only */}
           <div className="relative" ref={searchRef}>
             <button
