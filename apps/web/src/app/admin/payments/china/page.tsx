@@ -72,7 +72,13 @@ export default async function AdminChinaPaymentsPage() {
     )
   }
 
-  const orders = await getRecentChinaPaymentOrders()
+  let orders: AdminChinaPaymentOrder[] = []
+  let ordersLoadError = false
+  try {
+    orders = await getRecentChinaPaymentOrders()
+  } catch {
+    ordersLoadError = true
+  }
 
   return (
     <DashboardShell>
@@ -103,6 +109,12 @@ export default async function AdminChinaPaymentsPage() {
           Stripe / Paddle 仍保留为海外兼容路径，但不再作为中国大陆生产主方案。中国生产支付应走
           ChinaPaymentGateway，并在验签完成后再把 PaymentOrder 入账到 UserCreditWallet 与 CreditLedger。
         </section>
+
+        {ordersLoadError && (
+          <div className="mt-6 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+            订单列表暂时无法加载，请稍后刷新。
+          </div>
+        )}
 
         <ManualRechargeAdminPanel />
 

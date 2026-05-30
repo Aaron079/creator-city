@@ -24,7 +24,17 @@ export async function POST(req: NextRequest) {
 
   const note = typeof body.note === 'string' ? body.note.slice(0, 500) : undefined
 
-  const order = await db.paymentOrder.findUnique({ where: { id: orderId } })
+  let order: Awaited<ReturnType<typeof db.paymentOrder.findUnique>>
+  try {
+    order = await db.paymentOrder.findUnique({ where: { id: orderId } })
+  } catch (err) {
+    console.error('[POST /api/admin/payments/china/approve] DB lookup failed', err)
+    return NextResponse.json(
+      { success: false, errorCode: 'ADMIN_APPROVE_FAILED', message: '确认到账失败，请稍后重试。' },
+      { status: 500 },
+    )
+  }
+
   if (!order) {
     return NextResponse.json({ success: false, errorCode: 'ORDER_NOT_FOUND', message: '订单不存在' }, { status: 404 })
   }
@@ -51,8 +61,7 @@ export async function POST(req: NextRequest) {
     await approveManualRecharge(orderId, admin.id, note)
     return NextResponse.json({ success: true, idempotent: false, credits: order.credits })
   } catch (err) {
-    const message = err instanceof Error ? err.message : '审批失败'
     console.error('[POST /api/admin/payments/china/approve]', err)
-    return NextResponse.json({ success: false, errorCode: 'APPROVE_FAILED', message }, { status: 500 })
+    return NextResponse.json({ success: false, errorCode: 'ADMIN_APPROVE_FAILED', message: '确认到账失败，请稍后重试。' }, { status: 500 })
   }
 }
