@@ -7,6 +7,7 @@ import { CreatorCityLogo } from '@/components/brand/CreatorCityLogo'
 import { useAuthStore } from '@/store/auth.store'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
+import { clearUserScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 
 type NavItem = { label: string; href: string; badge?: string }
 type NavGroup = { label: string; key: string; items: NavItem[] }
@@ -165,6 +166,7 @@ export function TopNavigation() {
   const handleLogout = async () => {
     await clientLogout()
     logout()
+    clearUserScopedLocalState()
     router.push('/')
   }
 

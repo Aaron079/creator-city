@@ -24,18 +24,6 @@ interface ProjectListItem {
   membershipRole?: string | null
 }
 
-function readProjectsCache() {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(PROJECTS_CACHE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { projects?: ProjectListItem[] }
-    return Array.isArray(parsed.projects) ? parsed.projects : null
-  } catch {
-    return null
-  }
-}
-
 function writeProjectsCache(projects: ProjectListItem[]) {
   if (typeof window === 'undefined') return
   try {
@@ -300,14 +288,9 @@ export default function ProjectsPage() {
   const [message, setMessage] = useState('')
   const hasVisibleProjectsRef = useRef(false)
 
-  useEffect(() => {
-    const cachedProjects = readProjectsCache()
-    if (cachedProjects?.length) {
-      hasVisibleProjectsRef.current = true
-      setProjects(cachedProjects)
-      setLoading(false)
-    }
-  }, [])
+  // No initial render from localStorage cache — the cache key is not user-scoped,
+  // so pre-populating would show the previous user's projects after account switch.
+  // The API fetch (below) always replaces the state on load.
 
   const handlePrefetch = useCallback((projectId: string) => {
     router.prefetch(`/create?projectId=${encodeURIComponent(projectId)}`)

@@ -3347,11 +3347,17 @@ export function VisualCanvasWorkspace({
         devPerf('canvas-fetch', 'end')
         const data = await response.json().catch(() => ({})) as CanvasLoadResponse
         if (response.status === 401) {
-          setSaveStatus(localPreview?.value.nodes.length ? 'local-draft' : 'failed')
-          setSaveMessage(localPreview?.value.nodes.length
-            ? 'canvas_load_unauthorized: 登录状态失效，已保留本地草稿；重新登录后可再同步。'
-            : 'canvas_load_unauthorized: 登录状态失效，请重新登录后再加载画布。')
-          hasHydratedCanvasRef.current = Boolean(localPreview?.value.nodes.length)
+          // Session invalid — never display local draft on 401.
+          // Local state may belong to a different user who was previously logged in
+          // on the same browser; rendering it would expose cross-account data.
+          // Clear the project pointer so the next navigation re-resolves via /api/projects/ensure.
+          try {
+            window.localStorage.removeItem('creator-city:last-project-id')
+            window.localStorage.removeItem('creator-city:last-workflow-id')
+          } catch (_) { /* private mode */ }
+          setSaveStatus('failed')
+          setSaveMessage('canvas_load_unauthorized: 登录状态失效，请重新登录后再加载画布。')
+          hasHydratedCanvasRef.current = false
           isInitializingRef.current = false
           return
         }
