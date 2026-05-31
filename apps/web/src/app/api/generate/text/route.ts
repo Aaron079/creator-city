@@ -59,6 +59,8 @@ export async function POST(request: NextRequest) {
           success: false,
           errorCode: 'GENERATION_AUTH_UNAVAILABLE',
           message: '登录状态暂时无法确认，请稍后重试。',
+          retryable: true,
+          requestId: crypto.randomUUID(),
           providerId,
           mode: 'unavailable',
           status: 'failed',

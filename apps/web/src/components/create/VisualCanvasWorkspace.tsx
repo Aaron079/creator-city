@@ -694,6 +694,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
   const generationHttpStatus = result.generationHttpStatus ?? result.httpStatus
   if (errorCode === 'auth_required' || errorCode === 'UNAUTHORIZED' || errorCode === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
+  if (errorCode === 'GENERATION_AUTH_UNAVAILABLE') return 'generation_auth_unavailable'
   if (errorCode === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
   if (errorCode === 'client_fetch_failed') return 'client_fetch_failed'
   if (errorCode === 'MISSING_GENERATION_INPUT' || errorCode === 'missing_generation_input' || errorCode === 'missing_or_invalid_video_input') return 'missing_generation_input'
@@ -6614,6 +6615,8 @@ export function VisualCanvasWorkspace({
           ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
           ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         })
+        flushLocalSnapshot()
+        scheduleCanvasSave(0)
         setDialogError(errMsg)
         if (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED') {
           showCanvasFeedback('该模型 API 未配置，请到 /tools 配置 provider。')
@@ -6707,12 +6710,14 @@ export function VisualCanvasWorkspace({
         ...(nodeSnapshot.kind === 'image' ? { metadataJson: imageErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
       })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
       setDialogError(errMsg)
       showCanvasFeedback(errMsg)
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
