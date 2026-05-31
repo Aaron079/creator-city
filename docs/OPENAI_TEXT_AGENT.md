@@ -42,13 +42,27 @@
 | `generic` | 通用创作助手 |
 | (省略) | 默认 generic |
 
+**Request body (Phase 3+, optional billing context):**
+```json
+{
+  "prompt": "一个东方幻想战士从云层中降落，电影感",
+  "mode": "prompt_optimize",
+  "systemPrompt": "(optional) 覆盖内置 system prompt",
+  "projectContext": "(optional) 项目背景描述，最多 2000 字符",
+  "nodeContext": "(optional) 节点上下文，最多 2000 字符",
+  "projectId": "(optional) 当前项目 ID，用于 billing 追踪",
+  "nodeId": "(optional) 当前节点 ID，用于 billing 追踪"
+}
+```
+
 **成功响应:**
 ```json
 {
   "success": true,
   "providerId": "openai-text",
   "model": "gpt-4.1-mini",
-  "text": "优化后的 Prompt 或分析结果..."
+  "text": "优化后的 Prompt 或分析结果...",
+  "billing": { "chargedCredits": 5, "billingStatus": "SETTLED" }
 }
 ```
 
@@ -66,6 +80,8 @@
 |-----------|------|------|
 | `PROMPT_REQUIRED` | 400 | prompt 为空 |
 | `PROMPT_TOO_LONG` | 400 | prompt > 8000 字符 |
+| `UNAUTHENTICATED` | 401 | 未登录 |
+| `INSUFFICIENT_CREDITS` | 402 | credits 不足（已扣除预估额度） |
 | `OPENAI_API_KEY_MISSING` | 503 | OPENAI_API_KEY 未配置 |
 | `OPENAI_AUTH_FAILED` | 503 | API key 无效 |
 | `OPENAI_RATE_LIMITED` | 429 | OpenAI 限速 |
@@ -101,13 +117,14 @@ OPENAI_API_KEY=sk-... curl -s -X POST http://localhost:3000/api/agents/text \
   -d '{"mode": "prompt_optimize", "prompt": "一个东方幻想战士从云层中降落，电影感"}'
 ```
 
-## 当前限制（v1）
+## 当前限制（Phase 3）
 
-- **不写 DB**：不创建任何数据库记录
 - **不写 canvas**：不生成/修改 canvas 节点
 - **不生成节点**：只返回纯文本
 - **不处理图片/视频**：纯文本 in / 纯文本 out
-- **无 auth 强制**：v1 依赖 server-side key 隔离，TODO: 接入 session auth
+- **Auth 已启用**：通过 `setupBilling()` → `getCurrentUser()` 强制登录验证
+- **Credits 已计费**：text 节点固定 5 credits，不足返回 402
+- **ProviderCostLedger**：暂缓，Phase 4 统一接入
 
 ## 后续接入计划
 

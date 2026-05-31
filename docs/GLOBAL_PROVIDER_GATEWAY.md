@@ -1,7 +1,7 @@
 # Global Provider Gateway — Architecture & Implementation Plan
 
-> **Phase 2 status**: Types, error normalizer, adapter registry, and gateway skeleton are implemented.
-> No existing generate routes have been modified. No real provider calls added.
+> **Phase 3 status**: Text Agent billing live. `/api/agents/text` now requires auth and charges credits.
+> Phases 1–3 complete. No generate routes or cn-executor modified.
 > **Boundary**: P0-BOUNDARY-LOCK-ACTIVE applies. Forbidden Zone files untouched.
 
 ---
@@ -135,15 +135,15 @@ POST /api/generate/image (or video, audio, text)
 新增 types / error-normalizer / adapter-registry / provider-gateway。
 不改任何现有文件。
 
-### Phase 3 — Text Agent Billing + 成本追踪
+### Phase 3 ✅ Text Agent Billing（已完成）
 
 目标：接 `/api/agents/text` 的 `setupBilling()` / `finalizeBilling()`，使其扣 credits。
 
 改动范围：
-- `/api/agents/text/route.ts` — 接入 billing
-- `lib/gateway/cost-ledger.ts`（可选） — 统一成本写入逻辑
+- `/api/agents/text/route.ts` — 接入 billing + auth（commit P1-GATEWAY-PHASE-3）
+- `projectId` / `nodeId` 新增可选 body 字段用于 billing 追踪
 
-不改：generate/image, generate/video, cn-executor
+不改：generate/image, generate/video, cn-executor, billing-middleware, credits/server
 
 ### Phase 4 — Image/Video Route → Gateway 包装
 
