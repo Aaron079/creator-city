@@ -678,7 +678,7 @@ type VideoProviderStatusInfo = ImageProviderStatusInfo
 function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage'>) {
   const message = result.errorMessage || result.message || ''
   if (result.errorCode === 'auth_required') return '登录状态失效，请刷新并重新登录'
-  if (result.errorCode === 'GENERATION_AUTH_UNAVAILABLE') return '登录 session 短暂不可用，请稍等几秒后重试。'
+  if (result.errorCode === 'GENERATION_AUTH_UNAVAILABLE' || result.errorCode === 'DB_CONNECTION_UNAVAILABLE') return '数据库连接繁忙，请稍等几秒后重试。'
   if (result.errorCode === 'OPENAI_RATE_LIMITED') return `OpenAI API 额度已用尽，请切换 Provider 或在 OpenAI 控制台检查 Billing 设置。${message ? `（${message}）` : ''}`
   if (
     result.errorCode === 'KIMI_REQUEST_TIMEOUT'
@@ -696,7 +696,7 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   const haystack = `${errorCode} ${message} ${upstreamMessage}`.toLowerCase()
   const generationHttpStatus = result.generationHttpStatus ?? result.httpStatus
   if (errorCode === 'auth_required' || errorCode === 'UNAUTHORIZED' || errorCode === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
-  if (errorCode === 'GENERATION_AUTH_UNAVAILABLE') return 'generation_auth_unavailable'
+  if (errorCode === 'GENERATION_AUTH_UNAVAILABLE' || errorCode === 'DB_CONNECTION_UNAVAILABLE') return 'generation_auth_unavailable'
   if (errorCode === 'OPENAI_RATE_LIMITED' || errorCode === 'PROVIDER_RATE_LIMITED' || errorCode === 'PROVIDER_BUDGET_EXCEEDED' || errorCode === 'PROVIDER_INSUFFICIENT_CREDITS') return 'provider_quota_or_billing_error'
   if (errorCode === 'OPENAI_AUTH_FAILED' || errorCode === 'PROVIDER_AUTH_FAILED') return 'provider_auth_failed'
   if (errorCode === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
@@ -3036,11 +3036,14 @@ export function VisualCanvasWorkspace({
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
       // If a save was requested while we were in-flight, fire it now with the latest snapshot.
+      // After a 503/504 DB overload response, back off 10 s before the pending save fires to
+      // avoid a save storm while the connection pool is still saturated.
       if (pendingSaveRef.current && !isSwitchingProjectRef.current) {
         pendingSaveRef.current = false
         if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
         setSaveStatus('dirty')
-        saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, 300)
+        const pendingDelay = (lastResponseStatus === 503 || lastResponseStatus === 504) ? 10_000 : 300
+        saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, pendingDelay)
       }
     }
   }, [getCanvasSnapshot, projectId, router, workflowId, flushLocalSnapshot])

@@ -11,6 +11,7 @@ import { getOrCreateWallet } from '@/lib/credits/server'
 import { getToolProviderById } from '@/lib/tools/provider-catalog'
 import { getGatewayProvider } from '@/lib/providers/catalog'
 import { checkEnvKeys } from '@/lib/providers/env'
+import { isDbConnectionError } from '@/lib/db-error'
 import type { GenerateResponse } from '@/lib/providers/types'
 
 export interface BillingContext {
@@ -78,7 +79,16 @@ export async function setupBilling(
 
   // Mock: charge 1 credit if available, otherwise allow free
   if (kind === 'mock') {
-    const wallet = await getOrCreateWallet(user.id)
+    let wallet
+    try {
+      wallet = await getOrCreateWallet(user.id)
+    } catch (walletErr) {
+      if (isDbConnectionError(walletErr)) {
+        console.error('[billing] wallet DB unavailable (mock path)', walletErr)
+        return { ok: false, errorResponse: { success: false, message: '数据库连接繁忙，请稍后重试。', errorCode: 'DB_CONNECTION_UNAVAILABLE', providerId, mode: 'unavailable' as const, status: 'failed' as const }, status: 503 }
+      }
+      throw walletErr
+    }
     if (wallet.balance >= 1) {
       try {
         const reserve = await reserveCreditsForJob({ userId: user.id, estimatedCredits: 1, providerId, nodeType, prompt, projectId: context?.projectId, nodeId: context?.nodeId })
@@ -92,7 +102,16 @@ export async function setupBilling(
 
   // Real provider: estimate, check balance, reserve
   const estimated = estimateGenerationCredits({ nodeType, providerId })
-  const wallet = await getOrCreateWallet(user.id)
+  let wallet
+  try {
+    wallet = await getOrCreateWallet(user.id)
+  } catch (walletErr) {
+    if (isDbConnectionError(walletErr)) {
+      console.error('[billing] wallet DB unavailable (real path)', walletErr)
+      return { ok: false, errorResponse: { success: false, message: '数据库连接繁忙，请稍后重试。', errorCode: 'DB_CONNECTION_UNAVAILABLE', providerId, mode: 'unavailable' as const, status: 'failed' as const }, status: 503 }
+    }
+    throw walletErr
+  }
 
   if (wallet.balance < estimated) {
     return {
@@ -129,6 +148,21 @@ export async function setupBilling(
           status: 'failed',
         },
         status: 402,
+      }
+    }
+    if (isDbConnectionError(err)) {
+      console.error('[billing] reserve DB unavailable', err)
+      return {
+        ok: false,
+        errorResponse: {
+          success: false,
+          message: '数据库连接繁忙，请稍后重试。',
+          errorCode: 'DB_CONNECTION_UNAVAILABLE',
+          providerId,
+          mode: 'unavailable',
+          status: 'failed',
+        },
+        status: 503,
       }
     }
     const message = err instanceof Error ? err.message : '积分预留失败'

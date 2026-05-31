@@ -957,7 +957,7 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
   if (code === 'auth_required' || code === 'UNAUTHORIZED' || code === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
-  if (code === 'GENERATION_AUTH_UNAVAILABLE') return 'generation_auth_unavailable'
+  if (code === 'GENERATION_AUTH_UNAVAILABLE' || code === 'DB_CONNECTION_UNAVAILABLE') return 'generation_auth_unavailable'
   if (code === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
     if (code === 'client_fetch_failed') return 'client_fetch_failed'
     if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'

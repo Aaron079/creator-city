@@ -6,6 +6,7 @@ import { gatewayGenerate } from '@/lib/gateway/generate'
 import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
 import { generateDeepSeekText } from '@/lib/providers/china/deepseek'
 import { generateKimiText } from '@/lib/providers/china/kimi'
+import { isDbConnectionError } from '@/lib/db-error'
 import type { GenerateResponse } from '@/lib/providers/types'
 
 function isSessionDbError(err: unknown): boolean {
@@ -153,6 +154,18 @@ export async function POST(request: NextRequest) {
       requestId: result.requestId,
     }, { status: result.success ? 200 : result.errorCode === 'PROVIDER_NOT_FOUND' ? 404 : 200 })
   } catch (err) {
+    if (isDbConnectionError(err)) {
+      console.error('[api/generate/text] DB connection unavailable', err)
+      return NextResponse.json({
+        success: false,
+        errorCode: 'DB_CONNECTION_UNAVAILABLE',
+        message: '数据库连接繁忙，请稍后重试。',
+        retryable: true,
+        requestId: crypto.randomUUID(),
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 503 })
+    }
     const message = err instanceof Error ? err.message : '生成请求失败'
     console.error('[api/generate/text]', err)
     return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 500 })

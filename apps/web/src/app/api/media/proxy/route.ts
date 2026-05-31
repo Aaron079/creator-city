@@ -5,6 +5,7 @@ import type { CurrentUser } from '@/lib/auth/current-user'
 import { getSessionToken } from '@/lib/auth/cookies'
 import { hashToken } from '@/lib/auth/session'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
+import { isDbConnectionError } from '@/lib/db-error'
 
 // Module-level session cache — reduces pgBouncer pressure from concurrent video Range requests.
 // A single video stream triggers 10-15 parallel Range requests; without caching, each hits the DB.
@@ -192,11 +193,24 @@ export async function GET(request: NextRequest) {
     if (cached !== undefined) {
       user = cached
     } else {
-      user = await getCurrentUser().catch((error) => {
-        console.error('[media-proxy] auth lookup failed', error)
-        return null
-      })
-      setCachedProxySession(tokenHash, user)
+      try {
+        user = await getCurrentUser()
+        setCachedProxySession(tokenHash, user)
+      } catch (authErr) {
+        const code = (authErr as { code?: string }).code ?? ''
+        if (code === 'SESSION_DB_UNAVAILABLE' || isDbConnectionError(authErr)) {
+          console.error('[media-proxy] auth DB unavailable — returning 503 not 401', authErr)
+          return NextResponse.json({
+            ok: false,
+            success: false,
+            errorCode: 'AUTH_DB_UNAVAILABLE',
+            message: 'Auth DB temporarily unavailable, please retry in a moment.',
+          }, { status: 503 })
+        }
+        console.error('[media-proxy] auth lookup failed', authErr)
+        user = null
+        setCachedProxySession(tokenHash, user)
+      }
     }
   } else {
     user = null
