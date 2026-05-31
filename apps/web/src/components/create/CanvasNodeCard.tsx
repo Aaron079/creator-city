@@ -957,11 +957,14 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
   const haystack = `${code} ${message} ${stringValue(error.upstreamMessage)}`.toLowerCase()
   if (code === 'auth_required' || code === 'UNAUTHORIZED' || code === 'UNAUTHENTICATED' || generationHttpStatus === 401) return 'auth_required'
+  if (code === 'GENERATION_AUTH_UNAVAILABLE') return 'generation_auth_unavailable'
   if (code === 'api_error' || (typeof generationHttpStatus === 'number' && generationHttpStatus >= 500)) return 'api_error'
     if (code === 'client_fetch_failed') return 'client_fetch_failed'
     if (code === 'MISSING_GENERATION_INPUT' || code === 'missing_generation_input' || code === 'missing_or_invalid_video_input') return 'missing_generation_input'
     if (Array.isArray(error.missingEnv) && error.missingEnv.length) return 'provider_env_missing'
     if (code === 'provider_env_missing' || code === 'PROVIDER_NOT_CONFIGURED' || code.includes('MODEL_REQUIRED') || haystack.includes('not configured')) return 'provider_env_missing'
+    if (code === 'OPENAI_RATE_LIMITED' || code === 'PROVIDER_RATE_LIMITED' || code === 'PROVIDER_BUDGET_EXCEEDED' || code === 'PROVIDER_INSUFFICIENT_CREDITS') return 'provider_quota_or_billing_error'
+    if (code === 'OPENAI_AUTH_FAILED' || code === 'PROVIDER_AUTH_FAILED') return 'provider_auth_failed'
     if (code === 'oss_upload_timeout' || code === 'oss_upload_error' || code === 'oss_auth_error' || code === 'oss_permission_error' || code === 'oss_config_error') return code
     if (code === 'canvas_save_error') return 'canvas_save_error'
     if (code === 'provider_media_download_failed' || code === 'PROVIDER_MEDIA_DOWNLOAD_FAILED' || code === 'MEDIA_FETCH_FAILED' || code === 'ASSET_DOWNLOAD_FAILED' || code === 'ASSET_DOWNLOAD_ERROR' || code === 'ASSET_DOWNLOAD_TIMEOUT' || /media download failed|download failed|external asset/i.test(haystack)) return 'provider_media_download_failed'
@@ -1005,6 +1008,7 @@ function generationFailureMessage(error: Record<string, unknown>) {
   ].filter(Boolean).join(' · ')
   const diagnosticSuffix = requestSuffix ? ` · ${requestSuffix}` : ''
   if (normalized === 'auth_required') return `auth_required：登录状态失效，请刷新并重新登录${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${diagnosticSuffix}`
+  if (normalized === 'generation_auth_unavailable') return `generation_auth_unavailable：登录 session 短暂不可用，请稍等几秒后重试${diagnosticSuffix}`
   if (normalized === 'api_error') return `api_error：生成 API 返回服务器错误${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${responsePreview ? `：${responsePreview}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'client_fetch_failed') {
     const requestUrl = stringValue(error.generationRequestUrl) || stringValue(error.requestUrl)
@@ -1023,7 +1027,7 @@ function generationFailureMessage(error: Record<string, unknown>) {
   if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
-  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度、余额或限流失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度已用尽、账单受限或触发限流，请切换 Provider 或检查 API 账单设置${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'content_policy_rejected') return `内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。${diagnosticSuffix}`
   if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${diagnosticSuffix}`
