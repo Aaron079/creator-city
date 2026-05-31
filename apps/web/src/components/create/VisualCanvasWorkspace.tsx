@@ -679,7 +679,12 @@ function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCod
   const message = result.errorMessage || result.message || ''
   if (result.errorCode === 'auth_required') return '登录状态失效，请刷新并重新登录'
   if (result.errorCode === 'GENERATION_AUTH_UNAVAILABLE' || result.errorCode === 'DB_CONNECTION_UNAVAILABLE') return '数据库连接繁忙，请稍等几秒后重试。'
-  if (result.errorCode === 'OPENAI_RATE_LIMITED') return `OpenAI API 额度已用尽，请切换 Provider 或在 OpenAI 控制台检查 Billing 设置。${message ? `（${message}）` : ''}`
+  if (result.errorCode === 'OPENAI_RATE_LIMITED' || result.errorCode === 'PROVIDER_RATE_LIMITED' || result.errorCode === 'PROVIDER_BUDGET_EXCEEDED' || result.errorCode === 'PROVIDER_INSUFFICIENT_CREDITS') {
+    const prefix = result.errorCode === 'OPENAI_RATE_LIMITED'
+      ? 'OpenAI 额度不足或触发限流，请切换至 DeepSeek 或其他可用 Provider 继续生成'
+      : 'Provider 额度不足或触发限流，请切换至 DeepSeek 或其他可用 Provider 继续生成'
+    return `${prefix}。${message ? `（${message}）` : ''}`
+  }
   if (
     result.errorCode === 'KIMI_REQUEST_TIMEOUT'
     || (result.errorCode === 'KIMI_TEXT_FAILED' && message.toLowerCase().includes('abort'))

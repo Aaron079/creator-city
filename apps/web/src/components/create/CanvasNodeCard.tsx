@@ -1027,7 +1027,10 @@ function generationFailureMessage(error: Record<string, unknown>) {
   if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
-  if (normalized === 'provider_quota_or_billing_error') return `provider_quota_or_billing_error：Provider 额度已用尽、账单受限或触发限流，请切换 Provider 或检查 API 账单设置${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_quota_or_billing_error') {
+    const deepseekHint = code === 'OPENAI_RATE_LIMITED' ? '，建议切换至 DeepSeek（中文友好）或其他可用 Provider' : '，请切换 Provider 或检查 API 账单设置'
+    return `provider_quota_or_billing_error：Provider 额度已用尽、账单受限或触发限流${deepseekHint}${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+  }
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'content_policy_rejected') return `内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。${diagnosticSuffix}`
   if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${diagnosticSuffix}`
