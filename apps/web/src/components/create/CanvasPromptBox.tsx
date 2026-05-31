@@ -159,12 +159,12 @@ export function CanvasPromptBox({
     const isProviderPanel = openItem.id === 'api' || openItem.id === 'provider'
     const isParamsPanel = openItem.id === 'params'
     const anchorRect = footerButtonRefs.current[openItem.id]?.getBoundingClientRect() ?? boxRect
-    const width = Math.min(isProviderPanel ? 520 : isParamsPanel ? 320 : 300, viewportWidth - margin * 2)
+    const width = Math.min(isProviderPanel ? 600 : isParamsPanel ? 320 : 300, viewportWidth - margin * 2)
     const measuredHeight = panelRef.current?.scrollHeight ?? 0
     const estimatedHeight = isParamsPanel
       ? 390
       : 18 + openItem.options.length * (isProviderPanel ? 58 : 52)
-    const maxHeight = Math.max(160, Math.min(isProviderPanel ? viewportHeight * 0.62 : viewportHeight * 0.64, viewportHeight - margin * 2))
+    const maxHeight = Math.max(160, Math.min(isProviderPanel ? viewportHeight * 0.72 : viewportHeight * 0.64, viewportHeight - margin * 2))
     const panelHeight = Math.min(measuredHeight || estimatedHeight, maxHeight)
     const preferredLeft = isProviderPanel || isParamsPanel
       ? anchorRect.left
@@ -178,8 +178,11 @@ export function CanvasPromptBox({
       : Math.max(margin, Math.min(belowTop, viewportHeight - panelHeight - margin))
 
     const localTop = absoluteTop - boxRect.top
-    const safeTop = layout === 'node' ? Math.max(44, localTop) : localTop
-    const safeMaxHeight = layout === 'node'
+    // Provider panel: use viewport-based maxHeight so it isn't clipped by the node box dimensions
+    const safeTop = (isProviderPanel || layout !== 'node') ? localTop : Math.max(44, localTop)
+    const safeMaxHeight = isProviderPanel
+      ? maxHeight
+      : layout === 'node'
       ? Math.max(118, Math.min(maxHeight, boxRect.height - safeTop - 8))
       : maxHeight
 

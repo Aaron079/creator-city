@@ -4186,6 +4186,8 @@
 .scope :global(.canvas-prompt-footer-panel.is-model-panel .canvas-prompt-footer-options.is-scrollable) {
   overflow-y: auto;
   overscroll-behavior: contain;
+  flex: 1;
+  min-height: 0;
 }
 
 .scope :global(.canvas-prompt-footer-panel.is-model-panel .canvas-choice-button) {
