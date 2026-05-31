@@ -3,11 +3,14 @@ import type { NextRequest } from 'next/server'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { gatewayGenerate } from '@/lib/gateway/generate'
-import { getCurrentUser } from '@/lib/auth/current-user'
 import { attachGeneratedAsset } from '@/lib/assets/generated-assets'
 import { generateDeepSeekText } from '@/lib/providers/china/deepseek'
 import { generateKimiText } from '@/lib/providers/china/kimi'
 import type { GenerateResponse } from '@/lib/providers/types'
+
+function isSessionDbError(err: unknown): boolean {
+  return err instanceof Error && (err as Error & { code?: string }).code === 'SESSION_DB_UNAVAILABLE'
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -47,12 +50,27 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    const billing = await setupBilling(request, providerId, 'text', prompt)
+    let billing
+    try {
+      billing = await setupBilling(request, providerId, 'text', prompt)
+    } catch (err) {
+      if (isSessionDbError(err)) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'GENERATION_AUTH_UNAVAILABLE',
+          message: '登录状态暂时无法确认，请稍后重试。',
+          providerId,
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 503 })
+      }
+      throw err
+    }
     if (!billing.ok) {
       return NextResponse.json(billing.errorResponse, { status: billing.status })
     }
 
-    const currentUser = await getCurrentUser()
+    const userId = billing.ctx.userId
     let raw: TextGenerateResponse
     if (providerId === 'kimi-text' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
       const requestedMaxTokens = typeof body.maxTokens === 'number'
@@ -110,12 +128,12 @@ export async function POST(request: NextRequest) {
         params: body.params,
         projectId: body.projectId,
         nodeId: body.nodeId,
-      }, currentUser?.id)
+      }, userId)
     }
 
     const finalized = await finalizeBilling(raw, billing.ctx.billingJobId) as TextGenerateResponse
     const result = await attachGeneratedAsset(finalized, {
-      userId: currentUser?.id ?? billing.ctx.userId,
+      userId,
       providerId,
       nodeType: 'text',
       prompt,
