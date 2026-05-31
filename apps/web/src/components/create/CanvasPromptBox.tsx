@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefCallback } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface CanvasPromptFooterOption {
   value: string
@@ -56,6 +57,7 @@ interface CanvasPromptBoxProps {
   videoModeInfo?: VideoModeInfo
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
+  panelPortalTarget?: Element | null
 }
 
 const MODEL_DURATIONS = ['1~3 min', '1.5 min', '2 min', '30~90s', '2 min', '5~10 min', '2~5 min', '1 min']
@@ -112,6 +114,7 @@ export function CanvasPromptBox({
   videoModeInfo,
   inputRef,
   onClose,
+  panelPortalTarget,
 }: CanvasPromptBoxProps) {
   const [openFooterId, setOpenFooterId] = useState<string | null>(null)
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties | undefined>(undefined)
@@ -164,7 +167,8 @@ export function CanvasPromptBox({
     const estimatedHeight = isParamsPanel
       ? 390
       : 18 + openItem.options.length * (isProviderPanel ? 58 : 52)
-    const maxHeight = Math.max(160, Math.min(isProviderPanel ? viewportHeight * 0.72 : viewportHeight * 0.64, viewportHeight - margin * 2))
+    // Provider panel: at least 360px so 5 options (header ~30px + 5 × 56px = 310px) are always visible
+    const maxHeight = Math.max(isProviderPanel ? 360 : 160, Math.min(isProviderPanel ? viewportHeight * 0.80 : viewportHeight * 0.64, viewportHeight - margin * 2))
     const panelHeight = Math.min(measuredHeight || estimatedHeight, maxHeight)
     const preferredLeft = isProviderPanel || isParamsPanel
       ? anchorRect.left
@@ -178,7 +182,6 @@ export function CanvasPromptBox({
       : Math.max(margin, Math.min(belowTop, viewportHeight - panelHeight - margin))
 
     const localTop = absoluteTop - boxRect.top
-    // Provider panel: use viewport-based maxHeight so it isn't clipped by the node box dimensions
     const safeTop = (isProviderPanel || layout !== 'node') ? localTop : Math.max(44, localTop)
     const safeMaxHeight = isProviderPanel
       ? maxHeight
@@ -186,15 +189,19 @@ export function CanvasPromptBox({
       ? Math.max(118, Math.min(maxHeight, boxRect.height - safeTop - 8))
       : maxHeight
 
+    // For node layout, use position:fixed with viewport coords so the panel escapes
+    // the overflowY:auto + transform:scale() stacking context of canvas-node-dialog.
+    const useFixed = layout === 'node' && panelPortalTarget != null
     setPopoverStyle({
+      position: useFixed ? 'fixed' : undefined,
       bottom: 'auto',
-      left: absoluteLeft - boxRect.left,
+      left: useFixed ? absoluteLeft : absoluteLeft - boxRect.left,
       maxHeight: safeMaxHeight,
-      top: safeTop,
+      top: useFixed ? absoluteTop : safeTop,
       transform: 'none',
       width,
     })
-  }, [layout, openItem])
+  }, [layout, openItem, panelPortalTarget])
 
   useEffect(() => {
     if (!openFooterId) return
@@ -339,6 +346,7 @@ export function CanvasPromptBox({
     if (!openItem) return null
     const isProviderPanel = openItem.id === providerItem?.id
     const isParamsPanel = openItem.id === 'params'
+    const usePortal = layout === 'node' && panelPortalTarget != null
 
     if (isParamsPanel) {
       return (
@@ -444,10 +452,10 @@ export function CanvasPromptBox({
       )
     }
 
-    return (
+    const panel = (
       <div
         ref={panelRef}
-        className={`canvas-prompt-footer-panel panel-${openItem.id} ${isProviderPanel ? 'is-model-panel' : ''}`}
+        className={`canvas-prompt-footer-panel panel-${openItem.id} ${isProviderPanel ? 'is-model-panel' : ''} ${usePortal ? 'is-portal-panel' : ''}`}
         style={popoverStyle}
       >
         {isProviderPanel ? (
@@ -494,6 +502,9 @@ export function CanvasPromptBox({
         </div>
       </div>
     )
+    return usePortal && panelPortalTarget
+      ? createPortal(panel, panelPortalTarget)
+      : panel
   }
 
   if (layout === 'workspace') {

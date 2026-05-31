@@ -2411,6 +2411,7 @@ export function VisualCanvasWorkspace({
   const [activeSceneTool, setActiveSceneTool] = useState<SceneEditTool>('weather')
   const [selectedSceneEditId, setSelectedSceneEditId] = useState('')
   const [sceneEditInstructionsCopied, setSceneEditInstructionsCopied] = useState(false)
+  const [panelPortalTarget, setPanelPortalTarget] = useState<HTMLDivElement | null>(null)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
   const [generationHealth, setGenerationHealth] = useState<GenerationHealthResponse | null>(null)
@@ -8121,6 +8122,9 @@ export function VisualCanvasWorkspace({
         )
       })}
 
+      {/* Portal root for provider panel — outside canvas-node-dialog so the panel escapes overflowY:auto clipping */}
+      <div ref={setPanelPortalTarget} style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 89 }} />
+
       {editingNode && nodeDialogStyle ? (
         <div
           className="canvas-node-dialog create-floating-console"
@@ -8175,6 +8179,7 @@ export function VisualCanvasWorkspace({
               promptInputRef.current = element
             }}
             onClose={() => setEditingNodeId(null)}
+            panelPortalTarget={panelPortalTarget}
           />
         </div>
       ) : null}

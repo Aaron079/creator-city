@@ -4150,6 +4150,20 @@
   backdrop-filter: blur(24px);
 }
 
+/* Portal-rendered provider panel: positioned via position:fixed outside canvas-node-dialog to
+   escape overflowY:auto + transform clipping. Replicates visual styles from the parent-selector rules. */
+.scope :global(.canvas-prompt-footer-panel.is-portal-panel) {
+  position: fixed;
+  z-index: 120;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(12, 14, 18, 0.94);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 4px 16px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px);
+  pointer-events: auto;
+}
+
 .scope :global(.canvas-prompt-footer-panel.is-model-panel) {
   padding: 6px;
   display: flex;
