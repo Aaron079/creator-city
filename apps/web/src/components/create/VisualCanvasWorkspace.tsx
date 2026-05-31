@@ -728,46 +728,12 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
 }
 
 function formatGenerateError(result: GenerateApiResult) {
-  const message = normalizeGenerateErrorMessage(result)
-  const missingEnv = result.missingEnvKeys?.length ? result.missingEnvKeys : result.missingEnv
   const visibleCode = normalizeVisibleGenerateErrorCode(result)
-  const requestUrl = result.generationRequestUrl || result.requestUrl
-  const requestMethod = result.generationRequestMethod || result.method
+  const message = normalizeGenerateErrorMessage(result)
   const visibleMessage = visibleCode === 'auth_required'
     ? '登录状态失效，请刷新并重新登录'
     : message
-  return [
-    visibleCode,
-    result.errorCode,
-    visibleMessage,
-    requestUrl ? `requestUrl: ${requestUrl}` : '',
-    requestMethod ? `method: ${requestMethod}` : '',
-    missingEnv?.length ? `missingEnv: ${missingEnv.join(', ')}` : '',
-    result.missingFields?.length ? `missingFields: ${result.missingFields.join(', ')}` : '',
-    result.generationJobId ? `generationJobId: ${result.generationJobId}` : '',
-    result.executorKind ? `executorKind: ${result.executorKind}` : '',
-    result.model ? `model: ${result.model}` : '',
-    result.errorStage ? `errorStage: ${result.errorStage}` : '',
-    result.generationStage || result.stage ? `generationStage: ${result.generationStage || result.stage}` : '',
-    result.stageTrace ? `stageTrace: ${compactText(JSON.stringify(result.stageTrace), 500)}` : '',
-    typeof result.httpStatus === 'number' ? `httpStatus: ${result.httpStatus}` : '',
-    typeof result.generationHttpStatus === 'number' ? `generationHttpStatus: ${result.generationHttpStatus}` : '',
-      result.generationFetchError ? `fetchError: ${result.generationFetchError}` : '',
-      result.providerEndpoint ? `providerEndpoint: ${result.providerEndpoint}` : '',
-      result.providerRequestMethod ? `providerMethod: ${result.providerRequestMethod}` : '',
-      typeof result.providerHttpStatus === 'number' ? `providerHttpStatus: ${result.providerHttpStatus}` : '',
-      result.providerFetchError ? `providerFetchError: ${result.providerFetchError}` : '',
-      result.ossRequestId ? `ossRequestId: ${result.ossRequestId}` : '',
-      result.storageProvider ? `storageProvider: ${result.storageProvider}` : '',
-      result.bucket ? `bucket: ${result.bucket}` : '',
-      result.attemptedUploadKey ? `attemptedUploadKey: ${result.attemptedUploadKey}` : '',
-      result.mediaDownloadUrl ? `mediaDownloadUrl: ${result.mediaDownloadUrl}` : '',
-    typeof result.upstreamStatus === 'number' ? `upstreamStatus: ${result.upstreamStatus}` : '',
-    result.upstreamMessage ? `upstream: ${result.upstreamMessage.slice(0, 200)}` : '',
-    result.generationResponseTextPreview ? `responsePreview: ${result.generationResponseTextPreview.slice(0, 200)}` : '',
-    result.submittedInput ? `submittedInput: ${compactText(JSON.stringify(result.submittedInput), 500)}` : '',
-    result.requestId ? `requestId: ${result.requestId}` : '',
-  ].filter(Boolean).join(' · ') || '生成失败'
+  return visibleMessage || visibleCode || '生成失败'
 }
 
 function getGeneratedText(result: GenerateApiResult) {
@@ -2458,6 +2424,7 @@ export function VisualCanvasWorkspace({
   const pendingSaveRef = useRef(false)
   const saveRetryTimerRef = useRef<number | null>(null)
   const saveRetryAttemptRef = useRef(0)
+  const saveBackoffUntilRef = useRef(0)
   const deletedNodeIdsRef = useRef<string[]>([])
   const deletedEdgeIdsRef = useRef<string[]>([])
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
@@ -3028,15 +2995,13 @@ export function VisualCanvasWorkspace({
       saveRetryAttemptRef.current = 0
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') return
-      // 503/504: one automatic retry after 2 s to handle transient DB timeout / overload
-      if ((lastResponseStatus === 503 || lastResponseStatus === 504) && saveRetryAttemptRef.current < 1) {
-        saveRetryAttemptRef.current++
-        if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current)
-        saveRetryTimerRef.current = window.setTimeout(() => { void saveCanvas() }, 2000)
+      // 503/504: block new saves for 10 s — avoids hammering an already-overloaded DB pool.
+      if (lastResponseStatus === 503 || lastResponseStatus === 504) {
+        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 10_000)
       }
       flushLocalSnapshot()
       setSaveStatus('failed')
-      setSaveMessage('保存失败，结果已保留在本地草稿中')
+      setSaveMessage('数据库连接繁忙，画布已保留在本地草稿中。' )
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
@@ -3140,11 +3105,13 @@ export function VisualCanvasWorkspace({
 
   const scheduleCanvasSave = useCallback((delay = 800) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
+    const backoffRemaining = Math.max(0, saveBackoffUntilRef.current - Date.now())
+    const effectiveDelay = Math.max(delay, backoffRemaining)
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     setSaveStatus('dirty')
     saveTimerRef.current = window.setTimeout(() => {
       void saveCanvas()
-    }, delay)
+    }, effectiveDelay)
   }, [projectId, saveCanvas, workflowId])
 
   const handleManualSave = useCallback(() => {

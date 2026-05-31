@@ -12,6 +12,7 @@ import {
   attachCurrentUserProjectMemberWithEvidence,
   getProjectAccess,
 } from '@/lib/projects/ensure-active-project'
+import { isDbConnectionError } from '@/lib/db-error'
 
 function sanitizeJson(value: unknown): Prisma.InputJsonValue {
   try {
@@ -204,7 +205,17 @@ async function selectCanvasWorkflow(projectId: string) {
 }
 
 export async function GET(_request: NextRequest, { params }: RouteContext) {
-  const user = await getCurrentUser()
+  let user: Awaited<ReturnType<typeof getCurrentUser>>
+  try {
+    user = await getCurrentUser()
+  } catch (authErr) {
+    const errCode = (authErr as { code?: string }).code ?? ''
+    if (errCode === 'SESSION_DB_UNAVAILABLE' || isDbConnectionError(authErr)) {
+      console.error('[canvas-api] session DB unavailable during load', { projectId: params.projectId })
+      return jsonError('AUTH_DB_UNAVAILABLE', '数据库暂时不可用，请稍后重试。', 503)
+    }
+    return jsonError('UNAUTHORIZED', '认证异常，请刷新页面后重试。', 401)
+  }
   if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
   try {
@@ -287,6 +298,10 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (isProjectCanvasSchemaMissing(error)) {
       return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
+    if (isDbConnectionError(error)) {
+      console.error('[canvas-api] DB connection error during load', { projectId: params.projectId, error })
+      return jsonError('CANVAS_DB_TIMEOUT', '数据库连接繁忙，请稍后重试。', 503)
+    }
     const msg = safeErrorMessage(error)
     console.error('[canvas-api] load failed', { projectId: params.projectId, error })
     return jsonError('CANVAS_LOAD_FAILED', `加载画布失败：${msg}`, 500)
@@ -299,7 +314,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     user = await getCurrentUser()
   } catch (error) {
     const errCode = (error as { code?: string }).code ?? ''
-    if (errCode === 'SESSION_DB_UNAVAILABLE') {
+    if (errCode === 'SESSION_DB_UNAVAILABLE' || isDbConnectionError(error)) {
       console.error('[canvas-api] session DB unavailable during save', { projectId: params.projectId })
       return jsonError('AUTH_DB_UNAVAILABLE', '数据库暂时不可用，请稍后重试。', 503)
     }
@@ -558,6 +573,10 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
       return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
+    }
+    if (isDbConnectionError(error)) {
+      console.error('[canvas-api] DB connection error during save', { projectId: params.projectId, error })
+      return jsonError('CANVAS_DB_TIMEOUT', '数据库连接繁忙，请稍后重试。', 503)
     }
     const msg = safeErrorMessage(error)
     const prismaCode = (error as { code?: string }).code ?? ''
