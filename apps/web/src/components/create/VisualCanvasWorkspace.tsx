@@ -2981,11 +2981,11 @@ export function VisualCanvasWorkspace({
           )
         } catch { /* localStorage unavailable — nothing we can do */ }
         setSaveStatus('failed')
-        setSaveMessage('canvas_save_unauthorized: 登录状态失效，画布暂未保存到服务器。节点已保留在本地草稿中，重新登录后可恢复。')
+        setSaveMessage('登录状态失效，画布暂未保存到服务器。节点已保留在本地草稿中，重新登录后可恢复。')
         return
       }
       if (!response.ok || data.success === false) {
-        throw new Error(data.errorCode ? `${data.errorCode}: ${data.message ?? '保存画布失败。'}` : data.message ?? '保存画布失败。')
+        throw new Error(data.message ?? '保存画布失败。')
       }
       if (data.skipped) {
         setSaveStatus('saved')
@@ -3325,7 +3325,7 @@ export function VisualCanvasWorkspace({
             window.localStorage.removeItem('creator-city:last-workflow-id')
           } catch (_) { /* private mode */ }
           setSaveStatus('failed')
-          setSaveMessage('canvas_load_unauthorized: 登录状态失效，请重新登录后再加载画布。')
+          setSaveMessage('登录状态失效，请重新登录后再加载画布。')
           hasHydratedCanvasRef.current = false
           isInitializingRef.current = false
           return
@@ -3484,12 +3484,12 @@ export function VisualCanvasWorkspace({
             edges: localFallback.value.edges,
             viewport: localFallback.value.viewport,
             status: 'local-draft',
-            message: 'canvas_load_failed: 远端画布加载失败，已保留本地草稿。',
+            message: '远端画布加载失败，已保留本地草稿。',
           })
           hasHydratedCanvasRef.current = true
         }
         setSaveStatus(localFallback?.value.nodes.length ? 'local-draft' : 'failed')
-        setSaveMessage(`canvas_load_failed: ${error instanceof Error ? error.message : '加载项目失败。'}${localFallback?.value.nodes.length ? '；已保留本地草稿' : ''}`)
+        setSaveMessage(`${error instanceof Error ? error.message : '加载项目失败。'}${localFallback?.value.nodes.length ? '；已保留本地草稿' : ''}`)
         isInitializingRef.current = false
       }
     }

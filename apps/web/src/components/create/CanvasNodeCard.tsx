@@ -1013,63 +1013,44 @@ function generationFailureMessage(error: Record<string, unknown>) {
   const normalized = normalizeGenerationFailureCode(error)
   const missingEnv = Array.isArray(error.missingEnv) ? error.missingEnv.filter((item): item is string => typeof item === 'string') : []
   const code = stringValue(error.errorCode)
-  const upstreamStatus = typeof error.upstreamStatus === 'number' ? error.upstreamStatus : undefined
-  const upstreamMessage = stringValue(error.upstreamMessage)
   const message = stringValue(error.message)
-  const generationHttpStatus = typeof error.generationHttpStatus === 'number'
-    ? error.generationHttpStatus
-    : typeof error.httpStatus === 'number'
-      ? error.httpStatus
-      : undefined
-  const responsePreview = stringValue(error.generationResponseTextPreview)
-  const requestId = stringValue(error.requestId)
-  const ossRequestId = stringValue(error.ossRequestId)
-  const stage = stringValue(error.generationStage) || stringValue(error.stage)
-  const requestSuffix = [
-    stage ? `stage=${stage}` : '',
-    requestId ? `requestId=${requestId}` : '',
-    ossRequestId ? `ossRequestId=${ossRequestId}` : '',
-  ].filter(Boolean).join(' · ')
-  const diagnosticSuffix = requestSuffix ? ` · ${requestSuffix}` : ''
-  if (normalized === 'auth_required') return `auth_required：登录状态失效，请刷新并重新登录${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${diagnosticSuffix}`
-  if (normalized === 'generation_auth_unavailable') return `generation_auth_unavailable：登录 session 短暂不可用，请稍等几秒后重试${diagnosticSuffix}`
-  if (normalized === 'api_error') return `api_error：生成 API 返回服务器错误${generationHttpStatus ? `（HTTP ${generationHttpStatus}）` : ''}${responsePreview ? `：${responsePreview}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'auth_required') return '登录状态失效，请刷新并重新登录。'
+  if (normalized === 'generation_auth_unavailable') return '登录 session 短暂不可用，请稍等几秒后重试。'
+  if (normalized === 'api_error') return `生成 API 返回服务器错误${message ? `：${message}` : ''}，请稍后重试。`
   if (normalized === 'client_fetch_failed') {
-    const requestUrl = stringValue(error.generationRequestUrl) || stringValue(error.requestUrl)
-    const method = stringValue(error.generationRequestMethod) || stringValue(error.method)
     const fetchError = stringValue(error.generationFetchError) || stringValue(error.errorMessage) || message
-    return `client_fetch_failed：${[method, requestUrl, fetchError].filter(Boolean).join(' · ')}${diagnosticSuffix}`
+    return `浏览器网络请求失败${fetchError ? `：${fetchError}` : ''}，请检查网络后重试。`
   }
-  if (normalized === 'provider_env_missing') return `provider_env_missing：缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : '。'}${diagnosticSuffix}`
+  if (normalized === 'provider_env_missing') return `缺少 Provider 环境变量${missingEnv.length ? `：${missingEnv.join(', ')}` : ''}，请联系管理员配置。`
   if (normalized === 'missing_generation_input') {
     const missingFields = Array.isArray(error.missingFields) ? error.missingFields.filter((item): item is string => typeof item === 'string') : []
-    return `missing_generation_input：缺少重新生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : '。'}${diagnosticSuffix}`
+    return `缺少生成所需字段${missingFields.length ? `：${missingFields.join(', ')}` : ''}，请重新填写并生成。`
   }
-    if (normalized === 'provider_network_failed') return `provider_network_failed：Provider 网络请求失败。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${diagnosticSuffix}`
-    if (normalized === 'provider_timeout') return `provider_timeout：Provider 请求超时或被中断。${stringValue(error.providerFetchError) || upstreamMessage || message || code}${diagnosticSuffix}`
-    if (normalized === 'provider_auth_failed') return `provider_auth_failed：Provider 鉴权或权限失败${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
-  if (normalized === 'provider_model_invalid') return `provider_model_invalid：Provider 模型或接入点无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
-  if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
-  if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
+  if (normalized === 'provider_network_failed') return 'Provider 网络请求失败，请稍后重试。'
+  if (normalized === 'provider_timeout') return 'Provider 请求超时，请稍后重试。'
+  if (normalized === 'provider_auth_failed') return 'Provider 鉴权失败，请检查 API Key 或联系管理员。'
+  if (normalized === 'provider_model_invalid') return 'Provider 模型或接入点无效，请切换 Provider 后重试。'
+  if (normalized === 'provider_response_parse_failed') return 'Provider 返回了无法解析的结果，请稍后重试。'
+  if (normalized === 'provider_request_failed') return 'Provider 返回非成功响应，请切换 Provider 或稍后重试。'
   if (normalized === 'provider_quota_or_billing_error') {
     const hint = code === 'OPENAI_RATE_LIMITED'
       ? '，请切换至 DeepSeek 或其他可用 Provider 继续生成'
       : '，请切换 Provider 或检查 API 账单设置'
-    return `Provider 额度已用尽或触发限流${hint}。${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${diagnosticSuffix}`
+    return `Provider 额度已用尽或触发限流${hint}。`
   }
-  if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
-  if (normalized === 'content_policy_rejected') return `内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。${diagnosticSuffix}`
-  if (normalized === 'prompt_rejected_or_invalid') return `prompt_rejected_or_invalid：Provider 拒绝了该 prompt 或输入不合法。${upstreamMessage || message || code}${diagnosticSuffix}`
-  if (normalized === 'provider_no_download_url') return `provider_no_download_url：Provider 未返回可下载媒体 URL。${upstreamMessage || message || code}${diagnosticSuffix}`
-  if (normalized === 'provider_media_download_failed') return `provider_media_download_failed：Provider 返回的媒体 URL 无法下载或首帧 URL 不可被 Provider 读取。${upstreamMessage || message || code}${diagnosticSuffix}`
-  if (normalized === 'oss_upload_timeout') return `oss_upload_timeout: ${stringValue(error.errorMessage) || message || 'Aliyun OSS upload timed out'}${diagnosticSuffix}`
-  if (normalized === 'oss_auth_error') return `oss_auth_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS authentication failed.'}${diagnosticSuffix}`
-  if (normalized === 'oss_permission_error') return `oss_permission_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS permission denied.'}${diagnosticSuffix}`
-  if (normalized === 'oss_config_error') return `oss_config_error: ${stringValue(error.errorMessage) || message || 'Aliyun OSS configuration is invalid.'}${diagnosticSuffix}`
-  if (normalized === 'oss_upload_error') return `oss_upload_error: ${stringValue(error.errorMessage) || message || code}${diagnosticSuffix}`
-  if (normalized === 'asset_persistence_error') return `asset_persistence_error：媒体持久化或 Asset 写入失败。${message || code}${diagnosticSuffix}`
-  if (normalized === 'canvas_save_error') return `canvas_save_error：Canvas 保存失败。${message || code}${diagnosticSuffix}`
-  if (normalized === 'generation_failed') return `generation_failed：${[code, message, upstreamStatus ? `upstreamStatus=${upstreamStatus}` : '', upstreamMessage, requestId ? `requestId=${requestId}` : ''].filter(Boolean).join(' · ')}`
+  if (normalized === 'provider_invalid_parameter') return 'Provider 参数无效，请检查输入后重试。'
+  if (normalized === 'content_policy_rejected') return '内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。'
+  if (normalized === 'prompt_rejected_or_invalid') return 'Provider 拒绝了该 Prompt 或输入不合法，请修改后重试。'
+  if (normalized === 'provider_no_download_url') return 'Provider 未返回可下载媒体 URL，请稍后重试。'
+  if (normalized === 'provider_media_download_failed') return 'Provider 返回的媒体链接无法下载，请稍后重试。'
+  if (normalized === 'oss_upload_timeout') return '媒体上传超时，请稍后重试。'
+  if (normalized === 'oss_auth_error') return '对象存储鉴权失败，请联系管理员检查配置。'
+  if (normalized === 'oss_permission_error') return '对象存储权限不足，请联系管理员检查配置。'
+  if (normalized === 'oss_config_error') return '对象存储配置无效，请联系管理员检查配置。'
+  if (normalized === 'oss_upload_error') return '媒体上传到对象存储失败，请稍后重试。'
+  if (normalized === 'asset_persistence_error') return '媒体持久化或 Asset 写入失败，请稍后重试。'
+  if (normalized === 'canvas_save_error') return 'Canvas 保存失败，请稍后重试。'
+  if (normalized === 'generation_failed') return '生成失败，请稍后重试。'
   return ''
 }
 
@@ -1094,31 +1075,31 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'provider_media_download_failed') return 'Provider 返回的媒体链接不可下载，或传给 Provider 的首帧/参考图 URL 不可读取。'
   if (stringValue(metadata.persistenceStatus) === 'pending_persistence' || stringValue(nestedRecord(metadata.mediaPersistence).status) === 'pending_persistence') return '媒体已生成，资产库上传待重试。'
   if (reason === 'auth_required') {
-    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'auth_required：登录状态失效，请刷新并重新登录。'
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || '登录状态失效，请刷新并重新登录。'
   }
   if (reason === 'api_error') {
-    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'api_error：生成 API 返回服务器错误，请复制诊断 JSON。'
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || '生成 API 返回服务器错误，请稍后重试。'
   }
   if (reason === 'client_fetch_failed') {
-    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || 'client_fetch_failed：浏览器未能完成生成接口请求。'
+    return generationFailureMessage(metadataRecord(metadata.lastGenerationError || metadata.lastError)) || '浏览器未能完成生成接口请求，请检查网络后重试。'
   }
-  if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请复制诊断 JSON 查看 requestId 和 submittedInput。'
-  if (reason === 'provider_model_invalid') return 'Provider 模型或接入点无效，请复制诊断 JSON 查看 upstreamMessage 和 requestId。'
+  if (reason === 'provider_invalid_parameter') return 'Provider 参数无效，请检查输入后重试。'
+  if (reason === 'provider_model_invalid') return 'Provider 模型或接入点无效，请切换 Provider 后重试。'
   if (reason === 'provider_env_missing') return 'Provider 或对象存储环境变量缺失，配置后再重新生成或恢复。'
-  if (reason === 'provider_request_failed') return 'Provider 返回非成功响应，请复制诊断 JSON 查看 providerHttpStatus 和 upstreamMessage。'
-  if (reason === 'oss_upload_timeout') return 'oss_upload_timeout: Aliyun OSS upload timed out'
-  if (reason === 'oss_upload_error') return 'oss_upload_error: 生成成功后上传到 OSS 失败，请复制诊断 JSON 查看 ossRequestId。'
-  if (reason === 'oss_auth_error') return 'oss_auth_error: Aliyun OSS authentication failed.'
-  if (reason === 'oss_permission_error') return 'oss_permission_error: Aliyun OSS permission denied.'
-  if (reason === 'oss_config_error') return 'oss_config_error: Aliyun OSS configuration is invalid.'
-  if (reason === 'asset_persistence_error') return 'asset_persistence_error：媒体已上传，但 Asset 或 GenerationJob 写入失败。'
-  if (reason === 'canvas_save_error') return 'canvas_save_error：Asset 已创建，但 Canvas 节点写回失败。'
+  if (reason === 'provider_request_failed') return 'Provider 返回非成功响应，请切换 Provider 或稍后重试。'
+  if (reason === 'oss_upload_timeout') return '媒体上传超时，请稍后重试。'
+  if (reason === 'oss_upload_error') return '媒体上传到对象存储失败，请稍后重试。'
+  if (reason === 'oss_auth_error') return '对象存储鉴权失败，请联系管理员检查配置。'
+  if (reason === 'oss_permission_error') return '对象存储权限不足，请联系管理员检查配置。'
+  if (reason === 'oss_config_error') return '对象存储配置无效，请联系管理员检查配置。'
+  if (reason === 'asset_persistence_error') return '媒体已上传，但 Asset 或生成记录写入失败，请稍后重试。'
+  if (reason === 'canvas_save_error') return 'Asset 已创建，但 Canvas 节点写回失败，请稍后重试。'
   if (reason === 'recovery_timeout') return '资产恢复请求超时，已停止本次恢复流程。'
   if (reason === 'provider_retrieve_not_available') return 'Provider 历史结果取回不可用，需要用原 Prompt 重新生成。'
   if (reason === 'MEDIA_UPLOAD_FAILED') return '媒体下载成功后转存到对象存储失败。'
   if (reason === 'MEDIA_ASSET_CREATE_FAILED') return '媒体已上传，但 Asset 记录创建失败。'
-  if (reason === 'recovery_request_failed') return '资产恢复请求失败，请复制诊断 JSON。'
-  if (reason === 'generation_failed') return '恢复或重新生成链路失败，请复制诊断 JSON 查看真实 API 错误。'
+  if (reason === 'recovery_request_failed') return '资产恢复请求失败，请稍后重试。'
+  if (reason === 'generation_failed') return '恢复或重新生成链路失败，请稍后重试。'
   if (reason === 'no_recovery_source') return '节点暂时没有可用的媒体地址，可前往资产库（/assets）查看最近生成的全部素材。'
   if (reason === 'storage_key_unreadable') return '数据库有 storageKey，但对象存储暂时无法读取。'
   if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有 storageKey，但签名 URL、代理和历史来源都未能读取。'
@@ -2794,127 +2775,140 @@ export function CanvasNodeCard({
           → 前往资产库找回最近生成的素材
         </a>
       ) : null}
-      {mediaDiagnosticPayload?.errorCode ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
-          errorCode: {mediaDiagnosticPayload.errorCode}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.generationJobId ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          generationJobId: {mediaDiagnosticPayload.generationJobId}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.errorStage ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
-          errorStage: {mediaDiagnosticPayload.errorStage}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.generationStage ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
-          stage: {mediaDiagnosticPayload.generationStage}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.executorKind ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          executorKind: {mediaDiagnosticPayload.executorKind}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.errorMessage ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/62">
-          errorMessage: {mediaDiagnosticPayload.errorMessage}
-        </span>
-      ) : null}
-      {typeof mediaDiagnosticPayload?.upstreamStatus === 'number' ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          upstreamStatus: {mediaDiagnosticPayload.upstreamStatus}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.upstreamMessage ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          upstreamMessage: {mediaDiagnosticPayload.upstreamMessage}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.requestId ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          requestId: {mediaDiagnosticPayload.requestId}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.ossRequestId ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          ossRequestId: {mediaDiagnosticPayload.ossRequestId}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.storageProvider ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          storageProvider: {mediaDiagnosticPayload.storageProvider}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.bucket ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          bucket: {mediaDiagnosticPayload.bucket}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.attemptedUploadKey ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          attemptedUploadKey: {mediaDiagnosticPayload.attemptedUploadKey}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.mediaDownloadUrl ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          mediaDownloadUrl: {mediaDiagnosticPayload.mediaDownloadUrl}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.generationRequestUrl ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          generationRequestUrl: {mediaDiagnosticPayload.generationRequestUrl}
-        </span>
-      ) : null}
-      {typeof mediaDiagnosticPayload?.generationHttpStatus === 'number' ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-          generationHttpStatus: {mediaDiagnosticPayload.generationHttpStatus}
-        </span>
-      ) : null}
-        {mediaDiagnosticPayload?.generationFetchError ? (
-          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-            generationFetchError: {mediaDiagnosticPayload.generationFetchError}
-          </span>
-        ) : null}
-        {mediaDiagnosticPayload?.providerEndpoint ? (
-          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-            providerEndpoint: {mediaDiagnosticPayload.providerEndpoint}
-          </span>
-        ) : null}
-        {mediaDiagnosticPayload?.providerRequestMethod ? (
-          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-            providerRequestMethod: {mediaDiagnosticPayload.providerRequestMethod}
-          </span>
-        ) : null}
-        {typeof mediaDiagnosticPayload?.providerHttpStatus === 'number' ? (
-          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
-            providerHttpStatus: {mediaDiagnosticPayload.providerHttpStatus}
-          </span>
-        ) : null}
-        {mediaDiagnosticPayload?.providerFetchError ? (
-          <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-            providerFetchError: {mediaDiagnosticPayload.providerFetchError}
-          </span>
-        ) : null}
-        {mediaDiagnosticPayload?.generationResponseTextPreview ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          generationResponseTextPreview: {mediaDiagnosticPayload.generationResponseTextPreview}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.stageTrace ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          stageTrace: {displayValue(mediaDiagnosticPayload.stageTrace).slice(0, 240)}
-        </span>
-      ) : null}
-      {mediaDiagnosticPayload?.submittedInput ? (
-        <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/55">
-          submittedInput: {displayValue(mediaDiagnosticPayload.submittedInput).slice(0, 240)}
-        </span>
-      ) : null}
-      {failedRenderUrl ? (
+      {mediaDiagnosticPayload ? (
+        <details className="mt-2 w-full">
+          <summary className="cursor-pointer select-none text-left text-[10px] text-white/28 hover:text-white/45">
+            诊断信息（技术详情）
+          </summary>
+          <div className="mt-1 flex flex-col">
+            {mediaDiagnosticPayload.errorCode ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-red-100/82">
+                errorCode: {mediaDiagnosticPayload.errorCode}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.generationJobId ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                generationJobId: {mediaDiagnosticPayload.generationJobId}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.errorStage ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-red-100/82">
+                errorStage: {mediaDiagnosticPayload.errorStage}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.generationStage ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-red-100/82">
+                stage: {mediaDiagnosticPayload.generationStage}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.executorKind ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                executorKind: {mediaDiagnosticPayload.executorKind}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.errorMessage ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/62">
+                errorMessage: {mediaDiagnosticPayload.errorMessage}
+              </span>
+            ) : null}
+            {typeof mediaDiagnosticPayload.upstreamStatus === 'number' ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                upstreamStatus: {mediaDiagnosticPayload.upstreamStatus}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.upstreamMessage ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                upstreamMessage: {mediaDiagnosticPayload.upstreamMessage}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.requestId ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                requestId: {mediaDiagnosticPayload.requestId}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.ossRequestId ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                ossRequestId: {mediaDiagnosticPayload.ossRequestId}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.storageProvider ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                storageProvider: {mediaDiagnosticPayload.storageProvider}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.bucket ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                bucket: {mediaDiagnosticPayload.bucket}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.attemptedUploadKey ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                attemptedUploadKey: {mediaDiagnosticPayload.attemptedUploadKey}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.mediaDownloadUrl ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                mediaDownloadUrl: {mediaDiagnosticPayload.mediaDownloadUrl}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.generationRequestUrl ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                generationRequestUrl: {mediaDiagnosticPayload.generationRequestUrl}
+              </span>
+            ) : null}
+            {typeof mediaDiagnosticPayload.generationHttpStatus === 'number' ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                generationHttpStatus: {mediaDiagnosticPayload.generationHttpStatus}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.generationFetchError ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                generationFetchError: {mediaDiagnosticPayload.generationFetchError}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.providerEndpoint ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                providerEndpoint: {mediaDiagnosticPayload.providerEndpoint}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.providerRequestMethod ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                providerRequestMethod: {mediaDiagnosticPayload.providerRequestMethod}
+              </span>
+            ) : null}
+            {typeof mediaDiagnosticPayload.providerHttpStatus === 'number' ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-cyan-100/78">
+                providerHttpStatus: {mediaDiagnosticPayload.providerHttpStatus}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.providerFetchError ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                providerFetchError: {mediaDiagnosticPayload.providerFetchError}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.generationResponseTextPreview ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                generationResponseTextPreview: {mediaDiagnosticPayload.generationResponseTextPreview}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.stageTrace ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                stageTrace: {displayValue(mediaDiagnosticPayload.stageTrace).slice(0, 240)}
+              </span>
+            ) : null}
+            {mediaDiagnosticPayload.submittedInput ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/55">
+                submittedInput: {displayValue(mediaDiagnosticPayload.submittedInput).slice(0, 240)}
+              </span>
+            ) : null}
+            {failedRenderUrl ? (
+              <span className="mt-0.5 block max-w-full truncate text-left text-[10px] text-white/45">
+                failedRenderUrl: {failedRenderUrl}
+              </span>
+            ) : null}
+          </div>
+        </details>
+      ) : failedRenderUrl ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/45">
           failedRenderUrl: {failedRenderUrl}
         </span>
