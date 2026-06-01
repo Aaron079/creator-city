@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-01
-Last valid commit: `733d29f`
+Last updated: 2026-06-02
+Last valid commit: `d8ddd43`
 
 ---
 
@@ -20,6 +20,12 @@ Last valid commit: `733d29f`
 | Account monetization navigation（充值降级 + 订阅与套餐入口） | ✅ CLOSED / validated | `5561a80` |
 | Decentralized navigation（主导航加"我的 API"，去充值化叙事） | ✅ CLOSED / validated | `733d29f` |
 | User Provider Accounts 生产前置（migration + secret 已验证） | ✅ CLOSED / production validated | — |
+| User Provider Accounts Phase 3（测试连接） | ✅ CLOSED / test connection shipped | `6890501` |
+| P0 Auth/Session 持久化修复（transient DB error 不再登出） | ✅ CLOSED / validated | `dfcd10c` |
+| User Provider Accounts Phase 4（Text BYOK 试点） | ✅ CLOSED / Text BYOK validated | `ea2ccc6` |
+| Provider UX 修复（API Key 文案误解 + 跳转登录 bug） | ✅ CLOSED / validated | `8d96d09` |
+| 画布帮助面板（Provider API Key 接入手册） | ✅ CLOSED / shipped | `def152b` |
+| AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
 
 ---
 
@@ -327,6 +333,135 @@ Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 
 
 ---
 
+## User Provider Accounts Phase 3 — CLOSED / test connection shipped
+
+**Commit:** `6890501`
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| `POST /api/provider-accounts/:id/test` — 测试连接端点 | ✅ |
+| 解密 Key 内存中调用 Provider `/models` 端点验证有效性 | ✅ |
+| 测试结果写回 DB：`lastTestedAt` / `lastTestStatus` / `lastTestError` | ✅ |
+| `auth_failed` 时自动将账户状态改为 `invalid` | ✅ |
+| `/account/providers` UI 加入「测试连接」按钮 | ✅ |
+| 用户隔离：只能测试自己的账户 | ✅ |
+| API Key / 错误信息全程脱敏，不返回明文 Key | ✅ |
+
+### TestStatus 类型
+
+`ok` / `auth_failed` / `timeout` / `rate_limited` / `insufficient_quota` / `unsupported` / `error`
+
+---
+
+## P0 Auth/Session 持久化修复 — CLOSED / validated
+
+**Commit:** `dfcd10c`
+
+### 问题
+
+`/api/auth/me` 在 DB 短暂不可用时返回 `authenticated: false`，`AuthProvider` 误判为真正未登录并调用 `logout()`，清空 zustand 状态，导致刷新后强制登出。
+
+### 修复内容
+
+| 项目 | 状态 |
+|---|---|
+| `MeResponse` 新增 `errorCode?` 字段，DB 不可用时返回 error code 而非裸 false | ✅ |
+| `AuthProvider.tsx`：有 `errorCode` 时跳过 `logout()`，保留当前 session 状态 | ✅ |
+| `use-current-user.ts`：有 `errorCode` 时返回 `status: 'unknown'`，而非 `unauthenticated` | ✅ |
+| 各页面（TopNavigation / projects/[id] / dashboard / overview）使用 `effectiveIsAuthenticated`，把 `unknown` 等同于 `loading` 处理 | ✅ |
+
+### 效果
+
+DB 短暂不可用 → 用户保持登录状态，页面正常显示；真正未登录 → 仍然跳转登录。
+
+---
+
+## User Provider Accounts Phase 4 — CLOSED / Text BYOK validated
+
+**Commits:** `ea2ccc6`（BYOK 生成）→ `8d96d09`（UX 修复）
+
+### 已验收能力
+
+| 验收项 | 状态 |
+|---|---|
+| 用户可在 `/account/providers` 添加自己的 Provider API Key | ✅ |
+| 可测试连接，验证 Key 有效性 | ✅ |
+| Text 节点对话框中可选择「我的 API 账户」计费模式 | ✅ |
+| 选择指定账户后点击生成，走用户自己的 API Key 调用 | ✅ |
+| BYOK Text 路径不扣平台模型 credits | ✅ |
+| 平台额度模式保持原逻辑不变 | ✅ |
+| Image / Video 未接入 BYOK，仍走平台侧 | ✅ |
+| API Key 文案误解修复：明确 API Key ≠ 网页登录邮箱/密码 | ✅ |
+| `/account/providers` zustand hydration race 修复：不再误跳到登录页 | ✅ |
+| type-check / lint / build 全部通过 | ✅ |
+
+### 当前 BYOK 支持范围
+
+| Provider | 当前状态 |
+|---|---|
+| DeepSeek（deepseek-text / deepseek-reasoner） | ✅ 文本试点支持 |
+| OpenAI（openai-text） | ✅ 文本试点支持 |
+| Kimi（kimi-text / kimi-multimodal） | ✅ 文本试点支持 |
+| Image / Video 所有 Provider | ❌ 暂未接入 BYOK |
+
+### 实现方式（关键文件）
+
+- `apps/web/src/app/api/generate/text/route.ts` — 新增 `billingMode: 'user_provider_account'` 早返回分支，完整绕过平台 billing
+- `apps/web/src/lib/providers/china/deepseek.ts` / `kimi.ts` — 新增 `apiKeyOverride` 参数
+- `apps/web/src/components/create/VisualCanvasWorkspace.tsx` — 账户选择 UI + 延迟加载账户列表
+- `apps/web/src/app/account/providers/page.tsx` — API Key 文案明确化 + hydration race 修复
+
+### 安全边界确认
+
+- `encryptedApiKey` 永不返回前端，解密只在服务端内存进行
+- `apiKeyOverride` 参数不扩展到 image/video 生成路由
+- 不改 Prisma schema / migration / payment / cn-executor
+- setupBilling / finalizeBilling 完全跳过（不扣 credits，不触发扣费链路）
+
+### 当前未完成（后续阶段）
+
+- Image / Video BYOK
+- Seedance / 火山 Access Key + Secret Key 多字段凭证支持
+- BYOK 模式下平台服务费记录（平台服务费 ≠ provider API 费用）
+- 团队共享 API account（多用户共用同一 Key）
+- 独立 API Key 帮助页 `/help/api-keys`
+
+---
+
+## Provider API Key 帮助内容 — CLOSED / shipped
+
+**Commits:** `def152b`（画布帮助面板）→ `d8ddd43`（AI Agent 指南）
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| 画布右下角帮助面板升级为 4 标签（新手 / API Key / Provider / 排查） | ✅ |
+| 18 个 Provider 接入指南（DeepSeek~OpenRouter），含状态标注 | ✅ |
+| 明确 API Key ≠ 网页登录密码；普通用户不需要 API Key | ✅ |
+| Creator City 不是 API 转售平台；Provider 费用由用户直付服务商 | ✅ |
+| 浮动 AI Agent 新增「我的 API」和「API Key 指南」快捷动作 | ✅ |
+| AI Agent 本地模式新增关键词匹配：DeepSeek/OpenAI/Kimi/Gemini/Claude/通用 API Key/BYOK/认证失败排查 | ✅ |
+| 无真实 AI 调用，无新增 API 路由，无生成链路改动 | ✅ |
+
+---
+
+## 当前商业方向（已明确）
+
+Creator City **不是中心化 API 转售平台**。商业模型为：
+
+| 模式 | 说明 |
+|---|---|
+| 平台额度（过渡期） | 用户购买积分，平台代付 Provider API 费用 |
+| 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
+| 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
+
+**当前状态：** 平台额度与我的 API 双轨并存，Text 节点已可试点 BYOK。Image/Video 仍依赖平台侧 Provider，后续再接入 BYOK。
+
+---
+
 ## Current Remaining Issues
 
 **无 P0 / P1 问题。当前系统处于稳定状态。**
@@ -337,21 +472,22 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Next Phase Tasks (priority order)
 
-1. **User Provider Accounts Phase 3（下一优先）**
-   - `POST /api/provider-accounts/:id/test` — 测试连接，验证 API Key 是否有效
-   - 生产 migration + secret 已就绪，前置条件满足
+1. **BYOK 模式平台服务费记录方案审计（建议先做）**
+   - 当前 BYOK Text 路径完全跳过 billing，未记录平台服务费
+   - 需设计：记录服务费但不扣 provider credits 的最小方案
+   - 前提：先明确平台服务费定义和计算方式
 
-2. **User Provider Accounts Phase 4（Phase 3 完成后）**
-   - text 生成节点试点接入 `apiKeyOverride` + `billingMode`
-   - 禁止在 Phase 3 完成前推进本阶段
+2. **Image / Video BYOK 多字段凭证方案审计**
+   - 重点：Seedance / 火山 Access Key + Secret Key 双字段凭证 — 与当前单 apiKey 表单不兼容
+   - 需先设计表单结构和加密方案再实现
+   - 注意：不要扩展 `apiKeyOverride` 到 image/video 路由，直到凭证结构确定
 
-3. **新手创作路径**
-   - 第一次进入画布的用户引导（如何创建节点、如何生成）
-   - 空状态优化：空画布有明确的开始按钮/提示
+3. **独立 API Key 帮助页 `/help/api-keys`**
+   - 当前指南已内嵌在帮助面板和 AI Agent 中，可选择独立页面版本
+   - 无后端需求，纯静态前端
 
-4. **错误提示产品化**
-   - 统一剩余错误提示的语气和格式
-   - 去除所有 `errorCode:`/`provider_*:` 前缀（已处理 quota、asset 相关；其余 OSS/media 类还有残留）
+4. **错误提示产品化（P2）**
+   - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
 
 5. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
@@ -377,18 +513,24 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Stable Baseline (do not regress)
 
-Modules confirmed working as of `ad5ae06`:
+Modules confirmed working as of `d8ddd43`:
 
 - Canvas node CRUD (add / edit / delete / drag / connect)
 - Image generation chain (prompt → POST → poll → display)
 - Video generation chain (prompt → POST → poll → display)
 - Text generation chain (DeepSeek default, Kimi, OpenAI fallback)
+- Text generation — platform credits mode (unchanged, original logic)
+- Text generation — BYOK mode (DeepSeek / OpenAI / Kimi via user's own API Key)
 - Canvas save / load (PUT/GET with localStorage draft fallback)
 - Canvas save 503 backoff (10s, no cascade)
 - Media proxy (`/api/media/proxy`) for cross-region OSS display
 - Session auth (Supabase + Prisma, with pgBouncer pool guard)
+- Session persistence on transient DB error (no spurious logout)
 - Provider quota error → friendly Chinese message + DeepSeek CTA
 - Asset failure panel → friendly titles + `/assets` recovery link
 - DeepSeek as default text provider for new nodes
 - `/assets` page listing all generated assets with recovery status
 - Customer delivery share URL follows `NEXT_PUBLIC_APP_URL` (CN-safe)
+- `/account/providers` — CRUD + test connection + BYOK management UI
+- Provider API Key guide in canvas help panel (4-tab, 18 providers)
+- AI Agent floating button — API Key keyword replies + quick actions
