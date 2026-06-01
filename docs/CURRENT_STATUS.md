@@ -19,6 +19,7 @@ Last valid commit: `733d29f`
 | User Provider Accounts Phase 2D（/account/providers 管理页） | ✅ CLOSED / UI shipped | `85c9622` |
 | Account monetization navigation（充值降级 + 订阅与套餐入口） | ✅ CLOSED / validated | `5561a80` |
 | Decentralized navigation（主导航加"我的 API"，去充值化叙事） | ✅ CLOSED / validated | `733d29f` |
+| User Provider Accounts 生产前置（migration + secret 已验证） | ✅ CLOSED / production validated | — |
 
 ---
 
@@ -245,7 +246,9 @@ Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 
 - CRUD API 可正常使用，管理页已上线
 - **Key 仅加密存储，未用于生成调用**
 - 生成路由（text / image / video）尚未接入 `apiKeyOverride` / `billingMode`
-- 生产前置：需确认 Supabase migration 已应用，`PROVIDER_KEY_ENCRYPTION_SECRET` 已配置
+- ✅ Supabase production migration `20260601000000_user_provider_account` 已应用
+- ✅ `PROVIDER_KEY_ENCRYPTION_SECRET` 已在 Vercel 配置
+- ✅ `GET /api/provider-accounts` 线上正常（不再显示"获取账户列表失败"）
 
 ---
 
@@ -297,6 +300,33 @@ Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 
 
 ---
 
+## User Provider Accounts Production Setup — CLOSED / validated
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| Supabase production migration `20260601000000_user_provider_account` 已执行 | ✅ |
+| `UserProviderAccount` 表已成功创建（Supabase SQL Editor 显示 Success） | ✅ |
+| `PROVIDER_KEY_ENCRYPTION_SECRET` 已在 Vercel 环境变量配置（32 bytes base64） | ✅ |
+| `GET /api/provider-accounts` 线上恢复正常 | ✅ |
+| `/account/providers` 页面不再显示"获取账户列表失败" | ✅ |
+
+### 当前状态
+
+- **Provider account 管理基础链路已在生产可用：列出 / 添加 / 设默认 / 启停 / 删除**
+- Key 加密存储后仍**未用于真实生成调用**
+- 生成路由（text / image / video）尚未接入 `apiKeyOverride` / `billingMode`
+
+### 未完成部分
+
+- **Phase 3**：`POST /api/provider-accounts/:id/test` 测试连接
+- **Phase 4**：先只接 text 生成链路试点（`apiKeyOverride` + `billingMode`）
+- 团队共享 API 账户（多用户共享同一 Key）
+- 平台服务费 / 订阅逻辑
+
+---
+
 ## Current Remaining Issues
 
 **无 P0 / P1 问题。当前系统处于稳定状态。**
@@ -307,28 +337,23 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Next Phase Tasks (priority order)
 
-1. **生产前置（BYOK 上线必做）**
-   - 确认 Supabase production migration `20260601000000_user_provider_account` 已应用
-   - Vercel / CN 部署配置 `PROVIDER_KEY_ENCRYPTION_SECRET=<base64 of 32 random bytes>`
-   - 浏览器端验收 `/account/providers` 全流程（添加→列出→设默认→删除）
-
-2. **User Provider Accounts Phase 3（按需推进）**
+1. **User Provider Accounts Phase 3（下一优先）**
    - `POST /api/provider-accounts/:id/test` — 测试连接，验证 API Key 是否有效
-   - 前提：生产 migration + secret 已配置
+   - 生产 migration + secret 已就绪，前置条件满足
 
-3. **User Provider Accounts Phase 4（接入生成链路）**
+2. **User Provider Accounts Phase 4（Phase 3 完成后）**
    - text 生成节点试点接入 `apiKeyOverride` + `billingMode`
    - 禁止在 Phase 3 完成前推进本阶段
 
-4. **新手创作路径**
+3. **新手创作路径**
    - 第一次进入画布的用户引导（如何创建节点、如何生成）
    - 空状态优化：空画布有明确的开始按钮/提示
 
-5. **错误提示产品化**
+4. **错误提示产品化**
    - 统一剩余错误提示的语气和格式
    - 去除所有 `errorCode:`/`provider_*:` 前缀（已处理 quota、asset 相关；其余 OSS/media 类还有残留）
 
-6. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
+5. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
 
