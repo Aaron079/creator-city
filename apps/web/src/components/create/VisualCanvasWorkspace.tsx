@@ -6595,6 +6595,16 @@ export function VisualCanvasWorkspace({
           ...(nodeSnapshot.kind === 'video' ? { metadataJson: videoErrorMetadata(generationNodeSnapshot, result, generationProviderId) } : {}),
         })
         flushLocalSnapshot()
+        // If generation failed due to DB unavailability, pre-arm the canvas save backoff so
+        // the immediate scheduleCanvasSave(0) call below doesn't fire another PUT into an
+        // already-exhausted DB pool before a canvas-save 503 has had a chance to set it.
+        if (
+          result.errorCode === 'GENERATION_AUTH_UNAVAILABLE' ||
+          result.errorCode === 'DB_CONNECTION_UNAVAILABLE' ||
+          result.errorCode === 'AUTH_DB_UNAVAILABLE'
+        ) {
+          saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 10_000)
+        }
         scheduleCanvasSave(0)
         setDialogError(errMsg)
         if (result.status === 'not-configured' || result.errorCode === 'PROVIDER_NOT_CONFIGURED') {

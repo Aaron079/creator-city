@@ -348,11 +348,13 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     return jsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
   }
 
+  let saveStage = 'project_access'
   try {
     const project = await requireProjectAccess(params.projectId, user.id, true)
     if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在。', 404)
     if (project === 'FORBIDDEN') return jsonError('FORBIDDEN', '无权访问该项目。', 403)
 
+    saveStage = 'workflow_lookup'
     const existingWorkflow = body.workflowId
       ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: WORKFLOW_SELECT })
       : null
@@ -391,6 +393,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       })
     }
 
+    saveStage = 'node_upserts'
     // Batched node upserts: BATCH_SIZE nodes run in parallel per batch, batches are serial.
     // Pure parallel over many nodes saturates the single pgBouncer connection (connection_limit=1)
     // and stretches total latency past the 60s Vercel timeout for large canvases.
@@ -485,6 +488,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       }
     })
 
+    saveStage = 'edge_upserts'
     // Parallel edge upserts for the same reason.
     const failedEdgeIds: string[] = []
     const validEdges = (body.edges ?? []).filter((edge) => edge.id && edge.fromNodeId && edge.toNodeId)
@@ -575,12 +579,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       return jsonError('DB_SCHEMA_MISSING', PROJECT_CANVAS_SCHEMA_MISSING_MESSAGE, 503)
     }
     if (isDbConnectionError(error)) {
-      console.error('[canvas-api] DB connection error during save', { projectId: params.projectId, error })
+      console.error('[canvas-api] DB connection error during save', { stage: saveStage, projectId: params.projectId })
       return jsonError('CANVAS_DB_TIMEOUT', '数据库连接繁忙，请稍后重试。', 503)
     }
     const msg = safeErrorMessage(error)
     const prismaCode = (error as { code?: string }).code ?? ''
-    console.error('[canvas-api] save failed', { projectId: params.projectId, prismaCode, error: msg })
+    console.error('[canvas-api] save failed', { stage: saveStage, projectId: params.projectId, prismaCode, error: msg })
     // Classify common Prisma error codes into informative responses
     if (prismaCode === 'P2025') {
       return jsonError('CANVAS_DB_ERROR', `保存失败：目标记录不存在（可能已被删除）：${msg}`, 409)

@@ -30,6 +30,8 @@ type TextGenerateBody = Partial<GenerateRequest> & {
 }
 
 export async function POST(request: NextRequest) {
+  let generationStage = 'init'
+  let providerId = 'openai-text'
   try {
     let body: TextGenerateBody
     try {
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Invalid JSON', errorCode: 'INVALID_INPUT' }, { status: 400 })
     }
 
-    const providerId = body.providerId || 'openai-text'
+    providerId = body.providerId || 'openai-text'
     const prompt = body.compiledPrompt?.trim() || body.prompt?.trim() || ''
     if (!prompt) {
       return NextResponse.json({
@@ -51,11 +53,13 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
+    generationStage = 'auth_billing'
     let billing
     try {
       billing = await setupBilling(request, providerId, 'text', prompt)
     } catch (err) {
       if (isSessionDbError(err)) {
+        console.error('[api/generate/text] DB unavailable at stage: auth_billing (session)', { stage: generationStage, providerId })
         return NextResponse.json({
           success: false,
           errorCode: 'GENERATION_AUTH_UNAVAILABLE',
@@ -73,6 +77,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(billing.errorResponse, { status: billing.status })
     }
 
+    generationStage = 'provider'
     const userId = billing.ctx.userId
     let raw: TextGenerateResponse
     if (providerId === 'kimi-text' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
@@ -134,7 +139,10 @@ export async function POST(request: NextRequest) {
       }, userId)
     }
 
+    generationStage = 'billing_finalize'
     const finalized = await finalizeBilling(raw, billing.ctx.billingJobId) as TextGenerateResponse
+
+    generationStage = 'asset_attach'
     const result = await attachGeneratedAsset(finalized, {
       userId,
       providerId,
@@ -155,7 +163,7 @@ export async function POST(request: NextRequest) {
     }, { status: result.success ? 200 : result.errorCode === 'PROVIDER_NOT_FOUND' ? 404 : 200 })
   } catch (err) {
     if (isDbConnectionError(err)) {
-      console.error('[api/generate/text] DB connection unavailable', err)
+      console.error('[api/generate/text] DB connection unavailable', { stage: generationStage, providerId })
       return NextResponse.json({
         success: false,
         errorCode: 'DB_CONNECTION_UNAVAILABLE',
@@ -167,7 +175,7 @@ export async function POST(request: NextRequest) {
       }, { status: 503 })
     }
     const message = err instanceof Error ? err.message : '生成请求失败'
-    console.error('[api/generate/text]', err)
+    console.error('[api/generate/text] unexpected error', { stage: generationStage, providerId, message })
     return NextResponse.json({ success: false, message, errorCode: 'PROVIDER_REQUEST_FAILED' }, { status: 500 })
   }
 }
