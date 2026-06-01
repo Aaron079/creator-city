@@ -34,8 +34,8 @@ import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
 export default function ProjectHomePage() {
   const { isAuthenticated, user } = useAuthStore()
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
-  const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
-  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
+  const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || ((sessionStatus === 'loading' || sessionStatus === 'unknown') && isAuthenticated)
   const currentProfileId = useProfileStore((s) => s.currentUserId)
   const approvals = useApprovalStore((s) => s.approvals)
   const approvalGates = useApprovalStore((s) => s.gates)
@@ -61,7 +61,7 @@ export default function ProjectHomePage() {
   const isExampleProjectUrl = isPlaceholderProjectId(projectId)
 
   useEffect(() => {
-    if (sessionStatus === 'loading') return
+    if (sessionStatus === 'loading' || sessionStatus === 'unknown') return
     if (isExampleProjectUrl) return
     if (!effectiveIsAuthenticated) router.push('/auth/login')
   }, [effectiveIsAuthenticated, isExampleProjectUrl, router, sessionStatus])

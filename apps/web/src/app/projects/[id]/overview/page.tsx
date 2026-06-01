@@ -321,7 +321,7 @@ export default function ProjectOverviewPage() {
   }, [projectId])
 
   useEffect(() => {
-    if (authStatus === 'authenticated') fetchSummary()
+    if (authStatus === 'authenticated' || authStatus === 'unknown') fetchSummary()
   }, [authStatus, fetchSummary])
 
   return (

@@ -482,7 +482,7 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (authStatus === 'authenticated') fetchAll()
+    if (authStatus === 'authenticated' || authStatus === 'unknown') fetchAll()
   }, [authStatus, fetchAll])
 
   // Derived stats

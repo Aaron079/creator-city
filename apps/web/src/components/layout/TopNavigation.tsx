@@ -125,8 +125,8 @@ export function TopNavigation() {
   const router = useRouter()
   const { user, logout, isAuthenticated } = useAuthStore()
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
-  const effectiveUser = sessionUser ?? (sessionStatus === 'loading' ? user : null)
-  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || (sessionStatus === 'loading' && isAuthenticated)
+  const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || ((sessionStatus === 'loading' || sessionStatus === 'unknown') && isAuthenticated)
 
   // Unified hover dropdown — single open key + 150 ms close delay
   const [openMenu, setOpenMenu] = useState<string | null>(null)

@@ -20,11 +20,14 @@ export interface MeResponse {
   authenticated: boolean
   user: AuthUserPublic | null
   profile: AuthUserPublic['profile']
+  // Set by the server when the auth check failed due to a transient DB error.
+  // Absence means the server definitively determined auth state.
+  errorCode?: string
 }
 
 export async function fetchCurrentUser(): Promise<MeResponse> {
   const res = await fetch('/api/auth/me', { credentials: 'include' })
-  if (!res.ok) return { authenticated: false, user: null, profile: null }
+  if (!res.ok) return { authenticated: false, user: null, profile: null, errorCode: `AUTH_ME_HTTP_${res.status}` }
   return res.json() as Promise<MeResponse>
 }
 

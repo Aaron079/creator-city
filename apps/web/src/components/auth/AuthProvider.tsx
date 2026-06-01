@@ -41,8 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           credits: 0,
         })
         setCurrentUserId(res.user.id)
+      } else if (res.errorCode) {
+        // DB temporarily unavailable — server could not verify session but the
+        // cookie may still be valid. Do NOT logout here; preserve the local auth
+        // state so the user isn't kicked to the login page on a transient DB blip.
+        console.warn('[AuthProvider] auth/me returned errorCode', res.errorCode, '— keeping current session state')
       } else if (isAuthenticated) {
-        // Cookie expired/invalid — clear stale local state
+        // Server definitively returned authenticated:false with no error code,
+        // meaning the cookie is expired or invalid. Clear stale local state.
         logout()
       }
     })()

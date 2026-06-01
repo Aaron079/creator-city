@@ -14,6 +14,7 @@ type CurrentUserState = {
 type AuthMeResponse = {
   authenticated?: boolean
   user?: AuthUserPublic | null
+  errorCode?: string
 }
 
 export function useCurrentUser() {
@@ -48,6 +49,12 @@ export function useCurrentUser() {
       }
       if (data.authenticated === true && data.user) {
         setState({ status: 'authenticated', user: data.user, error: null })
+        return
+      }
+      if (data.errorCode) {
+        // Server returned an error code — DB temporarily unavailable or similar.
+        // Use 'unknown' so callers don't redirect the user to login on a transient error.
+        setState({ status: 'unknown', user: null, error: data.errorCode })
         return
       }
       setState({ status: 'unauthenticated', user: null, error: null })
