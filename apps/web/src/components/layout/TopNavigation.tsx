@@ -83,7 +83,8 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
   { label: '账号设置', href: '/account', group: '账户', keywords: ['账号', '设置', '资料', 'profile', 'account'] },
   { label: 'Provider API 账户', href: '/account/providers', group: '账户', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '账户'] },
-  { label: '积分与充值', href: '/billing?region=CN&method=manual', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing'] },
+  { label: '积分与充值', href: '/account/credits', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing', '平台额度'] },
+  { label: '订阅与套餐', href: '/pricing-preview', group: '账户', keywords: ['订阅', '套餐', '计划', 'subscription', 'plan', '平台服务费', 'pricing'] },
 ]
 
 const SEARCH_DEFAULTS = new Set([
@@ -254,15 +255,6 @@ export function TopNavigation() {
         {/* Right: search + user */}
         <div className="flex items-center gap-2">
 
-          {/* Credits top-up shortcut */}
-          <Link
-            href="/billing?region=CN&method=manual"
-            className="hidden rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-2.5 py-1.5 text-[12px] text-amber-200/70 transition hover:border-amber-300/35 hover:text-amber-200 sm:inline-flex items-center gap-1"
-          >
-            <span>◎</span>
-            <span>充值</span>
-          </Link>
-
           {/* Community shortcut */}
           <Link
             href="/community"
@@ -374,12 +366,16 @@ export function TopNavigation() {
                     <span>⚡</span> Provider API 账户
                   </Link>
                   <Link
-                    href="/billing?region=CN&method=manual"
+                    href="/account/credits"
                     className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
                     onClick={() => setOpenMenu(null)}
                   >
                     <span>◎</span> 积分与充值
                   </Link>
+                  <div className="flex w-full items-center justify-between gap-2 px-3.5 py-[7px] text-[12px] text-white/28 cursor-default select-none">
+                    <span className="flex items-center gap-2.5"><span>★</span> 订阅与套餐</span>
+                    <span className="rounded-full bg-white/[0.05] px-1.5 py-0.5 text-[9px] text-white/22">即将开放</span>
+                  </div>
 
                   <div className="mx-2 my-1 border-t border-white/[0.07]" />
 

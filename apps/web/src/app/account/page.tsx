@@ -96,7 +96,7 @@ export default function AccountPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-semibold text-white">账号设置</h1>
-            <p className="mt-1 text-sm text-white/45">管理你的个人资料与偏好设置。</p>
+            <p className="mt-1 text-sm text-white/45">个人资料、平台额度与 API 账户管理。</p>
           </div>
           <Link
             href="/me"
@@ -120,21 +120,25 @@ export default function AccountPage() {
         </div>
 
         {/* Quick links to account sub-sections */}
-        <div className="mb-6 grid grid-cols-2 gap-2">
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Link
             href="/account/credits"
-            className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
+            className="flex flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
           >
-            <span className="text-base">◎</span>
-            <span>积分与充值</span>
+            <span className="flex items-center gap-2"><span className="text-base">◎</span><span>平台额度</span></span>
+            <span className="text-[11px] text-white/30">积分充值 · 消耗流水</span>
           </Link>
           <Link
             href="/account/providers"
-            className="flex items-center gap-2.5 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-4 py-3 text-sm text-violet-300/80 hover:border-violet-500/30 hover:text-violet-200 transition"
+            className="flex flex-col gap-1 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-4 py-3.5 text-sm text-violet-300/80 hover:border-violet-500/30 hover:text-violet-200 transition"
           >
-            <span className="text-base">⚡</span>
-            <span>Provider API 账户</span>
+            <span className="flex items-center gap-2"><span className="text-base">⚡</span><span>我的 API 账户</span></span>
+            <span className="text-[11px] text-violet-300/40">直连 Provider，API 费用自付</span>
           </Link>
+          <div className="flex flex-col gap-1 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3.5 text-sm text-white/30 cursor-default select-none">
+            <span className="flex items-center gap-2"><span className="text-base">★</span><span>订阅与套餐</span></span>
+            <span className="text-[11px] text-white/18">平台服务费 · 即将开放</span>
+          </div>
         </div>
 
         {notice && (

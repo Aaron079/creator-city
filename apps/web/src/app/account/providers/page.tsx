@@ -234,29 +234,33 @@ export default function ProviderAccountsPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-white/35 mb-3">账单模式对比</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-              <p className="text-xs font-semibold text-white/70 mb-1">平台积分（默认）</p>
+              <p className="text-xs font-semibold text-white/70 mb-1">平台额度（默认）</p>
               <p className="text-xs text-white/40 leading-relaxed">
-                购买 Creator City 积分，由平台统一代付 API 费用。
+                购买 Creator City 平台积分，由平台代付 API 调用费用。
                 适合轻度用户，无需管理 API Key。
               </p>
             </div>
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3.5">
               <p className="text-xs font-semibold text-violet-300 mb-1">我的 API 账户</p>
               <p className="text-xs text-white/40 leading-relaxed">
-                接入自己的 Provider API Key，直接向服务商付费。
-                API 费用不经过 Creator City，平台不代扣。
+                接入自己的 Provider API Key，API 费用由你直接支付给服务商，
+                不经过 Creator City，平台不代扣。
               </p>
             </div>
           </div>
+          <p className="mt-3 text-[11px] text-white/25 leading-relaxed">
+            未来 Creator City 将仅收取平台服务费（工作台、协作工具、交易撮合等），
+            不再作为中心化 API 转售方参与计费。
+          </p>
         </div>
 
         {/* Phase notice */}
         <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3">
           <p className="text-xs text-amber-400/80 leading-relaxed">
             <span className="font-semibold">当前阶段提示：</span>
-            API 账户管理功能处于基础设施阶段，尚未接入生成链路。
-            添加账户不会改变画布生成的默认行为，生成仍使用平台积分。
-            接入生成链路的功能将在后续版本推出。
+            API 账户管理功能处于基础设施阶段，尚未接入画布生成链路。
+            添加后，你的 Key 将加密存储于平台，不会被用于实际调用或计费。
+            画布仍默认使用平台额度生成；接入生成链路将在后续版本推出。
           </p>
         </div>
 
