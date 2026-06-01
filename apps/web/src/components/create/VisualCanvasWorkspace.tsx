@@ -42,6 +42,7 @@ import {
 import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
 import { estimateCreditCost } from '@/lib/credits/cost-rules'
+import { BeginnerGuidePanel } from './BeginnerGuidePanel'
 import { CreditBalanceBadge } from './CreditBalanceBadge'
 import { CreditInsufficientModal } from './CreditInsufficientModal'
 import { normalizeAssetType } from '@/lib/assets/normalize'
@@ -8478,6 +8479,8 @@ export function VisualCanvasWorkspace({
           </button>
         </div>
       ) : null}
+
+      <BeginnerGuidePanel />
 
       <div className="canvas-zoom-controls">
         <span className="canvas-zoom-icon">⌗</span>
