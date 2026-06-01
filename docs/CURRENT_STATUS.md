@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-01
-Last valid commit: `fa088d2`
+Last valid commit: `733d29f`
 
 ---
 
@@ -16,6 +16,9 @@ Last valid commit: `fa088d2`
 | 中国版入口分流检查 + P1 Delivery hardcode 修复 | ✅ CLOSED | `ad5ae06` |
 | User Provider Accounts Phase 2A/2B（schema + crypto） | ✅ CLOSED / foundation added | `778bb2d` |
 | User Provider Accounts Phase 2C（CRUD API） | ✅ CLOSED / CRUD API added | `fa088d2` |
+| User Provider Accounts Phase 2D（/account/providers 管理页） | ✅ CLOSED / UI shipped | `85c9622` |
+| Account monetization navigation（充值降级 + 订阅与套餐入口） | ✅ CLOSED / validated | `5561a80` |
+| Decentralized navigation（主导航加"我的 API"，去充值化叙事） | ✅ CLOSED / validated | `733d29f` |
 
 ---
 
@@ -205,7 +208,7 @@ Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 
 
 ### 未完成部分（下一阶段）
 
-- **Phase 2D**：`/account/providers` 管理页（添加 Key、查看状态、删除）
+- **Phase 2D**：✅ `/account/providers` 管理页 — 已在 commit `85c9622` 完成
 - **Phase 3**：`POST /api/provider-accounts/:id/test` 测试连接
 - **Phase 4**：先只接 text 生成链路试点（`apiKeyOverride` + `billingMode`）
 
@@ -221,6 +224,79 @@ Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 
 
 ---
 
+## User Provider Accounts Phase 2D — CLOSED / UI shipped
+
+**Commits:** `b7182ce` (nav surface) → `85c9622` (管理页)
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| `/account/providers` 管理页（列出账户、添加 Key、设为默认、启停、删除） | ✅ |
+| 账单模式对比卡（平台额度 vs 我的 API 账户） | ✅ |
+| 阶段提示：明确 Key 仅存储，未接入生成链路 | ✅ |
+| 前端永不显示完整 apiKey / encryptedApiKey | ✅ |
+| 用户头像 hover 下拉菜单加入 Provider API 账户入口 | ✅ |
+| `/account` 快速入口卡片加入 Provider API 账户 | ✅ |
+| type-check / lint / build：全部通过 | ✅ |
+
+### 当前状态
+
+- CRUD API 可正常使用，管理页已上线
+- **Key 仅加密存储，未用于生成调用**
+- 生成路由（text / image / video）尚未接入 `apiKeyOverride` / `billingMode`
+- 生产前置：需确认 Supabase migration 已应用，`PROVIDER_KEY_ENCRYPTION_SECRET` 已配置
+
+---
+
+## Account Monetization Navigation — CLOSED / validated
+
+**Commits:** `5561a80` → `733d29f`
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| 移除顶部导航 amber "充值" 独立按钮 | ✅ |
+| "积分与充值" href 统一改为 `/account/credits` | ✅ |
+| `/account` 快速入口扩展为 3 列：平台额度 / 我的 API 账户 / 订阅与套餐 | ✅ |
+| 用户头像菜单加入"订阅与套餐（即将开放）"灰色入口 | ✅ |
+| `/account/providers` 账单模式卡文案：平台额度 / 未来平台服务费说明 | ✅ |
+| ⌘K 搜索加入"订阅与套餐"条目 | ✅ |
+| 主导航加入"我的 API"组（API 账户管理 + 平台模型中心） | ✅ |
+| ⌘K 搜索"Provider API 账户"更名为"API 账户管理"，分组改为"我的 API" | ✅ |
+
+### 当前导航状态
+
+**主导航（从左到右）：** 创作 · 市场 · 工作台 · 我的 API · 平台 · 社区与帮助
+
+- **我的 API** hover 展开：API 账户管理（→ `/account/providers`）、平台模型中心（→ `/providers`）
+- 主导航不再出现充值/积分相关按钮
+
+**用户头像下拉菜单：**
+- ⚙ 账号设置 → `/account`
+- ⚡ Provider API 账户 → `/account/providers`（紫色高亮）
+- ◎ 积分与充值 → `/account/credits`
+- ★ 订阅与套餐（即将开放，灰色不可点）
+- ↩ 登出
+
+### 商业叙事转向
+
+| 维度 | 旧叙事 | 新叙事 |
+|---|---|---|
+| 核心商业动作 | 充值积分，平台代付 API | 双轨：平台额度 OR 接入自己的 API Key |
+| Provider 费用 | 平台统一代付 | 用户直接支付给 Provider，不经过平台 |
+| 平台收入来源 | API 转售差价 | 未来：平台服务费 / 订阅 / 协作 / 交易服务费 |
+| 主导航叙事 | 充值（核心按钮） | 我的 API（去中心化能力） |
+| 充值入口 | 主导航 + 用户菜单 | 仅用户菜单（积分与充值） |
+
+### 安全边界确认
+
+- 未修改 `/api/generate/*` / billing / credits / payment / schema / cn-executor
+- 仅修改：`TopNavigation.tsx`、`account/page.tsx`、`account/providers/page.tsx`
+
+---
+
 ## Current Remaining Issues
 
 **无 P0 / P1 问题。当前系统处于稳定状态。**
@@ -231,24 +307,30 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Next Phase Tasks (priority order)
 
-1. **新手创作路径**
+1. **生产前置（BYOK 上线必做）**
+   - 确认 Supabase production migration `20260601000000_user_provider_account` 已应用
+   - Vercel / CN 部署配置 `PROVIDER_KEY_ENCRYPTION_SECRET=<base64 of 32 random bytes>`
+   - 浏览器端验收 `/account/providers` 全流程（添加→列出→设默认→删除）
+
+2. **User Provider Accounts Phase 3（按需推进）**
+   - `POST /api/provider-accounts/:id/test` — 测试连接，验证 API Key 是否有效
+   - 前提：生产 migration + secret 已配置
+
+3. **User Provider Accounts Phase 4（接入生成链路）**
+   - text 生成节点试点接入 `apiKeyOverride` + `billingMode`
+   - 禁止在 Phase 3 完成前推进本阶段
+
+4. **新手创作路径**
    - 第一次进入画布的用户引导（如何创建节点、如何生成）
    - 空状态优化：空画布有明确的开始按钮/提示
 
-2. **错误提示产品化**
+5. **错误提示产品化**
    - 统一剩余错误提示的语气和格式
    - 去除所有 `errorCode:`/`provider_*:` 前缀（已处理 quota、asset 相关；其余 OSS/media 类还有残留）
 
-3. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
+6. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
-
-4. **User Provider Accounts Phase 2D/3/4（CRUD API 已就绪，按需推进）**
-   - Phase 2C：CRUD API ✅ 已完成（`fa088d2`）
-   - Phase 2D：`/account/providers` 管理页（前端添加 Key、查看状态、删除）
-   - Phase 3：测试连接（`POST /api/provider-accounts/:id/test`）
-   - Phase 4：先只接 text 生成链路试点（`apiKeyOverride` + `billingMode`）
-   - 前提：确认 Supabase production migration 已应用，并配置 `PROVIDER_KEY_ENCRYPTION_SECRET`
 
 ---
 
