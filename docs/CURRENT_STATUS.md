@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-01
-Last valid commit: `ad5ae06`
+Last valid commit: `778bb2d`
 
 ---
 
@@ -14,6 +14,7 @@ Last valid commit: `ad5ae06`
 | 中国版默认 Provider 策略（DeepSeek 优先） | ✅ CLOSED | `d0ccb1c` |
 | 资产库兜底找回最小版 | ✅ CLOSED | `a990b5b` |
 | 中国版入口分流检查 + P1 Delivery hardcode 修复 | ✅ CLOSED | `ad5ae06` |
+| User Provider Accounts Phase 2A/2B（schema + crypto） | ✅ CLOSED / foundation added | `778bb2d` |
 
 ---
 
@@ -104,6 +105,64 @@ Last valid commit: `ad5ae06`
 
 ---
 
+## User Provider Accounts Phase 2A/2B — CLOSED / foundation added
+
+**Commit:** `778bb2d`
+
+### 已完成内容
+
+| 项目 | 状态 |
+|---|---|
+| Prisma schema: `UserProviderAccount` 表（14 字段） | ✅ |
+| Migration: `20260601000000_user_provider_account` | ✅ |
+| Crypto helper: `apps/web/src/lib/provider-accounts/crypto.ts` | ✅ |
+| 加密格式: `base64(iv):base64(authTag):base64(ciphertext)`（AES-256-GCM） | ✅ |
+| 17 单元测试（node:test）：全部通过 | ✅ |
+| type-check / lint / build：全部通过 | ✅ |
+
+### Schema 字段摘要
+
+- `userId` FK → `User.id` (CASCADE)
+- `providerId` — 如 `deepseek-text` / `openai-text`
+- `encryptedApiKey` — AES-256-GCM 密文，服务端仅内存解密，不返回前端
+- `keyLast4` — 原始 key 末 4 位，用于 UI 展示
+- `status` — `active` / `disabled` / `invalid`
+- `isDefault` — 该 provider 的默认账户（业务逻辑保证唯一性）
+- `projectScope` — null = 全局；projectId = 仅限项目
+- `lastTestedAt` / `lastTestStatus` / `lastTestError` — 测试连接预留字段
+- Indexes: `[userId]`、`[userId, providerId]`、`[userId, status]`
+
+### 当前状态（重要）
+
+- **仅 schema + encryption helper，不可用于真实生成**
+- `crypto.ts` 当前未被任何运行时代码 import，不影响线上生成链路
+- CRUD API / 管理页 / 测试连接 / 生成链路接入均未实现
+
+### 生产注意事项
+
+Migration `20260601000000_user_provider_account` 已提交到 git，但**进入 Phase 2C（CRUD API）前必须确认 Supabase production migration 已应用**，否则 CRUD 路由会报表不存在错误。应用方式：`pnpm --filter server prisma:migrate deploy`（或通过 Supabase Dashboard 手动执行 migration.sql）。
+
+`PROVIDER_KEY_ENCRYPTION_SECRET` 须在生产环境提前配置（base64 编码的 32 字节随机值），否则 CRUD 路由启动时会抛出服务端配置错误（不影响现有功能）。
+
+### 未完成部分（下一阶段）
+
+- **Phase 2C**：`/api/provider-accounts` CRUD（GET / POST / PATCH / DELETE）
+- **Phase 2D**：`/account/providers` 管理页（添加 Key、查看状态、删除）
+- **Phase 3**：`POST /api/provider-accounts/:id/test` 测试连接
+- **Phase 4**：先只接 text 生成链路试点（`apiKeyOverride` + `billingMode`）
+
+### 安全边界确认
+
+- 未修改 `/api/generate/*`（text / image / video）
+- 未修改 `VisualCanvasWorkspace.tsx` / `CanvasNodeCard.tsx`
+- 未修改 `billing/` / `credits/` / `reserve` / `finalize` / `refund`
+- 未修改 provider adapter 真实调用逻辑
+- 未修改 payment / Stripe / 支付宝 / 微信
+- 未修改 `apps/cn-executor`
+- 未改 billingMode 语义 / credits 计费
+
+---
+
 ## Current Remaining Issues
 
 **无 P0 / P1 问题。当前系统处于稳定状态。**
@@ -126,9 +185,12 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
 
-4. **User Provider Accounts / API Account Management（低优先级，之后考虑）**
-   - 用户自带 API Key 流程
-   - Provider 账户绑定与余额显示
+4. **User Provider Accounts Phase 2C/2D/3/4（基础设施已就绪，按需推进）**
+   - Phase 2C：`/api/provider-accounts` CRUD API
+   - Phase 2D：`/account/providers` 管理页
+   - Phase 3：测试连接（`POST /api/provider-accounts/:id/test`）
+   - Phase 4：先只接 text 生成链路试点（`apiKeyOverride` + `billingMode`）
+   - 前提：先确认 Supabase production migration 已应用，并配置 `PROVIDER_KEY_ENCRYPTION_SECRET`
 
 ---
 
