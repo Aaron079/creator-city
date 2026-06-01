@@ -3,6 +3,7 @@
 // All creator/project data is MOCK/DEMO — not real users or real transactions.
 import Link from 'next/link'
 import { TopNavigation } from '@/components/layout/TopNavigation'
+import { CommunitySectionHeader } from '@/components/community/CommunitySectionHeader'
 import {
   marketplaceStats,
   serviceCategories,
@@ -133,6 +134,8 @@ export function MarketplaceCenter() {
           gap: 28,
         }}
       >
+
+        <CommunitySectionHeader districtZh="交易市场" desc="找创作者、发布需求与项目招募。" activeHref="/marketplace" />
 
         {/* ── Hero ── */}
         <section

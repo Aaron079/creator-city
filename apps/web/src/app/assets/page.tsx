@@ -336,11 +336,15 @@ export default function AssetsPage() {
     <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif' }}>
       {/* Header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '16px', padding: '0 32px', height: '60px', background: 'rgba(10,10,15,0.9)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <a href="/community" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'rgba(255,255,255,0.34)', textDecoration: 'none', padding: '5px 9px', borderRadius: '7px' }}>
+          ← 社群
+        </a>
+        <div style={{ width: '1px', height: '16px', background: 'rgba(255,255,255,0.08)' }} />
         <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', padding: '6px 10px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}>
           ← 返回画布
         </a>
         <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)' }} />
-        <h1 style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', margin: 0 }}>资产中心</h1>
+        <h1 style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', margin: 0 }}>Gallery · 资产中心</h1>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.22)' }}>只读 · 不触发生成</span>
           <button

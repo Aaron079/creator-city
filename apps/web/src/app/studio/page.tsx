@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Nav } from '@/components/layout/Nav'
+import { CommunitySectionHeader } from '@/components/community/CommunitySectionHeader'
 
 const MY_WORKS = [
   { id:'w1', title:'《霓虹侦探》', sub:'商业悬疑短片', icon:'🎬', score:94, from:'#1f0508', accent:'#f43f5e', date:'今天' },
@@ -34,6 +35,11 @@ export default function StudioPage() {
       <Nav />
 
       <div className="pt-14">
+        {/* Community breadcrumb */}
+        <div className="px-6 py-4 border-b border-white/[0.06]">
+          <CommunitySectionHeader districtZh="创作者工作室" desc="建立你的个人主页与创作者身份。" activeHref="/studio" />
+        </div>
+
         {/* Profile header */}
         <div className="px-6 py-10 border-b border-white/[0.05]">
           <div className="max-w-4xl mx-auto">
