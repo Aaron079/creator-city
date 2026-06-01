@@ -546,6 +546,30 @@ const PROMPT_REBUILD_DETAIL = '历史 Asset 记录不存在，需要用原 Promp
 const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
 const STORAGE_SIGNED_PROXY_MESSAGE = '对象存在但需要 signed URL/proxy 读取。'
 
+// User-facing titles for media failure panel — replaces raw internal error codes shown in bold.
+const FRIENDLY_FAILURE_TITLES: Record<string, string> = {
+  no_recovery_source: '素材未找回',
+  asset_not_found_by_node: '素材未绑定到节点',
+  no_asset_id: '节点未绑定素材',
+  old_url_expired: '媒体链接已失效',
+  missing_generation_input: '缺少生成所需信息',
+  provider_env_missing: 'Provider 未配置',
+  storage_permission_error: '存储权限错误',
+  object_missing: '文件不存在',
+  signing_error: 'URL 签名失败',
+  proxy_error: '代理读取失败',
+  generated_but_persistence_pending: '素材待上传',
+  proxy_load_failed: '媒体加载暂时失败',
+}
+
+// Codes that should show the asset library recovery link.
+const ASSET_LIBRARY_RECOVERY_CODES = new Set([
+  'no_recovery_source',
+  'asset_not_found_by_node',
+  'no_asset_id',
+  'old_url_expired',
+])
+
 function productionMissingEnvMessage(missingEnv: string[]) {
   return missingEnv.length ? `生产环境缺少：${missingEnv.join(', ')}，请先在 Vercel 配置后重新部署。` : ''
 }
@@ -1095,15 +1119,15 @@ function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: bool
   if (reason === 'MEDIA_ASSET_CREATE_FAILED') return '媒体已上传，但 Asset 记录创建失败。'
   if (reason === 'recovery_request_failed') return '资产恢复请求失败，请复制诊断 JSON。'
   if (reason === 'generation_failed') return '恢复或重新生成链路失败，请复制诊断 JSON 查看真实 API 错误。'
-  if (reason === 'no_recovery_source') return '没有 assetId、storageKey、originalUrl、providerJobId 或旧 URL 可用于恢复。'
+  if (reason === 'no_recovery_source') return '节点暂时没有可用的媒体地址，可前往资产库（/assets）查看最近生成的全部素材。'
   if (reason === 'storage_key_unreadable') return '数据库有 storageKey，但对象存储暂时无法读取。'
   if (reason === 'storage_key_unreadable_without_recovery_source') return '数据库有 storageKey，但签名 URL、代理和历史来源都未能读取。'
   if (reason === 'provider_retrieve_not_implemented') return '该资产有 providerJobId，但当前 provider 尚未接入历史结果取回接口。'
   if (reason === 'needs_recovery') return '正在尝试恢复历史资产。'
-  if (!hasAssetId) return '当前画布节点缺少 assetId；可尝试用历史 URL 创建可持久化 Asset。'
+  if (!hasAssetId) return '画布节点暂未绑定素材，可前往资产库（/assets）查看最近生成的全部素材并找回。'
   const generationMessage = generationFailureMessage(metadataRecord(metadata.lastError))
   if (generationMessage) return generationMessage
-  return stringValue(metadata.error) || 'asset_not_found_by_node：按 nodeId 或 assetId 未解析到可显示媒体。'
+  return stringValue(metadata.error) || '素材暂时未找到，可前往资产库（/assets）查看最近生成的全部素材。'
 }
 
 function getOriginalProviderUrl(metadata: Record<string, unknown>, kind: 'image' | 'video') {
@@ -2738,10 +2762,14 @@ export function CanvasNodeCard({
       ? payloadNextAction
       : ''
     const nextAction = payloadNextAction || mediaFailureDiagnosis?.nextAction || ''
+    const diagCode = mediaFailureDiagnosis?.code ?? ''
+    const showAssetLibraryLink = !isRecoveryLoading && ASSET_LIBRARY_RECOVERY_CODES.has(diagCode)
     return (
     <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>
       <span className="block text-left text-[11px] font-bold uppercase tracking-normal text-red-100">
-        {isRecoveryLoading ? '正在尝试恢复历史资产...' : mediaFailureDiagnosis?.title ?? 'generation_failed'}
+        {isRecoveryLoading
+          ? '正在尝试恢复历史资产...'
+          : (FRIENDLY_FAILURE_TITLES[diagCode] ?? mediaFailureDiagnosis?.title ?? 'generation_failed')}
       </span>
       <span className="mt-1 block text-left text-xs leading-snug text-white/82">
         {isRecoveryLoading
@@ -2752,6 +2780,19 @@ export function CanvasNodeCard({
         <span className="mt-1 block text-left text-[11px] leading-snug text-cyan-100/86">
           下一步：{nextAction}
         </span>
+      ) : null}
+      {showAssetLibraryLink ? (
+        <a
+          href="/assets"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1.5 block text-left text-[11px] text-cyan-200/90 underline underline-offset-2 hover:text-cyan-100"
+          data-no-node-drag="true"
+          onPointerDown={(e) => { e.stopPropagation() }}
+          onClick={(e) => { e.stopPropagation() }}
+        >
+          → 前往资产库找回最近生成的素材
+        </a>
       ) : null}
       {mediaDiagnosticPayload?.errorCode ? (
         <span className="mt-1 block max-w-full truncate text-left text-[10px] text-red-100/82">
