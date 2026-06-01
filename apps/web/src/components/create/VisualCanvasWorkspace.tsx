@@ -350,7 +350,7 @@ type MediaReviewWindow = {
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string; model: string; ratio?: string }> = {
-  text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'openai-text' },
+  text: { title: '文本', subtitle: '从一句想法、脚本片段或 brief 开始。', model: 'deepseek-text' },
   image: { title: '图片', subtitle: '先做视觉方向、关键画面与风格参考。', model: 'volcengine-seedream-image', ratio: '16:9' },
   video: { title: '视频', subtitle: '直接推进镜头、节奏和画面运动。', model: 'volcengine-seedance-video', ratio: '16:9' },
   audio: { title: '音频', subtitle: '补充音乐、旁白和声音氛围。', model: 'elevenlabs' },
@@ -417,11 +417,13 @@ const PARAMETER_OPTIONS = [
   { value: '16:9-detail', label: '16:9 高细节', hint: '更强调质感与细节占位' },
 ] as const
 
+// DeepSeek is first — default for CN deployment. OpenAI is available but not prioritized
+// because it requires international balance that is frequently exhausted.
 const TEXT_NODE_PROVIDER_OPTIONS = [
-  { value: 'openai-text', label: 'OpenAI Text', hint: '默认文本生成', badge: 'available', duration: '10~20s' },
-  { value: 'deepseek-text', label: 'DeepSeek V4 Flash', hint: '中文文本 · 快速', badge: 'available', duration: '10~20s' },
-  { value: 'deepseek-reasoner', label: 'DeepSeek V4 Pro', hint: '中文文本 · 推理增强', badge: 'available', duration: '15~30s' },
+  { value: 'deepseek-text', label: 'DeepSeek V4 Flash', hint: '推荐 · 中文友好 · 快速', badge: 'available', duration: '10~20s' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek V4 Pro', hint: '中文 · 推理增强', badge: 'available', duration: '15~30s' },
   { value: 'kimi-text', label: 'Kimi K2.6', hint: '中文文本 · Kimi', badge: 'available', duration: '10~20s' },
+  { value: 'openai-text', label: 'OpenAI Text', hint: '海外 · 需 OpenAI 余额', badge: 'available', duration: '10~20s' },
 ] as const
 
 const IMAGE_NODE_PROVIDER_OPTIONS = [
@@ -5101,10 +5103,15 @@ export function VisualCanvasWorkspace({
   const syncPromptPreset = useCallback((kind: VisualCanvasNodeKind) => {
     const meta = NODE_META[kind]
     const providerKind = getProviderKind(kind)
+    // Text providers (deepseek-text, kimi-text, etc.) live only in TEXT_NODE_PROVIDER_OPTIONS —
+    // they are not registered in the canvas provider catalog, so getCanvasProvider would miss
+    // them and fall back to 'anthropic-claude'. Use the options list directly instead.
     const defaultModel = kind === 'image'
       ? getDefaultImageProviderId(imageProviderStatusMap) ?? meta.model
       : kind === 'video'
         ? getDefaultVideoProviderId(videoProviderStatusMap) ?? meta.model
+      : kind === 'text'
+        ? TEXT_NODE_PROVIDER_OPTIONS[0]?.value ?? meta.model
       : getCanvasProvider(providerKind, meta.model)?.id ?? CANVAS_PROVIDER_FALLBACKS[providerKind]
     setPreferredKind(kind)
     setPromptModel(defaultModel)
