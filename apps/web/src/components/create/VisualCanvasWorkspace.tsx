@@ -730,10 +730,13 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
 function formatGenerateError(result: GenerateApiResult) {
   const visibleCode = normalizeVisibleGenerateErrorCode(result)
   const message = normalizeGenerateErrorMessage(result)
-  const visibleMessage = visibleCode === 'auth_required'
-    ? '登录状态失效，请刷新并重新登录'
-    : message
-  return visibleMessage || visibleCode || '生成失败'
+  if (visibleCode === 'auth_required') return '登录状态失效，请刷新并重新登录'
+  // When upstream signals quota/rate-limit via status code or keywords but the specific errorCode
+  // wasn't handled by normalizeGenerateErrorMessage, produce a user-friendly Chinese message.
+  if (visibleCode === 'provider_quota_or_billing_error' && !message.includes('额度') && !message.includes('DeepSeek')) {
+    return `Provider 额度不足或触发限流，请切换至 DeepSeek 或其他可用 Provider 继续生成。${message ? `（${message}）` : ''}`
+  }
+  return message || visibleCode || '生成失败'
 }
 
 function getGeneratedText(result: GenerateApiResult) {

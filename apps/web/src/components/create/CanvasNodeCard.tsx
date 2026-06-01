@@ -1028,8 +1028,10 @@ function generationFailureMessage(error: Record<string, unknown>) {
   if (normalized === 'provider_response_parse_failed') return `provider_response_parse_failed：Provider 返回了无法解析的 JSON${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_request_failed') return `provider_request_failed：Provider 返回非成功响应${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'provider_quota_or_billing_error') {
-    const deepseekHint = code === 'OPENAI_RATE_LIMITED' ? '，建议切换至 DeepSeek（中文友好）或其他可用 Provider' : '，请切换 Provider 或检查 API 账单设置'
-    return `provider_quota_or_billing_error：Provider 额度已用尽、账单受限或触发限流${deepseekHint}${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : ''}${diagnosticSuffix}`
+    const hint = code === 'OPENAI_RATE_LIMITED'
+      ? '，请切换至 DeepSeek 或其他可用 Provider 继续生成'
+      : '，请切换 Provider 或检查 API 账单设置'
+    return `Provider 额度已用尽或触发限流${hint}。${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${diagnosticSuffix}`
   }
   if (normalized === 'provider_invalid_parameter') return `provider_invalid_parameter：Provider 参数无效${upstreamStatus ? `（HTTP ${upstreamStatus}）` : ''}${upstreamMessage ? `：${upstreamMessage}` : message ? `：${message}` : ''}${diagnosticSuffix}`
   if (normalized === 'content_policy_rejected') return `内容审核/版权限制：火山 Seedance 拒绝生成，可能涉及版权或受保护角色。请修改 Prompt，避免知名 IP、角色名、影视/游戏/动漫元素后重试。${diagnosticSuffix}`
@@ -1164,9 +1166,14 @@ function failureDiagnosis(args: {
         canRecover: false,
       }
     }
+    const friendlyTitle: Record<string, string> = {
+      provider_quota_or_billing_error: 'Provider 额度不足',
+      auth_required: '登录已失效',
+      generation_auth_unavailable: '数据库暂时繁忙',
+    }
     return {
       code,
-      title: code,
+      title: friendlyTitle[code] ?? code,
       detail: generationMessage,
       nextAction: code === 'auth_required'
         ? '刷新页面并重新登录后再用原 Prompt 重新生成。'
@@ -1174,7 +1181,9 @@ function failureDiagnosis(args: {
           ? '复制诊断 JSON，查看 generationResponseTextPreview 后再重试。'
           : code === 'provider_env_missing'
             ? '配置缺失的环境变量后再用原 Prompt 重新生成。'
-            : '用原 Prompt 重新生成，或复制诊断 JSON 排查 provider 返回。',
+            : code === 'provider_quota_or_billing_error'
+              ? '在节点对话框中切换至 DeepSeek 或其他可用 Provider，然后重新生成。'
+              : '用原 Prompt 重新生成，或复制诊断 JSON 排查 provider 返回。',
       canRecover: false,
     }
   }
