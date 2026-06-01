@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ function statusColor(status: string) {
 function testStatusLabel(s: string | null) {
   if (!s) return null
   if (s === 'ok') return '连接正常'
-  if (s === 'auth_failed') return '认证失败'
+  if (s === 'auth_failed') return '认证失败（请确认填写的是 API Key，而不是账号密码）'
   if (s === 'timeout') return '连接超时'
   if (s === 'rate_limited') return '请求限流'
   if (s === 'insufficient_quota') return '额度不足'
@@ -107,6 +108,14 @@ const EMPTY_FORM = { providerId: 'deepseek-text', accountLabel: '', apiKey: '', 
 export default function ProviderAccountsPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuthStore()
+  const { status: sessionStatus } = useCurrentUser()
+
+  // Wait for session to resolve before deciding to redirect.
+  // Zustand initial state is isAuthenticated=false (before localStorage hydrates),
+  // so we must not redirect until the /api/auth/me check completes.
+  const effectiveIsAuthenticated =
+    sessionStatus === 'authenticated' ||
+    ((sessionStatus === 'loading' || sessionStatus === 'unknown') && isAuthenticated)
 
   const [accounts, setAccounts] = useState<ProviderAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,10 +132,11 @@ export default function ProviderAccountsPage() {
   // ── Auth guard ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (sessionStatus === 'loading' || sessionStatus === 'unknown') return
+    if (!effectiveIsAuthenticated) {
       router.push('/auth/login?next=/account/providers')
     }
-  }, [isAuthenticated, router])
+  }, [effectiveIsAuthenticated, sessionStatus, router])
 
   // ── Load accounts ───────────────────────────────────────────────────────────
 
@@ -149,8 +159,8 @@ export default function ProviderAccountsPage() {
   }, [])
 
   useEffect(() => {
-    if (isAuthenticated) void loadAccounts()
-  }, [isAuthenticated, loadAccounts])
+    if (effectiveIsAuthenticated) void loadAccounts()
+  }, [effectiveIsAuthenticated, loadAccounts])
 
   // ── Create account ──────────────────────────────────────────────────────────
 
@@ -256,7 +266,9 @@ export default function ProviderAccountsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  // Show nothing while session check is in flight — avoids redirect flash
+  if (sessionStatus === 'loading' || sessionStatus === 'unknown') return null
+  if (!effectiveIsAuthenticated) return null
 
   return (
     <DashboardShell>
@@ -305,12 +317,17 @@ export default function ProviderAccountsPage() {
         </div>
 
         {/* Phase notice */}
-        <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3">
+        <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-1.5">
           <p className="text-xs text-amber-400/80 leading-relaxed">
             <span className="font-semibold">当前阶段提示：</span>
             API 账户管理功能处于基础设施阶段，尚未接入画布生成链路。
             添加后，你的 Key 将加密存储于平台，不会被用于实际调用或计费。
             画布仍默认使用平台额度生成；接入生成链路将在后续版本推出。
+          </p>
+          <p className="text-xs text-amber-400/50 leading-relaxed">
+            <span className="font-semibold">什么是 API Key？</span>{' '}
+            API Key 是 Provider 控制台（如 DeepSeek Platform、Moonshot 平台）生成的访问密钥，
+            通常以 <span className="font-mono">sk-</span> 开头，与你的网页登录账号密码完全不同。
           </p>
         </div>
 
@@ -488,17 +505,21 @@ export default function ProviderAccountsPage() {
             </Field>
 
             {/* API Key */}
-            <Field label="API Key">
+            <Field label="API Key（控制台生成的密钥，不是账号密码）">
               <input
                 type="password"
                 required
-                placeholder="sk-…"
+                placeholder="粘贴 Provider 控制台生成的 API Key，例如 sk-..."
                 autoComplete="off"
                 value={form.apiKey}
                 onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
                 className="input-field font-mono"
               />
-              <p className="mt-1.5 text-[11px] text-white/30">
+              <p className="mt-1.5 text-[11px] text-amber-400/60 leading-relaxed">
+                注意：这里需要填写 Provider 控制台生成的 API Key（如 sk-xxx），
+                不是你的网页登录账号和密码。
+              </p>
+              <p className="mt-1 text-[11px] text-white/25">
                 Key 仅在保存时提交一次，加密后存储，保存后只显示末 4 位。
               </p>
             </Field>
