@@ -70,21 +70,41 @@ export function buildLocalAgentReply(input: {
     return `${prefix}${explainCurrentPage(input.context)}`
   }
 
-  if (text.includes('客户') || text.includes('交付') || text.includes('审片') || text.includes('delivery') || text.includes('review')) {
-    const projectPart = input.context.projectId ? `当前项目会进入 /projects/${input.context.projectId}/delivery。` : '没有当前项目时会先进入 /projects，请先打开一个真实项目。'
-    return `${prefix}进入客户交付：点击 Agent 的“客户交付”快捷动作，或在 /create 画布右上角点击“客户”。${projectPart}`
+  if (text.includes('deepseek') && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    return `${prefix}DeepSeek API Key 步骤：\n1. 前往 DeepSeek 开放平台并登录\n2. 进入「API Keys」页面，创建并完整复制 Key（不是登录密码）\n3. 在 Creator City → 我的 API → 添加账户\n4. Provider 选 DeepSeek V4 Flash 或 V4 Pro，粘贴 Key，保存并测试连接\n\n状态：当前文本试点支持。`
   }
 
-  if (text.includes('工具') || text.includes('api') || text.includes('provider') || text.includes('模型')) {
-    return `${prefix}工具/API 状态在 /tools。available 表示真实可用，not-configured 表示缺 API key，mock 表示本地模拟，bridge-only 表示需要外部桥接。点击“工具/API”快捷动作即可进入。`
+  if (text.includes('openai') && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    return `${prefix}OpenAI API Key 步骤：\n1. 前往 OpenAI Platform 并登录\n2. 进入「API keys」→ Create new secret key，完整复制（仅展示一次）\n3. 在 Creator City → 我的 API → 添加账户\n4. Provider 选 OpenAI GPT，粘贴 Key，保存\n\n状态：当前文本试点支持。注意：不是 ChatGPT 登录密码。`
+  }
+
+  if ((text.includes('kimi') || text.includes('moonshot')) && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    return `${prefix}Kimi API Key 步骤：\n1. 前往 Kimi / Moonshot 开放平台并登录\n2. 找到「API 密钥」管理页面，创建并复制 Key\n3. 在 Creator City → 我的 API → 添加账户\n4. Provider 选 Kimi K2.6，粘贴 Key，保存\n\n状态：当前文本试点支持。`
+  }
+
+  if (
+    text.includes('api key') || text.includes('apikey') ||
+    (text.includes('key') && (text.includes('密钥') || text.includes('怎么填') || text.includes('在哪') || text.includes('获取') || text.includes('填写') || text.includes('哪里找'))) ||
+    text.includes('我的api') || text.includes('byok') || text.includes('自己的key') || text.includes('自己的api') || text.includes('provider账户')
+  ) {
+    return `${prefix}API Key 是 Provider 控制台生成的访问密钥（通常以 sk- 开头），不是你的网页登录密码。\n\n普通用户不需要 API Key，使用平台额度即可创作。\n\n当前文本试点支持：DeepSeek / OpenAI / Kimi\n\n操作路径：我的 API → Provider API 账户 → 添加账户 → 选 Provider → 填 API Key → 保存 → 测试连接\n\n你可以进一步问：「DeepSeek API Key 怎么获取？」「OpenAI key 在哪里？」「Kimi 怎么接？」\n\n点击「我的 API」快捷动作直接进入管理页面。`
+  }
+
+  if (text.includes('客户') || text.includes('交付') || text.includes('审片') || text.includes('delivery') || text.includes('review')) {
+    const projectPart = input.context.projectId ? `当前项目会进入 /projects/${input.context.projectId}/delivery。` : '没有当前项目时会先进入 /projects，请先打开一个真实项目。'
+    return `${prefix}进入客户交付：点击 Agent 的”客户交付”快捷动作，或在 /create 画布右上角点击”客户”。${projectPart}`
+  }
+
+  if (text.includes('工具') || (text.includes('api') && !text.includes('key')) || (text.includes('provider') && !text.includes('key')) || text.includes('模型')) {
+    return `${prefix}工具/API 状态在 /tools。available 表示真实可用，not-configured 表示缺 API key，mock 表示本地模拟，bridge-only 表示需要外部桥接。点击”工具/API”快捷动作即可进入。`
   }
 
   if (text.includes('节点') || text.includes('画布') || text.includes('create')) {
-    return `${prefix}/create 画布里：双击空白创建节点；点击节点打开对话框；节点右侧 + 创建下游节点；参数胶囊可改比例、清晰度、时长；右上角“客户”进入交付审批。`
+    return `${prefix}/create 画布里：双击空白创建节点；点击节点打开对话框；节点右侧 + 创建下游节点；参数胶囊可改比例、清晰度、时长；右上角”客户”进入交付审批。`
   }
 
   if (text.includes('复制') || text.includes('链接') || text.includes('link')) {
-    return `${prefix}点击“复制链接”快捷动作会复制当前页面 URL；如果浏览器 clipboard 不可用，会弹出手动复制窗口。`
+    return `${prefix}点击”复制链接”快捷动作会复制当前页面 URL；如果浏览器 clipboard 不可用，会弹出手动复制窗口。`
   }
 
   return `${prefix}${explainCurrentPage(input.context)}\n\n你也可以问：${input.context.suggestedQuestions.join('、')}。`

@@ -5,6 +5,8 @@ const BASE_ACTIONS: AgentQuickAction[] = [
   { id: 'navigate:projects', label: '项目', description: '查看项目列表' },
   { id: 'navigate:community', label: '社群', description: '进入社群页面' },
   { id: 'navigate:tools', label: '工具/API', description: '查看工具和 provider 状态' },
+  { id: 'navigate:my-api', label: '我的 API', description: '管理 Provider API 账户' },
+  { id: 'ask:api-key-guide', label: 'API Key 指南', description: '如何获取和填写各 Provider 的 API Key' },
   { id: 'navigate:client-delivery', label: '客户交付', description: '进入客户审片与交付确认' },
   { id: 'copy-current-link', label: '复制链接', description: '复制当前页面链接' },
   { id: 'explain-current-page', label: '解释页面', description: '说明当前页面能做什么' },
@@ -36,7 +38,7 @@ function pageConfig(pathname: string) {
     return {
       routeName: 'AI 画布',
       pageSummary: 'AI 画布用于创建文本、图片、视频、音频和交付节点，可以双击画布创建节点，用右侧 + 创建下游节点。',
-      suggestedQuestions: ['如何开始创作？', '如何创建下一个节点？', '如何进入客户交付？', '当前工具是真实 API 还是 mock？'],
+      suggestedQuestions: ['如何开始创作？', '如何创建下一个节点？', 'API Key 是什么？怎么填？', '如何用自己的 DeepSeek / OpenAI Key？', '如何进入客户交付？'],
       visibleActions: ['双击画布创建节点', '点击节点打开对话框', '参数参考', '客户交付', '复制画布链接'],
     }
   }

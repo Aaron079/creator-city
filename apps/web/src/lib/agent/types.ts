@@ -6,10 +6,12 @@ export type AgentQuickActionId =
   | 'navigate:community'
   | 'navigate:tools'
   | 'navigate:me'
+  | 'navigate:my-api'
   | 'navigate:client-delivery'
   | 'copy-current-link'
   | 'explain-current-page'
   | 'suggest-next-step'
+  | 'ask:api-key-guide'
 
 export interface AgentMessage {
   id: string

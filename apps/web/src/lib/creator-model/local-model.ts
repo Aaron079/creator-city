@@ -70,8 +70,10 @@ export async function runLocalCreatorModel(
 
   if (!text) {
     content = prefix + explainPage(pathname, routeName, pageSummary)
+
   } else if (text.includes('下一步') || text.includes('next step')) {
     content = prefix + suggestNextStep(pathname)
+
   } else if (
     text.includes('能做什么') ||
     text.includes('这个页面') ||
@@ -79,10 +81,195 @@ export async function runLocalCreatorModel(
     text.includes('what can')
   ) {
     content = prefix + explainPage(pathname, routeName, pageSummary)
+
+  } else if (text.includes('deepseek') && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    content = `${prefix}DeepSeek API Key 获取步骤：
+
+1. 前往 DeepSeek 官方开放平台并登录账号
+2. 进入「API Keys / API 密钥」页面
+3. 创建新 API Key 并完整复制（注意：不是登录密码）
+4. 在 Creator City → 我的 API → 添加账户
+5. Provider 选「DeepSeek V4 Flash」或「DeepSeek V4 Pro」
+6. 粘贴 API Key，保存后点击「测试连接」
+
+状态：当前文本试点支持，可用于文本节点 BYOK 生成。
+注意：认证失败请检查 Key 是否完整、账户是否有余额。`
+
+  } else if (text.includes('openai') && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    content = `${prefix}OpenAI API Key 获取步骤：
+
+1. 前往 OpenAI Platform 并登录账号
+2. 进入「API keys / Project API keys」
+3. 点击「Create new secret key」，完整复制（只展示一次）
+4. 在 Creator City → 我的 API → 添加账户
+5. Provider 选「OpenAI GPT」，粘贴 API Key，保存
+
+状态：当前文本试点支持，可用于文本节点 BYOK 生成。
+注意：不是 ChatGPT 网页登录密码，是 Platform 控制台生成的 Key；账户需有可用余额。`
+
+  } else if ((text.includes('kimi') || text.includes('moonshot') || text.includes('月之暗面')) && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何') || text.includes('获取'))) {
+    content = `${prefix}Kimi / Moonshot API Key 获取步骤：
+
+1. 前往 Kimi / Moonshot AI 开放平台并登录
+2. 找到「API Key / API 密钥」管理页面
+3. 创建并完整复制 API Key
+4. 在 Creator City → 我的 API → 添加账户
+5. Provider 选「Kimi K2.6」，粘贴 API Key，保存
+
+状态：当前文本试点支持，可用于文本节点 BYOK 生成。
+注意：不要填网页登录密码；限流或额度不足时，前往 Kimi 控制台检查余额。`
+
+  } else if ((text.includes('gemini') || text.includes('google')) && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何'))) {
+    content = `${prefix}Google Gemini API Key 获取步骤：
+
+1. 前往 Google AI Studio 并登录账号
+2. 在「API Keys」中创建 Gemini API Key
+3. 复制 API Key
+4. 回到 Creator City → 我的 API → 添加账户（当前暂无 Gemini 选项，后续接入）
+
+状态：教程预留，后续支持。当前 Creator City 暂未开放 Gemini 的「我的 API」生成。
+注意：API Key 不能截图或公开分享；需确认地区可用性和账单开通状态。`
+
+  } else if ((text.includes('claude') || text.includes('anthropic')) && (text.includes('key') || text.includes('密钥') || text.includes('接') || text.includes('怎么') || text.includes('如何'))) {
+    content = `${prefix}Anthropic Claude API Key 获取步骤：
+
+1. 前往 Anthropic Console 并登录账号
+2. 在「Account Settings / API Keys」中生成 API Key
+3. 复制 API Key
+4. 回到 Creator City → 我的 API（当前暂无 Claude 选项，后续接入）
+
+状态：教程预留，后续支持。当前 Creator City 暂未开放 Claude 的「我的 API」生成。
+注意：只使用官方 Anthropic 控制台的 Key，不要使用来源不明的中转 Key。`
+
+  } else if ((text.includes('阿里') || text.includes('dashscope') || text.includes('通义') || text.includes('千问')) && (text.includes('key') || text.includes('接') || text.includes('怎么') || text.includes('如何'))) {
+    content = `${prefix}阿里 DashScope / 通义千问 API Key：
+
+1. 前往阿里云 DashScope / 通义千问控制台
+2. 开通服务并创建 API Key
+3. 复制 API Key
+4. 回到 Creator City → 我的 API（当前暂无阿里 Provider 选项，后续接入）
+
+状态：教程预留，后续支持。
+注意：可能需要阿里云账号、实名认证、余额开通。`
+
+  } else if ((text.includes('火山') || text.includes('豆包') || text.includes('volcengine')) && (text.includes('key') || text.includes('byok') || text.includes('自己') || text.includes('接') || text.includes('怎么'))) {
+    content = `${prefix}火山引擎 / 豆包 API Key：
+
+当前 Creator City 已通过平台侧支持火山图片/视频生成（Seedream / Seedance），用户不需要自己的火山 Key 即可使用。
+
+用户自有火山 BYOK：
+1. 前往火山引擎控制台，找到方舟/豆包相关 API Key 管理
+2. 创建并复制密钥
+3. 后续 Creator City 接入后可在「我的 API」填写
+
+状态：BYOK 教程预留，后续支持。注意：部分服务使用 Access Key + Secret Key，非单个 sk-key。`
+
+  } else if ((text.includes('runway') || text.includes('kling') || text.includes('可灵') || text.includes('minimax') || text.includes('海螺') || text.includes('elevenlabs') || text.includes('配音') || text.includes('stability') || text.includes('replicate') || text.includes('fal') || text.includes('openrouter') || text.includes('groq') || text.includes('fireworks')) && (text.includes('key') || text.includes('接') || text.includes('怎么') || text.includes('如何'))) {
+    content = `${prefix}图像/视频/音频 Provider API Key：
+
+当前 Creator City 对以下 Provider 处于教程预留阶段，暂未开放「我的 API」生成：
+· Runway（视频生成）
+· Kling / 可灵（图生视频）
+· MiniMax / 海螺（视频/语音/多模态）
+· ElevenLabs（AI 配音/语音合成）
+· Stability AI（图像生成）
+· Replicate（多模型托管）
+· Fal.ai（图像/视频/实时生成）
+· OpenRouter / Groq / Fireworks（多模型聚合）
+
+这些 Provider 的 API Key 通常可在各自官方控制台或 Dashboard 的「API Keys / API tokens」页面获取。
+
+后续 Creator City 接入后，可在「我的 API → Provider API 账户」填写并测试连接。`
+
+  } else if (
+    text.includes('api key') || text.includes('apikey') ||
+    (text.includes('key') && (text.includes('密钥') || text.includes('怎么填') || text.includes('在哪') || text.includes('如何获取') || text.includes('获取') || text.includes('填写') || text.includes('哪里找'))) ||
+    text.includes('api密钥') || text.includes('key是什么') || text.includes('密钥是什么')
+  ) {
+    content = `${prefix}API Key 是什么？
+
+API Key 是 Provider 控制台生成的访问密钥（通常以 sk- 开头），与你的网页登录密码完全不同。
+
+普通用户完全不需要 API Key，使用平台额度即可创作。
+API Key 是给专业用户和团队的可选能力，用于直接接入自己的 Provider 账户，费用由你直接支付给服务商。
+
+当前支持（文本试点）：
+· DeepSeek — 前往 DeepSeek 开放平台 → API Keys → 创建 Key
+· OpenAI — 前往 OpenAI Platform → API keys → Create secret key
+· Kimi — 前往 Kimi/Moonshot 开放平台 → API 密钥 → 创建 Key
+
+操作路径：我的 API → Provider API 账户 → 添加账户 → 选 Provider → 填 API Key → 保存 → 测试连接
+
+安全提醒：不要填登录密码；不要截图或分享 Key；Creator City 只加密保存，默认只显示末 4 位。
+
+你可以进一步问：「DeepSeek API Key 怎么获取？」「OpenAI key 在哪里？」「Kimi 怎么接？」`
+
+  } else if (
+    text.includes('我的api') || text.includes('byok') || text.includes('自己的key') || text.includes('自己的api') ||
+    text.includes('provider账户') || text.includes('接入账户') || text.includes('添加账户') ||
+    (text.includes('自己') && (text.includes('provider') || text.includes('模型') || text.includes('账户')))
+  ) {
+    content = `${prefix}如何使用我的 API 账户（BYOK）？
+
+Creator City 支持你接入自己的 Provider API Key，API 费用直接由你支付给服务商，不经过 Creator City。
+
+操作步骤：
+1. 前往「我的 API → Provider API 账户」
+2. 点击「添加账户」
+3. 选择 Provider（如 DeepSeek、OpenAI、Kimi）
+4. 填写账户名称和 API Key（不是登录密码）
+5. 保存后点击「测试连接」验证
+
+当前支持：DeepSeek、OpenAI、Kimi（文本试点）
+后续支持：Gemini、Claude、阿里、火山、Runway 等
+
+注意：填写 API Key 时必须是 Provider 控制台生成的密钥，不是你的登录账号和密码。
+
+点击下方「我的 API」快捷动作直接进入管理页面。`
+
+  } else if (
+    text.includes('认证失败') || text.includes('auth failed') || text.includes('key无效') ||
+    (text.includes('key') && (text.includes('失败') || text.includes('错误') || text.includes('不对')))
+  ) {
+    content = `${prefix}API Key 认证失败排查：
+
+常见原因：
+1. 填写了网页登录密码，而不是控制台生成的 API Key
+2. 复制 Key 时不完整（漏掉了开头或结尾字符）
+3. API Key 已过期或被撤销
+4. Provider 账户余额不足或试用额度用尽
+5. 账户被 Provider 限制
+
+解决方法：
+· 前往对应 Provider 控制台重新复制 API Key
+· 确认是 API Keys / API 密钥页面，不是账号设置页面
+· 删除旧账户，重新在「我的 API」添加
+· 去 Provider 控制台检查账户余额和状态`
+
+  } else if (
+    text.includes('平台额度') || text.includes('积分') ||
+    (text.includes('额度') && !text.includes('api')) ||
+    text.includes('credits') ||
+    (text.includes('充值') && !text.includes('api'))
+  ) {
+    content = `${prefix}平台额度 vs 我的 API 账户：
+
+平台额度（默认）：
+· 购买 Creator City 积分，由平台代付 API 调用费用
+· 适合轻度用户，无需管理任何 API Key
+
+我的 API 账户（可选）：
+· 接入自己的 Provider API Key
+· API 费用由你直接支付给服务商（DeepSeek、OpenAI 等），Creator City 不代扣
+· Creator City 未来只收取平台服务费（工作台/协作/交易），不再作为 API 转售方
+
+两者可以共存：当你选择「我的 API」模式时，该次生成使用你的 Key；默认仍使用平台额度。`
+
   } else if (
     text.includes('工具') && (text.includes('不能用') || text.includes('为什么'))
   ) {
     content = `${prefix}标记为 not-configured 的 provider 需要配置自有 endpoint/key；mock 只做模拟，不会调用第三方 API；bridge-only 只生成桥接请求。进入 /tools 查看每个 provider 的状态。`
+
   } else if (
     text.includes('怎么接模型') ||
     text.includes('接入模型') ||
@@ -90,6 +277,7 @@ export async function runLocalCreatorModel(
     text.includes('remote mode')
   ) {
     content = `${prefix}配置方式：在服务端环境变量设置 CREATOR_MODEL_MODE=remote、CREATOR_MODEL_ENDPOINT（你自己的模型服务地址）、CREATOR_MODEL_API_KEY（只在服务端使用，不可暴露到浏览器）。`
+
   } else if (
     text.includes('客户') ||
     text.includes('交付') ||
@@ -100,18 +288,22 @@ export async function runLocalCreatorModel(
       ? `当前项目会进入 /projects/${projectId}/delivery。`
       : '没有当前项目时会先进入 /projects，请先打开一个真实项目。'
     content = `${prefix}进入客户交付：点击 Agent 的"客户交付"快捷动作，或在 /create 画布右上角点击"客户"。${projectPart}`
+
   } else if (
-    text.includes('api') ||
-    text.includes('provider') ||
-    text.includes('模型')
+    (text.includes('api') || text.includes('provider') || text.includes('模型')) &&
+    !text.includes('key') && !text.includes('密钥')
   ) {
-    content = `${prefix}工具/API 状态在 /tools。available 真实可用，not-configured 缺 key，mock 本地模拟，bridge-only 需外部桥接。`
+    content = `${prefix}工具/API 状态在 /tools。available 真实可用，not-configured 缺 key，mock 本地模拟，bridge-only 需外部桥接。
+
+如果你想用自己的 API Key 生成，可以问我：「API Key 怎么填？」或点击「API Key 指南」快捷动作。`
+
   } else if (
     text.includes('节点') ||
     text.includes('画布') ||
     text.includes('canvas')
   ) {
     content = `${prefix}/create 画布：双击空白创建节点；点击节点打开对话框；节点右侧 + 创建下游节点；参数胶囊可改比例、清晰度、时长；右上角"客户"进入交付审批。`
+
   } else if (
     text.includes('视频') ||
     text.includes('图片') ||
@@ -124,7 +316,8 @@ export async function runLocalCreatorModel(
     text.includes('image') ||
     text.includes('generate')
   ) {
-    content = `${prefix}当前 Agent 处于本地帮助模式，还没有连接自有模型 endpoint，无法直接替你生成内容。可以这样开始：\n\n1. 进入 AI 画布（/create）\n2. 双击画布创建节点，选择 Video 或 Image 类型\n3. 在节点对话框里写 prompt，底部选择 provider（如 Runway、Kling、VEO、Sora、Vidu 等）\n4. 未配置 API key 的 provider 显示 not-configured，只能 mock 模拟\n5. 配置自有模型 endpoint 后可走真实生成链路\n\n点击下方"进入 AI 画布"快捷动作直接开始；在"工具/API"可查看每个 provider 的当前状态。`
+    content = `${prefix}当前 Agent 处于本地帮助模式，无法直接替你生成内容。可以这样开始：\n\n1. 进入 AI 画布（/create）\n2. 双击画布创建节点，选择 Video 或 Image 类型\n3. 在节点对话框里写 prompt，选择 provider\n4. 点击「生成」\n\n点击下方"进入 AI 画布"快捷动作直接开始；在"工具/API"可查看每个 provider 的当前状态。`
+
   } else {
     content = `${prefix}${explainPage(pathname, routeName, pageSummary)}`
   }
