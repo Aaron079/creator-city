@@ -59,10 +59,10 @@ function isKimiK2Model(model: string) {
   return /^kimi-k2\.(5|6)(?:\b|[-_])/i.test(model)
 }
 
-export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal'; purpose?: 'ping' | 'generate' }): Promise<ChinaTextGenerationResult> {
+export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal'; purpose?: 'ping' | 'generate'; apiKeyOverride?: string }): Promise<ChinaTextGenerationResult> {
   const providerId = input.providerId ?? 'kimi-text'
   const purpose = input.purpose ?? 'ping'
-  const apiKey = process.env.MOONSHOT_API_KEY
+  const apiKey = input.apiKeyOverride ?? process.env.MOONSHOT_API_KEY
   const model = providerId === 'kimi-multimodal'
     ? process.env.KIMI_MODEL_MULTIMODAL || process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
     : process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'

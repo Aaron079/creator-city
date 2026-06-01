@@ -121,6 +121,14 @@ class CanvasNodeErrorBoundary extends Component<
   }
 }
 
+type UserProviderAccount = {
+  id: string
+  providerId: string
+  accountLabel: string
+  keyLast4: string
+  status: string
+}
+
 interface VisualCanvasWorkspaceProps {
   projectTitle: string
   templateName?: string | null
@@ -1715,6 +1723,8 @@ async function callGenerationApi(
   system?: string,
   model?: string,
   signal?: AbortSignal,
+  billingMode?: 'platform_credits' | 'user_provider_account',
+  userProviderAccountId?: string,
 ): Promise<GenerateApiResult> {
   const endpoint =
     nodeType === 'image' ? '/api/generate/image'
@@ -1788,6 +1798,9 @@ async function callGenerationApi(
           aspectRatio,
           duration,
           resolution,
+          ...(billingMode === 'user_provider_account' && userProviderAccountId
+            ? { billingMode, userProviderAccountId }
+            : {}),
         }
 
   let response: Response
@@ -2344,6 +2357,10 @@ export function VisualCanvasWorkspace({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
+  const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
+  const [selectedUserAccountId, setSelectedUserAccountId] = useState('')
+  const [userProviderAccounts, setUserProviderAccounts] = useState<UserProviderAccount[]>([])
+  const [userAccountsLoading, setUserAccountsLoading] = useState(false)
   const [promptRatio, setPromptRatio] = useState('16:9')
   const [preferredKind, setPreferredKind] = useState<VisualCanvasNodeKind>('video')
   const [promptStage, setPromptStage] = useState<(typeof STAGE_OPTIONS)[number]['value']>('draft')
@@ -2482,6 +2499,19 @@ export function VisualCanvasWorkspace({
   useEffect(() => {
     latestCommentsRef.current = comments
   }, [comments])
+
+  // Load user-owned provider accounts on demand (only when user switches to user_provider_account mode).
+  useEffect(() => {
+    if (billingMode !== 'user_provider_account') return
+    setUserAccountsLoading(true)
+    fetch('/api/provider-accounts', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data: { success?: boolean; accounts?: UserProviderAccount[] }) => {
+        if (data.success && Array.isArray(data.accounts)) setUserProviderAccounts(data.accounts)
+      })
+      .catch(() => { /* silently ignore — billing mode switch shows empty state */ })
+      .finally(() => setUserAccountsLoading(false))
+  }, [billingMode])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !projectId) return
@@ -6300,6 +6330,12 @@ export function VisualCanvasWorkspace({
       return
     }
 
+    // Guard: user_provider_account mode requires a selected account
+    if (nodeType === 'text' && billingMode === 'user_provider_account' && !selectedUserAccountId) {
+      setDialogError('请先选择一个 API 账户。')
+      return
+    }
+
     setDialogError(null)
     handleNodePatch(editingNode.id, {
       prompt: trimmedPrompt,
@@ -6335,6 +6371,8 @@ export function VisualCanvasWorkspace({
       undefined,
       generationProviderId,
       generationController?.signal,
+      nodeType === 'text' ? billingMode : undefined,
+      nodeType === 'text' && billingMode === 'user_provider_account' ? selectedUserAccountId : undefined,
     ).then(async (result) => {
       if (generationController?.signal.aborted) return
       if (nodeSnapshot.kind === 'image' && result.success && (result.status === 'running' || result.status === 'queued') && !(result.generationJobId || result.jobId)) {
@@ -6717,7 +6755,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, billingMode, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, selectedUserAccountId, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -8155,7 +8193,7 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || isActiveGenerationStatus(editingNode.status)}
+            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || isActiveGenerationStatus(editingNode.status) || (editingNode.kind === 'text' && billingMode === 'user_provider_account' && !selectedUserAccountId)}
             generateLabel={
               isActiveGenerationStatus(editingNode.status)
                 ? '生成中…'
@@ -8186,6 +8224,60 @@ export function VisualCanvasWorkspace({
             onClose={() => setEditingNodeId(null)}
             panelPortalTarget={panelPortalTarget}
           />
+          {editingNode.kind === 'text' && (
+            <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-2">生成费用来源</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBillingMode('platform_credits')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.09] text-white' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
+                >
+                  平台额度
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingMode('user_provider_account')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.1] text-violet-200' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
+                >
+                  我的 API 账户
+                </button>
+              </div>
+              {billingMode === 'platform_credits' && (
+                <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
+              )}
+              {billingMode === 'user_provider_account' && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+                  {userAccountsLoading ? (
+                    <p className="text-[11px] text-white/30">加载账户中…</p>
+                  ) : (() => {
+                    const matchingAccounts = userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
+                    if (matchingAccounts.length === 0) {
+                      return (
+                        <p className="text-[11px] text-amber-400/70">
+                          没有与 {normalizedPromptModel} 匹配的可用账户。
+                          <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">前往添加</a>
+                        </p>
+                      )
+                    }
+                    return (
+                      <select
+                        value={selectedUserAccountId}
+                        onChange={(e) => setSelectedUserAccountId(e.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
+                      >
+                        <option value="">— 选择账户 —</option>
+                        {matchingAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>{a.accountLabel} ···· {a.keyLast4}</option>
+                        ))}
+                      </select>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : null}
 

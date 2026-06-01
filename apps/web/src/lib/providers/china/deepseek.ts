@@ -60,10 +60,10 @@ type DeepSeekEmptyResult = Extract<ChinaTextGenerationResult, { success: false }
   reasoningContent?: string
 }
 
-export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner'; reasoner?: boolean; purpose?: 'ping' | 'generate' }): Promise<ChinaTextGenerationResult> {
+export async function generateDeepSeekText(input: ChinaTextGenerationInput & { providerId?: 'deepseek-text' | 'deepseek-reasoner'; reasoner?: boolean; purpose?: 'ping' | 'generate'; apiKeyOverride?: string }): Promise<ChinaTextGenerationResult> {
   const providerId = input.reasoner ? 'deepseek-reasoner' : input.providerId ?? 'deepseek-text'
   const purpose = input.purpose ?? 'ping'
-  const apiKey = process.env.DEEPSEEK_API_KEY
+  const apiKey = input.apiKeyOverride ?? process.env.DEEPSEEK_API_KEY
   const model = providerId === 'deepseek-reasoner'
     ? process.env.DEEPSEEK_MODEL_REASONER || 'deepseek-v4-pro'
     : process.env.DEEPSEEK_MODEL_TEXT || 'deepseek-v4-flash'
