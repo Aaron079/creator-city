@@ -260,6 +260,14 @@ export function TopNavigation() {
             <span>充值</span>
           </Link>
 
+          {/* Community shortcut */}
+          <Link
+            href="/community"
+            className="hidden rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[12px] text-white/55 transition hover:border-white/20 hover:text-white sm:inline-flex"
+          >
+            社群
+          </Link>
+
           {/* Local search — no fetch, static data only */}
           <div className="relative" ref={searchRef}>
             <button
