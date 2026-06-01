@@ -119,6 +119,24 @@ export default function AccountPage() {
           </div>
         </div>
 
+        {/* Quick links to account sub-sections */}
+        <div className="mb-6 grid grid-cols-2 gap-2">
+          <Link
+            href="/account/credits"
+            className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
+          >
+            <span className="text-base">◎</span>
+            <span>积分与充值</span>
+          </Link>
+          <Link
+            href="/account/providers"
+            className="flex items-center gap-2.5 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-4 py-3 text-sm text-violet-300/80 hover:border-violet-500/30 hover:text-violet-200 transition"
+          >
+            <span className="text-base">⚡</span>
+            <span>Provider API 账户</span>
+          </Link>
+        </div>
+
         {notice && (
           <div className={`mb-5 rounded-xl px-4 py-3 text-sm ${notice.type === 'success' ? 'bg-green-500/10 border border-green-500/20 text-green-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'}`}>
             {notice.message}
