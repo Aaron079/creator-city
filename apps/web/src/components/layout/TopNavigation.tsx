@@ -81,6 +81,9 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '企业版', href: '/enterprise-preview', group: '平台', keywords: ['企业', '权限'] },
   { label: '社区', href: '/community', group: '社区与帮助', keywords: ['社区', 'community'] },
   { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
+  { label: '账号设置', href: '/account', group: '账户', keywords: ['账号', '设置', '资料', 'profile', 'account'] },
+  { label: 'Provider API 账户', href: '/account/providers', group: '账户', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '账户'] },
+  { label: '积分与充值', href: '/billing?region=CN&method=manual', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing'] },
 ]
 
 const SEARCH_DEFAULTS = new Set([
@@ -320,23 +323,75 @@ export function TopNavigation() {
             )}
           </div>
 
-          {/* User area */}
+          {/* User area — hover dropdown */}
           {effectiveIsAuthenticated && effectiveUser ? (
-            <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 md:flex">
-              <div className="h-7 w-7 shrink-0 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
-                {getUserInitial(effectiveUser.displayName, effectiveUser.email)}
-              </div>
-              <div className="max-w-[80px] truncate text-[12px] font-medium text-white">
-                {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
-              </div>
-              <Link href="/account" className="px-1 text-xs text-white/40 transition hover:text-white/70" title="账号设置">⚙</Link>
-              <button
-                onClick={() => void handleLogout()}
-                className="text-xs text-white/40 transition hover:text-white/80"
-                title="登出"
-              >
-                ↩
+            <div
+              className="relative hidden md:block"
+              onMouseEnter={() => handleMenuEnter('user')}
+              onMouseLeave={handleMenuLeave}
+            >
+              {/* Trigger */}
+              <button className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 transition hover:border-white/20">
+                <div className="h-7 w-7 shrink-0 rounded-full bg-white/[0.08] text-center text-xs font-semibold leading-7 text-white">
+                  {getUserInitial(effectiveUser.displayName, effectiveUser.email)}
+                </div>
+                <div className="max-w-[80px] truncate text-[12px] font-medium text-white">
+                  {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
+                </div>
+                <span className="text-[8px] text-white/25">▾</span>
               </button>
+
+              {/* Dropdown */}
+              {openMenu === 'user' && (
+                <div
+                  className="absolute right-0 top-full z-[200] mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.12] bg-black/90 py-1.5 ring-1 ring-white/[0.06] backdrop-blur-xl"
+                  style={{ boxShadow: '0 24px 80px rgba(0,0,0,0.65)' }}
+                  onMouseEnter={() => handleMenuEnter('user')}
+                  onMouseLeave={handleMenuLeave}
+                >
+                  {/* User identity header */}
+                  <div className="px-3.5 pb-2 pt-2">
+                    <p className="text-[12px] font-medium text-white/80 truncate">
+                      {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
+                    </p>
+                    <p className="text-[10px] text-white/30 truncate">{effectiveUser.email}</p>
+                  </div>
+                  <div className="mx-2 mb-1 border-t border-white/[0.07]" />
+
+                  {/* Account links */}
+                  <Link
+                    href="/account"
+                    className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    <span>⚙</span> 账号设置
+                  </Link>
+                  <Link
+                    href="/account/providers"
+                    className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.08] hover:text-violet-200"
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    <span>⚡</span> Provider API 账户
+                  </Link>
+                  <Link
+                    href="/billing?region=CN&method=manual"
+                    className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    <span>◎</span> 积分与充值
+                  </Link>
+
+                  <div className="mx-2 my-1 border-t border-white/[0.07]" />
+
+                  {/* Logout */}
+                  <button
+                    onClick={() => void handleLogout()}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-white/40 transition hover:bg-white/[0.06] hover:text-white/70"
+                  >
+                    <span>↩</span> 登出
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="hidden items-center gap-2 md:flex">
