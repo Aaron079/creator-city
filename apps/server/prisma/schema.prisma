@@ -256,6 +256,7 @@ model User {
   deliveryShares      DeliveryShare[]
   sessions            Session[]
   auditLogs           AuditLog[]
+  providerAccounts    UserProviderAccount[]
 
   @@index([username])
   @@index([email])
@@ -1258,4 +1259,32 @@ model ProviderPricingRule {
   @@unique([providerId, modelId, nodeType])
   @@index([providerId])
   @@index([nodeType])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USER PROVIDER ACCOUNTS — user-owned API keys for BYOK (bring-your-own-key)
+// Phase 2A foundation: schema only, not wired into generation chain yet.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model UserProviderAccount {
+  id               String    @id @default(uuid())
+  userId           String
+  providerId       String
+  accountLabel     String
+  encryptedApiKey  String
+  keyLast4         String
+  status           String    @default("active")
+  isDefault        Boolean   @default(false)
+  projectScope     String?
+  lastTestedAt     DateTime?
+  lastTestStatus   String?
+  lastTestError    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, providerId])
+  @@index([userId, status])
 }
