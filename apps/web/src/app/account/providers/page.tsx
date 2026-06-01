@@ -54,6 +54,32 @@ function statusColor(status: string) {
   return 'text-rose-400 border-rose-400/30 bg-rose-400/[0.07]'
 }
 
+function testStatusLabel(s: string | null) {
+  if (!s) return null
+  if (s === 'ok') return '连接正常'
+  if (s === 'auth_failed') return '认证失败'
+  if (s === 'timeout') return '连接超时'
+  if (s === 'rate_limited') return '请求限流'
+  if (s === 'insufficient_quota') return '额度不足'
+  if (s === 'unsupported') return '不支持测试'
+  return '测试异常'
+}
+
+function testStatusColor(s: string | null) {
+  if (s === 'ok') return 'text-emerald-400'
+  if (s === 'auth_failed') return 'text-rose-400'
+  if (s === 'unsupported') return 'text-white/30'
+  return 'text-amber-400'
+}
+
+function fmtDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
 function providerLabel(id: string) {
   return PROVIDER_OPTIONS.find((p) => p.value === id)?.label ?? id
 }
@@ -92,6 +118,7 @@ export default function ProviderAccountsPage() {
   const [formSuccess, setFormSuccess] = useState<string | null>(null)
 
   const [actionState, setActionState] = useState<Record<string, string>>({}) // id → 'loading'|'error:<msg>'
+  const [testState, setTestState] = useState<Record<string, 'testing' | ''>>({}) // id → 'testing'|''
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
 
@@ -206,6 +233,29 @@ export default function ProviderAccountsPage() {
     }
   }
 
+  // ── Test connection ─────────────────────────────────────────────────────────
+
+  const testAccount = async (id: string) => {
+    setTestState((s) => ({ ...s, [id]: 'testing' }))
+    try {
+      const res = await fetch(`/api/provider-accounts/${id}/test`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json() as ApiResponse<{ account: ProviderAccount }>
+      if (res.ok && data.success) {
+        // Update local account list with the refreshed account from server
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === id ? (data as { account: ProviderAccount }).account : a))
+        )
+      }
+    } catch {
+      // Silently ignore network errors; user can retry
+    } finally {
+      setTestState((s) => ({ ...s, [id]: '' }))
+    }
+  }
+
   if (!isAuthenticated) return null
 
   return (
@@ -297,6 +347,7 @@ export default function ProviderAccountsPage() {
                 const state = actionState[acc.id] ?? ''
                 const isActing = state === 'loading'
                 const actionError = state.startsWith('error:') ? state.slice(6) : null
+                const isTesting = testState[acc.id] === 'testing'
 
                 return (
                   <div
@@ -331,6 +382,16 @@ export default function ProviderAccountsPage() {
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/30 mb-3">
                       <span>范围：{acc.projectScope ?? '全局'}</span>
                       <span>添加于 {fmtDate(acc.createdAt)}</span>
+                      {acc.lastTestedAt && (
+                        <span>
+                          测试于 {fmtDateTime(acc.lastTestedAt)}
+                          {acc.lastTestStatus && (
+                            <span className={`ml-1 font-medium ${testStatusColor(acc.lastTestStatus)}`}>
+                              · {testStatusLabel(acc.lastTestStatus)}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     {/* Action error */}
@@ -340,29 +401,34 @@ export default function ProviderAccountsPage() {
 
                     {/* Actions */}
                     <div className="flex flex-wrap items-center gap-2">
+                      <ActionButton
+                        label={isTesting ? '测试中…' : '测试连接'}
+                        disabled={isActing || isTesting}
+                        onClick={() => void testAccount(acc.id)}
+                      />
                       {!acc.isDefault && (
                         <ActionButton
                           label="设为默认"
-                          disabled={isActing}
+                          disabled={isActing || isTesting}
                           onClick={() => void patchAccount(acc.id, { isDefault: true })}
                         />
                       )}
                       {acc.status === 'active' ? (
                         <ActionButton
                           label="停用"
-                          disabled={isActing}
+                          disabled={isActing || isTesting}
                           onClick={() => void patchAccount(acc.id, { status: 'disabled' })}
                         />
                       ) : (
                         <ActionButton
                           label="启用"
-                          disabled={isActing}
+                          disabled={isActing || isTesting}
                           onClick={() => void patchAccount(acc.id, { status: 'active' })}
                         />
                       )}
                       <ActionButton
                         label={isActing ? '处理中…' : '删除'}
-                        disabled={isActing}
+                        disabled={isActing || isTesting}
                         variant="danger"
                         onClick={() => void deleteAccount(acc.id, acc.accountLabel)}
                       />
