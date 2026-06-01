@@ -75,7 +75,7 @@ type Props = {
   canvasNodes: DeliveryCanvasNodeForClient[]
 }
 
-const CUSTOMER_DELIVERY_ORIGIN = 'https://creator-city-vert.vercel.app'
+const CUSTOMER_DELIVERY_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? 'https://creator-city-vert.vercel.app'
 
 function getTextFromAsset(asset: DeliveryAssetForClient) {
   const metadata = asset.metadataJson && typeof asset.metadataJson === 'object'
