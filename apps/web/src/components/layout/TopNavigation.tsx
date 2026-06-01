@@ -43,6 +43,13 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: '我的 API', key: 'myapi',
+    items: [
+      { label: 'API 账户管理', href: '/account/providers' },
+      { label: '平台模型中心', href: '/providers' },
+    ],
+  },
+  {
     label: '平台', key: 'platform',
     items: [
       { label: '路线图', href: '/roadmap' },
@@ -82,7 +89,8 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '社区', href: '/community', group: '社区与帮助', keywords: ['社区', 'community'] },
   { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
   { label: '账号设置', href: '/account', group: '账户', keywords: ['账号', '设置', '资料', 'profile', 'account'] },
-  { label: 'Provider API 账户', href: '/account/providers', group: '账户', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '账户'] },
+  { label: 'API 账户管理', href: '/account/providers', group: '我的 API', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '我的api', '账户管理', '自带key'] },
+  { label: '平台模型中心', href: '/providers', group: '我的 API', keywords: ['平台模型', 'provider center', 'model', 'api center'] },
   { label: '积分与充值', href: '/account/credits', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing', '平台额度'] },
   { label: '订阅与套餐', href: '/pricing-preview', group: '账户', keywords: ['订阅', '套餐', '计划', 'subscription', 'plan', '平台服务费', 'pricing'] },
 ]
