@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-02
-Last valid commit: `d8ddd43` (docs: image/video byok audit)
+Last valid commit: `14a763d` (feat: User Provider Accounts V1 — multi-field credential structure)
 
 ---
 
@@ -27,6 +27,7 @@ Last valid commit: `d8ddd43` (docs: image/video byok audit)
 | 画布帮助面板（Provider API Key 接入手册） | ✅ CLOSED / shipped | `def152b` |
 | AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
 | Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
+| User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / schema + service + UI shipped | `14a763d` |
 
 ---
 
@@ -533,10 +534,11 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Next Phase Tasks (priority order)
 
-1. **Phase V1：多字段凭证结构扩展**
-   - 只改 `UserProviderAccount` schema（`encryptedFields` / `fieldMeta`）、service 层、`/account/providers` UI
-   - 不接生成链路，不动 cn-executor，不动 image/video 路由
-   - 完成标准：用户可保存含两个字段的 Volcengine 凭证（apiKey + endpointId），UI 展示末 4 位
+1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE (commit `14a763d`)~~
+   - schema 扩展（`credentialType` / `encryptedFields` / `fieldMeta`）+ migration
+   - crypto: `encryptProviderFields` / `decryptProviderFields` / `getFieldPreview`（28 tests）
+   - service/API：POST/PATCH 接受 `fields?: Record<string, string>`
+   - UI：Volcengine 显示 Endpoint ID 输入，image/video BYOK "coming soon" 提示
 
 2. **Phase V2：Seedream Image BYOK 试点**
    - 只接图片，不碰视频，不动 cn-executor
