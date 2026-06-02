@@ -16,6 +16,8 @@ const ACCOUNT_SELECT = {
   providerId: true,
   accountLabel: true,
   keyLast4: true,
+  credentialType: true,
+  fieldMeta: true,
   status: true,
   isDefault: true,
   projectScope: true,

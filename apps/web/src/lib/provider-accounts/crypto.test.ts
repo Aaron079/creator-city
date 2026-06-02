@@ -18,6 +18,11 @@ import {
   decryptProviderApiKey,
   getProviderKeyLast4,
   redactProviderKey,
+  encryptProviderField,
+  decryptProviderField,
+  encryptProviderFields,
+  decryptProviderFields,
+  getFieldPreview,
 } from './crypto'
 
 describe('encryptProviderApiKey / decryptProviderApiKey', () => {
@@ -111,6 +116,77 @@ describe('redactProviderKey', () => {
     const key = '123456789'
     const redacted = redactProviderKey(key)
     assert.equal(redacted, '1234...6789')
+  })
+})
+
+describe('encryptProviderField / decryptProviderField', () => {
+  test('decrypt restores original plaintext', () => {
+    const plain = 'ep-abc123xyz789'
+    const enc = encryptProviderField(plain)
+    assert.equal(decryptProviderField(enc), plain)
+  })
+
+  test('each call produces a unique ciphertext', () => {
+    const plain = 'ep-same-endpoint-id'
+    assert.notEqual(encryptProviderField(plain), encryptProviderField(plain))
+  })
+
+  test('decrypting tampered field throws', () => {
+    const enc = encryptProviderField('ep-test')
+    const parts = enc.split(':')
+    parts[2] = Buffer.from('tampered').toString('base64')
+    assert.throws(() => decryptProviderField(parts.join(':')))
+  })
+})
+
+describe('encryptProviderFields / decryptProviderFields', () => {
+  test('roundtrip preserves all field values', () => {
+    const fields = { endpointId: 'ep-abc123', regionCode: 'cn-beijing' }
+    const encrypted = encryptProviderFields(fields)
+    const decrypted = decryptProviderFields(encrypted)
+    assert.deepEqual(decrypted, fields)
+  })
+
+  test('each field gets independent encryption (different ciphertexts)', () => {
+    const fields = { a: 'same-value', b: 'same-value' }
+    const encrypted = encryptProviderFields(fields)
+    assert.notEqual(encrypted.a, encrypted.b)
+  })
+
+  test('empty record roundtrips as empty record', () => {
+    assert.deepEqual(decryptProviderFields(encryptProviderFields({})), {})
+  })
+
+  test('decrypting a tampered field throws', () => {
+    const encrypted = encryptProviderFields({ endpointId: 'ep-real' })
+    const parts = encrypted.endpointId!.split(':')
+    parts[2] = Buffer.from('bad-payload').toString('base64')
+    assert.throws(() => decryptProviderFields({ endpointId: parts.join(':') }))
+  })
+
+  test('encrypted values differ from plaintext', () => {
+    const fields = { endpointId: 'ep-abc123' }
+    const encrypted = encryptProviderFields(fields)
+    assert.notEqual(encrypted.endpointId, fields.endpointId)
+  })
+})
+
+describe('getFieldPreview', () => {
+  test('returns last 4 chars', () => {
+    assert.equal(getFieldPreview('endpoint-id-abcdef'), 'cdef')
+    assert.equal(getFieldPreview('ep-abc123xyz7890'), '7890')
+  })
+
+  test('returns **** for values shorter than 4 chars', () => {
+    assert.equal(getFieldPreview('ab'), '****')
+    assert.equal(getFieldPreview(''), '****')
+  })
+
+  test('does not return the full value', () => {
+    const value = 'ep-abc123xyz789abcdef'
+    const preview = getFieldPreview(value)
+    assert.notEqual(preview, value)
+    assert.equal(preview.length, 4)
   })
 })
 

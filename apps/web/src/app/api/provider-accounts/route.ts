@@ -40,6 +40,8 @@ type CreateBody = {
   accountLabel?: unknown
   isDefault?: unknown
   projectScope?: unknown
+  credentialType?: unknown
+  fields?: unknown
 }
 
 export async function POST(request: NextRequest) {
@@ -58,6 +60,18 @@ export async function POST(request: NextRequest) {
   const accountLabel = typeof body.accountLabel === 'string' ? body.accountLabel : ''
   const isDefault = body.isDefault === true
   const projectScope = typeof body.projectScope === 'string' ? body.projectScope : null
+  const credentialType = typeof body.credentialType === 'string' ? body.credentialType : undefined
+
+  // Extract extra fields — only accept string values, silently drop non-strings
+  const rawFields = body.fields
+  const fields: Record<string, string> | undefined =
+    rawFields && typeof rawFields === 'object' && !Array.isArray(rawFields)
+      ? Object.fromEntries(
+          Object.entries(rawFields as Record<string, unknown>)
+            .filter(([, v]) => typeof v === 'string' && (v as string).trim().length > 0)
+            .map(([k, v]) => [k, (v as string).trim()])
+        )
+      : undefined
 
   try {
     const account = await createUserProviderAccount(user.id, {
@@ -66,6 +80,8 @@ export async function POST(request: NextRequest) {
       accountLabel,
       isDefault,
       projectScope,
+      credentialType,
+      fields: fields && Object.keys(fields).length > 0 ? fields : undefined,
     })
     return jsonOk({ account }, { status: 201 })
   } catch (err) {

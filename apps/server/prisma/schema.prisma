@@ -1273,6 +1273,10 @@ model UserProviderAccount {
   accountLabel     String
   encryptedApiKey  String
   keyLast4         String
+  // V1 multi-field credential extension — never return encryptedFields to frontend
+  credentialType   String?   // "single_api_key" | "bearer_with_endpoint" | "multi_field"
+  encryptedFields  Json?     // { fieldName: "iv:authTag:cipher" } — server-side only
+  fieldMeta        Json?     // { fieldName: { label, last4, updatedAt } } — safe to return
   status           String    @default("active")
   isDefault        Boolean   @default(false)
   projectScope     String?

@@ -1,23 +1,44 @@
 /**
  * Server-side only. Provider account service layer.
- * Handles all DB queries and key encryption. Never exposes encryptedApiKey or plaintext keys.
+ * Handles all DB queries and key encryption. Never exposes encryptedApiKey,
+ * encryptedFields, or plaintext keys in any response.
  */
 
 import { db } from '@/lib/db'
-import { encryptProviderApiKey, getProviderKeyLast4 } from './crypto'
+import {
+  encryptProviderApiKey,
+  getProviderKeyLast4,
+  encryptProviderFields,
+  getFieldPreview,
+} from './crypto'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API_KEY_MIN_LENGTH = 8
 const ALLOWED_STATUSES = new Set(['active', 'disabled', 'invalid'])
 
-// ── Select set (excludes encryptedApiKey always) ──────────────────────────────
+// Human-readable labels for known extra credential fields.
+const FIELD_LABELS: Record<string, string> = {
+  endpointId: 'Endpoint ID',
+  modelId: 'Model ID',
+  accessKeyId: 'Access Key ID',
+  accessKeySecret: 'Access Key Secret',
+}
+
+function fieldLabel(key: string): string {
+  return FIELD_LABELS[key] ?? key
+}
+
+// ── Select set (excludes encryptedApiKey and encryptedFields always) ──────────
+// encryptedFields must NEVER appear here — it contains encrypted secrets.
 
 const ACCOUNT_SELECT = {
   id: true,
   providerId: true,
   accountLabel: true,
   keyLast4: true,
+  credentialType: true,
+  fieldMeta: true,
   status: true,
   isDefault: true,
   projectScope: true,
@@ -30,11 +51,21 @@ const ACCOUNT_SELECT = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type FieldMetaEntry = {
+  label: string
+  last4: string
+  updatedAt: string
+}
+
+export type FieldMetaMap = Record<string, FieldMetaEntry>
+
 export type ProviderAccountSummary = {
   id: string
   providerId: string
   accountLabel: string
   keyLast4: string
+  credentialType: string | null
+  fieldMeta: FieldMetaMap | null
   status: string
   isDefault: boolean
   projectScope: string | null
@@ -50,6 +81,8 @@ export type SelectedAccount = {
   providerId: string
   accountLabel: string
   keyLast4: string
+  credentialType: string | null
+  fieldMeta: unknown // Prisma JsonValue — cast in serializer
   status: string
   isDefault: boolean
   projectScope: string | null
@@ -66,6 +99,8 @@ export interface CreateProviderAccountInput {
   accountLabel: string
   isDefault?: boolean
   projectScope?: string | null
+  credentialType?: string
+  fields?: Record<string, string> // plaintext extra fields (e.g. { endpointId: '...' })
 }
 
 export interface UpdateProviderAccountInput {
@@ -73,6 +108,8 @@ export interface UpdateProviderAccountInput {
   status?: string
   isDefault?: boolean
   projectScope?: string | null
+  credentialType?: string
+  fields?: Record<string, string> // if provided, replaces all extra encrypted fields
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────
@@ -94,11 +131,19 @@ export class NotFoundError extends Error {
 // ── Serializer ────────────────────────────────────────────────────────────────
 
 export function toProviderAccountSummary(account: SelectedAccount): ProviderAccountSummary {
+  const rawMeta = account.fieldMeta
+  const fieldMeta: FieldMetaMap | null =
+    rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
+      ? (rawMeta as FieldMetaMap)
+      : null
+
   return {
     id: account.id,
     providerId: account.providerId,
     accountLabel: account.accountLabel,
     keyLast4: account.keyLast4,
+    credentialType: account.credentialType ?? null,
+    fieldMeta,
     status: account.status,
     isDefault: account.isDefault,
     projectScope: account.projectScope,
@@ -110,6 +155,18 @@ export function toProviderAccountSummary(account: SelectedAccount): ProviderAcco
   }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function buildEncryptedFieldsAndMeta(fields: Record<string, string>) {
+  const encryptedFields = encryptProviderFields(fields)
+  const fieldMeta: FieldMetaMap = {}
+  const now = new Date().toISOString()
+  for (const [key, value] of Object.entries(fields)) {
+    fieldMeta[key] = { label: fieldLabel(key), last4: getFieldPreview(value), updatedAt: now }
+  }
+  return { encryptedFields, fieldMeta }
+}
+
 // ── Service functions ─────────────────────────────────────────────────────────
 
 export async function listUserProviderAccounts(userId: string): Promise<ProviderAccountSummary[]> {
@@ -118,7 +175,7 @@ export async function listUserProviderAccounts(userId: string): Promise<Provider
     select: ACCOUNT_SELECT,
     orderBy: { createdAt: 'desc' },
   })
-  return accounts.map(toProviderAccountSummary)
+  return accounts.map((a) => toProviderAccountSummary(a as SelectedAccount))
 }
 
 export async function createUserProviderAccount(
@@ -141,6 +198,17 @@ export async function createUserProviderAccount(
   const encryptedApiKey = encryptProviderApiKey(apiKey)
   const keyLast4 = getProviderKeyLast4(apiKey)
 
+  // Determine credential type and encrypt any extra fields
+  const hasExtraFields = input.fields && Object.keys(input.fields).length > 0
+  const credentialType = input.credentialType
+    ?? (hasExtraFields ? 'bearer_with_endpoint' : 'single_api_key')
+
+  let extraData: { encryptedFields?: Record<string, string>; fieldMeta?: FieldMetaMap } = {}
+  if (hasExtraFields) {
+    const { encryptedFields, fieldMeta } = buildEncryptedFieldsAndMeta(input.fields!)
+    extraData = { encryptedFields, fieldMeta }
+  }
+
   // Clear existing default for same user + provider before setting new one
   if (isDefault) {
     await db.userProviderAccount.updateMany({
@@ -150,11 +218,23 @@ export async function createUserProviderAccount(
   }
 
   const account = await db.userProviderAccount.create({
-    data: { userId, providerId, accountLabel, encryptedApiKey, keyLast4, status: 'active', isDefault, projectScope },
+    data: {
+      userId,
+      providerId,
+      accountLabel,
+      encryptedApiKey,
+      keyLast4,
+      status: 'active',
+      isDefault,
+      projectScope,
+      credentialType,
+      ...(extraData.encryptedFields ? { encryptedFields: extraData.encryptedFields } : {}),
+      ...(extraData.fieldMeta ? { fieldMeta: extraData.fieldMeta } : {}),
+    },
     select: ACCOUNT_SELECT,
   })
 
-  return toProviderAccountSummary(account)
+  return toProviderAccountSummary(account as SelectedAccount)
 }
 
 export async function updateUserProviderAccount(
@@ -186,6 +266,14 @@ export async function updateUserProviderAccount(
   if (input.status !== undefined) data.status = input.status
   if (input.isDefault !== undefined) data.isDefault = input.isDefault
   if ('projectScope' in input) data.projectScope = input.projectScope?.trim() || null
+  if (input.credentialType !== undefined) data.credentialType = input.credentialType
+
+  // If new extra fields are provided, replace all encryptedFields and regenerate fieldMeta
+  if (input.fields && Object.keys(input.fields).length > 0) {
+    const { encryptedFields, fieldMeta } = buildEncryptedFieldsAndMeta(input.fields)
+    data.encryptedFields = encryptedFields
+    data.fieldMeta = fieldMeta
+  }
 
   const account = await db.userProviderAccount.update({
     where: { id },
@@ -193,7 +281,7 @@ export async function updateUserProviderAccount(
     select: ACCOUNT_SELECT,
   })
 
-  return toProviderAccountSummary(account)
+  return toProviderAccountSummary(account as SelectedAccount)
 }
 
 export async function deleteUserProviderAccount(userId: string, id: string): Promise<void> {

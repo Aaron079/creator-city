@@ -70,3 +70,51 @@ export function redactProviderKey(value: string): string {
   if (value.length <= 8) return '****'
   return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
+
+// ── Multi-field credential helpers ────────────────────────────────────────────
+// These use the same AES-256-GCM algorithm as the primary API key functions.
+
+/** Encrypts a single named credential field (e.g. endpointId). */
+export function encryptProviderField(plainText: string): string {
+  return encryptProviderApiKey(plainText)
+}
+
+/** Decrypts a single named credential field produced by encryptProviderField. */
+export function decryptProviderField(encrypted: string): string {
+  return decryptProviderApiKey(encrypted)
+}
+
+/**
+ * Encrypts all values in a record of plain-text fields.
+ * Input:  { endpointId: 'ep-abc123', ... }
+ * Output: { endpointId: 'iv:authTag:cipher', ... }
+ * Each field gets its own random IV, so ciphertexts are always unique.
+ */
+export function encryptProviderFields(fields: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    result[key] = encryptProviderApiKey(value)
+  }
+  return result
+}
+
+/**
+ * Decrypts all values in a record of encrypted fields.
+ * Input:  { endpointId: 'iv:authTag:cipher', ... }
+ * Output: { endpointId: 'ep-abc123', ... }
+ */
+export function decryptProviderFields(fields: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    result[key] = decryptProviderApiKey(value)
+  }
+  return result
+}
+
+/**
+ * Returns the last 4 characters of a field value for safe display.
+ * Identical behavior to getProviderKeyLast4 — alias for semantic clarity.
+ */
+export function getFieldPreview(value: string): string {
+  return getProviderKeyLast4(value)
+}

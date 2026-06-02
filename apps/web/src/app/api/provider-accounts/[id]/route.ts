@@ -22,7 +22,9 @@ type PatchBody = {
   status?: unknown
   isDefault?: unknown
   projectScope?: unknown
-  // Any other fields (including apiKey) are silently ignored.
+  credentialType?: unknown
+  fields?: unknown
+  // apiKey and encryptedApiKey are silently ignored — must delete and re-add to rotate key.
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
@@ -42,6 +44,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     status?: string
     isDefault?: boolean
     projectScope?: string | null
+    credentialType?: string
+    fields?: Record<string, string>
   } = {}
 
   if (typeof body.accountLabel === 'string') input.accountLabel = body.accountLabel
@@ -49,6 +53,18 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   if (typeof body.isDefault === 'boolean') input.isDefault = body.isDefault
   if ('projectScope' in body) {
     input.projectScope = typeof body.projectScope === 'string' ? body.projectScope : null
+  }
+  if (typeof body.credentialType === 'string') input.credentialType = body.credentialType
+
+  // Extract extra fields — only accept string values
+  const rawFields = body.fields
+  if (rawFields && typeof rawFields === 'object' && !Array.isArray(rawFields)) {
+    const filtered = Object.fromEntries(
+      Object.entries(rawFields as Record<string, unknown>)
+        .filter(([, v]) => typeof v === 'string' && (v as string).trim().length > 0)
+        .map(([k, v]) => [k, (v as string).trim()])
+    )
+    if (Object.keys(filtered).length > 0) input.fields = filtered
   }
 
   try {

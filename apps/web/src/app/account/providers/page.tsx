@@ -9,11 +9,16 @@ import { useCurrentUser } from '@/lib/auth/use-current-user'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type FieldMetaEntry = { label: string; last4: string; updatedAt: string }
+type FieldMetaMap = Record<string, FieldMetaEntry>
+
 type ProviderAccount = {
   id: string
   providerId: string
   accountLabel: string
   keyLast4: string
+  credentialType: string | null
+  fieldMeta: FieldMetaMap | null
   status: string
   isDefault: boolean
   projectScope: string | null
@@ -26,19 +31,69 @@ type ProviderAccount = {
 
 type ApiResponse<T> = { success: true } & T | { success: false; message: string }
 
-// ── Provider whitelist (only existing providerIds in this project) ─────────────
+// ── Provider whitelist ────────────────────────────────────────────────────────
 
-const PROVIDER_OPTIONS = [
-  { value: 'deepseek-text',            label: 'DeepSeek V4 Flash',       category: '文本' },
-  { value: 'deepseek-reasoner',        label: 'DeepSeek V4 Pro',         category: '文本' },
-  { value: 'kimi-text',               label: 'Kimi K2.6',               category: '文本' },
-  { value: 'openai-text',             label: 'OpenAI GPT',              category: '文本' },
-  { value: 'volcengine-seedream-image', label: 'Seedream Image (CN)',      category: '图片' },
-  { value: 'openai-image',            label: 'OpenAI Image',            category: '图片' },
-  { value: 'volcengine-seedance-video', label: 'Seedance Video (CN)',      category: '视频' },
-  { value: 'runway',                  label: 'Runway',                  category: '视频' },
-  { value: 'elevenlabs',              label: 'ElevenLabs',              category: '音频' },
-] as const
+type CredentialType = 'single_api_key' | 'bearer_with_endpoint'
+
+type ExtraField = {
+  name: string
+  label: string
+  placeholder: string
+  description: string
+}
+
+type ProviderOption = {
+  value: string
+  label: string
+  category: string
+  credentialType: CredentialType
+  extraFields?: ExtraField[]
+  byokStatus: 'live' | 'coming_soon'
+}
+
+const PROVIDER_OPTIONS: ProviderOption[] = [
+  { value: 'deepseek-text',            label: 'DeepSeek V4 Flash',   category: '文本', credentialType: 'single_api_key', byokStatus: 'live' },
+  { value: 'deepseek-reasoner',        label: 'DeepSeek V4 Pro',     category: '文本', credentialType: 'single_api_key', byokStatus: 'live' },
+  { value: 'kimi-text',               label: 'Kimi K2.6',           category: '文本', credentialType: 'single_api_key', byokStatus: 'live' },
+  { value: 'openai-text',             label: 'OpenAI GPT',          category: '文本', credentialType: 'single_api_key', byokStatus: 'live' },
+  {
+    value: 'volcengine-seedream-image',
+    label: 'Seedream Image (火山方舟)',
+    category: '图片',
+    credentialType: 'bearer_with_endpoint',
+    byokStatus: 'coming_soon',
+    extraFields: [
+      {
+        name: 'endpointId',
+        label: 'Endpoint ID / Model ID（来自火山方舟控制台）',
+        placeholder: '例：ep-xxxxxxxxxxxx-xxxxxxxx',
+        description: '在火山方舟控制台 → 模型接入 → Seedream → 复制接入点 ID。',
+      },
+    ],
+  },
+  {
+    value: 'volcengine-seedance-video',
+    label: 'Seedance Video (火山方舟)',
+    category: '视频',
+    credentialType: 'bearer_with_endpoint',
+    byokStatus: 'coming_soon',
+    extraFields: [
+      {
+        name: 'endpointId',
+        label: 'Endpoint ID / Model ID（来自火山方舟控制台）',
+        placeholder: '例：ep-xxxxxxxxxxxx-xxxxxxxx',
+        description: '在火山方舟控制台 → 模型接入 → Seedance → 复制接入点 ID。',
+      },
+    ],
+  },
+  { value: 'openai-image',            label: 'OpenAI Image',        category: '图片', credentialType: 'single_api_key', byokStatus: 'coming_soon' },
+  { value: 'runway',                  label: 'Runway',              category: '视频', credentialType: 'single_api_key', byokStatus: 'coming_soon' },
+  { value: 'elevenlabs',              label: 'ElevenLabs',          category: '音频', credentialType: 'single_api_key', byokStatus: 'coming_soon' },
+]
+
+function getProviderOption(providerId: string): ProviderOption | undefined {
+  return PROVIDER_OPTIONS.find((p) => p.value === providerId)
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,7 +117,7 @@ function testStatusLabel(s: string | null) {
   if (s === 'timeout') return '连接超时'
   if (s === 'rate_limited') return '请求限流'
   if (s === 'insufficient_quota') return '额度不足'
-  if (s === 'unsupported') return '不支持测试'
+  if (s === 'unsupported') return '不支持自动测试'
   return '测试异常'
 }
 
@@ -103,7 +158,14 @@ function apiErrorMessage(status: number, body: { message?: string }): string {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { providerId: 'deepseek-text', accountLabel: '', apiKey: '', isDefault: false, projectScope: '' }
+const EMPTY_FORM = {
+  providerId: 'deepseek-text',
+  accountLabel: '',
+  apiKey: '',
+  endpointId: '',
+  isDefault: false,
+  projectScope: '',
+}
 
 export default function ProviderAccountsPage() {
   const router = useRouter()
@@ -126,8 +188,12 @@ export default function ProviderAccountsPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState<string | null>(null)
 
-  const [actionState, setActionState] = useState<Record<string, string>>({}) // id → 'loading'|'error:<msg>'
-  const [testState, setTestState] = useState<Record<string, 'testing' | ''>>({}) // id → 'testing'|''
+  const [actionState, setActionState] = useState<Record<string, string>>({})
+  const [testState, setTestState] = useState<Record<string, 'testing' | ''>>({})
+
+  const selectedProvider = getProviderOption(form.providerId)
+  const isMultiField = selectedProvider?.credentialType === 'bearer_with_endpoint'
+  const selectedByokStatus = selectedProvider?.byokStatus ?? 'coming_soon'
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
 
@@ -166,10 +232,22 @@ export default function ProviderAccountsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setFormError(null)
     setFormSuccess(null)
+
+    // Client-side validation for extra fields
+    if (isMultiField && !form.endpointId.trim()) {
+      setFormError('请填写 Endpoint ID / Model ID。')
+      return
+    }
+
+    setSubmitting(true)
     try {
+      const credentialType = selectedProvider?.credentialType ?? 'single_api_key'
+      const fields = isMultiField && form.endpointId.trim()
+        ? { endpointId: form.endpointId.trim() }
+        : undefined
+
       const res = await fetch('/api/provider-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,6 +258,8 @@ export default function ProviderAccountsPage() {
           accountLabel: form.accountLabel,
           isDefault: form.isDefault,
           projectScope: form.projectScope.trim() || null,
+          credentialType,
+          fields,
         }),
       })
       const data = await res.json() as ApiResponse<{ account: ProviderAccount }>
@@ -187,9 +267,8 @@ export default function ProviderAccountsPage() {
         setFormError(apiErrorMessage(res.status, data as { message?: string }))
         return
       }
-      // Clear apiKey from state immediately after success
       setForm({ ...EMPTY_FORM })
-      setFormSuccess('API 账户已添加。')
+      setFormSuccess('API 账户已添加。凭证已加密存储。')
       await loadAccounts()
     } catch {
       setFormError('网络错误，请稍后再试。')
@@ -198,7 +277,7 @@ export default function ProviderAccountsPage() {
     }
   }
 
-  // ── Update account (status / isDefault) ─────────────────────────────────────
+  // ── Update account ──────────────────────────────────────────────────────────
 
   const patchAccount = async (id: string, patch: Record<string, unknown>) => {
     setActionState((s) => ({ ...s, [id]: 'loading' }))
@@ -245,7 +324,21 @@ export default function ProviderAccountsPage() {
 
   // ── Test connection ─────────────────────────────────────────────────────────
 
-  const testAccount = async (id: string) => {
+  const testAccount = async (id: string, accProviderId: string) => {
+    // Multi-field providers (Volcengine) don't have a reachable /models endpoint — skip
+    const opt = getProviderOption(accProviderId)
+    if (opt?.byokStatus === 'coming_soon' && opt.credentialType === 'bearer_with_endpoint') {
+      // Simulate unsupported gracefully without calling the API
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? { ...a, lastTestedAt: new Date().toISOString(), lastTestStatus: 'unsupported', lastTestError: '生成链路接入前暂不支持自动测试。' }
+            : a
+        )
+      )
+      return
+    }
+
     setTestState((s) => ({ ...s, [id]: 'testing' }))
     try {
       const res = await fetch(`/api/provider-accounts/${id}/test`, {
@@ -254,7 +347,6 @@ export default function ProviderAccountsPage() {
       })
       const data = await res.json() as ApiResponse<{ account: ProviderAccount }>
       if (res.ok && data.success) {
-        // Update local account list with the refreshed account from server
         setAccounts((prev) =>
           prev.map((a) => (a.id === id ? (data as { account: ProviderAccount }).account : a))
         )
@@ -319,15 +411,15 @@ export default function ProviderAccountsPage() {
         {/* Phase notice */}
         <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-1.5">
           <p className="text-xs text-amber-400/80 leading-relaxed">
-            <span className="font-semibold">当前阶段提示：</span>
-            API 账户管理功能处于基础设施阶段，尚未接入画布生成链路。
-            添加后，你的 Key 将加密存储于平台，不会被用于实际调用或计费。
-            画布仍默认使用平台额度生成；接入生成链路将在后续版本推出。
+            <span className="font-semibold">当前阶段：</span>
+            文本 BYOK 已上线（DeepSeek / OpenAI / Kimi）。
+            图片 / 视频 BYOK 凭证结构已准备，生成链路将在后续版本开放。
+            添加 Seedream / Seedance 账户后，凭证会加密存储，但暂不能用于生成，点击「测试连接」会提示不支持。
           </p>
           <p className="text-xs text-amber-400/50 leading-relaxed">
             <span className="font-semibold">什么是 API Key？</span>{' '}
-            API Key 是 Provider 控制台（如 DeepSeek Platform、Moonshot 平台）生成的访问密钥，
-            通常以 <span className="font-mono">sk-</span> 开头，与你的网页登录账号密码完全不同。
+            API Key 是 Provider 控制台生成的访问密钥（如 sk-xxx），
+            不是你的网页登录账号和密码。
           </p>
         </div>
 
@@ -365,6 +457,7 @@ export default function ProviderAccountsPage() {
                 const isActing = state === 'loading'
                 const actionError = state.startsWith('error:') ? state.slice(6) : null
                 const isTesting = testState[acc.id] === 'testing'
+                const accOpt = getProviderOption(acc.providerId)
 
                 return (
                   <div
@@ -386,11 +479,25 @@ export default function ProviderAccountsPage() {
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border flex-shrink-0 ${statusColor(acc.status)}`}>
                             {statusLabel(acc.status)}
                           </span>
+                          {accOpt?.byokStatus === 'coming_soon' && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-white/10 bg-white/[0.04] text-white/30 flex-shrink-0">
+                              生成暂未开放
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-white/40 mt-0.5">
                           {providerLabel(acc.providerId)}
                           <span className="mx-1.5 opacity-40">·</span>
                           <span className="font-mono tracking-widest">•••• {acc.keyLast4}</span>
+                          {/* Extra fields preview from fieldMeta */}
+                          {acc.fieldMeta?.endpointId && (
+                            <>
+                              <span className="mx-1.5 opacity-40">·</span>
+                              <span className="font-mono tracking-widest">
+                                Endpoint: •••• {acc.fieldMeta.endpointId.last4}
+                              </span>
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -421,7 +528,7 @@ export default function ProviderAccountsPage() {
                       <ActionButton
                         label={isTesting ? '测试中…' : '测试连接'}
                         disabled={isActing || isTesting}
-                        onClick={() => void testAccount(acc.id)}
+                        onClick={() => void testAccount(acc.id, acc.providerId)}
                       />
                       {!acc.isDefault && (
                         <ActionButton
@@ -480,24 +587,35 @@ export default function ProviderAccountsPage() {
             <Field label="Provider">
               <select
                 value={form.providerId}
-                onChange={(e) => setForm((f) => ({ ...f, providerId: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, providerId: e.target.value, endpointId: '' }))}
                 className="input-field"
                 required
               >
                 {PROVIDER_OPTIONS.map((p) => (
                   <option key={p.value} value={p.value}>
-                    [{p.category}] {p.label}
+                    [{p.category}] {p.label}{p.byokStatus === 'live' ? '' : ' (保存凭证，生成暂未开放)'}
                   </option>
                 ))}
               </select>
             </Field>
+
+            {/* Coming-soon notice for media providers */}
+            {selectedByokStatus === 'coming_soon' && (
+              <div className="rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3.5 py-3">
+                <p className="text-[11px] text-violet-300/70 leading-relaxed">
+                  <span className="font-semibold">凭证结构已准备。</span>{' '}
+                  {selectedProvider?.label} BYOK 生成接入将在下一版本（V2）开放。
+                  当前保存凭证不会触发任何生成调用，也不会扣费。
+                </p>
+              </div>
+            )}
 
             {/* Label */}
             <Field label="账户名称">
               <input
                 type="text"
                 required
-                placeholder="例：我的 DeepSeek 账户"
+                placeholder="例：我的火山方舟账户"
                 value={form.accountLabel}
                 onChange={(e) => setForm((f) => ({ ...f, accountLabel: e.target.value }))}
                 className="input-field"
@@ -505,7 +623,7 @@ export default function ProviderAccountsPage() {
             </Field>
 
             {/* API Key */}
-            <Field label="API Key（控制台生成的密钥，不是账号密码）">
+            <Field label="API Key（控制台生成的 Bearer Token，不是账号密码）">
               <input
                 type="password"
                 required
@@ -523,6 +641,24 @@ export default function ProviderAccountsPage() {
                 Key 仅在保存时提交一次，加密后存储，保存后只显示末 4 位。
               </p>
             </Field>
+
+            {/* Extra fields for multi-credential providers */}
+            {isMultiField && selectedProvider?.extraFields?.map((field) => (
+              <Field key={field.name} label={field.label}>
+                <input
+                  type="text"
+                  required
+                  placeholder={field.placeholder}
+                  autoComplete="off"
+                  value={form.endpointId}
+                  onChange={(e) => setForm((f) => ({ ...f, endpointId: e.target.value }))}
+                  className="input-field font-mono"
+                />
+                <p className="mt-1.5 text-[11px] text-white/40 leading-relaxed">
+                  {field.description}
+                </p>
+              </Field>
+            ))}
 
             {/* Project scope */}
             <Field label="项目范围（可选）">
@@ -550,7 +686,8 @@ export default function ProviderAccountsPage() {
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 text-[11px] text-white/30 space-y-1 leading-relaxed">
               <p>· 请勿提交他人的 API Key</p>
               <p>· 删除后 Key 永久销毁，无法恢复</p>
-              <p>· 当前阶段添加账户不会影响画布生成默认行为</p>
+              <p>· 文本 BYOK 已可用于生成；图片/视频 BYOK 后续开放</p>
+              <p>· 当前添加图片/视频 Provider 账户不会触发任何生成调用</p>
             </div>
 
             <div className="pt-1">
