@@ -2,6 +2,7 @@
 
 Last updated: 2026-06-02
 Last valid commit: `14a763d` (feat: User Provider Accounts V1 — multi-field credential structure)
+Production validated: 2026-06-02
 
 ---
 
@@ -27,7 +28,7 @@ Last valid commit: `14a763d` (feat: User Provider Accounts V1 — multi-field cr
 | 画布帮助面板（Provider API Key 接入手册） | ✅ CLOSED / shipped | `def152b` |
 | AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
 | Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
-| User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / schema + service + UI shipped | `14a763d` |
+| User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
 
 ---
 
@@ -532,19 +533,52 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ---
 
+## User Provider Accounts V1 多字段凭证 — CLOSED / production validated
+
+**Commits:** `14a763d` (feat) · `da0ab3b` (docs)
+**Production migration:** `20260602000000_user_provider_account_multi_field` — 已在 Supabase production 执行
+
+### 新增字段（`UserProviderAccount`）
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `credentialType` | `TEXT` nullable | `"single_api_key"` / `"bearer_with_endpoint"` |
+| `encryptedFields` | `JSONB` nullable | 额外加密字段，每字段独立 AES-256-GCM IV。**绝不返回给前端** |
+| `fieldMeta` | `JSONB` nullable | 展示用元数据 `{ fieldName: { label, last4, updatedAt } }`，可安全返回 |
+
+### 验证项目
+| 验证项 | 结果 |
+|---|---|
+| `ACCOUNT_SELECT` 不含 `encryptedFields` | ✅ 确认 |
+| API 路由响应不返回 `encryptedFields` | ✅ 确认 |
+| `encryptedFields` 仅在 `buildEncryptedFieldsAndMeta` 内存中存在，写入 DB 后不再暴露 | ✅ 确认 |
+| migration SQL 使用 `IF NOT EXISTS`，幂等安全 | ✅ 确认 |
+| Volcengine Seedream / Seedance 凭证表单含 Endpoint ID 输入 | ✅ 确认 |
+| Image / Video BYOK 标记为 `coming_soon`，无生成入口 | ✅ 确认 |
+| `/api/generate/image` 和 `/api/generate/video` 未被 V1 修改 | ✅ 确认（git diff 干净） |
+| cn-executor 未被 V1 修改 | ✅ 确认 |
+| Text BYOK 生成链路未受影响 | ✅ 确认（`ACCOUNT_SELECT` 仅加字段，未删字段） |
+| crypto 单元测试 28/28 pass | ✅ 确认 |
+| TypeScript type-check 零错误 | ✅ 确认 |
+| `next build` 成功 | ✅ 确认 |
+
+### 当前能力（production）
+- Text BYOK：已上线并验收（Phase 4，commit `ea2ccc6`）
+- 多字段凭证存储结构：V1 已上线（commit `14a763d`）
+- Volcengine / Seedream 凭证表单支持 API Key + Endpoint ID
+- 保存后只展示 `last4` / `fieldMeta`，不暴露明文或密文
+- Image / Video BYOK：**尚未实现**（UI 标注 coming soon，生成链路完全未接入）
+
+---
+
 ## Next Phase Tasks (priority order)
 
-1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE (commit `14a763d`)~~
-   - schema 扩展（`credentialType` / `encryptedFields` / `fieldMeta`）+ migration
-   - crypto: `encryptProviderFields` / `decryptProviderFields` / `getFieldPreview`（28 tests）
-   - service/API：POST/PATCH 接受 `fields?: Record<string, string>`
-   - UI：Volcengine 显示 Endpoint ID 输入，image/video BYOK "coming soon" 提示
+1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
 
 2. **Phase V2：Seedream Image BYOK 试点**
    - 只接图片，不碰视频，不动 cn-executor
    - 在 `/api/generate/image/route.ts` 加 `billingMode: 'user_provider_account'` 分支
    - Seedream 路径：Vercel 路由查 DB 解密 → 注入 cn-executor trigger payload（or cn-executor 自查）
-   - 依赖 Phase V1 完成
+   - 依赖 Phase V1（已完成）
 
 3. **Phase V3：Seedance Video BYOK 安全方案评审**
    - 先评审：cn-executor 解密方案（cn-executor 需 `PROVIDER_KEY_ENCRYPTION_SECRET` + DB 连接）
