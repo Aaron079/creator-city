@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-02
-Last valid commit: `d8ddd43`
+Last valid commit: `d8ddd43` (docs: image/video byok audit)
 
 ---
 
@@ -26,6 +26,7 @@ Last valid commit: `d8ddd43`
 | Provider UX 修复（API Key 文案误解 + 跳转登录 bug） | ✅ CLOSED / validated | `8d96d09` |
 | 画布帮助面板（Provider API Key 接入手册） | ✅ CLOSED / shipped | `def152b` |
 | AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
+| Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
 
 ---
 
@@ -448,6 +449,66 @@ DB 短暂不可用 → 用户保持登录状态，页面正常显示；真正未
 
 ---
 
+## Image/Video BYOK 多字段凭证方案审计 — CLOSED / read-only audit completed
+
+**审计日期：** 2026-06-02  
+**审计性质：** 只读 — 零文件修改，零 commit，零 push
+
+### 当前真实状态
+
+| 能力 | 状态 |
+|---|---|
+| Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ 已验收 |
+| Image BYOK（Seedream / 其他图片 Provider） | ❌ 未实现 |
+| Video BYOK（Seedance / 其他视频 Provider） | ❌ 未实现 |
+| 多字段凭证存储（encryptedFields） | ❌ 未实现 |
+
+### 核心审计结论
+
+1. **Volcengine Ark API 使用 Bearer Token 格式，不是传统 HMAC AK/SK 签名。**  
+   Seedream（图片）和 Seedance（视频）都用同一个 `VOLCENGINE_ARK_API_KEY`（Bearer），调用 OpenAI-compatible endpoint。这意味着 Volcengine BYOK 不需要实现 HMAC 签名逻辑，比预想简单。
+
+2. **Volcengine BYOK 预计需要两个字段：**  
+   - `apiKey`（Bearer Token，来自火山方舟控制台 API Key）  
+   - `endpointId`（对应 VOLCENGINE_SEEDREAM_MODEL / VOLCENGINE_SEEDANCE_MODEL，每个用户的方舟账号不同）
+
+3. **当前 `UserProviderAccount.encryptedApiKey` 单字段不足以支持需要 Endpoint ID 的 Provider。**  
+   需扩展 schema 支持多字段加密存储。
+
+4. **推荐 schema 扩展方向（方案 A，JSON 扩展，非破坏性）：**  
+   - `encryptedFields: Json?` — 存储额外加密字段（`{ fieldName: encryptedValue, ... }`）  
+   - `fieldMeta: Json?` — 存储额外字段的 UI 元数据（`{ fieldName: { label, last4, updatedAt } }`）  
+   无需新表，零破坏性 migration，字段数 ≤3 时足够用。
+
+5. **Seedream Image BYOK 应优先于 Seedance Video BYOK。**  
+   Seedream 走 Vercel-side 触发（cn-executor 只是异步执行器），BYOK 路径可控。
+
+6. **Seedance Video BYOK 涉及 cn-executor 安全边界扩张，必须单独排期评审。**  
+   cn-executor 当前只读取自身 env var。要支持用户凭证，cn-executor 必须能按需从 DB 解密，意味着 cn-executor 需要 `PROVIDER_KEY_ENCRYPTION_SECRET` 和 Supabase 连接权限，安全边界扩张，不可在图片 BYOK 内顺手做。
+
+7. **OSS 与 BYOK 无关。** `ALIYUN_OSS_ACCESS_KEY_ID` / `ALIYUN_OSS_ACCESS_KEY_SECRET` 是平台存储账号，不属于用户 BYOK 范畴，不动。
+
+### 安全约束（实现时必须全部满足）
+
+- `encryptedApiKey` 和 `encryptedFields` 中的值永远不返回给前端
+- 解密只在服务端实际调用 provider 前一刻进行，不 log，不缓存
+- 错误信息必须脱敏：不返回 Authorization header、原始 key、request body
+- 只能操作自己的 account（`account.userId === currentUser.id`）
+- 加密算法与现有 text BYOK 一致（AES-256-GCM，`encryptProviderApiKey` / `decryptProviderApiKey`）
+
+### 推荐分阶段实现顺序
+
+| 阶段 | 内容 | 范围约束 |
+|---|---|---|
+| **Phase V1** | 多字段凭证结构扩展 | 只改 schema / service / UI，不接生成链路，不动 cn-executor |
+| **Phase V2** | Seedream Image BYOK 试点 | 只接图片，不碰视频，不动 cn-executor |
+| **Phase V3** | Seedance Video BYOK 安全方案评审与试点 | 单独评审 cn-executor 解密/透传方案，评审通过后再实现 |
+| **Phase V4** | 其他单 API Key 图片/视频 Provider BYOK | 在 V2 链路验证后复用 |
+| **Phase V5** | BYOK 平台服务费记录 / usage logging | 不触及 billing 语义，仅记录 |
+| **Phase V6** | 团队共享凭证（多用户共用同一 Key） | 独立评审 |
+
+---
+
 ## 当前商业方向（已明确）
 
 Creator City **不是中心化 API 转售平台**。商业模型为：
@@ -472,24 +533,39 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Next Phase Tasks (priority order)
 
-1. **BYOK 模式平台服务费记录方案审计（建议先做）**
-   - 当前 BYOK Text 路径完全跳过 billing，未记录平台服务费
-   - 需设计：记录服务费但不扣 provider credits 的最小方案
-   - 前提：先明确平台服务费定义和计算方式
+1. **Phase V1：多字段凭证结构扩展**
+   - 只改 `UserProviderAccount` schema（`encryptedFields` / `fieldMeta`）、service 层、`/account/providers` UI
+   - 不接生成链路，不动 cn-executor，不动 image/video 路由
+   - 完成标准：用户可保存含两个字段的 Volcengine 凭证（apiKey + endpointId），UI 展示末 4 位
 
-2. **Image / Video BYOK 多字段凭证方案审计**
-   - 重点：Seedance / 火山 Access Key + Secret Key 双字段凭证 — 与当前单 apiKey 表单不兼容
-   - 需先设计表单结构和加密方案再实现
-   - 注意：不要扩展 `apiKeyOverride` 到 image/video 路由，直到凭证结构确定
+2. **Phase V2：Seedream Image BYOK 试点**
+   - 只接图片，不碰视频，不动 cn-executor
+   - 在 `/api/generate/image/route.ts` 加 `billingMode: 'user_provider_account'` 分支
+   - Seedream 路径：Vercel 路由查 DB 解密 → 注入 cn-executor trigger payload（or cn-executor 自查）
+   - 依赖 Phase V1 完成
 
-3. **独立 API Key 帮助页 `/help/api-keys`**
+3. **Phase V3：Seedance Video BYOK 安全方案评审**
+   - 先评审：cn-executor 解密方案（cn-executor 需 `PROVIDER_KEY_ENCRYPTION_SECRET` + DB 连接）
+   - 评审通过后单独实现，不在 V2 内顺手做
+   - 不动 cn-executor 直到评审结论出来
+
+4. **Phase V4：其他单 API Key 图片/视频 Provider BYOK**
+   - Runway 等 Vercel-side 单 Bearer Token Provider
+   - 依赖 Phase V2 链路验证
+
+5. **Phase V5：BYOK 平台服务费记录 / usage logging**
+   - 当前 BYOK 路径完全跳过 billing，未记录平台服务费
+   - 需先明确服务费定义，再设计最小记录方案
+   - 不改 billing 语义，不扣 provider credits
+
+6. **独立 API Key 帮助页 `/help/api-keys`**
    - 当前指南已内嵌在帮助面板和 AI Agent 中，可选择独立页面版本
    - 无后端需求，纯静态前端
 
-4. **错误提示产品化（P2）**
+7. **错误提示产品化（P2）**
    - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
 
-5. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
+8. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
 
