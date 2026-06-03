@@ -7,6 +7,7 @@
 import { db } from '@/lib/db'
 import {
   encryptProviderApiKey,
+  decryptProviderApiKey,
   getProviderKeyLast4,
   encryptProviderFields,
   getFieldPreview,
@@ -293,4 +294,80 @@ export async function deleteUserProviderAccount(userId: string, id: string): Pro
   if (!existing) throw new NotFoundError('未找到该 API 账户。')
 
   await db.userProviderAccount.delete({ where: { id } })
+}
+
+// ── BYOK credential resolution (server-side only) ─────────────────────────────
+// Decrypts user-owned credentials for a specific generation request.
+// Returns plaintext apiKey + endpointId for use in the generation trigger payload.
+// NEVER return these values to the client or write them to DB.
+
+export async function getProviderAccountForByok(
+  userId: string,
+  accountId: string,
+  allowedProviderIds: string[],
+): Promise<
+  | { ok: true; apiKey: string; endpointId: string | null }
+  | { ok: false; errorCode: string; message: string }
+> {
+  let account: {
+    providerId: string
+    status: string
+    encryptedApiKey: string
+    encryptedFields: unknown
+    credentialType: string | null
+  } | null
+  try {
+    account = await db.userProviderAccount.findFirst({
+      where: { id: accountId, userId },
+      select: {
+        providerId: true,
+        status: true,
+        encryptedApiKey: true,
+        encryptedFields: true,
+        credentialType: true,
+      },
+    })
+  } catch {
+    return { ok: false, errorCode: 'db_error', message: '数据库查询失败，请稍后重试。' }
+  }
+
+  if (!account) {
+    return { ok: false, errorCode: 'account_not_found', message: '未找到该 API 账户，请检查账户是否存在。' }
+  }
+  if (account.status !== 'active') {
+    return {
+      ok: false,
+      errorCode: 'account_unavailable',
+      message: `该 API 账户当前不可用（状态：${account.status}）。`,
+    }
+  }
+  if (!allowedProviderIds.includes(account.providerId)) {
+    return {
+      ok: false,
+      errorCode: 'provider_mismatch',
+      message: '该 API 账户不可用于 Seedream 图片生成，请选择 Volcengine / Seedream 账户。',
+    }
+  }
+
+  let apiKey: string
+  try {
+    apiKey = decryptProviderApiKey(account.encryptedApiKey)
+  } catch {
+    return { ok: false, errorCode: 'decrypt_failed', message: '用户 API Key 解密失败，请重新保存账户后重试。' }
+  }
+
+  let endpointId: string | null = null
+  const encFields = account.encryptedFields
+  if (encFields && typeof encFields === 'object' && !Array.isArray(encFields)) {
+    const enc = (encFields as Record<string, unknown>).endpointId
+    if (typeof enc === 'string' && enc) {
+      try {
+        endpointId = decryptProviderApiKey(enc)
+      } catch {
+        return { ok: false, errorCode: 'decrypt_failed', message: 'Endpoint ID 解密失败，请重新保存账户后重试。' }
+      }
+    }
+  }
+
+  return { ok: true, apiKey, endpointId }
 }

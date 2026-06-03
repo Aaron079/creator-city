@@ -323,11 +323,24 @@ export async function handleRunImageJob(req: IncomingMessage, res: ServerRespons
     return
   }
 
-  console.log('[cn-executor][jobRunner] received job, executing synchronously', { generationJobId })
+  // BYOK: optional user credential passed via HTTPS trigger body — never logged, never stored to DB.
+  const userCredential = (() => {
+    const cred = body.userCredential
+    if (!cred || typeof cred !== 'object' || Array.isArray(cred)) return null
+    const c = cred as Record<string, unknown>
+    const apiKey = typeof c.apiKey === 'string' ? c.apiKey.trim() : ''
+    const endpointId = typeof c.endpointId === 'string' ? c.endpointId.trim() : ''
+    return apiKey && endpointId ? { apiKey, endpointId } : null
+  })()
+
+  console.log('[cn-executor][jobRunner] received job, executing synchronously', {
+    generationJobId,
+    hasByokCredential: userCredential !== null,
+  })
 
   let result: ImageJobResult
   try {
-    result = await runImageJob(generationJobId)
+    result = await runImageJob(generationJobId, userCredential)
   } catch (err) {
     result = {
       ok: false,
@@ -342,7 +355,10 @@ export async function handleRunImageJob(req: IncomingMessage, res: ServerRespons
   jsonOk(res, result)
 }
 
-async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
+async function runImageJob(
+  generationJobId: string,
+  userCredential?: { apiKey: string; endpointId: string } | null,
+): Promise<ImageJobResult> {
   console.log('[cn-executor][jobRunner] starting job', { generationJobId })
 
   let job: GenerationJobRow | null
@@ -401,6 +417,8 @@ async function runImageJob(generationJobId: string): Promise<ImageJobResult> {
     aspectRatio,
     projectId: projectId ?? undefined,
     nodeId: nodeId || undefined,
+    // BYOK: inject user credentials if provided — never log these values
+    ...(userCredential ? { apiKeyOverride: userCredential.apiKey, endpointOverride: userCredential.endpointId } : {}),
   }
 
   try {

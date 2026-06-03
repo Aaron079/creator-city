@@ -47,6 +47,10 @@ export type ImageExecutionInput = {
   resolution?: string
   projectId?: string
   nodeId?: string
+  /** BYOK: user-supplied Volcengine Ark API key. Overrides env var. Never logged or stored. */
+  apiKeyOverride?: string
+  /** BYOK: user-supplied endpoint/model ID. Overrides env var. Never logged or stored. */
+  endpointOverride?: string
 }
 
 export type StageTrace = {

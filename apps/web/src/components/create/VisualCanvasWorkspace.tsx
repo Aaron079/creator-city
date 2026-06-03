@@ -127,6 +127,7 @@ type UserProviderAccount = {
   accountLabel: string
   keyLast4: string
   status: string
+  fieldMeta?: Record<string, { label: string; last4: string; updatedAt: string }> | null
 }
 
 interface VisualCanvasWorkspaceProps {
@@ -1765,6 +1766,9 @@ async function callGenerationApi(
         projectId,
         workflowId,
         nodeId,
+        ...(billingMode === 'user_provider_account' && userProviderAccountId
+          ? { billingMode, userProviderAccountId }
+          : {}),
       }
     : nodeType === 'video'
       ? {
@@ -6331,9 +6335,17 @@ export function VisualCanvasWorkspace({
     }
 
     // Guard: user_provider_account mode requires a selected account
-    if (nodeType === 'text' && billingMode === 'user_provider_account' && !selectedUserAccountId) {
+    if ((nodeType === 'text' || nodeType === 'image') && billingMode === 'user_provider_account' && !selectedUserAccountId) {
       setDialogError('请先选择一个 API 账户。')
       return
+    }
+    // Guard: image BYOK requires endpointId to be configured in the account
+    if (nodeType === 'image' && billingMode === 'user_provider_account' && selectedUserAccountId) {
+      const selectedAccount = userProviderAccounts.find((a) => a.id === selectedUserAccountId)
+      if (!selectedAccount?.fieldMeta?.endpointId) {
+        setDialogError('缺少 Endpoint ID，请到我的 API 账户补充火山方舟 Endpoint ID。')
+        return
+      }
     }
 
     setDialogError(null)
@@ -6371,8 +6383,8 @@ export function VisualCanvasWorkspace({
       undefined,
       generationProviderId,
       generationController?.signal,
-      nodeType === 'text' ? billingMode : undefined,
-      nodeType === 'text' && billingMode === 'user_provider_account' ? selectedUserAccountId : undefined,
+      (nodeType === 'text' || nodeType === 'image') ? billingMode : undefined,
+      (nodeType === 'text' || nodeType === 'image') && billingMode === 'user_provider_account' ? selectedUserAccountId : undefined,
     ).then(async (result) => {
       if (generationController?.signal.aborted) return
       if (nodeSnapshot.kind === 'image' && result.success && (result.status === 'running' || result.status === 'queued') && !(result.generationJobId || result.jobId)) {
@@ -8193,7 +8205,13 @@ export function VisualCanvasWorkspace({
             onRatioChange={setPromptRatio}
             placeholder="描述这个节点要生成的内容"
             onGenerate={handleNodeDialogGenerate}
-            generateDisabled={imageGenerateDisabled || videoGenerateDisabled || isActiveGenerationStatus(editingNode.status) || (editingNode.kind === 'text' && billingMode === 'user_provider_account' && !selectedUserAccountId)}
+            generateDisabled={
+              imageGenerateDisabled ||
+              videoGenerateDisabled ||
+              isActiveGenerationStatus(editingNode.status) ||
+              ((editingNode.kind === 'text' || editingNode.kind === 'image') && billingMode === 'user_provider_account' && !selectedUserAccountId) ||
+              (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId)
+            }
             generateLabel={
               isActiveGenerationStatus(editingNode.status)
                 ? '生成中…'
@@ -8224,7 +8242,7 @@ export function VisualCanvasWorkspace({
             onClose={() => setEditingNodeId(null)}
             panelPortalTarget={panelPortalTarget}
           />
-          {editingNode.kind === 'text' && (
+          {(editingNode.kind === 'text' || editingNode.kind === 'image') && (
             <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-2">生成费用来源</p>
               <div className="flex gap-2">
@@ -8248,30 +8266,54 @@ export function VisualCanvasWorkspace({
               )}
               {billingMode === 'user_provider_account' && (
                 <div className="space-y-2">
-                  <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+                  {editingNode.kind === 'image' ? (
+                    <p className="text-[10px] text-violet-300/50 leading-relaxed">
+                      使用你自己的火山方舟 API Key + Endpoint ID 生成 Seedream 图片，费用直接计入你的 Volcengine 账户，Creator City 不代扣。当前仅支持 Seedream 图片，Video 暂不支持。
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+                  )}
                   {userAccountsLoading ? (
                     <p className="text-[11px] text-white/30">加载账户中…</p>
                   ) : (() => {
-                    const matchingAccounts = userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
+                    const matchingAccounts = editingNode.kind === 'image'
+                      ? userProviderAccounts.filter((a) => a.providerId === 'volcengine-seedream-image' && a.status === 'active')
+                      : userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
                     if (matchingAccounts.length === 0) {
                       return (
                         <p className="text-[11px] text-amber-400/70">
-                          没有与 {normalizedPromptModel} 匹配的可用账户。
+                          {editingNode.kind === 'image'
+                            ? '没有可用的 Volcengine / Seedream 账户（需要 API Key + Endpoint ID）。'
+                            : `没有与 ${normalizedPromptModel} 匹配的可用账户。`}
                           <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">前往添加</a>
                         </p>
                       )
                     }
+                    const selectedAcc = matchingAccounts.find((a) => a.id === selectedUserAccountId)
+                    const missingEndpointId = editingNode.kind === 'image' && Boolean(selectedUserAccountId) && !selectedAcc?.fieldMeta?.endpointId
                     return (
-                      <select
-                        value={selectedUserAccountId}
-                        onChange={(e) => setSelectedUserAccountId(e.target.value)}
-                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
-                      >
-                        <option value="">— 选择账户 —</option>
-                        {matchingAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>{a.accountLabel} ···· {a.keyLast4}</option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          value={selectedUserAccountId}
+                          onChange={(e) => setSelectedUserAccountId(e.target.value)}
+                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
+                        >
+                          <option value="">— 选择账户 —</option>
+                          {matchingAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.accountLabel} ···· {a.keyLast4}
+                              {a.fieldMeta?.endpointId ? ` · EP:${a.fieldMeta.endpointId.last4}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {missingEndpointId && (
+                          <p className="text-[11px] text-amber-400/70">
+                            ⚠ 缺少 Endpoint ID，请到
+                            <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">我的 API 账户</a>
+                            补充火山方舟 Endpoint ID。
+                          </p>
+                        )}
+                      </>
                     )
                   })()}
                 </div>

@@ -141,6 +141,10 @@ export type SeedreamInput = {
   providerId?: string | null
   aspectRatio?: string | null
   resolution?: string | null
+  /** BYOK: user-supplied API key. Overrides VOLCENGINE_ARK_API_KEY. Never logged or stored. */
+  apiKeyOverride?: string
+  /** BYOK: user-supplied endpoint/model ID. Overrides VOLCENGINE_SEEDREAM_MODEL. Never logged or stored. */
+  endpointOverride?: string
 }
 
 export type SeedreamSuccess = {
@@ -190,16 +194,21 @@ function normalizeSeedreamErrorCode(status: number, message: string): string {
 }
 
 export async function generateSeedreamImage(input: SeedreamInput): Promise<SeedreamResult> {
-  const apiKey = process.env.VOLCENGINE_ARK_API_KEY?.trim()
+  // BYOK: use user-supplied credentials when provided, fall back to platform env vars.
+  // apiKeyOverride and endpointOverride are NEVER logged or stored.
+  const isByok = Boolean(input.apiKeyOverride)
+  const apiKey = input.apiKeyOverride?.trim() || process.env.VOLCENGINE_ARK_API_KEY?.trim()
   const endpoint = getSeedreamEndpoint()
 
-  // Always use the env-var model — never trust the forwarded provider/display ID
-  const model = process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() ?? ''
+  // Always use the env-var model for platform path — never trust the forwarded provider/display ID.
+  // For BYOK: use the user's endpoint ID as the model (Volcengine Ark endpoint IDs are valid model values).
+  const model = (input.endpointOverride?.trim() || process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()) ?? ''
   const size = normalizeSeedreamSize(input.aspectRatio)
   const submittedInput: Record<string, unknown> = {
     providerId: input.providerId ?? null,
     model,
-    modelSource: 'VOLCENGINE_SEEDREAM_MODEL',
+    modelSource: isByok ? 'user_provider_account' : 'VOLCENGINE_SEEDREAM_MODEL',
+    billingMode: isByok ? 'user_provider_account' : 'platform_credits',
     size,
     aspectRatio: input.aspectRatio ?? null,
     resolution: input.resolution ?? null,

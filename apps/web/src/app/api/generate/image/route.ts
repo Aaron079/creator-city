@@ -12,6 +12,7 @@ import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
+import { getProviderAccountForByok } from '@/lib/provider-accounts/service'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -24,7 +25,12 @@ type ImageGenerateBody = Partial<GenerateRequest> & {
   resolution?: string
   system?: string
   compiledPrompt?: string
+  billingMode?: string
+  userProviderAccountId?: string
 }
+
+// Provider IDs that support Seedream Image BYOK in this pilot.
+const SEEDREAM_BYOK_PROVIDER_IDS = ['volcengine-seedream-image']
 
 const IMAGE_PROVIDER_ORDER = ['volcengine-seedream-image', 'jimeng-image', 'openai-image'] as const
 
@@ -297,6 +303,190 @@ export async function POST(request: NextRequest) {
     body.nodeId = generationContext.nodeId
     const executorResolution = getExecutorForProvider(providerId)
     const { providerRegion, executionRegion, storageRegion, executor: resolvedExecutor, executorKind, unknownProvider } = executorResolution
+
+    // ── BYOK path (Seedream Image) ────────────────────────────────────────────
+    // billingMode: 'user_provider_account' skips platform billing entirely.
+    // User credentials are decrypted here (Vercel has PROVIDER_KEY_ENCRYPTION_SECRET)
+    // and passed to cn-executor via HTTPS trigger body only — never stored in DB.
+    if (body.billingMode === 'user_provider_account') {
+      const userProviderAccountId = typeof body.userProviderAccountId === 'string' ? body.userProviderAccountId.trim() : ''
+      if (!userProviderAccountId) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'missing_account_id',
+          message: '请先选择一个 API 账户。',
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 400 })
+      }
+
+      const credResult = await getProviderAccountForByok(currentUser.id, userProviderAccountId, SEEDREAM_BYOK_PROVIDER_IDS)
+      if (!credResult.ok) {
+        return NextResponse.json({
+          success: false,
+          errorCode: credResult.errorCode,
+          message: credResult.message,
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 200 })
+      }
+
+      const { apiKey: userApiKey, endpointId: userEndpointId } = credResult
+      if (!userEndpointId) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'missing_endpoint_id',
+          message: '缺少 Endpoint ID，请到我的 API 账户补充火山方舟 Endpoint ID。',
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 200 })
+      }
+
+      // Seedream is always a CN provider → must use cn-executor
+      const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
+      const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
+      if (!cnBaseUrl) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'executor_region_missing',
+          message: 'CREATOR_CN_API_BASE_URL 未配置，cn-executor 无法访问。',
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 200 })
+      }
+
+      // Create GenerationJob without billing linkage
+      let byokJobId: string | null = null
+      const byokJob = await createImageGenerationJob({
+        userId: currentUser.id,
+        providerId,
+        prompt,
+        body,
+        model: requestModel,
+      }).catch((err: unknown) => {
+        console.warn('[api/generate/image][byok] failed to create GenerationJob', err)
+        return null
+      })
+      byokJobId = byokJob?.id ?? null
+      if (!byokJobId) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'generation_job_create_failed',
+          message: '图片任务创建失败，请稍后重试。',
+          mode: 'unavailable',
+          status: 'failed',
+        }, { status: 200 })
+      }
+
+      // Write BYOK metadata into job input — no plaintext key stored
+      await db.generationJob.update({
+        where: { id: byokJobId },
+        data: {
+          status: 'QUEUED',
+          provider: providerId,
+          kind: 'image',
+          input: {
+            prompt,
+            providerId,
+            projectId: body.projectId ?? null,
+            workflowId: body.workflowId ?? null,
+            nodeId: body.nodeId ?? null,
+            params: { ratio: aspectRatio, aspectRatio },
+            model: requestModel ?? null,
+            aspectRatio: aspectRatio ?? null,
+            providerRegion,
+            executionRegion,
+            storageRegion,
+            executorKind,
+            billingMode: 'user_provider_account',
+            userProviderAccountId,
+          },
+        },
+      }).catch((err: unknown) => {
+        console.warn('[api/generate/image][byok] failed to update GenerationJob to QUEUED', err)
+      })
+
+      // Trigger cn-executor — credentials travel via HTTPS body only, never stored
+      let byokTriggerResponse: Response | null = null
+      let byokTriggerError: unknown = null
+      try {
+        byokTriggerResponse = await fetch(`${cnBaseUrl}/api/jobs/run-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cnSecret}`,
+            'x-creator-executor-secret': cnSecret,
+          },
+          body: JSON.stringify({
+            generationJobId: byokJobId,
+            // Credentials are NOT stored in DB — transmitted via this HTTPS payload only
+            userCredential: { apiKey: userApiKey, endpointId: userEndpointId },
+          }),
+          signal: AbortSignal.timeout(50_000),
+        })
+      } catch (err) {
+        byokTriggerError = err
+      }
+
+      const byokTimedOut = byokTriggerError instanceof Error && (byokTriggerError.name === 'TimeoutError' || byokTriggerError.name === 'AbortError')
+
+      if (byokTriggerError && !byokTimedOut) {
+        const errMsg = byokTriggerError instanceof Error ? byokTriggerError.message : String(byokTriggerError)
+        await db.generationJob.update({
+          where: { id: byokJobId },
+          data: { status: 'FAILED', errorMessage: `cn-executor 触发失败：${errMsg}` },
+        }).catch(() => {/* best-effort */})
+        return NextResponse.json({
+          success: false,
+          async: false,
+          providerId,
+          mode: 'real',
+          status: 'failed',
+          errorCode: 'executor_trigger_failed',
+          generationJobId: byokJobId,
+          jobId: byokJobId,
+          message: `cn-executor 触发失败（网络错误）：${errMsg}`,
+        }, { status: 200 })
+      }
+
+      if (byokTriggerResponse && !byokTriggerResponse.ok) {
+        const httpStatus = byokTriggerResponse.status
+        await db.generationJob.update({
+          where: { id: byokJobId },
+          data: { status: 'FAILED', errorMessage: `cn-executor 返回 HTTP ${httpStatus}` },
+        }).catch(() => {/* best-effort */})
+        return NextResponse.json({
+          success: false,
+          async: false,
+          providerId,
+          mode: 'real',
+          status: 'failed',
+          errorCode: 'executor_trigger_failed',
+          generationJobId: byokJobId,
+          jobId: byokJobId,
+          message: `cn-executor 返回 HTTP ${httpStatus}，触发失败`,
+        }, { status: 200 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        async: true,
+        providerId,
+        providerRegion,
+        executionRegion,
+        storageRegion,
+        executor: resolvedExecutor,
+        executorKind,
+        mode: 'real',
+        status: 'queued',
+        generationJobId: byokJobId,
+        jobId: byokJobId,
+        billingMode: 'user_provider_account',
+        message: byokTimedOut ? '图片生成任务已提交（触发超时但任务已送达）' : '图片生成任务已提交，正在处理中',
+      }, { status: 200 })
+    }
+    // ── end BYOK path ─────────────────────────────────────────────────────────
+
     const submittedInput = {
       providerId,
       providerRegion,
