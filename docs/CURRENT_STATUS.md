@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-03
-Last valid commit: `c6ff87f` (feat: Seedream Image BYOK pilot — V2)
-Production validated: 2026-06-03 (V2 Seedream Image BYOK browser validated)
+Last valid commit: `d693f71` (add usage logging for byok generation — Phase S1)
+Production validated: 2026-06-03 (Phase S1 UsageLog production validated)
 
 ---
 
@@ -30,6 +30,7 @@ Production validated: 2026-06-03 (V2 Seedream Image BYOK browser validated)
 | Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
 | User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
 | User Provider Accounts V2 — Seedream Image BYOK | ✅ CLOSED / validated | `c6ff87f` |
+| BYOK UsageLog Phase S1（平台用量记录，不扣费） | ✅ CLOSED / production validated | `d693f71` |
 
 ---
 
@@ -522,7 +523,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** 平台额度与我的 API 双轨并存，Text 节点已可试点 BYOK。Image/Video 仍依赖平台侧 Provider，后续再接入 BYOK。
+**当前状态：** 平台额度与我的 API 双轨并存，Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线——平台现已具备 BYOK 用量可观测基础（Text + Image 调用全量记录，无服务费扣费）。Video 仍依赖平台侧，BYOK 需单独评审。
+
+**下一步商业优先级（2026-06）：** 建议先观察 30–60 天真实用量数据，再决定服务费定价策略。可优先建设 admin 用量看板（基于 UsageLog），或向用户开放每账户调用历史，而非立即启用服务费扣费。
 
 ---
 
@@ -585,7 +588,9 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 | Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ validated |
 | 多字段凭证存储结构（encryptedFields / fieldMeta） | ✅ production validated |
 | Seedream Image BYOK | ✅ validated |
+| UsageLog Phase S1（用量记录，Text + Image） | ✅ production validated |
 | Seedance Video BYOK | ❌ not implemented |
+| Platform service fee charging | ❌ not implemented |
 
 ### 验收结果（2026-06-03 浏览器验收通过）
 
@@ -660,12 +665,15 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 | 9 | 测试 Text BYOK | 行为与之前一致，无回归 |
 | 10 | 使用非 volcengine-seedream-image 账户 | 不可选（前端过滤 + 后端 whitelist 校验） |
 
-### 下一步建议
+### 下一步建议（基于 UsageLog Phase S1 生产验证后）
 
+- **已完成**：UsageLog Phase S1 已生产验证（commit `d693f71`），Text + Image BYOK 用量可记录
 - **禁止**：不经评审直接开发 Seedance Video BYOK
-- 可选 A：先做 Seedance Video BYOK security review（评审 cn-executor credential access 方案）
-- 可选 B：先做 BYOK platform service fee / usage logging 只读审计
-- 可选 C：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
+- 可选 A：Phase S3 — admin BYOK usage dashboard（基于 UsageLog 表，可见 BYOK 调用分布）
+- 可选 B：Phase S2 — 用户端 usage history（`/account/providers` 展示每账户调用次数）
+- 可选 C：Seedance Video BYOK 安全审计（评审 cn-executor credential access 方案后再实现）
+- 可选 D：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
+- **暂不建议**：立刻启用平台服务费扣费（先观察 30–60 天真实用量后再决定服务费策略）
 
 ---
 
@@ -684,10 +692,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
    - Runway 等 Vercel-side 单 Bearer Token Provider
    - 依赖 Phase V2 链路验证
 
-5. **Phase V5：BYOK 平台服务费记录 / usage logging**
-   - 当前 BYOK 路径完全跳过 billing，未记录平台服务费
-   - 需先明确服务费定义，再设计最小记录方案
-   - 不改 billing 语义，不扣 provider credits
+5. ~~**Phase V5：BYOK 平台服务费记录 / usage logging** — ✅ DONE as Phase S1 (commit `d693f71`, validated 2026-06-03)~~
 
 6. **独立 API Key 帮助页 `/help/api-keys`**
    - 当前指南已内嵌在帮助面板和 AI Agent 中，可选择独立页面版本
@@ -720,7 +725,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Stable Baseline (do not regress)
 
-Modules confirmed working as of `d8ddd43`:
+Modules confirmed working as of `d693f71`:
 
 - Canvas node CRUD (add / edit / delete / drag / connect)
 - Image generation chain (prompt → POST → poll → display)
@@ -728,7 +733,8 @@ Modules confirmed working as of `d8ddd43`:
 - Text generation chain (DeepSeek default, Kimi, OpenAI fallback)
 - Text generation — platform credits mode (unchanged, original logic)
 - Text generation — BYOK mode (DeepSeek / OpenAI / Kimi via user's own API Key)
-- Image generation — BYOK mode (Seedream via user's Volcengine Ark API Key + Endpoint ID) [🟡 browser validation pending as of `c6ff87f`]
+- Image generation — BYOK mode (Seedream via user's Volcengine Ark API Key + Endpoint ID) [✅ browser validated 2026-06-03]
+- UsageLog Phase S1 — BYOK + platform_credits usage recording (Text + Image, no fee deduction)
 - Canvas save / load (PUT/GET with localStorage draft fallback)
 - Canvas save 503 backoff (10s, no cascade)
 - Media proxy (`/api/media/proxy`) for cross-region OSS display
