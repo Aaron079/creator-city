@@ -96,6 +96,12 @@ export default async function AdminIndexPage() {
           <p className="mb-3 text-xs font-medium uppercase tracking-wider text-white/30">核心运营</p>
           <div className="grid gap-3 sm:grid-cols-3">
             <AdminCard
+              href="/admin/usage"
+              title="生成用量观察"
+              description="BYOK 与平台额度调用量统计。基于 UsageLog，不含收费逻辑。"
+              badge="只读"
+            />
+            <AdminCard
               href="/admin/payments/china"
               title="待处理充值"
               description="查看转账充值申请，确认到账并发放 credits。"
