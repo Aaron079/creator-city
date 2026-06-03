@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-03
 Last valid commit: `c6ff87f` (feat: Seedream Image BYOK pilot — V2)
-Production validated: 2026-06-02 (V1 multi-field credentials)
+Production validated: 2026-06-03 (V2 Seedream Image BYOK browser validated)
 
 ---
 
@@ -29,7 +29,7 @@ Production validated: 2026-06-02 (V1 multi-field credentials)
 | AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
 | Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
 | User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
-| User Provider Accounts V2 — Seedream Image BYOK | 🟡 IMPLEMENTED / browser validation pending | `c6ff87f` |
+| User Provider Accounts V2 — Seedream Image BYOK | ✅ CLOSED / validated | `c6ff87f` |
 
 ---
 
@@ -574,8 +574,9 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 ## User Provider Accounts V2 — Seedream Image BYOK
 
 **Commit:** `c6ff87f`
-**Status:** 🟡 IMPLEMENTED / browser validation pending
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-03
+**Date validated:** 2026-06-03
 
 ### 能力矩阵（当前 production 状态）
 
@@ -583,8 +584,30 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 |---|---|
 | Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ validated |
 | 多字段凭证存储结构（encryptedFields / fieldMeta） | ✅ production validated |
-| Seedream Image BYOK | 🟡 implemented — browser validation pending |
+| Seedream Image BYOK | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented |
+
+### 验收结果（2026-06-03 浏览器验收通过）
+
+| 验收项 | 结果 |
+|---|---|
+| Image 节点出现"生成费用来源"区域，默认平台额度 | ✅ |
+| 平台额度 Image 生成路径保持不变 | ✅ |
+| 我的 API 账户只显示 volcengine-seedream-image active account | ✅ |
+| 缺少 Endpoint ID 时显示提示并禁用生成按钮 | ✅ |
+| 有效 Volcengine Ark API Key + Endpoint ID 可生成 Seedream 图片 | ✅ |
+| BYOK Image 不扣平台模型 credits | ✅ |
+| 生成图片刷新后仍保留（cn-executor 直写 DB） | ✅ |
+| Video 节点无"生成费用来源"（Video 未接入 BYOK） | ✅ |
+| Text BYOK 无回归 | ✅ |
+| cn-executor 视频链路未动 | ✅ |
+
+### 已知非阻塞现象
+
+- 生成后偶发 `/api/projects/<id>/canvas` 返回 503（Chrome DevTools 显示 `/api/projects:1`）
+- **根因**：DB pool / canvas auto-save 偶发过载，与 V2 BYOK 代码无关
+- **不影响**：图片数据由 cn-executor 直写 DB + localStorage draft 双重保留，页面刷新后图片仍在
+- **处理建议**：若 503 密集反复出现，应作为独立 DB pool / canvas save 稳定性任务处理，不属于 BYOK 问题
 
 ### 实现摘要
 
@@ -637,12 +660,12 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 | 9 | 测试 Text BYOK | 行为与之前一致，无回归 |
 | 10 | 使用非 volcengine-seedream-image 账户 | 不可选（前端过滤 + 后端 whitelist 校验） |
 
-### 验收通过后下一步
+### 下一步建议
 
-- 更新本节状态为 `✅ CLOSED / validated`，同步到能力矩阵
-- 然后再做 Seedance Video BYOK 安全审计（单独评审 cn-executor 凭证访问方案）
-- 或先做 BYOK usage logging / platform service fee 只读审计
 - **禁止**：不经评审直接开发 Seedance Video BYOK
+- 可选 A：先做 Seedance Video BYOK security review（评审 cn-executor credential access 方案）
+- 可选 B：先做 BYOK platform service fee / usage logging 只读审计
+- 可选 C：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
 
 ---
 
@@ -650,9 +673,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
 
-2. ~~**Phase V2：Seedream Image BYOK 试点** — 🟡 IMPLEMENTED / browser validation pending (commit `c6ff87f`)~~
-   - Image 节点"生成费用来源"已上线，BYOK 分支完整实现
-   - **下一步：完成浏览器验收（见 V2 验收重点章节），确认后更新状态为 validated**
+2. ~~**Phase V2：Seedream Image BYOK 试点** — ✅ CLOSED / validated (commit `c6ff87f`, validated 2026-06-03)~~
 
 3. **Phase V3：Seedance Video BYOK 安全方案评审**
    - 先评审：cn-executor 解密方案（cn-executor 需 `PROVIDER_KEY_ENCRYPTION_SECRET` + DB 连接）
