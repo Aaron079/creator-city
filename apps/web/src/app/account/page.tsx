@@ -120,7 +120,7 @@ export default function AccountPage() {
         </div>
 
         {/* Quick links to account sub-sections */}
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="mb-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
           <Link
             href="/account/credits"
             className="flex flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
@@ -134,6 +134,13 @@ export default function AccountPage() {
           >
             <span className="flex items-center gap-2"><span className="text-base">⚡</span><span>我的 API 账户</span></span>
             <span className="text-[11px] text-violet-300/40">直连 Provider，API 费用自付</span>
+          </Link>
+          <Link
+            href="/account/usage"
+            className="flex flex-col gap-1 rounded-xl border border-sky-500/15 bg-sky-500/[0.03] px-4 py-3.5 text-sm text-sky-300/70 hover:border-sky-500/25 hover:text-sky-200 transition"
+          >
+            <span className="flex items-center gap-2"><span className="text-base">📊</span><span>生成用量</span></span>
+            <span className="text-[11px] text-sky-300/30">平台额度 · 我的 API 记录</span>
           </Link>
           <div className="flex flex-col gap-1 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3.5 text-sm text-white/30 cursor-default select-none">
             <span className="flex items-center gap-2"><span className="text-base">★</span><span>订阅与套餐</span></span>
