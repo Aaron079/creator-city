@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-02
-Last valid commit: `14a763d` (feat: User Provider Accounts V1 — multi-field credential structure)
-Production validated: 2026-06-02
+Last updated: 2026-06-03
+Last valid commit: `c6ff87f` (feat: Seedream Image BYOK pilot — V2)
+Production validated: 2026-06-02 (V1 multi-field credentials)
 
 ---
 
@@ -29,6 +29,7 @@ Production validated: 2026-06-02
 | AI Agent 接入 Provider API Key 指南 | ✅ CLOSED / shipped | `d8ddd43` |
 | Image/Video BYOK 多字段凭证方案审计（只读） | ✅ CLOSED / read-only audit completed | — |
 | User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
+| User Provider Accounts V2 — Seedream Image BYOK | 🟡 IMPLEMENTED / browser validation pending | `c6ff87f` |
 
 ---
 
@@ -570,15 +571,88 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ---
 
+## User Provider Accounts V2 — Seedream Image BYOK
+
+**Commit:** `c6ff87f`
+**Status:** 🟡 IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-03
+
+### 能力矩阵（当前 production 状态）
+
+| 能力 | 状态 |
+|---|---|
+| Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ validated |
+| 多字段凭证存储结构（encryptedFields / fieldMeta） | ✅ production validated |
+| Seedream Image BYOK | 🟡 implemented — browser validation pending |
+| Seedance Video BYOK | ❌ not implemented |
+
+### 实现摘要
+
+- Image 节点编辑面板新增"生成费用来源"选择（平台额度 / 我的 API 账户）
+- 选择"我的 API 账户"后，只列出 `providerId === 'volcengine-seedream-image'` 的活跃账户
+- BYOK 路径：Vercel 路由从 DB 读取并解密用户 API Key + Endpoint ID，通过 HTTPS 触发体传入 cn-executor；cn-executor 用用户自己的 Volcengine Ark API Key + Endpoint ID 调用 Seedream
+- BYOK Image 不调用平台 credits reserve / finalize / refund
+- 生成结果仍保存到平台 Asset / OSS / CanvasNode（与平台额度路径一致）
+- 平台额度 Image 生成路径完全不变
+- Video / Seedance 未接入 BYOK
+- Text BYOK 未受影响
+
+### 修改文件（共 6 个）
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/app/api/generate/image/route.ts` | BYOK 早返回分支（+190 行） |
+| `apps/web/src/lib/provider-accounts/service.ts` | `getProviderAccountForByok`（解密 + 验权，+77 行） |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | Image 节点 BYOK UI（+78/-25 行） |
+| `apps/cn-executor/src/volcengine.ts` | `SeedreamInput` 加 overrides（+17 行） |
+| `apps/cn-executor/src/handlers/generateImage.ts` | `ImageExecutionInput` 加 overrides（+4 行） |
+| `apps/cn-executor/src/handlers/jobRunner.ts` | 解析 `userCredential`，传入执行链（+24/-3 行） |
+
+### 安全边界确认
+
+| 安全项 | 状态 |
+|---|---|
+| `generationJob.input` 不保存明文 API Key | ✅ 只存 `billingMode: 'user_provider_account'` + `userProviderAccountId` |
+| Vercel logs 不记录明文 Key | ✅ `route.ts` 不 log `userCredential` |
+| cn-executor logs 不记录明文 Key | ✅ 只 log `hasByokCredential: boolean` |
+| 前端不返回 `encryptedApiKey` / `encryptedFields` | ✅ `getProviderAccountForByok` select 不含密文 |
+| cn-executor `submittedInput` 不含 Key 值 | ✅ 只含 `modelSource: 'user_provider_account'` |
+| Video / Seedance 未接入 | ✅ 生成路由未动 |
+| Text BYOK 不受影响 | ✅ 仅扩展 Image UI 条件，Text 路径不变 |
+| 用户只能使用自己的账户 | ✅ `where: { id: accountId, userId }` 强制所有权 |
+| Provider 白名单校验 | ✅ `SEEDREAM_BYOK_PROVIDER_IDS = ['volcengine-seedream-image']` |
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 打开 Image 节点编辑面板 | 出现"生成费用来源"区域，默认选中"平台额度" |
+| 2 | 平台额度模式点击生成 | 正常生成，画布显示图片，无任何变化 |
+| 3 | 切换到"我的 API 账户" | 只显示 `volcengine-seedream-image` 类型的活跃账户 |
+| 4 | 选中缺少 Endpoint ID 的账户 | 显示 amber 警告，生成按钮 disabled |
+| 5 | 选中有效 Ark API Key + Endpoint ID 的账户 | 警告消失，生成按钮可用 |
+| 6 | 点击生成 | 成功生成 Seedream 图片，画布节点显示图片 |
+| 7 | 生成后检查平台模型 credits | 无扣减（BYOK 完全绕过平台 billing） |
+| 8 | 打开 Video 节点编辑面板 | 无"生成费用来源"区域（Video 未接入） |
+| 9 | 测试 Text BYOK | 行为与之前一致，无回归 |
+| 10 | 使用非 volcengine-seedream-image 账户 | 不可选（前端过滤 + 后端 whitelist 校验） |
+
+### 验收通过后下一步
+
+- 更新本节状态为 `✅ CLOSED / validated`，同步到能力矩阵
+- 然后再做 Seedance Video BYOK 安全审计（单独评审 cn-executor 凭证访问方案）
+- 或先做 BYOK usage logging / platform service fee 只读审计
+- **禁止**：不经评审直接开发 Seedance Video BYOK
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
 
-2. **Phase V2：Seedream Image BYOK 试点**
-   - 只接图片，不碰视频，不动 cn-executor
-   - 在 `/api/generate/image/route.ts` 加 `billingMode: 'user_provider_account'` 分支
-   - Seedream 路径：Vercel 路由查 DB 解密 → 注入 cn-executor trigger payload（or cn-executor 自查）
-   - 依赖 Phase V1（已完成）
+2. ~~**Phase V2：Seedream Image BYOK 试点** — 🟡 IMPLEMENTED / browser validation pending (commit `c6ff87f`)~~
+   - Image 节点"生成费用来源"已上线，BYOK 分支完整实现
+   - **下一步：完成浏览器验收（见 V2 验收重点章节），确认后更新状态为 validated**
 
 3. **Phase V3：Seedance Video BYOK 安全方案评审**
    - 先评审：cn-executor 解密方案（cn-executor 需 `PROVIDER_KEY_ENCRYPTION_SECRET` + DB 连接）
@@ -633,6 +707,7 @@ Modules confirmed working as of `d8ddd43`:
 - Text generation chain (DeepSeek default, Kimi, OpenAI fallback)
 - Text generation — platform credits mode (unchanged, original logic)
 - Text generation — BYOK mode (DeepSeek / OpenAI / Kimi via user's own API Key)
+- Image generation — BYOK mode (Seedream via user's Volcengine Ark API Key + Endpoint ID) [🟡 browser validation pending as of `c6ff87f`]
 - Canvas save / load (PUT/GET with localStorage draft fallback)
 - Canvas save 503 backoff (10s, no cascade)
 - Media proxy (`/api/media/proxy`) for cross-region OSS display
