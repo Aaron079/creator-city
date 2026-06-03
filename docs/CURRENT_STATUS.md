@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-03
-Last valid commit: `fbf7734` (add admin usage dashboard — BYOK & platform credits observability)
-Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admin Usage Dashboard browser validated)
+Last valid commit: `e96f916` (Provider Account Center 产品化升级 — 模型账户中心 / capability matrix / 3-mode billing / Seedream byokStatus fix)
+Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admin Usage Dashboard browser validated · Provider Account Center browser validated)
 
 ---
 
@@ -32,6 +32,7 @@ Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admi
 | User Provider Accounts V2 — Seedream Image BYOK | ✅ CLOSED / validated | `c6ff87f` |
 | BYOK UsageLog Phase S1（平台用量记录，不扣费） | ✅ CLOSED / production validated | `d693f71` |
 | Admin Usage Dashboard（/admin/usage，生成用量观察） | ✅ CLOSED / validated | `fbf7734` |
+| Provider Account Center 产品化升级（模型账户中心） | ✅ CLOSED / validated | `e96f916` |
 
 ---
 
@@ -524,7 +525,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** 平台额度与我的 API 双轨并存。Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线，Admin Usage Dashboard 已验收——Creator City 现已具备完整的 BYOK 用量可观测能力（全量记录，admin 实时可见）。Video BYOK 仍需单独安全评审。
+**当前状态：** 平台额度与我的 API 双轨并存。Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线，Admin Usage Dashboard 已验收——Creator City 现已具备完整的 BYOK 用量可观测能力（全量记录，admin 实时可见）。Provider Account Center 已升级为"模型账户中心"，明确三种计费模式、展示能力矩阵。Video BYOK 仍需单独安全评审。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -532,12 +533,14 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 |---|---|
 | Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ validated |
 | Seedream Image BYOK | ✅ validated |
+| 多字段凭证存储（encryptedFields / fieldMeta） | ✅ production validated |
 | UsageLog Phase S1（用量记录，不扣费） | ✅ production validated |
 | Admin BYOK Usage Dashboard（`/admin/usage`） | ✅ validated |
+| Provider Account Center（模型账户中心 UI） | ✅ validated |
 | Platform service fee charging | ❌ not implemented |
 | Seedance Video BYOK | ❌ not implemented |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做用户端 usage history、Provider Account Center 产品化，或启动 Seedance Video BYOK 安全评审。暂不直接启用服务费扣费。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做用户端 usage history、Seedance Video BYOK 安全评审，或平台服务费策略审计。暂不直接启用服务费扣费。
 
 ---
 
@@ -778,11 +781,61 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ### 下一步建议
 
+- ~~可选 B：Provider Account Center 产品化升级~~ ✅ DONE (commit `e96f916`, validated 2026-06-03)
 - 可选 A：用户端 usage history（`/account/providers` 展示每账户调用次数）
-- 可选 B：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
 - 可选 C：Seedance Video BYOK 安全评审（评审 cn-executor credential access 方案后再实现）
 - 可选 D：平台服务费策略审计（先观察 30–60 天用量数据后制定）
 - **暂不建议**：立刻启用平台服务费扣费
+
+---
+
+## Provider Account Center 产品化升级 — CLOSED / validated
+
+**Commit:** `e96f916`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-03
+**Date validated:** 2026-06-03
+
+### 升级内容
+
+| 项目 | 状态 |
+|---|---|
+| 页面更名：Provider API 账户 → 模型账户中心 | ✅ |
+| Hero section：价值主张 + 3 项关键说明（加密存储 / 直接调用 / 不经平台） | ✅ |
+| 计费模式卡：2 列 → 3 列（平台额度 / 我的 API / 未来纯平台服务费） | ✅ |
+| 能力矩阵（CAPABILITY_MATRIX，display-only，不接表单）：9 个 Provider × 状态 | ✅ |
+| 布局扩宽：`max-w-2xl` → `max-w-4xl` | ✅ |
+| 阶段提示升级：由 amber（待开放）→ emerald（Seedream 已上线） | ✅ |
+| 已连接账户卡片加入类别标签（文本 / 图片 / 视频） | ✅ |
+| 修复 `volcengine-seedream-image` byokStatus：`coming_soon` → `live` | ✅ |
+| 修复 `testAccount` 条件：从 `byokStatus===coming_soon && bearer` 改为 `bearer_with_endpoint` | ✅ |
+| 测试连接提示更新：火山方舟账户提示"请通过画布生成验证"，不触发图片 API | ✅ |
+| 表单安全说明升级：5 条详细说明（加密/不持有/删除/吊销指引） | ✅ |
+| 前端不显示 API Key / encryptedApiKey / encryptedFields | ✅ |
+
+### 浏览器验收结果（2026-06-03）
+
+| 验收项 | 结果 |
+|---|---|
+| `/account/providers` 标题更新为"模型账户中心" | ✅ |
+| 页面明确说明普通用户无需 API Key，可继续使用平台额度 | ✅ |
+| 页面明确说明 API Key 不是网页登录账号密码 | ✅ |
+| 页面明确说明用户 API 费用直接支付给 Provider，不经过平台 | ✅ |
+| 展示三种模式：平台额度 / 我的 API（BYOK）/ 未来纯平台服务费 | ✅ |
+| 能力矩阵展示：Text BYOK ✅、Seedream Image ✅、Seedance Video 🟡、其他 ○ | ✅ |
+| Seedream Image 状态显示"已上线" | ✅ |
+| Seedance Video 显示"存凭证，生成接入中" | ✅ |
+| 已连接账户卡片显示文本 / 图片 / 视频类别标签 | ✅ |
+| Seedream 账户点击"测试连接"显示"不支持自动测试"，不触发图片生成 API | ✅ |
+| 不显示 API Key / encryptedApiKey / encryptedFields | ✅ |
+
+### 安全边界确认
+
+- 未修改 `/api/generate/*` / billing / credits / payment / schema / cn-executor
+- 未新增真实 Provider（capability matrix 仅为展示常量，不接 form select）
+- 未修改 Provider Account CRUD API 语义
+- 未修改 UsageLog / Admin Dashboard
+- 仅修改 `apps/web/src/app/account/providers/page.tsx`
 
 ---
 
@@ -834,7 +887,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Stable Baseline (do not regress)
 
-Modules confirmed working as of `fbf7734`:
+Modules confirmed working as of `e96f916`:
 
 - Canvas node CRUD (add / edit / delete / drag / connect)
 - Image generation chain (prompt → POST → poll → display)
@@ -855,6 +908,6 @@ Modules confirmed working as of `fbf7734`:
 - DeepSeek as default text provider for new nodes
 - `/assets` page listing all generated assets with recovery status
 - Customer delivery share URL follows `NEXT_PUBLIC_APP_URL` (CN-safe)
-- `/account/providers` — CRUD + test connection + BYOK management UI
+- `/account/providers` — 模型账户中心：CRUD + test connection + BYOK management + capability matrix + 3-mode billing explanation [✅ browser validated 2026-06-03]
 - Provider API Key guide in canvas help panel (4-tab, 18 providers)
 - AI Agent floating button — API Key keyword replies + quick actions
