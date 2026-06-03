@@ -61,7 +61,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     label: 'Seedream Image (火山方舟)',
     category: '图片',
     credentialType: 'bearer_with_endpoint',
-    byokStatus: 'coming_soon',
+    byokStatus: 'live',
     extraFields: [
       {
         name: 'endpointId',
@@ -93,6 +93,41 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 
 function getProviderOption(providerId: string): ProviderOption | undefined {
   return PROVIDER_OPTIONS.find((p) => p.value === providerId)
+}
+
+// ── Capability matrix (display-only, not wired to form) ───────────────────────
+
+type CapabilityStatus = 'live' | 'ready' | 'planned'
+
+type CapabilityRow = {
+  label: string
+  category: string
+  byokStatus: CapabilityStatus
+  note: string
+}
+
+const CAPABILITY_MATRIX: CapabilityRow[] = [
+  { label: 'DeepSeek V4 Flash',           category: '文本', byokStatus: 'live',    note: '已上线' },
+  { label: 'DeepSeek V4 Pro',             category: '文本', byokStatus: 'live',    note: '已上线' },
+  { label: 'Kimi K2.6',                   category: '文本', byokStatus: 'live',    note: '已上线' },
+  { label: 'OpenAI GPT',                  category: '文本', byokStatus: 'live',    note: '已上线' },
+  { label: 'Seedream Image（火山方舟）',   category: '图片', byokStatus: 'live',    note: '已上线' },
+  { label: 'Seedance Video（火山方舟）',   category: '视频', byokStatus: 'ready',   note: '存凭证，生成接入中' },
+  { label: 'OpenAI Image',                category: '图片', byokStatus: 'planned', note: '即将开放' },
+  { label: 'Runway',                      category: '视频', byokStatus: 'planned', note: '即将开放' },
+  { label: 'ElevenLabs',                  category: '音频', byokStatus: 'planned', note: '即将开放' },
+]
+
+function capabilityIcon(status: CapabilityStatus) {
+  if (status === 'live') return '✅'
+  if (status === 'ready') return '🟡'
+  return '○'
+}
+
+function capabilityColor(status: CapabilityStatus) {
+  if (status === 'live') return 'text-emerald-400'
+  if (status === 'ready') return 'text-amber-400'
+  return 'text-white/25'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -325,14 +360,14 @@ export default function ProviderAccountsPage() {
   // ── Test connection ─────────────────────────────────────────────────────────
 
   const testAccount = async (id: string, accProviderId: string) => {
-    // Multi-field providers (Volcengine) don't have a reachable /models endpoint — skip
+    // bearer_with_endpoint providers (Volcengine) don't have a reachable /models endpoint — skip
     const opt = getProviderOption(accProviderId)
-    if (opt?.byokStatus === 'coming_soon' && opt.credentialType === 'bearer_with_endpoint') {
+    if (opt?.credentialType === 'bearer_with_endpoint') {
       // Simulate unsupported gracefully without calling the API
       setAccounts((prev) =>
         prev.map((a) =>
           a.id === id
-            ? { ...a, lastTestedAt: new Date().toISOString(), lastTestStatus: 'unsupported', lastTestError: '生成链路接入前暂不支持自动测试。' }
+            ? { ...a, lastTestedAt: new Date().toISOString(), lastTestStatus: 'unsupported', lastTestError: '火山方舟账户不支持自动连接测试，请通过画布生成验证。' }
             : a
         )
       )
@@ -364,16 +399,24 @@ export default function ProviderAccountsPage() {
 
   return (
     <DashboardShell>
-      <main className="mx-auto max-w-2xl px-4 py-8">
+      <main className="mx-auto max-w-4xl px-4 py-8">
 
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Provider API 账户</h1>
-            <p className="mt-1.5 text-sm text-white/45 leading-relaxed max-w-lg">
-              连接你自己的模型 API 账户。Provider 调用费用由你直接支付给服务商，
-              Creator City 只提供安全的创作工作台与账户管理能力。
+            <div className="mb-1.5 text-[11px] uppercase tracking-[0.22em] text-white/30">账号设置</div>
+            <h1 className="text-2xl font-semibold text-white">模型账户中心</h1>
+            <p className="mt-1.5 text-sm text-white/45 leading-relaxed max-w-xl">
+              连接你自己的 AI 模型 API 账户。API 调用费用由你直接支付给服务商，
+              Creator City 提供安全的创作工作台与账户管理，不作为 API 中间商参与计费。
             </p>
+            <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-white/35">
+              <span>🔐 凭证加密存储，不可查看</span>
+              <span>·</span>
+              <span>⚡ 生成时直接调用你的 Provider</span>
+              <span>·</span>
+              <span>💰 API 费用直接结算给服务商</span>
+            </div>
           </div>
           <Link
             href="/account"
@@ -385,38 +428,67 @@ export default function ProviderAccountsPage() {
 
         {/* Billing model info card */}
         <div className="mb-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/35 mb-3">账单模式对比</p>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-white/35 mb-3">账单模式</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-              <p className="text-xs font-semibold text-white/70 mb-1">平台额度（默认）</p>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-white/15 bg-white/[0.05] text-white/50">当前默认</span>
+              </div>
+              <p className="text-xs font-semibold text-white/70 mb-1">平台额度</p>
               <p className="text-xs text-white/40 leading-relaxed">
-                购买 Creator City 平台积分，由平台代付 API 调用费用。
-                适合轻度用户，无需管理 API Key。
+                购买 Creator City 积分，由平台代付 API 调用费用。适合轻度用户，无需管理 API Key。
               </p>
             </div>
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3.5">
-              <p className="text-xs font-semibold text-violet-300 mb-1">我的 API 账户</p>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/[0.08] text-violet-300">此页面功能</span>
+              </div>
+              <p className="text-xs font-semibold text-violet-300 mb-1">我的 API 账户（BYOK）</p>
               <p className="text-xs text-white/40 leading-relaxed">
-                接入自己的 Provider API Key，API 费用由你直接支付给服务商，
-                不经过 Creator City，平台不代扣。
+                接入自己的 Provider API Key，API 费用由你直接支付给服务商，Creator City 不代扣。
+              </p>
+            </div>
+            <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[0.03] p-3.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-cyan-400/20 bg-cyan-400/[0.05] text-cyan-400/60">规划中</span>
+              </div>
+              <p className="text-xs font-semibold text-cyan-300/70 mb-1">纯平台服务费</p>
+              <p className="text-xs text-white/30 leading-relaxed">
+                Creator City 仅收取工作台与协作工具服务费，不再作为 API 中间商参与 API 计费。
               </p>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-white/25 leading-relaxed">
-            未来 Creator City 将仅收取平台服务费（工作台、协作工具、交易撮合等），
-            不再作为中心化 API 转售方参与计费。
+        </div>
+
+        {/* Capability matrix */}
+        <div className="mb-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-white/35 mb-3">BYOK 能力矩阵</p>
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
+            {CAPABILITY_MATRIX.map((row) => (
+              <div key={row.label} className="flex items-center gap-2.5 rounded-lg px-3 py-2 bg-white/[0.02]">
+                <span className="text-sm flex-shrink-0">{capabilityIcon(row.byokStatus)}</span>
+                <div className="min-w-0">
+                  <p className="text-xs text-white/65 truncate">{row.label}</p>
+                  <p className={`text-[10px] mt-0.5 ${capabilityColor(row.byokStatus)}`}>
+                    {row.category} · {row.note}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] text-white/20 leading-relaxed">
+            ✅ 已上线 · 🟡 存凭证，生成接入中 · ○ 规划中
           </p>
         </div>
 
         {/* Phase notice */}
-        <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-1.5">
-          <p className="text-xs text-amber-400/80 leading-relaxed">
-            <span className="font-semibold">当前阶段：</span>
-            文本 BYOK 已上线（DeepSeek / OpenAI / Kimi）。
-            图片 / 视频 BYOK 凭证结构已准备，生成链路将在后续版本开放。
-            添加 Seedream / Seedance 账户后，凭证会加密存储，但暂不能用于生成，点击「测试连接」会提示不支持。
+        <div className="mb-6 rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3 space-y-1.5">
+          <p className="text-xs text-emerald-400/80 leading-relaxed">
+            <span className="font-semibold">当前状态：</span>
+            文本 BYOK（DeepSeek / Kimi / OpenAI）和 Seedream Image BYOK 已上线可用于生成。
+            Seedance Video BYOK 凭证结构已准备，生成接入正在推进，当前保存凭证不触发任何生成调用。
           </p>
-          <p className="text-xs text-amber-400/50 leading-relaxed">
+          <p className="text-xs text-emerald-400/40 leading-relaxed">
             <span className="font-semibold">什么是 API Key？</span>{' '}
             API Key 是 Provider 控制台生成的访问密钥（如 sk-xxx），
             不是你的网页登录账号和密码。
@@ -471,6 +543,11 @@ export default function ProviderAccountsPage() {
                           <span className="text-sm font-semibold text-white truncate">
                             {acc.accountLabel}
                           </span>
+                          {accOpt?.category && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-white/10 bg-white/[0.04] text-white/40 flex-shrink-0">
+                              {accOpt.category}
+                            </span>
+                          )}
                           {acc.isDefault && (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/[0.08] text-violet-300 flex-shrink-0">
                               默认
@@ -481,7 +558,7 @@ export default function ProviderAccountsPage() {
                           </span>
                           {accOpt?.byokStatus === 'coming_soon' && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-white/10 bg-white/[0.04] text-white/30 flex-shrink-0">
-                              生成暂未开放
+                              生成接入中
                             </span>
                           )}
                         </div>
@@ -566,7 +643,8 @@ export default function ProviderAccountsPage() {
 
         {/* Add account form */}
         <section>
-          <h2 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-3">添加 API 账户</h2>
+          <h2 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-1">添加 API 账户</h2>
+          <p className="text-xs text-white/35 mb-3">凭证加密存储，保存后只显示末 4 位，平台不持有明文 Key。</p>
 
           {formSuccess && (
             <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3 text-sm text-emerald-300">
@@ -599,13 +677,13 @@ export default function ProviderAccountsPage() {
               </select>
             </Field>
 
-            {/* Coming-soon notice for media providers */}
+            {/* Notice for providers with credential storage but pending generation */}
             {selectedByokStatus === 'coming_soon' && (
-              <div className="rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3.5 py-3">
-                <p className="text-[11px] text-violet-300/70 leading-relaxed">
-                  <span className="font-semibold">凭证结构已准备。</span>{' '}
-                  {selectedProvider?.label} BYOK 生成接入将在下一版本（V2）开放。
-                  当前保存凭证不会触发任何生成调用，也不会扣费。
+              <div className="rounded-xl border border-amber-500/15 bg-amber-500/[0.04] px-3.5 py-3">
+                <p className="text-[11px] text-amber-300/70 leading-relaxed">
+                  <span className="font-semibold">凭证存储已支持。</span>{' '}
+                  {selectedProvider?.label} BYOK 生成接入正在推进中。
+                  当前保存凭证不会触发任何生成调用，也不会扣费。凭证加密存储，随时可删除。
                 </p>
               </div>
             )}
@@ -684,10 +762,12 @@ export default function ProviderAccountsPage() {
 
             {/* Security notice */}
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 text-[11px] text-white/30 space-y-1 leading-relaxed">
-              <p>· 请勿提交他人的 API Key</p>
-              <p>· 删除后 Key 永久销毁，无法恢复</p>
-              <p>· 文本 BYOK 已可用于生成；图片/视频 BYOK 后续开放</p>
-              <p>· 当前添加图片/视频 Provider 账户不会触发任何生成调用</p>
+              <p className="font-semibold text-white/40 mb-1.5">安全说明</p>
+              <p>· Key 仅在提交时传输一次，加密存储后不可查看，仅保留末 4 位</p>
+              <p>· 请勿提交他人的 API Key，也不要提交登录账号密码</p>
+              <p>· 删除账户后 Key 永久销毁，无法恢复</p>
+              <p>· Creator City 不记录你的明文 API Key，不持有你的调用凭据</p>
+              <p>· 如怀疑 Key 泄漏，请立即在 Provider 控制台吊销并重新生成</p>
             </div>
 
             <div className="pt-1">
