@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-03
-Last valid commit: `d693f71` (add usage logging for byok generation — Phase S1)
-Production validated: 2026-06-03 (Phase S1 UsageLog production validated)
+Last valid commit: `fbf7734` (add admin usage dashboard — BYOK & platform credits observability)
+Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admin Usage Dashboard shipped)
 
 ---
 
@@ -31,6 +31,7 @@ Production validated: 2026-06-03 (Phase S1 UsageLog production validated)
 | User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
 | User Provider Accounts V2 — Seedream Image BYOK | ✅ CLOSED / validated | `c6ff87f` |
 | BYOK UsageLog Phase S1（平台用量记录，不扣费） | ✅ CLOSED / production validated | `d693f71` |
+| Admin Usage Dashboard（/admin/usage，生成用量观察） | ✅ CLOSED / shipped | `fbf7734` |
 
 ---
 
@@ -669,7 +670,8 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 - **已完成**：UsageLog Phase S1 已生产验证（commit `d693f71`），Text + Image BYOK 用量可记录
 - **禁止**：不经评审直接开发 Seedance Video BYOK
-- 可选 A：Phase S3 — admin BYOK usage dashboard（基于 UsageLog 表，可见 BYOK 调用分布）
+- ✅ **已完成**：Phase S3 — admin BYOK usage dashboard (`/admin/usage`，commit `fbf7734`)
+- 可选 A（下一步）：Phase S2 — 用户端 usage history（已无需 admin dashboard 铺垫，可直接做）
 - 可选 B：Phase S2 — 用户端 usage history（`/account/providers` 展示每账户调用次数）
 - 可选 C：Seedance Video BYOK 安全审计（评审 cn-executor credential access 方案后再实现）
 - 可选 D：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
@@ -725,7 +727,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Stable Baseline (do not regress)
 
-Modules confirmed working as of `d693f71`:
+Modules confirmed working as of `fbf7734`:
 
 - Canvas node CRUD (add / edit / delete / drag / connect)
 - Image generation chain (prompt → POST → poll → display)
@@ -735,6 +737,7 @@ Modules confirmed working as of `d693f71`:
 - Text generation — BYOK mode (DeepSeek / OpenAI / Kimi via user's own API Key)
 - Image generation — BYOK mode (Seedream via user's Volcengine Ark API Key + Endpoint ID) [✅ browser validated 2026-06-03]
 - UsageLog Phase S1 — BYOK + platform_credits usage recording (Text + Image, no fee deduction)
+- Admin Usage Dashboard — `/admin/usage` read-only view (total, byok, platform_credits, success rate, provider distribution, top users, recent logs)
 - Canvas save / load (PUT/GET with localStorage draft fallback)
 - Canvas save 503 backoff (10s, no cascade)
 - Media proxy (`/api/media/proxy`) for cross-region OSS display
