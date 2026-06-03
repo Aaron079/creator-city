@@ -2,8 +2,7 @@
 
 Last updated: 2026-06-03
 Last valid commit: `fbf7734` (add admin usage dashboard — BYOK & platform credits observability)
-Production validated: 2026-06-03 (Phase S1 UsageLog production validated)
-Last implemented: 2026-06-03 (Admin Usage Dashboard shipped, browser validation pending)
+Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admin Usage Dashboard browser validated)
 
 ---
 
@@ -32,7 +31,7 @@ Last implemented: 2026-06-03 (Admin Usage Dashboard shipped, browser validation 
 | User Provider Accounts V1（多字段凭证结构扩展） | ✅ CLOSED / production validated | `14a763d` |
 | User Provider Accounts V2 — Seedream Image BYOK | ✅ CLOSED / validated | `c6ff87f` |
 | BYOK UsageLog Phase S1（平台用量记录，不扣费） | ✅ CLOSED / production validated | `d693f71` |
-| Admin Usage Dashboard（/admin/usage，生成用量观察） | 🟡 IMPLEMENTED / browser validation pending | `fbf7734` |
+| Admin Usage Dashboard（/admin/usage，生成用量观察） | ✅ CLOSED / validated | `fbf7734` |
 
 ---
 
@@ -525,9 +524,20 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** 平台额度与我的 API 双轨并存，Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线——平台现已具备 BYOK 用量可观测基础（Text + Image 调用全量记录，无服务费扣费）。Video 仍依赖平台侧，BYOK 需单独评审。
+**当前状态：** 平台额度与我的 API 双轨并存。Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线，Admin Usage Dashboard 已验收——Creator City 现已具备完整的 BYOK 用量可观测能力（全量记录，admin 实时可见）。Video BYOK 仍需单独安全评审。
 
-**下一步商业优先级（2026-06）：** 建议先观察 30–60 天真实用量数据，再决定服务费定价策略。Admin 用量看板已实现（commit `fbf7734`，待浏览器验收），运营可通过 `/admin/usage` 观察 BYOK vs 平台额度的真实使用分布。暂不直接启用服务费扣费。
+**当前能力矩阵（production 已验收）：**
+
+| 能力 | 状态 |
+|---|---|
+| Text BYOK（DeepSeek / OpenAI / Kimi） | ✅ validated |
+| Seedream Image BYOK | ✅ validated |
+| UsageLog Phase S1（用量记录，不扣费） | ✅ production validated |
+| Admin BYOK Usage Dashboard（`/admin/usage`） | ✅ validated |
+| Platform service fee charging | ❌ not implemented |
+| Seedance Video BYOK | ❌ not implemented |
+
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做用户端 usage history、Provider Account Center 产品化，或启动 Seedance Video BYOK 安全评审。暂不直接启用服务费扣费。
 
 ---
 
@@ -591,6 +601,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 | 多字段凭证存储结构（encryptedFields / fieldMeta） | ✅ production validated |
 | Seedream Image BYOK | ✅ validated |
 | UsageLog Phase S1（用量记录，Text + Image） | ✅ production validated |
+| Admin BYOK Usage Dashboard（/admin/usage） | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented |
 | Platform service fee charging | ❌ not implemented |
 
@@ -671,7 +682,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 - **已完成**：UsageLog Phase S1 已生产验证（commit `d693f71`），Text + Image BYOK 用量可记录
 - **禁止**：不经评审直接开发 Seedance Video BYOK
-- 🟡 **待验收**：Phase S3 — admin BYOK usage dashboard (`/admin/usage`，commit `fbf7734`，browser validation pending)
+- ✅ **已验收**：Phase S3 — admin BYOK usage dashboard (`/admin/usage`，commit `fbf7734`，validated 2026-06-03)
 - 可选 A：Phase S2 — 用户端 usage history（`/account/providers` 展示每账户调用次数）
 - 可选 B：Seedance Video BYOK 安全审计（评审 cn-executor credential access 方案后再实现）
 - 可选 C：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
@@ -682,8 +693,9 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 ## Admin BYOK Usage Dashboard — IMPLEMENTED / browser validation pending
 
 **Commit:** `fbf7734`
-**Status:** 🟡 IMPLEMENTED / browser validation pending
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-03
+**Date validated:** 2026-06-03
 
 ### 新增文件（共 3 个）
 
@@ -750,13 +762,27 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 | 9 | 生成一条 Text BYOK 记录后刷新 dashboard | 总调用数 +1，BYOK 调用 +1 |
 | 10 | 生成一条 Image（平台额度）记录后刷新 dashboard | 总调用数 +1，平台额度 +1 |
 
+### 浏览器验收结果（2026-06-03 通过）
+
+| 验收项 | 结果 |
+|---|---|
+| 管理员访问 `/admin/usage` 可见 dashboard | ✅ |
+| 普通用户访问被拒绝（无权限错误） | ✅ |
+| 24h / 7d / 30d 时间范围切换正常 | ✅ |
+| Summary cards：总调用数、BYOK 调用、平台额度调用、成功率、失败数、服务费总计 | ✅ |
+| outputType / billingMode / provider / status 分布显示正常 | ✅ |
+| Top users 显示 email + displayName + 调用次数 | ✅ |
+| 最近 UsageLog 只显示 promptChars，不显示 prompt 明文 | ✅ |
+| 不显示 API Key / encryptedApiKey / encryptedFields | ✅ |
+| platformServiceFeeCredits 显示为 0，不启用扣费 | ✅ |
+
 ### 下一步建议
 
-- 完成上述浏览器验收后标记为 CLOSED / validated
-- 可选 A：Phase S2 — 用户端 usage history（`/account/providers` 展示每账户调用次数）
-- 可选 B：Seedance Video BYOK 安全审计（评审 cn-executor credential access 方案后再实现）
-- 可选 C：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
-- **暂不建议**：立刻启用平台服务费扣费（先观察 30–60 天真实用量后再决定）
+- 可选 A：用户端 usage history（`/account/providers` 展示每账户调用次数）
+- 可选 B：Provider Account Center 产品化升级（UI 打磨 / 多账户管理 / 测试连接结果展示）
+- 可选 C：Seedance Video BYOK 安全评审（评审 cn-executor credential access 方案后再实现）
+- 可选 D：平台服务费策略审计（先观察 30–60 天用量数据后制定）
+- **暂不建议**：立刻启用平台服务费扣费
 
 ---
 
@@ -818,7 +844,7 @@ Modules confirmed working as of `fbf7734`:
 - Text generation — BYOK mode (DeepSeek / OpenAI / Kimi via user's own API Key)
 - Image generation — BYOK mode (Seedream via user's Volcengine Ark API Key + Endpoint ID) [✅ browser validated 2026-06-03]
 - UsageLog Phase S1 — BYOK + platform_credits usage recording (Text + Image, no fee deduction)
-- Admin Usage Dashboard — `/admin/usage` read-only view (total, byok, platform_credits, success rate, provider distribution, top users, recent logs) [🟡 browser validation pending as of `fbf7734`]
+- Admin Usage Dashboard — `/admin/usage` read-only view (total, byok, platform_credits, success rate, provider distribution, top users, recent logs) [✅ browser validated 2026-06-03]
 - Canvas save / load (PUT/GET with localStorage draft fallback)
 - Canvas save 503 backoff (10s, no cascade)
 - Media proxy (`/api/media/proxy`) for cross-region OSS display
