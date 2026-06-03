@@ -205,7 +205,7 @@ const EMPTY_FORM = {
 export default function ProviderAccountsPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuthStore()
-  const { status: sessionStatus } = useCurrentUser()
+  const { status: sessionStatus, refresh: refreshSession } = useCurrentUser()
 
   // Wait for session to resolve before deciding to redirect.
   // Zustand initial state is isAuthenticated=false (before localStorage hydrates),
@@ -393,9 +393,29 @@ export default function ProviderAccountsPage() {
     }
   }
 
-  // Show nothing while session check is in flight — avoids redirect flash
-  if (sessionStatus === 'loading' || sessionStatus === 'unknown') return null
-  if (!effectiveIsAuthenticated) return null
+  // If Zustand says the user is authenticated, render immediately — don't wait for the
+  // network check to finish. effectiveIsAuthenticated already accounts for this.
+  // Returning null only when we're SURE the user is not authenticated (will redirect).
+  if (!effectiveIsAuthenticated) {
+    // Auth check timed out or hit a transient error, and Zustand has no session either —
+    // show a retry prompt instead of a permanent blank screen.
+    if (sessionStatus === 'unknown') {
+      return (
+        <DashboardShell>
+          <main className="mx-auto max-w-4xl px-4 py-20 text-center">
+            <p className="text-sm text-white/50 mb-4">连接异常，无法验证登录状态，请重试。</p>
+            <button
+              onClick={() => void refreshSession()}
+              className="rounded-xl border border-white/15 bg-white/[0.06] px-5 py-2 text-sm text-white/70 hover:text-white transition"
+            >
+              重新验证
+            </button>
+          </main>
+        </DashboardShell>
+      )
+    }
+    return null
+  }
 
   return (
     <DashboardShell>
