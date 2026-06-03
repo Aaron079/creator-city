@@ -99,7 +99,15 @@ function billingModeShort(m: string) {
 function statusLabel(s: string) {
   if (s === 'succeeded') return '成功'
   if (s === 'failed') return '失败'
+  if (s === 'canceled') return '已取消'
+  if (s === 'pending' || s === 'queued' || s === 'running') return '处理中'
   return s
+}
+
+function providerCostLabel(v: string | null) {
+  if (v === 'platform') return '平台承担'
+  if (v === 'user') return '用户承担'
+  return '—'
 }
 
 function statusColor(s: string) {
@@ -238,14 +246,14 @@ export default function UsageHistoryPage() {
                     : 'text-white/40 hover:text-white/70'
                 }`}
               >
-                {r === '24h' ? '近 24h' : r === '7d' ? '近 7 天' : r === '30d' ? '近 30 天' : '全部'}
+                {r === '24h' ? '近 24 小时' : r === '7d' ? '近 7 天' : r === '30d' ? '近 30 天' : '全部'}
               </button>
             ))}
           </div>
 
           {/* Billing filter */}
           <div className="flex items-center rounded-xl border border-white/[0.08] bg-white/[0.03] p-0.5 gap-0.5">
-            {([['all', '全部'], ['platform_credits', '平台额度'], ['user_provider_account', '我的 API']] as [BillingFilter, string][]).map(([v, label]) => (
+            {([['all', '全部来源'], ['platform_credits', '平台额度'], ['user_provider_account', '我的 API']] as [BillingFilter, string][]).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setBillingFilter(v)}
@@ -262,7 +270,7 @@ export default function UsageHistoryPage() {
 
           {/* Output type filter */}
           <div className="flex items-center rounded-xl border border-white/[0.08] bg-white/[0.03] p-0.5 gap-0.5">
-            {([['all', '全部'], ['text', '文本'], ['image', '图片'], ['video', '视频']] as [OutputFilter, string][]).map(([v, label]) => (
+            {([['all', '全部类型'], ['text', '文本'], ['image', '图片'], ['video', '视频']] as [OutputFilter, string][]).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setOutputFilter(v)}
@@ -372,7 +380,7 @@ export default function UsageHistoryPage() {
               <p className="text-2xl mb-3 opacity-40">○</p>
               <p className="text-sm font-medium text-white/40 mb-1">还没有生成记录</p>
               <p className="text-xs text-white/25 mb-6 leading-relaxed max-w-xs mx-auto">
-                当你使用平台额度或我的 API 账户生成 Text / Image 后，用量会显示在这里。
+                当你使用平台额度或我的 API 账户生成文本 / 图片后，用量会显示在这里。
               </p>
               <div className="flex items-center justify-center gap-3">
                 <Link
@@ -427,7 +435,7 @@ export default function UsageHistoryPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-white/[0.06]">
-                      {['时间', '类型', 'Provider', '费用来源', '状态', 'Prompt 字符', '平台服务费'].map((h) => (
+                      {['时间', '类型', 'Provider', '费用来源', '费用承担', '状态', 'Prompt 字符数', '平台服务费'].map((h) => (
                         <th key={h} className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-white/25">
                           {h}
                         </th>
@@ -453,6 +461,9 @@ export default function UsageHistoryPage() {
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${billingBadgeStyle(item.billingMode)}`}>
                             {billingModeLabel(item.billingMode)}
                           </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-white/35 text-[11px] whitespace-nowrap">
+                          {providerCostLabel(item.providerCostPaidBy)}
                         </td>
                         <td className="px-4 py-2.5">
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${statusColor(item.status)}`}>
