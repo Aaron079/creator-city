@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
 import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
 import { getProviderAccountForByok } from '@/lib/provider-accounts/service'
+import { safeRecordUsageLog } from '@/lib/usage/usage-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -824,6 +825,21 @@ export async function POST(request: NextRequest) {
 
     const finalized = await finalizeBilling(raw, billing.ctx.billingJobId)
     if (!finalized.success || !finalized.result) {
+      await safeRecordUsageLog({
+        userId: billing.ctx.userId,
+        projectId: body.projectId,
+        nodeId: body.nodeId,
+        workflowId: body.workflowId,
+        generationJobId: billing.ctx.billingJobId ?? null,
+        providerId,
+        outputType: 'image',
+        billingMode: 'platform_credits',
+        status: 'failed',
+        providerCostPaidBy: 'platform',
+        platformServiceFeeCredits: 0,
+        promptChars: prompt.length,
+        errorCode: visibleProviderErrorCode(finalized.errorCode, raw.upstreamStatus, finalized.message),
+      }, { route: '/api/generate/image[vercel-direct/failed]' })
       return NextResponse.json({
         ...finalized,
         errorCode: visibleProviderErrorCode(finalized.errorCode, raw.upstreamStatus, finalized.message),
@@ -991,6 +1007,22 @@ export async function POST(request: NextRequest) {
       assetIntelligence,
       ...(warning ? { mediaPersistenceWarning: warning } : {}),
     }
+
+    await safeRecordUsageLog({
+      userId: billing.ctx.userId,
+      projectId: body.projectId,
+      nodeId: body.nodeId,
+      workflowId: body.workflowId,
+      generationJobId: typeof generationJobId === 'string' ? generationJobId : null,
+      providerId,
+      outputType: 'image',
+      billingMode: 'platform_credits',
+      assetId: typeof assetId === 'string' ? assetId : null,
+      status: 'succeeded',
+      providerCostPaidBy: 'platform',
+      platformServiceFeeCredits: 0,
+      promptChars: prompt.length,
+    }, { route: '/api/generate/image[vercel-direct/succeeded]' })
 
     return NextResponse.json({
       ...finalized,

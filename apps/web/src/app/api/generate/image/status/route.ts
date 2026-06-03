@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
 import type { Prisma } from '@prisma/client'
+import { safeRecordUsageLog } from '@/lib/usage/usage-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -194,6 +195,24 @@ export async function GET(request: NextRequest) {
         sourceProviderRegion,
       })
     }
+    const succeededBillingMode = stringValue(input.billingMode) || 'platform_credits'
+    const succeededProviderAccountId = stringValue(input.userProviderAccountId) || null
+    await safeRecordUsageLog({
+      userId: currentUser.id,
+      projectId: stringValue(input.projectId) || null,
+      workflowId: stringValue(input.workflowId) || null,
+      nodeId: nodeId || null,
+      generationJobId: generationJob.id,
+      providerId,
+      outputType: 'image',
+      billingMode: (succeededBillingMode === 'user_provider_account' ? 'user_provider_account' : 'platform_credits'),
+      providerAccountId: succeededProviderAccountId,
+      assetId: typeof assetId === 'string' ? assetId : null,
+      status: 'succeeded',
+      providerCostPaidBy: succeededBillingMode === 'user_provider_account' ? 'user' : 'platform',
+      platformServiceFeeCredits: 0,
+      promptChars: typeof input.promptChars === 'number' ? input.promptChars : (typeof input.prompt === 'string' ? input.prompt.length : 0),
+    }, { route: '/api/generate/image/status[succeeded]' })
     return NextResponse.json({
       success: true,
       providerId,
@@ -224,6 +243,24 @@ export async function GET(request: NextRequest) {
 
   if (generationJob.status === 'FAILED') {
     const failOutput = record(generationJob.output)
+    const failedBillingMode = stringValue(input.billingMode) || 'platform_credits'
+    const failedProviderAccountId = stringValue(input.userProviderAccountId) || null
+    await safeRecordUsageLog({
+      userId: currentUser.id,
+      projectId: stringValue(input.projectId) || null,
+      workflowId: stringValue(input.workflowId) || null,
+      nodeId: nodeId || null,
+      generationJobId: generationJob.id,
+      providerId,
+      outputType: 'image',
+      billingMode: (failedBillingMode === 'user_provider_account' ? 'user_provider_account' : 'platform_credits'),
+      providerAccountId: failedProviderAccountId,
+      status: 'failed',
+      providerCostPaidBy: failedBillingMode === 'user_provider_account' ? 'user' : 'platform',
+      platformServiceFeeCredits: 0,
+      promptChars: typeof input.promptChars === 'number' ? input.promptChars : (typeof input.prompt === 'string' ? input.prompt.length : 0),
+      errorCode: stringValue(failOutput.errorCode) || 'image_generation_failed',
+    }, { route: '/api/generate/image/status[failed]' })
     return NextResponse.json({
       success: false,
       providerId,

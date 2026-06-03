@@ -11,6 +11,7 @@ import type { GenerateResponse } from '@/lib/providers/types'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { decryptProviderApiKey } from '@/lib/provider-accounts/crypto'
+import { safeRecordUsageLog } from '@/lib/usage/usage-log'
 
 function isSessionDbError(err: unknown): boolean {
   return err instanceof Error && (err as Error & { code?: string }).code === 'SESSION_DB_UNAVAILABLE'
@@ -158,6 +159,20 @@ export async function POST(request: NextRequest) {
       }
       generationStage = 'asset_attach'
       const result = await attachGeneratedAsset(raw, { userId: user.id, providerId, nodeType: 'text', prompt, projectId: body.projectId, nodeId: body.nodeId }) as TextGenerateResponse
+      await safeRecordUsageLog({
+        userId: user.id,
+        projectId: body.projectId,
+        nodeId: body.nodeId,
+        providerId,
+        outputType: 'text',
+        billingMode: 'user_provider_account',
+        providerAccountId: accountId,
+        status: result.success ? 'succeeded' : 'failed',
+        providerCostPaidBy: 'user',
+        platformServiceFeeCredits: 0,
+        promptChars: prompt.length,
+        errorCode: result.success ? null : (result.errorCode ?? null),
+      }, { route: '/api/generate/text[byok]' })
       return NextResponse.json({ ...result, text: result.result?.text, resultText: result.result?.text, model: result.result?.metadata?.model ?? result.model }, { status: result.success ? 200 : 200 })
     }
     // ── End User Provider Account mode ────────────────────────────────────────
@@ -260,6 +275,20 @@ export async function POST(request: NextRequest) {
       projectId: body.projectId,
       nodeId: body.nodeId,
     }) as TextGenerateResponse
+    await safeRecordUsageLog({
+      userId,
+      projectId: body.projectId,
+      nodeId: body.nodeId,
+      generationJobId: billing.ctx.billingJobId ?? null,
+      providerId,
+      outputType: 'text',
+      billingMode: 'platform_credits',
+      status: result.success ? 'succeeded' : 'failed',
+      providerCostPaidBy: 'platform',
+      platformServiceFeeCredits: 0,
+      promptChars: prompt.length,
+      errorCode: result.success ? null : (result.errorCode ?? null),
+    }, { route: '/api/generate/text[platform_credits]' })
     return NextResponse.json({
       ...result,
       text: result.result?.text,

@@ -1262,6 +1262,42 @@ model ProviderPricingRule {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// USAGE LOG — Phase S1: platform usage logging, no billing changes
+// Records all generation attempts (BYOK and platform_credits) without fees.
+// Never stores prompt text, API keys, or encrypted credentials.
+// ══════════════════════════════════════════════════════════════════════════════
+
+model UsageLog {
+  id                        String   @id @default(uuid())
+  userId                    String
+  projectId                 String?
+  workflowId                String?
+  nodeId                    String?
+  generationJobId           String?
+  providerId                String
+  modelId                   String?
+  outputType                String   // text | image | video
+  billingMode               String   // platform_credits | user_provider_account
+  providerAccountId         String?
+  assetId                   String?
+  status                    String   // succeeded | failed | canceled
+  providerCostPaidBy        String   // platform | user
+  platformServiceFeeCredits Int      @default(0)
+  promptChars               Int      @default(0)
+  durationSeconds           Float?
+  errorCode                 String?
+  createdAt                 DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, billingMode])
+  @@index([generationJobId])
+  @@index([providerId])
+  @@index([outputType])
+  @@index([billingMode])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // USER PROVIDER ACCOUNTS — user-owned API keys for BYOK (bring-your-own-key)
 // Phase 2A foundation: schema only, not wired into generation chain yet.
 // ══════════════════════════════════════════════════════════════════════════════
