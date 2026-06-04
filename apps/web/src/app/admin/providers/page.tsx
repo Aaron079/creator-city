@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 import { formatAdminDateTime } from '@/lib/format/adminDate'
@@ -324,6 +325,9 @@ export default function AdminProvidersPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-7xl px-4 py-8">
+        <Link href="/admin" className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-white">API Provider 管理中心</h1>

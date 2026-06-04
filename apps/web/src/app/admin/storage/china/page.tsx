@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { getChinaStorageConfigurations, getConfiguredChinaStorageProvider } from '@/lib/storage/china/gateway'
@@ -35,6 +36,9 @@ export default async function AdminChinaStoragePage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-5xl px-4 py-8">
+        <Link href="/admin" className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
         <h1 className="text-2xl font-semibold text-white">中国对象存储</h1>
         <p className="mt-2 text-sm text-white/50">
           当前数据库仍使用 DATABASE_URL，迁移状态 not-started。未来生成图片、视频和资产文件写入 OSS/COS。

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { formatAdminDate } from '@/lib/format/adminDate'
 
@@ -100,6 +101,10 @@ export default function AdminCreditsPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-5xl space-y-8 px-4 py-8">
+
+        <Link href="/admin" className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
 
         <div>
           <h1 className="text-2xl font-semibold text-white">积分管理</h1>

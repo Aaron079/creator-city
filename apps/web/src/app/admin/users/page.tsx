@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 import { formatAdminDate } from '@/lib/format/adminDate'
@@ -60,6 +61,9 @@ export default function AdminUsersPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <Link href="/admin" className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
         <h1 className="text-2xl font-semibold text-white">用户管理</h1>
         <p className="mt-2 text-sm text-white/50">所有注册用户，按注册时间倒序。</p>
 

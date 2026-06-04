@@ -140,11 +140,7 @@ export function CurrentContextBar() {
           getActionTarget({ actionType: 'me', actionLabel: 'My Tasks' }),
         ]
       })()
-    : [
-        getActionTarget({ actionType: 'project-overview', projectId: portfolio.recentProjects[0]?.projectId, actionLabel: 'Open Project' }),
-        getActionTarget({ actionType: 'dashboard-notifications', actionLabel: 'Notifications' }),
-        getActionTarget({ actionType: 'me', actionLabel: 'My Work' }),
-      ]
+    : []
 
   const breadcrumbItems = projectId
     ? [

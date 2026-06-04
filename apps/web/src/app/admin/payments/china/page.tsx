@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
@@ -83,6 +84,9 @@ export default async function AdminChinaPaymentsPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-5xl px-4 py-8">
+        <Link href="/admin" className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
         <h1 className="text-2xl font-semibold text-white">中国支付中台</h1>
         <p className="mt-2 text-sm text-white/50">
           展示支付宝与微信支付配置状态，并提供沙箱模式下的管理员模拟支付入账。

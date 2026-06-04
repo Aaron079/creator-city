@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
@@ -241,9 +242,19 @@ export default function AccountCreditsPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-4xl space-y-8 px-4 py-8">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-white">我的积分</h1>
+            <p className="mt-1 text-sm text-white/50">余额、充值申请、消耗流水。</p>
+          </div>
+          <Link
+            href="/account"
+            className="flex-shrink-0 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white"
+          >
+            ← 账号设置
+          </Link>
+        </div>
         <div>
-          <h1 className="text-2xl font-semibold text-white">我的积分</h1>
-          <p className="mt-1 text-sm text-white/50">余额、充值申请、消耗流水。</p>
           {authStatus === 'loading' || loading ? (
             <p className="mt-2 text-xs text-white/35">已显示本地缓存，正在后台同步钱包和订单状态。</p>
           ) : null}

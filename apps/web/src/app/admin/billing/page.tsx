@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { BillingOverview } from '@/components/admin/BillingOverview'
 import { PaymentStatusNotice } from '@/components/billing/PaymentStatusNotice'
@@ -33,6 +34,9 @@ export default function AdminBillingPage() {
   return (
     <DashboardShell>
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <Link href="/admin" className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white">
+          ← 管理员面板
+        </Link>
         <h1 className="text-2xl font-semibold text-white">Billing 管理后台</h1>
         <p className="mt-2 text-sm text-white/50">收入、用户钱包、支付订单与 Provider 成本统计。</p>
         {message ? <div className="mt-5"><PaymentStatusNotice type="info" message={message} /></div> : null}

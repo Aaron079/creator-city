@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 import { formatAdminDateTime } from '@/lib/format/adminDate'
@@ -170,6 +171,12 @@ export default function AdminUsagePage() {
       <main className="mx-auto max-w-6xl px-4 py-8">
 
         {/* Header */}
+        <Link
+          href="/admin"
+          className="mb-5 inline-flex rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white"
+        >
+          ← 管理员面板
+        </Link>
         <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-white/30">Admin Console</div>
         <div className="flex items-start justify-between gap-4">
           <div>
