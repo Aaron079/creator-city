@@ -181,14 +181,18 @@ export default function UsageHistoryPage() {
       const params = new URLSearchParams({ range, billingMode: billingFilter, outputType: outputFilter })
       const res = await fetch(`/api/account/usage?${params.toString()}`, { credentials: 'include' })
       if (!res.ok) {
-        const body = await res.json() as { message?: string }
+        if (res.status === 401) {
+          router.push('/auth/login?next=/account/usage')
+          return
+        }
+        const body = await res.json().catch(() => ({})) as { message?: string }
         setError(body.message ?? '加载失败，请刷新重试。')
         return
       }
       const json = await res.json() as UsageData
       setData(json)
     } catch {
-      setError('网络错误，请刷新重试。')
+      setError('网络连接异常，请检查网络后刷新重试。')
     } finally {
       setLoading(false)
     }

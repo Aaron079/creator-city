@@ -91,6 +91,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '账号设置', href: '/account', group: '账户', keywords: ['账号', '设置', '资料', 'profile', 'account'] },
   { label: 'API 账户管理', href: '/account/providers', group: '我的 API', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '我的api', '账户管理', '自带key'] },
   { label: '平台模型中心', href: '/providers', group: '我的 API', keywords: ['平台模型', 'provider center', 'model', 'api center'] },
+  { label: '生成用量', href: '/account/usage', group: '账户', keywords: ['用量', '用量历史', 'usage', '生成记录', 'byok用量', 'api用量'] },
   { label: '积分与充值', href: '/account/credits', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing', '平台额度'] },
   { label: '订阅与套餐', href: '/pricing-preview', group: '账户', keywords: ['订阅', '套餐', '计划', 'subscription', 'plan', '平台服务费', 'pricing'] },
 ]
@@ -372,6 +373,13 @@ export function TopNavigation() {
                     onClick={() => setOpenMenu(null)}
                   >
                     <span>⚡</span> Provider API 账户
+                  </Link>
+                  <Link
+                    href="/account/usage"
+                    className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-sky-300/70 transition hover:bg-sky-500/[0.06] hover:text-sky-200"
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    <span>📊</span> 生成用量
                   </Link>
                   <Link
                     href="/account/credits"

@@ -40,104 +40,109 @@ export async function GET(req: NextRequest) {
     ...(billingModeParam !== 'all' ? { billingMode: billingModeParam } : {}),
   }
 
-  const [
-    total,
-    succeeded,
-    failed,
-    byok,
-    platformCredits,
-    textCount,
-    imageCount,
-    videoCount,
-    feeSumAgg,
-    byOutputType,
-    byBillingMode,
-    byProvider,
-  ] = await Promise.all([
-    db.usageLog.count({ where }),
-    db.usageLog.count({ where: { ...where, status: 'succeeded' } }),
-    db.usageLog.count({ where: { ...where, status: 'failed' } }),
-    db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'user_provider_account' } }),
-    db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'platform_credits' } }),
-    db.usageLog.count({ where: { ...where, outputType: 'text' } }),
-    db.usageLog.count({ where: { ...where, outputType: 'image' } }),
-    db.usageLog.count({ where: { ...where, outputType: 'video' } }),
-    db.usageLog.aggregate({
-      where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}) },
-      _sum: { platformServiceFeeCredits: true },
-    }),
-    db.usageLog.groupBy({
-      by: ['outputType'],
-      where,
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
-    db.usageLog.groupBy({
-      by: ['billingMode'],
-      where,
-      _count: { id: true },
-    }),
-    db.usageLog.groupBy({
-      by: ['providerId'],
-      where,
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 10,
-    }),
-  ])
-
-  // Recent logs — safe fields only, no prompt text, no credentials
-  const recent = await db.usageLog.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    take: limit,
-    select: {
-      id: true,
-      projectId: true,
-      nodeId: true,
-      providerId: true,
-      outputType: true,
-      billingMode: true,
-      status: true,
-      providerCostPaidBy: true,
-      promptChars: true,
-      platformServiceFeeCredits: true,
-      errorCode: true,
-      createdAt: true,
-    },
-  })
-
-  return NextResponse.json({
-    range,
-    since: since?.toISOString() ?? null,
-    summary: {
+  try {
+    const [
       total,
-      byok,
-      platformCredits,
-      text: textCount,
-      image: imageCount,
-      video: videoCount,
       succeeded,
       failed,
-      successRate: total > 0 ? Math.round((succeeded / total) * 100) : 0,
-      platformServiceFeeCredits: feeSumAgg._sum.platformServiceFeeCredits ?? 0,
-    },
-    byOutputType: byOutputType.map((r) => ({ outputType: r.outputType, count: r._count.id })),
-    byBillingMode: byBillingMode.map((r) => ({ billingMode: r.billingMode, count: r._count.id })),
-    byProvider: byProvider.map((r) => ({ providerId: r.providerId, count: r._count.id })),
-    recent: recent.map((r) => ({
-      id: r.id,
-      createdAt: r.createdAt.toISOString(),
-      projectId: r.projectId,
-      nodeId: r.nodeId,
-      providerId: r.providerId,
-      outputType: r.outputType,
-      billingMode: r.billingMode,
-      status: r.status,
-      providerCostPaidBy: r.providerCostPaidBy,
-      promptChars: r.promptChars,
-      platformServiceFeeCredits: r.platformServiceFeeCredits,
-      errorCode: r.errorCode,
-    })),
-  })
+      byok,
+      platformCredits,
+      textCount,
+      imageCount,
+      videoCount,
+      feeSumAgg,
+      byOutputType,
+      byBillingMode,
+      byProvider,
+    ] = await Promise.all([
+      db.usageLog.count({ where }),
+      db.usageLog.count({ where: { ...where, status: 'succeeded' } }),
+      db.usageLog.count({ where: { ...where, status: 'failed' } }),
+      db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'user_provider_account' } }),
+      db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'platform_credits' } }),
+      db.usageLog.count({ where: { ...where, outputType: 'text' } }),
+      db.usageLog.count({ where: { ...where, outputType: 'image' } }),
+      db.usageLog.count({ where: { ...where, outputType: 'video' } }),
+      db.usageLog.aggregate({
+        where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}) },
+        _sum: { platformServiceFeeCredits: true },
+      }),
+      db.usageLog.groupBy({
+        by: ['outputType'],
+        where,
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+      }),
+      db.usageLog.groupBy({
+        by: ['billingMode'],
+        where,
+        _count: { id: true },
+      }),
+      db.usageLog.groupBy({
+        by: ['providerId'],
+        where,
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+    ])
+
+    // Recent logs — safe fields only, no prompt text, no credentials
+    const recent = await db.usageLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        projectId: true,
+        nodeId: true,
+        providerId: true,
+        outputType: true,
+        billingMode: true,
+        status: true,
+        providerCostPaidBy: true,
+        promptChars: true,
+        platformServiceFeeCredits: true,
+        errorCode: true,
+        createdAt: true,
+      },
+    })
+
+    return NextResponse.json({
+      range,
+      since: since?.toISOString() ?? null,
+      summary: {
+        total,
+        byok,
+        platformCredits,
+        text: textCount,
+        image: imageCount,
+        video: videoCount,
+        succeeded,
+        failed,
+        successRate: total > 0 ? Math.round((succeeded / total) * 100) : 0,
+        platformServiceFeeCredits: feeSumAgg._sum.platformServiceFeeCredits ?? 0,
+      },
+      byOutputType: byOutputType.map((r) => ({ outputType: r.outputType, count: r._count.id })),
+      byBillingMode: byBillingMode.map((r) => ({ billingMode: r.billingMode, count: r._count.id })),
+      byProvider: byProvider.map((r) => ({ providerId: r.providerId, count: r._count.id })),
+      recent: recent.map((r) => ({
+        id: r.id,
+        createdAt: r.createdAt.toISOString(),
+        projectId: r.projectId,
+        nodeId: r.nodeId,
+        providerId: r.providerId,
+        outputType: r.outputType,
+        billingMode: r.billingMode,
+        status: r.status,
+        providerCostPaidBy: r.providerCostPaidBy,
+        promptChars: r.promptChars,
+        platformServiceFeeCredits: r.platformServiceFeeCredits,
+        errorCode: r.errorCode,
+      })),
+    })
+  } catch (err) {
+    console.error('[account/usage] DB query failed:', err instanceof Error ? err.message : String(err))
+    return NextResponse.json({ message: '数据库查询失败，请稍后刷新重试。' }, { status: 500 })
+  }
 }
