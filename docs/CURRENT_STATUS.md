@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `8119eb0` (fix account usage production query — minimal count+findMany, expose error code in response)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed)
+Last valid commit: `35185b4` (add provider api key guide)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated)
 
 ---
 
@@ -36,6 +36,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Center auth blank screen fix | ✅ CLOSED / validated | `4710e79` |
 | User Usage History（/account/usage，用户端用量历史） | ✅ CLOSED / validated | `8119eb0` |
 | Seedance Video BYOK 安全评审（cn-executor credential plan，只读） | ✅ CLOSED / read-only audit completed | — |
+| Provider API Key Guide（/help/api-keys，接入教程页） | ✅ CLOSED / validated | `35185b4` |
 
 ---
 
@@ -528,7 +529,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化"的基础闭环。当前不赚 API 差价，不启用平台服务费扣费。用户可用自己的 API 生成 Text / Seedream Image，并在 `/account/usage` 查看自己的完整用量记录；管理员可通过 `/admin/usage` 观察全站 BYOK 与平台额度分布。Video BYOK 仍需单独安全评审。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程"的 BYOK 基础闭环。当前不赚 API 差价，不启用平台服务费扣费。用户可通过 `/help/api-keys` 了解如何连接自己的 Provider API，可用自己的 API 生成 Text / Seedream Image，并在 `/account/usage` 查看自己的完整用量记录；管理员可通过 `/admin/usage` 观察全站 BYOK 与平台额度分布。Seedance Video BYOK 安全评审已完成，实施暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -542,10 +543,11 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Provider Account Center（模型账户中心 UI） | ✅ validated |
 | Provider Account Center auth guard（白屏修复） | ✅ validated |
 | User Usage History（`/account/usage`） | ✅ validated |
+| Provider API Key Guide（`/help/api-keys`） | ✅ validated |
 | Platform service fee charging | ❌ not implemented |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。Seedance Video BYOK 安全评审已完成，推荐 Option A 方案（Vercel 解密后通过 HTTPS + executor shared secret 临时传给 cn-executor）。下一阶段可做 cn-executor safe logging 基础、Provider Account Center 教程完善、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做 Provider Account Center 后续迭代（账户用量汇总、Provider 教程深化）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1077,9 +1079,7 @@ await db.usageLog.create({
 
 5. ~~**Phase V5：BYOK 平台服务费记录 / usage logging** — ✅ DONE as Phase S1 (commit `d693f71`, validated 2026-06-03)~~
 
-6. **独立 API Key 帮助页 `/help/api-keys`**
-   - 当前指南已内嵌在帮助面板和 AI Agent 中，可选择独立页面版本
-   - 无后端需求，纯静态前端
+6. ~~**独立 API Key 帮助页 `/help/api-keys`** — ✅ DONE / browser validated (commit `35185b4`, validated 2026-06-04)~~
 
 7. **错误提示产品化（P2）**
    - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
