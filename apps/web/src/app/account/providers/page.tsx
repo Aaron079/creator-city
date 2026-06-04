@@ -582,8 +582,14 @@ export default function ProviderAccountsPage() {
 
           {!loading && !listError && accounts.length === 0 && (
             <div className="rounded-2xl border border-dashed border-white/[0.09] bg-white/[0.02] px-6 py-10 text-center">
-              <p className="text-sm text-white/35">还没有连接任何 API 账户。</p>
-              <p className="text-xs text-white/25 mt-1">在下方填写并保存你的第一个账户。</p>
+              <p className="text-sm text-white/40 mb-1">还没有连接任何 API 账户。</p>
+              <p className="text-xs text-white/25 mb-4">在下方填写并保存你的第一个账户。不清楚 API Key 从哪里获取？</p>
+              <Link
+                href="/help/api-keys"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] px-4 py-2 text-xs text-sky-400/70 hover:border-sky-500/35 hover:text-sky-300 transition"
+              >
+                📖 查看 API Key 接入指南
+              </Link>
             </div>
           )}
 
@@ -636,7 +642,7 @@ export default function ProviderAccountsPage() {
                             <>
                               <span className="mx-1.5 opacity-40">·</span>
                               <span className="font-mono tracking-widest">
-                                Endpoint: •••• {acc.fieldMeta.endpointId.last4}
+                                接入点 ID：•••• {acc.fieldMeta.endpointId.last4}
                               </span>
                             </>
                           )}

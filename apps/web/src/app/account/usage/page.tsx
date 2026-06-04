@@ -316,7 +316,22 @@ export default function UsageHistoryPage() {
         {/* Error */}
         {error && (
           <div className="mb-5 rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3 text-sm text-rose-300">
-            {error}
+            <p className="mb-2">{error}</p>
+            <div className="flex flex-wrap gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => void fetchData()}
+                className="rounded-lg border border-rose-400/25 bg-rose-400/[0.08] px-3 py-1 text-xs text-rose-300/80 hover:text-rose-200 transition"
+              >
+                刷新重试
+              </button>
+              <Link
+                href="/account"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/50 hover:text-white/80 transition"
+              >
+                ← 账号设置
+              </Link>
+            </div>
           </div>
         )}
 

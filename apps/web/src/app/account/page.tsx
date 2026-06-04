@@ -147,6 +147,14 @@ export default function AccountPage() {
             <span className="text-[11px] text-white/18">平台服务费 · 即将开放</span>
           </div>
         </div>
+        <div className="mt-2">
+          <Link
+            href="/help/api-keys"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/15 bg-sky-500/[0.03] px-3.5 py-1.5 text-xs text-sky-400/60 hover:border-sky-500/25 hover:text-sky-300/80 transition"
+          >
+            📖 API Key 接入指南 — 了解如何连接自己的 Provider
+          </Link>
+        </div>
 
         {notice && (
           <div className={`mb-5 rounded-xl px-4 py-3 text-sm ${notice.type === 'success' ? 'bg-green-500/10 border border-green-500/20 text-green-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'}`}>

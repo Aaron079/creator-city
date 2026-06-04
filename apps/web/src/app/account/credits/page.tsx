@@ -228,8 +228,8 @@ export default function AccountCreditsPage() {
   const wechatpayStatus = chinaProviders.wechatpay.status
   const alipayConfigured = alipayStatus === 'configured'
   const alipayChecking = alipayStatus === 'checking'
-  const alipayStatusText = alipayConfigured ? 'available / 可用' : alipayChecking ? 'checking...' : 'not-configured'
-  const wechatpayStatusText = wechatpayStatus === 'configured' ? 'available / 可用' : wechatpayStatus === 'checking' ? 'checking...' : 'not-configured'
+  const alipayStatusText = alipayConfigured ? '已配置 / 可用' : alipayChecking ? '检测中…' : '未配置'
+  const wechatpayStatusText = wechatpayStatus === 'configured' ? '已配置 / 可用' : wechatpayStatus === 'checking' ? '检测中…' : '未配置'
 
   if (authStatus === 'unauthenticated') return (
     <DashboardShell>

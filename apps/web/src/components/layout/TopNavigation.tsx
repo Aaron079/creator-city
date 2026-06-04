@@ -46,6 +46,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: '我的 API', key: 'myapi',
     items: [
       { label: 'API 账户管理', href: '/account/providers' },
+      { label: 'API Key 接入指南', href: '/help/api-keys' },
+      { label: '生成用量', href: '/account/usage' },
       { label: '平台模型中心', href: '/providers' },
     ],
   },
@@ -374,7 +376,7 @@ export function TopNavigation() {
                     className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.08] hover:text-violet-200"
                     onClick={() => setOpenMenu(null)}
                   >
-                    <span>⚡</span> Provider API 账户
+                    <span>⚡</span> 我的 API 账户
                   </Link>
                   <Link
                     href="/account/usage"

@@ -84,9 +84,17 @@ function outputTypeLabel(t: string | null) {
 }
 
 function billingModeLabel(m: string | null) {
-  if (m === 'byok') return 'BYOK'
-  if (m === 'platform') return '平台额度'
+  if (m === 'user_provider_account') return '我的 API'
+  if (m === 'platform_credits') return '平台额度'
   return m ?? '—'
+}
+
+function rowStatusLabel(s: string | null) {
+  if (s === 'succeeded') return '成功'
+  if (s === 'failed') return '失败'
+  if (s === 'pending' || s === 'queued' || s === 'running') return '处理中'
+  if (s === 'canceled') return '已取消'
+  return s ?? '—'
 }
 
 function healthColor(h: AccountHealth['status']) {
@@ -317,7 +325,7 @@ export default function ProviderAccountDetailPage() {
             <InfoCell label="添加日期" value={fmtDate(account.createdAt)} />
             <InfoCell label="上次更新" value={fmtDate(account.updatedAt)} />
             <InfoCell label="项目范围" value={account.projectScope ?? '全局'} />
-            <InfoCell label="凭证类型" value={account.credentialType === 'bearer_with_endpoint' ? 'API Key + Endpoint' : 'API Key'} />
+            <InfoCell label="凭证类型" value={account.credentialType === 'bearer_with_endpoint' ? 'API Key + 接入点 ID' : 'API Key'} />
           </div>
         </div>
 
@@ -400,7 +408,7 @@ export default function ProviderAccountDetailPage() {
                     )}
                   </div>
                   <span className={`flex-shrink-0 font-medium ${rowStatusColor(row.status)}`}>
-                    {row.status === 'succeeded' ? '成功' : row.status === 'failed' ? '失败' : (row.status ?? '—')}
+                    {rowStatusLabel(row.status)}
                   </span>
                 </div>
               ))}
