@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `0f4eee8` (polish provider account center ux)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated)
+Last valid commit: `4347465` (clarify account billing and byok messaging)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated)
 
 ---
 
@@ -41,6 +41,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Detail / Health Status（账户详情页 + 用量 + 健康状态） | ✅ CLOSED / validated | `60aaa95` |
 | Subpage Navigation Polish（子页面返回入口审计 + 无效 Workspace 按钮清理） | ✅ CLOSED / validated | `5cb46a8` |
 | Provider Account Center UX Polish Batch（文案 + 入口 + 空状态 + 错误提示全面 polish） | ✅ CLOSED / validated | `0f4eee8` |
+| Account / Billing / BYOK Messaging（账号/积分/BYOK 费用模式说明统一） | ✅ CLOSED / validated | `4347465` |
 
 ---
 
@@ -533,7 +534,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish"的 BYOK 基础闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、找到教程，并能从菜单/搜索快速进入关键页面。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一"的 BYOK 基础闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、找到教程，并能从菜单/搜索快速进入关键页面。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -552,6 +553,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Provider Account Detail / Health Status（账户详情页） | ✅ validated |
 | Subpage Navigation Polish（全站子页面返回入口 + 无效按钮清理） | ✅ validated |
 | Provider Account Center UX Polish（文案中文化 + 入口补齐 + 空状态 + 错误提示） | ✅ validated |
+| Account / Billing / BYOK Messaging（账号/积分/BYOK 三种费用模式说明统一） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 | Platform service fee charging | ❌ not implemented |
@@ -1209,6 +1211,49 @@ await db.usageLog.create({
 
 ---
 
+## Account / Billing / BYOK Messaging — CLOSED / validated
+
+**Commit:** `4347465`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/app/account/page.tsx` | 快捷入口下方新增三种费用模式一行说明（平台额度 / 我的 API / 平台服务费） |
+| `apps/web/src/app/account/credits/page.tsx` | WalletBalanceCard 上方新增费用说明框（3 行，分别解释三种模式） |
+
+### 验收结果（2026-06-04 静态核查通过）
+
+| 验收项 | 结果 |
+|---|---|
+| `/account` 快捷入口下方出现三种费用模式说明 | ✅ |
+| 平台额度：「购买积分，Creator City 代付 API 调用」 | ✅ |
+| 我的 API：「自带 Provider Key，API 费用直付给服务商，不扣平台积分」 | ✅ |
+| 平台服务费：「当前未启用（0）」 | ✅ |
+| `/account/credits` WalletBalanceCard 上方出现费用说明框 | ✅ |
+| 明确本页是平台额度余额与流水（Creator City 代付 AI 模型 API 调用） | ✅ |
+| 明确「我的 API 账户」时 API 费用由用户直接支付给服务商，不经过平台积分 | ✅ |
+| 明确平台服务费当前未启用，显示为 0 | ✅ |
+| 防止用户误以为充值这里会充值到 Provider 账户 | ✅ |
+| 防止用户误以为 Provider API 费用由 Creator City 代收 | ✅ |
+| `/account/providers` 无回归 | ✅ |
+| `/account/providers/[id]` 无回归 | ✅ |
+| `/account/usage` 无回归 | ✅ |
+| `/help/api-keys` 无回归 | ✅ |
+| 不显示 API Key / encryptedApiKey / encryptedFields / prompt 明文 | ✅ |
+| 未改生成链路 / billing / credits / Provider CRUD / UsageLog / cn-executor / schema | ✅ |
+
+### 安全边界确认
+
+- 仅修改 JSX 展示文案（2 个文件，各加一小块 info div）
+- 未触碰任何业务逻辑、API 路由、schema、billing / credits 语义
+- type-check 全部通过
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1287,3 +1332,5 @@ Modules confirmed working as of `8119eb0`:
 - User avatar dropdown → "生成用量" direct entry [✅ browser validated 2026-06-04]
 - Provider API Key guide in canvas help panel (4-tab, 18 providers)
 - AI Agent floating button — API Key keyword replies + quick actions
+- `/account` — 3-mode billing legend (平台额度 / 我的 API / 平台服务费) below quick-links grid [✅ validated 2026-06-04]
+- `/account/credits` — clarification box above WalletBalanceCard: platform credits only; BYOK Provider fees paid direct to vendor; service fee = 0/未启用 [✅ validated 2026-06-04]
