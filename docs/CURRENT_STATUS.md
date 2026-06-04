@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `35185b4` (add provider api key guide)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated)
+Last valid commit: `5c4b6e6` (show provider account usage summary)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated)
 
 ---
 
@@ -37,6 +37,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | User Usage History（/account/usage，用户端用量历史） | ✅ CLOSED / validated | `8119eb0` |
 | Seedance Video BYOK 安全评审（cn-executor credential plan，只读） | ✅ CLOSED / read-only audit completed | — |
 | Provider API Key Guide（/help/api-keys，接入教程页） | ✅ CLOSED / validated | `35185b4` |
+| Provider Account Usage Summary（账户卡片近 90 天用量汇总） | ✅ CLOSED / validated | `5c4b6e6` |
 
 ---
 
@@ -529,7 +530,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程"的 BYOK 基础闭环。当前不赚 API 差价，不启用平台服务费扣费。用户可通过 `/help/api-keys` 了解如何连接自己的 Provider API，可用自己的 API 生成 Text / Seedream Image，并在 `/account/usage` 查看自己的完整用量记录；管理员可通过 `/admin/usage` 观察全站 BYOK 与平台额度分布。Seedance Video BYOK 安全评审已完成，实施暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总"的 BYOK 基础闭环。当前不赚 API 差价，不启用平台服务费扣费。用户可通过 `/help/api-keys` 了解如何连接自己的 Provider API，可用自己的 API 生成 Text / Seedream Image，在 `/account/usage` 查看自己的完整用量记录，并在 `/account/providers` 每个账户卡片中直接查看该账户的近 90 天用量汇总；管理员可通过 `/admin/usage` 观察全站 BYOK 与平台额度分布。Seedance Video BYOK 安全评审已完成，实施暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -544,10 +545,11 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Provider Account Center auth guard（白屏修复） | ✅ validated |
 | User Usage History（`/account/usage`） | ✅ validated |
 | Provider API Key Guide（`/help/api-keys`） | ✅ validated |
+| Provider Account Usage Summary（账户卡片近 90 天用量） | ✅ validated |
 | Platform service fee charging | ❌ not implemented |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做 Provider Account Center 后续迭代（账户用量汇总、Provider 教程深化）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做 Provider Account Center 深化（账户详情页、更多 Provider 教程、账号健康状态）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
