@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-03
-Last valid commit: `e96f916` (Provider Account Center 产品化升级 — 模型账户中心 / capability matrix / 3-mode billing / Seedream byokStatus fix)
-Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admin Usage Dashboard browser validated · Provider Account Center browser validated)
+Last updated: 2026-06-04
+Last valid commit: `4710e79` (fix: provider account center blank screen — auth guard overriding Zustand session)
+Production validated: 2026-06-04 (Provider Account Center auth blank screen fix browser validated · User Usage History implemented, browser validation pending)
 
 ---
 
@@ -33,6 +33,8 @@ Production validated: 2026-06-03 (Phase S1 UsageLog production validated · Admi
 | BYOK UsageLog Phase S1（平台用量记录，不扣费） | ✅ CLOSED / production validated | `d693f71` |
 | Admin Usage Dashboard（/admin/usage，生成用量观察） | ✅ CLOSED / validated | `fbf7734` |
 | Provider Account Center 产品化升级（模型账户中心） | ✅ CLOSED / validated | `e96f916` |
+| Provider Account Center auth blank screen fix | ✅ CLOSED / validated | `4710e79` |
+| User Usage History（/account/usage，用户端用量历史） | 🚧 IMPLEMENTED / browser validation pending | `dc69df8` |
 
 ---
 
@@ -525,7 +527,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** 平台额度与我的 API 双轨并存。Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线，Admin Usage Dashboard 已验收——Creator City 现已具备完整的 BYOK 用量可观测能力（全量记录，admin 实时可见）。Provider Account Center 已升级为"模型账户中心"，明确三种计费模式、展示能力矩阵。Video BYOK 仍需单独安全评审。
+**当前状态：** 平台额度与我的 API 双轨并存。Text BYOK 和 Seedream Image BYOK 均已验收。UsageLog Phase S1 已上线，Admin Usage Dashboard 已验收——Creator City 现已具备完整的 BYOK 用量可观测能力（全量记录，admin 实时可见）。Provider Account Center 已升级为"模型账户中心"，明确三种计费模式、展示能力矩阵，auth 白屏问题已修复。用户端 Usage History 已实现，待浏览器验收。Video BYOK 仍需单独安全评审。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -537,16 +539,20 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | UsageLog Phase S1（用量记录，不扣费） | ✅ production validated |
 | Admin BYOK Usage Dashboard（`/admin/usage`） | ✅ validated |
 | Provider Account Center（模型账户中心 UI） | ✅ validated |
+| Provider Account Center auth guard（白屏修复） | ✅ validated |
+| User Usage History（`/account/usage`） | 🚧 implemented / browser validation pending |
 | Platform service fee charging | ❌ not implemented |
 | Seedance Video BYOK | ❌ not implemented |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做用户端 usage history、Seedance Video BYOK 安全评审，或平台服务费策略审计。暂不直接启用服务费扣费。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段优先对用户端 Usage History（`/account/usage`）做浏览器验收；验收通过后可做 Seedance Video BYOK 安全评审或平台服务费策略审计。暂不直接启用服务费扣费。
 
 ---
 
 ## Current Remaining Issues
 
 **无 P0 / P1 问题。当前系统处于稳定状态。**
+
+🚧 待验收：User Usage History（`/account/usage`）已实现，尚待浏览器验收确认。
 
 P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS localhost:4000 需单独排期。
 
@@ -839,6 +845,98 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ---
 
+## Provider Account Center Auth Blank Screen Fix — CLOSED / validated
+
+**Commit:** `4710e79`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
+
+### 问题背景
+
+用户从右上角头像菜单点击「Provider API 账户」进入 `/account/providers` 时出现完全白屏（永久空白，无法恢复）。
+
+### 根本原因
+
+`/account/providers` 页面存在两个互相冲突的 auth guard：
+
+1. `effectiveIsAuthenticated`（正确逻辑）：当 Zustand 本地登录态有效时（`isAuthenticated = true`），即使 `/api/auth/me` server check 还在加载中，也应允许显示页面内容。
+2. 显式 guard `if (sessionStatus === 'loading' || sessionStatus === 'unknown') return null`：**覆盖了上面的逻辑**，无论 Zustand 状态如何，只要 server auth check 还在进行（最多 5 秒超时），就强制返回 null（白屏）。
+
+**结果**：有效登录用户点击该页面 → `/api/auth/me` 请求超时或网络慢（≥5s）→ `sessionStatus` 变为 `'unknown'` → 页面永久空白，无法自动恢复。
+
+### 修复内容
+
+| 项目 | 状态 |
+|---|---|
+| 移除覆盖性 guard `if (sessionStatus === 'loading' \|\| 'unknown') return null` | ✅ |
+| 改为由 `effectiveIsAuthenticated` 单一控制渲染 | ✅ |
+| 有 Zustand 本地有效 session 时，页面立即显示（不再等待 server check） | ✅ |
+| server auth check 继续在后台异步进行，session 过期时 useEffect 执行重定向 | ✅ |
+| `sessionStatus === 'unknown'` 且无本地 session 时，显示可见 retry 状态（不再永久白屏） | ✅ |
+| 从 `useCurrentUser` 获取 `refresh` 函数，retry 按钮可重新发起 auth check | ✅ |
+| type-check 通过 | ✅ |
+
+### 浏览器验收结果（2026-06-04 通过）
+
+| 验收项 | 结果 |
+|---|---|
+| 用户菜单 → 「Provider API 账户」→ `/account/providers` 正常打开，不白屏 | ✅ |
+| 有本地 session（localStorage Zustand）时，页面立即渲染，不等待 server auth check | ✅ |
+| 慢网络或 `/api/auth/me` pending 期间，已连接账户列表显示"加载中…"而非白屏 | ✅ |
+| 已连接账户列表正常显示（空态 or 账户列表） | ✅ |
+| API 错误时显示友好错误信息，不崩溃 | ✅ |
+| Text 账户「测试连接」功能无回归 | ✅ |
+| Seedream 账户「测试连接」仍显示"不支持自动测试" | ✅ |
+| `/account/usage` 未受影响 | ✅ |
+
+### 安全边界确认
+
+- 未修改 `/api/generate/*` / billing / credits / payment / schema / cn-executor
+- 未修改 Provider Account CRUD API 语义
+- 未修改 UsageLog / Admin Dashboard
+- 仅修改 `apps/web/src/app/account/providers/page.tsx`（2 行删除，24 行添加）
+
+---
+
+## User Usage History — IMPLEMENTED / browser validation pending
+
+**Commits:** `dc69df8`（实现）→ `338c2a3`（标签中文化）
+**Status:** 🚧 IMPLEMENTED / browser validation pending
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/app/account/usage/page.tsx` | 用户端用量历史页面（client component） |
+| `apps/web/src/app/api/account/usage/route.ts` | 用户自身用量 API route，userScope 强隔离 |
+
+### 功能说明
+
+| 功能 | 状态 |
+|---|---|
+| 时间范围切换（近 24h / 7d / 30d / 全部） | ✅ |
+| 费用来源筛选（全部 / 平台额度 / 我的 API） | ✅ |
+| 生成类型筛选（全部 / 文本 / 图片 / 视频） | ✅ |
+| Summary cards：总生成次数 / 我的 API / 平台额度 / 文本·图片 / 成功率 / 平台服务费 | ✅ |
+| 分布面板：生成类型 / 计费模式 / Provider 来源 | ✅ |
+| 最近生成记录表（桌面 8 列 + 移动卡片视图） | ✅ |
+| 不显示 prompt 明文 / API Key / encryptedApiKey / encryptedFields | ✅ |
+| 全部标签中文化（底层 API 枚举值不变） | ✅ |
+| `/account` 快速入口加入"生成用量"入口卡 | ✅ |
+
+### 安全边界
+
+- `GET /api/account/usage`：每条查询都注入 `userScope = { userId: user.id }`，用户只能看自己的数据
+- `select` 白名单：不含 prompt 字段（UsageLog 本身无此字段）、不含凭证字段
+- 独立于 `GET /api/admin/usage`（admin 专用，不共享代码或权限）
+
+### 下一步
+
+浏览器验收通过后将此项标记为 ✅ CLOSED / validated。
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -887,7 +985,7 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ## Stable Baseline (do not regress)
 
-Modules confirmed working as of `e96f916`:
+Modules confirmed working as of `4710e79`:
 
 - Canvas node CRUD (add / edit / delete / drag / connect)
 - Image generation chain (prompt → POST → poll → display)
@@ -909,5 +1007,6 @@ Modules confirmed working as of `e96f916`:
 - `/assets` page listing all generated assets with recovery status
 - Customer delivery share URL follows `NEXT_PUBLIC_APP_URL` (CN-safe)
 - `/account/providers` — 模型账户中心：CRUD + test connection + BYOK management + capability matrix + 3-mode billing explanation [✅ browser validated 2026-06-03]
+- `/account/providers` auth guard — Zustand session shown immediately; server check async; unknown+no-session shows retry UI [✅ browser validated 2026-06-04]
 - Provider API Key guide in canvas help panel (4-tab, 18 providers)
 - AI Agent floating button — API Key keyword replies + quick actions
