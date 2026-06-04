@@ -185,8 +185,11 @@ export default function UsageHistoryPage() {
           router.push('/auth/login?next=/account/usage')
           return
         }
-        const body = await res.json().catch(() => ({})) as { message?: string }
-        setError(body.message ?? '加载失败，请刷新重试。')
+        const body = await res.json().catch(() => ({})) as { message?: string; _stage?: string; _code?: string }
+        // Include Prisma error code+stage in the banner so it's visible in the browser
+        // for diagnosis without needing Vercel logs access.
+        const diag = body._code && body._code !== 'UNKNOWN' ? ` [${body._code}@${body._stage ?? '?'}]` : ''
+        setError((body.message ?? '加载失败，请刷新重试。') + diag)
         return
       }
       const json = await res.json() as UsageData

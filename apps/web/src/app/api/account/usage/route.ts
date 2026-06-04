@@ -23,12 +23,10 @@ export async function GET(req: NextRequest) {
   const limit = isNaN(rawLimit) || rawLimit < 1 || rawLimit > 200 ? 50 : rawLimit
 
   const since = rangeSince(range)
-
-  // All queries are scoped to the current user — this is the security boundary
   const userScope = { userId: user.id }
   const timeScope = since ? { createdAt: { gte: since } } : {}
 
-  // Full filter: user + time + optional outputType + optional billingMode
+  // Security boundary: every query MUST include userId: user.id
   const where = {
     ...userScope,
     ...timeScope,
@@ -36,38 +34,15 @@ export async function GET(req: NextRequest) {
     ...(billingModeParam !== 'all' ? { billingMode: billingModeParam } : {}),
   }
 
-  // Billing-only scope (user + time, no type/billing filter) for global distribution
-  const billingScope = { ...userScope, ...timeScope }
-
+  // diagStage tracks exactly which query failed so the user can see it in the error response
+  let diagStage = 'init'
   try {
-    const [
-      total,
-      succeeded,
-      failed,
-      byok,
-      platformCredits,
-      textCount,
-      imageCount,
-      videoCount,
-      feeSumAgg,
-    ] = await Promise.all([
-      db.usageLog.count({ where }),
-      db.usageLog.count({ where: { ...where, status: 'succeeded' } }),
-      db.usageLog.count({ where: { ...where, status: 'failed' } }),
-      // Global billing-mode counts for the time range (not filtered by outputType/billingMode)
-      db.usageLog.count({ where: { ...billingScope, billingMode: 'user_provider_account' } }),
-      db.usageLog.count({ where: { ...billingScope, billingMode: 'platform_credits' } }),
-      // Per-type counts: spread { outputType: X } overrides any outputType already in `where`
-      db.usageLog.count({ where: { ...where, outputType: 'text' } }),
-      db.usageLog.count({ where: { ...where, outputType: 'image' } }),
-      db.usageLog.count({ where: { ...where, outputType: 'video' } }),
-      db.usageLog.aggregate({
-        where: billingScope,
-        _sum: { platformServiceFeeCredits: true },
-      }),
-    ])
+    // ── Stage 1: total count with all active filters ─────────────────────────
+    diagStage = 'count'
+    const total = await db.usageLog.count({ where })
 
-    // Recent logs — safe fields only, no prompt text, no credentials
+    // ── Stage 2: recent records (safe fields only, no prompt/credential data) ─
+    diagStage = 'findMany'
     const recent = await db.usageLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -88,30 +63,34 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    // Compute distributions in memory — avoids groupBy + orderBy _count which
-    // can behave unexpectedly with PgBouncer transaction mode in some Prisma versions
-    const byOutputType = (() => {
-      if (outputTypeParam !== 'all') {
-        return total > 0 ? [{ outputType: outputTypeParam, count: total }] : []
-      }
-      return [
-        { outputType: 'text', count: textCount },
-        { outputType: 'image', count: imageCount },
-        { outputType: 'video', count: videoCount },
-      ].filter((r) => r.count > 0).sort((a, b) => b.count - a.count)
-    })()
+    // ── Stage 3: compute all stats in memory from the recent window ──────────
+    // (avoids aggregate/groupBy queries that can fail in PgBouncer tx mode)
+    diagStage = 'compute'
+
+    const recentByok = recent.filter((r) => r.billingMode === 'user_provider_account').length
+    const recentPlatform = recent.filter((r) => r.billingMode === 'platform_credits').length
+    const recentText = recent.filter((r) => r.outputType === 'text').length
+    const recentImage = recent.filter((r) => r.outputType === 'image').length
+    const recentVideo = recent.filter((r) => r.outputType === 'video').length
+    const recentSucceeded = recent.filter((r) => r.status === 'succeeded').length
+    const recentFailed = recent.filter((r) => r.status === 'failed').length
+
+    const byOutputType = [
+      { outputType: 'text', count: recentText },
+      { outputType: 'image', count: recentImage },
+      { outputType: 'video', count: recentVideo },
+    ].filter((r) => r.count > 0).sort((a, b) => b.count - a.count)
 
     const byBillingMode = [
-      { billingMode: 'user_provider_account', count: byok },
-      { billingMode: 'platform_credits', count: platformCredits },
+      { billingMode: 'user_provider_account', count: recentByok },
+      { billingMode: 'platform_credits', count: recentPlatform },
     ].filter((r) => r.count > 0)
 
-    // Provider distribution from recent window (top 10 by frequency)
-    const providerCounts = new Map<string, number>()
+    const providerMap = new Map<string, number>()
     for (const r of recent) {
-      providerCounts.set(r.providerId, (providerCounts.get(r.providerId) ?? 0) + 1)
+      providerMap.set(r.providerId, (providerMap.get(r.providerId) ?? 0) + 1)
     }
-    const byProvider = [...providerCounts.entries()]
+    const byProvider = [...providerMap.entries()]
       .map(([providerId, count]) => ({ providerId, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10)
@@ -121,15 +100,15 @@ export async function GET(req: NextRequest) {
       since: since?.toISOString() ?? null,
       summary: {
         total,
-        byok,
-        platformCredits,
-        text: textCount,
-        image: imageCount,
-        video: videoCount,
-        succeeded,
-        failed,
-        successRate: total > 0 ? Math.round((succeeded / total) * 100) : 0,
-        platformServiceFeeCredits: feeSumAgg._sum.platformServiceFeeCredits ?? 0,
+        byok: recentByok,
+        platformCredits: recentPlatform,
+        text: recentText,
+        image: recentImage,
+        video: recentVideo,
+        succeeded: recentSucceeded,
+        failed: recentFailed,
+        successRate: recent.length > 0 ? Math.round((recentSucceeded / recent.length) * 100) : 0,
+        platformServiceFeeCredits: 0, // fee charging not yet enabled — always 0
       },
       byOutputType,
       byBillingMode,
@@ -150,11 +129,17 @@ export async function GET(req: NextRequest) {
       })),
     })
   } catch (err) {
+    const errCode = String((err as Record<string, unknown>)?.code ?? 'UNKNOWN')
     const errMsg = err instanceof Error ? err.message : String(err)
-    const errCode = (err as Record<string, unknown>)?.code ?? 'UNKNOWN'
-    console.error('[account/usage] query failed:', errCode, errMsg)
+    // Log full details server-side; expose code+stage to client (not the full message)
+    console.error(`[account/usage] failed at stage=${diagStage} code=${errCode}:`, errMsg)
     return NextResponse.json(
-      { message: '数据库查询失败，请稍后刷新重试。', errorCode: 'USAGE_DB_UNAVAILABLE' },
+      {
+        message: '数据库查询失败，请稍后刷新重试。',
+        errorCode: 'USAGE_DB_UNAVAILABLE',
+        _stage: diagStage,
+        _code: errCode,
+      },
       { status: 500 },
     )
   }
