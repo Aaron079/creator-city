@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `4347465` (clarify account billing and byok messaging)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated)
+Last valid commit: `4bac934` (add provider account health guidance)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated)
 
 ---
 
@@ -42,6 +42,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Subpage Navigation Polish（子页面返回入口审计 + 无效 Workspace 按钮清理） | ✅ CLOSED / validated | `5cb46a8` |
 | Provider Account Center UX Polish Batch（文案 + 入口 + 空状态 + 错误提示全面 polish） | ✅ CLOSED / validated | `0f4eee8` |
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 费用模式说明统一） | ✅ CLOSED / validated | `4347465` |
+| Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
 
 ---
 
@@ -534,7 +535,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一"的 BYOK 基础闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、找到教程，并能从菜单/搜索快速进入关键页面。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -554,11 +555,12 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Subpage Navigation Polish（全站子页面返回入口 + 无效按钮清理） | ✅ validated |
 | Provider Account Center UX Polish（文案中文化 + 入口补齐 + 空状态 + 错误提示） | ✅ validated |
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 三种费用模式说明统一） | ✅ validated |
+| Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 | Platform service fee charging | ❌ not implemented |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做：Provider Account Center 后续迭代（更多 Provider 教程、账号健康建议、错误修复引导）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。账户中心 UX 已相对完整（账户管理 + 健康状态 + 错误引导 + API Key 教程 + 用量历史）。下一阶段可做：Seedance Video BYOK feature flag skeleton / safe logging prework、其他单 API Key Provider BYOK（Runway 等）、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1254,6 +1256,74 @@ await db.usageLog.create({
 
 ---
 
+## Provider Account Health Guidance — CLOSED / validated
+
+**Commit:** `4bac934`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
+
+### 修改文件（共 3 个，仅 UI）
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/app/account/providers/[id]/page.tsx` | 新增 `getHealthExplanation` + `RepairTip` 类型 + `getRepairTips` 函数；健康卡片下增加中文扩展说明；插入「建议操作」修复建议 section |
+| `apps/web/src/app/account/providers/page.tsx` | 新增 `getAccountHint` 函数；异常账户卡片显示轻量健康 chip |
+| `apps/web/src/app/help/api-keys/page.tsx` | FAQ section 重命名为「出错了怎么办？」；新增 3 条 FAQ |
+
+### 功能说明
+
+| 功能 | 状态 |
+|---|---|
+| `/account/providers/[id]` 健康卡片下显示扩展中文解释（healthy / disabled / auth_failed / quota / timeout / unsupported / warning / unknown 各一句） | ✅ |
+| `/account/providers/[id]` 健康卡片与凭证之间插入「建议操作」section（最多 3 条，severity 颜色区分） | ✅ |
+| auth_failed / unauthorized / invalid_api_key / provider_auth_failed → 提示重新生成 API Key，链接接入指南 | ✅ |
+| insufficient_quota / rate_limited → 提示检查 Provider 账户余额和 API billing | ✅ |
+| bearer_with_endpoint 缺失 endpointId → 提示补充接入点 ID，链接接入指南 | ✅ |
+| timeout → 提示稍后重试或切换平台额度 | ✅ |
+| unsupported（Seedream 不支持自动测试）→ 提示在画布图片节点切换「我的 API 账户」实际验证 | ✅ |
+| 最近失败记录 errorCode 正则匹配（auth / quota / endpoint 三类），补充对应 tip | ✅ |
+| 未测试 + 无用量账户 → info tip 引导测试连接或实际生成 | ✅ |
+| 用量数据不可用 → "用量数据暂时不可用，请稍后重试" | ✅ |
+| `/account/providers` 异常账户卡片显示轻量 chip（4 种异常，正常账户不显示） | ✅ |
+| chip 使用现有 `usageSummaries` 数据，不发新 API 请求 | ✅ |
+| `/help/api-keys` FAQ section 重命名「出错了怎么办？」 | ✅ |
+| `/help/api-keys` 新增：Seedream 不支持自动测试说明、连接超时说明、BYOK 不扣平台服务费说明 | ✅ |
+
+### 验收结果（2026-06-04 静态核查通过）
+
+| 验收项 | 结果 | 备注 |
+|---|---|---|
+| `/account/providers/[id]` 健康卡片显示中文扩展解释 | ✅ PASS | `getHealthExplanation` → secondary `<p>` |
+| auth_failed / provider_auth_failed / unauthorized / invalid_api_key 覆盖 | ✅ PASS | lastTestStatus + recentUsage 正则双重覆盖 |
+| quota / billing / insufficient_quota 覆盖 | ✅ PASS | lastTestStatus + recentUsage 正则双重覆盖 |
+| provider_model_invalid / endpoint_invalid / model_not_found 覆盖 | ✅ PASS | credentialType 检查 + recentUsage 正则 |
+| timeout / provider_timeout 覆盖 | ✅ PASS | lastTestStatus === 'timeout' |
+| db_unavailable / 用量数据不可用 | ✅ PASS | `usageSummaryUnavailable` → "暂时不可用" |
+| asset_not_found / media_not_found | ⚠️ WARN | 非账户健康问题，未在 getRepairTips 中显式覆盖；recentUsage 表展示原始 errorCode；不在原始任务规格内；非阻塞 |
+| Seedream 不支持自动测试，有画布验证引导 | ✅ PASS | 两处：getHealthExplanation + getRepairTips（含「去画布创作」链接） |
+| 不触发真实生成 / 不调用 Provider | ✅ PASS | 所有 tip 均为静态文案 |
+| `/account/providers` 异常 chip 正常（4 种异常类型） | ✅ PASS | `getAccountHint` 函数覆盖 auth/quota/endpointId/fail-rate |
+| 正常账户不显示 chip | ✅ PASS | `if (!hint) return null` |
+| `/help/api-keys` FAQ 重命名「出错了怎么办？」 | ✅ PASS | |
+| `/help/api-keys` 新增 3 条 FAQ | ✅ PASS | Seedream unsupported / timeout / BYOK 服务费 |
+| 不显示 API Key / encryptedApiKey / encryptedFields / prompt 明文 | ✅ PASS | 无 grep 命中 |
+| `/account/usage` 无回归 | ✅ PASS | 文件未修改 |
+| `/admin/usage` 无回归 | ✅ PASS | 文件未修改 |
+| cn-executor 未改动 | ✅ PASS | commit diff 只含 3 个 web UI 文件 |
+| 生成链路 / billing / schema 未改动 | ✅ PASS | commit diff 只含 3 个 web UI 文件 |
+| type-check / lint / build 全部通过 | ✅ PASS | 零新错误 |
+
+### 安全边界确认
+
+- 未修改任何 API 路由、Provider CRUD、billing、credits、UsageLog schema
+- 未修改 `/api/generate/*` / cn-executor / Prisma schema / payment
+- 未新增真实 Provider 调用
+- 所有 tip 文案静态渲染，不触发任何后端请求
+- 不显示 API Key 明文 / encryptedApiKey / encryptedFields / prompt 明文 / endpointId 明文
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1334,3 +1404,6 @@ Modules confirmed working as of `8119eb0`:
 - AI Agent floating button — API Key keyword replies + quick actions
 - `/account` — 3-mode billing legend (平台额度 / 我的 API / 平台服务费) below quick-links grid [✅ validated 2026-06-04]
 - `/account/credits` — clarification box above WalletBalanceCard: platform credits only; BYOK Provider fees paid direct to vendor; service fee = 0/未启用 [✅ validated 2026-06-04]
+- `/account/providers/[id]` — Health Guidance: getHealthExplanation (secondary text below health.message) + getRepairTips 建议操作 section (auth/quota/endpoint/timeout/unsupported/high-fail coverage; links to /help/api-keys and /projects) [✅ validated 2026-06-04]
+- `/account/providers` — Health hint chips on abnormal accounts (auth_failed→请检查 API Key, quota→请检查 Provider 余额, missing endpointId→请补充接入点 ID, high fail rate→最近有失败记录); normal accounts show no chip [✅ validated 2026-06-04]
+- `/help/api-keys` — FAQ section renamed "出错了怎么办？"; 3 new entries (Seedream unsupported test, timeout, BYOK service fee clarification) [✅ validated 2026-06-04]
