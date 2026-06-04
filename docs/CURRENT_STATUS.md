@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `60aaa95` (add provider account detail page with usage summary and health status)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated)
+Last valid commit: `0f4eee8` (polish provider account center ux)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated)
 
 ---
 
@@ -40,6 +40,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Usage Summary（账户卡片近 90 天用量汇总） | ✅ CLOSED / validated | `5c4b6e6` |
 | Provider Account Detail / Health Status（账户详情页 + 用量 + 健康状态） | ✅ CLOSED / validated | `60aaa95` |
 | Subpage Navigation Polish（子页面返回入口审计 + 无效 Workspace 按钮清理） | ✅ CLOSED / validated | `5cb46a8` |
+| Provider Account Center UX Polish Batch（文案 + 入口 + 空状态 + 错误提示全面 polish） | ✅ CLOSED / validated | `0f4eee8` |
 
 ---
 
@@ -532,7 +533,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验"的 BYOK 基础闭环。用户不仅能接入 API，也能查看单账户状态、健康情况与最近调用。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish"的 BYOK 基础闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、找到教程，并能从菜单/搜索快速进入关键页面。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -550,6 +551,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Provider Account Usage Summary（账户卡片近 90 天用量） | ✅ validated |
 | Provider Account Detail / Health Status（账户详情页） | ✅ validated |
 | Subpage Navigation Polish（全站子页面返回入口 + 无效按钮清理） | ✅ validated |
+| Provider Account Center UX Polish（文案中文化 + 入口补齐 + 空状态 + 错误提示） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 | Platform service fee charging | ❌ not implemented |
@@ -1172,6 +1174,38 @@ await db.usageLog.create({
 | `/account/providers`、`/account/providers/[id]`、`/account/usage` 无回归 | ✅ |
 | 没有改生成链路 / BYOK / UsageLog / Provider CRUD / billing / schema | ✅ |
 | type-check / lint 通过 | ✅ |
+
+---
+
+## Provider Account Center UX Polish Batch — CLOSED / validated
+
+**Commit:** `0f4eee8`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
+
+### 修复内容
+
+| 修复项 | 说明 |
+|---|---|
+| `billingModeLabel` 映射修复 | `user_provider_account` → 我的 API；`platform_credits` → 平台额度（原代码检查 byok/platform，DB 值不匹配，所有行显示 —） |
+| 调用记录状态中文化 | `pending` / `queued` / `running` → 处理中；`canceled` → 已取消（原显示英文枚举值） |
+| 凭证类型文案中文化 | `API Key + Endpoint` → `API Key + 接入点 ID` |
+| 接入点 ID 预览中文化 | 账户卡片中 `Endpoint: •••• xxxx` → `接入点 ID：•••• xxxx` |
+| 支付状态中文化 | `/account/credits` 支付宝/微信状态从 `available / 可用` / `checking...` / `not-configured` 改为 `已配置 / 可用` / `检测中…` / `未配置` |
+| 顶部"我的 API"菜单补齐 | 新增 API Key 接入指南 → `/help/api-keys`，生成用量 → `/account/usage` |
+| 头像菜单文案统一 | `Provider API 账户` → `我的 API 账户` |
+| `/account` 增加 API Key 指南入口 | 快捷入口下方增加浅蓝色文字链接 |
+| `/account/providers` 空状态改善 | 新增"📖 查看 API Key 接入指南"按钮 |
+| `/account/usage` 错误状态改善 | 新增"刷新重试"按钮和"← 账号设置"返回链接 |
+| Volcengine 账户验证引导 | `/account/providers/[id]` 中 `bearer_with_endpoint` 账户操作区显示"如何验证此账户"蓝色提示框，引导用户通过画布图片节点实际验证 |
+
+### 安全边界确认
+
+- 未改生成链路 / billing / schema / cn-executor ✅
+- 未新增 API 路由 ✅
+- 未展示 API Key / encryptedApiKey / encryptedFields / prompt 明文 ✅
+- type-check / lint / build 全部通过 ✅
 
 ---
 

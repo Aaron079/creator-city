@@ -452,6 +452,13 @@ export default function ProviderAccountDetailPage() {
             )}
           </div>
 
+          {account.credentialType === 'bearer_with_endpoint' && (
+            <div className="mb-4 rounded-lg border border-sky-500/15 bg-sky-500/[0.03] px-3.5 py-2.5 text-[11px] text-sky-300/65 leading-relaxed">
+              <span className="font-semibold text-sky-300/80">如何验证此账户：</span>{' '}
+              该账户不支持自动连接测试。请回到画布，在图片节点的「生成费用来源」中选择「我的 API 账户」，生成一张图片，以实际生成结果为准。
+            </div>
+          )}
+
           <div className="border-t border-white/[0.06] pt-4">
             <p className="text-[11px] text-white/25 mb-3 leading-relaxed">
               删除操作不可恢复。删除后 API Key 永久销毁，所有引用此账户的生成任务将回退到平台额度。
