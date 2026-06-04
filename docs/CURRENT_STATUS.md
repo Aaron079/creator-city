@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `4bac934` (add provider account health guidance)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated)
+Last valid commit: `3c2bab6` (cn-executor safe logging + video BYOK feature flag skeleton)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton code validated)
 
 ---
 
@@ -43,6 +43,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Center UX Polish Batch（文案 + 入口 + 空状态 + 错误提示全面 polish） | ✅ CLOSED / validated | `0f4eee8` |
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 费用模式说明统一） | ✅ CLOSED / validated | `4347465` |
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
+| Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / code validated | `3c2bab6` |
 
 ---
 
@@ -535,7 +536,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -557,10 +558,11 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 三种费用模式说明统一） | ✅ validated |
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
-| Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
+| Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ code validated |
+| Seedance Video BYOK | ❌ not implemented（feature flag 默认关闭；安全基础已就绪；推荐方案 Option A；暂缓实施） |
 | Platform service fee charging | ❌ not implemented |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。账户中心 UX 已相对完整（账户管理 + 健康状态 + 错误引导 + API Key 教程 + 用量历史）。下一阶段可做：Seedance Video BYOK feature flag skeleton / safe logging prework、其他单 API Key Provider BYOK（Runway 等）、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。账户中心 UX 已相对完整（账户管理 + 健康状态 + 错误引导 + API Key 教程 + 用量历史）。cn-executor 日志脱敏基础已完成（commit `3c2bab6`），Video BYOK feature flag skeleton 已就位（`ENABLE_SEEDANCE_VIDEO_BYOK` 默认 false）。下一阶段可做：其他单 API Key Provider BYOK（Runway 等）、Seedance Video BYOK 实施（flag 已就绪，补充 videoJobRunner userCredential 接收逻辑即可）、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1324,6 +1326,69 @@ await db.usageLog.create({
 
 ---
 
+## Seedance Video BYOK Safe Logging / Feature Flag Skeleton — CLOSED / code validated
+
+**Commit:** `3c2bab6`
+**Status:** ✅ CLOSED / code validated (browser / API acceptance pending)
+**Date implemented:** 2026-06-04
+
+### 目标
+
+为未来 Seedance Video BYOK 实施准备安全基础，不开放 BYOK 给用户。
+
+### 修改文件（共 4 个）
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/cn-executor/src/logSafe.ts` | 新文件：`redactCredentialFields` + `sanitizeExecutorLogPayload` + `safeLogVideoJob` 三个工具函数 |
+| `apps/cn-executor/src/handlers/videoJobRunner.ts` | 使用 `safeLogVideoJob`；start log 加 `hasByokCredential: false`；task done / job completed log 改为 boolean 标志，不再 slice 签名 URL |
+| `apps/cn-executor/src/seedance.ts` | submit / poll 日志移除 `responseBody`（可能含签名 URL / token），改用已提取的安全字段 |
+| `apps/web/src/app/api/generate/video/route.ts` | 新增 `ENABLE_SEEDANCE_VIDEO_BYOK` feature flag（默认 false）；缺少 env var 时也默认 false；`billingMode=user_provider_account` 请求返回 403 `VIDEO_BYOK_NOT_ENABLED` |
+
+### 功能说明
+
+| 功能 | 状态 |
+|---|---|
+| `logSafe.ts`：`CREDENTIAL_KEYS` 集合覆盖 apiKey / Authorization / encryptedApiKey / encryptedFields / userCredential / endpointId 等 | ✅ |
+| `redactCredentialFields`：深度递归脱敏，不处理数组（数组不含凭证字段） | ✅ |
+| `safeLogVideoJob`：统一 `[cn-executor][videoJobRunner]` 前缀 + 自动脱敏 | ✅ |
+| videoJobRunner start log：`hasByokCredential: false`（当前平台路径，为 BYOK 实施预留 boolean 标志位） | ✅ |
+| videoJobRunner task done log：`hasProviderVideoUrl: true` + `providerVideoUrlLength`（不再 slice 签名 URL） | ✅ |
+| videoJobRunner job completed log：`hasStableVideoUrl: true`（不再 slice OSS URL） | ✅ |
+| seedance.ts submit log：移除 `responseBody` 字段，只保留已提取的 taskId / httpStatus / model / hasImageUrl / duration / ratio | ✅ |
+| seedance.ts poll log：移除 `responseBody` 字段，只保留 taskId / pollIndex / httpStatus / hasVideoUrl / taskStatus | ✅ |
+| video route feature flag：`ENABLE_SEEDANCE_VIDEO_BYOK = process.env.ENABLE_SEEDANCE_VIDEO_BYOK === 'true'`；env var 缺失时必定 false | ✅ |
+| video route guard：flag 为 false 且 `billingMode === 'user_provider_account'` → 403 `VIDEO_BYOK_NOT_ENABLED` | ✅ |
+| 平台 video 路径（无 billingMode / billingMode=platform_credits）完全不受影响 | ✅ |
+| 平台 credits reserve / finalize / refund 语义不变 | ✅ |
+
+### 关键状态记录
+
+| 项目 | 状态 |
+|---|---|
+| Seedance Video BYOK 实施 | ❌ 未实现（feature flag 默认关闭） |
+| `ENABLE_SEEDANCE_VIDEO_BYOK` 默认值 | `false`（env var 缺失时也为 false） |
+| userCredential 是否进入 run-video | ❌ 不进入（videoJobRunner 不接受 userCredential，guard 在 Vercel 层拦截） |
+| 手工发 `billingMode=user_provider_account` video 请求 | 返回 403 `VIDEO_BYOK_NOT_ENABLED` |
+| cn-executor video logs | ✅ 已脱敏：无签名 URL slice，无 responseBody，只有 boolean 标志 |
+| 平台 video 生成路径 | ✅ 完全不变（setupBilling / finalizeBilling 调用链路不变） |
+
+### 安全边界确认
+
+| 安全项 | 状态 |
+|---|---|
+| userCredential 不传入 cn-executor run-video | ✅ guard 在 Vercel 层 |
+| API key 不写入 `generationJob.input` | ✅（BYOK 未实现，平台路径不含 key） |
+| cn-executor logs 不含签名 URL / responseBody | ✅ |
+| feature flag 缺失 env var 时默认关闭 | ✅ `=== 'true'` 比较，undefined → false |
+| 平台 video 路径不变 | ✅ `billingMode` 未设置时完全跳过 guard |
+| cn-executor 未动真实调用逻辑 | ✅ 只改日志，apiKey fallback 逻辑不变 |
+| 未改 Prisma schema / migration / payment / billing / credits | ✅ |
+| 未改 Text / Image 生成路由 | ✅ |
+| 未改 Provider Account CRUD / UsageLog / Admin Dashboard | ✅ |
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1333,9 +1398,9 @@ await db.usageLog.create({
 3. **Phase V3：Seedance Video BYOK 安全方案评审 — ✅ 评审完成，实施暂缓**
    - 评审结论：推荐 Option A（Vercel 解密 → HTTPS 传给 cn-executor，镜像 Image BYOK 路径）
    - 不推荐：cn-executor 持有 `PROVIDER_KEY_ENCRYPTION_SECRET` / 直连 `UserProviderAccount` / 写入 `generationJob.input`
-   - 实施前提：先完成 cn-executor safe logging + request redaction 基础
-   - 实施前提：需要 feature flag skeleton（视频生成链路改动风险高）
+   - ✅ **前提条件 1 已完成**：cn-executor safe logging + video route feature flag skeleton (commit `3c2bab6`)
    - 暂缓原因：平台 key 已可正常生成视频；BYOK 是 power user 成本优化，优先级低于稳定性
+   - 启动前提：设置 `ENABLE_SEEDANCE_VIDEO_BYOK=true` 并实施 videoJobRunner userCredential 接收逻辑
    - 详见：文件内「Seedance Video BYOK Security Review」章节
 
 4. **Phase V4：其他单 API Key 图片/视频 Provider BYOK**
@@ -1407,3 +1472,5 @@ Modules confirmed working as of `8119eb0`:
 - `/account/providers/[id]` — Health Guidance: getHealthExplanation (secondary text below health.message) + getRepairTips 建议操作 section (auth/quota/endpoint/timeout/unsupported/high-fail coverage; links to /help/api-keys and /projects) [✅ validated 2026-06-04]
 - `/account/providers` — Health hint chips on abnormal accounts (auth_failed→请检查 API Key, quota→请检查 Provider 余额, missing endpointId→请补充接入点 ID, high fail rate→最近有失败记录); normal accounts show no chip [✅ validated 2026-06-04]
 - `/help/api-keys` — FAQ section renamed "出错了怎么办？"; 3 new entries (Seedream unsupported test, timeout, BYOK service fee clarification) [✅ validated 2026-06-04]
+- cn-executor video logs — sanitized via `safeLogVideoJob`; no signed URL slices, no responseBody; `hasByokCredential: false` in start log [✅ code validated 2026-06-04]
+- Video BYOK feature flag — `ENABLE_SEEDANCE_VIDEO_BYOK` (defaults false when env var absent); requests with `billingMode=user_provider_account` rejected with 403 `VIDEO_BYOK_NOT_ENABLED` [✅ code validated 2026-06-04]
