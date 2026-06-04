@@ -438,12 +438,20 @@ export default function ProviderAccountsPage() {
               <span>💰 API 费用直接结算给服务商</span>
             </div>
           </div>
-          <Link
-            href="/account"
-            className="flex-shrink-0 ml-4 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white"
-          >
-            ← 账号设置
-          </Link>
+          <div className="flex-shrink-0 ml-4 flex flex-col gap-2 items-end">
+            <Link
+              href="/account"
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white"
+            >
+              ← 账号设置
+            </Link>
+            <Link
+              href="/help/api-keys"
+              className="rounded-lg border border-sky-500/20 bg-sky-500/[0.04] px-4 py-2 text-sm text-sky-400/70 transition hover:border-sky-500/35 hover:text-sky-300/90"
+            >
+              📖 API Key 接入指南
+            </Link>
+          </div>
         </div>
 
         {/* Billing model info card */}

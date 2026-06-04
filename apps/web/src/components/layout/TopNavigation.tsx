@@ -64,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: '社区', href: '/community' },
       { label: '诊断帮助', href: '/help' },
+      { label: 'API Key 接入指南', href: '/help/api-keys' },
     ],
   },
 ]
@@ -88,6 +89,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '企业版', href: '/enterprise-preview', group: '平台', keywords: ['企业', '权限'] },
   { label: '社区', href: '/community', group: '社区与帮助', keywords: ['社区', 'community'] },
   { label: '诊断帮助', href: '/help', group: '社区与帮助', keywords: ['帮助', '诊断', 'help'] },
+  { label: 'API Key 接入指南', href: '/help/api-keys', group: '我的 API', keywords: ['api key', '密钥', 'provider', 'deepseek', 'openai', 'kimi', '火山方舟', 'seedream', '我的api', '接入教程', 'byok教程', 'api接入', '怎么添加key', '怎么填key'] },
   { label: '账号设置', href: '/account', group: '账户', keywords: ['账号', '设置', '资料', 'profile', 'account'] },
   { label: 'API 账户管理', href: '/account/providers', group: '我的 API', keywords: ['provider', 'api', 'key', 'apikey', '自带', 'byok', '我的api', '账户管理', '自带key'] },
   { label: '平台模型中心', href: '/providers', group: '我的 API', keywords: ['平台模型', 'provider center', 'model', 'api center'] },
