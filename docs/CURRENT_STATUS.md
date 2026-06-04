@@ -43,7 +43,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Center UX Polish Batch（文案 + 入口 + 空状态 + 错误提示全面 polish） | ✅ CLOSED / validated | `0f4eee8` |
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 费用模式说明统一） | ✅ CLOSED / validated | `4347465` |
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
-| Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / code validated | `3c2bab6` |
+| Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / validated | `3c2bab6` |
 
 ---
 
@@ -558,7 +558,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 三种费用模式说明统一） | ✅ validated |
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
-| Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ code validated |
+| Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented（feature flag 默认关闭；安全基础已就绪；推荐方案 Option A；暂缓实施） |
 | Platform service fee charging | ❌ not implemented |
 
@@ -1326,11 +1326,12 @@ await db.usageLog.create({
 
 ---
 
-## Seedance Video BYOK Safe Logging / Feature Flag Skeleton — CLOSED / code validated
+## Seedance Video BYOK Safe Logging / Feature Flag Skeleton — CLOSED / validated
 
 **Commit:** `3c2bab6`
-**Status:** ✅ CLOSED / code validated (browser / API acceptance pending)
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
 
 ### 目标
 
@@ -1372,6 +1373,27 @@ await db.usageLog.create({
 | 手工发 `billingMode=user_provider_account` video 请求 | 返回 403 `VIDEO_BYOK_NOT_ENABLED` |
 | cn-executor video logs | ✅ 已脱敏：无签名 URL slice，无 responseBody，只有 boolean 标志 |
 | 平台 video 生成路径 | ✅ 完全不变（setupBilling / finalizeBilling 调用链路不变） |
+
+### 验收结果（2026-06-04 静态核查通过）
+
+| 验收项 | 结果 | 文件:行号 |
+|---|---|---|
+| `ENABLE_SEEDANCE_VIDEO_BYOK` 默认 false（env var 缺失时也为 false） | ✅ PASS | `route.ts:496` — `=== 'true'` 比较 |
+| `billingMode=user_provider_account` 返回 403 `VIDEO_BYOK_NOT_ENABLED` | ✅ PASS | `route.ts:500-510`，guard 在任何 DB / billing 操作之前 |
+| guard 未解密 UserProviderAccount / 未读 encryptedApiKey | ✅ PASS | guard 在 auth check 后立即返回 |
+| cn-executor trigger body 仅含 `{ generationJobId }` — 无 userCredential | ✅ PASS | `route.ts:769` |
+| Video 节点 UI 无"生成费用来源"选择器 | ✅ PASS | `VisualCanvasWorkspace.tsx:8245` — `(kind === 'text' \|\| kind === 'image')` |
+| start log 含 `hasByokCredential: false`，无 key / Authorization | ✅ PASS | `videoJobRunner.ts:342` |
+| task done log 改为 boolean 标志 `hasProviderVideoUrl: true` — 无签名 URL | ✅ PASS | `videoJobRunner.ts:470` |
+| job completed log 改为 `hasStableVideoUrl: true` — 无 OSS URL | ✅ PASS | `videoJobRunner.ts:601` |
+| seedance.ts submit log 无 responseBody | ✅ PASS | `seedance.ts:249-253` |
+| seedance.ts poll log 无 responseBody | ✅ PASS | `seedance.ts:286-291` |
+| 平台 video 路径不变（普通请求完全跳过 guard） | ✅ PASS | guard 仅对 `user_provider_account` 触发 |
+| Text 生成路由未被修改 | ✅ PASS | `git log 3c2bab6..HEAD -- generate/text/route.ts` 无结果 |
+| Image 生成路由未被修改 | ✅ PASS | `git log 3c2bab6..HEAD -- generate/image/route.ts` 无结果 |
+| billing / credits / Prisma schema 未修改 | ✅ PASS | git diff 只含 4 个已记录文件 |
+| prompt 明文不进日志 | ✅ PASS | safeLogVideoJob payload 无 prompt 字段 |
+| imageUrl 不完整输出 | ✅ PASS | submittedInput 中用 `hasImageUrl: Boolean` 代替完整 URL |
 
 ### 安全边界确认
 
@@ -1472,5 +1494,5 @@ Modules confirmed working as of `8119eb0`:
 - `/account/providers/[id]` — Health Guidance: getHealthExplanation (secondary text below health.message) + getRepairTips 建议操作 section (auth/quota/endpoint/timeout/unsupported/high-fail coverage; links to /help/api-keys and /projects) [✅ validated 2026-06-04]
 - `/account/providers` — Health hint chips on abnormal accounts (auth_failed→请检查 API Key, quota→请检查 Provider 余额, missing endpointId→请补充接入点 ID, high fail rate→最近有失败记录); normal accounts show no chip [✅ validated 2026-06-04]
 - `/help/api-keys` — FAQ section renamed "出错了怎么办？"; 3 new entries (Seedream unsupported test, timeout, BYOK service fee clarification) [✅ validated 2026-06-04]
-- cn-executor video logs — sanitized via `safeLogVideoJob`; no signed URL slices, no responseBody; `hasByokCredential: false` in start log [✅ code validated 2026-06-04]
-- Video BYOK feature flag — `ENABLE_SEEDANCE_VIDEO_BYOK` (defaults false when env var absent); requests with `billingMode=user_provider_account` rejected with 403 `VIDEO_BYOK_NOT_ENABLED` [✅ code validated 2026-06-04]
+- cn-executor video logs — sanitized via `safeLogVideoJob`; no signed URL slices, no responseBody; `hasByokCredential: false` in start log [✅ validated 2026-06-04]
+- Video BYOK feature flag — `ENABLE_SEEDANCE_VIDEO_BYOK` (defaults false when env var absent); requests with `billingMode=user_provider_account` rejected with 403 `VIDEO_BYOK_NOT_ENABLED` [✅ validated 2026-06-04]
