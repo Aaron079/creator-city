@@ -12,6 +12,17 @@ import { useCurrentUser } from '@/lib/auth/use-current-user'
 type FieldMetaEntry = { label: string; last4: string; updatedAt: string }
 type FieldMetaMap = Record<string, FieldMetaEntry>
 
+type AccountUsageSummary = {
+  total: number
+  succeeded: number
+  failed: number
+  text: number
+  image: number
+  video: number
+  lastUsedAt: string | null
+  platformServiceFeeCredits: number
+}
+
 type ProviderAccount = {
   id: string
   providerId: string
@@ -183,6 +194,13 @@ function fmtDate(iso: string) {
   }
 }
 
+function fmtUsageDate(iso: string | null) {
+  if (!iso) return '暂无'
+  try {
+    return new Date(iso).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch { return iso }
+}
+
 function apiErrorMessage(status: number, body: { message?: string }): string {
   if (status === 401) return '请先登录后再管理 Provider API 账户。'
   if (status === 503) return 'Provider Key 加密服务暂时不可用，请稍后再试。'
@@ -217,6 +235,9 @@ export default function ProviderAccountsPage() {
   const [accounts, setAccounts] = useState<ProviderAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
+
+  const [usageSummaries, setUsageSummaries] = useState<Record<string, AccountUsageSummary> | null>(null)
+  const [usageSummaryError, setUsageSummaryError] = useState(false)
 
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [submitting, setSubmitting] = useState(false)
@@ -259,9 +280,25 @@ export default function ProviderAccountsPage() {
     }
   }, [])
 
+  const loadUsageSummaries = useCallback(async () => {
+    setUsageSummaryError(false)
+    try {
+      const res = await fetch('/api/provider-accounts/usage-summary', { credentials: 'include' })
+      if (!res.ok) { setUsageSummaryError(true); return }
+      const data = await res.json() as { success: boolean; summaries?: Record<string, AccountUsageSummary> }
+      if (data.success && data.summaries) setUsageSummaries(data.summaries)
+      else setUsageSummaryError(true)
+    } catch {
+      setUsageSummaryError(true)
+    }
+  }, [])
+
   useEffect(() => {
-    if (effectiveIsAuthenticated) void loadAccounts()
-  }, [effectiveIsAuthenticated, loadAccounts])
+    if (effectiveIsAuthenticated) {
+      void loadAccounts()
+      void loadUsageSummaries()
+    }
+  }, [effectiveIsAuthenticated, loadAccounts, loadUsageSummaries])
 
   // ── Create account ──────────────────────────────────────────────────────────
 
@@ -622,6 +659,36 @@ export default function ProviderAccountsPage() {
                         </span>
                       )}
                     </div>
+
+                    {/* Usage summary */}
+                    {usageSummaryError ? (
+                      <p className="text-[11px] text-white/20 mb-3">用量暂时不可用</p>
+                    ) : usageSummaries === null ? null : (() => {
+                      const s = usageSummaries[acc.id]
+                      if (!s || s.total === 0) {
+                        return (
+                          <div className="mb-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/20 mb-1">近 90 天用量</p>
+                            <p className="text-[11px] text-white/25">暂无使用记录</p>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div className="mb-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-white/20 mb-2">近 90 天用量</p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                            <span className="text-white/50">总调用 <span className="font-semibold text-white/70">{s.total}</span></span>
+                            <span className="text-emerald-400/70">成功 {s.succeeded}</span>
+                            {s.failed > 0 && <span className="text-rose-400/70">失败 {s.failed}</span>}
+                            {s.text > 0 && <span className="text-sky-400/60">文本 {s.text}</span>}
+                            {s.image > 0 && <span className="text-violet-400/60">图片 {s.image}</span>}
+                            {s.video > 0 && <span className="text-amber-400/60">视频 {s.video}</span>}
+                            <span className="text-white/25">平台服务费 {s.platformServiceFeeCredits}（未启用）</span>
+                          </div>
+                          <p className="mt-1.5 text-[10px] text-white/20">最近使用：{fmtUsageDate(s.lastUsedAt)}</p>
+                        </div>
+                      )
+                    })()}
 
                     {/* Action error */}
                     {actionError && (
