@@ -697,6 +697,12 @@ export default function ProviderAccountsPage() {
 
                     {/* Actions */}
                     <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/account/providers/${acc.id}`}
+                        className="rounded-lg px-3 py-1.5 text-xs font-medium border border-white/10 bg-white/[0.05] text-white/60 hover:bg-white/[0.08] hover:text-white transition"
+                      >
+                        查看详情
+                      </Link>
                       <ActionButton
                         label={isTesting ? '测试中…' : '测试连接'}
                         disabled={isActing || isTesting}
