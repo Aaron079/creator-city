@@ -172,11 +172,35 @@ export default function ApiKeysGuidePage() {
     <div className="min-h-screen" style={{ background: '#0a0a0b', color: '#fff' }}>
       <div className="mx-auto max-w-3xl px-4 py-10 pb-20">
 
+        {/* Top navigation */}
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <Link
+            href="/"
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white"
+          >
+            ← 返回首页
+          </Link>
+          <Link
+            href="/help"
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs text-white/55 transition hover:border-white/20 hover:text-white"
+          >
+            帮助中心
+          </Link>
+          <Link
+            href="/account/providers"
+            className="rounded-lg border border-violet-500/20 bg-violet-500/[0.05] px-3.5 py-1.5 text-xs text-violet-300/70 transition hover:border-violet-500/35 hover:text-violet-200"
+          >
+            我的 API 账户
+          </Link>
+        </div>
+
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-xs text-white/30 mb-6">
-          <Link href="/help" className="hover:text-white/60 transition">帮助中心</Link>
+        <div className="flex items-center gap-2 text-xs text-white/25 mb-6">
+          <Link href="/" className="hover:text-white/50 transition">首页</Link>
           <span>/</span>
-          <span className="text-white/50">API Key 接入指南</span>
+          <Link href="/help" className="hover:text-white/50 transition">帮助中心</Link>
+          <span>/</span>
+          <span className="text-white/40">API Key 接入指南</span>
         </div>
 
         {/* Hero */}
