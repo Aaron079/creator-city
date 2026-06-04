@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-04
-Last valid commit: `5cb46a8` (polish subpage navigation and remove unused workspace actions)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail page implemented · Subpage Navigation Polish browser validated)
+Last valid commit: `60aaa95` (add provider account detail page with usage summary and health status)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated)
 
 ---
 
@@ -38,7 +38,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Seedance Video BYOK 安全评审（cn-executor credential plan，只读） | ✅ CLOSED / read-only audit completed | — |
 | Provider API Key Guide（/help/api-keys，接入教程页） | ✅ CLOSED / validated | `35185b4` |
 | Provider Account Usage Summary（账户卡片近 90 天用量汇总） | ✅ CLOSED / validated | `5c4b6e6` |
-| Provider Account Detail / Health Status（账户详情页 + 用量 + 健康状态） | ⏳ implemented / browser validation pending | `60aaa95` |
+| Provider Account Detail / Health Status（账户详情页 + 用量 + 健康状态） | ✅ CLOSED / validated | `60aaa95` |
 | Subpage Navigation Polish（子页面返回入口审计 + 无效 Workspace 按钮清理） | ✅ CLOSED / validated | `5cb46a8` |
 
 ---
@@ -532,7 +532,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情页 + 子页面返回体验"的 BYOK 基础闭环。当前不赚 API 差价，不启用平台服务费扣费。用户可通过 `/help/api-keys` 了解如何连接自己的 Provider API，可用自己的 API 生成 Text / Seedream Image，在 `/account/usage` 查看自己的完整用量记录，在 `/account/providers` 每个账户卡片查看近 90 天用量汇总，并点击「查看详情」进入 `/account/providers/[id]` 查看账户健康状态与调用明细；管理员可通过 `/admin/usage` 观察全站 BYOK 与平台额度分布。全站子页面已完成返回入口审计，Workspace 无效占位按钮已清理。Seedance Video BYOK 安全评审已完成，实施暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验"的 BYOK 基础闭环。用户不仅能接入 API，也能查看单账户状态、健康情况与最近调用。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -548,13 +548,13 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | User Usage History（`/account/usage`） | ✅ validated |
 | Provider API Key Guide（`/help/api-keys`） | ✅ validated |
 | Provider Account Usage Summary（账户卡片近 90 天用量） | ✅ validated |
-| Provider Account Detail / Health Status（账户详情页） | ⏳ implemented，browser validation pending |
+| Provider Account Detail / Health Status（账户详情页） | ✅ validated |
 | Subpage Navigation Polish（全站子页面返回入口 + 无效按钮清理） | ✅ validated |
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
-| Platform service fee charging | ❌ not implemented |
 | Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
+| Platform service fee charging | ❌ not implemented |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。如 Provider Account Detail 浏览器验收通过，则收口该状态。下一阶段可做：Provider Account Center 后续迭代（账户详情 polish、更多 Provider 教程）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做：Provider Account Center 后续迭代（更多 Provider 教程、账号健康建议、错误修复引导）、Seedance Video BYOK feature flag skeleton / safe logging prework、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1066,11 +1066,12 @@ await db.usageLog.create({
 
 ---
 
-## Provider Account Detail / Health Status — IMPLEMENTED / browser validation pending
+## Provider Account Detail / Health Status — CLOSED / validated
 
 **Commit:** `60aaa95`
-**Status:** ⏳ implemented, browser validation pending
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-04
+**Date validated:** 2026-06-04
 
 ### 新增文件
 
@@ -1097,17 +1098,24 @@ await db.usageLog.create({
 | UsageLog 失败降级：账户信息正常返回，用量显示"暂时不可用" | ✅ |
 | /account/providers 每个账户卡片新增「查看详情」按钮 | ✅ |
 
-### 浏览器验收重点（待验收）
+### 浏览器验收结果（2026-06-04 通过）
 
-| # | 步骤 | 预期结果 |
+| # | 步骤 | 结果 |
 |---|---|---|
-| 1 | 进入 `/account/providers`，每个账户卡片中看到「查看详情」按钮 | ✅ |
-| 2 | 点击「查看详情」→ 进入 `/account/providers/[id]`，面包屑正确 | 待验收 |
-| 3 | 健康状态 section 显示绿 / 橙 / 红 / 灰色徽章及原因文本 | 待验收 |
-| 4 | 凭证 section 只显示 `•••• xxxx` 末 4 位，不显示完整 Key | 待验收 |
-| 5 | 近 90 天用量汇总正确，或暂无记录显示空态 | 待验收 |
-| 6 | 最近调用记录表显示时间 / 类型 / 状态，无 prompt 明文 | 待验收 |
-| 7 | 测试 / 启用 / 停用 / 删除按钮功能正常，与列表页一致 | 待验收 |
+| 1 | `/account/providers` 每个账户卡片有「查看详情」按钮 | ✅ |
+| 2 | 点击「查看详情」→ 进入 `/account/providers/[id]`，面包屑正确 | ✅ |
+| 3 | 详情页显示账户名称、Provider、状态、默认标识 | ✅ |
+| 4 | 凭证 section 只显示 API Key 末 4 位，不显示完整 Key | ✅ |
+| 5 | Seedream 等账户显示 Endpoint ID 末 4 位（如适用） | ✅ |
+| 6 | 健康状态 section 显示绿 / 橙 / 红 / 灰色徽章及原因文本 | ✅ |
+| 7 | 近 90 天用量汇总正确，无记录显示空态 | ✅ |
+| 8 | 最近 20 条调用记录表显示时间 / 类型 / 状态，无 prompt 明文 | ✅ |
+| 9 | 不显示 encryptedApiKey / encryptedFields / prompt 明文 | ✅ |
+| 10 | 只能查看当前用户自己的账户 | ✅ |
+| 11 | `/account/providers` 列表无回归 | ✅ |
+| 12 | `/account/usage` 无回归 | ✅ |
+| 13 | `/admin/usage` 无回归 | ✅ |
+| 14 | 没有改生成链路 / Provider CRUD / billing / schema | ✅ |
 
 ---
 
@@ -1239,6 +1247,8 @@ Modules confirmed working as of `8119eb0`:
 - Customer delivery share URL follows `NEXT_PUBLIC_APP_URL` (CN-safe)
 - `/account/providers` — 模型账户中心：CRUD + test connection + BYOK management + capability matrix + 3-mode billing explanation [✅ browser validated 2026-06-03]
 - `/account/providers` auth guard — Zustand session shown immediately; server check async; unknown+no-session shows retry UI [✅ browser validated 2026-06-04]
+- `/account/providers/[id]` — Provider Account Detail: identity + health status + masked credentials (last4 / fieldMeta) + 90-day usage summary + recent 20 call log; userId+providerAccountId double-scope; no key/prompt exposure; UsageLog graceful degradation [✅ browser validated 2026-06-04]
+- `/api/provider-accounts/[id]/summary` — read-only summary API; safe fields only; ownership enforced; UsageLog failure returns usageSummaryUnavailable:true [✅ browser validated 2026-06-04]
 - `/account/usage` — User Usage History: time/billing/type filters, summary cards, distribution panels, recent log table; userId-scoped; no prompt/key exposure [✅ browser validated 2026-06-04]
 - User avatar dropdown → "生成用量" direct entry [✅ browser validated 2026-06-04]
 - Provider API Key guide in canvas help panel (4-tab, 18 providers)
