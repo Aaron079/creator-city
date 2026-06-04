@@ -149,7 +149,7 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
 export default function UsageHistoryPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuthStore()
-  const { status: sessionStatus } = useCurrentUser()
+  const { status: sessionStatus, refresh: refreshSession } = useCurrentUser()
 
   const effectiveIsAuthenticated =
     sessionStatus === 'authenticated' ||
@@ -198,8 +198,26 @@ export default function UsageHistoryPage() {
     if (effectiveIsAuthenticated) void fetchData()
   }, [effectiveIsAuthenticated, fetchData])
 
-  if (sessionStatus === 'loading' || sessionStatus === 'unknown') return null
-  if (!effectiveIsAuthenticated) return null
+  // If Zustand says the user is authenticated, render immediately — don't wait for the
+  // network check to finish. effectiveIsAuthenticated already accounts for this.
+  if (!effectiveIsAuthenticated) {
+    if (sessionStatus === 'unknown') {
+      return (
+        <DashboardShell>
+          <main className="mx-auto max-w-4xl px-4 py-20 text-center">
+            <p className="text-sm text-white/50 mb-4">连接异常，无法验证登录状态，请重试。</p>
+            <button
+              onClick={() => void refreshSession()}
+              className="rounded-xl border border-white/15 bg-white/[0.06] px-5 py-2 text-sm text-white/70 hover:text-white transition"
+            >
+              重新验证
+            </button>
+          </main>
+        </DashboardShell>
+      )
+    }
+    return null
+  }
 
   const s = data?.summary
 
