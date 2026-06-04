@@ -147,6 +147,13 @@ export default function AccountPage() {
             <span className="text-[11px] text-white/18">平台服务费 · 即将开放</span>
           </div>
         </div>
+        <div className="mt-3 mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/30 leading-relaxed">
+          <span><span className="text-white/40">◎ 平台额度</span>：购买积分，Creator City 代付 API 调用</span>
+          <span>·</span>
+          <span><span className="text-violet-300/60">⚡ 我的 API</span>：自带 Provider Key，API 费用直付给服务商，不扣平台积分</span>
+          <span>·</span>
+          <span><span className="text-white/25">○ 平台服务费</span>：当前未启用（0）</span>
+        </div>
         <div className="mt-2">
           <Link
             href="/help/api-keys"

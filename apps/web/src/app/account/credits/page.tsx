@@ -260,6 +260,12 @@ export default function AccountCreditsPage() {
           ) : null}
         </div>
 
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5 text-[11px] text-white/35 leading-relaxed space-y-1">
+          <p>此页面显示 <span className="text-white/55 font-medium">平台额度</span> 的余额与流水——Creator City 代付 AI 模型 API 调用，消耗你充值的积分。</p>
+          <p>使用 <span className="text-violet-300/60 font-medium">我的 API 账户</span> 生成时，API 费用由你直接支付给服务商，不经过平台积分，也不显示在此页面。</p>
+          <p><span className="text-white/25">平台服务费</span>（工作台工具费）当前未启用，显示为 0。</p>
+        </div>
+
         <WalletBalanceCard wallet={wallet} />
 
         <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
