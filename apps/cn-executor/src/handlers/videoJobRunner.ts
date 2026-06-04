@@ -5,6 +5,7 @@ import { jsonError, jsonOk, jsonUnauthorized } from '../response'
 import { query, writeQuery } from '../db'
 import { submitSeedanceTask, pollSeedanceTaskUntilDone, buildVideoOssKey, downloadVideoBuffer } from '../seedance'
 import { uploadToOss } from '../oss'
+import { safeLogVideoJob } from '../logSafe'
 
 // cn-executor only executes cn providers. Mirrors registry.ts cn runtimeProviderIds.
 const CN_PROVIDER_IDS = new Set([
@@ -336,7 +337,9 @@ export async function handleRunVideoJob(req: IncomingMessage, res: ServerRespons
 }
 
 async function runVideoJob(generationJobId: string): Promise<void> {
-  console.log('[cn-executor][videoJobRunner] starting job', { generationJobId })
+  // hasByokCredential is always false — Video BYOK is not enabled.
+  // This field documents the guard and will be set dynamically when BYOK ships.
+  safeLogVideoJob('starting job', { generationJobId, hasByokCredential: false })
 
   let job: VideoJobRow | null
   try {
@@ -463,7 +466,8 @@ async function runVideoJob(generationJobId: string): Promise<void> {
   }
 
   const providerVideoUrl = pollResult.videoUrl
-  console.log('[cn-executor][videoJobRunner] Seedance task done', { generationJobId, taskId, providerVideoUrl: providerVideoUrl.slice(0, 80) })
+  // Avoid logging the signed provider URL — use boolean + length only.
+  safeLogVideoJob('Seedance task done', { generationJobId, taskId, hasProviderVideoUrl: true, providerVideoUrlLength: providerVideoUrl.length })
 
   // Step 3: download video buffer
   const videoBuffer = await downloadVideoBuffer(providerVideoUrl)
@@ -594,7 +598,5 @@ async function runVideoJob(generationJobId: string): Promise<void> {
     }
   }
 
-  console.log('[cn-executor][videoJobRunner] job completed', {
-    generationJobId, assetId, taskId, stableVideoUrl: stableVideoUrl.slice(0, 80),
-  })
+  safeLogVideoJob('job completed', { generationJobId, assetId, taskId, hasStableVideoUrl: true })
 }

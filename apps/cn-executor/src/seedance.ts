@@ -245,10 +245,10 @@ export async function submitSeedanceTask(input: SeedanceSubmitInput): Promise<Se
     }
   }
 
-  console.log('[cn-executor][seedance] submit response sample', {
-    taskId, httpStatus: response.status, model, endpoint,
+  // Log safe fields only — no responseBody to avoid leaking signed URLs or tokens.
+  console.log('[cn-executor][seedance] task submitted', {
+    taskId, httpStatus: response.status, model,
     hasImageUrl: Boolean(input.imageUrl), duration, ratio,
-    responseBody: JSON.stringify(data).slice(0, 1500),
   })
   return { success: true, taskId, model, endpoint, submittedInput }
 }
@@ -282,9 +282,11 @@ export async function pollSeedanceTask(taskId: string, _pollIndex?: number): Pro
   }
 
   if (_pollIndex === undefined || _pollIndex === 0 || _pollIndex % 10 === 0) {
-    console.log('[cn-executor][seedance] poll response sample', {
+    // Log safe fields only — avoid logging responseBody which may contain signed video URLs.
+    console.log('[cn-executor][seedance] poll status', {
       taskId, pollIndex: _pollIndex, httpStatus: response.status,
-      responseBody: JSON.stringify(data).slice(0, 1500),
+      hasVideoUrl: Boolean(findVideoUrl(data)),
+      taskStatus: findStatus(data) ?? 'unknown',
     })
   }
 

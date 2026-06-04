@@ -488,6 +488,28 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // ── Seedance Video BYOK guard ─────────────────────────────────────────────
+  // Feature flag skeleton: Video BYOK is NOT enabled. This guard rejects any
+  // request that sends billingMode=user_provider_account, whether from the UI
+  // or a manual API call. The flag defaults false even if the env var is absent.
+  // When Video BYOK is ready to ship, set ENABLE_SEEDANCE_VIDEO_BYOK=true.
+  const ENABLE_SEEDANCE_VIDEO_BYOK = process.env.ENABLE_SEEDANCE_VIDEO_BYOK === 'true'
+  const requestedBillingMode = typeof (body as Record<string, unknown>).billingMode === 'string'
+    ? (body as Record<string, unknown>).billingMode as string
+    : undefined
+  if (!ENABLE_SEEDANCE_VIDEO_BYOK && requestedBillingMode === 'user_provider_account') {
+    return videoErrorResponse({
+      errorCode: 'VIDEO_BYOK_NOT_ENABLED',
+      errorMessage: '视频我的 API 尚未开放，请先使用平台额度。',
+      requestId: routeRequestId,
+      mode: 'unavailable',
+      status: 'failed',
+      statusCode: 403,
+      submittedInput: safeVideoSubmittedInput(body),
+    })
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const prompt = body.prompt?.trim() || ''
   const projectId = stringInput(body.projectId)
   const nodeId = stringInput(body.nodeId)
