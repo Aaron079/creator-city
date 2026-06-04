@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-04
 Last valid commit: `8119eb0` (fix account usage production query — minimal count+findMany, expose error code in response)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed)
 
 ---
 
@@ -35,6 +35,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Center 产品化升级（模型账户中心） | ✅ CLOSED / validated | `e96f916` |
 | Provider Account Center auth blank screen fix | ✅ CLOSED / validated | `4710e79` |
 | User Usage History（/account/usage，用户端用量历史） | ✅ CLOSED / validated | `8119eb0` |
+| Seedance Video BYOK 安全评审（cn-executor credential plan，只读） | ✅ CLOSED / read-only audit completed | — |
 
 ---
 
@@ -542,9 +543,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Provider Account Center auth guard（白屏修复） | ✅ validated |
 | User Usage History（`/account/usage`） | ✅ validated |
 | Platform service fee charging | ❌ not implemented |
-| Seedance Video BYOK | ❌ not implemented |
+| Seedance Video BYOK | ❌ not implemented（安全评审已完成，推荐方案 Option A，暂缓实施） |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。下一阶段可做 Seedance Video BYOK 安全评审、平台服务费策略审计、或 Provider Account Center 后续迭代（更多 Provider 教程、账户用量汇总）。暂不直接启用服务费扣费。
+**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。Seedance Video BYOK 安全评审已完成，推荐 Option A 方案（Vercel 解密后通过 HTTPS + executor shared secret 临时传给 cn-executor）。下一阶段可做 cn-executor safe logging 基础、Provider Account Center 教程完善、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -952,16 +953,123 @@ P2（非紧急）：`NEXT_PUBLIC_API_URL` / billing webhook / legacy NestJS loca
 
 ---
 
+## Seedance Video BYOK Security Review — CLOSED / read-only audit completed
+
+**审计日期：** 2026-06-04
+**审计性质：** 只读 — 零文件修改，零 commit，零 push
+
+### 当前状态（已确认）
+
+| 项目 | 状态 |
+|---|---|
+| Seedance Video BYOK | ❌ 未实现 |
+| 当前 Seedance Video 使用 | 平台 `VOLCENGINE_ARK_API_KEY`（cn-executor env var） |
+| 视频生成实际执行点 | cn-executor（Aliyun FC 异步函数） |
+| Vercel video route 是否扣平台 credits | ❌ 不扣（早返回于 setupBilling/finalizeBilling 之前） |
+| cn-executor videoJobRunner 是否有 UsageLog 写入 | ❌ 无（视频生成全链路暂无 UsageLog） |
+| cn-executor videoJobRunner 是否接受 userCredential | ❌ 不接受（当前只读取 generationJob.input） |
+| generationJob.input 是否包含 API Key | ✅ 不包含（只存 prompt / model / duration / aspectRatio / providerId） |
+
+### 推荐方案（Option A — 镜像现有 Image BYOK 路径）
+
+**不推荐的方案：**
+- ❌ 将 `PROVIDER_KEY_ENCRYPTION_SECRET` 放入 cn-executor — 扩大密钥攻击面
+- ❌ 让 cn-executor 直连 `UserProviderAccount` 表并解密 — 同上，且破坏服务层边界
+- ❌ 将 encrypted credential 写入 `generationJob.input` — 若 DB 和 secret 同时泄漏则 key 外泄
+- ❌ 现在启用平台服务费扣费 — 时机未到，用量数据不足
+
+**推荐方案 Option A（与 Image BYOK 完全一致）：**
+
+```
+Browser → POST /api/generate/video { providerAccountId?, billingMode?, ... }
+
+Vercel video route（新增）：
+  if billingMode === 'user_provider_account':
+    cred = getProviderAccountForByok(userId, providerAccountId, ['volcengine-seedance-video'])
+    if !cred.ok → 400 早返回
+    triggerBody.userCredential = { apiKey: cred.apiKey }  // 明文只存在 HTTPS 传输中
+  POST cn-executor /api/jobs/run-video { generationJobId, userCredential? }
+
+cn-executor videoJobRunner（新增）：
+  const { userCredential } = triggerBody
+  console.log({ hasByokCredential: Boolean(userCredential) })  // 只记录 boolean
+  submitSeedanceTask({ ..., apiKeyOverride: userCredential?.apiKey })  // 不 log key 值
+  pollSeedanceTaskUntilDone(taskId, { apiKeyOverride: userCredential?.apiKey })
+  // key 用完即丢，不写 DB，不写 generationJob.input，不返回前端
+
+cn-executor seedance.ts（新增）：
+  SeedanceSubmitInput.apiKeyOverride?: string
+  const apiKey = input.apiKeyOverride?.trim() || process.env.VOLCENGINE_ARK_API_KEY?.trim()
+```
+
+### 硬性 no-go（实施时全部必须满足）
+
+| no-go 条件 | 说明 |
+|---|---|
+| key 不得写入 `generationJob.input` | JSON 列，任何有 DB 访问权限的人都能读取 |
+| key 不得写入 cn-executor 日志 | 只允许 `hasByokCredential: boolean` |
+| key 不得返回前端 | 任何 API 响应都不得含明文 key |
+| 未验证 `userId` 不得使用 `providerAccountId` | `getProviderAccountForByok` 强制 `{ id, userId }` 所有权校验 |
+| BYOK Video 不得扣平台模型 credits | Video route 已在 setupBilling 前早返回，保持不变 |
+| `auth_failed` 不得透传 provider 原始敏感响应给用户 | 错误信息脱敏后再返回 |
+| 没有 feature flag skeleton 和日志脱敏基础不得上线 | 必须先完成 safe logging 基础 |
+
+### 实施时涉及文件（V1 最小改动）
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/cn-executor/src/seedance.ts` | 新增 `apiKeyOverride?: string` 到 `SeedanceSubmitInput`；submit + poll 函数用 override 优先 |
+| `apps/cn-executor/src/handlers/videoJobRunner.ts` | 接受 `userCredential?: { apiKey: string }` from trigger body；仅 log `hasByokCredential`；forward 到 seedance 函数 |
+| `apps/web/src/app/api/generate/video/route.ts` | 接受 `providerAccountId`；调用 `getProviderAccountForByok`；添加到 trigger body |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | 视频节点添加"生成费用来源"选择器 UI（镜像 Image 节点条件） |
+
+**不需要改动的文件（已可复用）：**
+- `apps/web/src/lib/provider-accounts/service.ts` — `getProviderAccountForByok` 已支持任意 `allowedProviderIds`
+- `apps/web/src/lib/provider-accounts/crypto.ts` — 加密层稳定
+- Prisma schema — 仅 API Key 即可，无需 endpointId（Seedance 不用 endpoint ID，model 由平台 env 控制）
+
+### UsageLog 计划（实施时一并补充）
+
+当前 Seedance video **无任何 UsageLog 写入**，BYOK 实施时应同步补充：
+
+```typescript
+// Vercel video route，GenerationJob 创建后写入
+await db.usageLog.create({
+  data: {
+    userId, projectId, nodeId,
+    providerId: 'volcengine-seedance-video',
+    outputType: 'video',
+    billingMode: isByok ? 'user_provider_account' : 'platform_credits',
+    status: 'pending',
+    providerCostPaidBy: isByok ? 'user' : 'platform',
+    promptChars: prompt.length,
+    platformServiceFeeCredits: 0,
+  },
+})
+```
+
+### 当前不实施的理由
+
+- Video BYOK 对现有用户无阻塞（平台 key 已可正常生成视频）
+- cn-executor 改动须单独测试，风险高于收益
+- 应先做 cn-executor safe logging 和 request redaction 基础，再接 BYOK
+- 30–60 天观察用量数据后，再决定是否值得为 power user 做此优化
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
 
 2. ~~**Phase V2：Seedream Image BYOK 试点** — ✅ CLOSED / validated (commit `c6ff87f`, validated 2026-06-03)~~
 
-3. **Phase V3：Seedance Video BYOK 安全方案评审**
-   - 先评审：cn-executor 解密方案（cn-executor 需 `PROVIDER_KEY_ENCRYPTION_SECRET` + DB 连接）
-   - 评审通过后单独实现，不在 V2 内顺手做
-   - 不动 cn-executor 直到评审结论出来
+3. **Phase V3：Seedance Video BYOK 安全方案评审 — ✅ 评审完成，实施暂缓**
+   - 评审结论：推荐 Option A（Vercel 解密 → HTTPS 传给 cn-executor，镜像 Image BYOK 路径）
+   - 不推荐：cn-executor 持有 `PROVIDER_KEY_ENCRYPTION_SECRET` / 直连 `UserProviderAccount` / 写入 `generationJob.input`
+   - 实施前提：先完成 cn-executor safe logging + request redaction 基础
+   - 实施前提：需要 feature flag skeleton（视频生成链路改动风险高）
+   - 暂缓原因：平台 key 已可正常生成视频；BYOK 是 power user 成本优化，优先级低于稳定性
+   - 详见：文件内「Seedance Video BYOK Security Review」章节
 
 4. **Phase V4：其他单 API Key 图片/视频 Provider BYOK**
    - Runway 等 Vercel-side 单 Bearer Token Provider
