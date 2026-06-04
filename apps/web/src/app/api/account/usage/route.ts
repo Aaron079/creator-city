@@ -15,10 +15,8 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ message: '请先登录。' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-
   const rawRange = searchParams.get('range') ?? '7d'
   const range = ['24h', '7d', '30d', 'all'].includes(rawRange) ? rawRange : '7d'
-
   const outputTypeParam = searchParams.get('outputType') ?? 'all'
   const billingModeParam = searchParams.get('billingMode') ?? 'all'
   const rawLimit = parseInt(searchParams.get('limit') ?? '50', 10)
@@ -28,17 +26,18 @@ export async function GET(req: NextRequest) {
 
   // All queries are scoped to the current user — this is the security boundary
   const userScope = { userId: user.id }
+  const timeScope = since ? { createdAt: { gte: since } } : {}
 
-  const baseWhere = {
-    ...userScope,
-    ...(since ? { createdAt: { gte: since } } : {}),
-    ...(outputTypeParam !== 'all' ? { outputType: outputTypeParam } : {}),
-  }
-
+  // Full filter: user + time + optional outputType + optional billingMode
   const where = {
-    ...baseWhere,
+    ...userScope,
+    ...timeScope,
+    ...(outputTypeParam !== 'all' ? { outputType: outputTypeParam } : {}),
     ...(billingModeParam !== 'all' ? { billingMode: billingModeParam } : {}),
   }
+
+  // Billing-only scope (user + time, no type/billing filter) for global distribution
+  const billingScope = { ...userScope, ...timeScope }
 
   try {
     const [
@@ -51,39 +50,20 @@ export async function GET(req: NextRequest) {
       imageCount,
       videoCount,
       feeSumAgg,
-      byOutputType,
-      byBillingMode,
-      byProvider,
     ] = await Promise.all([
       db.usageLog.count({ where }),
       db.usageLog.count({ where: { ...where, status: 'succeeded' } }),
       db.usageLog.count({ where: { ...where, status: 'failed' } }),
-      db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'user_provider_account' } }),
-      db.usageLog.count({ where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}), billingMode: 'platform_credits' } }),
+      // Global billing-mode counts for the time range (not filtered by outputType/billingMode)
+      db.usageLog.count({ where: { ...billingScope, billingMode: 'user_provider_account' } }),
+      db.usageLog.count({ where: { ...billingScope, billingMode: 'platform_credits' } }),
+      // Per-type counts: spread { outputType: X } overrides any outputType already in `where`
       db.usageLog.count({ where: { ...where, outputType: 'text' } }),
       db.usageLog.count({ where: { ...where, outputType: 'image' } }),
       db.usageLog.count({ where: { ...where, outputType: 'video' } }),
       db.usageLog.aggregate({
-        where: { ...userScope, ...(since ? { createdAt: { gte: since } } : {}) },
+        where: billingScope,
         _sum: { platformServiceFeeCredits: true },
-      }),
-      db.usageLog.groupBy({
-        by: ['outputType'],
-        where,
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-      }),
-      db.usageLog.groupBy({
-        by: ['billingMode'],
-        where,
-        _count: { id: true },
-      }),
-      db.usageLog.groupBy({
-        by: ['providerId'],
-        where,
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: 10,
       }),
     ])
 
@@ -108,6 +88,34 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    // Compute distributions in memory — avoids groupBy + orderBy _count which
+    // can behave unexpectedly with PgBouncer transaction mode in some Prisma versions
+    const byOutputType = (() => {
+      if (outputTypeParam !== 'all') {
+        return total > 0 ? [{ outputType: outputTypeParam, count: total }] : []
+      }
+      return [
+        { outputType: 'text', count: textCount },
+        { outputType: 'image', count: imageCount },
+        { outputType: 'video', count: videoCount },
+      ].filter((r) => r.count > 0).sort((a, b) => b.count - a.count)
+    })()
+
+    const byBillingMode = [
+      { billingMode: 'user_provider_account', count: byok },
+      { billingMode: 'platform_credits', count: platformCredits },
+    ].filter((r) => r.count > 0)
+
+    // Provider distribution from recent window (top 10 by frequency)
+    const providerCounts = new Map<string, number>()
+    for (const r of recent) {
+      providerCounts.set(r.providerId, (providerCounts.get(r.providerId) ?? 0) + 1)
+    }
+    const byProvider = [...providerCounts.entries()]
+      .map(([providerId, count]) => ({ providerId, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+
     return NextResponse.json({
       range,
       since: since?.toISOString() ?? null,
@@ -123,9 +131,9 @@ export async function GET(req: NextRequest) {
         successRate: total > 0 ? Math.round((succeeded / total) * 100) : 0,
         platformServiceFeeCredits: feeSumAgg._sum.platformServiceFeeCredits ?? 0,
       },
-      byOutputType: byOutputType.map((r) => ({ outputType: r.outputType, count: r._count.id })),
-      byBillingMode: byBillingMode.map((r) => ({ billingMode: r.billingMode, count: r._count.id })),
-      byProvider: byProvider.map((r) => ({ providerId: r.providerId, count: r._count.id })),
+      byOutputType,
+      byBillingMode,
+      byProvider,
       recent: recent.map((r) => ({
         id: r.id,
         createdAt: r.createdAt.toISOString(),
@@ -142,7 +150,12 @@ export async function GET(req: NextRequest) {
       })),
     })
   } catch (err) {
-    console.error('[account/usage] DB query failed:', err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ message: '数据库查询失败，请稍后刷新重试。' }, { status: 500 })
+    const errMsg = err instanceof Error ? err.message : String(err)
+    const errCode = (err as Record<string, unknown>)?.code ?? 'UNKNOWN'
+    console.error('[account/usage] query failed:', errCode, errMsg)
+    return NextResponse.json(
+      { message: '数据库查询失败，请稍后刷新重试。', errorCode: 'USAGE_DB_UNAVAILABLE' },
+      { status: 500 },
+    )
   }
 }
