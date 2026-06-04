@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-04
 Last valid commit: `3c2bab6` (cn-executor safe logging + video BYOK feature flag skeleton)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton code validated)
+Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed)
 
 ---
 
@@ -44,6 +44,7 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Account / Billing / BYOK Messaging（账号/积分/BYOK 费用模式说明统一） | ✅ CLOSED / validated | `4347465` |
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
 | Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / validated | `3c2bab6` |
+| Platform Service Fee Strategy Audit（平台服务费策略只读审计） | ✅ CLOSED / read-only audit completed | — |
 
 ---
 
@@ -536,7 +537,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -560,9 +561,12 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Seedance Video BYOK 安全评审 | ✅ read-only audit completed |
 | Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented（feature flag 默认关闭；安全基础已就绪；推荐方案 Option A；暂缓实施） |
-| Platform service fee charging | ❌ not implemented |
+| Platform Service Fee Strategy Audit | ✅ read-only audit completed（结论：当前不启用；继续观察 BYOK 用量 30-60 天） |
+| Platform service fee charging | ❌ not implemented（UsageLog.platformServiceFeeCredits 固定为 0；不扣 service credits；UI 显示"未启用"） |
+| Service credits wallet | ❌ not implemented（无独立 service credits 余额；当前只有平台额度 wallet） |
+| Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
 
-**下一步商业优先级（2026-06）：** 继续观察用量数据（admin 已可实时看到 BYOK vs 平台额度分布），30–60 天后再制定服务费策略。账户中心 UX 已相对完整（账户管理 + 健康状态 + 错误引导 + API Key 教程 + 用量历史）。cn-executor 日志脱敏基础已完成（commit `3c2bab6`），Video BYOK feature flag skeleton 已就位（`ENABLE_SEEDANCE_VIDEO_BYOK` 默认 false）。下一阶段可做：其他单 API Key Provider BYOK（Runway 等）、Seedance Video BYOK 实施（flag 已就绪，补充 videoJobRunner userCredential 接收逻辑即可）、或平台服务费策略审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**，继续观察 BYOK 用量 30–60 天后再决策）。UsageLog.platformServiceFeeCredits 字段已存在但固定为 0，所有 UI 显示"未启用"。启用收费前必须满足的 no-go 条件：生成前价格展示 / 失败退款 / 账单明细 / 用户提前通知 / feature flag / 客服争议处理均未实现。推荐服务费路线：Phase 0（当前）继续免费 BYOK 观察用量 → Phase 1 静态价格文案预览 → Phase 2 service credits 数据模型审计 → Phase 3 前端价格预览（不扣费）→ Phase 4 feature flag 配置 → Phase 5 内测扣费。账户中心 UX 已相对完整。cn-executor 日志脱敏和 Video BYOK feature flag skeleton 已就位。下一阶段可做：Pricing / Service Credits 静态文案预览包，或 Service Credits 数据模型只读审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1411,6 +1415,77 @@ await db.usageLog.create({
 
 ---
 
+## Platform Service Fee Strategy Audit — CLOSED / read-only audit completed
+
+**审计日期：** 2026-06-04
+**审计性质：** 只读 — 零文件修改，零 commit，零 push
+
+### 核心结论
+
+**当前不启用平台服务费。** 继续观察 BYOK 用量 30–60 天后再决策。
+
+### 当前状态确认
+
+| 项目 | 状态 |
+|---|---|
+| `UsageLog.platformServiceFeeCredits` 字段 | ✅ 已存在于 Prisma schema（`Int @default(0)`） |
+| 当前所有路径写入值 | 固定为 0（`usage-log.ts:63` 硬编码 `?? 0`） |
+| 平台服务费扣费逻辑 | ❌ 无。`billing-middleware.ts` 完全未实现 service credits 检查 |
+| UI 显示 | `/account/usage`、`/account/providers`、`/account/providers/[id]`、`/admin/usage` 均显示"未启用 / 0" |
+| `/pricing-preview` 页面 | ✅ 存在，静态草案，标注为预览，未接导航，不代表最终定价 |
+| Service credits wallet | ❌ 未实现，当前只有平台额度单一 wallet |
+| CreditLedger service_fee 类型 | ❌ 未定义（现有类型：reserve/settle/release/refund/admin_adjustment） |
+| 订阅数据模型 | ❌ 未实现，Prisma schema 无 Subscription 表 |
+| Creator City 是否赚 API 差价 | ❌ 否。BYOK 路径平台零收入，Provider 费用由用户直接支付 |
+
+### No-Go 条件（任何一项未满足则不得启用收费）
+
+| No-Go 条件 | 当前状态 |
+|---|---|
+| 没有生成前价格展示 | ❌ 未实现 |
+| 没有失败退款机制 | ❌ 未实现 |
+| 没有清晰区分 Provider 费用和平台服务费 | ⚠️ 已有文案说明，但无账单级别区分 |
+| 没有用户账单明细 | ❌ 未实现 |
+| 没有管理员审计（admin usage）| ✅ 已有基础，但 platformServiceFeeCredits 全为 0 |
+| 没有 feature flag | ❌ 未实现（参照 ENABLE_SEEDANCE_VIDEO_BYOK 模式） |
+| 没有提前通知（至少 14 天）和免费过渡期 | ❌ 未实现 |
+| 没有客服 / 争议处理渠道 | ❌ 未实现 |
+| 会让用户误以为平台代收 Provider 费用 | ❌ 必须在每个扣费入口明确说明 |
+
+### 推荐路线（只读设计，不实施）
+
+| 阶段 | 内容 | 技术改动 |
+|---|---|---|
+| **Phase 0（当前）** | 继续免费 BYOK，用 `/admin/usage` 观察用量 30–60 天 | 无 |
+| **Phase 1** | 服务费策略文档 + `/pricing-preview` 文案更新（不改 billing） | 仅静态 UI |
+| **Phase 2** | Service credits 数据模型只读审计（`Wallet` 扩展方案 vs 新表） | 只读设计 |
+| **Phase 3** | 前端生成前价格预览（显示"预计消耗 N 平台服务 credits，当前未收费"） | 仅 UI，不改 billing |
+| **Phase 4** | 后台 `ENABLE_SERVICE_FEE_CHARGING` feature flag 配置，仍不扣费 | Feature flag only |
+| **Phase 5** | 小范围内测扣费，必须先实现 reserve / settle / refund service fee | 完整 billing 改动 |
+| **Phase 6** | 公开启用 + 14 天提前通知 + Free tier 免费配额 + 账单导出 | 通知 + 账单 API |
+| **Phase 7** | 订阅套餐（Subscription 数据模型 + 支付集成） | 全新 subscription 系统 |
+
+### 草案定价参考（仅供内部讨论，不实施，不承诺）
+
+| 操作 | 草案 service credits |
+|---|---|
+| Text BYOK 1 次 | 0（建议免费，计算成本极低） |
+| Image BYOK 1 次 | 1 service credit |
+| Video BYOK 5s 1 次 | 5 service credits |
+| Video BYOK 10s 1 次 | 10 service credits |
+| 失败是否退还 | 全额退还 |
+| Free tier 月免费配额 | 5 service credits / 月 |
+
+### 安全边界确认
+
+- 未修改任何功能代码、billing、credits、Prisma schema、payment ✅
+- 未新增 API 路由或修改现有路由 ✅
+- 未修改 UsageLog 写入逻辑（仍固定写 0） ✅
+- 未修改 setupBilling / finalizeBilling / reserve / settle / refund ✅
+- 未修改 cn-executor ✅
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1433,10 +1508,15 @@ await db.usageLog.create({
 
 6. ~~**独立 API Key 帮助页 `/help/api-keys`** — ✅ DONE / browser validated (commit `35185b4`, validated 2026-06-04)~~
 
-7. **错误提示产品化（P2）**
+7. **Platform Service Fee Phase 0：持续观察 BYOK 用量（P2）**
+   - 用 `/admin/usage` 每周观察 BYOK 调用量、用户分布、成功率
+   - 判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑启用
+   - **下一步可做**：Pricing / Service Credits 静态文案预览包（不改 billing）
+
+8. **错误提示产品化（P2）**
    - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
 
-8. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
+9. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
 
