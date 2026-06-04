@@ -117,6 +117,122 @@ function rowStatusColor(s: string | null) {
   return 'text-white/30'
 }
 
+function getHealthExplanation(
+  health: AccountHealth,
+  account: Pick<AccountSummaryAccount, 'status' | 'lastTestStatus' | 'credentialType'>
+): string | null {
+  if (health.status === 'healthy') return '该账户最近测试或生成成功，可以继续使用。'
+  if (account.status === 'disabled') return '账户已停用，不会出现在生成选择中。启用后可继续使用。'
+  if (account.status === 'invalid' || account.lastTestStatus === 'auth_failed')
+    return 'API Key 可能已失效、复制不完整，或误填了网页登录密码。请到 Provider 控制台重新生成 API Key，删除并重新添加此账户。'
+  if (account.lastTestStatus === 'insufficient_quota' || account.lastTestStatus === 'rate_limited')
+    return 'Provider 账户可能余额不足或 API Billing 未开通。请前往 Provider 控制台检查账单和余额。'
+  if (account.lastTestStatus === 'timeout')
+    return '连接超时，可能是网络波动或 Provider 侧临时故障。可稍后重试，或切换为平台额度模式生成。'
+  if (account.lastTestStatus === 'unsupported')
+    return '此账户不支持自动连接测试（火山方舟限制）。请在画布图片节点切换「我的 API 账户」实际生成一次来验证。'
+  if (health.status === 'warning')
+    return '最近有生成失败记录。请查看下方调用记录中的错误码，并检查 API Key、Provider 余额或接入点 ID 是否正确。'
+  return '该账户尚未完成测试，也无成功生成记录。建议先测试连接，或在画布中生成一次验证。'
+}
+
+type RepairTip = {
+  severity: 'error' | 'warning' | 'info'
+  text: string
+  link?: { href: string; label: string }
+}
+
+function getRepairTips(
+  account: AccountSummaryAccount,
+  recentUsage: AccountSummaryRecentRow[]
+): RepairTip[] {
+  const tips: RepairTip[] = []
+
+  if (account.status === 'disabled') {
+    tips.push({ severity: 'warning', text: '账户已停用，不会出现在生成选择中。点击「启用账户」后即可继续使用。' })
+    return tips
+  }
+
+  if (account.status === 'invalid' || account.lastTestStatus === 'auth_failed') {
+    tips.push({
+      severity: 'error',
+      text: 'API Key 认证失败。请确认填写的是 Provider 控制台生成的 API Key（非网页登录密码），到 Provider 控制台重新生成后删除并重新添加账户。',
+      link: { href: '/help/api-keys', label: '查看 API Key 接入指南' },
+    })
+  }
+
+  if (account.lastTestStatus === 'insufficient_quota' || account.lastTestStatus === 'rate_limited') {
+    tips.push({
+      severity: 'warning',
+      text: 'Provider 账户余额不足或 API Billing 未开通。请登录 Provider 控制台检查账单，确保账户有足够余额。',
+    })
+  }
+
+  if (account.lastTestStatus === 'timeout') {
+    tips.push({
+      severity: 'info',
+      text: '连接超时，可能是 Provider 临时故障。稍后重试，或切换为平台额度模式生成。',
+    })
+  }
+
+  if (account.credentialType === 'bearer_with_endpoint' && !account.fieldMeta?.endpointId) {
+    tips.push({
+      severity: 'error',
+      text: '此账户需要接入点 ID（Endpoint ID）。请在火山方舟控制台「模型接入」中获取接入点 ID，然后删除并重新添加账户。',
+      link: { href: '/help/api-keys', label: '查看 Seedream 接入步骤' },
+    })
+  }
+
+  if (account.lastTestStatus === 'unsupported' && !recentUsage.some((r) => r.status === 'succeeded')) {
+    tips.push({
+      severity: 'info',
+      text: '此账户不支持自动连接测试。请在画布图片节点切换「我的 API 账户」并生成一张图片，以实际结果验证账户可用性。',
+      link: { href: '/projects', label: '去画布创作' },
+    })
+  }
+
+  const recentErrors: string[] = recentUsage
+    .filter((r) => r.status === 'failed' && r.errorCode)
+    .map((r) => r.errorCode as string)
+
+  if (recentErrors.length > 0 && tips.length < 3) {
+    const hasAuth = recentErrors.some((c) => /auth_failed|unauthorized|invalid_api_key|provider_auth_failed/i.test(c))
+    const hasQuota = recentErrors.some((c) => /quota|billing|insufficient/i.test(c))
+    const hasEndpoint = recentErrors.some((c) => /endpoint|model_not_found|provider_model_invalid/i.test(c))
+
+    if (hasAuth && account.lastTestStatus !== 'auth_failed' && account.status !== 'invalid') {
+      tips.push({
+        severity: 'error',
+        text: '最近有认证失败记录。请确认 API Key 有效，或到 Provider 控制台重新生成。',
+        link: { href: '/help/api-keys', label: '查看 API Key 接入指南' },
+      })
+    }
+    if (hasQuota && tips.length < 3 && account.lastTestStatus !== 'insufficient_quota') {
+      tips.push({
+        severity: 'warning',
+        text: '最近有额度或账单错误。请前往 Provider 控制台检查账户余额和 API Billing 状态。',
+      })
+    }
+    if (hasEndpoint && tips.length < 3) {
+      tips.push({
+        severity: 'warning',
+        text: '最近有接入点或模型错误。请确认 Endpoint ID 填写正确，且在 Provider 控制台接入点状态为「运行中」。',
+        link: { href: '/help/api-keys', label: '查看接入步骤' },
+      })
+    }
+  }
+
+  if (tips.length === 0 && !account.lastTestedAt && account.lastTestStatus === null) {
+    tips.push({
+      severity: 'info',
+      text: '该账户尚未测试连接，也无生成记录。建议点击「测试连接」验证，或在画布中实际生成一次。',
+      link: { href: '/help/api-keys', label: '查看 API Key 接入指南' },
+    })
+  }
+
+  return tips.slice(0, 3)
+}
+
 type SummaryData = {
   account: AccountSummaryAccount
   usageSummary: AccountSummaryUsage | null
@@ -336,6 +452,11 @@ export default function ProviderAccountDetailPage() {
             <p className="text-sm font-semibold">健康状态</p>
           </div>
           <p className="text-sm opacity-80">{health.message}</p>
+          {(() => {
+            const exp = getHealthExplanation(health, account)
+            if (!exp || exp === health.message) return null
+            return <p className="mt-1.5 text-[11px] opacity-65 leading-relaxed">{exp}</p>
+          })()}
           {account.lastTestedAt && (
             <p className="mt-2 text-[11px] opacity-50">
               上次测试：{fmtDateTime(account.lastTestedAt)}
@@ -346,6 +467,47 @@ export default function ProviderAccountDetailPage() {
             <p className="mt-1 text-[11px] opacity-50">错误详情：{account.lastTestError}</p>
           )}
         </div>
+
+        {/* ── Repair tips ── */}
+        {(() => {
+          const tips = getRepairTips(account, recentUsage)
+          if (tips.length === 0) return null
+          return (
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-white/30 mb-3">建议操作</p>
+              <div className="space-y-2.5">
+                {tips.map((tip, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-xl border px-3.5 py-3 text-xs leading-relaxed ${
+                      tip.severity === 'error'
+                        ? 'border-rose-500/20 bg-rose-500/[0.05] text-rose-300/80'
+                        : tip.severity === 'warning'
+                        ? 'border-amber-500/20 bg-amber-500/[0.05] text-amber-300/80'
+                        : 'border-sky-500/15 bg-sky-500/[0.04] text-sky-300/70'
+                    }`}
+                  >
+                    <span className="mr-1.5">
+                      {tip.severity === 'error' ? '✕' : tip.severity === 'warning' ? '!' : 'ℹ'}
+                    </span>
+                    {tip.text}
+                    {tip.link && (
+                      <>
+                        {' '}
+                        <Link
+                          href={tip.link.href}
+                          className="underline underline-offset-2 opacity-80 hover:opacity-100"
+                        >
+                          {tip.link.label} →
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Credentials ── */}
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">

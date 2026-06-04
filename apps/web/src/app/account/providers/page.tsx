@@ -201,6 +201,31 @@ function fmtUsageDate(iso: string | null) {
   } catch { return iso }
 }
 
+type AccountHint = {
+  text: string
+  color: 'error' | 'warning'
+}
+
+function getAccountHint(
+  acc: ProviderAccount,
+  usage: AccountUsageSummary | null
+): AccountHint | null {
+  if (acc.status === 'disabled') return null
+  if (acc.status === 'invalid' || acc.lastTestStatus === 'auth_failed') {
+    return { text: '请检查 API Key', color: 'error' }
+  }
+  if (acc.credentialType === 'bearer_with_endpoint' && !acc.fieldMeta?.endpointId) {
+    return { text: '请补充接入点 ID', color: 'error' }
+  }
+  if (acc.lastTestStatus === 'insufficient_quota' || acc.lastTestStatus === 'rate_limited') {
+    return { text: '请检查 Provider 余额', color: 'warning' }
+  }
+  if (usage && usage.total >= 3 && usage.failed / usage.total > 0.5) {
+    return { text: '最近有失败记录', color: 'warning' }
+  }
+  return null
+}
+
 function apiErrorMessage(status: number, body: { message?: string }): string {
   if (status === 401) return '请先登录后再管理 Provider API 账户。'
   if (status === 503) return 'Provider Key 加密服务暂时不可用，请稍后再试。'
@@ -665,6 +690,27 @@ export default function ProviderAccountsPage() {
                         </span>
                       )}
                     </div>
+
+                    {/* Health hint chip */}
+                    {(() => {
+                      const s = usageSummaries?.[acc.id] ?? null
+                      const hint = getAccountHint(acc, s)
+                      if (!hint) return null
+                      return (
+                        <div className="mb-2">
+                          <Link
+                            href={`/account/providers/${acc.id}`}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium border transition ${
+                              hint.color === 'error'
+                                ? 'border-rose-500/25 bg-rose-500/[0.07] text-rose-300/80 hover:border-rose-500/40'
+                                : 'border-amber-500/20 bg-amber-500/[0.06] text-amber-300/70 hover:border-amber-500/35'
+                            }`}
+                          >
+                            {hint.color === 'error' ? '✕' : '!'} {hint.text} →
+                          </Link>
+                        </div>
+                      )
+                    })()}
 
                     {/* Usage summary */}
                     {usageSummaryError ? (

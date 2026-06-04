@@ -145,6 +145,18 @@ const ERRORS: { q: string; a: string }[] = [
     q: '页面一直显示生成中，没有结果',
     a: '可能是 Key 余额不足或 Endpoint 未正常运行。请到 Provider 控制台检查账户余额和接入点状态，也可以到画布节点查看错误详情。',
   },
+  {
+    q: 'Seedream 账户状态显示「不支持自动测试」，怎么验证是否可用？',
+    a: '火山方舟限制了 /models 接口，导致 Creator City 无法自动连接测试。这不代表账户有问题。请在画布图片节点中切换「我的 API 账户」，选择该账户并生成一张图片，以实际生成结果验证账户可用性。',
+  },
+  {
+    q: '测试连接提示「连接超时」，账户是否还能用？',
+    a: '超时通常是 Provider 侧临时故障或网络波动，不代表 API Key 失效。可等待几分钟后重试，或直接在画布中尝试生成验证。如果持续超时，建议切换为平台额度模式生成，并检查 Provider 服务状态页。',
+  },
+  {
+    q: '我使用 BYOK 生成时，Creator City 会向我收取平台服务费吗？',
+    a: '当前平台服务费功能未启用（计费值为 0）。使用「我的 API 账户」模式时，Creator City 不扣取平台模型积分，也不收取平台服务费。API 调用费用由你直接支付给 Provider，Creator City 不参与计费。',
+  },
 ]
 
 // ── Components ────────────────────────────────────────────────────────────────
@@ -324,7 +336,7 @@ export default function ApiKeysGuidePage() {
 
         {/* Section 4 — 常见错误 */}
         <section className="mb-8">
-          <SectionLabel>常见问题与错误</SectionLabel>
+          <SectionLabel>出错了怎么办？</SectionLabel>
           <Card>
             <div className="space-y-5">
               {ERRORS.map((item, i) => (
