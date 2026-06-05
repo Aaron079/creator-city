@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-05
 Last valid commit: `5b07162` (service credits pricing preview + AI billing help knowledge)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated)
 
 ---
 
@@ -48,7 +48,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Pricing / Service Credits Static Preview（价格/服务费静态说明页） | ✅ CLOSED / validated | `5b07162` |
 | AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ CLOSED / validated | `5b07162` |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ CLOSED / read-only audit completed | — |
-| Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ IMPLEMENTED / browser validation pending | — |
+| Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ CLOSED / validated | `cee4f9d` |
 
 ---
 
@@ -541,7 +541,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。管理员模拟服务积分只读视图已上线并验收：/admin/usage 可看到理论 service credits 估算（Text=0/Image=1/Video=5-10），只读不扣费，enabled=false，不写账本，不改 UsageLog.platformServiceFeeCredits。Creator City 现在可以在不收费、不写账本、不改 schema 的情况下，用真实 BYOK 用量估算未来 service credits 理论值。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -573,7 +573,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Service credits wallet | ❌ not implemented（无独立 service credits 余额；当前只有平台额度 wallet） |
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ read-only audit completed（推荐 Option B：独立 ServiceCreditWallet + ServiceCreditLedger；9 项 no-go 条件；迁移阶段 M0-M6；当前继续观察 30-60 天） |
-| Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ implemented（只读模拟，不扣费，不写 ledger，不改 UsageLog.platformServiceFeeCredits；/admin/usage 新增 amber 区块；API 返回 simulatedServiceCredits 字段） |
+| Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ validated（只读模拟，不扣费，不写 ledger，不改 UsageLog.platformServiceFeeCredits；/admin/usage amber 区块；API simulatedServiceCredits 字段；enabled=false；只统计 BYOK succeeded；failed/pending 不计入；`cee4f9d`） |
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：先实施 Admin 模拟服务积分视图（只读，不扣费）→ 再评估 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
@@ -1619,6 +1619,79 @@ await db.usageLog.create({
 - 未修改 UsageLog 写入逻辑（仍固定写 0）✅
 - 未修改 setupBilling / finalizeBilling / reserve / settle / refund ✅
 - 未修改 cn-executor ✅
+
+---
+
+## Admin Simulated Service Credits View — CLOSED / validated
+
+**Commit:** `cee4f9d`
+**验收日期：** 2026-06-05
+**验收方式：** 静态代码逐条核查（14/14 PASS）
+
+### 功能说明
+
+在 `/admin/usage` 页面（仅管理员可见）新增"模拟服务积分（只读）"amber 区块，基于现有 UsageLog 数据估算如果未来按草案规则收费，本时间范围 BYOK 成功任务理论会产生多少 service credits。**不扣费，不写账本，不改 schema，不改 UsageLog.platformServiceFeeCredits。**
+
+### 模拟规则
+
+| 类型 | 规则 |
+|---|---|
+| Text BYOK | 0 service credits / 次 |
+| Image BYOK | 1 service credit / 次 |
+| Video BYOK | durationSeconds ≤ 5 → 5；durationSeconds > 5 → 10；durationSeconds 缺失 → 5（UI 标注） |
+| platform_credits 路径 | 不纳入（只统计 billingMode = user_provider_account） |
+| 失败/取消 | 不计入 totalCredits，单独显示 failedByokCalls |
+| pending/running | 不计入 totalCredits，单独显示 pendingByokCalls |
+
+### 验收结果
+
+| 验收项 | 结果 | 证据 |
+|---|---|---|
+| admin guard 保留（非 ADMIN → 403） | ✅ PASS | `route.ts:15` |
+| `/api/admin/usage` 返回 simulatedServiceCredits | ✅ PASS | `route.ts:224-247` |
+| enabled: false | ✅ PASS | `route.ts:225` |
+| 只统计 BYOK succeeded（billingMode + status 双条件） | ✅ PASS | `route.ts:83-84` |
+| failed 单独计数不计入 totalCredits | ✅ PASS | `route.ts:89-94, 128` |
+| pending 单独计数不计入 totalCredits | ✅ PASS | `route.ts:96-102` |
+| Video 时长规则 ≤5→5, >5→10, null→5 | ✅ PASS | `route.ts:117-124` |
+| 零数据库写入 | ✅ PASS | grep 无 create/update/upsert/delete |
+| platformServiceFeeCredits 不改变 | ✅ PASS | 只读 aggregate，不写入 |
+| 区块文案"当前不会扣费/不会写入账本/不会改变 UsageLog.platformServiceFeeCredits" | ✅ PASS | `page.tsx:277` |
+| 区块 badges"未启用 / 不扣费""只读模拟" | ✅ PASS | `page.tsx:267, 270` |
+| 失败/处理中 显示为"不计入" | ✅ PASS | `page.tsx:334, 340` |
+| 无敏感字段（apiKey/encryptedFields/prompt/Authorization） | ✅ PASS | select 仅含 outputType+durationSeconds |
+| billing/schema/生成链路/payment/cn-executor 零触碰 | ✅ PASS | commit diff 只含 2 个 UI 文件 + docs |
+| 原有 summary cards 无回归 | ✅ PASS | `page.tsx:246-258` 原 6 个 SummaryCard 完整保留 |
+
+### 修改文件（共 2 个功能文件）
+
+| 文件 | 改动 |
+|---|---|
+| `apps/web/src/app/api/admin/usage/route.ts` | 新增 3 个并行只读查询 + reduce 计算 + simulatedServiceCredits 返回字段（+76 行） |
+| `apps/web/src/app/admin/usage/page.tsx` | 新增类型定义 + amber 区块（+123 行） |
+
+### 安全边界确认
+
+- 未启用平台服务费 ✅
+- 未改 billing / credits / payment / schema / 生成链路 ✅
+- 未暴露任何敏感字段 ✅
+- Platform service fee charging 仍 not implemented ✅
+- Service credits wallet 仍 not implemented ✅
+- UsageLog.platformServiceFeeCredits 仍固定为 0 ✅
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期 |
+|---|---|---|
+| 1 | 管理员访问 `/admin/usage` | 页面正常加载，原有 summary cards 无回归 |
+| 2 | 找到"模拟服务积分（只读）"amber 区块 | 区块显示，含"未启用 / 不扣费""只读模拟"badges |
+| 3 | 确认区块副标题 | 含"当前不会扣费""不会写入账本""不会改变 UsageLog.platformServiceFeeCredits" |
+| 4 | 查看理论总计 + Text / Image / Video 3 列 | 各列显示调用数 + 规则 + subtotal |
+| 5 | 查看 BYOK 失败（不计入）/ BYOK 处理中（不计入） | 显示数字但不进入 totalCredits |
+| 6 | 切换 24h / 7d / 30d | 模拟区块数据随 range 同步变化，原有 dashboard 无回归 |
+| 7 | DevTools Network 查看 `/api/admin/usage` response | 含 simulatedServiceCredits.enabled = false |
+| 8 | 普通用户访问 `/api/admin/usage` | 返回 401/403（guard 无回归） |
+| 9 | `/account/usage` / `/account/providers` / `/pricing-preview` | 无任何变化，无回归 |
 
 ---
 
