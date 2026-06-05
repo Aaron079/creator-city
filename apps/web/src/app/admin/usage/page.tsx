@@ -700,6 +700,142 @@ export default function AdminUsagePage() {
               </div>
             )}
 
+            {/* 30–60 Day Observation Playbook — static, read-only */}
+            <div className="mt-6 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03]">
+              <div className="flex flex-wrap items-center gap-2 border-b border-indigo-500/15 px-5 py-3">
+                <span className="text-sm font-semibold text-indigo-300">30–60 天观察期 Playbook</span>
+                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+                  只读观察
+                </span>
+                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+                  当前仍不启用收费
+                </span>
+                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+                  不写账本
+                </span>
+              </div>
+
+              <div className="px-5 py-4">
+                <p className="text-xs text-indigo-200/50 leading-relaxed">
+                  每周复制一次 BYOK 观察摘要，结合以下阈值判断下一步。
+                  <strong className="text-indigo-300"> 当前仍不启用收费，不写账本，不改变 UsageLog.platformServiceFeeCredits。</strong>
+                </p>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  {/* Weekly checklist */}
+                  <div className="rounded-xl border border-white/8 bg-white/[0.02] px-5 py-4">
+                    <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-indigo-300/60">📋 每周固定查看</div>
+                    <ul className="space-y-2">
+                      {[
+                        'BYOK 调用数（绝对值与环比变化）',
+                        'BYOK 占比（BYOK / 总调用）',
+                        '活跃 BYOK 用户数（独立用户）',
+                        'BYOK 成功率 & 失败率',
+                        '高频 BYOK 用户数（≥ 10 次）',
+                        'Top Provider 分布',
+                        '模拟 service credits 估算值',
+                        '失败率和主要错误类型',
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-white/55">
+                          <span className="mt-0.5 shrink-0 text-indigo-400/50">·</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* No-go for charging */}
+                  <div className="rounded-xl border border-rose-500/15 bg-rose-500/[0.03] px-5 py-4">
+                    <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-rose-300/60">🚫 绝不直接收费（6 条 No-Go）</div>
+                    <ul className="space-y-2">
+                      {[
+                        '没有 ServiceCreditWallet 不收费',
+                        '没有失败退款机制不收费',
+                        '没有生成前价格展示不收费',
+                        '没有账单明细不收费',
+                        '没有 ENABLE_SERVICE_FEE_CHARGING feature flag 不收费',
+                        '没有用户通知和免费过渡期不收费',
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-white/55">
+                          <span className="mt-0.5 shrink-0 text-rose-400/50">·</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Keep observing */}
+                  <div className="rounded-xl border border-white/8 bg-white/[0.02] px-5 py-4">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">🔍 继续观察</div>
+                    <div className="mb-3 text-[10px] text-white/25">满足以下任一条件时，维持当前策略</div>
+                    <ul className="space-y-1.5 mb-3">
+                      {[
+                        'BYOK 调用数 < 20',
+                        '活跃 BYOK 用户很少（< 5）',
+                        'BYOK 占比低于 10%',
+                        '高频用户（≥ 10 次）不足 5 人',
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-white/45">
+                          <span className="mt-0.5 shrink-0 text-white/25">·</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="rounded-lg border border-white/8 bg-white/[0.015] px-3 py-2 text-[11px] text-white/35">
+                      继续免费 BYOK，优先提升使用量和用户理解。
+                    </div>
+                  </div>
+
+                  {/* Fix stability first */}
+                  <div className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] px-5 py-4">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-300/60">⚠️ 先修稳定性</div>
+                    <div className="mb-3 text-[10px] text-amber-200/30">满足以下任一条件时，不推进收费</div>
+                    <ul className="space-y-1.5 mb-3">
+                      {[
+                        'BYOK 失败率 > 20%',
+                        'auth / quota / endpoint 错误集中',
+                        '某 Provider 成功率明显低于其他',
+                        '用户频繁查看错误引导页面',
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-white/45">
+                          <span className="mt-0.5 shrink-0 text-amber-400/40">·</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-200/45">
+                      先修 API Key 引导、Provider 错误提示、稳定性和账户健康建议，不推进收费。
+                    </div>
+                  </div>
+                </div>
+
+                {/* Next phase gate — full width */}
+                <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.04] px-5 py-4">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-indigo-300/60">✅ 可以进入下一阶段审计</div>
+                  <div className="mb-3 text-[10px] text-indigo-200/30">同时满足以下全部条件时，可启动 service credits 数据模型实施评估</div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mb-3">
+                    {[
+                      '连续 2–4 周 BYOK 调用稳定增长',
+                      'BYOK 成功率 ≥ 80%',
+                      '活跃 BYOK 用户持续增加',
+                      '高频用户（≥ 10 次）明显出现',
+                      '模拟 service credits 有可观规模',
+                      '失败率 < 10%，无明显稳定性问题',
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs text-white/50">
+                        <span className="mt-0.5 shrink-0 text-indigo-400/50">✓</span>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] px-3 py-2 text-[11px] text-indigo-200/55">
+                    可以进入下一阶段：service credits 数据模型实施评估（M1 新表），或前端价格预览 UI，但仍不直接扣费。
+                    <span className="ml-1 text-indigo-300/40">参见 Service Credits Data Model Audit 章节。</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Distributions */}
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
 
