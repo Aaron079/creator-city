@@ -2745,6 +2745,39 @@ export function CanvasNodeCard({
     const nextAction = payloadNextAction || mediaFailureDiagnosis?.nextAction || ''
     const diagCode = mediaFailureDiagnosis?.code ?? ''
     const showAssetLibraryLink = !isRecoveryLoading && ASSET_LIBRARY_RECOVERY_CODES.has(diagCode)
+    // Simple case: done node with a recorded asset but unavailable media preview.
+    // Most common cause: expired OSS signed URL → proxy returns 502. Show a calm
+    // placeholder so the user knows the asset is preserved, not lost.
+    const isSimplePreviewExpiry = node.status === 'done' && Boolean(nodeAssetId) && !persistencePending
+    if (isSimplePreviewExpiry) {
+      const promptTruncated = node.prompt?.trim().slice(0, 60) ?? ''
+      return (
+        <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>
+          <span className="block text-left text-[11px] font-semibold uppercase tracking-normal text-white/55">
+            预览暂不可用
+          </span>
+          <span className="mt-1 block text-left text-xs leading-snug text-white/45">
+            资产记录仍保留
+          </span>
+          {promptTruncated ? (
+            <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/30">
+              {promptTruncated}{(node.prompt?.trim().length ?? 0) > 60 ? '…' : ''}
+            </span>
+          ) : null}
+          <a
+            href="/assets"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1.5 block text-left text-[11px] text-cyan-200/70 underline underline-offset-2 hover:text-cyan-100"
+            data-no-node-drag="true"
+            onPointerDown={(e) => { e.stopPropagation() }}
+            onClick={(e) => { e.stopPropagation() }}
+          >
+            → 前往资产库确认
+          </a>
+        </span>
+      )
+    }
     return (
     <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>
       <span className="block text-left text-[11px] font-bold uppercase tracking-normal text-red-100">
