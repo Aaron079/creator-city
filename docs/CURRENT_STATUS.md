@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-05
 Last valid commit: `5b07162` (service credits pricing preview + AI billing help knowledge)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed)
 
 ---
 
@@ -47,6 +47,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Platform Service Fee Strategy Audit（平台服务费策略只读审计） | ✅ CLOSED / read-only audit completed | — |
 | Pricing / Service Credits Static Preview（价格/服务费静态说明页） | ✅ CLOSED / validated | `5b07162` |
 | AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ CLOSED / validated | `5b07162` |
+| Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ CLOSED / read-only audit completed | — |
 
 ---
 
@@ -539,7 +540,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -570,8 +571,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Platform service fee charging | ❌ not implemented（UsageLog.platformServiceFeeCredits 固定为 0；不扣 service credits；UI 显示"未启用"） |
 | Service credits wallet | ❌ not implemented（无独立 service credits 余额；当前只有平台额度 wallet） |
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
+| Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ read-only audit completed（推荐 Option B：独立 ServiceCreditWallet + ServiceCreditLedger；9 项 no-go 条件；迁移阶段 M0-M6；当前继续观察 30-60 天） |
 
-**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：Phase 2（service credits 数据模型只读审计）→ Phase 3（前端价格预览，不扣费）→ Phase 4（feature flag + 通知）→ Phase 5（内测扣费）。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：先实施 Admin 模拟服务积分视图（只读，不扣费）→ 再评估 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1536,6 +1538,88 @@ await db.usageLog.create({
 
 ---
 
+## Service Credits Data Model Audit — CLOSED / read-only audit completed
+
+**审计日期：** 2026-06-05  
+**审计性质：** 只读 — 零文件修改，零 commit，零 push
+
+### 当前状态
+
+| 项目 | 状态 |
+|---|---|
+| Service credits wallet | ❌ 未实现（当前只有 `UserCreditWallet`，无独立服务积分 wallet） |
+| Subscription billing | ❌ 未实现（Prisma schema 无 `Subscription` 表） |
+| Platform service fee charging | ❌ 未实现（`UsageLog.platformServiceFeeCredits` 固定为 0） |
+| Prisma schema / migration 变更 | ❌ 未做 |
+| `CreditLedger` service_fee 类型 | ❌ 未定义（现有类型：PURCHASE / BONUS / RESERVE / SETTLE / RELEASE / REFUND / ADMIN_ADJUSTMENT / EXPIRE） |
+| `UserCreditWallet` walletType | ❌ 不存在（只有单一 wallet 结构，无 walletType 字段） |
+| `CreditLedger` idempotencyKey | ❌ 不存在（仅 app-layer settle guard，无 DB UNIQUE 约束） |
+
+### 推荐数据模型（Option B：独立 ServiceCreditWallet + ServiceCreditLedger）
+
+**核心原则：**
+- 新建 `ServiceCreditWallet` 表，与 `UserCreditWallet` 完全隔离
+- 新建 `ServiceCreditLedger` 表，独立 reserve / settle / release / refund 语义
+- `UserCreditWallet` 继续只处理平台模型 credits（代付 Provider API 费用）
+- `idempotencyKey`（格式：`service_reserve:{generationJobId}:{attempt}`）加 UNIQUE 约束，实现 DB 层幂等
+- `generationJobId` + `usageLogId` 双向关联，逐笔可审计
+
+### 不推荐方案
+
+| 方案 | 原因 |
+|---|---|
+| ❌ Option A：在 `UserCreditWallet` 加 `serviceBalance` 字段 | 两种业务语义混在同一 wallet 中，会计混乱，审计困难 |
+| ❌ Option C：walletType 泛化 wallet | 过度设计，查询复杂，审计困难，无法清晰隔离 |
+| ❌ Option D：只用 `UsageLog` 统计服务费 | 无法做 reserve / settle / refund，不适合真实收费场景 |
+| ❌ Option E：先做 Subscription 订阅 | 用量不足，无法定价，架构跃进，暂无用户需求数据支撑 |
+
+### No-Go 条件（任何一项未满足则不得启用服务费收费）
+
+| No-Go 条件 | 当前状态 |
+|---|---|
+| `UserCreditWallet` 与 `ServiceCreditWallet` 不混用 | ❌ service credits 未实现，风险存在于设计阶段 |
+| 每笔 service fee reserve 必须有 DB 层 idempotencyKey（UNIQUE 约束） | ❌ 未实现 |
+| 失败时必须全额退还 service credits（refund 语义完整） | ❌ 未实现 |
+| 生成前必须展示预计消耗（preflight price preview） | ❌ 未实现 |
+| 必须有独立 `ServiceCreditLedger`（逐笔可审计） | ❌ 未实现 |
+| 必须有 `ENABLE_SERVICE_FEE_CHARGING` feature flag（默认 false） | ❌ 未实现（参照 `ENABLE_SEEDANCE_VIDEO_BYOK` 模式） |
+| 必须提前 14 天通知用户并提供免费过渡期 | ❌ 未实现 |
+| 必须有 admin 级别 service credit 审计界面 | ❌ 仅基础 `/admin/usage`，无 service credit 专项视图 |
+| 负余额防护（DB CHECK constraint 或 app-layer preflight + 事务） | ❌ 当前仅 app-layer check，无 DB CHECK constraint |
+
+### 关键发现：视频异步计费结构性缺陷
+
+当前 Vercel video route 在 `generationJobId` 创建后（12s timeout 内）同步调用 `finalizeBilling`，但视频实际生成由 cn-executor 异步执行（可能耗时数分钟）。若未来视频 service fee 依赖 Next.js 侧 `finalizeBilling` 模式，**计费将在实际生成完成前就 settle**，导致无论成功/失败都已扣费。实施视频 service fee 时，必须先评审 cn-executor 主动回调 settle/release 的方案，不能沿用现有同步 finalizeBilling 路径。
+
+### 迁移阶段建议（只读设计，当前不实施）
+
+| 阶段 | 内容 | 约束 |
+|---|---|---|
+| **M0（当前）** | 继续免费 BYOK，用 `/admin/usage` 观察用量 30-60 天，无任何 schema 变更 | 只读 |
+| **M1** | 新建 `ServiceCreditWallet` + `ServiceCreditLedger` 表，零业务逻辑 | 只加表，不写数据 |
+| **M2** | 生成路由中懒创建 ServiceCreditWallet（balance=0），写 UsageLog 关联 `serviceWalletId` | 无扣费 |
+| **M3** | Admin 手动 grant service credits（测试账户），验证 ledger 结构 | 仅后台操作 |
+| **M4** | 前端展示 service credits 余额（只读 UI，不影响生成流程） | 仅 UI |
+| **M5** | `ENABLE_SERVICE_FEE_CHARGING` feature flag 内测（小范围真实扣费） | 完整 reserve / settle / refund |
+| **M6** | 公开启用 + 14 天提前通知 + Free tier 免费配额 + 账单导出 | 通知 + 账单 API |
+
+### 下一步建议
+
+- **当前**：继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费
+- **可选（下阶段）**：Admin 模拟服务积分视图（只读报表，UsageLog × 草案费率，不真实扣费）— 最低风险的下一步
+- **不建议**：立刻进入 M1（新表），无用量数据支撑时无法验证草案费率是否合理
+- **禁止**：不经 9 项 no-go 条件全部满足就启用任何 service fee 扣费逻辑
+
+### 安全边界确认
+
+- 未修改任何功能代码、billing、credits、Prisma schema、payment ✅
+- 未新增 API 路由或修改现有路由 ✅
+- 未修改 UsageLog 写入逻辑（仍固定写 0）✅
+- 未修改 setupBilling / finalizeBilling / reserve / settle / refund ✅
+- 未修改 cn-executor ✅
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1559,9 +1643,12 @@ await db.usageLog.create({
 6. ~~**独立 API Key 帮助页 `/help/api-keys`** — ✅ DONE / browser validated (commit `35185b4`, validated 2026-06-04)~~
 
 7. **Platform Service Fee Phase 0：持续观察 BYOK 用量（P2）**
+   - ✅ 已完成：平台服务费策略只读审计（结论：当前不启用）
+   - ✅ 已完成：Pricing / Service Credits 静态文案预览包（`/pricing-preview` + AI 帮助费用知识同步，`5b07162`）
+   - ✅ 已完成：Service Credits 数据模型只读审计（推荐 Option B；9 项 no-go 条件；M0-M6 迁移阶段；当前继续观察）
    - 用 `/admin/usage` 每周观察 BYOK 调用量、用户分布、成功率
    - 判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑启用
-   - **下一步可做**：Pricing / Service Credits 静态文案预览包（不改 billing）
+   - **下一步可做**：Admin 模拟服务积分视图（只读报表，UsageLog × 草案费率，不真实扣费，不改 schema）
 
 8. **错误提示产品化（P2）**
    - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
