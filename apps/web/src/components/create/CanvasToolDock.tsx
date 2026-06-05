@@ -9,6 +9,7 @@ import {
   Plus,
   Square,
   Text,
+  UserRound,
   Video,
 } from 'lucide-react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -26,6 +27,8 @@ interface CanvasToolDockProps {
   onLexiconToggle: () => void
   variantPlannerOpen: boolean
   onVariantPlannerToggle: () => void
+  characterLockOpen: boolean
+  onCharacterLockToggle: () => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -52,6 +55,8 @@ export function CanvasToolDock({
   onLexiconToggle,
   variantPlannerOpen,
   onVariantPlannerToggle,
+  characterLockOpen,
+  onCharacterLockToggle,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
 
@@ -119,6 +124,19 @@ export function CanvasToolDock({
           >
             <Layers size={20} strokeWidth={1.8} />
             <span className="canvas-hover-tooltip" aria-hidden="true">变体规划器</span>
+          </button>
+
+          {/* Character Lock — Tool 4 */}
+          <button
+            type="button"
+            onClick={onCharacterLockToggle}
+            className={`canvas-toolbar-button ${characterLockOpen ? 'is-active' : ''}`}
+            title="角色锁定"
+            aria-label="角色锁定"
+            aria-pressed={characterLockOpen}
+          >
+            <UserRound size={20} strokeWidth={1.8} />
+            <span className="canvas-hover-tooltip" aria-hidden="true">角色锁定</span>
           </button>
 
           <div className="canvas-toolbar-divider" />

@@ -21,6 +21,7 @@ import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
 import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
 import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
+import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2364,6 +2365,7 @@ export function VisualCanvasWorkspace({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
+  const [isCharacterLockOpen, setIsCharacterLockOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -6797,6 +6799,14 @@ export function VisualCanvasWorkspace({
     handleNodePatch(editingNode.id, { prompt: next })
   }, [editingNode, canvasPrompt, handleNodePatch])
 
+  const handleCharacterLockInsert = useCallback((fragment: string) => {
+    if (!editingNode) return
+    const trimmed = canvasPrompt.trim()
+    const next = trimmed ? `${trimmed}${fragment}` : fragment.trimStart()
+    setCanvasPrompt(next)
+    handleNodePatch(editingNode.id, { prompt: next })
+  }, [editingNode, canvasPrompt, handleNodePatch])
+
   const handleVariantCreateNode = useCallback(
     (kind: 'image' | 'video', title: string, prompt: string) => {
       const source = editingNode ?? activeNode
@@ -7797,11 +7807,19 @@ export function VisualCanvasWorkspace({
           onLexiconToggle={() => {
             setIsLexiconOpen((o) => !o)
             setIsVariantPlannerOpen(false)
+            setIsCharacterLockOpen(false)
           }}
           variantPlannerOpen={isVariantPlannerOpen}
           onVariantPlannerToggle={() => {
             setIsVariantPlannerOpen((o) => !o)
             setIsLexiconOpen(false)
+            setIsCharacterLockOpen(false)
+          }}
+          characterLockOpen={isCharacterLockOpen}
+          onCharacterLockToggle={() => {
+            setIsCharacterLockOpen((o) => !o)
+            setIsLexiconOpen(false)
+            setIsVariantPlannerOpen(false)
           }}
         />
       ) : null}
@@ -7867,6 +7885,25 @@ export function VisualCanvasWorkspace({
             onInsert={handleVariantInsert}
             onCreateNode={handleVariantCreateNode}
             onClose={() => setIsVariantPlannerOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {/* Character Lock panel — Tool 4, triggered from left dock */}
+      {isCharacterLockOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsCharacterLockOpen(false)}
+          />
+          <CharacterLockPanel
+            node={editingNode ?? activeNode}
+            characterBible={characterBible}
+            canInsert={editingNode !== null}
+            onInsert={handleCharacterLockInsert}
+            onSaveBible={persistCharacterBibleSettings}
+            onClose={() => setIsCharacterLockOpen(false)}
           />
         </>
       ) : null}
