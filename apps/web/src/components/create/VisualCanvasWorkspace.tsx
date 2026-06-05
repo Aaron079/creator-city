@@ -18,7 +18,7 @@ import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
 import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
-import { CinematicControlsPanel } from '@/components/create/CinematicControlsPanel'
+import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -7768,6 +7768,24 @@ export function VisualCanvasWorkspace({
         />
       ) : null}
 
+      {saveStatus !== 'opening' ? (
+        <CanvasSmartToolbar
+          editingNode={editingNode}
+          selectedNode={activeNode}
+          canvasPrompt={canvasPrompt}
+          billingMode={billingMode}
+          selectedUserAccountId={selectedUserAccountId}
+          userProviderAccounts={userProviderAccounts}
+          providerStatus={
+            editingNode?.kind === 'image' ? selectedImageProviderStatus ?? undefined
+            : editingNode?.kind === 'video' ? selectedVideoProviderStatus ?? undefined
+            : undefined
+          }
+          projectId={projectId}
+          onPromptChange={handlePromptChange}
+        />
+      ) : null}
+
       <AnimatePresence mode="wait">
         {activePanel === 'assets' ? (
           <motion.section
@@ -8320,13 +8338,6 @@ export function VisualCanvasWorkspace({
                 </div>
               )}
             </div>
-          )}
-          {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
-            <CinematicControlsPanel
-              prompt={canvasPrompt}
-              onPromptChange={handlePromptChange}
-              nodeKind={editingNode.kind}
-            />
           )}
         </div>
       ) : null}
