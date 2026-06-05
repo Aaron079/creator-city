@@ -18,6 +18,7 @@ import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
 import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
+import { CinematicControlsPanel } from '@/components/create/CinematicControlsPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -8319,6 +8320,13 @@ export function VisualCanvasWorkspace({
                 </div>
               )}
             </div>
+          )}
+          {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
+            <CinematicControlsPanel
+              prompt={canvasPrompt}
+              onPromptChange={handlePromptChange}
+              nodeKind={editingNode.kind}
+            />
           )}
         </div>
       ) : null}
