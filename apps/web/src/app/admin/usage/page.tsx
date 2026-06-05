@@ -189,6 +189,51 @@ function typeBadge(outputType: string) {
   return <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/40">文本</span>
 }
 
+// ── Observation summary builder ───────────────────────────────────────────────
+
+function buildObservationSummary(data: UsageData, rangeLbl: string): string {
+  const m = data.byokBusinessMetrics
+  const s = data.simulatedServiceCredits
+
+  let conclusion: string
+  if (m.byokCalls === 0) {
+    conclusion = '当前范围暂无 BYOK 使用，暂不具备定价判断依据。'
+  } else if (m.byokFailureRate > 20) {
+    conclusion = 'BYOK 失败率偏高，优先修复稳定性和错误引导，不建议推进收费。'
+  } else if (m.byokCalls >= 100) {
+    conclusion = 'BYOK 使用量较高，建议持续跟踪高频用户与基础设施成本，但仍不建议在缺少服务 credits 钱包和失败退款前启用收费。'
+  } else if (m.byokCalls >= 20 && m.byokSuccessRate >= 80) {
+    conclusion = 'BYOK 已有一定使用量且成功率较稳定，可继续观察高频用户和 Provider 分布。'
+  } else {
+    conclusion = '当前 BYOK 用量较低，建议继续观察。'
+  }
+
+  const topProviders = m.byokByProvider.slice(0, 3).map(p =>
+    `${p.providerId}（${p.calls}次，成功率${p.successRate}%）`
+  ).join('、')
+
+  return [
+    `Creator City BYOK 观察摘要（${rangeLbl}）`,
+    `生成日期：${new Date().toISOString().slice(0, 10)}`,
+    '',
+    `· BYOK 调用数：${m.byokCalls}`,
+    `· 平台额度调用数：${m.platformCreditCalls}`,
+    `· BYOK 占比：${m.byokSharePercent}%`,
+    `· 活跃 BYOK 用户：${m.activeByokUsers}`,
+    `· BYOK 成功率：${m.byokSuccessRate}%`,
+    `· 高频 BYOK 用户（≥${m.highFrequencyThreshold}次）：${m.highFrequencyCount}`,
+    `· Top Provider：${topProviders || '暂无数据'}`,
+    `· 类型分布：文本 ${m.byokByOutputType.text} / 图片 ${m.byokByOutputType.image} / 视频 ${m.byokByOutputType.video}`,
+    `· 模拟服务积分：${s.totalCredits} service credits（只读估算，当前未启用扣费）`,
+    `· BYOK 失败：${s.failedByokCalls} 次；处理中：${s.pendingByokCalls} 次（不计入模拟服务积分）`,
+    '',
+    `· 观察结论：${conclusion}`,
+    '',
+    '· 边界说明：此摘要只读，不写账本，不改变 UsageLog.platformServiceFeeCredits，不代表实际收费。',
+    '· 当前未启用平台服务费。模拟 service credits 只是估算，不会扣费，不会写入账本。',
+  ].join('\n')
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdminUsagePage() {
@@ -197,6 +242,8 @@ export default function AdminUsagePage() {
   const [data, setData] = useState<UsageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [showFallback, setShowFallback] = useState(false)
 
   const fetchData = useCallback(async (r: RangeOption) => {
     setLoading(true)
@@ -230,6 +277,21 @@ export default function AdminUsagePage() {
     }
     void fetchData(range)
   }, [isAuthenticated, user?.role, range, fetchData])
+
+  const handleCopy = useCallback(async () => {
+    if (!data) return
+    const rangeLabelMap: Record<RangeOption, string> = { '24h': '近 24h', '7d': '近 7 天', '30d': '近 30 天' }
+    const text = buildObservationSummary(data, rangeLabelMap[range])
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyStatus('copied')
+      setShowFallback(false)
+      setTimeout(() => setCopyStatus('idle'), 2500)
+    } catch {
+      setCopyStatus('failed')
+      setShowFallback(true)
+    }
+  }, [data, range])
 
   const ranges: RangeOption[] = ['24h', '7d', '30d']
   const rangeLabel: Record<RangeOption, string> = { '24h': '近 24h', '7d': '近 7 天', '30d': '近 30 天' }
@@ -577,6 +639,63 @@ export default function AdminUsagePage() {
                       ))}
                     </ul>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* BYOK Observation Summary — read-only copy */}
+            {data.byokBusinessMetrics && data.simulatedServiceCredits && (
+              <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03]">
+                <div className="flex flex-wrap items-center gap-2 border-b border-emerald-500/15 px-5 py-3">
+                  <span className="text-sm font-semibold text-emerald-300">BYOK 观察摘要（只读）</span>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                    只读
+                  </span>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                    不扣费
+                  </span>
+                </div>
+
+                <div className="px-5 py-4">
+                  <p className="text-xs text-emerald-200/50 leading-relaxed">
+                    基于当前筛选范围生成可复制的运营观察摘要。
+                    <strong className="text-emerald-300"> 当前不会扣费，不会写入账本，不会改变 UsageLog.platformServiceFeeCredits。</strong>
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleCopy}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition active:scale-[0.98] ${
+                        copyStatus === 'copied'
+                          ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
+                          : copyStatus === 'failed'
+                          ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                      }`}
+                    >
+                      {copyStatus === 'copied' ? '✓ 已复制' : copyStatus === 'failed' ? '复制失败，请手动复制' : '复制观察摘要'}
+                    </button>
+                    {copyStatus === 'copied' && (
+                      <span className="text-xs text-emerald-400/60">摘要已复制到剪贴板</span>
+                    )}
+                    {copyStatus === 'failed' && (
+                      <span className="text-xs text-white/35">浏览器不支持自动复制，请选中下方文本手动复制</span>
+                    )}
+                  </div>
+
+                  {showFallback ? (
+                    <textarea
+                      readOnly
+                      value={buildObservationSummary(data, rangeLabel[range])}
+                      rows={22}
+                      className="mt-3 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 font-mono text-xs leading-relaxed text-white/55 resize-y"
+                      onClick={e => (e.target as HTMLTextAreaElement).select()}
+                    />
+                  ) : (
+                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg border border-white/8 bg-black/15 px-4 py-3 text-[11px] leading-relaxed text-white/40">
+                      {buildObservationSummary(data, rangeLabel[range])}
+                    </pre>
+                  )}
                 </div>
               </div>
             )}
