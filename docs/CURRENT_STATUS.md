@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-05
 Last valid commit: `5b07162` (service credits pricing preview + AI billing help knowledge)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard implemented)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated)
 
 ---
 
@@ -49,7 +49,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ CLOSED / validated | `5b07162` |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ CLOSED / read-only audit completed | — |
 | Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ CLOSED / validated | `cee4f9d` |
-| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ IMPLEMENTED / browser validation pending | — |
+| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ CLOSED / validated | `9e80027` |
 
 ---
 
@@ -542,7 +542,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。管理员模拟服务积分只读视图已上线并验收：/admin/usage 可看到理论 service credits 估算（Text=0/Image=1/Video=5-10），只读不扣费，enabled=false，不写账本，不改 UsageLog.platformServiceFeeCredits。Creator City 现在可以在不收费、不写账本、不改 schema 的情况下，用真实 BYOK 用量估算未来 service credits 理论值。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。管理员模拟服务积分只读视图已上线并验收：/admin/usage 可看到理论 service credits 估算（Text=0/Image=1/Video=5-10），只读不扣费，enabled=false，不写账本，不改 UsageLog.platformServiceFeeCredits。Creator City 现在可以在不收费、不写账本、不改 schema 的情况下，用真实 BYOK 用量估算未来 service credits 理论值。Admin BYOK 商业指标只读看板已上线并验收：管理员可实时查看 BYOK 调用占比/活跃用户/成功率/高频用户（≥10次/时间范围）/Provider 分布/类型分布/daily trend，完整 BYOK 商业数据可见，不扣费、不写账本、不改 UsageLog.platformServiceFeeCredits。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -575,9 +575,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ read-only audit completed（推荐 Option B：独立 ServiceCreditWallet + ServiceCreditLedger；9 项 no-go 条件；迁移阶段 M0-M6；当前继续观察 30-60 天） |
 | Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ validated（只读模拟，不扣费，不写 ledger，不改 UsageLog.platformServiceFeeCredits；/admin/usage amber 区块；API simulatedServiceCredits 字段；enabled=false；只统计 BYOK succeeded；failed/pending 不计入；`cee4f9d`） |
-| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ implemented（只读业务观察，不扣费，不写 ledger，不改 schema；/admin/usage sky 区块；BYOK 调用/占比/活跃用户/成功率/高频用户/Provider/类型/daily trend；API byokBusinessMetrics 字段；findMany+reduce 无 groupBy 问题；高频阈值≥10次） |
+| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ validated（只读业务观察，不扣费，不写 ledger，不改 schema；/admin/usage sky 区块；BYOK 调用/占比/活跃用户/成功率/高频用户/Provider/类型/daily trend；API byokBusinessMetrics 字段；findMany+reduce 无 groupBy 问题；高频阈值≥10次；`9e80027`） |
 
-**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：先实施 Admin 模拟服务积分视图（只读，不扣费）→ 再评估 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -1697,6 +1697,72 @@ await db.usageLog.create({
 
 ---
 
+## Admin BYOK Business Metrics Dashboard — CLOSED / validated
+
+**Commit:** `9e80027`
+**验收日期：** 2026-06-05
+**验收方式：** 静态代码逐条核查（14/14 PASS）
+
+### 功能说明
+
+在 `/admin/usage` 页面（仅管理员可见）新增"BYOK 商业指标（只读）"sky/blue 区块，基于现有 UsageLog + User 数据展示 BYOK 业务运营全貌。**不扣费，不写账本，不改 schema，不改 UsageLog.platformServiceFeeCredits。**
+
+### 核心指标
+
+| 指标 | 说明 |
+|---|---|
+| BYOK 总调用次数 | billingMode = user_provider_account 的所有状态记录 |
+| BYOK 占比（%） | BYOK 调用 / 总调用 × 100 |
+| 活跃 BYOK 用户数 | 该时间范围内有过 BYOK 调用的独立 userId 数 |
+| BYOK 成功率（%） | BYOK succeeded / BYOK 总调用 × 100 |
+| 高频用户（HIGH_FREQ_THRESHOLD = 10） | 该时间范围内 BYOK 调用 ≥ 10 次的用户数 |
+| Provider 分布（前 10） | 含 successRate per provider，按调用次数降序 |
+| 输出类型分布 | text / image / video，含 successRate |
+| 高频用户明细表（前 10） | email / displayName / 调用次数 |
+| Daily trend（近 30 天） | 每日 BYOK + platform_credits 调用数 |
+
+### 验收结果
+
+| 验收项 | 结果 | 证据 |
+|---|---|---|
+| admin guard 保留（非 ADMIN → 403） | ✅ PASS | `route.ts:15` — `role !== 'ADMIN' → 403` |
+| `/api/admin/usage` 返回 byokBusinessMetrics | ✅ PASS | `route.ts:266-289, 385` |
+| HIGH_FREQ_THRESHOLD = 10 | ✅ PASS | `route.ts:131`；filter `route.ts:218`；返回 `route.ts:277` |
+| UI 展示高频阈值说明"≥ N 次" | ✅ PASS | `page.tsx:347` — `≥ ${data.byokBusinessMetrics.highFrequencyThreshold} 次` |
+| 零数据库写入 | ✅ PASS | grep 无 create/update/upsert/delete |
+| 无敏感字段（apiKey/encryptedFields/prompt/Authorization） | ✅ PASS | select 仅含安全字段 |
+| platformServiceFeeCredits 只读 aggregate，不写入 | ✅ PASS | 仅 `_sum.platformServiceFeeCredits`，无 update |
+| 区块免责说明"当前不会扣费，不会写入账本，不会改变 UsageLog.platformServiceFeeCredits" | ✅ PASS | `page.tsx:326` |
+| 区块 badges"只读指标""当前不会扣费" | ✅ PASS | `page.tsx:316, 319` |
+| 区块标题"BYOK 商业指标（只读）" | ✅ PASS | `page.tsx:314` |
+| Provider 分布前 10 含 successRate | ✅ PASS | `page.tsx:378-388` |
+| 高频用户表（条件渲染） | ✅ PASS | `page.tsx:396` |
+| Daily trend 表（条件渲染） | ✅ PASS | daily trend conditional present |
+| amber 模拟积分区块无回归 | ✅ PASS | `page.tsx:491` — simulatedServiceCredits 区块保留 |
+| billing/schema/generate routes/payment/cn-executor 零触碰 | ✅ PASS | commit diff 只含 2 个 UI 文件 + docs |
+
+### 修改文件（共 2 个功能文件）
+
+| 文件 | 改动 |
+|---|---|
+| `apps/web/src/app/api/admin/usage/route.ts` | 新增 2 个 findMany 查询（BYOK + 平台额度各 take: 5000）+ reduce 计算 4 个 Map（user/provider/daily/output）+ byokBusinessMetrics 返回字段（+160 行） |
+| `apps/web/src/app/admin/usage/page.tsx` | 新增类型定义（4 个 interface）+ sky/blue BYOK 商业指标区块（含 6 SummaryCard / Provider 分布 / 类型分布 / 高频用户表 / daily trend）（+195 行） |
+
+### TypeScript 严格模式修复
+
+Map entries 数组访问 `[...map.entries()].sort(...)[0][0]` 在 strict 模式下报 Object possibly undefined，统一改为 `[...map.entries()].sort(...)[0]?.[0] ?? null` 后 type-check 零错误。
+
+### 安全边界确认
+
+- 未启用平台服务费 ✅
+- 未改 billing / credits / payment / schema / 生成链路 ✅
+- 未暴露任何敏感字段（encryptedApiKey / encryptedFields / apiKey / Authorization） ✅
+- Platform service fee charging 仍 not implemented ✅
+- Service credits wallet 仍 not implemented ✅
+- UsageLog.platformServiceFeeCredits 仍固定为 0 ✅
+
+---
+
 ## Next Phase Tasks (priority order)
 
 1. ~~**Phase V1：多字段凭证结构扩展** — ✅ DONE / production validated (commit `14a763d`)~~
@@ -1726,7 +1792,8 @@ await db.usageLog.create({
    - 用 `/admin/usage` 每周观察 BYOK 调用量、用户分布、成功率
    - 判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑启用
    - ✅ 已完成：Admin 模拟服务积分视图（只读报表，UsageLog × 草案费率，不真实扣费，不改 schema）
-   - **下一步可做**：继续观察 BYOK 用量，无需立即动作；如数据支撑，下阶段考虑 M1（新表，不写数据）
+   - ✅ 已完成：Admin BYOK 商业指标只读看板（BYOK 调用占比/活跃用户/成功率/高频用户/Provider/类型/daily trend，`9e80027`，validated 2026-06-05）
+   - **下一步可做**：继续观察 BYOK 用量，无需立即动作；定期查看 `/admin/usage` BYOK 商业指标区块；如数据支撑（BYOK 占比 > 30%，高频用户 ≥ 50），下阶段考虑 M1（新表，不写数据）
 
 8. **错误提示产品化（P2）**
    - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
