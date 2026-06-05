@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-05
-Last valid commit: `3c2bab6` (cn-executor safe logging + video BYOK feature flag skeleton)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview implemented · AI Help Billing Knowledge Sync implemented)
+Last valid commit: `5b07162` (service credits pricing preview + AI billing help knowledge)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated)
 
 ---
 
@@ -45,8 +45,8 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
 | Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / validated | `3c2bab6` |
 | Platform Service Fee Strategy Audit（平台服务费策略只读审计） | ✅ CLOSED / read-only audit completed | — |
-| Pricing / Service Credits Static Preview（价格/服务费静态说明页） | ✅ IMPLEMENTED / browser validation pending | `dbcd9c2`+ |
-| AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ IMPLEMENTED / validation pending | `dbcd9c2`+ |
+| Pricing / Service Credits Static Preview（价格/服务费静态说明页） | ✅ CLOSED / validated | `5b07162` |
+| AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ CLOSED / validated | `5b07162` |
 
 ---
 
@@ -564,9 +564,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented（feature flag 默认关闭；安全基础已就绪；推荐方案 Option A；暂缓实施） |
 | Platform Service Fee Strategy Audit | ✅ read-only audit completed（结论：当前不启用；继续观察 BYOK 用量 30-60 天） |
-| Pricing / Service Credits Static Preview（`/pricing-preview` 费用说明页） | ✅ implemented（当前费用模式 / Service Credits 草案 / 费用 FAQ 全部展示；标注未启用） |
-| AI Help Billing Knowledge Sync（平台 AI 帮助费用知识） | ✅ implemented（本地 AI 可回答费用/BYOK/service credits 相关 8 类问题） |
-| Command Palette 费用页面搜索词 | ✅ implemented（pricing-preview / help-api-keys / my-api / help 已加入搜索索引） |
+| Pricing / Service Credits Static Preview（`/pricing-preview` 费用说明页） | ✅ validated（当前费用模式 / Service Credits 草案（未启用）/ 费用 FAQ 全部展示；明确不收费；搜索可达；`5b07162`） |
+| AI Help Billing Knowledge Sync（平台 AI 帮助费用知识） | ✅ validated（本地 AI 可回答 7 类费用问题：平台服务费 / 我的API扣费 / 充值≠Provider / 谁收费 / 何时启用 / 失败退款 / 普通用户需要Key；`5b07162`） |
+| Command Palette 费用页面搜索词 | ✅ validated（pricing-preview / help-api-keys / my-api / help 已加入搜索索引，含 30+ 中英文关键词） |
 | Platform service fee charging | ❌ not implemented（UsageLog.platformServiceFeeCredits 固定为 0；不扣 service credits；UI 显示"未启用"） |
 | Service credits wallet | ❌ not implemented（无独立 service credits 余额；当前只有平台额度 wallet） |
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
@@ -1417,6 +1417,51 @@ await db.usageLog.create({
 | 未改 Prisma schema / migration / payment / billing / credits | ✅ |
 | 未改 Text / Image 生成路由 | ✅ |
 | 未改 Provider Account CRUD / UsageLog / Admin Dashboard | ✅ |
+
+---
+
+## Pricing / Service Credits Static Preview + AI Help Billing Knowledge Sync — CLOSED / validated
+
+**Commit:** `5b07162`
+**验收日期：** 2026-06-05
+**验收方式：** 静态代码逐条核查（10/10 PASS）
+
+### 验收结果
+
+| 验收项 | 结果 |
+|---|---|
+| `/pricing-preview` 顶部展示「当前费用模式（实际生效）」4 张卡片 | ✅ PASS |
+| 明确「平台服务费：当前未启用，显示为 0」 | ✅ PASS |
+| 明确「我的 API：Provider 费用由用户直接支付，不赚差价」 | ✅ PASS |
+| 明确「充值 credits ≠ 给 Provider 充值」 | ✅ PASS |
+| 「当前不会发生的事」7 条列表（含"不扣平台积分"/"不代收"/"不赚差价"/"不自动续费"） | ✅ PASS |
+| Service Credits 草案黄色警告横幅「未来商业化草案，当前未启用，不会扣费」 | ✅ PASS |
+| 草案表格含 Text/Image/Video BYOK 三行，标注「草案（未启用）」 | ✅ PASS |
+| 启用前提 8 条（含失败退款 / feature flag / 通知 / 30-60 天观察） | ✅ PASS |
+| 费用 FAQ 7 问 7 答（覆盖任务要求全部问题） | ✅ PASS |
+| 命令面板：`平台服务费` / `pricing` / `API Key 接入` / `我的 API` 可搜到对应页面 | ✅ PASS |
+| AI 助手：能回答「我的API会扣费吗」「充值是给Provider吗」「平台服务费是什么」「普通用户需要Key吗」 | ✅ PASS |
+| AI 助手：平台服务费答案包含「当前未启用/0/不扣」 | ✅ PASS |
+| 安全检查：无 encryptedApiKey / Authorization / sk- / endpointId 明文泄露 | ✅ PASS |
+| 业务边界：generate routes / credits / billing / payment / prisma / cn-executor 零修改（diff = 0 行） | ✅ PASS |
+| type-check / lint（0 Error）/ build 全部通过 | ✅ PASS |
+
+### 变更文件（仅静态文案 / AI 知识 / 搜索索引）
+
+| 文件 | 改动 |
+|---|---|
+| `pricingPreviewData.ts` | 新增 currentFeeFacts / currentFeeNeverList / serviceCreditsDraftRows / serviceCreditsNoGoList / billingFaqItems |
+| `PricingPreviewPage.tsx` | 新增 CurrentFeeModeSection / ServiceCreditsDraftSection / BillingFaqSection 三个 section（Hero 之后最优先展示） |
+| `local-model.ts` | 新增 7 个 if-else 分支覆盖全部费用类问题 |
+| `context.ts` | 新增 `/pricing-preview` 等 5 个页面上下文 |
+| `palette.ts` | 新增 4 个命令面板搜索条目含 30+ 关键词 |
+
+### 安全边界确认
+
+- 未启用平台服务费 ✅
+- 未改 billing / credits / payment / schema / 生成链路 ✅
+- 未暴露任何敏感字段 ✅
+- Platform service fee charging 仍 not implemented ✅
 
 ---
 
