@@ -75,6 +75,58 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
+  // Simulated service credits — BYOK succeeded only, read-only, no DB write
+  const [byokSucceededLogs, byokSimFailedCount, byokSimPendingCount] = await Promise.all([
+    db.usageLog.findMany({
+      where: {
+        createdAt: { gte: since },
+        billingMode: 'user_provider_account',
+        status: 'succeeded',
+      },
+      select: { outputType: true, durationSeconds: true },
+      take: 2000,
+    }),
+    db.usageLog.count({
+      where: {
+        createdAt: { gte: since },
+        billingMode: 'user_provider_account',
+        status: 'failed',
+      },
+    }),
+    db.usageLog.count({
+      where: {
+        createdAt: { gte: since },
+        billingMode: 'user_provider_account',
+        status: { notIn: ['succeeded', 'failed', 'canceled'] },
+      },
+    }),
+  ])
+
+  let textCalls = 0, imageCalls = 0, videoCalls = 0
+  let imageCredits = 0, videoCredits = 0
+  let videoMissingDuration = false
+
+  for (const log of byokSucceededLogs) {
+    if (log.outputType === 'text') {
+      textCalls++
+    } else if (log.outputType === 'image') {
+      imageCalls++
+      imageCredits += 1
+    } else if (log.outputType === 'video') {
+      videoCalls++
+      if (log.durationSeconds === null) {
+        videoMissingDuration = true
+        videoCredits += 5
+      } else if (log.durationSeconds <= 5) {
+        videoCredits += 5
+      } else {
+        videoCredits += 10
+      }
+    }
+  }
+
+  const totalSimulatedCredits = imageCredits + videoCredits
+
   // Top users — group then join for email
   const topUsersRaw = await db.usageLog.groupBy({
     by: ['userId'],
@@ -169,5 +221,29 @@ export async function GET(req: NextRequest) {
     byStatus: byStatus.map(r => ({ status: r.status, count: r._count.id })),
     topUsers,
     recent,
+    simulatedServiceCredits: {
+      enabled: false,
+      label: '只读模拟，当前未启用扣费',
+      range,
+      totalCredits: totalSimulatedCredits,
+      byOutputType: {
+        text: { calls: textCalls, simulatedCredits: 0, rule: '0 / 次' },
+        image: { calls: imageCalls, simulatedCredits: imageCredits, rule: '1 / 次' },
+        video: {
+          calls: videoCalls,
+          simulatedCredits: videoCredits,
+          rule: '≤5s → 5，>5s → 10 service credits / 次',
+          hasMissingDuration: videoMissingDuration,
+        },
+      },
+      failedByokCalls: byokSimFailedCount,
+      pendingByokCalls: byokSimPendingCount,
+      assumptions: [
+        '只统计我的 API（BYOK）成功任务',
+        'Text 按 0，Image 按 1，Video 按 5/10 估算',
+        '当前不会扣费，UsageLog.platformServiceFeeCredits 仍为 0',
+        '未来真实收费必须支持生成前展示与失败退款',
+      ],
+    },
   })
 }

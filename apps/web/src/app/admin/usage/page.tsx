@@ -18,6 +18,28 @@ interface UsageSummary {
   platformServiceFeeCredits: number
 }
 
+interface SimulatedOutputType {
+  calls: number
+  simulatedCredits: number
+  rule: string
+  hasMissingDuration?: boolean
+}
+
+interface SimulatedServiceCredits {
+  enabled: boolean
+  label: string
+  range: string
+  totalCredits: number
+  byOutputType: {
+    text: SimulatedOutputType
+    image: SimulatedOutputType
+    video: SimulatedOutputType & { hasMissingDuration: boolean }
+  }
+  failedByokCalls: number
+  pendingByokCalls: number
+  assumptions: string[]
+}
+
 interface UsageData {
   range: string
   since: string
@@ -43,6 +65,7 @@ interface UsageData {
     errorCode: string | null
     createdAt: string
   }>
+  simulatedServiceCredits: SimulatedServiceCredits
 }
 
 type RangeOption = '24h' | '7d' | '30d'
@@ -233,6 +256,106 @@ export default function AdminUsagePage() {
                 sub="当前固定为 0"
               />
             </div>
+
+            {/* Simulated Service Credits — read-only, no fee charged */}
+            {data.simulatedServiceCredits && (
+              <div className="mt-6 rounded-xl border border-amber-500/25 bg-amber-500/[0.04]">
+                {/* Section header */}
+                <div className="flex flex-wrap items-center gap-2 border-b border-amber-500/15 px-5 py-3">
+                  <span className="text-sm font-semibold text-amber-300">模拟服务积分（只读）</span>
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                    未启用 / 不扣费
+                  </span>
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                    只读模拟
+                  </span>
+                </div>
+
+                <div className="px-5 py-4">
+                  <p className="text-xs text-amber-200/55 leading-relaxed">
+                    基于当前 BYOK 成功用量估算，如果未来按草案规则收费，本时间范围理论会产生多少 service credits。
+                    <strong className="text-amber-300"> 当前不会扣费，不会写入账本，不会改变 UsageLog.platformServiceFeeCredits。</strong>
+                  </p>
+                  <p className="mt-1 text-[11px] text-amber-200/35">
+                    未来真实收费必须先支持生成前展示、失败退款、账单明细和 feature flag，当前九项 no-go 条件均未满足。
+                  </p>
+
+                  {/* Total + breakdown */}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    {/* Total */}
+                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-amber-300/50">理论总计</div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums text-amber-300">
+                        {data.simulatedServiceCredits.totalCredits}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-amber-200/35">service credits</div>
+                    </div>
+
+                    {/* Text */}
+                    <div className="rounded-lg border border-white/8 bg-white/[0.02] px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-white/30">文本 BYOK</div>
+                      <div className="mt-1 text-xl font-semibold tabular-nums text-white/60">
+                        {data.simulatedServiceCredits.byOutputType.text.simulatedCredits}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-white/25">
+                        {data.simulatedServiceCredits.byOutputType.text.calls} 次 · {data.simulatedServiceCredits.byOutputType.text.rule}
+                      </div>
+                    </div>
+
+                    {/* Image */}
+                    <div className="rounded-lg border border-white/8 bg-white/[0.02] px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-amber-300/50">图片 BYOK</div>
+                      <div className="mt-1 text-xl font-semibold tabular-nums text-amber-300">
+                        {data.simulatedServiceCredits.byOutputType.image.simulatedCredits}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-white/25">
+                        {data.simulatedServiceCredits.byOutputType.image.calls} 次 · {data.simulatedServiceCredits.byOutputType.image.rule}
+                      </div>
+                    </div>
+
+                    {/* Video */}
+                    <div className="rounded-lg border border-white/8 bg-white/[0.02] px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-blue-300/50">视频 BYOK</div>
+                      <div className="mt-1 text-xl font-semibold tabular-nums text-blue-300">
+                        {data.simulatedServiceCredits.byOutputType.video.simulatedCredits}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-white/25">
+                        {data.simulatedServiceCredits.byOutputType.video.calls} 次 · {data.simulatedServiceCredits.byOutputType.video.rule}
+                      </div>
+                      {data.simulatedServiceCredits.byOutputType.video.hasMissingDuration && (
+                        <div className="mt-1 text-[9px] text-amber-400/60">视频缺少时长时按 5 估算</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Failed / pending — shown but not counted */}
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <div className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.015] px-3 py-2">
+                      <span className="text-[10px] text-white/30">BYOK 失败（不计入）</span>
+                      <span className="text-sm font-semibold tabular-nums text-rose-400/70">
+                        {data.simulatedServiceCredits.failedByokCalls}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.015] px-3 py-2">
+                      <span className="text-[10px] text-white/30">BYOK 处理中/排队（不计入）</span>
+                      <span className="text-sm font-semibold tabular-nums text-white/35">
+                        {data.simulatedServiceCredits.pendingByokCalls}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Assumptions */}
+                  <div className="mt-3 rounded-lg border border-white/6 bg-white/[0.015] px-3 py-2.5">
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-white/25">模拟假设</div>
+                    <ul className="space-y-0.5">
+                      {data.simulatedServiceCredits.assumptions.map((a, i) => (
+                        <li key={i} className="text-[10px] text-white/30 before:mr-1.5 before:content-['·']">{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Distributions */}
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
