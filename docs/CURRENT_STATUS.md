@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-05
 Last valid commit: `5b07162` (service credits pricing preview + AI billing help knowledge)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard implemented)
 
 ---
 
@@ -49,6 +49,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ CLOSED / validated | `5b07162` |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ CLOSED / read-only audit completed | — |
 | Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ CLOSED / validated | `cee4f9d` |
+| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ IMPLEMENTED / browser validation pending | — |
 
 ---
 
@@ -574,6 +575,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
 | Service Credits Data Model Audit（服务积分数据模型只读审计） | ✅ read-only audit completed（推荐 Option B：独立 ServiceCreditWallet + ServiceCreditLedger；9 项 no-go 条件；迁移阶段 M0-M6；当前继续观察 30-60 天） |
 | Admin Simulated Service Credits View（管理员模拟服务积分只读视图） | ✅ validated（只读模拟，不扣费，不写 ledger，不改 UsageLog.platformServiceFeeCredits；/admin/usage amber 区块；API simulatedServiceCredits 字段；enabled=false；只统计 BYOK succeeded；failed/pending 不计入；`cee4f9d`） |
+| Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ implemented（只读业务观察，不扣费，不写 ledger，不改 schema；/admin/usage sky 区块；BYOK 调用/占比/活跃用户/成功率/高频用户/Provider/类型/daily trend；API byokBusinessMetrics 字段；findMany+reduce 无 groupBy 问题；高频阈值≥10次） |
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：先实施 Admin 模拟服务积分视图（只读，不扣费）→ 再评估 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 

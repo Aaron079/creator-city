@@ -18,6 +18,54 @@ interface UsageSummary {
   platformServiceFeeCredits: number
 }
 
+interface ByokProviderEntry {
+  providerId: string
+  calls: number
+  succeeded: number
+  failed: number
+  successRate: number
+}
+
+interface ByokHighFreqUser {
+  userId: string
+  email: string | null
+  displayName: string | null
+  calls: number
+  succeeded: number
+  failed: number
+  successRate: number
+  topProviderId: string | null
+  topOutputType: string | null
+}
+
+interface DailyTrendEntry {
+  date: string
+  byokCalls: number
+  platformCreditCalls: number
+  byokSucceeded: number
+  byokFailed: number
+}
+
+interface ByokBusinessMetrics {
+  enabled: boolean
+  label: string
+  range: string
+  byokCalls: number
+  platformCreditCalls: number
+  totalCalls: number
+  byokSharePercent: number
+  activeByokUsers: number
+  byokSuccessRate: number
+  byokFailureRate: number
+  highFrequencyThreshold: number
+  highFrequencyCount: number
+  byokByOutputType: { text: number; image: number; video: number }
+  byokByProvider: ByokProviderEntry[]
+  highFrequencyUsers: ByokHighFreqUser[]
+  dailyTrend: DailyTrendEntry[]
+  notes: string[]
+}
+
 interface SimulatedOutputType {
   calls: number
   simulatedCredits: number
@@ -65,6 +113,7 @@ interface UsageData {
     errorCode: string | null
     createdAt: string
   }>
+  byokBusinessMetrics: ByokBusinessMetrics
   simulatedServiceCredits: SimulatedServiceCredits
 }
 
@@ -256,6 +305,181 @@ export default function AdminUsagePage() {
                 sub="当前固定为 0"
               />
             </div>
+
+            {/* BYOK Business Metrics — read-only analysis */}
+            {data.byokBusinessMetrics && (
+              <div className="mt-6 rounded-xl border border-sky-500/20 bg-sky-500/[0.03]">
+                {/* Header */}
+                <div className="flex flex-wrap items-center gap-2 border-b border-sky-500/15 px-5 py-3">
+                  <span className="text-sm font-semibold text-sky-300">BYOK 商业指标（只读）</span>
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+                    只读指标
+                  </span>
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+                    当前不会扣费
+                  </span>
+                </div>
+
+                <div className="px-5 py-4">
+                  <p className="text-xs text-sky-200/50 leading-relaxed">
+                    用于观察我的 API 在 30–60 天内的真实增长、成功率和高频用户。
+                    <strong className="text-sky-300"> 当前不会扣费，不会写入账本，不会改变 UsageLog.platformServiceFeeCredits。</strong>
+                  </p>
+
+                  {/* Summary cards */}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                    <SummaryCard label="BYOK 调用数" value={data.byokBusinessMetrics.byokCalls} accent="cyan" sub="我的 API" />
+                    <SummaryCard
+                      label="BYOK 占比"
+                      value={`${data.byokBusinessMetrics.byokSharePercent}%`}
+                      accent="cyan"
+                      sub={`共 ${data.byokBusinessMetrics.totalCalls} 次`}
+                    />
+                    <SummaryCard label="活跃 BYOK 用户" value={data.byokBusinessMetrics.activeByokUsers} accent="violet" sub="本时间段" />
+                    <SummaryCard
+                      label="BYOK 成功率"
+                      value={`${data.byokBusinessMetrics.byokSuccessRate}%`}
+                      accent={data.byokBusinessMetrics.byokSuccessRate >= 80 ? 'green' : 'amber'}
+                    />
+                    <SummaryCard
+                      label="高频用户数"
+                      value={data.byokBusinessMetrics.highFrequencyCount}
+                      sub={`≥ ${data.byokBusinessMetrics.highFrequencyThreshold} 次`}
+                    />
+                    <SummaryCard label="平台额度调用" value={data.byokBusinessMetrics.platformCreditCalls} sub="平台代付" />
+                  </div>
+
+                  {/* Output type + Provider distribution */}
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    {/* BYOK output type */}
+                    <div className="rounded-xl border border-white/8 bg-white/[0.02] px-5 py-4">
+                      <div className="mb-3 text-xs font-medium uppercase tracking-wider text-white/30">BYOK 类型分布</div>
+                      {data.byokBusinessMetrics.byokCalls === 0 ? (
+                        <div className="text-xs text-white/25">暂无 BYOK 数据</div>
+                      ) : (() => {
+                        const maxOut = Math.max(
+                          data.byokBusinessMetrics.byokByOutputType.text,
+                          data.byokBusinessMetrics.byokByOutputType.image,
+                          data.byokBusinessMetrics.byokByOutputType.video,
+                          1,
+                        )
+                        return (
+                          <>
+                            <DistroRow label="文本" count={data.byokBusinessMetrics.byokByOutputType.text} max={maxOut} accent="bg-white/30" />
+                            <DistroRow label="图片" count={data.byokBusinessMetrics.byokByOutputType.image} max={maxOut} accent="bg-amber-500/60" />
+                            <DistroRow label="视频" count={data.byokBusinessMetrics.byokByOutputType.video} max={maxOut} accent="bg-blue-500/60" />
+                          </>
+                        )
+                      })()}
+                    </div>
+
+                    {/* BYOK provider top 10 */}
+                    <div className="rounded-xl border border-white/8 bg-white/[0.02] px-5 py-4">
+                      <div className="mb-3 text-xs font-medium uppercase tracking-wider text-white/30">BYOK Provider Top 10</div>
+                      {data.byokBusinessMetrics.byokByProvider.length === 0 ? (
+                        <div className="text-xs text-white/25">暂无 BYOK 数据</div>
+                      ) : (
+                        data.byokBusinessMetrics.byokByProvider.map(p => (
+                          <DistroRow
+                            key={p.providerId}
+                            label={`${p.providerId} (${p.successRate}%)`}
+                            count={p.calls}
+                            max={data.byokBusinessMetrics.byokByProvider[0]?.calls ?? 1}
+                            accent="bg-sky-500/60"
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* High-frequency users table */}
+                  {data.byokBusinessMetrics.highFrequencyUsers.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.02]">
+                      <div className="border-b border-white/8 px-5 py-3 text-xs font-medium uppercase tracking-wider text-white/30">
+                        高频 BYOK 用户（≥ {data.byokBusinessMetrics.highFrequencyThreshold} 次）
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="border-b border-white/8 text-[10px] uppercase tracking-[0.14em] text-white/25">
+                            <tr>
+                              <th className="px-4 py-2.5">#</th>
+                              <th className="px-4 py-2.5">用户</th>
+                              <th className="px-4 py-2.5 text-right">调用数</th>
+                              <th className="px-4 py-2.5 text-right">成功</th>
+                              <th className="px-4 py-2.5 text-right">失败</th>
+                              <th className="px-4 py-2.5 text-right">成功率</th>
+                              <th className="px-4 py-2.5">主要 Provider</th>
+                              <th className="px-4 py-2.5">主要类型</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.byokBusinessMetrics.highFrequencyUsers.map((u, i) => (
+                              <tr key={u.userId} className="border-b border-white/5 last:border-0 hover:bg-white/[0.015]">
+                                <td className="px-4 py-2 text-white/30 tabular-nums">{i + 1}</td>
+                                <td className="px-4 py-2">
+                                  <div className="truncate max-w-[180px] text-white/65">{u.email ?? '—'}</div>
+                                  {u.displayName && <div className="text-[10px] text-white/35">{u.displayName}</div>}
+                                </td>
+                                <td className="px-4 py-2 text-right font-semibold tabular-nums text-white">{u.calls}</td>
+                                <td className="px-4 py-2 text-right tabular-nums text-green-300/70">{u.succeeded}</td>
+                                <td className="px-4 py-2 text-right tabular-nums text-rose-300/70">{u.failed}</td>
+                                <td className="px-4 py-2 text-right tabular-nums text-white/55">{u.successRate}%</td>
+                                <td className="px-4 py-2 truncate max-w-[120px] text-white/40">{u.topProviderId ?? '—'}</td>
+                                <td className="px-4 py-2">
+                                  {u.topOutputType ? typeBadge(u.topOutputType) : <span className="text-white/25">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Daily trend */}
+                  {data.byokBusinessMetrics.dailyTrend.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.02] px-5 py-4">
+                      <div className="mb-3 text-xs font-medium uppercase tracking-wider text-white/30">
+                        每日趋势（最近 {data.byokBusinessMetrics.dailyTrend.length} 天）
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-[11px]">
+                          <thead className="border-b border-white/8 text-[10px] uppercase tracking-wider text-white/25">
+                            <tr>
+                              <th className="py-1.5 pr-4 whitespace-nowrap">日期</th>
+                              <th className="py-1.5 pr-4 text-right text-sky-300/50 whitespace-nowrap">BYOK</th>
+                              <th className="py-1.5 pr-4 text-right text-cyan-300/50 whitespace-nowrap">平台额度</th>
+                              <th className="py-1.5 pr-4 text-right text-green-300/50 whitespace-nowrap">BYOK 成功</th>
+                              <th className="py-1.5 pr-4 text-right text-rose-300/50 whitespace-nowrap">BYOK 失败</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.byokBusinessMetrics.dailyTrend.map(d => (
+                              <tr key={d.date} className="border-b border-white/5 last:border-0">
+                                <td className="py-1.5 pr-4 text-white/40 tabular-nums">{d.date}</td>
+                                <td className="py-1.5 pr-4 text-right tabular-nums text-sky-300/70">{d.byokCalls}</td>
+                                <td className="py-1.5 pr-4 text-right tabular-nums text-cyan-300/50">{d.platformCreditCalls}</td>
+                                <td className="py-1.5 pr-4 text-right tabular-nums text-green-300/60">{d.byokSucceeded}</td>
+                                <td className="py-1.5 pr-4 text-right tabular-nums text-rose-300/60">{d.byokFailed}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  <div className="mt-3 rounded-lg border border-white/6 bg-white/[0.015] px-3 py-2.5">
+                    <ul className="space-y-0.5">
+                      {data.byokBusinessMetrics.notes.map((n, i) => (
+                        <li key={i} className="text-[10px] text-white/30 before:mr-1.5 before:content-['·']">{n}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Simulated Service Credits — read-only, no fee charged */}
             {data.simulatedServiceCredits && (

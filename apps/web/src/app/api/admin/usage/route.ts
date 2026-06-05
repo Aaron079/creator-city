@@ -127,6 +127,167 @@ export async function GET(req: NextRequest) {
 
   const totalSimulatedCredits = imageCredits + videoCredits
 
+  // ── BYOK Business Metrics — read-only, no DB write ────────────────────────
+  const HIGH_FREQ_THRESHOLD = 10
+
+  const [byokAllLogs, platformAllLogs] = await Promise.all([
+    db.usageLog.findMany({
+      where: { createdAt: { gte: since }, billingMode: 'user_provider_account' },
+      select: { userId: true, outputType: true, providerId: true, status: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5000,
+    }),
+    db.usageLog.findMany({
+      where: { createdAt: { gte: since }, billingMode: 'platform_credits' },
+      select: { status: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5000,
+    }),
+  ])
+
+  // Reduce over BYOK logs
+  const byokUserMap = new Map<string, {
+    calls: number; succeeded: number; failed: number
+    providers: Map<string, number>; outputTypes: Map<string, number>
+  }>()
+  const byokProviderMap = new Map<string, { calls: number; succeeded: number; failed: number }>()
+  const byokOutputCounts = { text: 0, image: 0, video: 0 }
+  const byokDailyMap = new Map<string, { byokCalls: number; byokSucceeded: number; byokFailed: number }>()
+  let byokSucceededAll = 0, byokFailedAll = 0
+
+  for (const log of byokAllLogs) {
+    if (!byokUserMap.has(log.userId)) {
+      byokUserMap.set(log.userId, { calls: 0, succeeded: 0, failed: 0, providers: new Map(), outputTypes: new Map() })
+    }
+    const u = byokUserMap.get(log.userId)!
+    u.calls++
+    if (log.status === 'succeeded') { u.succeeded++; byokSucceededAll++ }
+    if (log.status === 'failed') { u.failed++; byokFailedAll++ }
+    u.providers.set(log.providerId, (u.providers.get(log.providerId) ?? 0) + 1)
+    u.outputTypes.set(log.outputType, (u.outputTypes.get(log.outputType) ?? 0) + 1)
+
+    if (!byokProviderMap.has(log.providerId)) {
+      byokProviderMap.set(log.providerId, { calls: 0, succeeded: 0, failed: 0 })
+    }
+    const pv = byokProviderMap.get(log.providerId)!
+    pv.calls++
+    if (log.status === 'succeeded') pv.succeeded++
+    if (log.status === 'failed') pv.failed++
+
+    if (log.outputType === 'text') byokOutputCounts.text++
+    else if (log.outputType === 'image') byokOutputCounts.image++
+    else if (log.outputType === 'video') byokOutputCounts.video++
+
+    const dk = log.createdAt.toISOString().slice(0, 10)
+    if (!byokDailyMap.has(dk)) byokDailyMap.set(dk, { byokCalls: 0, byokSucceeded: 0, byokFailed: 0 })
+    const d = byokDailyMap.get(dk)!
+    d.byokCalls++
+    if (log.status === 'succeeded') d.byokSucceeded++
+    if (log.status === 'failed') d.byokFailed++
+  }
+
+  // Platform daily
+  const platformDailyMap = new Map<string, number>()
+  for (const log of platformAllLogs) {
+    const dk = log.createdAt.toISOString().slice(0, 10)
+    platformDailyMap.set(dk, (platformDailyMap.get(dk) ?? 0) + 1)
+  }
+
+  const byokTotalCalls = byokAllLogs.length
+  const platformTotalCalls = platformAllLogs.length
+  const bizTotalCalls = byokTotalCalls + platformTotalCalls
+  const byokSharePct = bizTotalCalls > 0 ? Math.round((byokTotalCalls / bizTotalCalls) * 100) : 0
+  const byokSuccessRatePct = byokTotalCalls > 0 ? Math.round((byokSucceededAll / byokTotalCalls) * 100) : 0
+  const byokFailureRatePct = byokTotalCalls > 0 ? Math.round((byokFailedAll / byokTotalCalls) * 100) : 0
+  const activeByokUsers = byokUserMap.size
+
+  // Provider top 10
+  const byokByProvider = [...byokProviderMap.entries()]
+    .sort((a, b) => b[1].calls - a[1].calls)
+    .slice(0, 10)
+    .map(([providerId, pv]) => ({
+      providerId,
+      calls: pv.calls,
+      succeeded: pv.succeeded,
+      failed: pv.failed,
+      successRate: pv.calls > 0 ? Math.round((pv.succeeded / pv.calls) * 100) : 0,
+    }))
+
+  // High-frequency users
+  const highFreqRaw = [...byokUserMap.entries()]
+    .filter(([, v]) => v.calls >= HIGH_FREQ_THRESHOLD)
+    .sort((a, b) => b[1].calls - a[1].calls)
+    .slice(0, 10)
+  const highFrequencyCount = [...byokUserMap.values()].filter(v => v.calls >= HIGH_FREQ_THRESHOLD).length
+
+  let highFrequencyUsers: Array<{
+    userId: string; email: string | null; displayName: string | null
+    calls: number; succeeded: number; failed: number; successRate: number
+    topProviderId: string | null; topOutputType: string | null
+  }> = []
+
+  if (highFreqRaw.length > 0) {
+    const hfIds = highFreqRaw.map(([id]) => id)
+    const hfProfiles = await db.user.findMany({
+      where: { id: { in: hfIds } },
+      select: { id: true, email: true, displayName: true },
+    })
+    const hfMap = new Map(hfProfiles.map(p => [p.id, p]))
+    highFrequencyUsers = highFreqRaw.map(([userId, v]) => {
+      const p = hfMap.get(userId)
+      return {
+        userId,
+        email: p?.email ?? null,
+        displayName: p?.displayName ?? null,
+        calls: v.calls,
+        succeeded: v.succeeded,
+        failed: v.failed,
+        successRate: v.calls > 0 ? Math.round((v.succeeded / v.calls) * 100) : 0,
+        topProviderId: v.providers.size > 0
+          ? ([...v.providers.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null)
+          : null,
+        topOutputType: v.outputTypes.size > 0
+          ? ([...v.outputTypes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null)
+          : null,
+      }
+    })
+  }
+
+  // Daily trend (last 30 calendar days)
+  const trendDates = [...new Set([...byokDailyMap.keys(), ...platformDailyMap.keys()])].sort().slice(-30)
+  const dailyTrend = trendDates.map(date => ({
+    date,
+    byokCalls: byokDailyMap.get(date)?.byokCalls ?? 0,
+    platformCreditCalls: platformDailyMap.get(date) ?? 0,
+    byokSucceeded: byokDailyMap.get(date)?.byokSucceeded ?? 0,
+    byokFailed: byokDailyMap.get(date)?.byokFailed ?? 0,
+  }))
+
+  const byokBusinessMetrics = {
+    enabled: true,
+    label: 'BYOK 商业指标（只读）',
+    range,
+    byokCalls: byokTotalCalls,
+    platformCreditCalls: platformTotalCalls,
+    totalCalls: bizTotalCalls,
+    byokSharePercent: byokSharePct,
+    activeByokUsers,
+    byokSuccessRate: byokSuccessRatePct,
+    byokFailureRate: byokFailureRatePct,
+    highFrequencyThreshold: HIGH_FREQ_THRESHOLD,
+    highFrequencyCount,
+    byokByOutputType: byokOutputCounts,
+    byokByProvider,
+    highFrequencyUsers,
+    dailyTrend,
+    notes: [
+      '只读指标，不启用收费',
+      '用于观察 30–60 天 BYOK 真实使用情况',
+      '不写入账本，不改变 UsageLog.platformServiceFeeCredits',
+      `数据来源：最近 ${byokTotalCalls} 条 BYOK 记录（上限 5000）`,
+    ],
+  }
+
   // Top users — group then join for email
   const topUsersRaw = await db.usageLog.groupBy({
     by: ['userId'],
@@ -221,6 +382,7 @@ export async function GET(req: NextRequest) {
     byStatus: byStatus.map(r => ({ status: r.status, count: r._count.id })),
     topUsers,
     recent,
+    byokBusinessMetrics,
     simulatedServiceCredits: {
       enabled: false,
       label: '只读模拟，当前未启用扣费',
