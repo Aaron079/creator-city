@@ -56,6 +56,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Canvas Smart Tools — Generate Readiness Check（右侧工具栏 · 生成前体检） | ✅ CLOSED / validated | `fa62030` |
 | Canvas Smart Tools Tool 2 — Camera Lexicon（镜头词典 · image/video 节点专业镜头词汇插入） | ✅ CLOSED / validated | `e48ee95` |
 | Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement（右侧工具栏清理 · 镜头词典移至左侧导航） | ✅ CLOSED / validated | `a7b5a9a` |
+| Canvas Smart Tools Tool 3A — Asset Variant Planner（资产变体规划器 · 左侧工具导航 · 变体方向卡片） | 🚧 IMPLEMENTED / browser validation pending | (this commit) |
 
 ---
 

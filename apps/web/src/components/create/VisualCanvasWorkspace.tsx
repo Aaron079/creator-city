@@ -20,6 +20,7 @@ import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
 import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
+import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2362,6 +2363,7 @@ export function VisualCanvasWorkspace({
   const [activeTool, setActiveTool] = useState<string>('add')
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
+  const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -6787,6 +6789,22 @@ export function VisualCanvasWorkspace({
     handleNodePatch(editingNode.id, { prompt: next })
   }, [editingNode, canvasPrompt, handleNodePatch])
 
+  const handleVariantInsert = useCallback((fragment: string) => {
+    if (!editingNode) return
+    const trimmed = canvasPrompt.trim()
+    const next = trimmed ? `${trimmed}, ${fragment}` : fragment
+    setCanvasPrompt(next)
+    handleNodePatch(editingNode.id, { prompt: next })
+  }, [editingNode, canvasPrompt, handleNodePatch])
+
+  const handleVariantCreateNode = useCallback(
+    (kind: 'image' | 'video', title: string, prompt: string) => {
+      const source = editingNode ?? activeNode
+      createNode(kind, { title, prompt, parentNodeId: source?.id ?? undefined })
+    },
+    [createNode, editingNode, activeNode],
+  )
+
   const handleProviderChange = useCallback((value: string) => {
     const providerId = normalizeProviderId(value)
     setPromptModel(providerId)
@@ -7776,7 +7794,15 @@ export function VisualCanvasWorkspace({
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
           lexiconOpen={isLexiconOpen}
-          onLexiconToggle={() => setIsLexiconOpen((o) => !o)}
+          onLexiconToggle={() => {
+            setIsLexiconOpen((o) => !o)
+            setIsVariantPlannerOpen(false)
+          }}
+          variantPlannerOpen={isVariantPlannerOpen}
+          onVariantPlannerToggle={() => {
+            setIsVariantPlannerOpen((o) => !o)
+            setIsLexiconOpen(false)
+          }}
         />
       ) : null}
 
@@ -7823,6 +7849,25 @@ export function VisualCanvasWorkspace({
               </div>
             )
           })()}
+        </>
+      ) : null}
+
+      {/* Asset Variant Planner panel — triggered from left dock */}
+      {isVariantPlannerOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsVariantPlannerOpen(false)}
+          />
+          <AssetVariantPlannerPanel
+            node={editingNode ?? activeNode}
+            canvasPrompt={canvasPrompt}
+            canInsert={editingNode !== null}
+            onInsert={handleVariantInsert}
+            onCreateNode={handleVariantCreateNode}
+            onClose={() => setIsVariantPlannerOpen(false)}
+          />
         </>
       ) : null}
 

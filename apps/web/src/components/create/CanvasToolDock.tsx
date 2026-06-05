@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Clapperboard,
   ImageIcon,
+  Layers,
   Plus,
   Square,
   Text,
@@ -23,6 +24,8 @@ interface CanvasToolDockProps {
   onStopAllGenerations: () => void
   lexiconOpen: boolean
   onLexiconToggle: () => void
+  variantPlannerOpen: boolean
+  onVariantPlannerToggle: () => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -47,6 +50,8 @@ export function CanvasToolDock({
   onStopAllGenerations,
   lexiconOpen,
   onLexiconToggle,
+  variantPlannerOpen,
+  onVariantPlannerToggle,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
 
@@ -101,6 +106,19 @@ export function CanvasToolDock({
           >
             <Clapperboard size={20} strokeWidth={1.8} />
             <span className="canvas-hover-tooltip" aria-hidden="true">镜头词典</span>
+          </button>
+
+          {/* Asset Variant Planner — Tool 3A */}
+          <button
+            type="button"
+            onClick={onVariantPlannerToggle}
+            className={`canvas-toolbar-button ${variantPlannerOpen ? 'is-active' : ''}`}
+            title="资产变体规划器"
+            aria-label="资产变体规划器"
+            aria-pressed={variantPlannerOpen}
+          >
+            <Layers size={20} strokeWidth={1.8} />
+            <span className="canvas-hover-tooltip" aria-hidden="true">变体规划器</span>
           </button>
 
           <div className="canvas-toolbar-divider" />
