@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-05
-Last valid commit: `e48ee95` (Canvas Smart Tools Tool 2 — Camera Lexicon)
+Last valid commit: (pending — Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement)
 Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check static audit validated · Camera Lexicon shipped)
 
 ---
@@ -55,6 +55,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Canvas Cinematic Controls（专业镜头参数 UI 基础包） | ✅ CLOSED / shipped | `16ac371` |
 | Canvas Smart Tools — Generate Readiness Check（右侧工具栏 · 生成前体检） | ✅ CLOSED / validated | `fa62030` |
 | Canvas Smart Tools Tool 2 — Camera Lexicon（镜头词典 · image/video 节点专业镜头词汇插入） | 🚧 SHIPPED / browser validation pending | `e48ee95` |
+| Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement（右侧工具栏清理 · 镜头词典移至左侧导航） | 🚧 IMPLEMENTED / browser validation pending | (this commit) |
 
 ---
 

@@ -79,7 +79,7 @@ export function CameraLexiconPanel({
 
   return (
     <div
-      className="fixed right-[80px] top-1/2 z-[1200] flex max-h-[84vh] w-[320px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/96 shadow-2xl backdrop-blur-xl"
+      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[84vh] w-[320px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/96 shadow-2xl backdrop-blur-xl"
       data-no-node-drag="true"
       data-smart-toolbar-panel="true"
       onPointerDown={(e) => e.stopPropagation()}

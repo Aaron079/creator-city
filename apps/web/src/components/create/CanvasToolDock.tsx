@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  Clapperboard,
   ImageIcon,
   Plus,
   Square,
@@ -20,6 +21,8 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
+  lexiconOpen: boolean
+  onLexiconToggle: () => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -42,6 +45,8 @@ export function CanvasToolDock({
   onToggleAddMenu,
   hasActiveGenerations,
   onStopAllGenerations,
+  lexiconOpen,
+  onLexiconToggle,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
 
@@ -84,6 +89,19 @@ export function CanvasToolDock({
               <span className="canvas-hover-tooltip" aria-hidden="true">停止所有生成</span>
             </button>
           ) : null}
+
+          {/* Camera Lexicon — director tool */}
+          <button
+            type="button"
+            onClick={onLexiconToggle}
+            className={`canvas-toolbar-button ${lexiconOpen ? 'is-active' : ''}`}
+            title="镜头词典"
+            aria-label="镜头词典"
+            aria-pressed={lexiconOpen}
+          >
+            <Clapperboard size={20} strokeWidth={1.8} />
+            <span className="canvas-hover-tooltip" aria-hidden="true">镜头词典</span>
+          </button>
 
           <div className="canvas-toolbar-divider" />
 

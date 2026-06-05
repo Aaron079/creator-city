@@ -19,6 +19,7 @@ import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel
 import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
 import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
+import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2360,6 +2361,7 @@ export function VisualCanvasWorkspace({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string>('add')
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+  const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -6777,6 +6779,14 @@ export function VisualCanvasWorkspace({
     }
   }, [editingNode, handleNodePatch])
 
+  const handleLexiconInsert = useCallback((fragment: string) => {
+    if (!editingNode) return
+    const trimmed = canvasPrompt.trim()
+    const next = trimmed ? `${trimmed}, ${fragment}` : fragment
+    setCanvasPrompt(next)
+    handleNodePatch(editingNode.id, { prompt: next })
+  }, [editingNode, canvasPrompt, handleNodePatch])
+
   const handleProviderChange = useCallback((value: string) => {
     const providerId = normalizeProviderId(value)
     setPromptModel(providerId)
@@ -7765,7 +7775,55 @@ export function VisualCanvasWorkspace({
           onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
+          lexiconOpen={isLexiconOpen}
+          onLexiconToggle={() => setIsLexiconOpen((o) => !o)}
         />
+      ) : null}
+
+      {/* Camera Lexicon panel — triggered from left dock */}
+      {isLexiconOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsLexiconOpen(false)}
+          />
+          {(() => {
+            const lexTarget = editingNode ?? activeNode
+            const lexApplicable = lexTarget?.kind === 'image' || lexTarget?.kind === 'video'
+            if (lexApplicable && lexTarget) {
+              return (
+                <CameraLexiconPanel
+                  nodeKind={lexTarget.kind as 'image' | 'video'}
+                  canInsert={editingNode !== null}
+                  onInsert={handleLexiconInsert}
+                  onClose={() => setIsLexiconOpen(false)}
+                />
+              )
+            }
+            return (
+              <div
+                className="fixed left-[80px] top-1/2 z-[1200] w-[280px] -translate-y-1/2 rounded-2xl border border-white/10 bg-[#0f1117]/96 px-5 py-6 shadow-2xl backdrop-blur-xl"
+                data-no-node-drag="true"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-white/30">
+                  镜头词典
+                </p>
+                <p className="mt-3 text-sm leading-relaxed text-white/55">
+                  请先点击一个图片或视频节点，工具将显示可插入的专业镜头词汇。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsLexiconOpen(false)}
+                  className="mt-4 text-[11px] text-white/30 hover:text-white/55"
+                >
+                  关闭
+                </button>
+              </div>
+            )
+          })()}
+        </>
       ) : null}
 
       {saveStatus !== 'opening' ? (

@@ -1,11 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Activity, Clapperboard, Link2, Palette, Stethoscope, Wand2 } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { checkReadiness } from '@/lib/canvas/readiness-check'
 import type { OverallStatus, UserAccountLike } from '@/lib/canvas/readiness-check'
 import { GenerateReadinessPanel } from '@/components/create/GenerateReadinessPanel'
-import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
 
 interface CanvasSmartToolbarProps {
@@ -31,27 +30,6 @@ const DOT_CLASSES: Record<OverallStatus | 'no_node', string> = {
   blocked: 'bg-red-400',
 }
 
-// ─── future tool stub ────────────────────────────────────────────────────────
-
-function FutureTool({ icon: Icon, label }: { icon: typeof Activity; label: string }) {
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        disabled
-        className="canvas-toolbar-button cursor-not-allowed opacity-25"
-        title={`${label}（即将上线）`}
-        aria-label={`${label}（即将上线）`}
-      >
-        <Icon size={20} strokeWidth={1.8} />
-        <span className="canvas-hover-tooltip" aria-hidden="true">
-          {label}（即将上线）
-        </span>
-      </button>
-    </div>
-  )
-}
-
 // ─── main component ──────────────────────────────────────────────────────────
 
 export function CanvasSmartToolbar({
@@ -66,14 +44,10 @@ export function CanvasSmartToolbar({
   onPromptChange,
 }: CanvasSmartToolbarProps) {
   const [readinessOpen, setReadinessOpen] = useState(false)
-  const [lexiconOpen, setLexiconOpen] = useState(false)
 
   // The target node for analysis — prefer editingNode (dialog open), fall back to selectedNode
   const targetNode = editingNode ?? selectedNode
   const canAppendPrompt = editingNode !== null
-
-  // Camera Lexicon is only applicable to image/video nodes
-  const isLexiconApplicable = targetNode?.kind === 'image' || targetNode?.kind === 'video'
 
   // Guard: only run analysis for relevant node kinds
   const targetKind = targetNode?.kind
@@ -122,12 +96,6 @@ export function CanvasSmartToolbar({
     setReadinessOpen(false)
   }
 
-  const handleLexiconInsert = (fragment: string) => {
-    if (!canAppendPrompt) return
-    const trimmed = canvasPrompt.trim()
-    onPromptChange(trimmed ? `${trimmed}, ${fragment}` : fragment)
-  }
-
   return (
     <>
       {/* Right-side toolbar */}
@@ -138,10 +106,7 @@ export function CanvasSmartToolbar({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => {
-                  setReadinessOpen((o) => !o)
-                  setLexiconOpen(false)
-                }}
+                onClick={() => setReadinessOpen((o) => !o)}
                 className={`canvas-toolbar-button ${readinessOpen ? 'is-active' : ''}`}
                 title="生成前体检"
                 aria-label="生成前体检"
@@ -159,33 +124,6 @@ export function CanvasSmartToolbar({
               </button>
             </div>
 
-            {/* Tool 2: Camera Lexicon */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setLexiconOpen((o) => !o)
-                  setReadinessOpen(false)
-                }}
-                className={`canvas-toolbar-button ${lexiconOpen ? 'is-active' : ''} ${!isLexiconApplicable ? 'opacity-40' : ''}`}
-                title="镜头词典"
-                aria-label="镜头词典"
-                aria-pressed={lexiconOpen}
-              >
-                <Clapperboard size={20} strokeWidth={1.8} />
-                <span className="canvas-hover-tooltip" aria-hidden="true">
-                  镜头词典
-                </span>
-              </button>
-            </div>
-
-            <div className="canvas-toolbar-divider" />
-
-            {/* Future tools — disabled */}
-            <FutureTool icon={Stethoscope} label="镜头诊断" />
-            <FutureTool icon={Wand2} label="提示词重写" />
-            <FutureTool icon={Palette} label="风格提取" />
-            <FutureTool icon={Link2} label="连贯性检查" />
           </div>
         </div>
       </div>
@@ -235,48 +173,6 @@ export function CanvasSmartToolbar({
         </>
       )}
 
-      {/* Camera Lexicon panel overlay */}
-      {lexiconOpen && (
-        <>
-          {/* Invisible backdrop to close on outside click */}
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => setLexiconOpen(false)}
-          />
-
-          {isLexiconApplicable && targetNode ? (
-            <CameraLexiconPanel
-              nodeKind={targetNode.kind as 'image' | 'video'}
-              canInsert={canAppendPrompt}
-              onInsert={handleLexiconInsert}
-              onClose={() => setLexiconOpen(false)}
-            />
-          ) : (
-            /* No applicable node selected */
-            <div
-              className="fixed right-[80px] top-1/2 z-[1200] w-[280px] -translate-y-1/2 rounded-2xl border border-white/10 bg-[#0f1117]/96 px-5 py-6 shadow-2xl backdrop-blur-xl"
-              data-no-node-drag="true"
-              data-smart-toolbar-panel="true"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-white/30">
-                镜头词典
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-white/55">
-                请先点击一个图片或视频节点，工具将显示可插入的专业镜头词汇。
-              </p>
-              <button
-                type="button"
-                onClick={() => setLexiconOpen(false)}
-                className="mt-4 text-[11px] text-white/30 hover:text-white/55"
-              >
-                关闭
-              </button>
-            </div>
-          )}
-        </>
-      )}
     </>
   )
 }
