@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-05
-Last valid commit: `16ac371` (canvas cinematic prompt controls)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped)
+Last valid commit: `fa62030` (asset-aware canvas readiness tool)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check implemented)
 
 ---
 
@@ -53,6 +53,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | BYOK Observation Summary / Admin Copy Report（BYOK 观察摘要 / 管理员可复制周报） | ✅ CLOSED / validated | `98859b7` |
 | BYOK Observation Playbook（30–60 天观察期运营 Playbook） | ✅ CLOSED / validated | `40f3d81` |
 | Canvas Cinematic Controls（专业镜头参数 UI 基础包） | ✅ CLOSED / shipped | `16ac371` |
+| Canvas Smart Tools — Generate Readiness Check（右侧工具栏 · 生成前体检） | 🚧 IMPLEMENTED / browser validation pending | `fa62030` |
 
 ---
 
