@@ -115,6 +115,51 @@ function pageConfig(pathname: string) {
     }
   }
 
+  if (pathname.startsWith('/pricing-preview')) {
+    return {
+      routeName: '价格与费用说明',
+      pageSummary: '静态页面：展示当前费用模式、Service Credits 草案（未启用）、未来商业化方向预览。不接支付，不启用收费，不改任何业务逻辑。',
+      suggestedQuestions: ['我的 API 会扣费吗？', '平台服务费是什么？', '充值积分是给 Provider 吗？', '当前什么情况下扣费？'],
+      visibleActions: ['查看当前费用模式', '查看 Service Credits 草案', '查看费用 FAQ', 'API Key 指南', '我的 API 账户'],
+    }
+  }
+
+  if (pathname.startsWith('/help/api-keys')) {
+    return {
+      routeName: 'API Key 接入指南',
+      pageSummary: '静态教程页：如何获取各 Provider 的 API Key 并接入 Creator City。包含 DeepSeek、OpenAI、Kimi、Seedream Image 等接入步骤，以及 BYOK 费用说明（当前不扣平台积分）。',
+      suggestedQuestions: ['DeepSeek API Key 怎么获取？', 'OpenAI key 在哪里？', '使用我的 API 会扣费吗？', '认证失败怎么排查？'],
+      visibleActions: ['查看各 Provider 接入步骤', '前往模型账户中心添加账户', '查看常见错误排查', '返回帮助中心'],
+    }
+  }
+
+  if (pathname.startsWith('/help')) {
+    return {
+      routeName: '帮助中心',
+      pageSummary: '诊断帮助中心：快速定位图片、视频、资产、任务、登录与部署问题。包含常见错误排查和 API Key 接入指南入口。',
+      suggestedQuestions: ['图片生成失败怎么办？', '视频生成没有结果？', 'API Key 怎么填？', '怎么排查登录问题？'],
+      visibleActions: ['查看诊断说明', 'API Key 接入指南', '我的 API 账户'],
+    }
+  }
+
+  if (pathname.startsWith('/account/credits')) {
+    return {
+      routeName: '平台积分 / 充值',
+      pageSummary: '查看平台 credits 余额、充值和消费记录。Creator City credits 是平台额度，用于代付模型调用，不等于 Provider 账户充值。',
+      suggestedQuestions: ['充值后积分去哪了？', '充值是给 OpenAI / DeepSeek 充值吗？', '平台服务费会扣我的积分吗？'],
+      visibleActions: ['查看余额', '购买积分', '费用说明 →/pricing-preview', '我的 API →/account/providers'],
+    }
+  }
+
+  if (pathname.startsWith('/account/usage')) {
+    return {
+      routeName: '用量历史',
+      pageSummary: '查看生成用量记录，包括使用模式（平台额度 / 我的 API）、生成类型、状态和用量统计。平台服务费字段当前显示为 0。',
+      suggestedQuestions: ['哪些生成走的是我的 API？', '平台服务费是什么？', '用量怎么查看？'],
+      visibleActions: ['查看用量列表', '过滤生成类型', '费用说明 →/pricing-preview'],
+    }
+  }
+
   return {
     routeName: '当前页面',
     pageSummary: '这是 Creator City 的一个工作页面，我可以帮你解释可见入口、导航到主要板块并建议下一步。',

@@ -10,6 +10,11 @@ import {
   investorHighlights,
   risksAndBoundaries,
   quickLinks,
+  currentFeeFacts,
+  currentFeeNeverList,
+  serviceCreditsDraftRows,
+  serviceCreditsNoGoList,
+  billingFaqItems,
   type RevenueStatus,
   type PlanTier,
 } from '@/components/pricing-preview/pricingPreviewData'
@@ -470,6 +475,153 @@ function Divider() {
   )
 }
 
+// ── Current fee mode section ──────────────────────────────────────────────────
+
+function CurrentFeeModeSection() {
+  return (
+    <Section>
+      <SectionLabel>当前费用模式（实际生效）</SectionLabel>
+      <div style={{
+        borderRadius: 20,
+        border: '1px solid rgba(99,102,241,0.25)',
+        background: 'rgba(99,102,241,0.04)',
+        padding: '20px 24px 16px',
+        marginBottom: 20,
+      }}>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, margin: 0 }}>
+          以下为<strong style={{ color: 'rgba(255,255,255,0.55)' }}>当前实际生效</strong>的费用规则，
+          不是草案，不是规划。使用 Creator City 前请了解这些事实。
+        </p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
+        {currentFeeFacts.map((fact) => (
+          <div key={fact.title} style={{
+            ...glassLighter,
+            padding: '18px 20px',
+            borderColor: fact.highlight === 'green'
+              ? 'rgba(110,231,183,0.15)'
+              : 'rgba(252,211,77,0.15)',
+            background: fact.highlight === 'green'
+              ? 'rgba(6,78,59,0.12)'
+              : 'rgba(120,53,15,0.12)',
+          }}>
+            <div style={{ fontSize: 20, marginBottom: 10 }}>{fact.icon}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 6, lineHeight: 1.3 }}>{fact.title}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>{fact.body}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{
+        ...glassLighter,
+        padding: '16px 20px',
+        borderColor: 'rgba(248,113,113,0.12)',
+        background: 'rgba(127,29,29,0.08)',
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(248,113,113,0.55)', marginBottom: 10 }}>
+          当前不会发生的事
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 24px' }}>
+          {currentFeeNeverList.map((item) => (
+            <div key={item} style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', lineHeight: 1.6 }}>
+              <span style={{ color: 'rgba(248,113,113,0.60)', marginRight: 5 }}>✗</span>{item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// ── Service credits draft section ─────────────────────────────────────────────
+
+function ServiceCreditsDraftSection() {
+  return (
+    <Section>
+      <SectionLabel>Service Credits 草案（未启用）</SectionLabel>
+      <div style={{
+        borderRadius: 14,
+        border: '1px solid rgba(252,211,77,0.30)',
+        background: 'rgba(120,53,15,0.18)',
+        padding: '12px 18px',
+        marginBottom: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}>
+        <span style={{ fontSize: 18 }}>⚠️</span>
+        <p style={{ fontSize: 11, color: 'rgba(252,211,77,0.80)', lineHeight: 1.6, margin: 0 }}>
+          <strong>以下为未来商业化草案，当前未启用，不会扣费。</strong>
+          所有 service credits 数字均为占位草案，不代表当前收费，不代表最终定价。
+        </p>
+      </div>
+
+      <div style={{ ...glassLighter, padding: '0', overflow: 'hidden', marginBottom: 20 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <th style={{ padding: '12px 18px', textAlign: 'left', color: 'rgba(255,255,255,0.30)', fontWeight: 600, fontSize: 10 }}>使用场景</th>
+              <th style={{ padding: '12px 18px', textAlign: 'left', color: 'rgba(255,255,255,0.30)', fontWeight: 600, fontSize: 10 }}>当前</th>
+              <th style={{ padding: '12px 18px', textAlign: 'left', color: 'rgba(255,255,255,0.30)', fontWeight: 600, fontSize: 10 }}>草案（未启用）</th>
+            </tr>
+          </thead>
+          <tbody>
+            {serviceCreditsDraftRows.map((row, i) => (
+              <tr key={row.scenario} style={{ borderBottom: i < serviceCreditsDraftRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                <td style={{ padding: '11px 18px', color: 'rgba(255,255,255,0.65)' }}>{row.scenario}</td>
+                <td style={{ padding: '11px 18px', color: 'rgba(110,231,183,0.75)' }}>{row.currentCost}</td>
+                <td style={{ padding: '11px 18px', color: 'rgba(252,211,77,0.55)' }}>{row.draftCost}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ ...glassLighter, padding: '16px 20px', marginBottom: 20 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 10 }}>
+          启用前必须满足的所有条件（全部 × 才可考虑）
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {serviceCreditsNoGoList.map((item) => (
+            <div key={item} style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', lineHeight: 1.6 }}>
+              <span style={{ color: 'rgba(252,211,77,0.45)', marginRight: 6 }}>☐</span>{item}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7 }}>
+        如果未来启用 service credits：
+        失败任务必须退还；
+        会提前通知并给过渡期；
+        生成前会明确显示预估费用；
+        用户有关闭 / 降级开关；
+        Free / Creator / Studio / Team 套餐可能包含 monthly service credits 配额。
+      </div>
+    </Section>
+  )
+}
+
+// ── Billing FAQ section ───────────────────────────────────────────────────────
+
+function BillingFaqSection() {
+  return (
+    <Section>
+      <SectionLabel>费用常见问题</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, ...glassLighter, overflow: 'hidden' }}>
+        {billingFaqItems.map((item, i) => (
+          <div key={item.q} style={{
+            padding: '16px 20px',
+            borderBottom: i < billingFaqItems.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.70)', marginBottom: 6 }}>Q：{item.q}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.42)', lineHeight: 1.65 }}>A：{item.a}</div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 // ── Page root ─────────────────────────────────────────────────────────────────
 
 export function PricingPreviewPage() {
@@ -482,6 +634,12 @@ export function PricingPreviewPage() {
     }}>
       <Hero />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 64 }}>
+        <CurrentFeeModeSection />
+        <Divider />
+        <ServiceCreditsDraftSection />
+        <Divider />
+        <BillingFaqSection />
+        <Divider />
         <RevenueOverview />
         <Divider />
         <PricingPlans />

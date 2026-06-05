@@ -109,6 +109,53 @@ function getPageResults() {
       priority: 22,
       keywords: ['invitation', 'invite', '邀请', '收件箱'],
     },
+    {
+      id: 'page-pricing-preview',
+      kind: 'page' as const,
+      title: '价格与费用说明',
+      subtitle: '平台费用模式、Service Credits 草案、BYOK 费用、当前不收费确认',
+      href: '/pricing-preview',
+      priority: 12,
+      keywords: [
+        'pricing', '价格', '费用', '收费', '服务费', '平台服务费',
+        'service credits', 'credits', '积分', '充值', '平台额度',
+        'byok 费用', 'provider 费用', '我的 api 扣费', '扣积分',
+        '我的 api 会扣费吗', '充值是给 provider 吗',
+        '平台服务费是什么', '什么时候收费', '当前免费',
+      ],
+    },
+    {
+      id: 'page-help-api-keys',
+      kind: 'page' as const,
+      title: 'API Key 接入指南',
+      subtitle: '如何获取和填写各 Provider 的 API Key，BYOK 费用说明',
+      href: '/help/api-keys',
+      priority: 13,
+      keywords: [
+        'api key', 'api 密钥', 'byok', '接入', '我的 api',
+        'deepseek key', 'openai key', 'kimi key', 'seedream',
+        'provider api', '认证失败', '测试连接', '填写 key',
+        'api key 在哪', '怎么获取 key', '费用', '扣费',
+      ],
+    },
+    {
+      id: 'page-help',
+      kind: 'page' as const,
+      title: '帮助中心',
+      subtitle: '诊断帮助、常见问题、API Key 指南',
+      href: '/help',
+      priority: 11,
+      keywords: ['help', '帮助', '诊断', '问题', 'faq', '使用帮助', '报错', '怎么用'],
+    },
+    {
+      id: 'page-my-api',
+      kind: 'page' as const,
+      title: '我的 API 账户',
+      subtitle: '管理 Provider API 账户、BYOK 设置',
+      href: '/account/providers',
+      priority: 14,
+      keywords: ['我的 api', 'provider api', 'api 账户', 'byok', '添加账户', '模型账户', 'api key 管理'],
+    },
   ]
 }
 

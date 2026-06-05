@@ -272,4 +272,116 @@ export const quickLinks: QuickLink[] = [
   { label: '社区', href: '/community', description: '探索创作者社区' },
   { label: '诊断帮助', href: '/help', description: '获取使用帮助' },
   { label: '工作空间', href: '/projects', description: '管理我的项目' },
+  { label: 'API Key 指南', href: '/help/api-keys', description: '了解 BYOK 费用与接入' },
+  { label: '我的 API', href: '/account/providers', description: '管理 Provider API 账户' },
+]
+
+// ── Current fee mode ──────────────────────────────────────────────────────────
+
+export interface FeeModeFact {
+  icon: string
+  title: string
+  body: string
+  highlight: 'green' | 'amber'
+}
+
+export const currentFeeFacts: FeeModeFact[] = [
+  {
+    icon: '✅',
+    title: '平台额度（默认模式）',
+    body: '购买 Creator City credits 后，由平台代付 Provider API 调用费用。充值不进入 OpenAI / DeepSeek / 火山方舟等 Provider 账户。',
+    highlight: 'green',
+  },
+  {
+    icon: '✅',
+    title: '我的 API（BYOK）',
+    body: 'Provider 费用由你直接支付给服务商。Creator City 不代扣、不赚 API 差价、不作为 API 中间商参与计费。',
+    highlight: 'green',
+  },
+  {
+    icon: '⚠️',
+    title: '平台服务费：当前未启用',
+    body: '平台服务费显示为 0，当前不会扣取。未来如启用，会在生成前明确展示费用，并提前通知。',
+    highlight: 'amber',
+  },
+  {
+    icon: '⚠️',
+    title: 'Service Credits：当前未启用',
+    body: 'Service credits 是未来可能的平台工具服务费单位，当前不会扣费。价格页所有 service credits 数字均为草案。',
+    highlight: 'amber',
+  },
+]
+
+export const currentFeeNeverList: string[] = [
+  '使用「我的 API」不会扣平台模型 credits',
+  'Creator City 当前不代收、不中转 Provider API 费用',
+  'Creator City 当前不赚 API 差价',
+  '充值 Creator City credits 不会充值到任何 Provider 账户',
+  '当前没有 service credits 扣费',
+  '当前没有订阅自动续费',
+  '当前没有市场抽佣',
+]
+
+// ── Service credits draft ─────────────────────────────────────────────────────
+
+export interface ServiceCreditsDraftRow {
+  scenario: string
+  currentCost: string
+  draftCost: string
+}
+
+export const serviceCreditsDraftRows: ServiceCreditsDraftRow[] = [
+  { scenario: 'Text BYOK（文本生成）', currentCost: '免费', draftCost: '0 或极低（建议保持免费）' },
+  { scenario: 'Image BYOK（图片生成）', currentCost: '免费', draftCost: '1 service credit / 次（草案）' },
+  { scenario: 'Video BYOK（视频生成）', currentCost: '免费', draftCost: '5–10 service credits / 次（草案）' },
+  { scenario: '平台额度模式', currentCost: 'Creator City credits（覆盖 API 成本）', draftCost: '不变' },
+]
+
+export const serviceCreditsNoGoList: string[] = [
+  '生成前必须明确展示费用（用户确认后才扣）',
+  '失败任务必须全额退还 service credits',
+  '账单明细必须可查',
+  '必须有 feature flag 且默认关闭',
+  '必须提前发通知并给过渡期',
+  '用户必须有可关闭 / 降级开关',
+  '必须有争议处理流程',
+  '必须先完成 30–60 天真实用量观察',
+]
+
+// ── Billing FAQ ───────────────────────────────────────────────────────────────
+
+export interface BillingFaqItem {
+  q: string
+  a: string
+}
+
+export const billingFaqItems: BillingFaqItem[] = [
+  {
+    q: '我的 API 会扣平台积分吗？',
+    a: '当前不会扣平台模型 credits。Provider 费用由你的 Provider 账户直接承担。平台服务费当前未启用，显示为 0。',
+  },
+  {
+    q: '充值 Creator City 积分是不是给 OpenAI / DeepSeek 充值？',
+    a: '不是。Creator City credits 是平台额度，用于平台代付模型调用。Provider 自己的 API 账单需要去 Provider 控制台处理。',
+  },
+  {
+    q: '平台服务费是什么？',
+    a: '平台服务费是未来可能用于覆盖画布、资产库、账号加密、用量记录等平台 SaaS 工具服务的费用单位。当前未启用，不会扣费。',
+  },
+  {
+    q: '使用我的 API 谁在收费？',
+    a: 'Provider API 费用由你直接支付给 Provider；Creator City 当前不代收 Provider 费用，不赚 API 差价。',
+  },
+  {
+    q: '平台服务费什么时候启用？',
+    a: '目前没有启用时间表。平台会先观察真实用量，并在有清晰价格展示、失败退款、账单明细、通知机制和开关后才可能考虑。',
+  },
+  {
+    q: '如果未来启用平台服务费，失败会退款吗？',
+    a: '如果未来启用，失败任务必须退还 service credits；当前未启用，不会产生服务费扣费。',
+  },
+  {
+    q: '普通用户需要 API Key 吗？',
+    a: '不需要。普通用户使用平台额度（Creator City credits）即可创作；专业用户可选择连接自己的 Provider API。',
+  },
 ]

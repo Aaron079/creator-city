@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 Last valid commit: `3c2bab6` (cn-executor safe logging + video BYOK feature flag skeleton)
-Production validated: 2026-06-04 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed)
+Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview implemented · AI Help Billing Knowledge Sync implemented)
 
 ---
 
@@ -45,6 +45,8 @@ Production validated: 2026-06-04 (User Usage History browser validated · Provid
 | Provider Account Health Guidance（账户健康建议/错误修复引导） | ✅ CLOSED / validated | `4bac934` |
 | Seedance Video BYOK 安全日志脱敏 / Feature Flag Skeleton | ✅ CLOSED / validated | `3c2bab6` |
 | Platform Service Fee Strategy Audit（平台服务费策略只读审计） | ✅ CLOSED / read-only audit completed | — |
+| Pricing / Service Credits Static Preview（价格/服务费静态说明页） | ✅ IMPLEMENTED / browser validation pending | `dbcd9c2`+ |
+| AI Help Billing Knowledge Sync（AI 帮助费用知识同步） | ✅ IMPLEMENTED / validation pending | `dbcd9c2`+ |
 
 ---
 
@@ -537,7 +539,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -562,11 +564,14 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Seedance Video BYOK Safe Logging / Feature Flag Skeleton | ✅ validated |
 | Seedance Video BYOK | ❌ not implemented（feature flag 默认关闭；安全基础已就绪；推荐方案 Option A；暂缓实施） |
 | Platform Service Fee Strategy Audit | ✅ read-only audit completed（结论：当前不启用；继续观察 BYOK 用量 30-60 天） |
+| Pricing / Service Credits Static Preview（`/pricing-preview` 费用说明页） | ✅ implemented（当前费用模式 / Service Credits 草案 / 费用 FAQ 全部展示；标注未启用） |
+| AI Help Billing Knowledge Sync（平台 AI 帮助费用知识） | ✅ implemented（本地 AI 可回答费用/BYOK/service credits 相关 8 类问题） |
+| Command Palette 费用页面搜索词 | ✅ implemented（pricing-preview / help-api-keys / my-api / help 已加入搜索索引） |
 | Platform service fee charging | ❌ not implemented（UsageLog.platformServiceFeeCredits 固定为 0；不扣 service credits；UI 显示"未启用"） |
 | Service credits wallet | ❌ not implemented（无独立 service credits 余额；当前只有平台额度 wallet） |
 | Subscription billing | ❌ not implemented（无 Subscription 数据模型；/pricing-preview 仅静态草案） |
 
-**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**，继续观察 BYOK 用量 30–60 天后再决策）。UsageLog.platformServiceFeeCredits 字段已存在但固定为 0，所有 UI 显示"未启用"。启用收费前必须满足的 no-go 条件：生成前价格展示 / 失败退款 / 账单明细 / 用户提前通知 / feature flag / 客服争议处理均未实现。推荐服务费路线：Phase 0（当前）继续免费 BYOK 观察用量 → Phase 1 静态价格文案预览 → Phase 2 service credits 数据模型审计 → Phase 3 前端价格预览（不扣费）→ Phase 4 feature flag 配置 → Phase 5 内测扣费。账户中心 UX 已相对完整。cn-executor 日志脱敏和 Video BYOK feature flag skeleton 已就位。下一阶段可做：Pricing / Service Credits 静态文案预览包，或 Service Credits 数据模型只读审计。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作。如需推进商业化：Phase 2（service credits 数据模型只读审计）→ Phase 3（前端价格预览，不扣费）→ Phase 4（feature flag + 通知）→ Phase 5（内测扣费）。暂不直接启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
