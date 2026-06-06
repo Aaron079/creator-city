@@ -8238,6 +8238,16 @@ export function VisualCanvasWorkspace({
       </div>
 
       {/* Workflow Connection Context Tools — position:fixed so they don't scale with canvas zoom */}
+
+      {/* Global backdrop — closes any open context menu */}
+      {openContextMenuNodeId && saveStatus !== 'opening' && (
+        <div
+          className="fixed inset-0"
+          style={{ zIndex: 1079 }}
+          onClick={() => setOpenContextMenuNodeId(null)}
+        />
+      )}
+
       {saveStatus !== 'opening' && Array.from(upstreamContextMap.entries()).map(([nodeId, upCtx]) => {
         const fixedStyle = upstreamContextFixedStyles.get(nodeId)
         if (!fixedStyle) return null
@@ -8245,40 +8255,37 @@ export function VisualCanvasWorkspace({
         const sourceNode = nodes.find((n) => n.id === upCtx.sourceNodeId)
         if (!targetNode) return null
         const menuOpen = openContextMenuNodeId === nodeId
+        const btnLeft = fixedStyle.left as number
+        const btnTop = fixedStyle.top as number
         return (
-          <div
-            key={`ctx-${nodeId}`}
-            style={fixedStyle}
-            data-no-node-drag="true"
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Backdrop — closes menu on click outside */}
-            {menuOpen && (
-              <div
-                className="fixed inset-0"
-                style={{ zIndex: 84 }}
-                onClick={() => setOpenContextMenuNodeId(null)}
-              />
-            )}
+          <div key={`ctx-${nodeId}`}>
             {/* Entry button */}
-            <button
-              type="button"
-              className="relative inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-white/55 shadow-lg backdrop-blur-sm transition hover:border-white/30 hover:text-white/85"
-              style={{ zIndex: 85 }}
+            <div
+              style={{ position: 'fixed', left: btnLeft, top: btnTop, zIndex: 1080 }}
               data-no-node-drag="true"
-              onClick={() => setOpenContextMenuNodeId(menuOpen ? null : nodeId)}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
-              <span className="text-white/30">↑</span>
-              <span>{upCtx.isPortraitLikely ? '角色可用' : '继续创作'}</span>
-              <span className="text-white/30">{menuOpen ? '▲' : '▼'}</span>
-            </button>
-            {/* Dropdown menu */}
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-white/55 shadow-lg backdrop-blur-sm transition hover:border-white/30 hover:text-white/85"
+                onClick={() => setOpenContextMenuNodeId(menuOpen ? null : nodeId)}
+              >
+                <span className="text-white/30">↑</span>
+                <span>{upCtx.isPortraitLikely ? '角色可用' : '继续创作'}</span>
+                <span className="text-white/30">{menuOpen ? '▲' : '▼'}</span>
+              </button>
+            </div>
+            {/* Dropdown — separate fixed element, not a child of the button container */}
             {menuOpen && (
               <div
-                className="absolute left-0 top-full mt-1 min-w-[120px] rounded-xl border border-white/12 bg-black/90 py-1 shadow-2xl backdrop-blur-md"
-                style={{ zIndex: 86 }}
+                className="min-w-[128px] rounded-xl border border-white/12 bg-black/90 py-1 shadow-2xl backdrop-blur-md"
+                style={{ position: 'fixed', left: btnLeft, top: btnTop + 30, zIndex: 1082 }}
+                data-no-node-drag="true"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
               >
                 {upCtx.isPortraitLikely && (
                   <div className="px-3 pb-1 pt-1.5 text-[10px] leading-none text-amber-300/60 select-none">
@@ -8288,7 +8295,6 @@ export function VisualCanvasWorkspace({
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  data-no-node-drag="true"
                   onClick={() => {
                     handleUpstreamTool(targetNode, 'character-lock', sourceNode)
                     setOpenContextMenuNodeId(null)
@@ -8299,7 +8305,6 @@ export function VisualCanvasWorkspace({
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  data-no-node-drag="true"
                   onClick={() => {
                     handleUpstreamTool(targetNode, 'variant-planner', sourceNode)
                     setOpenContextMenuNodeId(null)
@@ -8310,7 +8315,6 @@ export function VisualCanvasWorkspace({
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  data-no-node-drag="true"
                   onClick={() => {
                     handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)
                     setOpenContextMenuNodeId(null)
