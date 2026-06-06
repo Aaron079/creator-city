@@ -218,6 +218,7 @@ export function buildShotListReport(
   shots: ShotDraft[],
   sourceTitle: string,
   options?: Partial<ShotListOptions>,
+  sourceTextSummary?: string,
 ): string {
   const opts: ShotListOptions = { ...DEFAULT_SHOT_OPTIONS, ...options }
   const lines = [
@@ -225,6 +226,10 @@ export function buildShotListReport(
     `生成时间：${new Date().toLocaleString('zh-CN')}`,
     `拆分设置：${shots.length}镜 · ${OUTPUT_MODE_LABELS[opts.outputMode]} · ${PACING_LABELS[opts.pacing]} · ${STRATEGY_LABELS[opts.shotSizeStrategy]}`,
   ]
+  if (sourceTextSummary?.trim()) {
+    const preview = sourceTextSummary.trim()
+    lines.push(`来源文本：${preview.slice(0, 200)}${preview.length > 200 ? '…' : ''}`)
+  }
   if (opts.userInstruction?.trim()) {
     lines.push(`导演补充要求：${opts.userInstruction}`)
   }

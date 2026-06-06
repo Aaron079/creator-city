@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { X, RefreshCw, Copy, Plus, Check } from 'lucide-react'
+import { X, RefreshCw, Copy, Plus, Check, RotateCcw, Trash2 } from 'lucide-react'
 import {
   parseShotList,
   buildShotListReport,
@@ -48,7 +48,7 @@ function getNodeLabel(node: SourceNode): string {
   return node.title ?? `${kind}节点`
 }
 
-// Dark-panel textarea — explicit dark bg so browser cannot override with system white
+// Shared class constants — explicit dark bg prevents browser system-theme override
 const txClass = 'w-full resize-none rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-2 text-[12px] leading-relaxed text-slate-100 placeholder:text-slate-500 outline-none focus:border-white/25'
 const txSmClass = 'w-full resize-none rounded-lg border border-white/8 bg-[#1a1d26] px-3 py-1.5 text-[11px] leading-relaxed text-slate-200/75 placeholder:text-slate-500 outline-none focus:border-white/18'
 const selClass = 'w-full rounded-lg border border-white/10 bg-[#1a1d26] px-2 py-1.5 text-[11px] text-slate-100 outline-none focus:border-white/25'
@@ -59,13 +59,44 @@ export function ShotListBuilderPanel({
   onCreateNode,
   onClose,
 }: ShotListBuilderPanelProps) {
+  // All nodes are usable as source (any with text content)
   const textNodes = nodes.filter((n) => getNodeText(n).length > 0)
 
   const firstId = initialNodeId && textNodes.find((n) => n.id === initialNodeId)
     ? initialNodeId
     : textNodes[0]?.id ?? ''
 
-  // Split controls
+  const firstNodeText = textNodes.find((n) => n.id === firstId)
+    ? getNodeText(textNodes.find((n) => n.id === firstId)!)
+    : ''
+
+  // ── Source state ──────────────────────────────────────────
+  const [selectedNodeId, setSelectedNodeId] = useState(firstId)
+  // Editable source text — initialized from node, but fully user-owned after that
+  const [sourceDraftText, setSourceDraftText] = useState(firstNodeText)
+
+  const selectedNode = textNodes.find((n) => n.id === selectedNodeId)
+
+  const handleNodeChange = (nodeId: string) => {
+    setSelectedNodeId(nodeId)
+    // Update the editable text to this node's content — user can still edit before reparting
+    const node = textNodes.find((n) => n.id === nodeId)
+    setSourceDraftText(node ? getNodeText(node) : '')
+    setReparseError(null)
+  }
+
+  const handleRestoreNodeText = () => {
+    const node = textNodes.find((n) => n.id === selectedNodeId)
+    setSourceDraftText(node ? getNodeText(node) : '')
+    setReparseError(null)
+  }
+
+  const handleClearSourceText = () => {
+    setSourceDraftText('')
+    setReparseError(null)
+  }
+
+  // ── Split controls ────────────────────────────────────────
   const [countPreset, setCountPreset] = useState<CountPreset | 'custom'>(5)
   const [customCountStr, setCustomCountStr] = useState('6')
   const [outputMode, setOutputMode] = useState<ShotListOptions['outputMode']>('mixed')
@@ -85,27 +116,22 @@ export function ShotListBuilderPanel({
     userInstruction: instruction,
   }), [effectiveCount, outputMode, pacing, strategy, instruction])
 
-  // Shot list state
-  const [selectedNodeId, setSelectedNodeId] = useState(firstId)
-  const [shots, setShots] = useState<ShotDraft[]>(() => {
-    const node = textNodes.find((n) => n.id === firstId)
-    return node ? parseShotList(getNodeText(node), DEFAULT_SHOT_OPTIONS) : []
-  })
+  // ── Shot list state ───────────────────────────────────────
+  const [shots, setShots] = useState<ShotDraft[]>(() =>
+    firstNodeText ? parseShotList(firstNodeText, DEFAULT_SHOT_OPTIONS) : []
+  )
+  const [reparseError, setReparseError] = useState<string | null>(null)
   const [copyDone, setCopyDone] = useState(false)
   const [createdCount, setCreatedCount] = useState<number | null>(null)
 
-  const selectedNode = textNodes.find((n) => n.id === selectedNodeId)
-
-  const handleNodeChange = (nodeId: string) => {
-    setSelectedNodeId(nodeId)
-    const node = textNodes.find((n) => n.id === nodeId)
-    setShots(node ? parseShotList(getNodeText(node), buildOpts()) : [])
-    setCreatedCount(null)
-  }
-
+  // ── Actions ───────────────────────────────────────────────
   const handleReparse = () => {
-    if (!selectedNode) return
-    setShots(parseShotList(getNodeText(selectedNode), buildOpts()))
+    if (!sourceDraftText.trim()) {
+      setReparseError('请先输入或粘贴要拆分的文本。')
+      return
+    }
+    setReparseError(null)
+    setShots(parseShotList(sourceDraftText, buildOpts()))
     setCreatedCount(null)
   }
 
@@ -119,7 +145,7 @@ export function ShotListBuilderPanel({
 
   const handleCopy = () => {
     const title = selectedNode ? getNodeLabel(selectedNode) : '未知来源'
-    const report = buildShotListReport(shots, title, buildOpts())
+    const report = buildShotListReport(shots, title, buildOpts(), sourceDraftText)
     void navigator.clipboard.writeText(report).then(() => {
       setCopyDone(true)
       setTimeout(() => setCopyDone(false), 2000)
@@ -169,14 +195,14 @@ export function ShotListBuilderPanel({
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
 
-        {/* Source selector */}
-        <div className="mb-4">
+        {/* ── A. 来源节点选择 ── */}
+        <div className="mb-3">
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
-            来源节点
+            A. 来源节点选择
           </label>
           {textNodes.length === 0 ? (
             <p className="rounded-lg border border-white/8 bg-white/3 px-3 py-3 text-[12px] text-white/40">
-              画布中没有可用节点。请先创建一个文本节点并输入内容。
+              画布中没有可用节点。请先创建文本节点并输入内容，或直接在下方粘贴文本。
             </p>
           ) : (
             <select
@@ -187,20 +213,57 @@ export function ShotListBuilderPanel({
               {textNodes.map((n) => (
                 <option key={n.id} value={n.id}>
                   {getNodeLabel(n)}
-                  {getNodeText(n).length > 0 ? ` — ${getNodeText(n).slice(0, 40)}…` : ''}
+                  {getNodeText(n).length > 0 ? ` — ${getNodeText(n).slice(0, 38)}…` : ''}
                 </option>
               ))}
             </select>
           )}
-          {selectedNode && getNodeText(selectedNode).length > 0 ? (
-            <p className="mt-2 line-clamp-2 rounded-lg border border-white/6 bg-white/3 px-3 py-2 text-[11px] leading-relaxed text-white/40">
-              {getNodeText(selectedNode).slice(0, 140)}
-              {getNodeText(selectedNode).length > 140 ? '…' : ''}
-            </p>
-          ) : null}
         </div>
 
-        {/* ── Split controls ── */}
+        {/* ── B. 分镜文本输入（可编辑） ── */}
+        <div className="mb-4">
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+              B. 分镜文本输入
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreNodeText}
+                disabled={!selectedNode}
+                className="flex items-center gap-1 text-[10px] text-white/35 transition hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
+                title="恢复为来源节点文本"
+              >
+                <RotateCcw size={11} strokeWidth={2.2} />
+                使用来源节点文本
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSourceText}
+                className="flex items-center gap-1 text-[10px] text-white/35 transition hover:text-white/70"
+                title="清空"
+              >
+                <Trash2 size={11} strokeWidth={2.2} />
+                清空
+              </button>
+            </div>
+          </div>
+
+          <textarea
+            value={sourceDraftText}
+            onChange={(e) => { setSourceDraftText(e.target.value); setReparseError(null) }}
+            rows={7}
+            placeholder="在这里粘贴剧本、故事梗概、广告脚本、短视频文案，或直接写你希望拆分的分镜内容……"
+            className={txClass}
+            style={{ minHeight: '160px' }}
+          />
+
+          <p className="mt-1.5 text-[10px] text-white/25">
+            这里的修改只用于本次分镜拆分，不会改动原节点。点击「按要求重新拆分」后生效。
+          </p>
+        </div>
+
+        {/* ── 分镜拆分要求 ── */}
         <div className="mb-4 rounded-xl border border-white/8 bg-white/2 px-4 py-3">
           <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
             分镜拆分要求
@@ -299,18 +362,21 @@ export function ShotListBuilderPanel({
             />
           </div>
 
+          {reparseError ? (
+            <p className="mb-2 text-center text-[11px] text-amber-400/80">{reparseError}</p>
+          ) : null}
+
           <button
             type="button"
             onClick={handleReparse}
-            disabled={textNodes.length === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2 text-[12px] font-semibold text-indigo-300 transition hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2 text-[12px] font-semibold text-indigo-300 transition hover:bg-indigo-500/20"
           >
             <RefreshCw size={13} strokeWidth={2.2} />
             按要求重新拆分
           </button>
         </div>
 
-        {/* Shot list */}
+        {/* ── Shot list ── */}
         {shots.length > 0 ? (
           <>
             <div className="mb-2 flex items-center justify-between">
@@ -404,7 +470,7 @@ export function ShotListBuilderPanel({
                     ) : null}
                   </div>
 
-                  {/* Description textarea */}
+                  {/* Description */}
                   <textarea
                     value={shot.description}
                     onChange={(e) => patchShot(shot.id, { description: e.target.value })}
@@ -413,7 +479,7 @@ export function ShotListBuilderPanel({
                     className={`mb-2 ${txClass}`}
                   />
 
-                  {/* Cinematic note textarea */}
+                  {/* Cinematic note */}
                   <textarea
                     value={shot.cinematicNote}
                     onChange={(e) => patchShot(shot.id, { cinematicNote: e.target.value })}
@@ -425,11 +491,13 @@ export function ShotListBuilderPanel({
               ))}
             </div>
           </>
-        ) : textNodes.length > 0 ? (
+        ) : (
           <p className="rounded-lg border border-white/8 bg-white/3 px-3 py-3 text-center text-[12px] text-white/40">
-            请选择来源节点后点击「按要求重新拆分」生成分镜清单。
+            {sourceDraftText.trim()
+              ? '点击「按要求重新拆分」生成分镜清单。'
+              : '请先在上方输入或粘贴文本，再点击「按要求重新拆分」。'}
           </p>
-        ) : null}
+        )}
       </div>
 
       {/* Footer */}
