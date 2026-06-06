@@ -28,7 +28,6 @@ import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPan
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
-import { SequenceBoardPanel } from '@/components/create/SequenceBoardPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2378,7 +2377,6 @@ export function VisualCanvasWorkspace({
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
-  const [isSequenceBoardOpen, setIsSequenceBoardOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7906,7 +7904,6 @@ export function VisualCanvasWorkspace({
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
             setIsContinuityCheckerOpen(tool === 'continuity-checker')
-            setIsSequenceBoardOpen(tool === 'sequence-board')
             if (tool === 'camera-lexicon') setIsLexiconOpen(true)
           }}
           onOpenPromptTool={(tool) => {
@@ -8121,31 +8118,6 @@ export function VisualCanvasWorkspace({
               scheduleCanvasSave(0)
             }}
             onClose={() => setIsPromptBoosterOpen(false)}
-          />
-        </>
-      ) : null}
-
-      {isSequenceBoardOpen && saveStatus !== 'opening' ? (
-        <>
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => setIsSequenceBoardOpen(false)}
-          />
-          <SequenceBoardPanel
-            nodes={nodes}
-            edges={edges}
-            onFocusNode={(nodeId) => {
-              setActiveNodeId(nodeId)
-              const target = nodes.find((n) => n.id === nodeId)
-              if (target) {
-                setCanvasPan({
-                  x: -(target.x * canvasZoom) + window.innerWidth / 2 - 120,
-                  y: -(target.y * canvasZoom) + window.innerHeight / 2 - 80,
-                })
-              }
-            }}
-            onClose={() => setIsSequenceBoardOpen(false)}
           />
         </>
       ) : null}
