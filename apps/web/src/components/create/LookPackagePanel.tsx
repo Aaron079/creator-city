@@ -27,6 +27,7 @@ interface LookPackagePanelProps {
   nodes: LookNode[]
   onApplyLook: (updates: Array<{ nodeId: string; prompt: string }>) => void
   onClose: () => void
+  defaultSelectedNodeId?: string
 }
 
 const CATEGORIES: Array<{ id: LookCategory | 'all'; label: string }> = [
@@ -98,10 +99,13 @@ function LookCard({
   )
 }
 
-export function LookPackagePanel({ nodes, onApplyLook, onClose }: LookPackagePanelProps) {
+export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedNodeId }: LookPackagePanelProps) {
   const [categoryFilter, setCategoryFilter] = useState<LookCategory | 'all'>('all')
   const [selectedLookId, setSelectedLookId] = useState<string | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => {
+    if (defaultSelectedNodeId) {
+      return new Set([defaultSelectedNodeId])
+    }
     const ids = new Set<string>()
     for (const n of nodes) {
       if (n.kind === 'image' || n.kind === 'video') ids.add(n.id)
@@ -183,6 +187,9 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose }: LookPackagePan
   const canApply = !!targets && !applied && targets.some((t) => !t.alreadyContains)
   const updatedCount = targets ? targets.filter((t) => !t.alreadyContains).length : 0
   const skippedCount = targets ? targets.filter((t) => t.alreadyContains).length : 0
+  const defaultNode = defaultSelectedNodeId
+    ? nodes.find((n) => n.id === defaultSelectedNodeId)
+    : undefined
 
   return (
     <div
@@ -212,6 +219,27 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose }: LookPackagePan
 
         {/* Body — scrollable */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/* Node context hint — shown when opened from node dialog */}
+          {defaultNode ? (
+            <div className="shrink-0 border-b border-white/6 px-4 py-2 flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
+                  borderRadius: '50%',
+                  width: 7,
+                  height: 7,
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }}
+              />
+              <p className="text-[10px] text-white/50 truncate">
+                正在为当前节点选择视觉风格：
+                <span className="text-white/75 font-medium">{defaultNode.title ?? defaultNode.id}</span>
+              </p>
+            </div>
+          ) : null}
+
           {/* Category filter */}
           <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
             <div className="flex flex-wrap gap-1.5">

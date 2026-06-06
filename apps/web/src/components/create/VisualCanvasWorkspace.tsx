@@ -2381,6 +2381,7 @@ export function VisualCanvasWorkspace({
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
+  const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7913,7 +7914,12 @@ export function VisualCanvasWorkspace({
           onOpenPromptTool={(tool) => {
             setIsPromptBoosterOpen(tool === 'prompt-booster')
             setIsBatchRewriterOpen(tool === 'batch-rewriter')
-            setIsLookPackageOpen(tool === 'look-package')
+            if (tool === 'look-package') {
+              setLookPanelDefaultNodeId(undefined)
+              setIsLookPackageOpen(true)
+            } else {
+              setIsLookPackageOpen(false)
+            }
           }}
         />
       ) : null}
@@ -8166,6 +8172,7 @@ export function VisualCanvasWorkspace({
               scheduleCanvasSave(0)
             }}
             onClose={() => setIsLookPackageOpen(false)}
+            defaultSelectedNodeId={lookPanelDefaultNodeId}
           />
         </>
       ) : null}
@@ -8849,6 +8856,13 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setEditingNodeId(null)}
             panelPortalTarget={panelPortalTarget}
+            nodeKind={editingNode.kind}
+            onOpenLook={(editingNode.kind === 'image' || editingNode.kind === 'video') ? () => {
+              setLookPanelDefaultNodeId(editingNode.id)
+              setIsLookPackageOpen(true)
+              setIsPromptBoosterOpen(false)
+              setIsBatchRewriterOpen(false)
+            } : undefined}
           />
           {(editingNode.kind === 'text' || editingNode.kind === 'image') && (
             <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
