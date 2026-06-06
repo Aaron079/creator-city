@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `66da5b5` (feat: add A/B version compare panel Tool 5)
-Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
+Last valid commit: `9e9b340` (fix: escape curly quotes in KeyframeExtractorPanel — Vercel build fix)
+Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated)
 
 ---
 
@@ -65,8 +65,8 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Workflow Context Target Binding Fix（source→target 绑定修复 · 工具明确作用下游节点） | ✅ CLOSED / validated | `36eca47` |
 | Make Workflow Continue Button Visible（继续创作按钮移入节点卡片 · 解决 position:fixed 坐标计算失效） | ✅ CLOSED / validated | `1133c2b` |
 | Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
-| Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / browser validation pending | `66da5b5` |
-| Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / browser validation pending | `ccb5f42` |
+| Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / validated | `66da5b5` |
+| Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
 
 ---
 
@@ -602,8 +602,10 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Character Lock Basic — supports downstream workflow target | ✅ validated |
 | Workflow Context Target Binding（source→target 绑定修复） | ✅ validated |
 | Workflow Continue Options in Source Menu（引用该节点生成菜单接入继续创作三选项） | ✅ validated |
-| A/B Compare / Version Compare Panel | ✅ implemented / browser validation pending（Asset 分组子工具；`66da5b5`）|
-| Keyframe Extractor / 关键帧提取器 | ✅ implemented / browser validation pending（Asset 分组子工具；`ccb5f42`）|
+| A/B Compare / Version Compare Panel | ✅ validated（Asset 分组子工具；`66da5b5`）|
+| Keyframe Extractor / 关键帧提取器 | ✅ validated（Asset 分组子工具；`ccb5f42`；build fix `9e9b340`）|
+| Real server-side keyframe extraction | ❌ not implemented（future；需服务端 ffmpeg 或截帧 API）|
+| Video timeline editor | ❌ not implemented / not now |
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
@@ -2284,7 +2286,7 @@ if (isSimplePreviewExpiry) {
     - compare-utils.ts：纯函数 analyzePromptDiff / buildCompareReport / isComparableNode
     - ABComparePanel.tsx：NodeSelector / MediaPreview（无自动播放）/ NodeColumn / 复制报告 / 标记胜出版本
 
-17. ~~**Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组下）** — ✅ IMPLEMENTED / browser validation pending (commit `ccb5f42`, 2026-06-06)~~
+17. ~~**Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组下）** — ✅ CLOSED / validated (commit `ccb5f42`, build fix `9e9b340`, 2026-06-06)~~
     - video 节点选择器（仅 video 节点，有内容才可选）
     - 视频预览不自动播放，含 controls
     - 快捷时间点：起始帧 0s / 中间帧 50% / 结尾帧 95% / 当前帧
@@ -2293,11 +2295,21 @@ if (isSimplePreviewExpiry) {
     - 创建图片草案节点（prompt 写关键帧参考，idle，不自动生成，建 edge）
     - 创建视频续作草案节点（idle，不自动生成，建 edge）
     - 不自动生成，不消耗 credits，不新增 API，不上传 OSS，不改 schema/billing/cn-executor
+    - Asset 分组当前包含：资产变体规划器 / 版本对比 / 关键帧提取
 
-17. **错误提示产品化（P2）**
+18. **Canvas Smart Tools Tool 7 — Shot List Builder / 分镜清单生成器（next）**
+    - 归属：Director 分组（如 Director 分组尚无子导航，先评估是否需要在 CanvasToolDock 中增加 Director 分组子菜单入口；建议与 Camera Lexicon 同组，因为两者均属于导演拍摄工作流）
+    - 基于已有 Text 节点 / 剧本文本，生成可编辑分镜表
+    - 用户确认每行分镜后才创建 image/video 草案节点，不批量自动创建
+    - 不自动生成，不消耗 credits
+    - 不新增 API / schema，优先复用现有 text agent 或先做只读 / 草案版本
+    - 不改 generate routes / provider adapter / billing / cn-executor
+    - 状态：❌ not implemented（next）
+
+19. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
 
-16. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
+20. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
    - 确认 CN 部署是否启用支付链路
    - 如启用：配置 `NEXT_PUBLIC_API_URL` 或将 billing webhook 改为直接 DB 调用
 
@@ -2610,17 +2622,30 @@ if (isSimplePreviewExpiry) {
 
 ## Next Phase Tasks
 
-### ~~Tool 5 — A/B Compare / Version Compare Panel~~ — ✅ IMPLEMENTED (commit `66da5b5`)
+### ~~Tool 5 — A/B Compare / Version Compare Panel~~ — ✅ CLOSED / validated (commit `66da5b5`)
 
-### ~~Tool 6 — Keyframe Extractor / 关键帧提取器~~ — ✅ IMPLEMENTED (commit `ccb5f42`)
+### ~~Tool 6 — Keyframe Extractor / 关键帧提取器~~ — ✅ CLOSED / validated (commit `ccb5f42`, build fix `9e9b340`)
+
+### Tool 7 — Shot List Builder / 分镜清单生成器
+归属：Director 分组
+状态：❌ not implemented（next）
+
+要求：
+- 基于已有 Text 节点 / 剧本文本，生成可编辑分镜表
+- 用户确认每行分镜后才创建 image/video 草案节点，不批量自动创建
+- 不自动生成，不消耗 credits
+- 不新增 API / schema，优先复用现有 text agent 或先做只读 / 草案版本
+- 不改 generate routes / provider adapter / billing / cn-executor
 
 ---
 
-## Canvas Smart Tools Tool 6 — Keyframe Extractor — IMPLEMENTED / browser validation pending
+## Canvas Smart Tools Tool 6 — Keyframe Extractor — CLOSED / validated
 
-**Commit:** `ccb5f42`
-**Status:** ✅ IMPLEMENTED / browser validation pending
+**功能 commit:** `ccb5f42`
+**Build fix commit:** `9e9b340` (react/no-unescaped-entities — 弯引号导致 Vercel build 失败，改为「」)
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-06
+**Date validated:** 2026-06-06
 
 ### 新增文件
 
@@ -2684,13 +2709,64 @@ if (isSimplePreviewExpiry) {
 | 14 | 关闭面板（× 按钮或背景遮罩） | 面板关闭 |
 | 15 | Tool 1/2/3A/4/5 及生成链路 | 无回归 |
 
+### 问题背景
+
+专业 AI 视频工作流中，用户经常需要从已生成视频中截取一帧，作为下一镜头图片参考或视频续作起点。旧流程需要下载视频、手动截图、再上传，摩擦大。Keyframe Extractor 让用户在画布内完成这件事，不产生额外 API 调用或费用。
+
+### 验收结果（2026-06-06）
+
+| 验收项 | 结果 |
+|---|---|
+| Asset 分组出现"关键帧提取"入口 | ✅ |
+| 不新增左侧一级图标 | ✅ |
+| 右侧工具栏仍只保留生成前体检 | ✅ |
+| 非 video 节点时显示空状态，不报错 | ✅ |
+| video 预览不自动播放，含 controls | ✅ |
+| 快捷时间点（0s / 50% / 95% / 当前帧）可用 | ✅ |
+| 浏览器端当前帧预览（drawImage）可用 | ✅ |
+| CORS 截帧失败显示 fallback，不 crash | ✅ |
+| 可复制当前帧时间点 | ✅ |
+| 可复制关键帧说明 | ✅ |
+| 可创建 image 草案节点，prompt 写入关键帧参考 | ✅ |
+| source video → image edge 自动建立 | ✅ |
+| 可创建 video 续作草案节点 | ✅ |
+| source video → video edge 自动建立 | ✅ |
+| 新草案节点状态 idle，不自动生成 | ✅ |
+| 不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不上传 OSS | ✅ |
+| 不改 schema / generate routes / provider adapter / billing | ✅ |
+| 不改 cn-executor | ✅ |
+| Tool 1/2/3A/4/5 及生成链路无回归 | ✅ |
+
+### 安全边界（完整）
+
+- 不自动生成
+- 不消耗 credits
+- 不新增 API
+- 不上传 OSS
+- 不伪造 assetId
+- 不删除或覆盖原视频节点
+- 不改原视频 prompt
+- 不自动注册角色
+- 不改 schema / generate routes / provider adapter / billing / cn-executor
+
+### Asset 分组当前已包含工具
+
+| 工具 | 状态 |
+|---|---|
+| 资产变体规划器（Asset Variant Planner） | ✅ validated |
+| 版本对比（A/B Compare） | ✅ validated |
+| 关键帧提取（Keyframe Extractor） | ✅ validated |
+
 ---
 
-## Canvas Smart Tools Tool 5 — A/B Compare Panel — IMPLEMENTED / browser validation pending
+## Canvas Smart Tools Tool 5 — A/B Compare Panel — CLOSED / validated
 
 **Commit:** `66da5b5`
-**Status:** ✅ IMPLEMENTED / browser validation pending
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-06
+**Date validated:** 2026-06-06
 
 ### 新增文件
 
