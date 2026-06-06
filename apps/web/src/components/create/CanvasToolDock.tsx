@@ -25,7 +25,7 @@ interface CanvasToolDockProps {
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
   onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker') => void
-  onOpenPromptTool: (tool: 'prompt-booster') => void
+  onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -255,6 +255,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">✨</span>
                     <span>提示词增强器</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsPromptMenuOpen(false); onOpenPromptTool('batch-rewriter') }}
+                  >
+                    <span className="text-[13px]">⚡</span>
+                    <span>批量 Prompt 重写器</span>
                   </button>
                 </motion.div>
               ) : null}

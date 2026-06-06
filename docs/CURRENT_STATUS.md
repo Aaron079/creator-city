@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: `37a43da` (Tool 10 Sequence Board removed from UI after product review)
+Last valid commit: (Tool 10 Batch Prompt Rewriter implemented — browser validation pending)
 Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review)
 
 ---
@@ -71,6 +71,7 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
+| Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器） | 🚧 IMPLEMENTED / browser validation pending | (pending commit) |
 
 ---
 
@@ -613,7 +614,9 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Prompt Booster / 提示词增强器 | ✅ validated（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖；重复检测；可忽略/重新分析/复制报告）|
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
 | Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
-| Prompt Templates / 提示词模板库 | ❌ not implemented / future（Prompt 分组；纯前端模板库）|
+| Batch Prompt Rewriter / 批量 Prompt 重写器 | 🚧 implemented / browser validation pending（Prompt 分组；多节点 prompt 批量追加；预览后确认；不替换；不自动生成；不消耗 credits）|
+| Prompt Templates / 提示词模板库 | ❌ not implemented / not planned now（静态模板库，护城河低，暂不做）|
+| Batch Prompt Replace | ❌ not implemented / future（替换风险高，MVP 只做 append）|
 | Prompt History | ❌ not implemented / future |
 | AI Prompt Rewriter | ❌ not implemented / future |
 | Timeline editor（时间轴编辑器） | ❌ not implemented / not now |
@@ -2330,11 +2333,19 @@ if (isSimplePreviewExpiry) {
 21. ~~**Canvas Smart Tools Tool 10 — Sequence Board / 镜头序列编排器**~~ — ❌ REMOVED / not validated (commit `37a43da`, 2026-06-07)
     - 实现后用户产品评审：功能与 Shot List Builder / Continuity Checker / 画布连线顺序重叠，判断为冗余
     - 已从 UI 完全撤下：Director 子菜单入口已删除，SequenceBoardPanel.tsx 和 sequence-board.ts 已删除
-    - 原则：下一个工具必须直接减少用户真实操作步骤，不能是管理视图的变种
 
-22. **Canvas Smart Tools 下一个工具（待定，重新评估）**
-    - 下一工具评估要求：不重复已有工具；必须直接作用在现有资产/节点；必须减少真实操作步骤；不做静态模板库；不做重复管理面板
-    - 状态：❌ not started（待选题）
+22. **Canvas Smart Tools Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器** — 🚧 IMPLEMENTED / browser validation pending
+    - 归属：Prompt / 提示词分组（PencilLine 图标），位于提示词增强器下方
+    - 选择多个 text/image/video 节点 → 选维度 → 输入追加内容 → 生成预览 → 用户确认后批量 patch prompt
+    - 支持维度：风格统一 / 质感/画质 / 负向约束 / 画幅/构图 / 镜头语言 / 自定义
+    - 重复检测：已存在类似片段的节点自动跳过
+    - 只追加，不替换（replace mode: future）
+    - 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/billing/cn-executor
+    - 新增文件：batch-prompt-rewriter.ts / BatchPromptRewriterPanel.tsx
+    - 修改文件：CanvasToolDock.tsx / VisualCanvasWorkspace.tsx
+
+23. **Canvas Smart Tools 下一个工具（待定）**
+    - 状态：❌ not started（待评估）
 
 23. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2666,9 +2677,17 @@ if (isSimplePreviewExpiry) {
 
 原因：产品评审后判断为冗余（与 Shot List Builder + Continuity Checker + 画布连线顺序重叠），已从 UI 完全撤下。
 
-### 下一工具（待定，重新评估）
+### Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器 — 🚧 IMPLEMENTED / browser validation pending
 
-评估要求：不重复已有工具；必须直接作用在现有资产/节点；必须减少真实操作步骤；不做静态模板库；不做重复管理面板
+- Prompt 分组（PencilLine 图标），提示词增强器下方第二项
+- 支持 text / image / video 节点批量 append prompt
+- 支持 6 维度：风格统一 / 质感画质 / 负向约束 / 画幅构图 / 镜头语言 / 自定义
+- 两步确认：生成预览 → 应用到 X 个节点
+- 重复检测：alreadyContains 节点自动跳过
+- 追加格式：`[Batch Prompt Rewriter - 维度]\n内容`
+- 可复制批量修改报告
+- Replace mode：not implemented / future
+- 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/provider/billing/cn-executor
 
 ---
 
