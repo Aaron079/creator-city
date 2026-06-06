@@ -29,6 +29,7 @@ import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
+import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2379,6 +2380,7 @@ export function VisualCanvasWorkspace({
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
+  const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7911,6 +7913,7 @@ export function VisualCanvasWorkspace({
           onOpenPromptTool={(tool) => {
             setIsPromptBoosterOpen(tool === 'prompt-booster')
             setIsBatchRewriterOpen(tool === 'batch-rewriter')
+            setIsLookPackageOpen(tool === 'look-package')
           }}
         />
       ) : null}
@@ -8142,6 +8145,27 @@ export function VisualCanvasWorkspace({
               scheduleCanvasSave(0)
             }}
             onClose={() => setIsBatchRewriterOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {isLookPackageOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsLookPackageOpen(false)}
+          />
+          <LookPackagePanel
+            nodes={nodes}
+            onApplyLook={(updates) => {
+              for (const { nodeId, prompt } of updates) {
+                handleNodePatch(nodeId, { prompt })
+              }
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
+            onClose={() => setIsLookPackageOpen(false)}
           />
         </>
       ) : null}

@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: `e5bb57a` (Tool 10 Batch Prompt Rewriter — CLOSED / validated · textarea readability fix)
+Last valid commit: Tool 11 Look Package Applier — IMPLEMENTED / browser validation pending
 Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated)
 
 ---
@@ -72,6 +72,7 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
 | Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器 · Prompt 分组子工具） | ✅ CLOSED / validated | `e3c3a2b` (readability fix: `e5bb57a`) |
+| Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · Prompt 分组子工具） | 🔄 IMPLEMENTED / browser validation pending | — |
 
 ---
 
@@ -615,6 +616,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
 | Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
 | Batch Prompt Rewriter / 批量 Prompt 重写器 | ✅ validated（Prompt 分组子工具；`e3c3a2b` · readability fix `e5bb57a`；text/image/video 节点批量追加；6维度；生成预览；重复检测跳过；用户确认后才 patch；只追加不替换；不自动生成；不消耗 credits）|
+| Look Package Applier / 视觉风格包应用器 | 🔄 implemented / browser validation pending（Prompt 分组子工具；10个风格包；6分类；CSS渐变色块；两步预览/应用；重复检测；只追加不替换；不自动生成；不消耗 credits）|
 | Prompt Templates / 提示词模板库 | ❌ not implemented / not planned now（静态模板库，护城河低，暂不做）|
 | Batch Prompt Replace | ❌ not implemented / future（替换风险高，MVP 只做 append）|
 | Prompt History | ❌ not implemented / future |
@@ -2344,10 +2346,15 @@ if (isSimplePreviewExpiry) {
     - 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/billing/cn-executor
     - 27 条验收全部通过
 
-23. **Canvas Smart Tools Tool 11 — 待定，重新评估**
-    - 状态：❌ not started（待选题）
-    - 不做 Prompt Templates 静态模板库（护城河低，竞品可复制）
-    - 候选方向必须满足：不重复已有工具；直接作用于当前资产/节点/连线；不是静态模板；不是重复管理面板；能减少真实操作步骤；有复杂判断或跨节点上下文；不自动生成；不消耗 credits；不新增 API/schema（除非用户明确批准）
+23. **Canvas Smart Tools Tool 11 — Look Package Applier / 视觉风格包应用器**
+    - 状态：🔄 IMPLEMENTED / browser validation pending
+    - Prompt 分组第三子工具（PencilLine 图标，🎨 视觉风格包）
+    - 10 个风格包，6 分类（导演风格/胶片模拟/LUT调色/品牌商业/建筑空间/社交摄影）
+    - CSS 渐变色块替代图片，无额外资源依赖
+    - 两步确认：生成预览 → 确认应用
+    - hasSimilarLook 重复检测（前40字 case-insensitive）
+    - 只追加不替换；不自动生成；不消耗 credits；不新增 API
+    - 追加格式：`[Look Package - {name}]\n{fragment}\n\n[Look Negative Constraints]\n{negativeConstraints}`
 
 23. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2692,6 +2699,33 @@ if (isSimplePreviewExpiry) {
 - 修复追加内容 textarea 可读性（深底浅字 + colorScheme:dark）
 - 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/provider/billing/cn-executor
 - 27 条验收全部通过
+
+### Tool 11 — Look Package Applier / 视觉风格包应用器 — IMPLEMENTED / browser validation pending
+
+- Prompt 分组第三子工具（批量 Prompt 重写器下方，🎨 视觉风格包）
+- 10 个风格包覆盖 6 个分类（导演风格 · 胶片模拟 · LUT调色 · 品牌商业 · 建筑空间 · 社交摄影）
+- 分类过滤 tab，风格包卡片网格（CSS渐变色块色板 + 名称 + 标签）
+- 风格包详情（描述 · 对比度 · 饱和度 · 适用/不适用）
+- 节点勾选（默认只勾 image/video，text 默认不勾）
+- 两步确认：「生成预览」→ 预览结果 →「确认应用」
+- hasSimilarLook 重复检测（image prompt fragment 前40字 case-insensitive）
+- 追加格式：`[Look Package - {name}]\n{imageOrVideoFragment}\n\n[Look Negative Constraints]\n{negativeConstraints}`
+- 可复制应用报告
+- 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/provider/billing/cn-executor
+
+**文件变动：**
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/lib/canvas/look-packages.ts` | 新建：LookPackage 类型 + 10个风格包数据 + 辅助函数 |
+| `apps/web/src/components/create/LookPackagePanel.tsx` | 新建：完整 Panel 组件 |
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Prompt 分组新增「视觉风格包」第三项；onOpenPromptTool 类型加 look-package |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | 导入 LookPackagePanel；isLookPackageOpen state；handler；render block |
+
+**Prompt 分组当前子工具：**
+1. ✨ 提示词增强器（Prompt Booster）
+2. ⚡ 批量 Prompt 重写器（Batch Prompt Rewriter）
+3. 🎨 视觉风格包（Look Package Applier）← 新增
 
 ---
 
