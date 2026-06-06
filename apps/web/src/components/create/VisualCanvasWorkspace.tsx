@@ -2415,7 +2415,7 @@ export function VisualCanvasWorkspace({
   const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'intelligence' | 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
   const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
-  const [openContextMenuNodeId, setOpenContextMenuNodeId] = useState<string | null>(null)
+  const [openContextMenuAnchor, setOpenContextMenuAnchor] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [refImagePickerOpen, setRefImagePickerOpen] = useState(false)
   const [workflowContext, setWorkflowContext] = useState<{ sourceNodeId: string; targetNodeId: string } | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
@@ -6842,7 +6842,6 @@ export function VisualCanvasWorkspace({
       const target = nodeById.get(edge.toNodeId)
       if (!source || !target) continue
       if (target.kind !== 'image' && target.kind !== 'video') continue
-      if (source.kind !== 'image' && source.kind !== 'video') continue
       // Source is valid if it has any content: media result, asset binding, or prompt
       const sourceHasContent = Boolean(
         source.resultImageUrl || source.resultVideoUrl || source.assetId || source.prompt?.trim(),
@@ -6857,31 +6856,6 @@ export function VisualCanvasWorkspace({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges])
 
-  // Screen-space positions for context entries — must recompute on pan/zoom so they track their nodes.
-  // Rendered as position:fixed (outside canvas surface) so they don't scale with canvas zoom.
-  const upstreamContextFixedStyles = useMemo<Map<string, CSSProperties>>(() => {
-    if (typeof window === 'undefined') return new Map()
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return new Map()
-    const surfaceOff = getSurfaceOffset(surfaceRef.current)
-    const result = new Map<string, CSSProperties>()
-    for (const [nodeId] of upstreamContextMap.entries()) {
-      const node = nodes.find((n) => n.id === nodeId)
-      if (!node) continue
-      const screenLeft = rect.left + surfaceOff.left + canvasPan.x + node.x * canvasZoom
-      const screenTop = rect.top + surfaceOff.top + canvasPan.y + (node.y + node.height) * canvasZoom
-      result.set(nodeId, {
-        position: 'fixed' as const,
-        left: Math.round(screenLeft),
-        top: Math.round(screenTop + 4),
-        zIndex: 85,
-        pointerEvents: 'auto',
-      })
-    }
-    return result
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upstreamContextMap, nodes, canvasPan.x, canvasPan.y, canvasZoom])
-
   const handleUpstreamTool = useCallback((
     targetNode: VisualCanvasNode,
     tool: 'character-lock' | 'variant-planner' | 'camera-lexicon',
@@ -6895,6 +6869,12 @@ export function VisualCanvasWorkspace({
     setIsVariantPlannerOpen(tool === 'variant-planner')
     setIsCharacterLockOpen(tool === 'character-lock')
   }, [focusPromptForNode])
+
+  const handleWorkflowContinue = useCallback((nodeId: string, event: React.MouseEvent) => {
+    const x = event.clientX
+    const y = event.clientY
+    setOpenContextMenuAnchor((prev) => (prev?.nodeId === nodeId ? null : { nodeId, x, y }))
+  }, [])
   // ────────────────────────────────────────────────────────────────────────────
 
   const handleProviderChange = useCallback((value: string) => {
@@ -8243,6 +8223,16 @@ export function VisualCanvasWorkspace({
                   onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
                   generationHealth={generationHealth}
                   reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
+                  workflowIncomingContext={(() => {
+                    const ctx = upstreamContextMap.get(node.id)
+                    if (!ctx) return undefined
+                    const sourceNode = nodes.find((n) => n.id === ctx.sourceNodeId)
+                    if (!sourceNode) return undefined
+                    return { sourceNode, isPortraitLikely: ctx.isPortraitLikely }
+                  })()}
+                  onWorkflowContinue={upstreamContextMap.has(node.id)
+                    ? (e) => handleWorkflowContinue(node.id, e)
+                    : undefined}
                 />
               </CanvasNodeErrorBoundary>
             </div>
@@ -8251,121 +8241,87 @@ export function VisualCanvasWorkspace({
         </div>
       </div>
 
-      {/* Workflow Connection Context Tools — position:fixed so they don't scale with canvas zoom */}
+      {/* Workflow Connection Context — button lives inside CanvasNodeCard; only the dropdown is rendered here */}
 
-      {/* Global backdrop — closes any open context menu */}
-      {openContextMenuNodeId && saveStatus !== 'opening' && (
+      {/* Global backdrop — closes any open workflow context menu */}
+      {openContextMenuAnchor && saveStatus !== 'opening' && (
         <div
           className="fixed inset-0"
           style={{ zIndex: 1079 }}
-          onClick={() => setOpenContextMenuNodeId(null)}
+          onClick={() => setOpenContextMenuAnchor(null)}
         />
       )}
 
-      {saveStatus !== 'opening' && Array.from(upstreamContextMap.entries()).map(([nodeId, upCtx]) => {
-        const fixedStyle = upstreamContextFixedStyles.get(nodeId)
-        if (!fixedStyle) return null
+      {/* Dropdown anchored to click position */}
+      {openContextMenuAnchor && saveStatus !== 'opening' && (() => {
+        const { nodeId, x, y } = openContextMenuAnchor
         const targetNode = nodes.find((n) => n.id === nodeId)
-        const sourceNode = nodes.find((n) => n.id === upCtx.sourceNodeId)
+        const ctx = upstreamContextMap.get(nodeId)
+        const sourceNode = ctx ? nodes.find((n) => n.id === ctx.sourceNodeId) : undefined
         if (!targetNode) return null
-        const menuOpen = openContextMenuNodeId === nodeId
-        const btnLeft = fixedStyle.left as number
-        const btnTop = fixedStyle.top as number
         return (
-          <div key={`ctx-${nodeId}`}>
-            {/* Entry button */}
-            <div
-              style={{ position: 'fixed', left: btnLeft, top: btnTop, zIndex: 1080 }}
-              data-no-node-drag="true"
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div
+            className="w-[230px] overflow-hidden rounded-xl border border-white/12 bg-black/92 shadow-2xl backdrop-blur-md"
+            style={{ position: 'fixed', left: x, top: y + 6, zIndex: 1082 }}
+            data-no-node-drag="true"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* source → target context header */}
+            <div className="border-b border-white/8 px-3 pb-2 pt-2.5">
+              <p className="mb-1.5 text-[10px] font-semibold text-white/40">基于上一节点继续</p>
+              <div className="space-y-0.5">
+                <p className="truncate text-[10px] text-white/30">
+                  <span className="text-white/18">来源</span>{' '}
+                  <span className="text-white/50">{sourceNode?.title || (sourceNode?.kind === 'image' ? '图片节点' : '视频节点')}</span>
+                  {sourceNode?.prompt ? <span className="text-white/22"> · {sourceNode.prompt.slice(0, 18)}{sourceNode.prompt.length > 18 ? '…' : ''}</span> : null}
+                </p>
+                <p className="truncate text-[10px] text-white/30">
+                  <span className="text-white/18">目标</span>{' '}
+                  <span className="text-white/50">{targetNode.title || (targetNode.kind === 'image' ? '图片任务' : '视频任务') || '空白任务'}</span>
+                </p>
+              </div>
+            </div>
+            {/* Menu items */}
+            <div className="py-1">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-white/55 shadow-lg backdrop-blur-sm transition hover:border-white/30 hover:text-white/85"
-                onClick={() => setOpenContextMenuNodeId(menuOpen ? null : nodeId)}
+                className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                onClick={() => { handleUpstreamTool(targetNode, 'character-lock', sourceNode); setOpenContextMenuAnchor(null) }}
               >
-                <span className="text-white/30">↑</span>
-                <span>{upCtx.isPortraitLikely ? '角色可用' : '继续创作'}</span>
-                <span className="text-white/30">{menuOpen ? '▲' : '▼'}</span>
+                <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                  <span className="text-amber-300/80">👤</span>
+                  角色参考 → 传给下游
+                </span>
+                <span className="pl-5 text-[10px] text-white/30">把上游资产作为下游任务的角色参考</span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                onClick={() => { handleUpstreamTool(targetNode, 'variant-planner', sourceNode); setOpenContextMenuAnchor(null) }}
+              >
+                <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                  <span className="text-violet-300/80">⬡</span>
+                  资产变体 → 写入下游
+                </span>
+                <span className="pl-5 text-[10px] text-white/30">基于上游资产规划变体，追加到下游 Prompt</span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                onClick={() => { handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode); setOpenContextMenuAnchor(null) }}
+              >
+                <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                  <span className="text-sky-300/80">🎬</span>
+                  镜头语言 → 添加到下游
+                </span>
+                <span className="pl-5 text-[10px] text-white/30">给下游任务添加景别 / 运镜 / 光线词</span>
               </button>
             </div>
-            {/* Dropdown — separate fixed element, not a child of the button container */}
-            {menuOpen && (
-              <div
-                className="w-[230px] rounded-xl border border-white/12 bg-black/92 shadow-2xl backdrop-blur-md overflow-hidden"
-                style={{ position: 'fixed', left: btnLeft, top: btnTop + 30, zIndex: 1082 }}
-                data-no-node-drag="true"
-                onPointerDown={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* source → target context header */}
-                <div className="border-b border-white/8 px-3 pt-2.5 pb-2">
-                  <p className="text-[10px] font-semibold text-white/40 mb-1.5">基于上一节点继续</p>
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] text-white/30 truncate">
-                      <span className="text-white/18">来源</span>{' '}
-                      <span className="text-white/50">{sourceNode?.title || (sourceNode?.kind === 'image' ? '图片节点' : '视频节点')}</span>
-                      {sourceNode?.prompt ? <span className="text-white/22"> · {sourceNode.prompt.slice(0, 18)}{sourceNode.prompt.length > 18 ? '…' : ''}</span> : null}
-                    </p>
-                    <p className="text-[10px] text-white/30 truncate">
-                      <span className="text-white/18">目标</span>{' '}
-                      <span className="text-white/50">{targetNode?.title || (targetNode?.kind === 'image' ? '图片任务' : '视频任务') || '空白任务'}</span>
-                    </p>
-                  </div>
-                </div>
-                {/* Menu items */}
-                <div className="py-1">
-                  <button
-                    type="button"
-                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
-                    onClick={() => {
-                      handleUpstreamTool(targetNode, 'character-lock', sourceNode)
-                      setOpenContextMenuNodeId(null)
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
-                      <span className="text-amber-300/80">👤</span>
-                      角色参考 → 传给下游
-                    </span>
-                    <span className="pl-5 text-[10px] text-white/30">把上游资产作为下游任务的角色参考</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
-                    onClick={() => {
-                      handleUpstreamTool(targetNode, 'variant-planner', sourceNode)
-                      setOpenContextMenuNodeId(null)
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
-                      <span className="text-violet-300/80">⬡</span>
-                      资产变体 → 写入下游
-                    </span>
-                    <span className="pl-5 text-[10px] text-white/30">基于上游资产规划变体，追加到下游 Prompt</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
-                    onClick={() => {
-                      handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)
-                      setOpenContextMenuNodeId(null)
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
-                      <span className="text-sky-300/80">🎬</span>
-                      镜头语言 → 添加到下游
-                    </span>
-                    <span className="pl-5 text-[10px] text-white/30">给下游任务添加景别 / 运镜 / 光线词</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )
-      })}
+      })()}
 
       {/* Asset Agent Toolbar — position:fixed to escape canvas-viewport overflow:hidden */}
       {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) && toolbarFixedStyle ? (

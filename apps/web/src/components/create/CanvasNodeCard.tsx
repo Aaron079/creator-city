@@ -79,6 +79,8 @@ interface CanvasNodeCardProps {
   dragging?: boolean
   generationHealth?: GenerationHealthResponse | null
   reframeMode?: ReframeMode
+  workflowIncomingContext?: { sourceNode: VisualCanvasNode; isPortraitLikely: boolean }
+  onWorkflowContinue?: (event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1393,6 +1395,8 @@ export function CanvasNodeCard({
   dragging = false,
   generationHealth = null,
   reframeMode = 'original',
+  workflowIncomingContext,
+  onWorkflowContinue,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -3466,6 +3470,22 @@ export function CanvasNodeCard({
           title="打开智能资产"
         >
           AI Tags: {assetIntelligenceTagCount}
+        </button>
+      ) : null}
+      {workflowIncomingContext && onWorkflowContinue ? (
+        <button
+          type="button"
+          className="absolute bottom-2 right-2 z-[7] inline-flex items-center gap-1 rounded-full border border-violet-500/25 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-violet-300/80 shadow-lg backdrop-blur-sm transition hover:border-violet-500/40 hover:text-violet-200"
+          data-no-node-drag="true"
+          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWorkflowContinue(e) }}
+          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+          aria-label="继续创作"
+          title="基于此节点继续创作"
+        >
+          <span className="text-violet-400/60">↑</span>
+          <span>{workflowIncomingContext.isPortraitLikely ? '角色可用' : '继续创作'}</span>
+          <span className="text-violet-400/40">▼</span>
         </button>
       ) : null}
       {(onOpenPromptInspector || canOpenCreativeAssets || onAddToStoryboard) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
