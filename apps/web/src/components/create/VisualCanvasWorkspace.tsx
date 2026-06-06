@@ -22,6 +22,8 @@ import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
 import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
 import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
 import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
+import { ABComparePanel } from '@/components/create/ABComparePanel'
+import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2366,6 +2368,7 @@ export function VisualCanvasWorkspace({
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
   const [isCharacterLockOpen, setIsCharacterLockOpen] = useState(false)
+  const [isABCompareOpen, setIsABCompareOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7885,6 +7888,15 @@ export function VisualCanvasWorkspace({
           onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
+          onOpenAssetTool={(tool) => {
+            if (tool === 'variant-planner') {
+              setIsVariantPlannerOpen(true)
+              setIsABCompareOpen(false)
+            } else {
+              setIsABCompareOpen(true)
+              setIsVariantPlannerOpen(false)
+            }
+          }}
         />
       ) : null}
 
@@ -7971,6 +7983,32 @@ export function VisualCanvasWorkspace({
             onSaveBible={persistCharacterBibleSettings}
             onClose={() => { setIsCharacterLockOpen(false); setWorkflowContext(null) }}
             workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
+          />
+        </>
+      ) : null}
+
+      {/* A/B Compare panel — Tool 5, triggered from Asset tools group in left dock */}
+      {isABCompareOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsABCompareOpen(false)}
+          />
+          <ABComparePanel
+            nodes={nodes.filter(isComparableNode)}
+            initialNodeAId={activeNodeId ?? undefined}
+            onFocusNode={(nodeId) => {
+              setActiveNodeId(nodeId)
+              const target = nodes.find((n) => n.id === nodeId)
+              if (target) {
+                setCanvasPan({
+                  x: -(target.x * canvasZoom) + window.innerWidth / 2 - 120,
+                  y: -(target.y * canvasZoom) + window.innerHeight / 2 - 80,
+                })
+              }
+            }}
+            onClose={() => setIsABCompareOpen(false)}
           />
         </>
       ) : null}

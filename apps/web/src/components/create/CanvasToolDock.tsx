@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ImageIcon,
+  Layers,
   Plus,
   Square,
   Text,
@@ -20,6 +21,7 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
+  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -42,8 +44,10 @@ export function CanvasToolDock({
   onToggleAddMenu,
   hasActiveGenerations,
   onStopAllGenerations,
+  onOpenAssetTool,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [isAssetMenuOpen, setIsAssetMenuOpen] = useState(false)
 
   return (
     <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
@@ -84,6 +88,56 @@ export function CanvasToolDock({
               <span className="canvas-hover-tooltip" aria-hidden="true">停止所有生成</span>
             </button>
           ) : null}
+
+          {/* Asset tools group */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAssetMenuOpen((v) => !v)
+                setIsUserMenuOpen(false)
+              }}
+              className={`canvas-toolbar-button ${isAssetMenuOpen ? 'is-active' : ''}`}
+              title="资产工具"
+              aria-label="资产工具"
+              data-no-node-drag="true"
+            >
+              <Layers size={22} strokeWidth={2.2} />
+              <span className="canvas-hover-tooltip" aria-hidden="true">资产工具</span>
+            </button>
+            <AnimatePresence>
+              {isAssetMenuOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, x: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -8, scale: 0.98 }}
+                  transition={{ duration: 0.16 }}
+                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[164px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
+                  data-no-node-drag="true"
+                >
+                  <div className="px-3 pb-1 pt-0.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">资产工具</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('variant-planner') }}
+                  >
+                    <span className="text-[13px]">⬡</span>
+                    <span>资产变体规划器</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('ab-compare') }}
+                  >
+                    <span className="text-[13px]">⚖</span>
+                    <span>版本对比</span>
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
 
           <div className="canvas-toolbar-divider" />
 
