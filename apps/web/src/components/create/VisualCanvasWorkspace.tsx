@@ -27,6 +27,7 @@ import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
+import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2375,6 +2376,7 @@ export function VisualCanvasWorkspace({
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
+  const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7904,6 +7906,9 @@ export function VisualCanvasWorkspace({
             setIsContinuityCheckerOpen(tool === 'continuity-checker')
             if (tool === 'camera-lexicon') setIsLexiconOpen(true)
           }}
+          onOpenPromptTool={(tool) => {
+            setIsPromptBoosterOpen(tool === 'prompt-booster')
+          }}
         />
       ) : null}
 
@@ -8088,6 +8093,31 @@ export function VisualCanvasWorkspace({
               }
             }}
             onClose={() => setIsContinuityCheckerOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {isPromptBoosterOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsPromptBoosterOpen(false)}
+          />
+          <PromptBoosterPanel
+            nodes={nodes}
+            initialNodeId={activeNodeId ?? undefined}
+            onAppendPrompt={(nodeId, appendText) => {
+              const target = nodes.find((n) => n.id === nodeId)
+              if (!target) return
+              const current = (target.prompt ?? '').trim()
+              const separator = current ? '\n[Prompt Booster]\n' : ''
+              const newPrompt = current + separator + appendText
+              handleNodePatch(nodeId, { prompt: newPrompt })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
+            onClose={() => setIsPromptBoosterOpen(false)}
           />
         </>
       ) : null}
