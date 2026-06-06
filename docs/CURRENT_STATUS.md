@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `94db55e` (Workflow Connection Context Tools + Stronger Edges — IMPLEMENTED / browser validation pending)
+Last valid commit: `a195f41` (fix: workflow context entries now position:fixed — visible at any zoom level)
 Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
 
 ---
@@ -60,7 +60,7 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Media Preview Fallback（历史资产 OSS URL 过期 → 冷静占位符，不再误诊） | ✅ CLOSED / validated | `5ebdb91` |
 | Canvas Smart Tools Tool 4 — Character Lock / 角色一致性锁定基础版 | ✅ CLOSED / validated | `201c795` |
 | Canvas Tool Dock Grouping（导演/资产/角色 分组子导航重构） | ✅ CLOSED / validated | `daa6811` |
-| Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ IMPLEMENTED / browser validation pending | `94db55e` |
+| Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ IMPLEMENTED / browser validation pending | `a195f41` |
 
 ---
 
@@ -2431,11 +2431,15 @@ if (isSimplePreviewExpiry) {
 
 ## Workflow Connection Context Tools + Stronger Edges — IMPLEMENTED / browser validation pending
 
-**Commit:** `94db55e` | **Date:** 2026-06-06  
+**Commits:** `94db55e` (initial) → `a195f41` (fix: position:fixed) | **Date:** 2026-06-06  
 **Files changed:** `CanvasFlowEdge.tsx`, `VisualCanvasWorkspace.tsx`, `canvas.module.css`, `edge-director.ts`  
 **New API / schema / billing / generate routes:** 无
 
-### 连接线视觉增强
+**首轮验收问题：** Stronger Edges ✅ 通过；Context Tools ❌ 未出现  
+**根因：** 上下文 UI 渲染在 canvas 坐标空间内，35% zoom 时 10px 文字变为 3.5px，视觉不可见  
+**修复 (`a195f41`)：** 改为 `position: fixed` 渲染（同 AssetAgentToolbar 模式），`upstreamContextFixedStyles` useMemo 将 canvas 坐标转换为屏幕坐标，pan/zoom 变化时自动重算
+
+### 连接线视觉增强（✅ 浏览器验收通过）
 
 | 方面 | 改动前 | 改动后 |
 |---|---|---|
@@ -2446,15 +2450,16 @@ if (isSimplePreviewExpiry) {
 | Active | 细线 + 虚线 | 同色 + drop-shadow + 动画 |
 | 方向感 | 无 | arrowhead marker（SVG marker，orient=auto）|
 
-### 上下文工具入口
+### 上下文工具入口（fix 后待复验）
 
 触发条件（同时满足）：
 - target node 是 image 或 video
 - 存在 edge 从某个 source 连到 target
 - source.kind 是 image 或 video
-- source 有 `resultImageUrl` OR `resultVideoUrl` OR `assetId`
+- source 有任意之一：`resultImageUrl` / `resultVideoUrl` / `assetId` / `prompt`（放宽，新建任务框也触发）
 
-触发后：在 target 节点卡片正下方显示小 pill 行。
+触发后：在 target 节点卡片正下方显示 `position: fixed` pill 行（不受 canvas zoom 影响）。  
+工具路由：角色/变体 → focusPromptForNode(source)；镜头 → focusPromptForNode(target)
 
 人物检测关键词（source.prompt）：`人|人物|角色|女孩|男孩|女|男|girl|boy|man|woman|person|portrait|face|character|child`
 
