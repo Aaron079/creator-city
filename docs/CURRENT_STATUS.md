@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `a195f41` (fix: workflow context entries now position:fixed — visible at any zoom level)
-Production validated: 2026-06-05 (User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
+Last valid commit: `2575b9f` (add reference image picker for text-to-video nodes)
+Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
 
 ---
 
@@ -60,7 +60,8 @@ Production validated: 2026-06-05 (User Usage History browser validated · Provid
 | Media Preview Fallback（历史资产 OSS URL 过期 → 冷静占位符，不再误诊） | ✅ CLOSED / validated | `5ebdb91` |
 | Canvas Smart Tools Tool 4 — Character Lock / 角色一致性锁定基础版 | ✅ CLOSED / validated | `201c795` |
 | Canvas Tool Dock Grouping（导演/资产/角色 分组子导航重构） | ✅ CLOSED / validated | `daa6811` |
-| Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ IMPLEMENTED / browser validation pending | `a195f41` |
+| Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ CLOSED / validated | `2575b9f` |
+| Reference Image Picker（视频节点文生视频 → 一键选择参考图节点 → 自动连线切换图生视频） | ✅ CLOSED / validated | `2575b9f` |
 
 ---
 
