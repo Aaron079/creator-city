@@ -400,8 +400,8 @@ const DOWNSTREAM_NODE_X_GAP = 820
 const DOWNSTREAM_NODE_Y_GAP = 220
 const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
-const NODE_ADD_MENU_WIDTH = 190
-const NODE_ADD_MENU_HEIGHT = 220
+const NODE_ADD_MENU_WIDTH = 214
+const NODE_ADD_MENU_HEIGHT = 440
 const NODE_DIALOG_GAP = 16
 const NODE_DIALOG_HEIGHT = 210
 const REVIEW_WINDOW_GAP = 18
@@ -6875,6 +6875,26 @@ export function VisualCanvasWorkspace({
     const y = event.clientY
     setOpenContextMenuAnchor((prev) => (prev?.nodeId === nodeId ? null : { nodeId, x, y }))
   }, [])
+
+  // Creates a downstream target node, wires source→target edge, and opens the given workflow tool panel.
+  const handleWorkflowCreateAndOpen = useCallback((
+    sourceNodeId: string,
+    targetKind: 'image' | 'video',
+    tool: 'character-lock' | 'variant-planner' | 'camera-lexicon',
+  ) => {
+    const newNode = createNode(targetKind, {
+      parentNodeId: sourceNodeId,
+      model: NODE_META[targetKind].model,
+      ratio: NODE_META[targetKind].ratio,
+      position: nodeAddMenu ? { x: nodeAddMenu.worldX, y: nodeAddMenu.worldY } : undefined,
+    })
+    setWorkflowContext({ sourceNodeId, targetNodeId: newNode.id })
+    setIsLexiconOpen(tool === 'camera-lexicon')
+    setIsVariantPlannerOpen(tool === 'variant-planner')
+    setIsCharacterLockOpen(tool === 'character-lock')
+    setNodeAddMenu(null)
+    setConnectionDraft(null)
+  }, [createNode, nodeAddMenu])
   // ────────────────────────────────────────────────────────────────────────────
 
   const handleProviderChange = useCallback((value: string) => {
@@ -8900,7 +8920,61 @@ export function VisualCanvasWorkspace({
           style={{ left: nodeAddMenu.x, top: nodeAddMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className="canvas-menu-label">引用该节点生成</div>
+          {/* Source summary */}
+          <div className="px-2.5 pb-1.5 pt-2">
+            <p className="mb-0.5 text-[9px] font-semibold uppercase tracking-widest text-white/30">引用该节点生成</p>
+            <p className="truncate text-[10px] text-white/55">
+              {connectorNode.title || (connectorNode.kind === 'image' ? '图片节点' : connectorNode.kind === 'video' ? '视频节点' : '文本节点')}
+              {connectorNode.prompt?.trim() ? (
+                <span className="text-white/30"> · {connectorNode.prompt.trim().slice(0, 24)}{connectorNode.prompt.trim().length > 24 ? '…' : ''}</span>
+              ) : null}
+            </p>
+          </div>
+
+          {/* ── 继续创作 section — shown when source has any content ── */}
+          {(connectorNode.resultImageUrl || connectorNode.resultVideoUrl || connectorNode.assetId || connectorNode.prompt?.trim()) ? (
+            <>
+              <div className="canvas-menu-divider" />
+              <div className="canvas-menu-label">继续创作</div>
+
+              <button
+                type="button"
+                className="flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.07]"
+                onClick={() => handleWorkflowCreateAndOpen(connectorNode.id, 'image', 'character-lock')}
+              >
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-amber-300/90">
+                  <span>👤</span>角色参考生成
+                </span>
+                <span className="pl-5 text-[9px] leading-tight text-white/35">把该资产传给下游角色任务</span>
+              </button>
+
+              <button
+                type="button"
+                className="flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.07]"
+                onClick={() => handleWorkflowCreateAndOpen(connectorNode.id, connectorNode.kind === 'video' ? 'video' : 'image', 'variant-planner')}
+              >
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-violet-300/90">
+                  <span>⬡</span>资产变体生成
+                </span>
+                <span className="pl-5 text-[9px] leading-tight text-white/35">基于该资产规划不同版本</span>
+              </button>
+
+              <button
+                type="button"
+                className="flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.07]"
+                onClick={() => handleWorkflowCreateAndOpen(connectorNode.id, 'video', 'camera-lexicon')}
+              >
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-sky-300/90">
+                  <span>🎬</span>镜头语言生成
+                </span>
+                <span className="pl-5 text-[9px] leading-tight text-white/35">为下一个视频补充景别运镜</span>
+              </button>
+            </>
+          ) : null}
+
+          {/* ── 新建任务 section ── */}
+          <div className="canvas-menu-divider" />
+          <div className="canvas-menu-label">新建任务</div>
           {([
             { kind: 'text', label: '文本生成' },
             { kind: 'image', label: '图片生成' },
