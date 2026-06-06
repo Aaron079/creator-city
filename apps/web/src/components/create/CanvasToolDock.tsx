@@ -24,7 +24,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
-  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker') => void
+  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'sequence-board') => void
   onOpenPromptTool: (tool: 'prompt-booster') => void
 }
 
@@ -211,6 +211,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🔍</span>
                     <span>连贯性检查器</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('sequence-board') }}
+                  >
+                    <span className="text-[13px]">🎞</span>
+                    <span>镜头序列编排器</span>
                   </button>
                 </motion.div>
               ) : null}
