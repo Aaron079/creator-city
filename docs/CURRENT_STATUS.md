@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `1e9b737` (Tool 8 Continuity Checker validated)
+Last valid commit: `6e1a24f` (Tool 9 Prompt Booster implemented)
 Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated)
 
 ---
@@ -69,6 +69,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
 | Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`) |
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
+| Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ IMPLEMENTED / browser validation pending | `6e1a24f` |
 
 ---
 
@@ -608,6 +609,8 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Keyframe Extractor / 关键帧提取器 | ✅ validated（Asset 分组子工具；`ccb5f42`；build fix `9e9b340`）|
 | Shot List Builder / 分镜清单生成器 | ✅ validated（Director 分组子工具；`26f8d16` · `5cfb912` · `97ff477`）|
 | Continuity Checker / 连贯性检查器 | ✅ validated（Director 分组子工具；`1e9b737`；6 维规则引擎；overallScore + issue 列表 + 定位节点 + 复制报告）|
+| Prompt Booster / 提示词增强器 | ✅ IMPLEMENTED / browser validation pending（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖）|
+| Prompt Templates / History / AI Rewriter | ❌ not implemented / future（后续独立排期）|
 | Real server-side keyframe extraction | ❌ not implemented（future；需服务端 ffmpeg 或截帧 API）|
 | AI vision-based continuity analysis | ❌ not implemented / future（当前为规则引擎；视觉模型接入需单独评估）|
 | Automatic continuity repair | ❌ not implemented / not now（不自动修改 prompt，不自动创建节点）|
@@ -2310,14 +2313,12 @@ if (isSimplePreviewExpiry) {
 
 19. ~~**Canvas Smart Tools Tool 8 — Continuity Checker / 连贯性检查器**~~ — ✅ CLOSED / validated (commit `1e9b737`)
 
-20. **Canvas Smart Tools Tool 9 — Prompt Booster / 提示词增强器（next）**
-    - 归属：建议先评估分组归属——若偏导演创作方向可作为 Director 子工具；若覆盖所有节点类型，可新增 Prompt 分组
-    - 基于当前节点 prompt，给出结构化增强建议（场景细节 / 镜头语言 / 风格词 / 情绪氛围等）
-    - 用户逐条接受/复制/追加，不自动覆盖原 prompt
-    - 基础版：本地规则引擎（关键词 + 模板填充），不接 AI
-    - AI 增强版：后续接入 text agent，独立排期
+20. ~~**Canvas Smart Tools Tool 9 — Prompt Booster / 提示词增强器**~~ — ✅ IMPLEMENTED / browser validation pending (commit `6e1a24f`, 2026-06-06)
+    - 归属：新增 Prompt / 提示词分组（PencilLine 图标），独立于 Asset / Director
+    - image 7维 / video 7维 / text 6维规则引擎；score 0-100；checks + suggestions + appendText
+    - 用户点击追加到 Prompt，重复检测防止重复追加，不自动覆盖
     - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-    - 状态：❌ not implemented（next）
+    - type-check / lint / build 全部通过
 
 21. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2643,15 +2644,32 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 8 — Continuity Checker / 连贯性检查器~~ — ✅ CLOSED / validated (commit `1e9b737`)
 
-### Tool 9 — Prompt Booster / 提示词增强器（next）
-归属：建议先评估——Director 子工具（偏创作方向）或新增 Prompt 分组（覆盖全节点类型）
-状态：❌ not implemented（next）
+### ~~Tool 9 — Prompt Booster / 提示词增强器~~ — ✅ IMPLEMENTED / browser validation pending (commit `6e1a24f`, 2026-06-06)
 
-要求：
-- 基于当前节点 prompt，给出结构化增强建议
-- 用户逐条接受/复制/追加，不自动覆盖原 prompt
-- 基础版规则引擎，AI 增强版后续独立排期
+归属：新增 Prompt / 提示词分组（PencilLine 图标）
+状态：✅ IMPLEMENTED — type-check / lint / build 全部通过；待浏览器验收
+
+实现：
+- image 7维检查（主体 / 场景 / 构图景别 / 光线 / 色调风格 / 质量质感 / 负向约束）
+- video 7维检查（主体 / 场景 / 动作 / 运镜 / 时长节奏 / 连续性 / 负向约束）
+- text 6维检查（主题 / 目标格式 / 受众平台 / 语气风格 / 输出结构 / 长度约束）
+- score = 100 - 15×missing - 8×warn，最低 0
+- 用户点击「追加到 Prompt」；重复检测防二次追加；不自动覆盖
 - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
+
+浏览器验收标准（待验收）：
+1. 左侧 Dock 出现 PencilLine 图标（Prompt 分组）
+2. 点击展开子菜单，仅含「提示词增强器」
+3. 点击打开 PromptBoosterPanel（left-[80px]，不遮主 Dock）
+4. 节点选择器列出 text/image/video 节点
+5. 节点 prompt 不为空时显示 score + checks + suggestions
+6. score 颜色：≥80 emerald / ≥50 amber / <50 red
+7. 每张建议卡片可「复制片段」/ 「追加到 Prompt」/ 「忽略」
+8. 点击追加 → Prompt 末尾新增 [Prompt Booster] 分隔标记 + appendText
+9. 再次点击追加同一建议 → 显示「已存在类似片段」(2500ms)，不重复写入
+10. 点击忽略 → 当前会话隐藏该建议（不持久化）
+11. 点击「重新分析」→ 分析更新，dismissed 重置
+12. 点击「复制报告」→ 剪贴板含 score + checks + suggestions 文本
 
 ---
 
@@ -3090,3 +3108,72 @@ Modules confirmed working as of `8119eb0`:
 - `/help/api-keys` — FAQ section renamed "出错了怎么办？"; 3 new entries (Seedream unsupported test, timeout, BYOK service fee clarification) [✅ validated 2026-06-04]
 - cn-executor video logs — sanitized via `safeLogVideoJob`; no signed URL slices, no responseBody; `hasByokCredential: false` in start log [✅ validated 2026-06-04]
 - Video BYOK feature flag — `ENABLE_SEEDANCE_VIDEO_BYOK` (defaults false when env var absent); requests with `billingMode=user_provider_account` rejected with 403 `VIDEO_BYOK_NOT_ENABLED` [✅ validated 2026-06-04]
+
+---
+
+## Canvas Smart Tools Tool 9 — Prompt Booster — IMPLEMENTED / browser validation pending
+
+**Commit:** `6e1a24f`
+**Status:** ✅ IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-06
+
+### 功能说明
+
+纯规则引擎提示词质量分析，无 API 调用，无生成，不消耗 credits。针对单节点 prompt，从 image 7维 / video 7维 / text 6维进行结构化分析，输出质量评分（0-100）和可追加建议。
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/lib/canvas/prompt-booster.ts` | 纯规则引擎（analyzePromptBoost / buildPromptBoostReportText / textAlreadyContains） |
+| `apps/web/src/components/create/PromptBoosterPanel.tsx` | 提示词增强器面板 |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | 新增 Prompt 分组（PencilLine 图标 + 提示词增强器子菜单项） |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | import + state + handler + render block |
+
+### 检查维度
+
+**image（7 维）：** 主体 / 场景 / 构图景别 / 光线 / 色调风格 / 质量质感 / 负向约束
+
+**video（7 维）：** 主体 / 场景 / 动作 / 运镜 / 时长节奏 / 连续性 / 负向约束
+
+**text（6 维）：** 主题 / 目标格式 / 受众平台 / 语气风格 / 输出结构 / 长度约束
+
+### 评分公式
+
+`score = 100 - 15×missing - 8×warn`，最低 0。≥80 「结构较完整」/ ≥50 「建议增强」/ <50 「缺少关键描述」
+
+### 追加行为
+
+- 用户点击「追加到 Prompt」→ 末尾追加 `\n[Prompt Booster]\n` + appendText
+- `textAlreadyContains`：取 appendText 前 28 字符做 lowercase 子串检测，命中则显示「已存在类似片段」(2500ms 提示)，不重复写入
+- 点击「忽略」→ 本会话隐藏该建议（dismissed Set，不持久化）
+
+### 安全边界确认
+
+- 不改 cn-executor / generate routes / billing / credits / schema / provider adapter
+- 不自动生成，不消耗 credits，不新增后端 API
+- 不改 Tool 1–8 功能逻辑
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 左侧 Dock 查看新图标 | PencilLine 图标出现在 Clapperboard 下方 |
+| 2 | 点击 PencilLine 图标 | 展开子菜单，仅含「提示词增强器」 |
+| 3 | 点击「提示词增强器」 | 打开 PromptBoosterPanel（left-[80px]，不遮 Dock） |
+| 4 | 节点选择器 | 列出 text / image / video 节点 |
+| 5 | 选择有 prompt 的 image 节点 | 显示 score + checks（7 维）+ suggestions |
+| 6 | score 颜色 | ≥80 emerald / ≥50 amber / <50 red |
+| 7 | 追加建议 | Prompt 末尾出现 [Prompt Booster] 分隔标记 + appendText |
+| 8 | 再次点击追加同一建议 | 显示「已存在类似片段」，不重复写入 |
+| 9 | 点击「忽略」| 当前会话隐藏该建议 |
+| 10 | 点击「重新分析」| score 和 checks 刷新，dismissed 清除 |
+| 11 | 点击「复制报告」| 剪贴板含 score + checks + suggestions 文本 |
+| 12 | 选择 video 节点 | 切换为 7 维 video 检查维度 |
+| 13 | 选择 text 节点 | 切换为 6 维 text 检查维度 |
+| 14 | Asset / Director 分组正常 | 不受影响 |
