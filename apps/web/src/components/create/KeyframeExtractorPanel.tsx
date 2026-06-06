@@ -306,7 +306,7 @@ export function KeyframeExtractorPanel({
                     />
                   </div>
                 ) : (
-                  <p className="mt-1.5 text-[10px] text-white/25">点击"预览当前帧"后在此显示截图</p>
+                  <p className="mt-1.5 text-[10px] text-white/25">点击「预览当前帧」后在此显示截图</p>
                 )}
               </div>
             ) : null}
