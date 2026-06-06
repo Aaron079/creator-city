@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: `6d5e44c` (Tool 10 Sequence Board implemented)
-Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board implemented)
+Last valid commit: `37a43da` (Tool 10 Sequence Board removed from UI after product review)
+Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review)
 
 ---
 
@@ -70,7 +70,7 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`) |
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
-| Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器 · Director 分组子工具） | ✅ IMPLEMENTED / browser validation pending | `6d5e44c` |
+| Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
 
 ---
 
@@ -611,7 +611,8 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Shot List Builder / 分镜清单生成器 | ✅ validated（Director 分组子工具；`26f8d16` · `5cfb912` · `97ff477`）|
 | Continuity Checker / 连贯性检查器 | ✅ validated（Director 分组子工具；`1e9b737`；6 维规则引擎；overallScore + issue 列表 + 定位节点 + 复制报告）|
 | Prompt Booster / 提示词增强器 | ✅ validated（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖；重复检测；可忽略/重新分析/复制报告）|
-| Sequence Board / 镜头序列编排器 | ✅ IMPLEMENTED / browser validation pending（Director 分组子工具；`6d5e44c`；edge 拓扑排序；role 标记；总时长；复制清单；定位节点）|
+| Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
+| Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
 | Prompt Templates / 提示词模板库 | ❌ not implemented / future（Prompt 分组；纯前端模板库）|
 | Prompt History | ❌ not implemented / future |
 | AI Prompt Rewriter | ❌ not implemented / future |
@@ -2326,23 +2327,14 @@ if (isSimplePreviewExpiry) {
     - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
     - 23 条验收全部通过
 
-21. ~~**Canvas Smart Tools Tool 10 — Sequence Board / 镜头序列编排器**~~ — ✅ IMPLEMENTED / browser validation pending (commit `6d5e44c`, 2026-06-07)
-    - 归属：Director 分组（Clapperboard 图标），不放 Asset / Prompt
-    - 把画布中已有的 text/image/video 节点编排成最终作品镜头序列
-    - edge 拓扑排序自动生成默认序列，仅包含 image/video done 节点
-    - 可加入节点池：展示未入序列的所有 text/image/video 节点
-    - 每镜头：role 标记（正片/备选/待重做/参考）、时长设置、备注
-    - 总时长 = 正片镜头 durationSeconds 之和；上移/下移排序；定位节点；复制清单
-    - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-    - type-check / lint / build 全部通过
+21. ~~**Canvas Smart Tools Tool 10 — Sequence Board / 镜头序列编排器**~~ — ❌ REMOVED / not validated (commit `37a43da`, 2026-06-07)
+    - 实现后用户产品评审：功能与 Shot List Builder / Continuity Checker / 画布连线顺序重叠，判断为冗余
+    - 已从 UI 完全撤下：Director 子菜单入口已删除，SequenceBoardPanel.tsx 和 sequence-board.ts 已删除
+    - 原则：下一个工具必须直接减少用户真实操作步骤，不能是管理视图的变种
 
-22. **Canvas Smart Tools Tool 11 — Prompt Templates / 提示词模板库（next）**
-    - 归属：Prompt 分组（与 Prompt Booster 同组，不放 Asset / Director）
-    - 「Prompt Templates」是用户主动选择模板起草新 prompt；「Prompt Booster」是诊断已有 prompt——两者不重复
-    - 基础版纯前端模板库，支持 image / video / text 三类模板
-    - 用户点击后填入节点 prompt 或追加
-    - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-    - 状态：❌ not implemented（next）
+22. **Canvas Smart Tools 下一个工具（待定，重新评估）**
+    - 下一工具评估要求：不重复已有工具；必须直接作用在现有资产/节点；必须减少真实操作步骤；不做静态模板库；不做重复管理面板
+    - 状态：❌ not started（待选题）
 
 23. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2670,31 +2662,13 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 9 — Prompt Booster / 提示词增强器~~ — ✅ CLOSED / validated (commit `6e1a24f`, validated 2026-06-07)
 
-### ~~Tool 10 — Sequence Board / 镜头序列编排器~~ — ✅ IMPLEMENTED / browser validation pending (commit `6d5e44c`, 2026-06-07)
+### ~~Tool 10 — Sequence Board / 镜头序列编排器~~ — ❌ REMOVED / not validated (commit `37a43da`, 2026-06-07)
 
-归属：Director 分组（Clapperboard 图标，第四个子菜单项）
-状态：✅ IMPLEMENTED — type-check / lint / build 全部通过；待浏览器验收
+原因：产品评审后判断为冗余（与 Shot List Builder + Continuity Checker + 画布连线顺序重叠），已从 UI 完全撤下。
 
-实现：
-- edge 拓扑排序（Kahn 算法）自动生成默认序列，只含 image/video done 节点
-- 可加入节点池：展示全部未入序列的 text/image/video 节点
-- 每镜头：role（正片/备选/待重做/参考）、durationSeconds、note
-- 总时长只计 role=main 镜头之和
-- 上移/下移按钮排序（无拖拽库依赖）
-- 定位节点：setActiveNodeId + canvasPan 聚焦
-- 复制镜头清单：完整中文 Markdown 报告（清单/角色/时长/状态/待重做列表/安全说明）
-- 不自动生成，不消耗 credits，不新增 API，不上传 OSS，不改 schema
+### 下一工具（待定，重新评估）
 
-### Tool 11 — Prompt Templates / 提示词模板库（next）
-
-归属：Prompt 分组（PencilLine 图标，与 Prompt Booster 同组）
-状态：❌ not implemented（next）
-
-要求：
-- 「Prompt Templates」是用户主动选择模板起草 prompt；「Prompt Booster」是诊断已有 prompt——两者不重复
-- 基础版纯前端模板库，支持 image / video / text 三类模板
-- 用户点击后填入节点 prompt 或追加
-- 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
+评估要求：不重复已有工具；必须直接作用在现有资产/节点；必须减少真实操作步骤；不做静态模板库；不做重复管理面板
 
 ---
 
@@ -3231,11 +3205,20 @@ Modules confirmed working as of `8119eb0`:
 
 ---
 
-## Canvas Smart Tools Tool 10 — Sequence Board — IMPLEMENTED / browser validation pending
+## Canvas Smart Tools Tool 10 — Sequence Board — REMOVED / not validated
 
-**Commit:** `6d5e44c`
-**Status:** ✅ IMPLEMENTED / browser validation pending
+**Implement commit:** `6d5e44c`
+**Remove commit:** `37a43da`
+**Status:** ❌ REMOVED / not validated / removed from UI after product review
 **Date implemented:** 2026-06-07
+**Date removed:** 2026-06-07
+
+**移除原因：** 用户产品评审后判断为冗余。Sequence Board 的顺序管理功能与以下已有工具重叠：
+- Shot List Builder（分镜清单，创建草案顺序）
+- Continuity Checker（连续性审查）
+- 画布连线本身（连线即表示节点顺序关系）
+
+**处置：** Director 子菜单入口已删除，SequenceBoardPanel.tsx 和 sequence-board.ts 源文件已删除，VisualCanvasWorkspace 中的 import / state / handler / render 均已清除。
 
 ### 差异化说明
 
