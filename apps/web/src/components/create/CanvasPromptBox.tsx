@@ -55,6 +55,7 @@ interface CanvasPromptBoxProps {
   showAllModelsInline?: boolean
   footerItems?: CanvasPromptFooterItem[]
   videoModeInfo?: VideoModeInfo
+  onRequestReferenceImage?: () => void
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
   panelPortalTarget?: Element | null
@@ -112,6 +113,7 @@ export function CanvasPromptBox({
   extraPills: _extraPills = [],
   footerItems = [],
   videoModeInfo,
+  onRequestReferenceImage,
   inputRef,
   onClose,
   panelPortalTarget,
@@ -652,8 +654,21 @@ export function CanvasPromptBox({
               <span className="canvas-video-mode-icon">⊡</span>
               <div className="canvas-video-mode-text">
                 <span className="canvas-video-mode-label">文生视频</span>
-                <span className="canvas-video-mode-desc">未连接参考图，将根据 Prompt 直接生成</span>
+                <span className="canvas-video-mode-desc">
+                  {onRequestReferenceImage
+                    ? '未连接参考图 · 点击添加图生视频参考'
+                    : '未连接参考图，将根据 Prompt 直接生成'}
+                </span>
               </div>
+              {onRequestReferenceImage ? (
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/55 transition hover:border-white/30 hover:bg-white/10 hover:text-white/85"
+                  onClick={onRequestReferenceImage}
+                >
+                  + 选择参考图
+                </button>
+              ) : null}
             </>
           )}
         </div>
