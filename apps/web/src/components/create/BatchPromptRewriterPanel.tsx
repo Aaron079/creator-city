@@ -377,7 +377,8 @@ export function BatchPromptRewriterPanel({ nodes, onBatchPatch, onClose }: Batch
               onChange={(e) => handleTextChange(e.target.value)}
               rows={3}
               placeholder="例如：cinematic lighting, warm color grade, film grain, consistent character design"
-              className="w-full resize-none rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-[12px] text-white/80 placeholder-white/25 outline-none transition focus:border-violet-500/40 focus:bg-white/6"
+              style={{ colorScheme: 'dark' }}
+              className="w-full resize-none rounded-xl border border-white/15 bg-[#10131a] px-3 py-2.5 text-[12px] text-slate-100 caret-white outline-none transition placeholder:text-slate-500 focus:border-violet-400/40 focus:bg-[#13161f]"
             />
             {appendText.trim() ? (
               <button
