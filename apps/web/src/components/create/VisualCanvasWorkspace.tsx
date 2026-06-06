@@ -24,6 +24,7 @@ import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlanne
 import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
 import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { isComparableNode } from '@/lib/canvas/compare-utils'
+import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2369,6 +2370,7 @@ export function VisualCanvasWorkspace({
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
   const [isCharacterLockOpen, setIsCharacterLockOpen] = useState(false)
   const [isABCompareOpen, setIsABCompareOpen] = useState(false)
+  const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7889,13 +7891,9 @@ export function VisualCanvasWorkspace({
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
           onOpenAssetTool={(tool) => {
-            if (tool === 'variant-planner') {
-              setIsVariantPlannerOpen(true)
-              setIsABCompareOpen(false)
-            } else {
-              setIsABCompareOpen(true)
-              setIsVariantPlannerOpen(false)
-            }
+            setIsVariantPlannerOpen(tool === 'variant-planner')
+            setIsABCompareOpen(tool === 'ab-compare')
+            setIsKeyframeExtractorOpen(tool === 'keyframe-extractor')
           }}
         />
       ) : null}
@@ -8009,6 +8007,35 @@ export function VisualCanvasWorkspace({
               }
             }}
             onClose={() => setIsABCompareOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {/* Keyframe Extractor panel — Tool 6, triggered from Asset tools group in left dock */}
+      {isKeyframeExtractorOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsKeyframeExtractorOpen(false)}
+          />
+          <KeyframeExtractorPanel
+            nodes={nodes}
+            initialNodeId={activeNodeId ?? undefined}
+            onCreateNode={(kind, options) => {
+              createNode(kind, options)
+            }}
+            onFocusNode={(nodeId) => {
+              setActiveNodeId(nodeId)
+              const target = nodes.find((n) => n.id === nodeId)
+              if (target) {
+                setCanvasPan({
+                  x: -(target.x * canvasZoom) + window.innerWidth / 2 - 120,
+                  y: -(target.y * canvasZoom) + window.innerHeight / 2 - 80,
+                })
+              }
+            }}
+            onClose={() => setIsKeyframeExtractorOpen(false)}
           />
         </>
       ) : null}

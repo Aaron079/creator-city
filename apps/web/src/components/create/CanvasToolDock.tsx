@@ -21,7 +21,7 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare') => void
+  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -133,6 +133,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">⚖</span>
                     <span>版本对比</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('keyframe-extractor') }}
+                  >
+                    <span className="text-[13px]">🎞</span>
+                    <span>关键帧提取</span>
                   </button>
                 </motion.div>
               ) : null}
