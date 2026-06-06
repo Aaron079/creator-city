@@ -90,7 +90,7 @@ export const EDGE_DIRECTOR_LABELS: Record<EdgeDirectorType, string> = {
 }
 
 export const EDGE_DIRECTOR_COLORS: Record<EdgeDirectorType, { from: string; mid: string; to: string; dashed?: boolean }> = {
-  default: { from: 'rgba(255,255,255,0.1)', mid: 'rgba(255,255,255,0.22)', to: 'rgba(255,255,255,0.08)' },
+  default: { from: 'rgba(110,140,255,0.22)', mid: 'rgba(130,160,255,0.62)', to: 'rgba(110,140,255,0.16)' },
   'story-to-visual': { from: 'rgba(56,189,248,0.16)', mid: 'rgba(96,165,250,0.72)', to: 'rgba(56,189,248,0.12)' },
   'image-to-video': { from: 'rgba(168,85,247,0.16)', mid: 'rgba(192,132,252,0.76)', to: 'rgba(168,85,247,0.12)' },
   'style-lock': { from: 'rgba(217,70,239,0.16)', mid: 'rgba(232,121,249,0.78)', to: 'rgba(217,70,239,0.12)' },

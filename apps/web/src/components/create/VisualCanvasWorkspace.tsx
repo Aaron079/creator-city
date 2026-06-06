@@ -6815,6 +6815,42 @@ export function VisualCanvasWorkspace({
     [createNode, editingNode, activeNode],
   )
 
+  // ─── Workflow Connection Context Tools ──────────────────────────────────────
+  // For each image/video target node that has an upstream image/video node with
+  // media results, compute whether a portrait asset is likely so we can surface
+  // the Character Lock option more prominently.
+  const PORTRAIT_RE = /人|人物|角色|女孩|男孩|女|男|girl|boy|man|woman|person|portrait|face|character|child/i
+
+  const upstreamContextMap = useMemo(() => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const result = new Map<string, { isPortraitLikely: boolean }>()
+    for (const edge of edges) {
+      if (result.has(edge.toNodeId)) continue
+      const source = nodeById.get(edge.fromNodeId)
+      const target = nodeById.get(edge.toNodeId)
+      if (!source || !target) continue
+      if (target.kind !== 'image' && target.kind !== 'video') continue
+      if (source.kind !== 'image' && source.kind !== 'video') continue
+      if (!source.resultImageUrl && !source.resultVideoUrl && !source.assetId) continue
+      result.set(edge.toNodeId, {
+        isPortraitLikely: PORTRAIT_RE.test(source.prompt ?? ''),
+      })
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges])
+
+  const handleUpstreamTool = useCallback((
+    targetNode: VisualCanvasNode,
+    tool: 'character-lock' | 'variant-planner' | 'camera-lexicon',
+  ) => {
+    focusPromptForNode(targetNode)
+    setIsLexiconOpen(tool === 'camera-lexicon')
+    setIsVariantPlannerOpen(tool === 'variant-planner')
+    setIsCharacterLockOpen(tool === 'character-lock')
+  }, [focusPromptForNode])
+  // ────────────────────────────────────────────────────────────────────────────
+
   const handleProviderChange = useCallback((value: string) => {
     const providerId = normalizeProviderId(value)
     setPromptModel(providerId)
@@ -8178,6 +8214,51 @@ export function VisualCanvasWorkspace({
                   reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
                 />
               </CanvasNodeErrorBoundary>
+
+              {/* Workflow Connection Context Tools — shown below target node when upstream has media */}
+              {(() => {
+                const upCtx = upstreamContextMap.get(node.id)
+                if (!upCtx || (node.kind !== 'image' && node.kind !== 'video')) return null
+                return (
+                  <div
+                    className="absolute z-[5] flex flex-wrap items-center gap-1"
+                    style={{ top: node.height + 6, left: 2 }}
+                    data-no-node-drag="true"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <span className="text-[10px] leading-none text-white/22 select-none">
+                      {upCtx.isPortraitLikely ? '↑ 角色参考可用' : '↑ 基于上一节点'}
+                    </span>
+                    {upCtx.isPortraitLikely ? (
+                      <button
+                        type="button"
+                        className="inline-flex min-h-[18px] items-center rounded-full border border-amber-400/22 bg-amber-400/6 px-1.5 text-[10px] leading-none text-amber-200/55 transition hover:border-amber-400/40 hover:bg-amber-400/12 hover:text-amber-100/85"
+                        onClick={() => handleUpstreamTool(node, 'character-lock')}
+                        data-no-node-drag="true"
+                      >
+                        角色锁定
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[18px] items-center rounded-full border border-white/8 bg-black/25 px-1.5 text-[10px] leading-none text-white/32 transition hover:border-white/22 hover:bg-black/45 hover:text-white/62"
+                      onClick={() => handleUpstreamTool(node, 'variant-planner')}
+                      data-no-node-drag="true"
+                    >
+                      资产变体
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[18px] items-center rounded-full border border-white/8 bg-black/25 px-1.5 text-[10px] leading-none text-white/32 transition hover:border-white/22 hover:bg-black/45 hover:text-white/62"
+                      onClick={() => handleUpstreamTool(node, 'camera-lexicon')}
+                      data-no-node-drag="true"
+                    >
+                      镜头语言
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           ))}
 
