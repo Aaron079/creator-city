@@ -6823,7 +6823,7 @@ export function VisualCanvasWorkspace({
 
   const upstreamContextMap = useMemo(() => {
     const nodeById = new Map(nodes.map((n) => [n.id, n]))
-    const result = new Map<string, { isPortraitLikely: boolean }>()
+    const result = new Map<string, { isPortraitLikely: boolean; sourceNodeId: string }>()
     for (const edge of edges) {
       if (result.has(edge.toNodeId)) continue
       const source = nodeById.get(edge.fromNodeId)
@@ -6831,20 +6831,54 @@ export function VisualCanvasWorkspace({
       if (!source || !target) continue
       if (target.kind !== 'image' && target.kind !== 'video') continue
       if (source.kind !== 'image' && source.kind !== 'video') continue
-      if (!source.resultImageUrl && !source.resultVideoUrl && !source.assetId) continue
+      // Source is valid if it has any content: media result, asset binding, or prompt
+      const sourceHasContent = Boolean(
+        source.resultImageUrl || source.resultVideoUrl || source.assetId || source.prompt?.trim(),
+      )
+      if (!sourceHasContent) continue
       result.set(edge.toNodeId, {
         isPortraitLikely: PORTRAIT_RE.test(source.prompt ?? ''),
+        sourceNodeId: source.id,
       })
     }
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges])
 
+  // Screen-space positions for context entries — must recompute on pan/zoom so they track their nodes.
+  // Rendered as position:fixed (outside canvas surface) so they don't scale with canvas zoom.
+  const upstreamContextFixedStyles = useMemo<Map<string, CSSProperties>>(() => {
+    if (typeof window === 'undefined') return new Map()
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!rect) return new Map()
+    const surfaceOff = getSurfaceOffset(surfaceRef.current)
+    const result = new Map<string, CSSProperties>()
+    for (const [nodeId] of upstreamContextMap.entries()) {
+      const node = nodes.find((n) => n.id === nodeId)
+      if (!node) continue
+      const screenLeft = rect.left + surfaceOff.left + canvasPan.x + node.x * canvasZoom
+      const screenTop = rect.top + surfaceOff.top + canvasPan.y + (node.y + node.height) * canvasZoom
+      result.set(nodeId, {
+        position: 'fixed' as const,
+        left: Math.round(screenLeft),
+        top: Math.round(screenTop + 4),
+        zIndex: 85,
+        pointerEvents: 'auto',
+      })
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upstreamContextMap, nodes, canvasPan.x, canvasPan.y, canvasZoom])
+
   const handleUpstreamTool = useCallback((
     targetNode: VisualCanvasNode,
     tool: 'character-lock' | 'variant-planner' | 'camera-lexicon',
+    sourceNode?: VisualCanvasNode | null,
   ) => {
-    focusPromptForNode(targetNode)
+    // Character lock / variant planner: focus SOURCE node (register/analyze the upstream asset)
+    // Camera lexicon: focus TARGET node (add lexicon terms to the downstream prompt)
+    const nodeToFocus = tool === 'camera-lexicon' ? targetNode : (sourceNode ?? targetNode)
+    focusPromptForNode(nodeToFocus)
     setIsLexiconOpen(tool === 'camera-lexicon')
     setIsVariantPlannerOpen(tool === 'variant-planner')
     setIsCharacterLockOpen(tool === 'character-lock')
@@ -8214,56 +8248,60 @@ export function VisualCanvasWorkspace({
                   reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
                 />
               </CanvasNodeErrorBoundary>
-
-              {/* Workflow Connection Context Tools — shown below target node when upstream has media */}
-              {(() => {
-                const upCtx = upstreamContextMap.get(node.id)
-                if (!upCtx || (node.kind !== 'image' && node.kind !== 'video')) return null
-                return (
-                  <div
-                    className="absolute z-[5] flex flex-wrap items-center gap-1"
-                    style={{ top: node.height + 6, left: 2 }}
-                    data-no-node-drag="true"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-[10px] leading-none text-white/22 select-none">
-                      {upCtx.isPortraitLikely ? '↑ 角色参考可用' : '↑ 基于上一节点'}
-                    </span>
-                    {upCtx.isPortraitLikely ? (
-                      <button
-                        type="button"
-                        className="inline-flex min-h-[18px] items-center rounded-full border border-amber-400/22 bg-amber-400/6 px-1.5 text-[10px] leading-none text-amber-200/55 transition hover:border-amber-400/40 hover:bg-amber-400/12 hover:text-amber-100/85"
-                        onClick={() => handleUpstreamTool(node, 'character-lock')}
-                        data-no-node-drag="true"
-                      >
-                        角色锁定
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="inline-flex min-h-[18px] items-center rounded-full border border-white/8 bg-black/25 px-1.5 text-[10px] leading-none text-white/32 transition hover:border-white/22 hover:bg-black/45 hover:text-white/62"
-                      onClick={() => handleUpstreamTool(node, 'variant-planner')}
-                      data-no-node-drag="true"
-                    >
-                      资产变体
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex min-h-[18px] items-center rounded-full border border-white/8 bg-black/25 px-1.5 text-[10px] leading-none text-white/32 transition hover:border-white/22 hover:bg-black/45 hover:text-white/62"
-                      onClick={() => handleUpstreamTool(node, 'camera-lexicon')}
-                      data-no-node-drag="true"
-                    >
-                      镜头语言
-                    </button>
-                  </div>
-                )
-              })()}
             </div>
           ))}
 
         </div>
       </div>
+
+      {/* Workflow Connection Context Tools — position:fixed so they don't scale with canvas zoom */}
+      {saveStatus !== 'opening' && Array.from(upstreamContextMap.entries()).map(([nodeId, upCtx]) => {
+        const fixedStyle = upstreamContextFixedStyles.get(nodeId)
+        if (!fixedStyle) return null
+        const targetNode = nodes.find((n) => n.id === nodeId)
+        const sourceNode = nodes.find((n) => n.id === upCtx.sourceNodeId)
+        if (!targetNode) return null
+        return (
+          <div
+            key={`ctx-${nodeId}`}
+            style={fixedStyle}
+            data-no-node-drag="true"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-black/75 px-2 py-1.5 shadow-xl backdrop-blur-sm">
+              <span className="shrink-0 text-[11px] leading-none text-white/40 select-none">
+                {upCtx.isPortraitLikely ? '↑ 角色参考可用' : '↑ 基于上一节点'}
+              </span>
+              <button
+                type="button"
+                className={`inline-flex min-h-[22px] items-center rounded-full border px-2 text-[11px] leading-none transition ${upCtx.isPortraitLikely ? 'border-amber-400/35 bg-amber-400/10 text-amber-200/75 hover:border-amber-400/55 hover:text-amber-100' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/30 hover:text-white/85'}`}
+                onClick={() => handleUpstreamTool(targetNode, 'character-lock', sourceNode)}
+                data-no-node-drag="true"
+              >
+                角色
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-[22px] items-center rounded-full border border-white/15 bg-white/5 px-2 text-[11px] leading-none text-white/55 transition hover:border-white/30 hover:text-white/85"
+                onClick={() => handleUpstreamTool(targetNode, 'variant-planner', sourceNode)}
+                data-no-node-drag="true"
+              >
+                变体
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-[22px] items-center rounded-full border border-white/15 bg-white/5 px-2 text-[11px] leading-none text-white/55 transition hover:border-white/30 hover:text-white/85"
+                onClick={() => handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)}
+                data-no-node-drag="true"
+              >
+                镜头
+              </button>
+            </div>
+          </div>
+        )
+      })}
 
       {/* Asset Agent Toolbar — position:fixed to escape canvas-viewport overflow:hidden */}
       {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) && toolbarFixedStyle ? (
