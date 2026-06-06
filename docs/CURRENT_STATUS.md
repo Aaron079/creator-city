@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `97ff477` (make shot list source text editable)
+Last valid commit: `1e9b737` (Tool 8 Continuity Checker implemented)
 Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated)
 
 ---
@@ -68,6 +68,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / validated | `66da5b5` |
 | Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
 | Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`) |
+| Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ IMPLEMENTED / browser validation pending | `1e9b737` |
 
 ---
 
@@ -2300,13 +2301,7 @@ if (isSimplePreviewExpiry) {
 
 18. ~~**Canvas Smart Tools Tool 7 — Shot List Builder / 分镜清单生成器**~~ — ✅ CLOSED / validated (commits `26f8d16` · `5cfb912` · `97ff477`)
 
-19. **Canvas Smart Tools Tool 8 — Continuity Checker / 连贯性检查器（next）**
-    - 归属：Director 分组（与 Camera Lexicon / Shot List Builder 同组）
-    - 检查画布中多个 image/video/text 节点的角色、地点、风格、时间、色调、镜头连续性
-    - 基础版用 prompt / node metadata / 关键词规则分析，不接入视觉模型
-    - 输出：连贯性问题列表 + 每条建议修复方向
-    - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-    - 状态：❌ not implemented（next）
+19. ~~**Canvas Smart Tools Tool 8 — Continuity Checker / 连贯性检查器**~~ — ✅ IMPLEMENTED / browser validation pending (commit `1e9b737`)
 
 20. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2630,15 +2625,7 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 7 — Shot List Builder / 分镜清单生成器~~ — ✅ CLOSED / validated (commits `26f8d16` · `5cfb912` · `97ff477`)
 
-### Tool 8 — Continuity Checker / 连贯性检查器（next）
-归属：Director 分组
-状态：❌ not implemented（next）
-
-要求：
-- 检查画布中多个 image/video/text 节点的角色、地点、风格、时间、色调、镜头连续性
-- 基础版用 prompt / node metadata / 关键词规则分析，不接入视觉模型
-- 输出：连贯性问题列表 + 每条建议修复方向
-- 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
+### ~~Tool 8 — Continuity Checker / 连贯性检查器~~ — ✅ IMPLEMENTED / browser validation pending (commit `1e9b737`)
 
 ---
 
@@ -2768,6 +2755,77 @@ if (isSimplePreviewExpiry) {
 |---|---|
 | 镜头词典（Camera Lexicon） | ✅ validated |
 | 分镜清单生成器（Shot List Builder） | ✅ validated |
+| 连贯性检查器（Continuity Checker） | ✅ implemented / browser validation pending |
+
+---
+
+## Canvas Smart Tools Tool 8 — Continuity Checker — IMPLEMENTED / browser validation pending
+
+**Commit:** `1e9b737`
+**Status:** ✅ IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-06
+
+### 功能说明
+
+纯规则引擎连贯性分析，无 API 调用，无生成，不消耗 credits。从 6 个维度检查画布中 image/video/text 节点的连续性问题：
+
+| 维度 | 检查内容 |
+|---|---|
+| 角色一致性（characters） | 角色词汇前后节点消失、角色性别前后不一致 |
+| 场景/地点（location） | 室内/户外/宇宙等场景类型跳变（无转场说明） |
+| 时间线（timeline） | 昼夜时段切换（白天→夜晚，无说明） |
+| 风格/色调（style） | 3+ 种不同视觉风格分散在各节点 |
+| 镜头语言（shotLanguage） | 连续 3+ 个节点同一景别（全景/中景/近景/特写） |
+| 资产状态（assetHealth） | 节点 error/failed、done 无输出、image/video 无 assetId |
+
+### 评分机制
+
+`score = 100 - risk×20 - warn×10 - info×3`，最低 0。
+
+| 分段 | 文案 |
+|---|---|
+| ≥85 | 连贯性良好，未发现明显冲突 |
+| ≥70 | 整体连贯，有少量需关注的地方 |
+| ≥50 | 存在一些连贯性问题，建议检查标注节点 |
+| <50 | 连贯性风险较高，建议仔细检查各分类问题 |
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/lib/canvas/continuity-check.ts` | 纯规则引擎（类型 + 6 维检查函数 + analyzeContinuity + buildContinuityReportText） |
+| `apps/web/src/components/create/ContinuityCheckerPanel.tsx` | 固定左侧面板：评分环 + 6-section 2列网格 + issue列表 + 定位节点按钮 + 复制报告 |
+
+### 修改文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Director 分组新增「连贯性检查器」菜单项 |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | import + isContinuityCheckerOpen state + handler + render block |
+
+### 安全边界确认
+
+- 未修改任何生成路由（text/image/video）
+- 未修改 billing / credits / payment / cn-executor / schema
+- 纯前端只读分析，无网络请求
+- type-check / lint / build 全部通过（commit `1e9b737`）
+
+### 浏览器验收清单（待验收）
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 点击左侧 Clapperboard 图标 | Director 子菜单展开，出现「连贯性检查器」菜单项 |
+| 2 | 点击「连贯性检查器」 | 面板在 left-[80px] top-1/2 显示 |
+| 3 | 画布有 2+ 个节点时 | 6-section 分类网格可见，评分环显示数字 |
+| 4 | 画布节点少于 2 个时 | 显示"节点数量不足"空状态文案 |
+| 5 | 有错误节点（error/failed）时 | RISK 标签 issue 出现，评分显示红色 |
+| 6 | 场景类型跳变时 | WARN 标签 issue：场景/地点可能不一致 |
+| 7 | 角色性别描述冲突时 | WARN 标签 issue：角色性别描述不一致 |
+| 8 | 点击 issue 中「定位节点」 | 画布平移到对应节点，节点高亮 |
+| 9 | 点击「重新检查」 | 重新运行 analyzeContinuity，issue 列表刷新 |
+| 10 | 点击「复制检查报告」 | 剪贴板可粘贴出完整中文报告 |
+| 11 | 点击面板外背景 | 面板关闭 |
+| 12 | 面板底部显示「只读分析 · 不自动生成 · 不消耗 credits」 | 固定底栏文案可见 |
 
 ---
 
