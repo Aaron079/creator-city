@@ -3,13 +3,10 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Clapperboard,
   ImageIcon,
-  Layers,
   Plus,
   Square,
   Text,
-  UserRound,
   Video,
 } from 'lucide-react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -23,15 +20,7 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  lexiconOpen: boolean
-  onLexiconToggle: () => void
-  variantPlannerOpen: boolean
-  onVariantPlannerToggle: () => void
-  characterLockOpen: boolean
-  onCharacterLockToggle: () => void
 }
-
-// ─── node options ──────────────────────────────────────────────────────────────
 
 const NODE_OPTIONS: Array<{
   id: string
@@ -45,76 +34,6 @@ const NODE_OPTIONS: Array<{
   { id: 'video', kind: 'video', icon: Video, label: '视频', hint: '生成镜头、动作和转场' },
 ]
 
-// ─── tool group definitions ────────────────────────────────────────────────────
-
-type ToolGroupId = 'director' | 'asset' | 'character'
-
-interface ToolGroupItem {
-  id: 'camera-lexicon' | 'asset-variant-planner' | 'character-lock'
-  label: string
-  description: string
-  Icon: typeof Clapperboard
-}
-
-interface ToolGroup {
-  id: ToolGroupId
-  label: string
-  labelEn: string
-  Icon: typeof Clapperboard
-  description: string
-  items: ToolGroupItem[]
-}
-
-const TOOL_GROUPS: ToolGroup[] = [
-  {
-    id: 'director',
-    label: '导演',
-    labelEn: 'Director',
-    Icon: Clapperboard,
-    description: '镜头语言 · 画面构图 · 运镜指导',
-    items: [
-      {
-        id: 'camera-lexicon',
-        label: '镜头词典',
-        description: '插入专业镜头词汇到 Prompt',
-        Icon: Clapperboard,
-      },
-    ],
-  },
-  {
-    id: 'asset',
-    label: '资产',
-    labelEn: 'Asset',
-    Icon: Layers,
-    description: '变体规划 · 资产对比 · 素材整理',
-    items: [
-      {
-        id: 'asset-variant-planner',
-        label: '变体规划器',
-        description: '生成当前节点的变体方向建议',
-        Icon: Layers,
-      },
-    ],
-  },
-  {
-    id: 'character',
-    label: '角色',
-    labelEn: 'Character',
-    Icon: UserRound,
-    description: '角色卡 · 一致性描述 · 角色绑定',
-    items: [
-      {
-        id: 'character-lock',
-        label: '角色锁定',
-        description: '注册角色卡，追加一致性描述到 Prompt',
-        Icon: UserRound,
-      },
-    ],
-  },
-]
-
-// ─── component ─────────────────────────────────────────────────────────────────
-
 export function CanvasToolDock({
   onAddNode,
   activeTool,
@@ -123,36 +42,8 @@ export function CanvasToolDock({
   onToggleAddMenu,
   hasActiveGenerations,
   onStopAllGenerations,
-  lexiconOpen,
-  onLexiconToggle,
-  variantPlannerOpen,
-  onVariantPlannerToggle,
-  characterLockOpen,
-  onCharacterLockToggle,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
-  const [openGroupId, setOpenGroupId] = useState<ToolGroupId | null>(null)
-
-  // Which group has an active panel (panel is open)
-  const activeGroupId: ToolGroupId | null =
-    lexiconOpen ? 'director'
-    : variantPlannerOpen ? 'asset'
-    : characterLockOpen ? 'character'
-    : null
-
-  const toggleGroup = (groupId: ToolGroupId) => {
-    setOpenGroupId((current) => (current === groupId ? null : groupId))
-    // Close add menu and user menu when opening a group sub-nav
-    if (isAddMenuOpen) onToggleAddMenu()
-    setIsUserMenuOpen(false)
-  }
-
-  const handleToolItemClick = (itemId: ToolGroupItem['id']) => {
-    setOpenGroupId(null)
-    if (itemId === 'camera-lexicon') onLexiconToggle()
-    else if (itemId === 'asset-variant-planner') onVariantPlannerToggle()
-    else if (itemId === 'character-lock') onCharacterLockToggle()
-  }
 
   return (
     <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
@@ -164,7 +55,6 @@ export function CanvasToolDock({
             onClick={() => {
               onToolSelect('add')
               setIsUserMenuOpen(false)
-              setOpenGroupId(null)
               onToggleAddMenu()
             }}
             className={`canvas-toolbar-button ${activeTool === 'add' || isAddMenuOpen ? 'is-active' : ''}`}
@@ -195,28 +85,6 @@ export function CanvasToolDock({
             </button>
           ) : null}
 
-          {/* Tool group buttons — Director / Asset / Character */}
-          {TOOL_GROUPS.map((group) => {
-            const GroupIcon = group.Icon
-            const hasActiveTool = activeGroupId === group.id
-            const isSubNavOpen = openGroupId === group.id
-            return (
-              <button
-                key={group.id}
-                type="button"
-                onClick={() => toggleGroup(group.id)}
-                className={`canvas-toolbar-button ${hasActiveTool || isSubNavOpen ? 'is-active' : ''}`}
-                title={`${group.label} / ${group.labelEn}`}
-                aria-label={`${group.label}工具组`}
-                aria-expanded={isSubNavOpen}
-                data-no-node-drag="true"
-              >
-                <GroupIcon size={20} strokeWidth={1.8} />
-                <span className="canvas-hover-tooltip" aria-hidden="true">{group.label}</span>
-              </button>
-            )
-          })}
-
           <div className="canvas-toolbar-divider" />
 
           {/* User menu */}
@@ -229,7 +97,6 @@ export function CanvasToolDock({
               data-no-node-drag="true"
               onClick={() => {
                 setIsUserMenuOpen((current) => !current)
-                setOpenGroupId(null)
                 onToolSelect('user')
               }}
             >
@@ -304,99 +171,6 @@ export function CanvasToolDock({
             </div>
           </motion.div>
         ) : null}
-      </AnimatePresence>
-
-      {/* Tool group sub-navigation */}
-      <AnimatePresence>
-        {openGroupId ? (() => {
-          const group = TOOL_GROUPS.find((g) => g.id === openGroupId)
-          if (!group) return null
-          return (
-            <motion.div
-              key={openGroupId}
-              initial={{ opacity: 0, x: -10, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -10, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="canvas-add-menu"
-              data-no-node-drag="true"
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {/* Group header */}
-              <div className="canvas-add-menu-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <group.Icon size={16} strokeWidth={1.8} style={{ color: 'rgba(255,255,255,0.5)', flexShrink: 0 }} />
-                  <div>
-                    <div className="canvas-add-menu-label" style={{ fontSize: 13 }}>
-                      {group.label} / {group.labelEn}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
-                      {group.description}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tool items */}
-              <div className="space-y-2">
-                {group.items.map((item) => {
-                  const ItemIcon = item.Icon
-                  const isActive =
-                    (item.id === 'camera-lexicon' && lexiconOpen) ||
-                    (item.id === 'asset-variant-planner' && variantPlannerOpen) ||
-                    (item.id === 'character-lock' && characterLockOpen)
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleToolItemClick(item.id)}
-                      className="canvas-add-option"
-                      style={isActive ? {
-                        background: 'rgba(29, 160, 219, 0.12)',
-                        border: '1px solid rgba(29, 160, 219, 0.25)',
-                        borderRadius: 16,
-                      } : undefined}
-                    >
-                      <span className="canvas-add-option-icon">
-                        <ItemIcon
-                          size={22}
-                          strokeWidth={2}
-                          style={{ color: isActive ? 'rgb(29, 160, 219)' : undefined }}
-                        />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="canvas-add-option-title" style={{ color: isActive ? 'rgba(255,255,255,0.9)' : undefined }}>
-                          {item.label}
-                          {isActive ? (
-                            <span style={{ marginLeft: 6, fontSize: 10, color: 'rgba(29,160,219,0.9)', fontWeight: 600 }}>
-                              已打开
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="canvas-add-option-hint">{item.description}</span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Future tools notice */}
-              <div style={{
-                marginTop: 12,
-                paddingTop: 10,
-                borderTop: '1px solid rgba(255,255,255,0.07)',
-                fontSize: 10,
-                color: 'rgba(255,255,255,0.22)',
-                lineHeight: 1.5,
-              }}>
-                {openGroupId === 'director' && '未来：Shot Doctor · Motion Director · Composition Coach'}
-                {openGroupId === 'asset' && '未来：A/B Compare · Keyframe Extractor · Asset Export Pack'}
-                {openGroupId === 'character' && '未来：Consistency Checker · Multi-character Binding · Card Manager'}
-              </div>
-            </motion.div>
-          )
-        })() : null}
       </AnimatePresence>
     </div>
   )

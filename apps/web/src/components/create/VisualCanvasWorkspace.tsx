@@ -7874,24 +7874,6 @@ export function VisualCanvasWorkspace({
           onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
-          lexiconOpen={isLexiconOpen}
-          onLexiconToggle={() => {
-            setIsLexiconOpen((o) => !o)
-            setIsVariantPlannerOpen(false)
-            setIsCharacterLockOpen(false)
-          }}
-          variantPlannerOpen={isVariantPlannerOpen}
-          onVariantPlannerToggle={() => {
-            setIsVariantPlannerOpen((o) => !o)
-            setIsLexiconOpen(false)
-            setIsCharacterLockOpen(false)
-          }}
-          characterLockOpen={isCharacterLockOpen}
-          onCharacterLockToggle={() => {
-            setIsCharacterLockOpen((o) => !o)
-            setIsLexiconOpen(false)
-            setIsVariantPlannerOpen(false)
-          }}
         />
       ) : null}
 
