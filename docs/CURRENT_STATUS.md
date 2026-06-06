@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `9e9b340` (fix: escape curly quotes in KeyframeExtractorPanel — Vercel build fix)
+Last valid commit: `26f8d16` (feat: Tool 7 — Shot List Builder / 分镜清单生成器 (Director group))
 Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated)
 
 ---
@@ -67,6 +67,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
 | Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / validated | `66da5b5` |
 | Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
+| Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ⏳ IMPLEMENTED / browser validation pending | `26f8d16` |
 
 ---
 
@@ -2626,16 +2627,10 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 6 — Keyframe Extractor / 关键帧提取器~~ — ✅ CLOSED / validated (commit `ccb5f42`, build fix `9e9b340`)
 
-### Tool 7 — Shot List Builder / 分镜清单生成器
-归属：Director 分组
-状态：❌ not implemented（next）
+### ~~Tool 7 — Shot List Builder / 分镜清单生成器~~ — ⏳ IMPLEMENTED / browser validation pending (commit `26f8d16`)
 
-要求：
-- 基于已有 Text 节点 / 剧本文本，生成可编辑分镜表
-- 用户确认每行分镜后才创建 image/video 草案节点，不批量自动创建
-- 不自动生成，不消耗 credits
-- 不新增 API / schema，优先复用现有 text agent 或先做只读 / 草案版本
-- 不改 generate routes / provider adapter / billing / cn-executor
+归属：Director 分组（Clapperboard 图标，新增）
+状态：✅ 已实现，待浏览器验收
 
 ---
 
@@ -2758,6 +2753,77 @@ if (isSimplePreviewExpiry) {
 | 资产变体规划器（Asset Variant Planner） | ✅ validated |
 | 版本对比（A/B Compare） | ✅ validated |
 | 关键帧提取（Keyframe Extractor） | ✅ validated |
+
+### Director 分组当前已包含工具
+
+| 工具 | 状态 |
+|---|---|
+| 镜头词典（Camera Lexicon） | ✅ validated |
+| 分镜清单生成器（Shot List Builder） | ⏳ browser validation pending |
+
+---
+
+## Canvas Smart Tools Tool 7 — Shot List Builder — IMPLEMENTED / browser validation pending
+
+**Commit:** `26f8d16`
+**Status:** ⏳ IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-06
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/components/create/ShotListBuilderPanel.tsx` | 分镜清单生成器面板 |
+| `apps/web/src/lib/canvas/shot-list.ts` | 纯函数：parseShotList / buildShotListReport / SHOT_SIZE_LABELS |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | 新增 Director 分组（Clapperboard 图标）+ 子菜单：镜头词典 + 分镜清单生成器 |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | `isShotListBuilderOpen` state、`onOpenDirectorTool` prop、`ShotListBuilderPanel` render |
+
+### 功能说明
+
+- 从 Director 分组（Clapperboard 图标）子菜单选择"分镜清单生成器"打开面板
+- 来源节点：画布中所有有文本内容的节点（resultText 或 prompt 非空），Text 节点优先 resultText
+- 文本解析规则：段落分割 → 行分割 → 句子分割，最多 8 镜，不足 3 镜则使用默认 3 镜
+- 每个分镜卡片可编辑：kind（图片/视频切换）、shotSize（全景/中景/近景/特写）、description、cinematicNote、duration（仅视频）
+- 全选/全不选，各镜头可单独 checkbox 选择
+- 复制分镜清单：buildShotListReport 输出文本，写入剪贴板
+- 创建草案节点：仅创建 selected 的镜头，`createNode(kind, { title, prompt, parentNodeId: sourceNodeId })`，自动建 edge，状态 idle
+- 创建后显示"已创建 X 个草案节点"反馈
+- 不自动生成，不消耗 credits，不上传 OSS，不新增 API
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 点击左侧 Clapperboard 图标 | 展开 Director 子菜单，包含 镜头词典 / 分镜清单生成器 |
+| 2 | 点击"分镜清单生成器" | ShotListBuilderPanel 打开 |
+| 3 | 无可用文本节点 | 显示"画布中没有可用的文本节点"提示 |
+| 4 | 有文本节点 | 下拉选择器显示所有有内容节点，预览前 120 字符 |
+| 5 | 切换来源节点 | 自动重新分析分镜，列表刷新 |
+| 6 | 点击"重新分析" | 重新解析当前节点文本 |
+| 7 | 分镜卡片可编辑 kind/shotSize/description/cinematicNote | 修改即时生效 |
+| 8 | 视频镜头显示 duration 选择器，图片不显示 | ✅ |
+| 9 | 全选/全不选生效 | ✅ |
+| 10 | 单独 checkbox 可切换选择状态 | ✅ |
+| 11 | 点击"复制分镜清单" | 剪贴板含完整文本报告 |
+| 12 | 复制成功后按钮显示"已复制" 2 秒 | ✅ |
+| 13 | 创建草案节点 | 仅 selected 镜头创建，每个镜头建独立节点 + edge 到来源节点 |
+| 14 | 创建后显示"已创建 X 个草案节点" | ✅ |
+| 15 | 新节点状态 idle，不自动生成 | ✅ |
+| 16 | 不消耗 credits | ✅ |
+| 17 | 关闭面板（× 按钮或背景遮罩） | 面板关闭 |
+| 18 | 镜头词典菜单项正常打开 Camera Lexicon | ✅ |
+| 19 | Tool 1/2/3A/4/5/6 及生成链路 | 无回归 |
+
+### 安全边界确认
+
+- 不改 cn-executor / generate routes / billing / credits / schema / provider adapter
+- 不上传 OSS，不新增后端 API，不改 Prisma 表
+- 不伪造 assetId，不自动生成，不消耗 credits
 
 ---
 
