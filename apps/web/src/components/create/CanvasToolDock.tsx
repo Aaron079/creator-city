@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  Clapperboard,
   ImageIcon,
   Layers,
   Plus,
@@ -22,6 +23,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
+  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -45,9 +47,11 @@ export function CanvasToolDock({
   hasActiveGenerations,
   onStopAllGenerations,
   onOpenAssetTool,
+  onOpenDirectorTool,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [isAssetMenuOpen, setIsAssetMenuOpen] = useState(false)
+  const [isDirectorMenuOpen, setIsDirectorMenuOpen] = useState(false)
 
   return (
     <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
@@ -141,6 +145,57 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🎞</span>
                     <span>关键帧提取</span>
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          {/* Director tools group */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDirectorMenuOpen((v) => !v)
+                setIsAssetMenuOpen(false)
+                setIsUserMenuOpen(false)
+              }}
+              className={`canvas-toolbar-button ${isDirectorMenuOpen ? 'is-active' : ''}`}
+              title="导演工具"
+              aria-label="导演工具"
+              data-no-node-drag="true"
+            >
+              <Clapperboard size={20} strokeWidth={2.1} />
+              <span className="canvas-hover-tooltip" aria-hidden="true">导演工具</span>
+            </button>
+            <AnimatePresence>
+              {isDirectorMenuOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, x: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -8, scale: 0.98 }}
+                  transition={{ duration: 0.16 }}
+                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
+                  data-no-node-drag="true"
+                >
+                  <div className="px-3 pb-1 pt-0.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">导演工具</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('camera-lexicon') }}
+                  >
+                    <span className="text-[13px]">📷</span>
+                    <span>镜头词典</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('shot-list-builder') }}
+                  >
+                    <span className="text-[13px]">🎬</span>
+                    <span>分镜清单生成器</span>
                   </button>
                 </motion.div>
               ) : null}

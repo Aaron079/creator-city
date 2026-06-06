@@ -25,6 +25,7 @@ import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
 import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
+import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2371,6 +2372,7 @@ export function VisualCanvasWorkspace({
   const [isCharacterLockOpen, setIsCharacterLockOpen] = useState(false)
   const [isABCompareOpen, setIsABCompareOpen] = useState(false)
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
+  const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7895,6 +7897,10 @@ export function VisualCanvasWorkspace({
             setIsABCompareOpen(tool === 'ab-compare')
             setIsKeyframeExtractorOpen(tool === 'keyframe-extractor')
           }}
+          onOpenDirectorTool={(tool) => {
+            setIsShotListBuilderOpen(tool === 'shot-list-builder')
+            if (tool === 'camera-lexicon') setIsLexiconOpen(true)
+          }}
         />
       ) : null}
 
@@ -8036,6 +8042,24 @@ export function VisualCanvasWorkspace({
               }
             }}
             onClose={() => setIsKeyframeExtractorOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {isShotListBuilderOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsShotListBuilderOpen(false)}
+          />
+          <ShotListBuilderPanel
+            nodes={nodes}
+            initialNodeId={activeNodeId ?? undefined}
+            onCreateNode={(kind, options) => {
+              createNode(kind, options)
+            }}
+            onClose={() => setIsShotListBuilderOpen(false)}
           />
         </>
       ) : null}
