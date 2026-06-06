@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `f607a53` (add continue creation options to source menu)
+Last valid commit: `66da5b5` (feat: add A/B version compare panel Tool 5)
 Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
 
 ---
@@ -65,6 +65,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Workflow Context Target Binding Fix（source→target 绑定修复 · 工具明确作用下游节点） | ✅ CLOSED / validated | `36eca47` |
 | Make Workflow Continue Button Visible（继续创作按钮移入节点卡片 · 解决 position:fixed 坐标计算失效） | ✅ CLOSED / validated | `1133c2b` |
 | Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
+| Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / browser validation pending | `66da5b5` |
 
 ---
 
@@ -600,7 +601,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Character Lock Basic — supports downstream workflow target | ✅ validated |
 | Workflow Context Target Binding（source→target 绑定修复） | ✅ validated |
 | Workflow Continue Options in Source Menu（引用该节点生成菜单接入继续创作三选项） | ✅ validated |
-| A/B Compare / Version Compare Panel | ❌ not implemented（future，归属 Asset 分组，无新 API/schema/generate/billing）|
+| A/B Compare / Version Compare Panel | ✅ implemented / browser validation pending（Asset 分组子工具；`66da5b5`）|
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
@@ -2274,11 +2275,18 @@ if (isSimplePreviewExpiry) {
     - 约束已遵守：type-check/lint/build 全通过；不新增 API / 不改 schema / 不改生成路由
     - **Browser validation pending**
 
-16. **Canvas Smart Tools Tool 5 — A/B Compare Panel（Asset 分组下）**
-    - 已有资产对比工具：选择两个 image 节点，并排展示两版生成结果
-    - 进入 Asset 分组子导航，不新增一级图标
+16. ~~**Canvas Smart Tools Tool 5 — A/B Compare Panel（Asset 分组下）** — ✅ IMPLEMENTED / browser validation pending (commit `66da5b5`, 2026-06-06)~~
+    - 已有资产对比工具：选择两个 image/video 节点，并排展示两版生成结果，prompt 差异分析
+    - 进入 Asset 分组子导航（Layers 图标 → 版本对比），不新增一级图标
     - 纯前端展示，不消耗 credits，不新增 API
-    - Real Batch Variants / 批量真实生成：later（涉及 credits 并发失败处理，不直接做）
+    - compare-utils.ts：纯函数 analyzePromptDiff / buildCompareReport / isComparableNode
+    - ABComparePanel.tsx：NodeSelector / MediaPreview（无自动播放）/ NodeColumn / 复制报告 / 标记胜出版本
+
+17. **Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组下）**
+    - 状态：❌ not implemented（next）
+    - 从已有视频节点提取静帧，作为下一步图片参考或新节点草案
+    - 不自动生成，不消耗 credits，不新增 API，不上传 OSS
+    - 进入 Asset 分组子导航，不新增一级图标
 
 17. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2596,17 +2604,73 @@ if (isSimplePreviewExpiry) {
 
 ## Next Phase Tasks
 
-### Tool 5 — A/B Compare / Version Compare Panel
+### ~~Tool 5 — A/B Compare / Version Compare Panel~~ — ✅ IMPLEMENTED (commit `66da5b5`)
+
+### Tool 6 — Keyframe Extractor / 关键帧提取器
 归属：Asset 分组
-状态：❌ not implemented（future）
+状态：❌ not implemented（next）
 
 要求：
-- 不新增左侧一级图标
-- 只比较已有资产，不自动生成
-- 不消耗 credits
-- 不新增 API / schema
-- 不改 generate routes / provider adapter / billing
-- 归入 Asset 分组展开子工具
+- 只作用于 video 节点（有 resultVideoUrl / assetId / prompt）
+- 浏览器端 canvas drawImage 抽帧，CORS 失败显示 fallback
+- 可创建 image 草案节点（prompt 写入关键帧参考，idle 状态，不自动生成）
+- 可创建 video 续作草案节点（idle 状态，不自动生成）
+- source video → new node 建立 edge
+- 不新增左侧一级图标，进入 Asset 分组
+- 不消耗 credits，不新增 API / schema，不上传 OSS
+- 不改 generate routes / provider adapter / billing / cn-executor
+
+---
+
+## Canvas Smart Tools Tool 5 — A/B Compare Panel — IMPLEMENTED / browser validation pending
+
+**Commit:** `66da5b5`
+**Status:** ✅ IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-06
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/components/create/ABComparePanel.tsx` | 版本对比面板 |
+| `apps/web/src/lib/canvas/compare-utils.ts` | 纯函数：analyzePromptDiff / buildCompareReport / isComparableNode |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Asset 分组新增"版本对比"子菜单项 |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | `isABCompareOpen` state、`onOpenAssetTool` prop、`ABComparePanel` render |
+
+### 功能说明
+
+- 从 Asset 分组（Layers 图标）子菜单选择"版本对比"打开面板
+- 选择两个 image/video 节点，并排展示：缩略图 / 元数据 / prompt 预览
+- Prompt 差异分析：A/B 独有关键词 + 人物/镜头/光线/情绪词 DiffBadge
+- 标记胜出版本（本地 state，不写 DB）
+- 复制对比报告到剪贴板
+- 定位节点（setActiveNodeId + canvasPan）
+- 不自动生成，不消耗 credits，不新增 API，不改 generate/billing/schema
+
+### 安全边界确认
+
+- 不改 cn-executor / generate routes / billing / credits / schema / provider adapter
+- 不上传 OSS，不新增后端 API，不改 Prisma 表
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 点击左侧 Layers 图标 | 展开 Asset 子菜单 |
+| 2 | 点击"版本对比" | ABComparePanel 打开，`left-[80px] top-1/2` |
+| 3 | 下拉选择器 | 只列出 image/video 有内容节点 |
+| 4 | 选择两节点 | 并排显示缩略图 + prompt 差异 |
+| 5 | 点击"⭐ 选为胜出" | 页脚显示推荐版本 |
+| 6 | 点击"复制对比报告" | 剪贴板含格式化报告文本 |
+| 7 | 点击"定位节点" | 画布平移并激活该节点 |
+| 8 | 点击背景遮罩 | 面板关闭 |
+| 9 | 视频节点 | 显示 video 元素，无自动播放 |
+| 10 | 其他工具（Tool 1/2/3A/4）| 无回归 |
 
 ---
 
