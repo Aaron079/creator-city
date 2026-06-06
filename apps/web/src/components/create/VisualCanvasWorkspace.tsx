@@ -2417,6 +2417,7 @@ export function VisualCanvasWorkspace({
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
   const [openContextMenuNodeId, setOpenContextMenuNodeId] = useState<string | null>(null)
   const [refImagePickerOpen, setRefImagePickerOpen] = useState(false)
+  const [workflowContext, setWorkflowContext] = useState<{ sourceNodeId: string; targetNodeId: string } | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
@@ -6786,28 +6787,37 @@ export function VisualCanvasWorkspace({
   }, [editingNode, handleNodePatch])
 
   const handleLexiconInsert = useCallback((fragment: string) => {
-    if (!editingNode) return
-    const trimmed = canvasPrompt.trim()
-    const next = trimmed ? `${trimmed}, ${fragment}` : fragment
-    setCanvasPrompt(next)
-    handleNodePatch(editingNode.id, { prompt: next })
-  }, [editingNode, canvasPrompt, handleNodePatch])
+    const targetId = workflowContext?.targetNodeId ?? editingNode?.id
+    if (!targetId) return
+    const isEditing = editingNode?.id === targetId
+    const base = isEditing ? canvasPrompt : (nodes.find((n) => n.id === targetId)?.prompt ?? '')
+    const next = base.trim() ? `${base.trim()}, ${fragment}` : fragment
+    if (isEditing) setCanvasPrompt(next)
+    handleNodePatch(targetId, { prompt: next })
+    if (workflowContext) showCanvasFeedback('已追加到下游 Prompt')
+  }, [workflowContext, editingNode, nodes, canvasPrompt, handleNodePatch, showCanvasFeedback])
 
   const handleVariantInsert = useCallback((fragment: string) => {
-    if (!editingNode) return
-    const trimmed = canvasPrompt.trim()
-    const next = trimmed ? `${trimmed}, ${fragment}` : fragment
-    setCanvasPrompt(next)
-    handleNodePatch(editingNode.id, { prompt: next })
-  }, [editingNode, canvasPrompt, handleNodePatch])
+    const targetId = workflowContext?.targetNodeId ?? editingNode?.id
+    if (!targetId) return
+    const isEditing = editingNode?.id === targetId
+    const base = isEditing ? canvasPrompt : (nodes.find((n) => n.id === targetId)?.prompt ?? '')
+    const next = base.trim() ? `${base.trim()}, ${fragment}` : fragment
+    if (isEditing) setCanvasPrompt(next)
+    handleNodePatch(targetId, { prompt: next })
+    if (workflowContext) showCanvasFeedback('已追加到下游 Prompt')
+  }, [workflowContext, editingNode, nodes, canvasPrompt, handleNodePatch, showCanvasFeedback])
 
   const handleCharacterLockInsert = useCallback((fragment: string) => {
-    if (!editingNode) return
-    const trimmed = canvasPrompt.trim()
-    const next = trimmed ? `${trimmed}${fragment}` : fragment.trimStart()
-    setCanvasPrompt(next)
-    handleNodePatch(editingNode.id, { prompt: next })
-  }, [editingNode, canvasPrompt, handleNodePatch])
+    const targetId = workflowContext?.targetNodeId ?? editingNode?.id
+    if (!targetId) return
+    const isEditing = editingNode?.id === targetId
+    const base = isEditing ? canvasPrompt : (nodes.find((n) => n.id === targetId)?.prompt ?? '')
+    const next = base.trim() ? `${base.trim()}${fragment}` : fragment.trimStart()
+    if (isEditing) setCanvasPrompt(next)
+    handleNodePatch(targetId, { prompt: next })
+    if (workflowContext) showCanvasFeedback('已追加到下游 Prompt')
+  }, [workflowContext, editingNode, nodes, canvasPrompt, handleNodePatch, showCanvasFeedback])
 
   const handleVariantCreateNode = useCallback(
     (kind: 'image' | 'video', title: string, prompt: string) => {
@@ -6877,10 +6887,10 @@ export function VisualCanvasWorkspace({
     tool: 'character-lock' | 'variant-planner' | 'camera-lexicon',
     sourceNode?: VisualCanvasNode | null,
   ) => {
-    // Character lock / variant planner: focus SOURCE node (register/analyze the upstream asset)
-    // Camera lexicon: focus TARGET node (add lexicon terms to the downstream prompt)
-    const nodeToFocus = tool === 'camera-lexicon' ? targetNode : (sourceNode ?? targetNode)
-    focusPromptForNode(nodeToFocus)
+    // Always focus TARGET — tools write to the downstream node
+    focusPromptForNode(targetNode)
+    // Store source→target so panels can display source info and route writes to target
+    setWorkflowContext(sourceNode ? { sourceNodeId: sourceNode.id, targetNodeId: targetNode.id } : null)
     setIsLexiconOpen(tool === 'camera-lexicon')
     setIsVariantPlannerOpen(tool === 'variant-planner')
     setIsCharacterLockOpen(tool === 'character-lock')
@@ -7878,13 +7888,13 @@ export function VisualCanvasWorkspace({
         />
       ) : null}
 
-      {/* Camera Lexicon panel — triggered from left dock */}
+      {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
         <>
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsLexiconOpen(false)}
+            onPointerDown={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
           />
           {(() => {
             const lexTarget = editingNode ?? activeNode
@@ -7893,9 +7903,10 @@ export function VisualCanvasWorkspace({
               return (
                 <CameraLexiconPanel
                   nodeKind={lexTarget.kind as 'image' | 'video'}
-                  canInsert={editingNode !== null}
+                  canInsert={editingNode !== null || workflowContext !== null}
                   onInsert={handleLexiconInsert}
-                  onClose={() => setIsLexiconOpen(false)}
+                  onClose={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
+                  workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
                 />
               )
             }
@@ -7913,7 +7924,7 @@ export function VisualCanvasWorkspace({
                 </p>
                 <button
                   type="button"
-                  onClick={() => setIsLexiconOpen(false)}
+                  onClick={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
                   className="mt-4 text-[11px] text-white/30 hover:text-white/55"
                 >
                   关闭
@@ -7924,40 +7935,42 @@ export function VisualCanvasWorkspace({
         </>
       ) : null}
 
-      {/* Asset Variant Planner panel — triggered from left dock */}
+      {/* Asset Variant Planner panel — triggered from left dock or workflow context menu */}
       {isVariantPlannerOpen && saveStatus !== 'opening' ? (
         <>
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsVariantPlannerOpen(false)}
+            onPointerDown={() => { setIsVariantPlannerOpen(false); setWorkflowContext(null) }}
           />
           <AssetVariantPlannerPanel
-            node={editingNode ?? activeNode}
-            canvasPrompt={canvasPrompt}
-            canInsert={editingNode !== null}
+            node={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode) : (editingNode ?? activeNode)}
+            canvasPrompt={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId)?.prompt ?? '') : canvasPrompt}
+            canInsert={editingNode !== null || workflowContext !== null}
             onInsert={handleVariantInsert}
             onCreateNode={handleVariantCreateNode}
-            onClose={() => setIsVariantPlannerOpen(false)}
+            onClose={() => { setIsVariantPlannerOpen(false); setWorkflowContext(null) }}
+            workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
           />
         </>
       ) : null}
 
-      {/* Character Lock panel — Tool 4, triggered from left dock */}
+      {/* Character Lock panel — Tool 4, triggered from left dock or workflow context menu */}
       {isCharacterLockOpen && saveStatus !== 'opening' ? (
         <>
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsCharacterLockOpen(false)}
+            onPointerDown={() => { setIsCharacterLockOpen(false); setWorkflowContext(null) }}
           />
           <CharacterLockPanel
-            node={editingNode ?? activeNode}
+            node={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode) : (editingNode ?? activeNode)}
             characterBible={characterBible}
-            canInsert={editingNode !== null}
+            canInsert={editingNode !== null || workflowContext !== null}
             onInsert={handleCharacterLockInsert}
             onSaveBible={persistCharacterBibleSettings}
-            onClose={() => setIsCharacterLockOpen(false)}
+            onClose={() => { setIsCharacterLockOpen(false); setWorkflowContext(null) }}
+            workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
           />
         </>
       ) : null}
@@ -8281,48 +8294,73 @@ export function VisualCanvasWorkspace({
             {/* Dropdown — separate fixed element, not a child of the button container */}
             {menuOpen && (
               <div
-                className="min-w-[128px] rounded-xl border border-white/12 bg-black/90 py-1 shadow-2xl backdrop-blur-md"
+                className="w-[230px] rounded-xl border border-white/12 bg-black/92 shadow-2xl backdrop-blur-md overflow-hidden"
                 style={{ position: 'fixed', left: btnLeft, top: btnTop + 30, zIndex: 1082 }}
                 data-no-node-drag="true"
                 onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
-                {upCtx.isPortraitLikely && (
-                  <div className="px-3 pb-1 pt-1.5 text-[10px] leading-none text-amber-300/60 select-none">
-                    ↑ 检测到角色参考
+                {/* source → target context header */}
+                <div className="border-b border-white/8 px-3 pt-2.5 pb-2">
+                  <p className="text-[10px] font-semibold text-white/40 mb-1.5">基于上一节点继续</p>
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-white/30 truncate">
+                      <span className="text-white/18">来源</span>{' '}
+                      <span className="text-white/50">{sourceNode?.title || (sourceNode?.kind === 'image' ? '图片节点' : '视频节点')}</span>
+                      {sourceNode?.prompt ? <span className="text-white/22"> · {sourceNode.prompt.slice(0, 18)}{sourceNode.prompt.length > 18 ? '…' : ''}</span> : null}
+                    </p>
+                    <p className="text-[10px] text-white/30 truncate">
+                      <span className="text-white/18">目标</span>{' '}
+                      <span className="text-white/50">{targetNode?.title || (targetNode?.kind === 'image' ? '图片任务' : '视频任务') || '空白任务'}</span>
+                    </p>
                   </div>
-                )}
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  onClick={() => {
-                    handleUpstreamTool(targetNode, 'character-lock', sourceNode)
-                    setOpenContextMenuNodeId(null)
-                  }}
-                >
-                  <span className="text-amber-300/70">👤</span> 角色参考
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  onClick={() => {
-                    handleUpstreamTool(targetNode, 'variant-planner', sourceNode)
-                    setOpenContextMenuNodeId(null)
-                  }}
-                >
-                  <span className="text-violet-300/70">⬡</span> 资产变体
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
-                  onClick={() => {
-                    handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)
-                    setOpenContextMenuNodeId(null)
-                  }}
-                >
-                  <span className="text-sky-300/70">🎬</span> 镜头语言
-                </button>
+                </div>
+                {/* Menu items */}
+                <div className="py-1">
+                  <button
+                    type="button"
+                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                    onClick={() => {
+                      handleUpstreamTool(targetNode, 'character-lock', sourceNode)
+                      setOpenContextMenuNodeId(null)
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                      <span className="text-amber-300/80">👤</span>
+                      角色参考 → 传给下游
+                    </span>
+                    <span className="pl-5 text-[10px] text-white/30">把上游资产作为下游任务的角色参考</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                    onClick={() => {
+                      handleUpstreamTool(targetNode, 'variant-planner', sourceNode)
+                      setOpenContextMenuNodeId(null)
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                      <span className="text-violet-300/80">⬡</span>
+                      资产变体 → 写入下游
+                    </span>
+                    <span className="pl-5 text-[10px] text-white/30">基于上游资产规划变体，追加到下游 Prompt</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full flex-col gap-0.5 px-3 py-2 text-left transition hover:bg-white/[0.06]"
+                    onClick={() => {
+                      handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)
+                      setOpenContextMenuNodeId(null)
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+                      <span className="text-sky-300/80">🎬</span>
+                      镜头语言 → 添加到下游
+                    </span>
+                    <span className="pl-5 text-[10px] text-white/30">给下游任务添加景别 / 运镜 / 光线词</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

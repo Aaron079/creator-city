@@ -10,6 +10,7 @@ interface CameraLexiconPanelProps {
   canInsert: boolean
   onInsert: (fragment: string) => void
   onClose: () => void
+  workflowTargetNodeTitle?: string
 }
 
 // ─── term button ──────────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ export function CameraLexiconPanel({
   canInsert,
   onInsert,
   onClose,
+  workflowTargetNodeTitle,
 }: CameraLexiconPanelProps) {
   const [activeCategory, setActiveCategory] = useState<string>('shotSize')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -71,8 +73,12 @@ export function CameraLexiconPanel({
     )
   }
 
+  const isWorkflow = Boolean(workflowTargetNodeTitle)
+  const canActuallyInsert = canInsert || isWorkflow
+  const insertLabel = isWorkflow ? `插入到「${workflowTargetNodeTitle}」Prompt` : '插入 Prompt'
+
   const handleInsert = () => {
-    if (!fragment || !canInsert) return
+    if (!fragment || !canActuallyInsert) return
     onInsert(fragment)
     setSelectedIds([])
   }
@@ -95,9 +101,15 @@ export function CameraLexiconPanel({
             镜头词典
           </p>
           <h2 className="mt-1 text-sm font-semibold text-white/90">Camera Lexicon</h2>
-          <p className="mt-0.5 text-[11px] text-white/40">
-            {nodeKind === 'image' ? '图片节点' : '视频节点'}
-          </p>
+          {isWorkflow ? (
+            <p className="mt-0.5 text-[11px] text-sky-300/70">
+              正在给下游任务添加镜头语言 →「{workflowTargetNodeTitle}」
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-white/40">
+              {nodeKind === 'image' ? '图片节点' : '视频节点'}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -179,7 +191,7 @@ export function CameraLexiconPanel({
           </div>
         )}
 
-        {!canInsert && (
+        {!canActuallyInsert && (
           <p className="mt-3 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[11px] text-white/35">
             提示：打开节点对话框后可插入镜头词汇到 Prompt。
           </p>
@@ -191,10 +203,10 @@ export function CameraLexiconPanel({
         <button
           type="button"
           onClick={handleInsert}
-          disabled={!fragment || !canInsert}
+          disabled={!fragment || !canActuallyInsert}
           className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.1] py-1.5 text-[12px] font-medium text-violet-300 transition hover:bg-violet-500/[0.18] disabled:cursor-not-allowed disabled:opacity-30"
         >
-          插入 Prompt
+          {insertLabel}
         </button>
         {selectedIds.length > 0 && (
           <button

@@ -25,6 +25,7 @@ interface AssetVariantPlannerPanelProps {
   onInsert: (text: string) => void
   onCreateNode: (kind: 'image' | 'video', title: string, prompt: string) => void
   onClose: () => void
+  workflowTargetNodeTitle?: string
 }
 
 // ─── icon map ─────────────────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ function VariantCard({
   onCopy,
   onInsert,
   onCreateNode,
+  insertLabel = '追加 Prompt',
 }: {
   plan: AssetVariantPlan
   canInsert: boolean
@@ -139,6 +141,7 @@ function VariantCard({
   onCopy: (id: string, text: string) => void
   onInsert: (text: string) => void
   onCreateNode: (kind: 'image' | 'video', title: string, prompt: string) => void
+  insertLabel?: string
 }) {
   const Icon = ICON_MAP[plan.iconKey] ?? Layers
   const isCopied = copiedId === plan.id
@@ -191,7 +194,7 @@ function VariantCard({
           title={!canInsert ? '打开节点对话框后可追加' : undefined}
           className="inline-flex h-6 items-center rounded-md border border-violet-500/25 bg-violet-500/[0.07] px-2 text-[10px] font-medium text-violet-300/80 transition hover:bg-violet-500/[0.14] disabled:cursor-not-allowed disabled:opacity-30"
         >
-          追加 Prompt
+          {insertLabel}
         </button>
         <button
           type="button"
@@ -218,6 +221,7 @@ export function AssetVariantPlannerPanel({
   onInsert,
   onCreateNode,
   onClose,
+  workflowTargetNodeTitle,
 }: AssetVariantPlannerPanelProps) {
   const { copiedId, copy } = useCopy()
 
@@ -235,6 +239,8 @@ export function AssetVariantPlannerPanel({
   }, [node, canvasPrompt])
 
   const isTextNode = node?.kind === 'text'
+  const isWorkflow = Boolean(workflowTargetNodeTitle)
+  const insertLabel = isWorkflow ? `追加到「${workflowTargetNodeTitle}」Prompt` : '追加 Prompt'
 
   return (
     <div
@@ -279,6 +285,18 @@ export function AssetVariantPlannerPanel({
         </div>
       ) : (
         <>
+          {/* Workflow context banner */}
+          {isWorkflow && (
+            <div className="border-b border-violet-500/15 bg-violet-500/[0.06] px-4 py-2.5">
+              <p className="text-[10px] font-semibold text-violet-300/70">
+                正在基于上游资产，为下游任务规划变体
+              </p>
+              <p className="mt-0.5 text-[10px] text-violet-300/45">
+                变体选项追加到「{workflowTargetNodeTitle}」的 Prompt，不修改上游节点
+              </p>
+            </div>
+          )}
+
           {/* Asset summary */}
           <AssetSummary node={node} prompt={canvasPrompt} />
 
@@ -303,6 +321,7 @@ export function AssetVariantPlannerPanel({
                   onCopy={copy}
                   onInsert={onInsert}
                   onCreateNode={onCreateNode}
+                  insertLabel={insertLabel}
                 />
               ))}
             </div>

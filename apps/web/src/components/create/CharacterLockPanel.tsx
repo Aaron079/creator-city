@@ -25,6 +25,7 @@ interface CharacterLockPanelProps {
   onInsert: (text: string) => void
   onSaveBible: (bible: CharacterBible) => void
   onClose: () => void
+  workflowTargetNodeTitle?: string
 }
 
 // ─── copy hook ────────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ function CharacterCard({
   onAppend,
   onCopy,
   onDelete,
+  appendLabel = '追加到 Prompt',
 }: {
   character: CharacterProfile
   canInsert: boolean
@@ -119,6 +121,7 @@ function CharacterCard({
   onAppend: (character: CharacterProfile) => void
   onCopy: (id: string, text: string) => void
   onDelete: (characterId: string) => void
+  appendLabel?: string
 }) {
   const hero = getHeroReference(character)
   const hasAssetRef = Boolean(hero?.imageUrl)
@@ -194,7 +197,7 @@ function CharacterCard({
           onClick={() => onAppend(character)}
           className="inline-flex h-6 items-center rounded-md border border-violet-500/25 bg-violet-500/[0.07] px-2 text-[10px] font-medium text-violet-300/80 transition hover:bg-violet-500/[0.14] disabled:cursor-not-allowed disabled:opacity-30"
         >
-          追加到 Prompt
+          {appendLabel}
         </button>
         <button
           type="button"
@@ -334,6 +337,7 @@ export function CharacterLockPanel({
   onInsert,
   onSaveBible,
   onClose,
+  workflowTargetNodeTitle,
 }: CharacterLockPanelProps) {
   const { copiedId, copy } = useCopy()
   const [isRegistering, setIsRegistering] = useState(false)
@@ -376,6 +380,7 @@ export function CharacterLockPanel({
 
   const isImageNode = node?.kind === 'image'
   const isTextNode = node?.kind === 'text'
+  const isWorkflow = Boolean(workflowTargetNodeTitle)
 
   return (
     <div
@@ -415,6 +420,16 @@ export function CharacterLockPanel({
           把当前图片资产注册为角色卡，并在后续图片/视频节点中复用。工具不会自动生成，也不会消耗 credits。
         </p>
       </div>
+
+      {/* Workflow context banner */}
+      {isWorkflow && (
+        <div className="border-b border-amber-500/15 bg-amber-500/[0.06] px-4 py-2.5">
+          <p className="text-[10px] font-semibold text-amber-300/70">使用上游资产作为下游角色参考</p>
+          <p className="mt-0.5 text-[10px] text-amber-300/45">
+            注册角色卡后，可追加到「{workflowTargetNodeTitle}」的 Prompt
+          </p>
+        </div>
+      )}
 
       {/* No node selected */}
       {!node ? (
@@ -474,6 +489,7 @@ export function CharacterLockPanel({
                         onAppend={handleAppend}
                         onCopy={copy}
                         onDelete={handleDelete}
+                        appendLabel={isWorkflow ? `追加到「${workflowTargetNodeTitle}」` : '追加到 Prompt'}
                       />
                     ))}
                   </div>
