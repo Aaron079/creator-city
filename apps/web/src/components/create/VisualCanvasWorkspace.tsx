@@ -2415,6 +2415,7 @@ export function VisualCanvasWorkspace({
   const [activeCreativeAssetsTab, setActiveCreativeAssetsTab] = useState<'intelligence' | 'characters' | 'scenes' | 'scene-lab' | 'palette' | 'props' | 'camera'>('characters')
   const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
+  const [openContextMenuNodeId, setOpenContextMenuNodeId] = useState<string | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
   const [previewLinkCopied, setPreviewLinkCopied] = useState(false)
@@ -8261,6 +8262,7 @@ export function VisualCanvasWorkspace({
         const targetNode = nodes.find((n) => n.id === nodeId)
         const sourceNode = nodes.find((n) => n.id === upCtx.sourceNodeId)
         if (!targetNode) return null
+        const menuOpen = openContextMenuNodeId === nodeId
         return (
           <div
             key={`ctx-${nodeId}`}
@@ -8270,35 +8272,72 @@ export function VisualCanvasWorkspace({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-black/75 px-2 py-1.5 shadow-xl backdrop-blur-sm">
-              <span className="shrink-0 text-[11px] leading-none text-white/40 select-none">
-                {upCtx.isPortraitLikely ? '↑ 角色参考可用' : '↑ 基于上一节点'}
-              </span>
-              <button
-                type="button"
-                className={`inline-flex min-h-[22px] items-center rounded-full border px-2 text-[11px] leading-none transition ${upCtx.isPortraitLikely ? 'border-amber-400/35 bg-amber-400/10 text-amber-200/75 hover:border-amber-400/55 hover:text-amber-100' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/30 hover:text-white/85'}`}
-                onClick={() => handleUpstreamTool(targetNode, 'character-lock', sourceNode)}
-                data-no-node-drag="true"
+            {/* Backdrop — closes menu on click outside */}
+            {menuOpen && (
+              <div
+                className="fixed inset-0"
+                style={{ zIndex: 84 }}
+                onClick={() => setOpenContextMenuNodeId(null)}
+              />
+            )}
+            {/* Entry button */}
+            <button
+              type="button"
+              className="relative inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-white/55 shadow-lg backdrop-blur-sm transition hover:border-white/30 hover:text-white/85"
+              style={{ zIndex: 85 }}
+              data-no-node-drag="true"
+              onClick={() => setOpenContextMenuNodeId(menuOpen ? null : nodeId)}
+            >
+              <span className="text-white/30">↑</span>
+              <span>{upCtx.isPortraitLikely ? '角色可用' : '继续创作'}</span>
+              <span className="text-white/30">{menuOpen ? '▲' : '▼'}</span>
+            </button>
+            {/* Dropdown menu */}
+            {menuOpen && (
+              <div
+                className="absolute left-0 top-full mt-1 min-w-[120px] rounded-xl border border-white/12 bg-black/90 py-1 shadow-2xl backdrop-blur-md"
+                style={{ zIndex: 86 }}
               >
-                角色
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-[22px] items-center rounded-full border border-white/15 bg-white/5 px-2 text-[11px] leading-none text-white/55 transition hover:border-white/30 hover:text-white/85"
-                onClick={() => handleUpstreamTool(targetNode, 'variant-planner', sourceNode)}
-                data-no-node-drag="true"
-              >
-                变体
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-[22px] items-center rounded-full border border-white/15 bg-white/5 px-2 text-[11px] leading-none text-white/55 transition hover:border-white/30 hover:text-white/85"
-                onClick={() => handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)}
-                data-no-node-drag="true"
-              >
-                镜头
-              </button>
-            </div>
+                {upCtx.isPortraitLikely && (
+                  <div className="px-3 pb-1 pt-1.5 text-[10px] leading-none text-amber-300/60 select-none">
+                    ↑ 检测到角色参考
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
+                  data-no-node-drag="true"
+                  onClick={() => {
+                    handleUpstreamTool(targetNode, 'character-lock', sourceNode)
+                    setOpenContextMenuNodeId(null)
+                  }}
+                >
+                  <span className="text-amber-300/70">👤</span> 角色参考
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
+                  data-no-node-drag="true"
+                  onClick={() => {
+                    handleUpstreamTool(targetNode, 'variant-planner', sourceNode)
+                    setOpenContextMenuNodeId(null)
+                  }}
+                >
+                  <span className="text-violet-300/70">⬡</span> 资产变体
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/8 hover:text-white"
+                  data-no-node-drag="true"
+                  onClick={() => {
+                    handleUpstreamTool(targetNode, 'camera-lexicon', sourceNode)
+                    setOpenContextMenuNodeId(null)
+                  }}
+                >
+                  <span className="text-sky-300/70">🎬</span> 镜头语言
+                </button>
+              </div>
+            )}
           </div>
         )
       })}
