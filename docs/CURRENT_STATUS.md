@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-06
-Last valid commit: `2575b9f` (add reference image picker for text-to-video nodes)
-Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
+Last valid commit: `f607a53` (add continue creation options to source menu)
+Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated)
 
 ---
 
@@ -62,7 +62,9 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Canvas Tool Dock Grouping（导演/资产/角色 分组子导航重构） | ✅ CLOSED / validated | `daa6811` |
 | Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ CLOSED / validated | `2575b9f` |
 | Reference Image Picker（视频节点文生视频 → 一键选择参考图节点 → 自动连线切换图生视频） | ✅ CLOSED / validated | `2575b9f` |
-| Workflow Context Target Binding Fix（source→target 绑定修复 · 工具明确作用下游节点） | ✅ IMPLEMENTED / browser validation pending | `36eca47` |
+| Workflow Context Target Binding Fix（source→target 绑定修复 · 工具明确作用下游节点） | ✅ CLOSED / validated | `36eca47` |
+| Make Workflow Continue Button Visible（继续创作按钮移入节点卡片 · 解决 position:fixed 坐标计算失效） | ✅ CLOSED / validated | `1133c2b` |
+| Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
 
 ---
 
@@ -591,6 +593,14 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Admin BYOK Business Metrics Dashboard（BYOK 商业指标只读看板） | ✅ validated（只读业务观察，不扣费，不写 ledger，不改 schema；/admin/usage sky 区块；BYOK 调用/占比/活跃用户/成功率/高频用户/Provider/类型/daily trend；API byokBusinessMetrics 字段；findMany+reduce 无 groupBy 问题；高频阈值≥10次；`9e80027`） |
 | BYOK Observation Summary / Admin Copy Report（BYOK 观察摘要 / 管理员可复制周报） | ✅ validated（/admin/usage emerald 区块；前端 buildObservationSummary 函数；复制摘要按钮；自动观察结论；navigator.clipboard fallback textarea；不写 DB，不扣费，不改 schema；只依赖已有 byokBusinessMetrics + simulatedServiceCredits API 数据；`98859b7`） |
 | BYOK Observation Playbook（30–60 天观察期运营 Playbook） | ✅ validated（/admin/usage indigo 区块；4 组静态文案：每周固定查看（8项）/ 继续观察（4条件）/ 先修稳定性（4条件）/ 可进入下一阶段（6条件）；6 条 no-go；纯静态不写 DB 不扣费不改 schema；`40f3d81`）|
+| Canvas Tool Dock Grouping（导演/资产/角色分组子导航重构） | ✅ validated |
+| Workflow Connection Context Tools + Stronger Edges（连线上下文工具 + 连接线增强） | ✅ validated |
+| Camera Lexicon — supports downstream workflow target | ✅ validated |
+| Asset Variant Planner — supports downstream workflow target | ✅ validated |
+| Character Lock Basic — supports downstream workflow target | ✅ validated |
+| Workflow Context Target Binding（source→target 绑定修复） | ✅ validated |
+| Workflow Continue Options in Source Menu（引用该节点生成菜单接入继续创作三选项） | ✅ validated |
+| A/B Compare / Version Compare Panel | ❌ not implemented（future，归属 Asset 分组，无新 API/schema/generate/billing）|
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
@@ -2509,6 +2519,94 @@ if (isSimplePreviewExpiry) {
 | 20 | 不改 billing/credits/payment/schema | pending |
 | 21 | Tool 1/2/3A/4 / Tool Dock Grouping / Media Preview Fallback 无回归 | pending |
 | 22 | Text/Image/Video 生成无回归 | pending |
+
+---
+
+## Workflow Continue Options in Source Menu — CLOSED / validated
+
+**Commit:** `f607a53`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-06
+**Date validated:** 2026-06-06
+
+### 问题背景
+
+旧方案（`1133c2b`）把"继续创作"按钮放在已有 target 节点卡片内部。但用户从 source 拖线时，target 尚未创建，因此入口完全不可见——浏览器验收发现用户只能看到普通的"文本生成 / 图片生成 / 视频生成 / 音频 / 3D 世界"五个选项，看不到任何工作流继续创作入口。
+
+### 修复方案
+
+将"继续创作"三个选项直接接入"引用该节点生成"菜单顶部（`nodeAddMenu`）。用户从 source 节点拖出连线时即可选择，不依赖 target 节点已经存在。
+
+新增 `handleWorkflowCreateAndOpen` callback：
+- 创建下游 target 节点（image 或 video，根据工具类型）
+- 通过 `parentNodeId` 自动建立 source → target edge
+- 设置 `workflowContext = { sourceNodeId, targetNodeId: newNode.id }`
+- 打开对应 tool panel（CharacterLockPanel / AssetVariantPlannerPanel / CameraLexiconPanel）
+- 清除 `nodeAddMenu` 状态
+
+菜单结构改为两段：
+1. **来源摘要**：显示 source 节点标题 + prompt 前 24 字
+2. **继续创作**（source 有 prompt/resultImageUrl/resultVideoUrl/assetId 时出现）：角色参考生成 / 资产变体生成 / 镜头语言生成
+3. **新建任务**：文本生成 / 图片生成 / 视频生成 / 音频 / 3D 世界（原有，保留不变）
+
+### 验收结果
+
+| 验收项 | 结果 |
+|---|---|
+| 从 source image 节点拖线后菜单顶部出现"继续创作"区 | ✅ |
+| 继续创作区包含：角色参考生成 / 资产变体生成 / 镜头语言生成 | ✅ |
+| 原"新建任务"区保留：文本生成 / 图片生成 / 视频生成 / 音频 / 3D 世界 | ✅ |
+| 点击"角色参考生成"→ 创建 image target 节点 + 建立 edge + 打开 CharacterLockPanel | ✅ |
+| CharacterLockPanel 顶部显示 source→target workflow 上下文 banner | ✅ |
+| 点击"资产变体生成"→ 创建 target 节点 + 建立 edge + 打开 AssetVariantPlannerPanel | ✅ |
+| AssetVariantPlannerPanel 追加 Prompt 写入 target，不写入 source | ✅ |
+| 点击"镜头语言生成"→ 创建 video target 节点 + 建立 edge + 打开 CameraLexiconPanel | ✅ |
+| CameraLexiconPanel 插入词条写入 target，不写入 source | ✅ |
+| 不自动注册角色 | ✅ |
+| 不自动追加 prompt（用户在 panel 内点击才写入） | ✅ |
+| 不自动触发生成 | ✅ |
+| 不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不改 schema | ✅ |
+| 不改 generate routes | ✅ |
+| 不改 provider adapter | ✅ |
+| 不改 billing / credits / payment / schema | ✅ |
+| 左侧工具仍分组，不新增一级图标 | ✅ |
+| 右侧仍只保留生成前体检 | ✅ |
+| type-check / lint / build 全部通过 | ✅ |
+
+### 安全边界确认
+
+- 未修改 `/api/generate/*`（text / image / video）
+- 未修改 cn-executor
+- 未修改 billing / credits / reserve / finalize / refund
+- 未修改 provider adapter 真实调用逻辑
+- 未修改 payment / Stripe / 支付宝 / 微信
+- 未新增 Prisma 表或字段
+- 未新增 API 路由
+- 工具写入由 `workflowContext.targetNodeId` 路由到下游 target，不写入 source
+
+### 修改文件（共 1 个）
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | `handleWorkflowCreateAndOpen` callback + 菜单两段重构（+77/-3 行） |
+
+---
+
+## Next Phase Tasks
+
+### Tool 5 — A/B Compare / Version Compare Panel
+归属：Asset 分组
+状态：❌ not implemented（future）
+
+要求：
+- 不新增左侧一级图标
+- 只比较已有资产，不自动生成
+- 不消耗 credits
+- 不新增 API / schema
+- 不改 generate routes / provider adapter / billing
+- 归入 Asset 分组展开子工具
 
 ---
 
