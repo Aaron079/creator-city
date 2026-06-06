@@ -62,6 +62,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Canvas Tool Dock Grouping（导演/资产/角色 分组子导航重构） | ✅ CLOSED / validated | `daa6811` |
 | Workflow Connection Context Tools + Stronger Edges（连线上下文工具入口 + 连接线视觉增强） | ✅ CLOSED / validated | `2575b9f` |
 | Reference Image Picker（视频节点文生视频 → 一键选择参考图节点 → 自动连线切换图生视频） | ✅ CLOSED / validated | `2575b9f` |
+| Workflow Context Target Binding Fix（source→target 绑定修复 · 工具明确作用下游节点） | ✅ IMPLEMENTED / browser validation pending | `36eca47` |
 
 ---
 
