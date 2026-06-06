@@ -66,6 +66,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Make Workflow Continue Button Visible（继续创作按钮移入节点卡片 · 解决 position:fixed 坐标计算失效） | ✅ CLOSED / validated | `1133c2b` |
 | Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
 | Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / browser validation pending | `66da5b5` |
+| Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / browser validation pending | `ccb5f42` |
 
 ---
 
@@ -602,6 +603,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Workflow Context Target Binding（source→target 绑定修复） | ✅ validated |
 | Workflow Continue Options in Source Menu（引用该节点生成菜单接入继续创作三选项） | ✅ validated |
 | A/B Compare / Version Compare Panel | ✅ implemented / browser validation pending（Asset 分组子工具；`66da5b5`）|
+| Keyframe Extractor / 关键帧提取器 | ✅ implemented / browser validation pending（Asset 分组子工具；`ccb5f42`）|
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
@@ -2282,11 +2284,15 @@ if (isSimplePreviewExpiry) {
     - compare-utils.ts：纯函数 analyzePromptDiff / buildCompareReport / isComparableNode
     - ABComparePanel.tsx：NodeSelector / MediaPreview（无自动播放）/ NodeColumn / 复制报告 / 标记胜出版本
 
-17. **Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组下）**
-    - 状态：❌ not implemented（next）
-    - 从已有视频节点提取静帧，作为下一步图片参考或新节点草案
-    - 不自动生成，不消耗 credits，不新增 API，不上传 OSS
-    - 进入 Asset 分组子导航，不新增一级图标
+17. ~~**Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组下）** — ✅ IMPLEMENTED / browser validation pending (commit `ccb5f42`, 2026-06-06)~~
+    - video 节点选择器（仅 video 节点，有内容才可选）
+    - 视频预览不自动播放，含 controls
+    - 快捷时间点：起始帧 0s / 中间帧 50% / 结尾帧 95% / 当前帧
+    - 浏览器 canvas drawImage 抽帧，CORS 失败显示 fallback（不 crash）
+    - 复制时间点 / 复制关键帧说明
+    - 创建图片草案节点（prompt 写关键帧参考，idle，不自动生成，建 edge）
+    - 创建视频续作草案节点（idle，不自动生成，建 edge）
+    - 不自动生成，不消耗 credits，不新增 API，不上传 OSS，不改 schema/billing/cn-executor
 
 17. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2606,19 +2612,77 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 5 — A/B Compare / Version Compare Panel~~ — ✅ IMPLEMENTED (commit `66da5b5`)
 
-### Tool 6 — Keyframe Extractor / 关键帧提取器
-归属：Asset 分组
-状态：❌ not implemented（next）
+### ~~Tool 6 — Keyframe Extractor / 关键帧提取器~~ — ✅ IMPLEMENTED (commit `ccb5f42`)
 
-要求：
-- 只作用于 video 节点（有 resultVideoUrl / assetId / prompt）
-- 浏览器端 canvas drawImage 抽帧，CORS 失败显示 fallback
-- 可创建 image 草案节点（prompt 写入关键帧参考，idle 状态，不自动生成）
-- 可创建 video 续作草案节点（idle 状态，不自动生成）
-- source video → new node 建立 edge
-- 不新增左侧一级图标，进入 Asset 分组
-- 不消耗 credits，不新增 API / schema，不上传 OSS
-- 不改 generate routes / provider adapter / billing / cn-executor
+---
+
+## Canvas Smart Tools Tool 6 — Keyframe Extractor — IMPLEMENTED / browser validation pending
+
+**Commit:** `ccb5f42`
+**Status:** ✅ IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-06
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/components/create/KeyframeExtractorPanel.tsx` | 关键帧提取器面板 |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Asset 分组新增"关键帧提取"子菜单项 |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | `isKeyframeExtractorOpen` state、panel render、onCreateNode 回调 |
+
+### 功能说明
+
+- 从 Asset 分组（Layers 图标）子菜单选择"关键帧提取"打开面板
+- 只列出 video 节点（有 resultVideoUrl / assetId / prompt）
+- 非 video 节点时显示"请选择视频节点"空状态
+- video 预览：无自动播放，显示 controls，`crossOrigin="anonymous"`
+- CORS 失败时显示 fallback，不 crash
+- 快捷时间点：起始帧（0s）/ 中间帧（50%）/ 结尾帧（95%）/ 当前帧
+- 预览当前帧：canvas.drawImage → toDataURL('image/jpeg', 0.88)
+- 复制时间点 / 复制关键帧说明到剪贴板
+- 创建图片草案节点：`createNode('image', { prompt, title, parentNodeId })`，自动建 edge，状态 idle
+- 创建视频续作草案节点：`createNode('video', { prompt, title, parentNodeId })`，自动建 edge，状态 idle
+- 定位视频节点：setActiveNodeId + canvasPan 平移
+- 不自动生成，不消耗 credits，不上传 OSS，不新增 API
+
+### 差异化说明
+
+| 工具 | 作用对象 | 目的 |
+|---|---|---|
+| A/B Compare | 已有 image/video 节点 | 比较两版生成结果，分析 prompt 差异 |
+| Keyframe Extractor | 已有 video 节点 | 从视频中提取某帧，作为下一步图片/视频参考 |
+| Asset Variant Planner | 已有 image/video 节点 | 规划未来变体方向 |
+
+### 安全边界确认
+
+- 不改 cn-executor / generate routes / billing / credits / schema / provider adapter
+- 不上传 OSS，不新增后端 API，不改 Prisma 表
+- 不伪造 assetId，不自动生成，不消耗 credits
+
+### 浏览器验收重点
+
+| # | 步骤 | 预期结果 |
+|---|---|---|
+| 1 | 点击左侧 Layers 图标 | 展开 Asset 子菜单，包含 资产变体规划器/版本对比/关键帧提取 |
+| 2 | 点击"关键帧提取" | KeyframeExtractorPanel 打开 |
+| 3 | 无 video 节点 | 显示"请选择视频节点"空状态 |
+| 4 | 有 video 节点，且当前节点是 video | 默认选中当前 video 节点 |
+| 5 | 视频预览 | 不自动播放，显示 controls |
+| 6 | 点击"起始帧/中间帧/结尾帧/当前帧" | 视频跳到对应时间，当前时间标签更新 |
+| 7 | 点击"预览当前帧"（视频加载成功） | 显示帧截图 |
+| 8 | CORS 阻止截帧 | 显示 amber fallback 文字，不 crash |
+| 9 | 点击"复制时间点" | 剪贴板含时间字符串 |
+| 10 | 点击"创建图片节点草案" | 画布新增 image 节点，prompt 含关键帧参考，状态 idle，建 edge |
+| 11 | 点击"创建视频续作节点草案" | 画布新增 video 节点，prompt 含续作说明，状态 idle，建 edge |
+| 12 | 新节点不自动生成 | 状态保持 idle，无生成请求 |
+| 13 | 点击"定位到视频节点" | 画布平移到选中视频节点 |
+| 14 | 关闭面板（× 按钮或背景遮罩） | 面板关闭 |
+| 15 | Tool 1/2/3A/4/5 及生成链路 | 无回归 |
 
 ---
 
