@@ -26,6 +26,7 @@ import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
+import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2373,6 +2374,7 @@ export function VisualCanvasWorkspace({
   const [isABCompareOpen, setIsABCompareOpen] = useState(false)
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
+  const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
@@ -7899,6 +7901,7 @@ export function VisualCanvasWorkspace({
           }}
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
+            setIsContinuityCheckerOpen(tool === 'continuity-checker')
             if (tool === 'camera-lexicon') setIsLexiconOpen(true)
           }}
         />
@@ -8060,6 +8063,31 @@ export function VisualCanvasWorkspace({
               createNode(kind, options)
             }}
             onClose={() => setIsShotListBuilderOpen(false)}
+          />
+        </>
+      ) : null}
+
+      {isContinuityCheckerOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsContinuityCheckerOpen(false)}
+          />
+          <ContinuityCheckerPanel
+            nodes={nodes}
+            edges={edges}
+            onFocusNode={(nodeId) => {
+              setActiveNodeId(nodeId)
+              const target = nodes.find((n) => n.id === nodeId)
+              if (target) {
+                setCanvasPan({
+                  x: -(target.x * canvasZoom) + window.innerWidth / 2 - 120,
+                  y: -(target.y * canvasZoom) + window.innerHeight / 2 - 80,
+                })
+              }
+            }}
+            onClose={() => setIsContinuityCheckerOpen(false)}
           />
         </>
       ) : null}
