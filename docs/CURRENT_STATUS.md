@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-06
-Last valid commit: `6e1a24f` (Tool 9 Prompt Booster implemented)
-Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated)
+Last updated: 2026-06-07
+Last valid commit: `6e1a24f` (Tool 9 Prompt Booster validated)
+Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated)
 
 ---
 
@@ -69,7 +69,7 @@ Production validated: 2026-06-06 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
 | Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`) |
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
-| Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ IMPLEMENTED / browser validation pending | `6e1a24f` |
+| Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 
 ---
 
@@ -609,8 +609,10 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Keyframe Extractor / 关键帧提取器 | ✅ validated（Asset 分组子工具；`ccb5f42`；build fix `9e9b340`）|
 | Shot List Builder / 分镜清单生成器 | ✅ validated（Director 分组子工具；`26f8d16` · `5cfb912` · `97ff477`）|
 | Continuity Checker / 连贯性检查器 | ✅ validated（Director 分组子工具；`1e9b737`；6 维规则引擎；overallScore + issue 列表 + 定位节点 + 复制报告）|
-| Prompt Booster / 提示词增强器 | ✅ IMPLEMENTED / browser validation pending（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖）|
-| Prompt Templates / History / AI Rewriter | ❌ not implemented / future（后续独立排期）|
+| Prompt Booster / 提示词增强器 | ✅ validated（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖；重复检测；可忽略/重新分析/复制报告）|
+| Prompt Templates / 提示词模板库 | ❌ not implemented / future（Prompt 分组下一步；纯前端模板库，image/video/text 三类）|
+| Prompt History | ❌ not implemented / future |
+| AI Prompt Rewriter | ❌ not implemented / future |
 | Real server-side keyframe extraction | ❌ not implemented（future；需服务端 ffmpeg 或截帧 API）|
 | AI vision-based continuity analysis | ❌ not implemented / future（当前为规则引擎；视觉模型接入需单独评估）|
 | Automatic continuity repair | ❌ not implemented / not now（不自动修改 prompt，不自动创建节点）|
@@ -2313,14 +2315,22 @@ if (isSimplePreviewExpiry) {
 
 19. ~~**Canvas Smart Tools Tool 8 — Continuity Checker / 连贯性检查器**~~ — ✅ CLOSED / validated (commit `1e9b737`)
 
-20. ~~**Canvas Smart Tools Tool 9 — Prompt Booster / 提示词增强器**~~ — ✅ IMPLEMENTED / browser validation pending (commit `6e1a24f`, 2026-06-06)
+20. ~~**Canvas Smart Tools Tool 9 — Prompt Booster / 提示词增强器**~~ — ✅ CLOSED / validated (commit `6e1a24f`, validated 2026-06-07)
     - 归属：新增 Prompt / 提示词分组（PencilLine 图标），独立于 Asset / Director
     - image 7维 / video 7维 / text 6维规则引擎；score 0-100；checks + suggestions + appendText
     - 用户点击追加到 Prompt，重复检测防止重复追加，不自动覆盖
     - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-    - type-check / lint / build 全部通过
+    - 23 条验收全部通过
 
-21. **错误提示产品化（P2）**
+21. **Canvas Smart Tools Tool 10 — Prompt Templates / 提示词模板库（next）**
+    - 归属：Prompt 分组（与 Prompt Booster 同组，不放 Asset / Director）
+    - 「Prompt Booster」是诊断已有 prompt 的结构完整度；「Prompt Templates」是用户主动选择模板起草新 prompt——两者不重复
+    - 基础版纯前端模板库，支持 image / video / text 三类模板
+    - 用户点击后填入节点 prompt 或追加
+    - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
+    - 状态：❌ not implemented（next）
+
+22. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
 
 21. **NEXT_PUBLIC_API_URL / billing webhook（P2，单独排期）**
@@ -2644,32 +2654,18 @@ if (isSimplePreviewExpiry) {
 
 ### ~~Tool 8 — Continuity Checker / 连贯性检查器~~ — ✅ CLOSED / validated (commit `1e9b737`)
 
-### ~~Tool 9 — Prompt Booster / 提示词增强器~~ — ✅ IMPLEMENTED / browser validation pending (commit `6e1a24f`, 2026-06-06)
+### ~~Tool 9 — Prompt Booster / 提示词增强器~~ — ✅ CLOSED / validated (commit `6e1a24f`, validated 2026-06-07)
 
-归属：新增 Prompt / 提示词分组（PencilLine 图标）
-状态：✅ IMPLEMENTED — type-check / lint / build 全部通过；待浏览器验收
+### Tool 10 — Prompt Templates / 提示词模板库（next）
 
-实现：
-- image 7维检查（主体 / 场景 / 构图景别 / 光线 / 色调风格 / 质量质感 / 负向约束）
-- video 7维检查（主体 / 场景 / 动作 / 运镜 / 时长节奏 / 连续性 / 负向约束）
-- text 6维检查（主题 / 目标格式 / 受众平台 / 语气风格 / 输出结构 / 长度约束）
-- score = 100 - 15×missing - 8×warn，最低 0
-- 用户点击「追加到 Prompt」；重复检测防二次追加；不自动覆盖
+归属：Prompt 分组（PencilLine 图标，与 Prompt Booster 同组）
+状态：❌ not implemented（next）
+
+要求：
+- 「Prompt Templates」是用户主动选择模板起草 prompt；「Prompt Booster」是诊断并增强已有 prompt——两者不重复
+- 基础版纯前端模板库，支持 image / video / text 三类模板
+- 用户点击后填入节点 prompt 或追加
 - 不自动生成，不消耗 credits，不新增 API/schema，不改 generate/provider/billing/cn-executor
-
-浏览器验收标准（待验收）：
-1. 左侧 Dock 出现 PencilLine 图标（Prompt 分组）
-2. 点击展开子菜单，仅含「提示词增强器」
-3. 点击打开 PromptBoosterPanel（left-[80px]，不遮主 Dock）
-4. 节点选择器列出 text/image/video 节点
-5. 节点 prompt 不为空时显示 score + checks + suggestions
-6. score 颜色：≥80 emerald / ≥50 amber / <50 red
-7. 每张建议卡片可「复制片段」/ 「追加到 Prompt」/ 「忽略」
-8. 点击追加 → Prompt 末尾新增 [Prompt Booster] 分隔标记 + appendText
-9. 再次点击追加同一建议 → 显示「已存在类似片段」(2500ms)，不重复写入
-10. 点击忽略 → 当前会话隐藏该建议（不持久化）
-11. 点击「重新分析」→ 分析更新，dismissed 重置
-12. 点击「复制报告」→ 剪贴板含 score + checks + suggestions 文本
 
 ---
 
@@ -3111,15 +3107,30 @@ Modules confirmed working as of `8119eb0`:
 
 ---
 
-## Canvas Smart Tools Tool 9 — Prompt Booster — IMPLEMENTED / browser validation pending
+## Canvas Smart Tools Tool 9 — Prompt Booster — CLOSED / validated
 
-**Commit:** `6e1a24f`
-**Status:** ✅ IMPLEMENTED / browser validation pending
+**功能 commit:** `6e1a24f`
+**docs commit:** `2752e50`
+**Status:** ✅ CLOSED / validated
 **Date implemented:** 2026-06-06
+**Date validated:** 2026-06-07
 
-### 功能说明
+### 问题背景
 
-纯规则引擎提示词质量分析，无 API 调用，无生成，不消耗 credits。针对单节点 prompt，从 image 7维 / video 7维 / text 6维进行结构化分析，输出质量评分（0-100）和可追加建议。
+- 用户经常不知道当前 prompt 差在哪里——生成结果平庸但不知从何改起。
+- 镜头词典（Camera Lexicon）是用户主动选词插入，而 Prompt Booster 是诊断当前 prompt 的结构完整度，两者定位不重复。
+
+### 实现方案
+
+- 新增 Prompt / 提示词分组（PencilLine 图标），独立于 Asset / Director 分组
+- 在 Prompt 分组下加入 Prompt Booster 作为唯一子工具
+- 新增本地规则引擎 `apps/web/src/lib/canvas/prompt-booster.ts`（纯函数，无 API 调用）
+- 新增 `apps/web/src/components/create/PromptBoosterPanel.tsx`
+- 支持 text / image / video 节点，分别检查不同维度
+- 输出评分（0-100）、PASS/WARN/MISSING 检查清单、增强建议卡片、可复制中文报告
+- 评分公式：`score = 100 - 15×missing - 8×warn`，最低 0
+- 用户点击「追加到 Prompt」追加，重复片段检测防二次追加，不自动覆盖
+- 不自动生成，不消耗 credits，不新增 API，不上传 OSS，不改 schema / generate / provider / billing / cn-executor
 
 ### 新增文件
 
@@ -3143,37 +3154,48 @@ Modules confirmed working as of `8119eb0`:
 
 **text（6 维）：** 主题 / 目标格式 / 受众平台 / 语气风格 / 输出结构 / 长度约束
 
-### 评分公式
+### Prompt 分组当前子工具
 
-`score = 100 - 15×missing - 8×warn`，最低 0。≥80 「结构较完整」/ ≥50 「建议增强」/ <50 「缺少关键描述」
+| 工具 | 状态 |
+|---|---|
+| 提示词增强器（Prompt Booster） | ✅ validated |
 
-### 追加行为
+### 验收表（2026-06-07 浏览器验收通过）
 
-- 用户点击「追加到 Prompt」→ 末尾追加 `\n[Prompt Booster]\n` + appendText
-- `textAlreadyContains`：取 appendText 前 28 字符做 lowercase 子串检测，命中则显示「已存在类似片段」(2500ms 提示)，不重复写入
-- 点击「忽略」→ 本会话隐藏该建议（dismissed Set，不持久化）
+| 验收项 | 结果 |
+|---|---|
+| 左侧出现 Prompt 分组（PencilLine 图标） | ✅ |
+| Prompt 分组下出现「提示词增强器」 | ✅ |
+| 不放到 Asset / Director 分组 | ✅ |
+| 右侧仍只保留生成前体检 | ✅ |
+| image 节点显示 image 专属 7 维检查 | ✅ |
+| video 节点显示 video 专属 7 维检查 | ✅ |
+| text 节点显示 text 专属 6 维检查 | ✅ |
+| 显示 Prompt 完整度评分 | ✅ |
+| 分数颜色区分（≥80 emerald / ≥50 amber / <50 red） | ✅ |
+| 显示 PASS/WARN/MISSING 检查清单 | ✅ |
+| 显示增强建议卡片 | ✅ |
+| 可复制建议片段 | ✅ |
+| 点击后才追加到 prompt | ✅ |
+| 追加不覆盖原 prompt（末尾追加 + 分隔标记） | ✅ |
+| 重复建议不重复追加（textAlreadyContains 检测） | ✅ |
+| 可忽略建议（本会话 dismissed Set） | ✅ |
+| 可重新分析（dismissed 重置，report 更新） | ✅ |
+| 可复制中文检查报告 | ✅ |
+| 不自动生成 | ✅ |
+| 不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不上传 OSS | ✅ |
+| 不改 schema / generate routes / provider adapter / billing / cn-executor | ✅ |
 
 ### 安全边界确认
 
-- 不改 cn-executor / generate routes / billing / credits / schema / provider adapter
-- 不自动生成，不消耗 credits，不新增后端 API
-- 不改 Tool 1–8 功能逻辑
-
-### 浏览器验收重点
-
-| # | 步骤 | 预期结果 |
-|---|---|---|
-| 1 | 左侧 Dock 查看新图标 | PencilLine 图标出现在 Clapperboard 下方 |
-| 2 | 点击 PencilLine 图标 | 展开子菜单，仅含「提示词增强器」 |
-| 3 | 点击「提示词增强器」 | 打开 PromptBoosterPanel（left-[80px]，不遮 Dock） |
-| 4 | 节点选择器 | 列出 text / image / video 节点 |
-| 5 | 选择有 prompt 的 image 节点 | 显示 score + checks（7 维）+ suggestions |
-| 6 | score 颜色 | ≥80 emerald / ≥50 amber / <50 red |
-| 7 | 追加建议 | Prompt 末尾出现 [Prompt Booster] 分隔标记 + appendText |
-| 8 | 再次点击追加同一建议 | 显示「已存在类似片段」，不重复写入 |
-| 9 | 点击「忽略」| 当前会话隐藏该建议 |
-| 10 | 点击「重新分析」| score 和 checks 刷新，dismissed 清除 |
-| 11 | 点击「复制报告」| 剪贴板含 score + checks + suggestions 文本 |
-| 12 | 选择 video 节点 | 切换为 7 维 video 检查维度 |
-| 13 | 选择 text 节点 | 切换为 6 维 text 检查维度 |
-| 14 | Asset / Director 分组正常 | 不受影响 |
+- 不自动生成
+- 不消耗 credits
+- 不新增 API
+- 不上传 OSS
+- 不删除或覆盖原节点
+- 不自动修改 prompt，除非用户点击「追加到 Prompt」
+- 不自动创建节点
+- 不自动注册角色
+- 不改 schema / generate routes / provider adapter / billing / cn-executor
