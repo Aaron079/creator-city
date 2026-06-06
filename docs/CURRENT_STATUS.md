@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: (Tool 10 Batch Prompt Rewriter implemented — browser validation pending)
-Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review)
+Last valid commit: `e5bb57a` (Tool 10 Batch Prompt Rewriter — CLOSED / validated · textarea readability fix)
+Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated)
 
 ---
 
@@ -71,7 +71,7 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
-| Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器） | 🚧 IMPLEMENTED / browser validation pending | (pending commit) |
+| Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器 · Prompt 分组子工具） | ✅ CLOSED / validated | `e3c3a2b` (readability fix: `e5bb57a`) |
 
 ---
 
@@ -614,7 +614,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Prompt Booster / 提示词增强器 | ✅ validated（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖；重复检测；可忽略/重新分析/复制报告）|
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
 | Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
-| Batch Prompt Rewriter / 批量 Prompt 重写器 | 🚧 implemented / browser validation pending（Prompt 分组；多节点 prompt 批量追加；预览后确认；不替换；不自动生成；不消耗 credits）|
+| Batch Prompt Rewriter / 批量 Prompt 重写器 | ✅ validated（Prompt 分组子工具；`e3c3a2b` · readability fix `e5bb57a`；text/image/video 节点批量追加；6维度；生成预览；重复检测跳过；用户确认后才 patch；只追加不替换；不自动生成；不消耗 credits）|
 | Prompt Templates / 提示词模板库 | ❌ not implemented / not planned now（静态模板库，护城河低，暂不做）|
 | Batch Prompt Replace | ❌ not implemented / future（替换风险高，MVP 只做 append）|
 | Prompt History | ❌ not implemented / future |
@@ -2334,18 +2334,20 @@ if (isSimplePreviewExpiry) {
     - 实现后用户产品评审：功能与 Shot List Builder / Continuity Checker / 画布连线顺序重叠，判断为冗余
     - 已从 UI 完全撤下：Director 子菜单入口已删除，SequenceBoardPanel.tsx 和 sequence-board.ts 已删除
 
-22. **Canvas Smart Tools Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器** — 🚧 IMPLEMENTED / browser validation pending
+22. ~~**Canvas Smart Tools Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器**~~ — ✅ CLOSED / validated (commit `e3c3a2b`, readability fix `e5bb57a`, validated 2026-06-07)
     - 归属：Prompt / 提示词分组（PencilLine 图标），位于提示词增强器下方
     - 选择多个 text/image/video 节点 → 选维度 → 输入追加内容 → 生成预览 → 用户确认后批量 patch prompt
     - 支持维度：风格统一 / 质感/画质 / 负向约束 / 画幅/构图 / 镜头语言 / 自定义
     - 重复检测：已存在类似片段的节点自动跳过
     - 只追加，不替换（replace mode: future）
+    - 追加内容 textarea 修复可读性（深底浅字 + colorScheme:dark + 显式 placeholder + caret 可见）
     - 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/billing/cn-executor
-    - 新增文件：batch-prompt-rewriter.ts / BatchPromptRewriterPanel.tsx
-    - 修改文件：CanvasToolDock.tsx / VisualCanvasWorkspace.tsx
+    - 27 条验收全部通过
 
-23. **Canvas Smart Tools 下一个工具（待定）**
-    - 状态：❌ not started（待评估）
+23. **Canvas Smart Tools Tool 11 — 待定，重新评估**
+    - 状态：❌ not started（待选题）
+    - 不做 Prompt Templates 静态模板库（护城河低，竞品可复制）
+    - 候选方向必须满足：不重复已有工具；直接作用于当前资产/节点/连线；不是静态模板；不是重复管理面板；能减少真实操作步骤；有复杂判断或跨节点上下文；不自动生成；不消耗 credits；不新增 API/schema（除非用户明确批准）
 
 23. **错误提示产品化（P2）**
     - 去除剩余 `errorCode:`/`provider_*:` 前缀（OSS/media 类还有残留）
@@ -2677,7 +2679,7 @@ if (isSimplePreviewExpiry) {
 
 原因：产品评审后判断为冗余（与 Shot List Builder + Continuity Checker + 画布连线顺序重叠），已从 UI 完全撤下。
 
-### Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器 — 🚧 IMPLEMENTED / browser validation pending
+### ~~Tool 10 — Batch Prompt Rewriter / 批量 Prompt 重写器~~ — ✅ CLOSED / validated (commit `e3c3a2b`, readability fix `e5bb57a`, validated 2026-06-07)
 
 - Prompt 分组（PencilLine 图标），提示词增强器下方第二项
 - 支持 text / image / video 节点批量 append prompt
@@ -2687,7 +2689,9 @@ if (isSimplePreviewExpiry) {
 - 追加格式：`[Batch Prompt Rewriter - 维度]\n内容`
 - 可复制批量修改报告
 - Replace mode：not implemented / future
+- 修复追加内容 textarea 可读性（深底浅字 + colorScheme:dark）
 - 不自动生成，不消耗 credits，不新增 API，不改 schema/generate/provider/billing/cn-executor
+- 27 条验收全部通过
 
 ---
 
@@ -3326,4 +3330,105 @@ Modules confirmed working as of `8119eb0`:
 - 不删除或覆盖原节点
 - 不自动修改 prompt
 - 不自动创建节点
+- 不改 schema / generate routes / provider adapter / billing / cn-executor
+
+---
+
+## Canvas Smart Tools Tool 10 — Batch Prompt Rewriter — CLOSED / validated
+
+**功能 commit:** `e3c3a2b`
+**Textarea readability fix commit:** `e5bb57a`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-07
+**Date validated:** 2026-06-07
+
+### 问题背景
+
+- 用户需要对多个已有节点批量追加统一风格、质感、负向约束、画幅或镜头语言。
+- 单节点 Prompt Booster 只能诊断一个 prompt，不能跨画布执行批量修改。
+- Prompt Templates 已明确不需要；本工具不是静态模板库。
+
+### 实现方案
+
+- 在 Prompt 分组（PencilLine 图标）加入 Batch Prompt Rewriter，位于提示词增强器下方。
+- 新增 `batch-prompt-rewriter.ts` 纯函数 helper（previewBatchAppend / hasSimilarAppend / buildBatchAppendText / buildBatchRewriteReportText / DIMENSION_LABELS / QUICK_CHIPS）。
+- 新增 `BatchPromptRewriterPanel.tsx`。
+- 支持 text / image / video 节点选择（running/pending 节点默认不勾选并显示警告）。
+- 支持维度选择（6 个）、追加内容输入、生成预览（before/after）、重复检测（hasSimilarAppend 前 40 字符检测）、确认应用、复制报告。
+- MVP 只追加，不替换（replace mode: future）。
+- 追加格式：`[Batch Prompt Rewriter - 维度]\n内容`。
+- 修复追加内容 textarea 可读性：`bg-white/4`（透明白底被浏览器覆盖为白色）→ `bg-[#10131a]` + `text-slate-100` + `colorScheme:dark` + 显式 placeholder/caret。
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/lib/canvas/batch-prompt-rewriter.ts` | 纯函数 helper |
+| `apps/web/src/components/create/BatchPromptRewriterPanel.tsx` | 批量 Prompt 重写器面板 |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Prompt 分组新增「批量 Prompt 重写器」子菜单项；onOpenPromptTool 类型加 batch-rewriter |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | import + isBatchRewriterOpen state + handler + render block |
+
+### Prompt 分组当前子工具
+
+| 工具 | 状态 |
+|---|---|
+| 提示词增强器（Prompt Booster） | ✅ validated |
+| 批量 Prompt 重写器（Batch Prompt Rewriter） | ✅ validated |
+
+### 差异化说明
+
+| 工具 | 作用对象 | 目的 |
+|---|---|---|
+| Prompt Booster | 单节点 | 诊断 prompt 缺失维度，用户点击追加建议 |
+| Batch Prompt Rewriter | 多节点批量 | 把同一风格/质感/负向词批量追加到多个节点 |
+| Camera Lexicon | 单节点 | 插入专业镜头词汇 |
+
+### 验收记录
+
+| # | 验收项 | 结果 |
+|---|---|---|
+| 1 | Prompt 分组出现批量 Prompt 重写器 | ✅ |
+| 2 | 不出现在 Asset / Director 分组 | ✅ |
+| 3 | 右侧仍只保留生成前体检 | ✅ |
+| 4 | 显示"只追加，不替换"安全提示 | ✅ |
+| 5 | text/image/video 节点可选择 | ✅ |
+| 6 | 可按类型筛选 | ✅ |
+| 7 | 可全选 / 只选 Image / 只选 Video / 清空选择 | ✅ |
+| 8 | 支持风格、质感、负向、画幅、镜头、自定义维度 | ✅ |
+| 9 | 追加内容 textarea 字体清晰可见 | ✅ |
+| 10 | placeholder 和光标清晰可见 | ✅ |
+| 11 | 快捷 chip 内容进入 textarea 后可见 | ✅ |
+| 12 | 未生成预览不能应用 | ✅ |
+| 13 | 预览显示 before / after | ✅ |
+| 14 | 已存在类似片段显示跳过 | ✅ |
+| 15 | 应用后批量 patch prompt | ✅ |
+| 16 | 追加不覆盖原 prompt | ✅ |
+| 17 | 重复内容不重复追加 | ✅ |
+| 18 | 显示更新 X / 跳过 Y | ✅ |
+| 19 | 可复制批量修改报告 | ✅ |
+| 20 | 不支持 replace | ✅ |
+| 21 | 不自动创建节点 | ✅ |
+| 22 | 不自动删除节点 | ✅ |
+| 23 | 不自动生成 | ✅ |
+| 24 | 不消耗 credits | ✅ |
+| 25 | 不新增 API | ✅ |
+| 26 | 不上传 OSS | ✅ |
+| 27 | 不改 schema/generate/provider/billing | ✅ |
+
+### 安全边界确认
+
+- 不自动生成
+- 不消耗 credits
+- 不新增 API
+- 不上传 OSS
+- 不删除或覆盖原节点
+- 不覆盖原 prompt，只追加
+- 不支持 replace
+- 不自动创建节点
+- 不自动注册角色
 - 不改 schema / generate routes / provider adapter / billing / cn-executor
