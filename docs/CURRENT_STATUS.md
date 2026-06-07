@@ -75,7 +75,8 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器 · Prompt 分组子工具） | ✅ CLOSED / validated | `e3c3a2b` (readability fix: `e5bb57a`) |
 | Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · Prompt 分组子工具） | ✅ CLOSED / validated | feat: `a8d6c10` · dialog entry: `888d9dd` · subject fix: `55aebc9` · feedback fix: `0610a1e` · token fix: `75a1771` · Chinese keywords: `27552ca` · empty-prompt warning: `2ee0a67` |
 | Canvas Smart Tools Tool 12 — Color Grade Palette / 调色盘（Editing / 剪辑分组子工具） | 🔄 IMPLEMENTED / browser validation pending | `a8753b4` (preview monitor UX: `17dbd76`) |
-| Color Grade Palette — Preview Monitor 增强（大预览 + CSS filter 即时反馈） | 🔄 IMPLEMENTED / browser validation pending | TBD |
+| Color Grade Palette — Preview Monitor 增强（大预览 + CSS filter 即时反馈） | 🔄 IMPLEMENTED / browser validation pending | `c5cefed` |
+| Color Grade Palette — Preview Monitor 修复（filter 可见性 + 浮动可调大小窗口） | 🔄 IMPLEMENTED / browser validation pending | TBD |
 
 ---
 

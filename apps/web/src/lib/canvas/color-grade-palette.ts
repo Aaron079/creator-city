@@ -423,45 +423,54 @@ export function previewColorGradeApply(
 // Ranges are intentionally conservative to stay visually honest.
 
 export function buildPreviewCssFilter(setting: ColorGradeSetting): string {
-  // Weighted luminance: gamma and offset dominate perceptual brightness
-  const weightedLum =
-    setting.lift.luminance * 0.15 +
-    setting.gamma.luminance * 0.35 +
-    setting.gain.luminance * 0.25 +
-    setting.offset.luminance * 0.25
-  const brightness = Math.max(0.75, Math.min(1.35, 1 + weightedLum * 1.2))
+  // Use weighted SUM (not average) so a single-wheel change stays visible.
+  // Previous version averaged across 4 wheels, making single-wheel edits 4× too weak.
+  // Offset gets extra weight as it's a global adjustment; gamma dominates luminance.
+  const lumSum =
+    setting.lift.luminance * 0.25 +
+    setting.gamma.luminance * 0.50 +
+    setting.gain.luminance * 0.40 +
+    setting.offset.luminance * 0.70
+  const brightness = Math.max(0.65, Math.min(1.55, 1 + lumSum))
 
-  // Contrast from curve shape (0.75–1.45)
+  // Contrast from curve shape (0.65–1.65)
   const contrastMap: Record<ContrastCurve, number> = {
     'neutral': 1.0,
-    'gentle-s-curve': 1.1,
-    'standard-s-curve': 1.2,
-    'steep-s-curve': 1.38,
-    'lifted-blacks-film-curve': 1.08,
+    'gentle-s-curve': 1.12,
+    'standard-s-curve': 1.28,
+    'steep-s-curve': 1.52,
+    'lifted-blacks-film-curve': 1.10,
   }
-  const contrast = Math.max(0.75, Math.min(1.45, contrastMap[setting.curves.contrastCurve]))
+  const contrast = Math.max(0.65, Math.min(1.65, contrastMap[setting.curves.contrastCurve]))
 
-  // Saturation: ASC CDL multiplier ≈ CSS saturate() (both use 1.0 = neutral)
+  // Saturation: amplify deviation from neutral (1.0) so ±0.5 CDL → visible ±1.0 CSS
   const avgSat =
     (setting.lift.saturation + setting.gamma.saturation + setting.gain.saturation + setting.offset.saturation) / 4
-  const saturate = Math.max(0.25, Math.min(1.8, avgSat))
+  const saturate = Math.max(0.15, Math.min(2.2, 1 + (avgSat - 1.0) * 2.0))
 
-  // Hue-rotate: warm temp → orange shift (−deg), cool → blue (+deg); tint → small adjustment
-  const avgTemp =
-    (setting.lift.temperature + setting.gamma.temperature + setting.gain.temperature + setting.offset.temperature) / 4
-  const avgTint =
-    (setting.lift.tint + setting.gamma.tint + setting.gain.tint + setting.offset.tint) / 4
-  const hueRotateDeg = Math.max(-20, Math.min(20, -avgTemp * 18 + avgTint * 8))
+  // Hue-rotate: weighted sum so a single-wheel drag of 0.3 gives ~8deg visible shift
+  // Warm temperature → orange (−hue), cool → blue (+hue); tint → smaller shift
+  const tempSum =
+    setting.lift.temperature * 0.8 +
+    setting.gamma.temperature * 1.0 +
+    setting.gain.temperature * 1.0 +
+    setting.offset.temperature * 1.2
+  const tintSum =
+    setting.lift.tint * 0.8 +
+    setting.gamma.tint * 1.0 +
+    setting.gain.tint * 1.0 +
+    setting.offset.tint * 1.2
+  const hueRotateDeg = Math.max(-35, Math.min(35, -tempSum * 22 + tintSum * 12))
 
-  // Sepia: subtle warm-tone approximation (0–0.25)
-  const sepia = Math.max(0, Math.min(0.25, Math.max(0, avgTemp) * 0.28))
+  // Sepia: warm tone approximation (0–0.35), sum-based for single-wheel visibility
+  const sepia = Math.max(0, Math.min(0.35, Math.max(0, tempSum) * 0.18))
 
   const parts: string[] = []
   if (Math.abs(brightness - 1) > 0.005) parts.push(`brightness(${brightness.toFixed(3)})`)
   if (Math.abs(contrast - 1) > 0.005) parts.push(`contrast(${contrast.toFixed(3)})`)
-  if (Math.abs(saturate - 1) > 0.02) parts.push(`saturate(${saturate.toFixed(3)})`)
-  if (Math.abs(hueRotateDeg) > 0.5) parts.push(`hue-rotate(${hueRotateDeg.toFixed(1)}deg)`)
-  if (sepia > 0.01) parts.push(`sepia(${sepia.toFixed(3)})`)
+  if (Math.abs(saturate - 1) > 0.01) parts.push(`saturate(${saturate.toFixed(3)})`)
+  if (Math.abs(hueRotateDeg) > 0.3) parts.push(`hue-rotate(${hueRotateDeg.toFixed(1)}deg)`)
+  if (sepia > 0.005) parts.push(`sepia(${sepia.toFixed(3)})`)
 
   return parts.length > 0 ? parts.join(' ') : 'none'
 }
