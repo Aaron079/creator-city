@@ -318,10 +318,11 @@ export function filterLookPackages(
   })
 }
 
-const SUBJECT_PRESERVATION_BLOCK = `Apply only the visual color grade, lighting mood, film texture, contrast, saturation, and cinematic atmosphere from this look.
-
-[Preserve Original Subject / Asset]
+const SUBJECT_PRESERVATION_BLOCK = `[Preserve Original Subject / Asset]
 Keep the original subject, character identity, face, clothing, product shape, object design, composition, camera angle, pose, scene layout, and all important visual details unchanged. Do not replace the person, do not invent a new character, do not change the main asset, do not alter the core composition.`
+
+const APPLY_LOOK_STRONGLY = `[Apply Visual Look Strongly]
+Apply this look's color grade, lighting mood, film texture, contrast, saturation, black levels, highlight roll-off, color palette, and cinematic atmosphere strongly and visibly. The visual style change must be prominent and clearly recognizable.`
 
 const SUBJECT_NEGATIVE_CONSTRAINTS = 'no subject replacement, no new character, no face change, no clothing change, no product redesign, no scene rewrite, no composition change, no plastic AI texture'
 
@@ -334,6 +335,8 @@ export function buildLookAppendText(look: LookPackage, nodeKind: 'text' | 'image
   return [
     `[Look Package - ${look.name}]`,
     SUBJECT_PRESERVATION_BLOCK,
+    '',
+    APPLY_LOOK_STRONGLY,
     '',
     `[Look Details]`,
     fragment,

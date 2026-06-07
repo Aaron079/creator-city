@@ -8167,6 +8167,11 @@ export function VisualCanvasWorkspace({
             onApplyLook={(updates) => {
               for (const { nodeId, prompt } of updates) {
                 handleNodePatch(nodeId, { prompt })
+                // Sync canvasPrompt immediately so the dialog textarea and generation
+                // use the new prompt without waiting for the activeNode useEffect.
+                if (nodeId === editingNodeId || nodeId === activeNodeId) {
+                  setCanvasPrompt(prompt)
+                }
               }
               flushLocalSnapshot()
               scheduleCanvasSave(0)

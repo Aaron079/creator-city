@@ -412,9 +412,12 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
 
           {applied ? (
             <div className="mb-3 space-y-2">
-              <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-3 text-center">
-                <p className="text-[11px] font-semibold text-emerald-400">已成功应用风格包</p>
-                <p className="text-[9px] text-white/40">Prompt 已追加，不会自动生成</p>
+              <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-3">
+                <p className="text-[11px] font-semibold text-emerald-400 mb-1">视觉风格已追加到 Prompt ✓</p>
+                <p className="text-[10px] leading-relaxed text-white/65">
+                  当前图片<span className="text-white/90 font-medium">不会自动变化</span>。请关闭此面板，点击节点对话框中的
+                  <span className="text-white/90 font-medium">「重新生成」或「重试」</span>，才能看到新的视觉风格效果。
+                </p>
               </div>
               <button
                 type="button"
