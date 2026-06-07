@@ -318,9 +318,29 @@ export function filterLookPackages(
   })
 }
 
+const SUBJECT_PRESERVATION_BLOCK = `Apply only the visual color grade, lighting mood, film texture, contrast, saturation, and cinematic atmosphere from this look.
+
+[Preserve Original Subject / Asset]
+Keep the original subject, character identity, face, clothing, product shape, object design, composition, camera angle, pose, scene layout, and all important visual details unchanged. Do not replace the person, do not invent a new character, do not change the main asset, do not alter the core composition.`
+
+const SUBJECT_NEGATIVE_CONSTRAINTS = 'no subject replacement, no new character, no face change, no clothing change, no product redesign, no scene rewrite, no composition change, no plastic AI texture'
+
 export function buildLookAppendText(look: LookPackage, nodeKind: 'text' | 'image' | 'video'): string {
   const fragment = nodeKind === 'video' ? look.videoPromptFragment : look.imagePromptFragment
-  return `[Look Package - ${look.name}]\n${fragment}\n\n[Look Negative Constraints]\n${look.negativeConstraints}`
+  if (nodeKind === 'text') {
+    return `[Look Package - ${look.name}]\n${fragment}\n\n[Look Negative Constraints]\n${look.negativeConstraints}`
+  }
+  const combinedNegative = `${SUBJECT_NEGATIVE_CONSTRAINTS}, ${look.negativeConstraints}`
+  return [
+    `[Look Package - ${look.name}]`,
+    SUBJECT_PRESERVATION_BLOCK,
+    '',
+    `[Look Details]`,
+    fragment,
+    '',
+    `[Look Negative Constraints]`,
+    combinedNegative,
+  ].join('\n')
 }
 
 export function hasSimilarLook(prompt: string, look: LookPackage): boolean {

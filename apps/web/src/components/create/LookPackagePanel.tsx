@@ -205,7 +205,7 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <p className="text-[13px] font-semibold text-white/90">视觉风格包</p>
-            <p className="text-[10px] text-white/35">Look Package Applier · 只追加，不替换，不消耗 credits</p>
+            <p className="text-[10px] text-white/35">只改调色/光线/质感，尽量保持主体和构图不变 · 不消耗 credits</p>
           </div>
           <button
             type="button"
@@ -221,24 +221,35 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* Node context hint — shown when opened from node dialog */}
           {defaultNode ? (
-            <div className="shrink-0 border-b border-white/6 px-4 py-2 flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                style={{
-                  background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
-                  borderRadius: '50%',
-                  width: 7,
-                  height: 7,
-                  display: 'inline-block',
-                  flexShrink: 0,
-                }}
-              />
-              <p className="text-[10px] text-white/50 truncate">
-                正在为当前节点选择视觉风格：
-                <span className="text-white/75 font-medium">{defaultNode.title ?? defaultNode.id}</span>
+            <div className="shrink-0 border-b border-white/6 px-4 py-2.5 space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
+                    borderRadius: '50%',
+                    width: 7,
+                    height: 7,
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+                <p className="text-[10px] text-white/60 truncate">
+                  正在为节点应用视觉风格：<span className="text-white/80 font-medium">{defaultNode.title ?? defaultNode.id}</span>
+                </p>
+              </div>
+              <p className="pl-[15px] text-[9px] text-white/35 leading-relaxed">
+                只改变调色/光线/质感，尽量保持主体和构图不变。若模型不支持参考图，身份一致性仍取决于生成模型。
               </p>
             </div>
           ) : null}
+
+          {/* Safety notice — always shown */}
+          <div className="shrink-0 border-b border-white/6 px-4 py-2">
+            <p className="text-[9px] leading-relaxed text-white/30">
+              应用时会追加主体保护约束，尽量保持原人物、产品、构图不变，只改变调色和视觉氛围。若需强一致性，建议结合角色锁定或图生图参考图能力。
+            </p>
+          </div>
 
           {/* Category filter */}
           <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
@@ -304,7 +315,7 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                   {LOOK_CATEGORY_LABELS[selectedLook.category]}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-1.5 text-[9px]">
+              <div className="grid grid-cols-2 gap-1.5 text-[9px] mb-2">
                 <div>
                   <p className="mb-0.5 font-semibold text-white/35">适用场景</p>
                   <p className="text-white/50">{selectedLook.bestFor}</p>
@@ -313,6 +324,10 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                   <p className="mb-0.5 font-semibold text-white/35">不适合</p>
                   <p className="text-white/50">{selectedLook.notFor}</p>
                 </div>
+              </div>
+              <div className="rounded-lg border border-white/6 bg-white/3 px-2.5 py-2 text-[9px]">
+                <p className="mb-0.5 font-semibold text-white/40">主体保护（追加到 prompt）</p>
+                <p className="text-white/30 leading-relaxed">应用时自动追加保护约束：保持原人物、主体、产品、构图、服装、场景布局不变，只改变调色和视觉氛围。</p>
               </div>
             </div>
           ) : (

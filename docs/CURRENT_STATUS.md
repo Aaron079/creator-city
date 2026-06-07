@@ -616,7 +616,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
 | Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
 | Batch Prompt Rewriter / 批量 Prompt 重写器 | ✅ validated（Prompt 分组子工具；`e3c3a2b` · readability fix `e5bb57a`；text/image/video 节点批量追加；6维度；生成预览；重复检测跳过；用户确认后才 patch；只追加不替换；不自动生成；不消耗 credits）|
-| Look Package Applier / 视觉风格包应用器 | 🔄 implemented / browser validation pending（Prompt 分组子工具；10个风格包；6分类；CSS渐变色块；两步预览/应用；重复检测；只追加不替换；不自动生成；不消耗 credits）|
+| Look Package Applier / 视觉风格包应用器 | 🔄 implemented / browser validation pending（Prompt 分组子工具；10个风格包；6分类；CSS渐变色块；两步预览/应用；重复检测；只追加不替换；不自动生成；不消耗 credits）Browser feedback fix: append now includes Preserve Original Subject / Asset block + unified subject-protection negative constraints；UI clarifies 调色/光线/质感 only，不换主体，不保证100%|
 | Prompt Templates / 提示词模板库 | ❌ not implemented / not planned now（静态模板库，护城河低，暂不做）|
 | Batch Prompt Replace | ❌ not implemented / future（替换风险高，MVP 只做 append）|
 | Prompt History | ❌ not implemented / future |
