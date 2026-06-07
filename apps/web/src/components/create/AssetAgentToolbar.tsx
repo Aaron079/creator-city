@@ -31,6 +31,7 @@ export interface AssetAgentToolbarProps {
   onFullscreen: () => void
   reframeMode: ReframeMode
   onReframeChange: (mode: ReframeMode) => void
+  onOpenColorGrade?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -45,8 +46,10 @@ export function AssetAgentToolbar({
   onFullscreen,
   reframeMode,
   onReframeChange,
+  onOpenColorGrade,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
+  const [clipMenuOpen, setClipMenuOpen] = useState(false)
 
   function handleDownload(e: React.MouseEvent) {
     stopEvent(e)
@@ -152,18 +155,37 @@ export function AssetAgentToolbar({
         <span className="asset-agent-soon-badge">soon</span>
       </button>
 
-      {/* Clip — coming soon */}
-      <button
-        type="button"
-        data-no-node-drag="true"
-        className="asset-agent-btn is-coming-soon"
-        disabled
-        title="剪辑 Agent — 即将上线"
-      >
-        <span className="asset-agent-btn-icon">✂</span>
-        <span className="asset-agent-btn-label">剪辑</span>
-        <span className="asset-agent-soon-badge">soon</span>
-      </button>
+      {/* Clip — post-production suite (Color Grade Palette available; others coming soon) */}
+      <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
+        <button
+          type="button"
+          data-no-node-drag="true"
+          className={`asset-agent-btn${clipMenuOpen ? ' is-active' : ''}`}
+          onClick={(e) => { stopEvent(e); setClipMenuOpen((v) => !v); setReframeOpen(false) }}
+          title="剪辑套件 — 后期处理工具"
+        >
+          <span className="asset-agent-btn-icon">✂</span>
+          <span className="asset-agent-btn-label">剪辑</span>
+        </button>
+        {clipMenuOpen ? (
+          <div className="asset-agent-reframe-popover" data-no-node-drag="true">
+            <div className="asset-agent-reframe-title">后期套件</div>
+            <button
+              type="button"
+              data-no-node-drag="true"
+              className="asset-agent-reframe-chip"
+              onClick={(e) => { stopEvent(e); onOpenColorGrade?.(); setClipMenuOpen(false) }}
+            >
+              🎛 调色盘
+            </button>
+            <div style={{ padding: '4px 10px 2px', fontSize: 10, color: 'rgba(255,255,255,0.22)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span>✂ 剪辑建议 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
+              <span>◧ 转场 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
+              <span>♪ 音频 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {/* Save to library — coming soon */}
       <button

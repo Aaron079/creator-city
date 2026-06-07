@@ -7923,11 +7923,6 @@ export function VisualCanvasWorkspace({
               setIsLookPackageOpen(false)
             }
           }}
-          onOpenEditingTool={(tool) => {
-            if (tool === 'color-grade-palette') {
-              setIsColorGradePaletteOpen(true)
-            }
-          }}
         />
       ) : null}
 
@@ -8624,6 +8619,7 @@ export function VisualCanvasWorkspace({
             reframeMode={reframeMode}
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
+            onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
           />
         </div>
       ) : null}

@@ -502,9 +502,15 @@ export function ColorGradePalettePanel({
       {/* ── Header ── */}
       <div className="flex items-start justify-between border-b border-white/8 px-4 pb-2.5 pt-3">
         <div>
-          <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">Editing · 剪辑</p>
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">后期套件 · 剪辑</p>
           <h2 className="mt-0.5 text-[14px] font-bold tracking-tight text-white/90">Color Grade Palette</h2>
-          <p className="text-[9px] text-white/35">调色盘 · Prompt-level grading · 非像素级调色</p>
+          {defaultSelectedNodeId && nodes.find((n) => n.id === defaultSelectedNodeId) ? (
+            <p className="text-[9px] text-indigo-300/70">
+              正在为节点 <span className="font-medium">{nodes.find((n) => n.id === defaultSelectedNodeId)?.title ?? defaultSelectedNodeId}</span> 创建调色指令
+            </p>
+          ) : (
+            <p className="text-[9px] text-white/35">调色盘 · Prompt-level grading · 非像素级调色</p>
+          )}
         </div>
         <button
           type="button"
