@@ -17,6 +17,34 @@ export const LOOK_CATEGORY_LABELS: Record<LookCategory, string> = {
   'social-photography': '社交摄影',
 }
 
+export type LookCategoryKeywords = {
+  colorGrade: string  // 调色
+  lighting: string    // 光线
+  texture: string     // 质感
+  atmosphere: string  // 氛围
+}
+
+export type SelectedLookCategories = {
+  colorGrade: boolean
+  lighting: boolean
+  texture: boolean
+  atmosphere: boolean
+}
+
+export const DEFAULT_SELECTED_CATEGORIES: SelectedLookCategories = {
+  colorGrade: true,
+  lighting: true,
+  texture: true,
+  atmosphere: true,
+}
+
+export const LOOK_KEYWORD_CATEGORY_LABELS: Record<keyof SelectedLookCategories, string> = {
+  colorGrade: '调色',
+  lighting: '光线',
+  texture: '质感',
+  atmosphere: '氛围',
+}
+
 export type LookPackage = {
   id: string
   name: string
@@ -30,6 +58,7 @@ export type LookPackage = {
   colorKeywords: string[]
   lightingKeywords: string[]
   textureKeywords: string[]
+  keywordsZh: LookCategoryKeywords
   paletteGradient: string // CSS gradient for swatch
   imagePromptFragment: string
   videoPromptFragment: string
@@ -57,6 +86,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['cold blue-white', 'desaturated steel', 'clinical white', 'deep shadow'],
     lightingKeywords: ['hard overhead light', 'institutional fluorescent', 'single-point cold key'],
     textureKeywords: ['sharp geometry', 'crisp edges', 'sterile surface'],
+    keywordsZh: {
+      colorGrade: '冷蓝白色调，钢铁灰，极度去饱和，深暗阴影',
+      lighting: '硬质顶光，冷白荧光灯，单点冷色主光',
+      texture: '锐利几何边缘，无菌表面，精密线条',
+      atmosphere: '极致对称构图，广角一点透视，疏离感，制度化空间',
+    },
     paletteGradient: 'linear-gradient(135deg, #0a0e1a 0%, #1a2744 40%, #b8cce0 80%, #e8f4ff 100%)',
     imagePromptFragment: 'Kubrick-style cold symmetry, perfect bilateral symmetry, icy blue-white palette, desaturated steel tones, clinical high contrast, wide-angle one-point perspective, institutional overhead lighting, geometric precision, isolated subject in vast space, photorealistic',
     videoPromptFragment: 'Kubrick-inspired cold symmetry, slow deliberate camera movement, perfect bilateral symmetry, icy blue-white palette, desaturated, clinical overhead lighting, wide-angle one-point perspective, geometric framing, unsettling calm, cinematic',
@@ -81,6 +116,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['neon red', 'teal cyan', 'golden amber', 'deep shadow'],
     lightingKeywords: ['practical neon lights', 'backlit fog', 'sodium vapor glow', 'colored spill'],
     textureKeywords: ['grain film', 'motion blur', 'lens flare', 'wet surface reflection'],
+    keywordsZh: {
+      colorGrade: '霓虹暖红与青绿互补，金色琥珀中间调，深暗阴影',
+      lighting: '霓虹实际光源，逆光雾气感，钠灯橙光，彩色溢光',
+      texture: '胶片颗粒感，运动模糊，镜头光晕，湿地反光',
+      atmosphere: '港式霓虹怀旧，浅景深散景，浪漫忧郁，35mm胶片感',
+    },
     paletteGradient: 'linear-gradient(135deg, #1a0a1a 0%, #8b1a3a 35%, #1a5a6a 65%, #f5a623 100%)',
     imagePromptFragment: 'Wong Kar-wai neon nostalgia, Hong Kong neon lights, warm red and teal complementary palette, shallow depth of field, film grain, bokeh neon reflections, practical light sources, moody shadows, romantic longing, cinematic analog warmth, 35mm film look',
     videoPromptFragment: 'Wong Kar-wai inspired, Hong Kong neon atmosphere, slow shutter motion blur, warm red and teal neon palette, step-printed motion, shallow focus, film grain, practical neon practicals, dreamy temporal dislocation, romantic melancholy, cinematic',
@@ -107,6 +148,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['warm orange highlights', 'cyan-green shadows', 'natural skin tones', 'creamy midtones'],
     lightingKeywords: ['natural daylight', 'tungsten indoor', 'overcast soft', 'golden hour'],
     textureKeywords: ['film grain', 'organic texture', 'gentle halation', 'soft roll-off'],
+    keywordsZh: {
+      colorGrade: '暖橙高光，青绿阴影，奶油中间调，优雅自然肤色',
+      lighting: '自然日光，钨灯室内光，柔和阴天，黄金时刻',
+      texture: '有机胶片颗粒，轻柔晕染，高光软渐变',
+      atmosphere: '经典电影胶片质感，自然温暖，叙事影片感',
+    },
     paletteGradient: 'linear-gradient(135deg, #1a2a1a 0%, #3d5a3d 30%, #c8a87a 65%, #f5d4a8 100%)',
     imagePromptFragment: 'Kodak Vision3 500T film emulation, warm orange highlights, cyan-green shadows, natural organic grain, creamy midtones, beautiful skin tone rendering, gentle highlight roll-off, analog film character, slightly underexposed look, photographic warmth',
     videoPromptFragment: 'Kodak Vision3 500T cinematic film look, organic grain structure, warm highlights shifting to teal shadows, natural motion cadence, analog film texture, beautiful skin tones, classic Hollywood color science, cinematic',
@@ -131,6 +178,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['vivid blue sky', 'emerald green', 'rich red', 'golden yellow', 'deep black'],
     lightingKeywords: ['hard sunlight', 'polarized sky', 'sidelit', 'magic hour'],
     textureKeywords: ['razor sharp', 'fine grain', 'jewel-like', 'hyper-real texture'],
+    keywordsZh: {
+      colorGrade: '超高饱和，深邃蓝天，翠绿植被，丰富暖红黄',
+      lighting: '强烈硬日光，偏振光效，侧光，魔幻时刻',
+      texture: '极锐细节，细腻颗粒，宝石通透质感',
+      atmosphere: '风光摄影经典色彩，自然场景宝石般鲜艳，强对比',
+    },
     paletteGradient: 'linear-gradient(135deg, #0a2a50 0%, #1a6a2a 35%, #c8a000 65%, #d42020 100%)',
     imagePromptFragment: 'Fuji Velvia slide film, hyper-saturated landscape colors, deep vivid blue sky, emerald green foliage, intense contrast, razor-sharp detail, jewel-like color saturation, polarized sky effect, warm shadows with cool highlights, hyper-real natural colors',
     videoPromptFragment: 'Fuji Velvia-inspired color grade, hyper-saturated landscape palette, vivid emerald greens and deep blue sky, intense contrast ratio, polarized light quality, rich saturated tones, cinematic landscape cinematography',
@@ -157,6 +210,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['teal shadows', 'orange skin tones', 'warm highlights', 'complementary split'],
     lightingKeywords: ['three-point lighting', 'rim light', 'key and fill', 'motivated light'],
     textureKeywords: ['clean sharp', 'commercial finish', 'smooth gradation'],
+    keywordsZh: {
+      colorGrade: '青色阴影，暖橙肤色，互补色分离，高对比',
+      lighting: '三点布光，轮廓边缘光，主补光系统',
+      texture: '干净锐利，商业级质感，平滑渐变',
+      atmosphere: '好莱坞商业大片感，高制作价值，专业调色',
+    },
     paletteGradient: 'linear-gradient(135deg, #0a3040 0%, #1a5a6a 40%, #c87a30 70%, #f5a050 100%)',
     imagePromptFragment: 'teal and orange Hollywood color grade, warm orange skin tones, cool teal shadows, complementary color split, commercial film look, high contrast, clean sharp image, professional color grading, cinematic blockbuster aesthetics',
     videoPromptFragment: 'teal and orange Hollywood blockbuster grade, complementary color palette with orange highlights and teal shadows, commercial cinematography, high production value, clean professional look, cinematic',
@@ -181,6 +240,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['lifted blacks', 'milky whites', 'faded greens', 'muted warm midtones'],
     lightingKeywords: ['soft diffuse', 'overcast natural', 'bounced light', 'window light'],
     textureKeywords: ['soft edges', 'gentle grain', 'vintage halation', 'low micro-contrast'],
+    keywordsZh: {
+      colorGrade: '提亮暗部，奶白高光，微绿色调阴影，低饱和暖中间调',
+      lighting: '柔和漫射光，窗口光，阴天自然光，反射补光',
+      texture: '柔和边缘，轻微颗粒，复古晕染，低微对比',
+      atmosphere: '文艺独立电影气质，慵懒低调，vintage褪色美学',
+    },
     paletteGradient: 'linear-gradient(135deg, #2a3020 0%, #6a7a5a 35%, #c8c0a0 65%, #e8e0d0 100%)',
     imagePromptFragment: 'matte faded indie film look, lifted blacks with milky shadow tones, low contrast, desaturated muted palette, slight green tint in shadows, faded vintage aesthetic, soft halation, film-like tonal compression, indie cinema color grading',
     videoPromptFragment: 'indie film matte color grade, lifted blacks, low contrast faded look, muted desaturated tones, milky white highlights, vintage film compression, soft light quality, contemplative pacing, indie cinema feel',
@@ -207,6 +272,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['pure white', 'light gray', 'cool neutral', 'slight silver'],
     lightingKeywords: ['large soft box', 'diffused wrap light', 'white infinity cove', 'no shadow'],
     textureKeywords: ['ultra sharp detail', 'clean surface', 'premium finish', 'no noise'],
+    keywordsZh: {
+      colorGrade: '纯净白，浅灰，冷中性色调，微银色',
+      lighting: '大型柔光箱，漫射包围光，白色无缝背景，几乎无阴影',
+      texture: '超锐精密细节，干净高端表面，无噪点',
+      atmosphere: '苹果式极简，高调商业产品感，精密工业设计质感',
+    },
     paletteGradient: 'linear-gradient(135deg, #d0d8e0 0%, #e8eef5 40%, #f5f8ff 70%, #ffffff 100%)',
     imagePromptFragment: 'Apple-inspired clean white minimalist product photography, pure white high-key lighting, soft diffused wrap light, minimal shadows, precise product detail, cool neutral tones, premium material texture, infinite white background, ultra-sharp focus, commercial product photography',
     videoPromptFragment: 'Apple-style clean white minimalist commercial, high-key diffused lighting, pure white atmosphere, precise product reveal, cool neutral color palette, smooth deliberate motion, premium commercial production quality',
@@ -231,6 +302,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['deep black', 'warm gold', 'champagne highlight', 'dark chocolate'],
     lightingKeywords: ['narrow rim light', 'motivated golden accent', 'dark background fill', 'specular highlight'],
     textureKeywords: ['polished surface', 'metallic sheen', 'velvet texture', 'precision detail'],
+    keywordsZh: {
+      colorGrade: '深黑底色，暖金色强调，香槟色高光，深巧克力中间调',
+      lighting: '窄边缘光，金色定向强调光，暗背景，镜面高光',
+      texture: '抛光金属光泽，天鹅绒质感，精密奢华细节',
+      atmosphere: '珠宝香水广告感，极致戏剧性，低调奢华大牌质感',
+    },
     paletteGradient: 'linear-gradient(135deg, #0a0806 0%, #3a2a10 35%, #8a6a20 65%, #d4a840 100%)',
     imagePromptFragment: 'luxury dark gold brand aesthetic, deep black background, warm gold accent lighting, narrow rim highlight on subject, champagne specular highlight, dark low-key dramatic lighting, polished metallic surface, high-end jewelry and perfume advertisement quality, precise shadow control',
     videoPromptFragment: 'luxury dark gold brand film, deep black atmospheric background, golden accent light, subtle product reveal in darkness, warm gold highlights, high-end commercial production, cinematic slow motion, premium brand feel',
@@ -257,6 +334,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['warm gray', 'cool concrete', 'white diffuse', 'muted earth'],
     lightingKeywords: ['north window light', 'soft overcast', 'indirect natural', 'no hard shadow'],
     textureKeywords: ['raw concrete texture', 'smooth plaster', 'rough stone', 'linear grain'],
+    keywordsZh: {
+      colorGrade: '暖灰色，冷混凝土色，漫射白，低饱和大地色',
+      lighting: '北窗漫射光，柔和阴天，间接自然光，无硬阴影',
+      texture: '原始混凝土纹理，平滑石膏，粗糙石材，线性纹理',
+      atmosphere: '北欧建筑禅意，极简材料诚实，静谧冥想感，Zumthor质感',
+    },
     paletteGradient: 'linear-gradient(135deg, #2a2a2a 0%, #6a6a6a 35%, #b0b0a8 65%, #e0ddd8 100%)',
     imagePromptFragment: 'Nordic minimalist concrete architecture, warm gray concrete texture, soft diffused north light, quiet contemplative atmosphere, Zumthor-inspired material honesty, clean geometric lines, muted earth tones, architectural photography, no decoration, raw material beauty',
     videoPromptFragment: 'Nordic concrete minimalist architectural film, soft gray palette, diffused natural light through high windows, slow deliberate camera movement, raw material textures, austere geometric space, contemplative silence, architectural documentary style',
@@ -283,6 +366,12 @@ export const LOOK_PACKAGES: LookPackage[] = [
     colorKeywords: ['golden orange', 'warm amber', 'soft pink sky', 'shadow purple'],
     lightingKeywords: ['backlit golden hour', 'lens flare', 'rim light', 'warm fill'],
     textureKeywords: ['soft bokeh', 'natural lens flare', 'warm halation', 'air haze'],
+    keywordsZh: {
+      colorGrade: '金橙色，暖琥珀，粉色天空，紫色阴影',
+      lighting: '日落逆光，自然镜头眩光，轮廓光，暖色补光',
+      texture: '柔软焦外散景，自然光晕，空气感，暖色晕染',
+      atmosphere: '生活流温暖浪漫，户外IG美学，轻松随性，黄金时刻',
+    },
     paletteGradient: 'linear-gradient(135deg, #3a1a30 0%, #c85a10 40%, #f5a030 70%, #ffd580 100%)',
     imagePromptFragment: 'golden hour lifestyle photography, warm orange backlight, natural lens flare, soft bokeh background, amber and golden tones, shadow with purple undertones, warm atmospheric haze, relaxed candid lifestyle feel, romantic natural light, social media lifestyle aesthetic',
     videoPromptFragment: 'golden hour lifestyle film, warm backlit glow, natural lens flares, golden amber atmosphere, organic natural motion, soft shallow focus, lifestyle documentary feel, warm and romantic tone, social lifestyle content',
@@ -318,26 +407,55 @@ export function filterLookPackages(
   })
 }
 
-// Compact 4-line format: style keywords first (highest model attention),
-// brief preservation constraint, short negatives. Verbose multi-section blocks
-// were exceeding Seedream's effective prompt limit and burying the style signal.
-export function buildLookAppendText(look: LookPackage, nodeKind: 'text' | 'image' | 'video'): string {
-  const fragment = nodeKind === 'video' ? look.videoPromptFragment : look.imagePromptFragment
-  if (nodeKind === 'text') {
-    return `[Look: ${look.name}] ${fragment}`
+// Builds Chinese keyword lines from selected categories.
+// Returns empty string if no categories selected.
+function buildChineseKeywordLines(
+  look: LookPackage,
+  selected: SelectedLookCategories,
+): string {
+  const lines: string[] = []
+  const order: Array<keyof SelectedLookCategories> = ['colorGrade', 'lighting', 'texture', 'atmosphere']
+  for (const key of order) {
+    if (selected[key]) {
+      lines.push(`${LOOK_KEYWORD_CATEGORY_LABELS[key]}：${look.keywordsZh[key]}`)
+    }
   }
-  return [
-    `[Look: ${look.name}]`,
-    fragment,
-    `Apply this color grade and visual atmosphere strongly. Keep original face, clothing, pose, and composition unchanged.`,
-    `Avoid: no face change, no subject replacement, no composition change, ${look.negativeConstraints}`,
-  ].join('\n')
+  return lines.join('，')
+}
+
+// Output is Chinese. selectedCategories controls which keyword dimensions are included.
+// Compact single-line format to stay within Seedream's effective prompt limit.
+export function buildLookAppendText(
+  look: LookPackage,
+  nodeKind: 'text' | 'image' | 'video',
+  selectedCategories?: SelectedLookCategories,
+): string {
+  const cats = selectedCategories ?? DEFAULT_SELECTED_CATEGORIES
+  const kwLine = buildChineseKeywordLines(look, cats)
+
+  if (nodeKind === 'text') {
+    return kwLine
+      ? `[视觉风格: ${look.nameZh}] ${kwLine}`
+      : `[视觉风格: ${look.nameZh}]`
+  }
+
+  const parts: string[] = [`[视觉风格: ${look.nameZh}]`]
+  if (kwLine) parts.push(kwLine)
+  parts.push('保留原始人物身份、面部、服装、姿势和构图不变。')
+  parts.push('禁止替换主体，禁止改变构图，禁止改变人物身份。')
+  return parts.join('\n')
 }
 
 export function hasSimilarLook(prompt: string, look: LookPackage): boolean {
+  const lower = prompt.toLowerCase()
+  // Check Chinese header (new format)
+  if (lower.includes(`[视觉风格: ${look.nameZh.toLowerCase()}]`)) return true
+  // Check English header (legacy format)
+  if (lower.includes(`[look: ${look.name.toLowerCase()}]`)) return true
+  // Fallback: check first 40 chars of imagePromptFragment
   const sample = look.imagePromptFragment.trim().slice(0, 40).toLowerCase()
-  if (!sample) return false
-  return prompt.toLowerCase().includes(sample)
+  if (sample && lower.includes(sample)) return true
+  return false
 }
 
 export interface LookApplyTarget {
@@ -361,6 +479,7 @@ export function previewLookApply(
   }>,
   selectedNodeIds: Set<string>,
   look: LookPackage,
+  selectedCategories?: SelectedLookCategories,
 ): LookApplyTarget[] {
   const results: LookApplyTarget[] = []
 
@@ -371,7 +490,7 @@ export function previewLookApply(
 
     const currentPrompt = (node.prompt ?? node.resultText ?? '').trim()
     const already = hasSimilarLook(currentPrompt, look)
-    const appendBlock = buildLookAppendText(look, kind)
+    const appendBlock = buildLookAppendText(look, kind, selectedCategories)
 
     let previewPrompt: string
     if (already) {

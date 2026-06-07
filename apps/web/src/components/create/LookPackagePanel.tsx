@@ -5,6 +5,8 @@ import { Check, Copy, X } from 'lucide-react'
 import {
   LOOK_PACKAGES,
   LOOK_CATEGORY_LABELS,
+  LOOK_KEYWORD_CATEGORY_LABELS,
+  DEFAULT_SELECTED_CATEGORIES,
   filterLookPackages,
   buildLookApplyReportText,
   hasSimilarLook,
@@ -12,6 +14,7 @@ import {
   type LookCategory,
   type LookPackage,
   type LookApplyTarget,
+  type SelectedLookCategories,
 } from '@/lib/canvas/look-packages'
 
 interface LookNode {
@@ -112,6 +115,7 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
     }
     return ids
   })
+  const [selectedCategories, setSelectedCategories] = useState<SelectedLookCategories>(DEFAULT_SELECTED_CATEGORIES)
   const [targets, setTargets] = useState<LookApplyTarget[] | null>(null)
   const [applied, setApplied] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -151,9 +155,15 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
     setApplied(false)
   }
 
+  function toggleCategory(key: keyof SelectedLookCategories) {
+    setSelectedCategories((prev) => ({ ...prev, [key]: !prev[key] }))
+    setTargets(null)
+    setApplied(false)
+  }
+
   function handlePreview() {
     if (!selectedLook || selectedNodeIds.size === 0) return
-    const result = previewLookApply(nodes, selectedNodeIds, selectedLook)
+    const result = previewLookApply(nodes, selectedNodeIds, selectedLook, selectedCategories)
     setTargets(result)
     setApplied(false)
   }
@@ -183,7 +193,8 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
     })
   }
 
-  const canPreview = !!selectedLook && selectedNodeIds.size > 0 && !targets
+  const hasAnyCategory = Object.values(selectedCategories).some(Boolean)
+  const canPreview = !!selectedLook && selectedNodeIds.size > 0 && !targets && hasAnyCategory
   const canApply = !!targets && !applied && targets.some((t) => !t.alreadyContains)
   const updatedCount = targets ? targets.filter((t) => !t.alreadyContains).length : 0
   const skippedCount = targets ? targets.filter((t) => t.alreadyContains).length : 0
@@ -325,9 +336,27 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                   <p className="text-white/50">{selectedLook.notFor}</p>
                 </div>
               </div>
-              <div className="rounded-lg border border-white/6 bg-white/3 px-2.5 py-2 text-[9px]">
-                <p className="mb-0.5 font-semibold text-white/40">追加格式（紧凑型）</p>
-                <p className="text-white/30 leading-relaxed">风格词优先追加，附加简短主体保护约束（keep original face, clothing, pose, composition）和负向约束。不影响生成模型 token 预算。</p>
+              <div className="rounded-lg border border-white/6 bg-white/3 px-2.5 py-2">
+                <p className="mb-1.5 text-[9px] font-semibold text-white/40">选择追加维度（中文关键词）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(LOOK_KEYWORD_CATEGORY_LABELS) as Array<keyof SelectedLookCategories>).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleCategory(key)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
+                        selectedCategories[key]
+                          ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-500/40'
+                          : 'bg-white/5 text-white/30 hover:bg-white/10 hover:text-white/50'
+                      }`}
+                    >
+                      {LOOK_KEYWORD_CATEGORY_LABELS[key]}
+                    </button>
+                  ))}
+                </div>
+                {Object.values(selectedCategories).every((v) => !v) && (
+                  <p className="mt-1 text-[9px] text-amber-400/60">请至少选择一个维度</p>
+                )}
               </div>
             </div>
           ) : (
@@ -478,7 +507,9 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                     ? '请先选择风格包'
                     : selectedNodeIds.size === 0
                       ? '请选择要应用的节点'
-                      : '生成预览'}
+                      : !hasAnyCategory
+                        ? '请至少选择一个维度'
+                        : '生成预览'}
                 </button>
               )}
             </div>
