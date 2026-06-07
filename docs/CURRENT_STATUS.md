@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: Tool 11 Look Package Applier — IMPLEMENTED / browser validation pending
-Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated)
+Last valid commit: Tool 11 Look Package Applier — CLOSED / validated
+Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
 
@@ -72,7 +72,7 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
 | Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器 · Prompt 分组子工具） | ✅ CLOSED / validated | `e3c3a2b` (readability fix: `e5bb57a`) |
-| Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · Prompt 分组子工具） | 🔄 IMPLEMENTED / browser validation pending | — |
+| Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · Prompt 分组子工具） | ✅ CLOSED / validated | feat: `a8d6c10` · dialog entry: `888d9dd` · subject fix: `55aebc9` · feedback fix: `0610a1e` · token fix: `75a1771` · Chinese keywords: `27552ca` · empty-prompt warning: `2ee0a67` |
 
 ---
 
@@ -565,7 +565,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | 我的 API（去中心化） | 用户自带 API Key，费用直付给 Provider，Creator City 不代扣 |
 | 平台服务费（未来主要收入） | 工作台 / 协作工具 / 交易撮合 / 订阅，不含 API 转售差价 |
 
-**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。管理员模拟服务积分只读视图已上线并验收：/admin/usage 可看到理论 service credits 估算（Text=0/Image=1/Video=5-10），只读不扣费，enabled=false，不写账本，不改 UsageLog.platformServiceFeeCredits。Creator City 现在可以在不收费、不写账本、不改 schema 的情况下，用真实 BYOK 用量估算未来 service credits 理论值。Admin BYOK 商业指标只读看板已上线并验收：管理员可实时查看 BYOK 调用占比/活跃用户/成功率/高频用户（≥10次/时间范围）/Provider 分布/类型分布/daily trend，完整 BYOK 商业数据可见，不扣费、不写账本、不改 UsageLog.platformServiceFeeCredits。BYOK 观察摘要已实现：/admin/usage 新增 emerald 区块，管理员可一键复制中文周报摘要（BYOK 调用/占比/活跃用户/成功率/高频用户/Top Provider/类型分布/模拟积分/自动观察结论），不写 DB，不扣费，不改 schema；复制失败时显示 textarea fallback。30–60 天观察期运营 Playbook 已上线并验收：/admin/usage 新增 indigo 区块，包含每周固定查看清单（8 项）、继续观察条件（4项）、先修稳定性条件（4项）、可进入下一阶段条件（6项全部满足才启动）、6 条绝不直接收费 no-go；纯静态不写 DB 不扣费不改 schema。Creator City 现在已形成完整 BYOK 30–60 天观察期运营方法：看指标 → 复制周报 → 判断继续观察/先修稳定性/是否进入下一阶段，管理员每周有清单、有阈值、有 no-go 防护。
+**当前状态：** Creator City 已形成"平台额度 + 我的 API 账户 + 用量记录 + 用户端/管理员端可视化 + API Key 教程 + 单账户用量汇总 + 账户详情/健康状态 + 子页面返回体验 + 账户管理 UX 全面 polish + 账号/积分/BYOK 费用模式说明统一 + 账户健康建议/错误修复引导 + cn-executor 日志脱敏 + 视频 BYOK feature flag skeleton + 平台服务费策略只读审计 + 价格/服务费静态说明页面 + AI 帮助费用知识同步 + 服务积分数据模型只读审计"的 BYOK 完整闭环。Provider Account Center 已从 API 账户列表升级为更完整的用户可理解账户管理体验：用户能接入、理解、查看用量、查看详情、看健康状态、看明确修复建议、找到教程，并能从菜单/搜索快速进入关键页面。账户健康状态不仅展示状态，还能指导用户修复 API Key、额度、账单、接入点、最近失败等问题，用户可以从错误状态直接理解下一步动作，而不是只看到失败。/account 页面已在快捷入口下方统一展示三种费用模式说明；/account/credits 页面已明确区分平台 credits 与 Provider 直付费用，防止用户误解。当前不赚 API 差价，不启用平台服务费扣费。Seedance Video BYOK 实施仍暂缓。Canvas Smart Tools Prompt 分组已加入第三个工具：Look Package Applier / 视觉风格包应用器已浏览器验收通过。Prompt 分组当前包含：Prompt Booster（提示词增强器）/ Batch Prompt Rewriter（批量 Prompt 重写器）/ Look Package Applier（视觉风格包）。image/video 节点编辑框顶部导航有彩色"视觉风格"快捷入口；全局工具栏也保留多节点批量入口。MVP 内置 10 个精选 Look 共 6 分类（导演风格/胶片模拟/LUT调色/品牌商业/建筑空间/社交摄影）：库布里克冷峻对称 / 王家卫霓虹怀旧 / Kodak Vision3 胶片模拟 / 富士 Velvia 风光 / 青橙好莱坞 / 褪色独立电影 / 苹果极简白 / 奢华暗金 / 北欧混凝土极简 / 黄金时刻生活流。每个 Look 均有调色/光线/质感/氛围 4 维度中文关键词，用户可按维度选择只追加部分。应用时追加 [视觉风格: nameZh] + 选中维度中文关键词 + 主体保护约束 + 负向约束；不替换原 prompt；不自动生成；不消耗 credits。UI 明确说明：Look 只改 prompt，需点击重新生成才生效；不承诺 100% 保持原图，仅通过 prompt 约束降低主体漂移。真正"原图只改色不换主体"需要图生图/参考图/vision/provider 能力，需单独评估后实施。服务积分数据模型已只读审计：推荐 Option B（独立 ServiceCreditWallet + ServiceCreditLedger），不推荐 Option A/C/D/E；9 项 no-go 条件全部未满足；当前继续观察 BYOK 用量 30-60 天，不做 schema migration，不做 service fee 扣费。管理员模拟服务积分只读视图已上线并验收：/admin/usage 可看到理论 service credits 估算（Text=0/Image=1/Video=5-10），只读不扣费，enabled=false，不写账本，不改 UsageLog.platformServiceFeeCredits。Creator City 现在可以在不收费、不写账本、不改 schema 的情况下，用真实 BYOK 用量估算未来 service credits 理论值。Admin BYOK 商业指标只读看板已上线并验收：管理员可实时查看 BYOK 调用占比/活跃用户/成功率/高频用户（≥10次/时间范围）/Provider 分布/类型分布/daily trend，完整 BYOK 商业数据可见，不扣费、不写账本、不改 UsageLog.platformServiceFeeCredits。BYOK 观察摘要已实现：/admin/usage 新增 emerald 区块，管理员可一键复制中文周报摘要（BYOK 调用/占比/活跃用户/成功率/高频用户/Top Provider/类型分布/模拟积分/自动观察结论），不写 DB，不扣费，不改 schema；复制失败时显示 textarea fallback。30–60 天观察期运营 Playbook 已上线并验收：/admin/usage 新增 indigo 区块，包含每周固定查看清单（8 项）、继续观察条件（4项）、先修稳定性条件（4项）、可进入下一阶段条件（6项全部满足才启动）、6 条绝不直接收费 no-go；纯静态不写 DB 不扣费不改 schema。Creator City 现在已形成完整 BYOK 30–60 天观察期运营方法：看指标 → 复制周报 → 判断继续观察/先修稳定性/是否进入下一阶段，管理员每周有清单、有阈值、有 no-go 防护。
 
 **当前能力矩阵（production 已验收）：**
 
@@ -616,7 +616,11 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
 | Canvas edges as workflow order（连线即顺序） | ✅ current behavior（画布连线已体现节点顺序，无需独立序列管理）|
 | Batch Prompt Rewriter / 批量 Prompt 重写器 | ✅ validated（Prompt 分组子工具；`e3c3a2b` · readability fix `e5bb57a`；text/image/video 节点批量追加；6维度；生成预览；重复检测跳过；用户确认后才 patch；只追加不替换；不自动生成；不消耗 credits）|
-| Look Package Applier / 视觉风格包应用器 | 🔄 implemented / browser validation pending（Prompt 分组子工具；10个风格包；6分类；CSS渐变色块；两步预览/应用；重复检测；只追加不替换；不自动生成；不消耗 credits）Browser feedback fix: append now includes Preserve Original Subject / Asset block + unified subject-protection negative constraints；UI clarifies 调色/光线/质感 only，不换主体，不保证100%|
+| Look Package Applier / 视觉风格包应用器 | ✅ validated（Prompt 分组子工具；10个风格包6分类；image/video节点顶部"视觉风格"快捷入口；调色/光线/质感/氛围4维度中文关键词可选；预览/确认两步应用；主体保护约束；只追加不替换；不自动生成；不消耗 credits；feat `a8d6c10` · fixes `55aebc9` `0610a1e` `75a1771` `27552ca` `2ee0a67`）|
+| Style Bible Extract & Apply / 风格圣经提取与应用 | ❌ not implemented / future（需从成功资产提取项目风格圣经，必须单独评估）|
+| Vision-based Color Analysis / 视觉色彩分析 | ❌ not implemented / future（需 vision model 接入，必须单独评估）|
+| Reference-preserving Style Transfer / 参考保护式风格迁移 | ❌ not implemented / future（需图生图/参考图/vision provider 能力，不能只靠 prompt 保证）|
+| User Custom Look / 用户自定义 Look | ❌ not implemented / future（Look Package V2 可扩展到 30+ Look，在 MVP 稳定后）|
 | Prompt Templates / 提示词模板库 | ❌ not implemented / not planned now（静态模板库，护城河低，暂不做）|
 | Batch Prompt Replace | ❌ not implemented / future（替换风险高，MVP 只做 append）|
 | Prompt History | ❌ not implemented / future |
@@ -628,7 +632,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Automatic continuity repair | ❌ not implemented / not now（不自动修改 prompt，不自动创建节点）|
 | Video timeline editor | ❌ not implemented / not now |
 
-**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+**下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。Tool 11 Look Package Applier 已验收，下一步不继续堆静态 Look 数量。Tool 12 之前先重新评估高级版方向：Reference-preserving Style Transfer（参考保护式风格迁移）/ Style Bible Extract & Apply（从成功资产提取项目风格圣经）/ Vision-based Color Analysis（视觉色彩分析）/ Product·Character Consistency Guard（主体一致性保护）/ Edit Handoff Pack（剪辑交付包规划器）。任何高级版若要新增 API/schema/provider capability，必须先单独评估并等待用户确认后再实施。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
 
 ---
 
@@ -3466,3 +3470,147 @@ Modules confirmed working as of `8119eb0`:
 - 不自动创建节点
 - 不自动注册角色
 - 不改 schema / generate routes / provider adapter / billing / cn-executor
+
+---
+
+## Canvas Smart Tools Tool 11 — Look Package Applier — CLOSED / validated
+
+**功能 commit:** `a8d6c10`
+**节点对话框顶部入口 commit:** `888d9dd`
+**Preserve Original Subject / Asset 修复 commit:** `55aebc9`
+**应用反馈/重新生成说明修复 commit:** `0610a1e`
+**Token overflow 修复（紧凑中文格式）commit:** `75a1771`
+**中文关键词 + 分类维度选择 commit:** `27552ca`
+**空 Prompt 节点警告 commit:** `2ee0a67`
+**Status:** ✅ CLOSED / validated
+**Date implemented:** 2026-06-07
+**Date validated:** 2026-06-07
+
+### 问题背景
+
+- 用户希望升级调色/视觉风格能力，不能只是静态模板或简单套色。
+- 需要可作用于 image/video 节点的专业 Look Package，风格词必须对模型有实际影响。
+- 初版验收发现仅追加风格词会导致主体漂移（人物/道具被替换）；补充主体保护约束后解决。
+- 用户后续反馈"应用后没有反应"：Look Package 只改 prompt，需要重新生成才生效；修复为明确 UI 提示。
+- Token overflow：verbose 5段英文格式 (~120词) + Character Lock 注入超出 Seedream Image 有效 prompt 限制；修复为紧凑中文4行格式 (~50词)。
+- 用户要求风格词用中文，且可按维度（调色/光线/质感/氛围）选择只追加部分。
+
+### 实现方案
+
+- 在 Prompt 分组（PencilLine 图标）加入 Look Package Applier，位于 Batch Prompt Rewriter 下方。
+- 在 image/video 节点编辑框顶部导航加入渐变色点"视觉风格"快捷入口，点击预选当前节点。
+- 新增 `apps/web/src/lib/canvas/look-packages.ts`（纯函数数据层，无 API 调用）。
+- 新增 `apps/web/src/components/create/LookPackagePanel.tsx`。
+- MVP 内置 10 个高辨识度 Look 共 6 分类：
+  - 导演风格：库布里克冷峻对称 / 王家卫霓虹怀旧
+  - 胶片模拟：Kodak Vision3 胶片模拟 / 富士 Velvia 风光
+  - LUT调色：青橙好莱坞 / 褪色独立电影
+  - 品牌商业：苹果极简白 / 奢华暗金
+  - 建筑空间：北欧混凝土极简
+  - 社交摄影：黄金时刻生活流
+- 每个 Look 包含：中文名/英文名/分类/标签/适用类型/视觉描述/对比度/饱和度/调色/光线/质感/氛围中文关键词/CSS渐变色块/image prompt fragment/video prompt fragment/negative constraints/适用场景/不适用场景/风险/用户预期。
+- 4 维度中文关键词（调色/光线/质感/氛围）可独立勾选，只追加选中的维度。
+- 追加格式（紧凑中文）：`[视觉风格: nameZh]\n{选中维度中文关键词}\n保留原始人物身份、面部、服装、姿势和构图不变。\n禁止替换主体，禁止改变构图，禁止改变人物身份。`
+- 应用前必须生成预览（两步确认）；应用后只追加 prompt，不覆盖原 prompt。
+- 重复 Look 检测（`hasSimilarLook`：`[视觉风格: nameZh]` 头 / `[Look: name]` 旧格式头 / 前40字符三路检测）；已含类似片段自动跳过。
+- 空 Prompt 节点警告：检测只有风格词无主体描述的节点，显示 amber 警告提示写主体描述。
+- 支持复制应用报告。
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `apps/web/src/lib/canvas/look-packages.ts` | Look Package 纯数据 + 纯函数（类型 / 10个 Look 数据 / filterLookPackages / buildLookAppendText / hasSimilarLook / previewLookApply / buildLookApplyReportText） |
+| `apps/web/src/components/create/LookPackagePanel.tsx` | 视觉风格包面板 |
+
+### 修改文件
+
+| 文件 | 改动说明 |
+|---|---|
+| `apps/web/src/components/create/CanvasToolDock.tsx` | Prompt 分组新增「视觉风格包」子菜单项；onOpenPromptTool 类型加 look-package |
+| `apps/web/src/components/create/CanvasPromptBox.tsx` | 节点对话框顶部导航新增渐变色"视觉风格"按钮（image/video 节点显示） |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | import + state + handler + onApplyLook + render block |
+
+### Prompt 分组当前子工具
+
+| 工具 | 状态 |
+|---|---|
+| 提示词增强器（Prompt Booster） | ✅ validated |
+| 批量 Prompt 重写器（Batch Prompt Rewriter） | ✅ validated |
+| 视觉风格包（Look Package Applier） | ✅ validated |
+
+### 验收表（2026-06-07 浏览器验收通过）
+
+| 验收项 | 结果 |
+|---|---|
+| Prompt 分组出现视觉风格包 | ✅ |
+| 不出现在 Asset / Director 分组 | ✅ |
+| image/video 节点顶部出现渐变色"视觉风格"入口 | ✅ |
+| text 节点不显示 | ✅ |
+| 右侧仍只保留生成前体检 | ✅ |
+| MVP 只显示 10 个精选 Look | ✅ |
+| Look 卡片显示中文名、英文名、类别、色彩条、描述、对比度、饱和度 | ✅ |
+| 可按分类筛选 | ✅ |
+| 点击 Look 后显示详情 | ✅ |
+| 详情含 4 维度切换 chip（调色/光线/质感/氛围） | ✅ |
+| 取消所有维度 → 生成预览按钮 disabled | ✅ |
+| 可选择 image/video 节点 | ✅ |
+| 当前节点快捷入口默认选中当前节点 | ✅ |
+| 未生成预览不能应用 | ✅ |
+| 预览显示 before / after | ✅ |
+| 追加格式为紧凑中文（[视觉风格: nameZh] + 选中维度 + 保留主体 + 禁止替换） | ✅ |
+| 已存在类似 Look 显示跳过 | ✅ |
+| 应用后批量 patch prompt | ✅ |
+| 追加不覆盖原 prompt | ✅ |
+| 重复内容不重复追加 | ✅ |
+| 空 Prompt 节点显示 amber 警告（提示补充主体描述） | ✅ |
+| UI 明确说明需要重新生成才会看到效果 | ✅ |
+| UI 不承诺 100% 保持原图不变 | ✅ |
+| 可复制应用报告 | ✅ |
+| 不支持 replace | ✅ |
+| 不自动创建节点 | ✅ |
+| 不自动删除节点 | ✅ |
+| 不自动生成 | ✅ |
+| 不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不上传 OSS | ✅ |
+| 不调用 vision AI | ✅ |
+| 不改 schema/generate/provider/billing | ✅ |
+| type-check 通过 | ✅ |
+
+### 安全边界确认
+
+- 不自动生成
+- 不消耗 credits
+- 不新增 API
+- 不上传 OSS
+- 不调用 vision AI
+- 不删除或覆盖原节点
+- 不覆盖原 prompt，只追加
+- 不支持 replace
+- 不自动创建节点
+- 不自动注册角色
+- 不承诺 100% 保持原图，仅通过 prompt 约束降低主体漂移
+- 不改 schema / generate routes / provider adapter / billing / cn-executor
+
+### 已知限制（non-blocking，已在 UI 中说明）
+
+- 真正"原图只改色不换主体"需要图生图/参考图/vision/provider 能力，不能只靠 prompt 保证。
+- Look Package 只改 prompt；当前已生成图片不会自动变化；用户必须点击重新生成。
+- 若节点 Prompt 为空（无主体描述），只有风格词无法驱动模型生成有效图片；UI 显示 amber 警告。
+- Look Package V2 可扩展到 30+ Look，但必须在 MVP 稳定后，且高级风格迁移须先评估 vision 能力。
+
+### Next Phase — Tool 12 前重新评估高级版方向
+
+下一步不继续堆静态 Look 数量，先重新评估：
+
+| 高级版方向 | 说明 | 前提 |
+|---|---|---|
+| Reference-preserving Style Transfer / 参考保护式风格迁移 | 在迁移风格时保留原始主体身份 | 需要图生图/参考图/vision provider 能力 |
+| Style Bible Extract & Apply / 风格圣经提取与应用 | 从成功资产提取项目视觉圣经，持续应用 | 需要 vision model 接入，单独评估 |
+| Vision-based Color Analysis / 视觉色彩分析 | 分析已生成图的色彩结构并推荐 Look | 需要 vision model 接入，单独评估 |
+| Product/Character Consistency Guard / 主体一致性保护 | 跨节点主体身份一致性强化 | 需要 vision 或参考图能力 |
+| Edit Handoff Pack / 剪辑交付包规划器 | 生成后剪辑交付规划 | 独立评估 |
+| Look Package V2（30+ Look） | 扩展 Look 数量 | MVP 稳定后，不需 vision |
+
+任何高级版若要新增 API/schema/provider capability，必须先单独评估并等待用户确认后再实施。
