@@ -8,6 +8,7 @@ import {
   Layers,
   PencilLine,
   Plus,
+  SlidersHorizontal,
   Square,
   Text,
   Video,
@@ -26,6 +27,7 @@ interface CanvasToolDockProps {
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
   onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
+  onOpenEditingTool: (tool: 'color-grade-palette') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -51,11 +53,13 @@ export function CanvasToolDock({
   onOpenAssetTool,
   onOpenDirectorTool,
   onOpenPromptTool,
+  onOpenEditingTool,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [isAssetMenuOpen, setIsAssetMenuOpen] = useState(false)
   const [isDirectorMenuOpen, setIsDirectorMenuOpen] = useState(false)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [isEditingMenuOpen, setIsEditingMenuOpen] = useState(false)
 
   return (
     <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
@@ -271,6 +275,51 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🎨</span>
                     <span>视觉风格包</span>
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          {/* Editing tools group */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditingMenuOpen((v) => !v)
+                setIsPromptMenuOpen(false)
+                setIsDirectorMenuOpen(false)
+                setIsAssetMenuOpen(false)
+                setIsUserMenuOpen(false)
+              }}
+              className={`canvas-toolbar-button ${isEditingMenuOpen ? 'is-active' : ''}`}
+              title="剪辑工具"
+              aria-label="剪辑工具"
+              data-no-node-drag="true"
+            >
+              <SlidersHorizontal size={20} strokeWidth={2.1} />
+              <span className="canvas-hover-tooltip" aria-hidden="true">剪辑工具</span>
+            </button>
+            <AnimatePresence>
+              {isEditingMenuOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, x: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -8, scale: 0.98 }}
+                  transition={{ duration: 0.16 }}
+                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
+                  data-no-node-drag="true"
+                >
+                  <div className="px-3 pb-1 pt-0.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">剪辑工具</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsEditingMenuOpen(false); onOpenEditingTool('color-grade-palette') }}
+                  >
+                    <span className="text-[13px]">🎛</span>
+                    <span>调色盘</span>
                   </button>
                 </motion.div>
               ) : null}

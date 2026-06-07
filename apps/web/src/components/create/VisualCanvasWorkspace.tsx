@@ -30,6 +30,7 @@ import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPan
 import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
+import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2381,6 +2382,7 @@ export function VisualCanvasWorkspace({
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
+  const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
@@ -7921,6 +7923,11 @@ export function VisualCanvasWorkspace({
               setIsLookPackageOpen(false)
             }
           }}
+          onOpenEditingTool={(tool) => {
+            if (tool === 'color-grade-palette') {
+              setIsColorGradePaletteOpen(true)
+            }
+          }}
         />
       ) : null}
 
@@ -8201,6 +8208,32 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setIsLookPackageOpen(false)}
             defaultSelectedNodeId={lookPanelDefaultNodeId}
+          />
+        </>
+      ) : null}
+
+      {/* Color Grade Palette — Tool 12, Editing group */}
+      {isColorGradePaletteOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsColorGradePaletteOpen(false)}
+          />
+          <ColorGradePalettePanel
+            nodes={nodes}
+            onApplyGrade={(updates) => {
+              for (const { nodeId, prompt } of updates) {
+                handleNodePatch(nodeId, { prompt })
+                if (nodeId === editingNodeId || nodeId === activeNodeId) {
+                  setCanvasPrompt(prompt)
+                }
+              }
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
+            onClose={() => setIsColorGradePaletteOpen(false)}
+            defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
           />
         </>
       ) : null}
