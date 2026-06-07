@@ -667,8 +667,7 @@ export function ColorGradePalettePanel({
         {/* ── Apply success ── */}
         {applySuccess && (
           <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-3">
-            <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述</p>
-            <p className="mt-0.5 text-[9px] text-emerald-300/60">请重新生成查看效果。</p>
+            <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述 — 请重新生成查看效果</p>
           </div>
         )}
 

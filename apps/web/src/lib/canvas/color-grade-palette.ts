@@ -343,25 +343,33 @@ export function buildColorGradePrompt(
 
   const sections: string[] = ['[Color Grade Palette]']
 
-  if (toneLines.length > 0) {
-    sections.push('\n[Primary / Tone Intent]')
-    sections.push(toneLines.join(', '))
-  }
+  sections.push('\n[Primary / Tone Intent]')
+  sections.push(
+    toneLines.length > 0
+      ? toneLines.join(', ')
+      : 'Neutral primary correction — no tone adjustment requested.',
+  )
 
-  if (satLines.length > 0) {
-    sections.push('\n[Saturation]')
-    sections.push(satLines.join(', '))
-  }
+  sections.push('\n[Saturation]')
+  sections.push(
+    satLines.length > 0
+      ? satLines.join(', ')
+      : 'Neutral saturation — no saturation, color boost, or midtone detail adjustment requested.',
+  )
 
-  if (curveLines.length > 0) {
-    sections.push('\n[Curve Intent]')
-    sections.push(curveLines.join(', '))
-  }
+  sections.push('\n[Curve Intent]')
+  sections.push(
+    curveLines.length > 0
+      ? curveLines.join(', ')
+      : 'Neutral curve — no S-curve adjustment requested.',
+  )
 
-  if (hslLines.length > 0) {
-    sections.push('\n[HSL Intent]')
-    sections.push(hslLines.join(', '))
-  }
+  sections.push('\n[HSL Intent]')
+  sections.push(
+    hslLines.length > 0
+      ? hslLines.join(', ')
+      : 'Neutral HSL intent — no selective color emphasis requested.',
+  )
 
   sections.push('\n[Output Protection]')
   sections.push(outputLines.join('\n'))
