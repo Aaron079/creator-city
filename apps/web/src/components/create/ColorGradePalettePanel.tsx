@@ -26,6 +26,8 @@ interface GradeNode {
   title?: string | null
   prompt?: string | null
   status?: string | null
+  resultImageUrl?: string | null
+  resultVideoUrl?: string | null
 }
 
 interface ColorGradePalettePanelProps {
@@ -402,6 +404,83 @@ function TextureSlider({
   )
 }
 
+// ─── Node Target Banner ───────────────────────────────────────────────────────
+// Shown directly below the panel header — immediately communicates which
+// image/video node is being graded, so the user never has to choose again.
+
+function NodeTargetBanner({ node }: { node: GradeNode }) {
+  const hasImage = Boolean(node.resultImageUrl?.trim())
+  const hasVideo = Boolean(node.resultVideoUrl?.trim())
+  const promptSnippet = node.prompt?.trim()
+    ? node.prompt.trim().slice(0, 72) + (node.prompt.trim().length > 72 ? '…' : '')
+    : null
+
+  return (
+    <div className="flex gap-3 border-b border-white/7 bg-[#09090d] px-3 py-2">
+      {/* Thumbnail / video preview */}
+      <div className="relative h-[72px] w-[108px] flex-shrink-0 overflow-hidden rounded-lg border border-white/8 bg-black/50">
+        {hasImage && (
+          <img
+            src={node.resultImageUrl!}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        )}
+        {hasVideo && !hasImage && (
+          <video
+            src={node.resultVideoUrl!}
+            controls
+            preload="metadata"
+            className="h-full w-full object-cover"
+            style={{ minHeight: 0 }}
+          />
+        )}
+        {!hasImage && !hasVideo && (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1">
+            <span className={`text-[9px] font-bold ${node.kind === 'image' ? 'text-sky-400/45' : 'text-violet-400/45'}`}>
+              {node.kind === 'image' ? 'IMG' : 'VID'}
+            </span>
+            <span className="text-center text-[6.5px] leading-tight text-white/22">暂无结果<br/>生成后可见</span>
+          </div>
+        )}
+        {/* Kind badge overlay */}
+        <div className="absolute left-1 top-1">
+          <span className={`rounded px-0.5 py-[1px] text-[6px] font-bold ${node.kind === 'image' ? 'bg-sky-900/80 text-sky-300' : 'bg-violet-900/80 text-violet-300'}`}>
+            {node.kind === 'image' ? 'IMG' : 'VID'}
+          </span>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="flex min-w-0 flex-1 flex-col justify-between">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="flex-shrink-0 rounded-full bg-indigo-500/15 px-1.5 py-[1.5px] text-[7px] font-semibold text-indigo-300/75">
+              当前调色目标
+            </span>
+            {node.status && (
+              <span className={`text-[7px] ${node.status === 'done' ? 'text-emerald-400/65' : node.status === 'error' || node.status === 'failed' ? 'text-red-400/65' : 'text-white/25'}`}>
+                {node.status}
+              </span>
+            )}
+          </div>
+          <p className="truncate text-[9.5px] font-semibold text-white/75">
+            {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
+          </p>
+          {promptSnippet && (
+            <p className="line-clamp-2 text-[7.5px] leading-relaxed text-white/25">{promptSnippet}</p>
+          )}
+        </div>
+        <p className="text-[7px] italic text-white/18">
+          {hasImage || hasVideo
+            ? '预览仅供参考 · 调色 Prompt 追加后需重新生成才生效'
+            : '暂无生成结果 · 调色指令仍可追加 · 重新生成后生效'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function ColorGradePalettePanel({
@@ -441,6 +520,13 @@ export function ColorGradePalettePanel({
     setSelectedNodeIds(defaultSelected)
     setInitDone(true)
   }
+
+  // The primary node is the first selected node (or the defaultSelectedNodeId fallback).
+  // This drives the NodeTargetBanner and the intent monitor.
+  const primaryNode = useMemo(
+    () => eligibleNodes.find((n) => n.id === (selectedNodeIds[0] ?? defaultSelectedNodeId)) ?? null,
+    [eligibleNodes, selectedNodeIds, defaultSelectedNodeId],
+  )
 
   const resetPreview = () => {
     setPreviewText(null)
@@ -532,8 +618,6 @@ export function ColorGradePalettePanel({
     { id: 'output', label: 'Output', zh: '输出' },
   ]
 
-  const defaultNode = nodes.find((n) => n.id === defaultSelectedNodeId)
-
   return (
     <div
       className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[700px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c0e13]/98 shadow-2xl backdrop-blur-xl"
@@ -545,9 +629,9 @@ export function ColorGradePalettePanel({
         <div>
           <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/22">后期套件 · Color Page</p>
           <h2 className="mt-0.5 text-[13px] font-bold tracking-tight text-white/90">Color Grade Palette</h2>
-          {defaultNode ? (
+          {primaryNode ? (
             <p className="text-[8.5px] text-indigo-300/65">
-              正在为节点 <span className="font-semibold">{defaultNode.title ?? defaultSelectedNodeId}</span> 创建调色指令
+              正在为当前节点创建调色指令：<span className="font-semibold">{primaryNode.title ?? (primaryNode.kind === 'image' ? '图片节点' : '视频节点')}</span>
             </p>
           ) : (
             <p className="text-[8.5px] text-white/30">调色盘 · Prompt-level grading · 非像素级调色</p>
@@ -561,6 +645,9 @@ export function ColorGradePalettePanel({
           <X size={15} strokeWidth={2.2} />
         </button>
       </div>
+
+      {/* ── Node Target Banner — shows which node is being graded ── */}
+      {primaryNode && <NodeTargetBanner node={primaryNode} />}
 
       {/* ── Gallery Strip (preset chips) ── */}
       <div className="border-b border-white/5 px-3 py-1.5">
@@ -590,10 +677,11 @@ export function ColorGradePalettePanel({
       {/* ── Body: 3-column ── */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
 
-        {/* ── Left: Clip Strip ── */}
+        {/* ── Left: Clip Strip (secondary — for switching target) ── */}
         <div className="flex w-[132px] flex-shrink-0 flex-col border-r border-white/5">
           <div className="border-b border-white/5 px-2.5 py-1.5">
-            <p className="text-[7px] font-bold uppercase tracking-widest text-white/22">Clip Strip</p>
+            <p className="text-[7px] font-bold uppercase tracking-widest text-white/22">项目素材 / 切换</p>
+            <p className="mt-0.5 text-[6px] text-white/16">可切换调色目标</p>
           </div>
           <div className="flex-1 space-y-1 overflow-y-auto px-1.5 py-1.5">
             {eligibleNodes.length === 0 && (
@@ -601,6 +689,7 @@ export function ColorGradePalettePanel({
             )}
             {eligibleNodes.map((node) => {
               const isSelected = selectedNodeIds.includes(node.id)
+              const isDefault = node.id === defaultSelectedNodeId
               const hasGrade = hasColorGradePrompt(node.prompt ?? '')
               return (
                 <button
@@ -617,9 +706,10 @@ export function ColorGradePalettePanel({
                   <p className="truncate text-[8.5px] font-medium text-white/65">
                     {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
                   </p>
-                  <div className="mt-0.5 flex items-center gap-1">
-                    {isSelected && <span className="text-[6.5px] text-indigo-400">● 已选</span>}
-                    {hasGrade && <span className="text-[6.5px] text-amber-400/80">已调色</span>}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    {isDefault && <span className="text-[6px] font-semibold text-indigo-400/80">当前目标</span>}
+                    {!isDefault && isSelected && <span className="text-[6px] text-indigo-400/60">● 已选</span>}
+                    {hasGrade && <span className="text-[6px] text-amber-400/70">已调色</span>}
                   </div>
                 </button>
               )
@@ -630,7 +720,7 @@ export function ColorGradePalettePanel({
                 onClick={() => setSelectedNodeIds(eligibleNodes.map((n) => n.id))}
                 className="w-full rounded-lg border border-white/5 py-1 text-[7.5px] text-white/28 transition hover:border-white/12 hover:text-white/50"
               >
-                全选 {eligibleNodes.length} 个
+                批量全选 {eligibleNodes.length} 个
               </button>
             )}
           </div>
