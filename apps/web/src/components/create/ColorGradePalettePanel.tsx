@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Check, Copy, X, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import {
   COLOR_GRADE_PRESETS,
@@ -38,7 +38,9 @@ interface ColorGradePalettePanelProps {
 
 type ActiveTab = 'wheels' | 'curves' | 'qualifier' | 'texture' | 'output'
 
-// ─── Color Wheel Visual ───────────────────────────────────────────────────────
+// ─── Color Wheel Visual (Interactive — drag to set temperature/tint) ──────────
+// Axes: right=warm (+temp), left=cool (−temp), top=magenta (+tint), bottom=green (−tint)
+// Matches DaVinci Resolve primary wheel orientation.
 
 function ColorWheel({
   wheel,
@@ -49,66 +51,105 @@ function ColorWheel({
   size?: number
   onChange: (patch: Partial<WheelSetting>) => void
 }) {
-  // Dot position: temperature maps to x, tint maps to y (inverted)
-  const maxOffset = 0.35
-  const dotX = 50 + (wheel.temperature / 100) * maxOffset * 100
-  const dotY = 50 - (wheel.tint / 100) * maxOffset * 100
+  const divRef = useRef<HTMLDivElement>(null)
+  const isDragging = useRef(false)
+
+  const updateFromPointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = divRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const dx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2)   // −1 to +1
+    const dy = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2)  // −1 to +1
+    const dist = Math.min(1, Math.sqrt(dx * dx + dy * dy))
+    const angle = Math.atan2(dy, dx)  // clockwise from right
+    onChange({
+      temperature: Math.round(Math.cos(angle) * dist * 100),   // right = +warm
+      tint: Math.round(-Math.sin(angle) * dist * 100),          // up = +magenta (y inverted)
+    })
+  }, [onChange])
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    isDragging.current = true
+    e.currentTarget.setPointerCapture(e.pointerId)
+    updateFromPointer(e)
+  }, [updateFromPointer])
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current) return
+    updateFromPointer(e)
+  }, [updateFromPointer])
+
+  const handlePointerUp = useCallback(() => { isDragging.current = false }, [])
+
+  // Dot position clamped to 38% radius
+  const dotX = 50 + (wheel.temperature / 100) * 38
+  const dotY = 50 - (wheel.tint / 100) * 38
   const isNeutral = wheel.temperature === 0 && wheel.tint === 0
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      {/* Wheel disc */}
+    <div className="flex flex-col items-center gap-1">
+      {/* Wheel disc — drag to set temp/tint */}
       <div
-        className="relative flex-shrink-0 rounded-full border border-white/10"
+        ref={divRef}
+        className="relative flex-shrink-0 cursor-crosshair select-none rounded-full border border-white/12"
         style={{
           width: size,
           height: size,
+          // Layered: dark center reference → white fade → full color spectrum ring
+          // Warm (orange) anchored at 3 o'clock, magenta at 12, cool (blue) at 9, green at 6
           background: `
-            radial-gradient(circle at center, rgba(0,0,0,0.55) 0%, transparent 60%),
+            radial-gradient(circle, rgba(8,10,16,0.6) 0%, transparent 24%),
+            radial-gradient(circle, white 0%, transparent 56%),
             conic-gradient(
-              hsl(0,75%,55%) 0deg,
-              hsl(30,75%,55%) 30deg,
-              hsl(60,75%,55%) 60deg,
-              hsl(120,75%,55%) 120deg,
-              hsl(180,75%,55%) 180deg,
-              hsl(210,75%,55%) 210deg,
-              hsl(240,75%,55%) 240deg,
-              hsl(270,75%,55%) 270deg,
-              hsl(300,75%,55%) 300deg,
-              hsl(330,75%,55%) 330deg,
-              hsl(360,75%,55%) 360deg
+              hsl(300,80%,52%) 0deg,
+              hsl(345,82%,55%) 45deg,
+              hsl(30,88%,55%)  90deg,
+              hsl(75,80%,50%)  135deg,
+              hsl(120,75%,46%) 180deg,
+              hsl(165,78%,46%) 225deg,
+              hsl(210,82%,52%) 270deg,
+              hsl(255,80%,55%) 315deg,
+              hsl(300,80%,52%) 360deg
             )
           `,
         }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       >
-        {/* Center dot */}
+        {/* Subtle crosshair */}
+        <svg className="pointer-events-none absolute inset-0" viewBox="0 0 100 100">
+          <line x1="50" y1="10" x2="50" y2="90" stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />
+          <line x1="10" y1="50" x2="90" y2="50" stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />
+        </svg>
+        {/* Bias dot */}
         <div
-          className="absolute rounded-full border-2 border-white shadow-lg"
+          className="pointer-events-none absolute rounded-full"
           style={{
-            width: 9,
-            height: 9,
-            left: `${dotX}%`,
-            top: `${dotY}%`,
+            width: 10, height: 10,
+            left: `${dotX}%`, top: `${dotY}%`,
             transform: 'translate(-50%, -50%)',
-            backgroundColor: isNeutral ? 'rgba(255,255,255,0.6)' : 'white',
-            boxShadow: '0 0 4px rgba(0,0,0,0.8)',
+            background: isNeutral ? 'rgba(255,255,255,0.45)' : 'white',
+            border: '1.5px solid rgba(0,0,0,0.55)',
+            boxShadow: isNeutral ? '0 0 3px rgba(0,0,0,0.5)' : '0 0 0 1px rgba(255,255,255,0.25), 0 1px 6px rgba(0,0,0,0.9)',
+            transition: isDragging.current ? 'none' : 'left 0.05s, top 0.05s',
           }}
         />
-        {/* Reset button */}
+        {/* Reset — shows when not neutral */}
         {!isNeutral && (
           <button
             type="button"
-            onClick={() => onChange({ temperature: 0, tint: 0 })}
-            className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[7px] text-white/50 hover:text-white/80"
-            title="Reset hue"
+            onClick={(e) => { e.stopPropagation(); onChange({ temperature: 0, tint: 0 }) }}
+            className="absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[8px] text-white/60 hover:bg-black hover:text-white/90 transition"
           >
             ↺
           </button>
         )}
       </div>
-      {/* Temp axis label */}
-      <div className="flex w-full items-center justify-between px-0.5 text-[7.5px] text-white/25">
+      {/* Axis labels */}
+      <div className="flex w-full items-center justify-between px-0.5 text-[6.5px] text-white/18">
         <span>◀ Cool</span>
+        <span className="text-white/12">· Drag ·</span>
         <span>Warm ▶</span>
       </div>
     </div>
