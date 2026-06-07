@@ -247,7 +247,7 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
           {/* Safety notice — always shown */}
           <div className="shrink-0 border-b border-white/6 px-4 py-2">
             <p className="text-[9px] leading-relaxed text-white/30">
-              应用时会追加主体保护约束，尽量保持原人物、产品、构图不变，只改变调色和视觉氛围。若需强一致性，建议结合角色锁定或图生图参考图能力。
+              紧凑追加格式：风格词优先，附加简短主体保护与负向约束，减少 token 占用。应用后需点击「重新生成」才能看到效果。
             </p>
           </div>
 
@@ -326,8 +326,8 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                 </div>
               </div>
               <div className="rounded-lg border border-white/6 bg-white/3 px-2.5 py-2 text-[9px]">
-                <p className="mb-0.5 font-semibold text-white/40">主体保护（追加到 prompt）</p>
-                <p className="text-white/30 leading-relaxed">应用时自动追加保护约束：保持原人物、主体、产品、构图、服装、场景布局不变，只改变调色和视觉氛围。</p>
+                <p className="mb-0.5 font-semibold text-white/40">追加格式（紧凑型）</p>
+                <p className="text-white/30 leading-relaxed">风格词优先追加，附加简短主体保护约束（keep original face, clothing, pose, composition）和负向约束。不影响生成模型 token 预算。</p>
               </div>
             </div>
           ) : (

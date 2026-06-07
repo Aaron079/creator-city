@@ -318,31 +318,19 @@ export function filterLookPackages(
   })
 }
 
-const SUBJECT_PRESERVATION_BLOCK = `[Preserve Original Subject / Asset]
-Keep the original subject, character identity, face, clothing, product shape, object design, composition, camera angle, pose, scene layout, and all important visual details unchanged. Do not replace the person, do not invent a new character, do not change the main asset, do not alter the core composition.`
-
-const APPLY_LOOK_STRONGLY = `[Apply Visual Look Strongly]
-Apply this look's color grade, lighting mood, film texture, contrast, saturation, black levels, highlight roll-off, color palette, and cinematic atmosphere strongly and visibly. The visual style change must be prominent and clearly recognizable.`
-
-const SUBJECT_NEGATIVE_CONSTRAINTS = 'no subject replacement, no new character, no face change, no clothing change, no product redesign, no scene rewrite, no composition change, no plastic AI texture'
-
+// Compact 4-line format: style keywords first (highest model attention),
+// brief preservation constraint, short negatives. Verbose multi-section blocks
+// were exceeding Seedream's effective prompt limit and burying the style signal.
 export function buildLookAppendText(look: LookPackage, nodeKind: 'text' | 'image' | 'video'): string {
   const fragment = nodeKind === 'video' ? look.videoPromptFragment : look.imagePromptFragment
   if (nodeKind === 'text') {
-    return `[Look Package - ${look.name}]\n${fragment}\n\n[Look Negative Constraints]\n${look.negativeConstraints}`
+    return `[Look: ${look.name}] ${fragment}`
   }
-  const combinedNegative = `${SUBJECT_NEGATIVE_CONSTRAINTS}, ${look.negativeConstraints}`
   return [
-    `[Look Package - ${look.name}]`,
-    SUBJECT_PRESERVATION_BLOCK,
-    '',
-    APPLY_LOOK_STRONGLY,
-    '',
-    `[Look Details]`,
+    `[Look: ${look.name}]`,
     fragment,
-    '',
-    `[Look Negative Constraints]`,
-    combinedNegative,
+    `Apply this color grade and visual atmosphere strongly. Keep original face, clothing, pose, and composition unchanged.`,
+    `Avoid: no face change, no subject replacement, no composition change, ${look.negativeConstraints}`,
   ].join('\n')
 }
 
