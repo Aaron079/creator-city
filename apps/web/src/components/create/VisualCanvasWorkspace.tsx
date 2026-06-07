@@ -8077,7 +8077,30 @@ export function VisualCanvasWorkspace({
             nodes={nodes}
             initialNodeId={activeNodeId ?? undefined}
             onCreateNode={(kind, options) => {
-              createNode(kind, options)
+              const { index = 0, total = 1, parentNodeId, ...rest } = options
+              const parentNode = parentNodeId ? nodes.find((n) => n.id === parentNodeId) : null
+              const viewportRect = viewportRef.current?.getBoundingClientRect()
+              const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+              let baseX: number
+              let baseY: number
+              if (parentNode) {
+                baseX = parentNode.x + parentNode.width + 240
+                baseY = parentNode.y - Math.floor(total / 2) * 340
+              } else if (viewportRect) {
+                baseX = (viewportRect.width / 2 - surfaceOffset.left - canvasPan.x) / canvasZoom + 200
+                baseY = (viewportRect.height * 0.42 - surfaceOffset.top - canvasPan.y) / canvasZoom - Math.floor(total / 2) * 340
+              } else {
+                baseX = 600
+                baseY = 200 - Math.floor(total / 2) * 340
+              }
+              const maxRowsPerColumn = 5
+              const column = Math.floor(index / maxRowsPerColumn)
+              const row = index % maxRowsPerColumn
+              const position = {
+                x: baseX + column * 460,
+                y: baseY + row * 340,
+              }
+              createNode(kind, { ...rest, parentNodeId, position })
             }}
             onClose={() => setIsShotListBuilderOpen(false)}
           />

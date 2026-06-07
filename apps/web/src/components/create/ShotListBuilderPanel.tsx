@@ -25,7 +25,7 @@ interface SourceNode {
 interface ShotListBuilderPanelProps {
   nodes: SourceNode[]
   initialNodeId?: string
-  onCreateNode: (kind: VisualCanvasNodeKind, options: { title?: string; prompt?: string; parentNodeId?: string }) => void
+  onCreateNode: (kind: VisualCanvasNodeKind, options: { title?: string; prompt?: string; parentNodeId?: string; index?: number; total?: number }) => void
   onClose: () => void
 }
 
@@ -155,7 +155,7 @@ export function ShotListBuilderPanel({
   const handleCreate = () => {
     const toCreate = shots.filter((s) => s.selected)
     if (toCreate.length === 0) return
-    toCreate.forEach((shot) => {
+    toCreate.forEach((shot, index) => {
       const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
       const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
       const title = `镜头 · ${sizeLabel} · ${kindLabel}`
@@ -164,6 +164,8 @@ export function ShotListBuilderPanel({
         title,
         prompt,
         parentNodeId: selectedNodeId || undefined,
+        index,
+        total: toCreate.length,
       })
     })
     setCreatedCount(toCreate.length)
