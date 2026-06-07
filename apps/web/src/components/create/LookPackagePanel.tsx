@@ -202,6 +202,15 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
     ? nodes.find((n) => n.id === defaultSelectedNodeId)
     : undefined
 
+  // Warn when selected nodes have empty prompts — look block alone has no subject to generate
+  const emptyPromptNodeTitles = selectableNodes
+    .filter((n) => selectedNodeIds.has(n.id))
+    .filter((n) => {
+      const p = (n.prompt ?? n.resultText ?? '').trim()
+      return !p || p.startsWith('[视觉风格:') || p.startsWith('[Look:')
+    })
+    .map((n) => n.title ?? n.id)
+
   return (
     <div
       className="fixed left-[80px] top-1/2 z-[1200] -translate-y-1/2 flex"
@@ -423,6 +432,19 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
 
         {/* Footer */}
         <div className="shrink-0 border-t border-white/8 px-4 py-3">
+          {/* Empty-prompt warning — shown when selected nodes have no subject description */}
+          {emptyPromptNodeTitles.length > 0 && (
+            <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5">
+              <p className="text-[10px] font-semibold text-amber-400 mb-1">⚠ 节点 Prompt 为空</p>
+              <p className="text-[9px] leading-relaxed text-white/55">
+                以下节点没有主体描述，只有风格词无法生成图片。请先在 Prompt 框中写明主体（如「一个穿旗袍的女孩站在稻田中」），再应用视觉风格：
+              </p>
+              <p className="mt-1 text-[9px] text-amber-300/70 truncate">
+                {emptyPromptNodeTitles.join('、')}
+              </p>
+            </div>
+          )}
+
           {/* Preview results */}
           {targets ? (
             <div className="mb-3 rounded-xl border border-white/8 bg-white/3 p-3">
@@ -444,8 +466,8 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
               <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-3">
                 <p className="text-[11px] font-semibold text-emerald-400 mb-1">视觉风格已追加到 Prompt ✓</p>
                 <p className="text-[10px] leading-relaxed text-white/65">
-                  当前图片<span className="text-white/90 font-medium">不会自动变化</span>。请关闭此面板，点击节点对话框中的
-                  <span className="text-white/90 font-medium">「重新生成」或「重试」</span>，才能看到新的视觉风格效果。
+                  请确认 Prompt 框最上方有<span className="text-white/90 font-medium">主体描述</span>（如「穿旗袍的女孩在稻田」）。
+                  风格词单独无法生成图片。确认后点击<span className="text-white/90 font-medium">「重新生成」</span>。
                 </p>
               </div>
               <button
