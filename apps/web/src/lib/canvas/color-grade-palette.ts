@@ -1,6 +1,6 @@
 /**
  * Color Grade Palette — Tool 12
- * Translates DaVinci Resolve Color Page concepts into prompt-level grading instructions.
+ * DaVinci Resolve Color Page concepts translated to prompt-level grading.
  * Prompt-only: no pixel manipulation, no API calls, no generation.
  */
 
@@ -15,41 +15,72 @@ export type ColorGradePresetId =
   | 'warm-portrait-protection'
   | 'teal-orange-classic'
 
-export type ContrastLevel = 'low' | 'medium' | 'high'
-export type PivotLevel = 'dark' | 'medium' | 'bright'
-export type BlacksIntent = 'preserve-detail' | 'neutral' | 'deepen'
-export type WhitesIntent = 'protect-highlights' | 'neutral' | 'brighten'
-export type SaturationIntent = 'low' | 'slightly-muted' | 'neutral' | 'slightly-boosted' | 'high'
-export type ColorBoostIntent = 'off' | 'subtle' | 'medium' | 'strong'
-export type MidtoneDetailIntent = 'soften' | 'off' | 'subtle' | 'medium'
-export type SCurveIntent =
-  | 'none'
-  | 'gentle-s-curve'
-  | 'standard-s-curve'
-  | 'steep-s-curve'
-  | 'lifted-blacks-s-curve'
+/** Primary color wheel: temperature/tint = hue bias, luminance = exposure, saturation = chroma */
+export interface WheelSetting {
+  temperature: number  // -100 cool → +100 warm
+  tint: number         // -100 green → +100 magenta
+  luminance: number    // -100 darken → +100 brighten
+  saturation: number   // -100 desaturate → +100 saturate
+}
 
-export type SkyIntent = 'none' | 'deepen-blue' | 'dramatic-dark' | 'airy-bright'
-export type FoliageIntent = 'none' | 'reduce-green-saturation' | 'vibrant-foliage'
-export type AccentIntent = 'none' | 'warm-emphasis' | 'cool-emphasis' | 'neon-emphasis'
+export type CurveShape =
+  | 'neutral'
+  | 'gentle-s'
+  | 'standard-s'
+  | 'steep-s'
+  | 'lifted-blacks'
+
+export type RgbBias =
+  | 'neutral'
+  | 'warm-hi-cool-sh'
+  | 'cool-hi-warm-sh'
+  | 'green-sh-mag-hi'
+  | 'teal-orange'
+
+export interface CurveSetting {
+  shape: CurveShape
+  rgbBias: RgbBias
+}
+
+export type RangeIntent = 'cut' | 'neutral' | 'boost'
+export type LumIntent = 'darken' | 'neutral' | 'brighten'
+
+export interface QualifierSetting {
+  protectSkin: boolean
+  skinSat: RangeIntent
+  skinLum: LumIntent
+  bluesSat: RangeIntent
+  bluesLum: LumIntent
+  greensSat: RangeIntent
+  greensLum: LumIntent
+  neonAccent: boolean
+}
+
+export type GrainType = 'none' | 'fine' | 'medium' | 'heavy'
+export type EffectLevel = 'none' | 'subtle' | 'strong'
+
+export interface TextureSetting {
+  sharpness: number    // -2 to +2 integer, 0 = neutral
+  grain: GrainType
+  halation: EffectLevel
+  glow: EffectLevel
+  vignette: EffectLevel
+  cleanShadows: boolean
+}
 
 export interface ColorGradeSetting {
   presetId: ColorGradePresetId
-  contrast: ContrastLevel
-  pivot: PivotLevel
-  blacks: BlacksIntent
-  whites: WhitesIntent
-  saturation: SaturationIntent
-  colorBoost: ColorBoostIntent
-  midtoneDetail: MidtoneDetailIntent
-  sCurve: SCurveIntent
-  protectSkin: boolean
-  sky: SkyIntent
-  foliage: FoliageIntent
-  accent: AccentIntent
-  protectHighlights: boolean
-  protectShadows: boolean
-  accurateSkin: boolean
+  // Primary Wheels (DaVinci Lift / Gamma / Gain / Offset)
+  lift: WheelSetting
+  gamma: WheelSetting
+  gain: WheelSetting
+  offset: WheelSetting
+  // Curves
+  curve: CurveSetting
+  // Qualifier / HSL intent
+  qualifier: QualifierSetting
+  // Texture
+  texture: TextureSetting
 }
 
 // ─── Preset metadata ──────────────────────────────────────────────────────────
@@ -58,154 +89,101 @@ export interface ColorGradePreset {
   id: ColorGradePresetId
   nameZh: string
   nameEn: string
-  description: string
-  accentColor: string  // CSS color for preset card accent
+  accentColor: string
   setting: Omit<ColorGradeSetting, 'presetId'>
 }
+
+const NEUTRAL_WHEEL: WheelSetting = { temperature: 0, tint: 0, luminance: 0, saturation: 0 }
 
 export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
   {
     id: 'neutral-rec709-clean',
     nameZh: '中性广播级',
     nameEn: 'Neutral Rec709 Clean',
-    description: '自然准确，皮肤色调正确，适合纪录片/访谈/企业视频',
-    accentColor: 'rgba(148,163,184,0.8)',
+    accentColor: 'linear-gradient(90deg, #888 0%, #ccc 100%)',
     setting: {
-      contrast: 'medium',
-      pivot: 'medium',
-      blacks: 'preserve-detail',
-      whites: 'protect-highlights',
-      saturation: 'neutral',
-      colorBoost: 'off',
-      midtoneDetail: 'off',
-      sCurve: 'gentle-s-curve',
-      protectSkin: true,
-      sky: 'none',
-      foliage: 'none',
-      accent: 'none',
-      protectHighlights: true,
-      protectShadows: false,
-      accurateSkin: true,
+      lift: { ...NEUTRAL_WHEEL },
+      gamma: { ...NEUTRAL_WHEEL },
+      gain: { ...NEUTRAL_WHEEL },
+      offset: { ...NEUTRAL_WHEEL },
+      curve: { shape: 'neutral', rgbBias: 'neutral' },
+      qualifier: { protectSkin: true, skinSat: 'neutral', skinLum: 'neutral', bluesSat: 'neutral', bluesLum: 'neutral', greensSat: 'neutral', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 0, grain: 'none', halation: 'none', glow: 'none', vignette: 'none', cleanShadows: false },
     },
   },
   {
     id: 'soft-cinematic-s-curve',
     nameZh: '柔和电影感',
     nameEn: 'Soft Cinematic S-Curve',
-    description: '暖高光冷阴影分色调，低饱和胶片感，适合叙事短片/MV',
-    accentColor: 'rgba(251,191,36,0.7)',
+    accentColor: 'linear-gradient(90deg, #4a3728 0%, #c8a87a 100%)',
     setting: {
-      contrast: 'medium',
-      pivot: 'medium',
-      blacks: 'preserve-detail',
-      whites: 'protect-highlights',
-      saturation: 'slightly-muted',
-      colorBoost: 'off',
-      midtoneDetail: 'off',
-      sCurve: 'standard-s-curve',
-      protectSkin: true,
-      sky: 'none',
-      foliage: 'none',
-      accent: 'warm-emphasis',
-      protectHighlights: true,
-      protectShadows: false,
-      accurateSkin: false,
+      lift: { temperature: -10, tint: 0, luminance: -15, saturation: -10 },
+      gamma: { temperature: 5, tint: 0, luminance: 0, saturation: 0 },
+      gain: { temperature: 15, tint: 0, luminance: 10, saturation: 0 },
+      offset: { temperature: 5, tint: 0, luminance: 0, saturation: -5 },
+      curve: { shape: 'standard-s', rgbBias: 'warm-hi-cool-sh' },
+      qualifier: { protectSkin: true, skinSat: 'neutral', skinLum: 'neutral', bluesSat: 'boost', bluesLum: 'neutral', greensSat: 'neutral', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 0, grain: 'fine', halation: 'subtle', glow: 'none', vignette: 'subtle', cleanShadows: false },
     },
   },
   {
     id: 'low-key-night-film',
     nameZh: '夜景低调电影',
     nameEn: 'Low Key Night Film',
-    description: '深黑重对比高低饱和冷色调，适合惊悚/黑色电影/悬疑',
-    accentColor: 'rgba(56,189,248,0.6)',
+    accentColor: 'linear-gradient(90deg, #0a0f1e 0%, #1a2a4a 100%)',
     setting: {
-      contrast: 'high',
-      pivot: 'dark',
-      blacks: 'deepen',
-      whites: 'neutral',
-      saturation: 'low',
-      colorBoost: 'off',
-      midtoneDetail: 'off',
-      sCurve: 'steep-s-curve',
-      protectSkin: false,
-      sky: 'none',
-      foliage: 'none',
-      accent: 'cool-emphasis',
-      protectHighlights: false,
-      protectShadows: false,
-      accurateSkin: false,
+      lift: { temperature: -25, tint: 0, luminance: -30, saturation: -15 },
+      gamma: { temperature: -10, tint: 0, luminance: -15, saturation: 0 },
+      gain: { temperature: -10, tint: 0, luminance: -5, saturation: 0 },
+      offset: { temperature: -15, tint: 0, luminance: -10, saturation: -10 },
+      curve: { shape: 'steep-s', rgbBias: 'neutral' },
+      qualifier: { protectSkin: true, skinSat: 'neutral', skinLum: 'neutral', bluesSat: 'boost', bluesLum: 'darken', greensSat: 'cut', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 0, grain: 'medium', halation: 'subtle', glow: 'none', vignette: 'strong', cleanShadows: true },
     },
   },
   {
     id: 'high-key-commercial',
     nameZh: '高调商业广告',
     nameEn: 'High Key Commercial',
-    description: '明亮开放阴影高饱和，适合美妆/科技产品/奢侈品广告',
-    accentColor: 'rgba(249,168,212,0.7)',
+    accentColor: 'linear-gradient(90deg, #dde8f5 0%, #ffffff 100%)',
     setting: {
-      contrast: 'medium',
-      pivot: 'bright',
-      blacks: 'preserve-detail',
-      whites: 'brighten',
-      saturation: 'high',
-      colorBoost: 'medium',
-      midtoneDetail: 'off',
-      sCurve: 'gentle-s-curve',
-      protectSkin: true,
-      sky: 'none',
-      foliage: 'none',
-      accent: 'none',
-      protectHighlights: false,
-      protectShadows: false,
-      accurateSkin: false,
+      lift: { temperature: 5, tint: 0, luminance: 20, saturation: 10 },
+      gamma: { temperature: 5, tint: 0, luminance: 20, saturation: 5 },
+      gain: { temperature: 5, tint: 0, luminance: 15, saturation: 0 },
+      offset: { temperature: 5, tint: 0, luminance: 10, saturation: 5 },
+      curve: { shape: 'gentle-s', rgbBias: 'neutral' },
+      qualifier: { protectSkin: true, skinSat: 'boost', skinLum: 'brighten', bluesSat: 'neutral', bluesLum: 'neutral', greensSat: 'neutral', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 1, grain: 'none', halation: 'none', glow: 'subtle', vignette: 'none', cleanShadows: false },
     },
   },
   {
     id: 'warm-portrait-protection',
     nameZh: '暖调人像保护',
     nameEn: 'Warm Portrait Protection',
-    description: '肤色隔离保护，暖调细腻，适合人像/美妆/模特造型',
-    accentColor: 'rgba(251,146,60,0.7)',
+    accentColor: 'linear-gradient(90deg, #8b4513 0%, #f4a460 100%)',
     setting: {
-      contrast: 'medium',
-      pivot: 'medium',
-      blacks: 'preserve-detail',
-      whites: 'protect-highlights',
-      saturation: 'slightly-boosted',
-      colorBoost: 'subtle',
-      midtoneDetail: 'subtle',
-      sCurve: 'gentle-s-curve',
-      protectSkin: true,
-      sky: 'none',
-      foliage: 'none',
-      accent: 'warm-emphasis',
-      protectHighlights: true,
-      protectShadows: false,
-      accurateSkin: true,
+      lift: { temperature: 15, tint: 5, luminance: 0, saturation: 0 },
+      gamma: { temperature: 15, tint: 5, luminance: 5, saturation: 5 },
+      gain: { temperature: 20, tint: 0, luminance: 5, saturation: 0 },
+      offset: { temperature: 10, tint: 3, luminance: 0, saturation: 0 },
+      curve: { shape: 'standard-s', rgbBias: 'warm-hi-cool-sh' },
+      qualifier: { protectSkin: true, skinSat: 'boost', skinLum: 'neutral', bluesSat: 'neutral', bluesLum: 'neutral', greensSat: 'neutral', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 0, grain: 'fine', halation: 'none', glow: 'subtle', vignette: 'subtle', cleanShadows: false },
     },
   },
   {
     id: 'teal-orange-classic',
     nameZh: '青橙好莱坞经典',
     nameEn: 'Teal & Orange Classic',
-    description: '阴影青蓝高光暖橙经典分色，适合动作/商业/视觉冲击',
-    accentColor: 'linear-gradient(135deg, rgba(20,184,166,0.8) 0%, rgba(251,146,60,0.8) 100%)',
+    accentColor: 'linear-gradient(90deg, #008080 0%, #ff6b00 100%)',
     setting: {
-      contrast: 'high',
-      pivot: 'medium',
-      blacks: 'deepen',
-      whites: 'protect-highlights',
-      saturation: 'slightly-boosted',
-      colorBoost: 'subtle',
-      midtoneDetail: 'off',
-      sCurve: 'standard-s-curve',
-      protectSkin: true,
-      sky: 'deepen-blue',
-      foliage: 'none',
-      accent: 'warm-emphasis',
-      protectHighlights: true,
-      protectShadows: false,
-      accurateSkin: false,
+      lift: { temperature: -35, tint: -5, luminance: -10, saturation: 10 },
+      gamma: { temperature: -5, tint: 0, luminance: 0, saturation: 5 },
+      gain: { temperature: 40, tint: 5, luminance: 5, saturation: 10 },
+      offset: { temperature: 0, tint: 0, luminance: 0, saturation: 5 },
+      curve: { shape: 'standard-s', rgbBias: 'teal-orange' },
+      qualifier: { protectSkin: true, skinSat: 'boost', skinLum: 'neutral', bluesSat: 'boost', bluesLum: 'darken', greensSat: 'cut', greensLum: 'neutral', neonAccent: false },
+      texture: { sharpness: 0, grain: 'fine', halation: 'none', glow: 'none', vignette: 'subtle', cleanShadows: false },
     },
   },
 ]
@@ -215,21 +193,29 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
 export function createDefaultColorGradeSetting(): ColorGradeSetting {
   return {
     presetId: 'none',
-    contrast: 'medium',
-    pivot: 'medium',
-    blacks: 'neutral',
-    whites: 'neutral',
-    saturation: 'neutral',
-    colorBoost: 'off',
-    midtoneDetail: 'off',
-    sCurve: 'none',
-    protectSkin: true,
-    sky: 'none',
-    foliage: 'none',
-    accent: 'none',
-    protectHighlights: false,
-    protectShadows: false,
-    accurateSkin: false,
+    lift: { ...NEUTRAL_WHEEL },
+    gamma: { ...NEUTRAL_WHEEL },
+    gain: { ...NEUTRAL_WHEEL },
+    offset: { ...NEUTRAL_WHEEL },
+    curve: { shape: 'neutral', rgbBias: 'neutral' },
+    qualifier: {
+      protectSkin: true,
+      skinSat: 'neutral',
+      skinLum: 'neutral',
+      bluesSat: 'neutral',
+      bluesLum: 'neutral',
+      greensSat: 'neutral',
+      greensLum: 'neutral',
+      neonAccent: false,
+    },
+    texture: {
+      sharpness: 0,
+      grain: 'none',
+      halation: 'none',
+      glow: 'none',
+      vignette: 'none',
+      cleanShadows: false,
+    },
   }
 }
 
@@ -240,154 +226,157 @@ export function applyColorGradePreset(presetId: ColorGradePresetId): ColorGradeS
   return { presetId, ...preset.setting }
 }
 
-// ─── Prompt builder ───────────────────────────────────────────────────────────
+// ─── Prompt builder helpers ───────────────────────────────────────────────────
 
-function buildToneIntentLines(s: ColorGradeSetting): string[] {
-  const lines: string[] = []
+function isNeutralWheel(w: WheelSetting): boolean {
+  return w.temperature === 0 && w.tint === 0 && w.luminance === 0 && w.saturation === 0
+}
 
-  // Contrast
-  if (s.contrast === 'high') lines.push('high dramatic contrast')
-  else if (s.contrast === 'low') lines.push('low flat matte contrast')
-  // 'medium' → no output
+function describeWheel(name: string, label: string, w: WheelSetting): string[] {
+  if (isNeutralWheel(w)) return []
+  const parts: string[] = []
+  if (w.luminance > 20) parts.push(`${label} exposure lifted`)
+  else if (w.luminance > 5) parts.push(`${label} exposure slightly brightened`)
+  else if (w.luminance < -20) parts.push(`${label} exposure pulled down`)
+  else if (w.luminance < -5) parts.push(`${label} exposure slightly darkened`)
 
-  // Blacks
-  if (s.blacks === 'deepen') lines.push('deep rich blacks')
-  else if (s.blacks === 'preserve-detail') lines.push('shadow detail preserved, no crushed blacks')
+  if (w.temperature > 20) parts.push(`warm ${name.toLowerCase()} bias`)
+  else if (w.temperature > 5) parts.push(`slightly warm ${name.toLowerCase()} cast`)
+  else if (w.temperature < -20) parts.push(`cool blue ${name.toLowerCase()} bias`)
+  else if (w.temperature < -5) parts.push(`slightly cool ${name.toLowerCase()} cast`)
 
-  // Whites
-  if (s.whites === 'brighten') lines.push('bright clean white point')
-  else if (s.whites === 'protect-highlights') lines.push('highlight rolloff preserved, no clipping')
+  if (w.tint > 15) parts.push(`magenta ${name.toLowerCase()} tint`)
+  else if (w.tint < -15) parts.push(`green ${name.toLowerCase()} tint offset`)
 
-  // Pivot — only output if contrast is non-medium
-  if (s.contrast !== 'medium') {
-    if (s.pivot === 'bright') lines.push('tonal center biased toward brighter midtones')
-    else if (s.pivot === 'dark') lines.push('tonal center biased toward darker midtones')
+  if (w.saturation > 15) parts.push(`${name.toLowerCase()} chroma boost`)
+  else if (w.saturation < -15) parts.push(`${name.toLowerCase()} chroma reduction`)
+  return parts
+}
+
+function buildPrimaryWheelsSection(s: ColorGradeSetting): string {
+  const liftParts = describeWheel('Lift', 'shadow', s.lift)
+  const gammaParts = describeWheel('Gamma', 'midtone', s.gamma)
+  const gainParts = describeWheel('Gain', 'highlight', s.gain)
+  const offsetParts = describeWheel('Offset', 'global', s.offset)
+
+  const allParts = [...liftParts, ...gammaParts, ...gainParts, ...offsetParts]
+  if (allParts.length === 0) {
+    return 'Neutral primary correction — balanced lift, gamma, gain, and offset. No tonal or color bias applied.'
   }
 
-  return lines
-}
-
-function buildSaturationLines(s: ColorGradeSetting): string[] {
   const lines: string[] = []
-
-  if (s.saturation === 'low') lines.push('heavy desaturation, muted color palette')
-  else if (s.saturation === 'slightly-muted') lines.push('slightly desaturated tones')
-  else if (s.saturation === 'slightly-boosted') lines.push('slightly boosted color vibrancy')
-  else if (s.saturation === 'high') lines.push('vibrant saturated colors, vivid palette')
-  // 'neutral' → no output
-
-  if (s.colorBoost === 'subtle') lines.push('natural color enhancement without oversaturation')
-  else if (s.colorBoost === 'medium') lines.push('rich natural color boost, vivid presence')
-  else if (s.colorBoost === 'strong') lines.push('strong natural color boost, vibrant foliage and skin')
-
-  if (s.midtoneDetail === 'soften') lines.push('smooth softened texture, beauty retouching clarity')
-  else if (s.midtoneDetail === 'subtle') lines.push('subtle texture enhancement, fine skin and fabric detail')
-  else if (s.midtoneDetail === 'medium') lines.push('fine texture detail, subtle fabric and skin sharpness')
-
-  return lines
+  if (liftParts.length > 0) lines.push(`Lift: ${liftParts.join(', ')}`)
+  if (gammaParts.length > 0) lines.push(`Gamma: ${gammaParts.join(', ')}`)
+  if (gainParts.length > 0) lines.push(`Gain: ${gainParts.join(', ')}`)
+  if (offsetParts.length > 0) lines.push(`Offset: ${offsetParts.join(', ')}`)
+  return lines.join('\n')
 }
 
-function buildCurveLines(s: ColorGradeSetting): string[] {
-  switch (s.sCurve) {
-    case 'gentle-s-curve': return ['gentle S-curve contrast, natural tonal separation']
-    case 'standard-s-curve': return ['cinematic S-curve contrast, film-like tonal curve']
-    case 'steep-s-curve': return ['steep dramatic contrast curve, noir tonal structure']
-    case 'lifted-blacks-s-curve': return ['lifted blacks with film S-curve, analog tonal response']
-    default: return []
+function buildCurvesSection(s: CurveSetting): string {
+  const shapeParts: string[] = []
+  switch (s.shape) {
+    case 'gentle-s': shapeParts.push('gentle S-curve contrast, natural tonal separation, all detail preserved'); break
+    case 'standard-s': shapeParts.push('cinematic S-curve contrast, film-like tonal curve, smooth shoulder and toe'); break
+    case 'steep-s': shapeParts.push('steep dramatic contrast curve, noir tonal structure, crushed blacks and clipped highs'); break
+    case 'lifted-blacks': shapeParts.push('lifted blacks film curve, analog tonal response, open shadows with S-curve shoulder'); break
+    default: break
   }
+  const biasParts: string[] = []
+  switch (s.rgbBias) {
+    case 'warm-hi-cool-sh': biasParts.push('warm orange-gold highlight curve, cool blue-teal shadow curve'); break
+    case 'cool-hi-warm-sh': biasParts.push('cool clean highlight curve, warm amber shadow undertone'); break
+    case 'green-sh-mag-hi': biasParts.push('green-shifted shadow curve, magenta highlight bias'); break
+    case 'teal-orange': biasParts.push('teal shadow curve bias, orange highlight curve bias, split-tone complementary'); break
+    default: break
+  }
+
+  const all = [...shapeParts, ...biasParts]
+  if (all.length === 0) return 'Neutral curve — no S-curve or RGB bias applied. Linear tonal response.'
+  return all.join(', ')
 }
 
-function buildHslLines(s: ColorGradeSetting): string[] {
-  const lines: string[] = []
+function buildQualifierSection(s: QualifierSetting): string {
+  const parts: string[] = []
+  if (s.protectSkin) parts.push('protect skin tones unchanged, warm accurate complexion')
+  if (s.skinSat === 'boost') parts.push('boost skin vibrancy, rich healthy complexion')
+  else if (s.skinSat === 'cut') parts.push('reduce skin saturation, muted complexion')
+  if (s.skinLum === 'brighten') parts.push('brighten skin midtones, clear lit complexion')
+  else if (s.skinLum === 'darken') parts.push('deepen skin tones, sculpted shadow under face')
 
-  if (s.protectSkin) lines.push('protect skin tones unchanged, warm accurate complexion')
+  if (s.bluesSat === 'boost') parts.push('deep saturated blue sky and cool tones')
+  else if (s.bluesSat === 'cut') parts.push('muted desaturated blue range')
+  if (s.bluesLum === 'darken') parts.push('darken blue channel for dramatic sky depth')
+  else if (s.bluesLum === 'brighten') parts.push('airy luminous blue sky')
 
-  if (s.sky === 'deepen-blue') lines.push('deep saturated blue sky')
-  else if (s.sky === 'dramatic-dark') lines.push('dramatic dark moody sky')
-  else if (s.sky === 'airy-bright') lines.push('bright airy luminous sky')
+  if (s.greensSat === 'boost') parts.push('vibrant lush foliage and green tones')
+  else if (s.greensSat === 'cut') parts.push('reduced green saturation, muted foliage')
+  if (s.greensLum === 'brighten') parts.push('bright open foliage')
+  else if (s.greensLum === 'darken') parts.push('deeper moody foliage')
 
-  if (s.foliage === 'reduce-green-saturation') lines.push('reduced green saturation in foliage')
-  else if (s.foliage === 'vibrant-foliage') lines.push('vibrant lush foliage')
+  if (s.neonAccent) parts.push('vivid neon accent isolation against dark background')
 
-  if (s.accent === 'warm-emphasis') lines.push('warm orange-gold tonal emphasis in highlights')
-  else if (s.accent === 'cool-emphasis') lines.push('cool blue-cyan tonal emphasis in shadows')
-  else if (s.accent === 'neon-emphasis') lines.push('vivid neon accent isolation against dark background')
-
-  return lines
+  if (parts.length === 0) return 'Neutral HSL qualifier intent — no selective color emphasis requested. All color ranges at natural response.'
+  return parts.join(',\n')
 }
 
-function buildOutputProtectionLines(s: ColorGradeSetting): string[] {
-  const optional: string[] = []
-  if (s.protectHighlights) optional.push('no blown highlights')
-  if (s.protectShadows) optional.push('no crushed blacks')
-  if (s.accurateSkin) optional.push('accurate skin tone reproduction')
+function buildTextureSection(s: TextureSetting): string {
+  const parts: string[] = []
+  if (s.sharpness > 1) parts.push('enhanced edge sharpness, fine fabric and skin detail')
+  else if (s.sharpness === 1) parts.push('subtle sharpness enhancement')
+  else if (s.sharpness < -1) parts.push('soft diffused texture, beauty retouching clarity')
+  else if (s.sharpness === -1) parts.push('slightly softened texture')
 
-  const base = [
-    'preserve original subject, composition, and characters unchanged,',
-    'adjust only color grading and tonal quality,',
-    'no changes to scene content or layout',
-  ]
-  if (optional.length > 0) base.push(optional.join(', '))
-  return base
+  if (s.grain === 'fine') parts.push('fine analog grain texture, subtle film noise')
+  else if (s.grain === 'medium') parts.push('medium analog grain, visible film texture')
+  else if (s.grain === 'heavy') parts.push('heavy grain structure, high-speed film look')
+
+  if (s.halation === 'subtle') parts.push('subtle warm halation glow around bright edges')
+  else if (s.halation === 'strong') parts.push('strong film halation around highlights, analog lens bloom')
+
+  if (s.glow === 'subtle') parts.push('soft diffused glow on highlights')
+  else if (s.glow === 'strong') parts.push('strong dreamy glow on bright areas')
+
+  if (s.vignette === 'subtle') parts.push('subtle darkened corner vignette')
+  else if (s.vignette === 'strong') parts.push('strong oval vignette, focused center composition')
+
+  if (s.cleanShadows) parts.push('clean shadow areas, no noise in dark regions')
+
+  if (parts.length === 0) return 'Neutral texture — no grain, halation, glow, vignette, or sharpness adjustment.'
+  return parts.join(',\n')
 }
+
+// ─── Main prompt builder ──────────────────────────────────────────────────────
 
 export function buildColorGradePrompt(
   setting: ColorGradeSetting,
   _nodeKind: 'image' | 'video',
 ): string {
-  const toneLines = buildToneIntentLines(setting)
-  const satLines = buildSaturationLines(setting)
-  const curveLines = buildCurveLines(setting)
-  const hslLines = buildHslLines(setting)
-  const outputLines = buildOutputProtectionLines(setting)
-
-  const sections: string[] = ['[Color Grade Palette]']
-
-  sections.push('\n[Primary / Tone Intent]')
-  sections.push(
-    toneLines.length > 0
-      ? toneLines.join(', ')
-      : 'Neutral primary correction — no tone adjustment requested.',
-  )
-
-  sections.push('\n[Saturation]')
-  sections.push(
-    satLines.length > 0
-      ? satLines.join(', ')
-      : 'Neutral saturation — no saturation, color boost, or midtone detail adjustment requested.',
-  )
-
-  sections.push('\n[Curve Intent]')
-  sections.push(
-    curveLines.length > 0
-      ? curveLines.join(', ')
-      : 'Neutral curve — no S-curve adjustment requested.',
-  )
-
-  sections.push('\n[HSL Intent]')
-  sections.push(
-    hslLines.length > 0
-      ? hslLines.join(', ')
-      : 'Neutral HSL intent — no selective color emphasis requested.',
-  )
-
-  sections.push('\n[Output Protection]')
-  sections.push(outputLines.join('\n'))
-
-  sections.push('\n[Color Grade Negative Constraints]')
-  sections.push(
+  const sections: string[] = [
+    '[Color Grade Palette]',
+    '\n[Primary Wheels]',
+    buildPrimaryWheelsSection(setting),
+    '\n[Curves]',
+    buildCurvesSection(setting.curve),
+    '\n[Qualifier Intent]',
+    buildQualifierSection(setting.qualifier),
+    '\n[Texture]',
+    buildTextureSection(setting.texture),
+    '\n[Output Protection]',
+    'Subject preservation LOCKED: preserve original subject, composition, and characters unchanged.\n' +
+    'No face change, no product redesign, no scene replacement.\n' +
+    'Avoid overprocessed HDR artifacts. Avoid plastic AI texture.',
+    '\n[Color Grade Negative Constraints]',
     'do not alter subject identity, facial features, body proportions, or scene objects,\n' +
     'do not change lighting direction or shadow placement from original composition,\n' +
     'do not introduce new colors unrelated to the selected grade,\n' +
     'no subject replacement, no face change, no product redesign, no composition change',
-  )
+  ]
 
   return sections.join('\n')
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-/** Returns true if the prompt already has a Color Grade Palette block. */
 export function hasColorGradePrompt(prompt: string): boolean {
   return prompt.includes('[Color Grade Palette]')
 }
@@ -406,7 +395,6 @@ export interface ColorGradeApplyResult {
   skipReason?: string
 }
 
-/** Preview what applying the grade would do to each node. */
 export function previewColorGradeApply(
   nodes: ColorGradeApplyTarget[],
   selectedNodeIds: string[],
@@ -419,24 +407,16 @@ export function previewColorGradeApply(
     const existing = node.prompt ?? ''
 
     if (hasColorGradePrompt(existing)) {
-      return {
-        nodeId,
-        newPrompt: existing,
-        skipped: true,
-        skipReason: 'already-has-grade',
-      }
+      return { nodeId, newPrompt: existing, skipped: true, skipReason: 'already-has-grade' }
     }
 
     const grade = buildColorGradePrompt(setting, (node.kind as 'image' | 'video') ?? 'image')
-    const newPrompt = existing.trim()
-      ? `${existing.trimEnd()}\n\n${grade}`
-      : grade
+    const newPrompt = existing.trim() ? `${existing.trimEnd()}\n\n${grade}` : grade
 
     return { nodeId, newPrompt, skipped: false }
   })
 }
 
-/** Build a human-readable summary of the current setting for the copy report. */
 export function summarizeColorGradeSetting(setting: ColorGradeSetting): string {
   const presetLabel = setting.presetId === 'none'
     ? '手动'
@@ -444,13 +424,12 @@ export function summarizeColorGradeSetting(setting: ColorGradeSetting): string {
 
   const lines = [
     `预设：${presetLabel}`,
-    `对比度：${{ low: '低', medium: '中', high: '高' }[setting.contrast]}`,
-    `黑位：${{ 'preserve-detail': '保留细节', neutral: '中性', deepen: '压暗' }[setting.blacks]}`,
-    `白位：${{ 'protect-highlights': '保护高光', neutral: '中性', brighten: '提亮' }[setting.whites]}`,
-    `饱和度：${({ low: '低饱和', 'slightly-muted': '轻降', neutral: '中性', 'slightly-boosted': '轻升', high: '高饱和' } as Record<SaturationIntent, string>)[setting.saturation]}`,
-    `曲线：${({ none: '无', 'gentle-s-curve': '轻柔 S-Curve', 'standard-s-curve': '标准 S-Curve', 'steep-s-curve': '陡峭 S-Curve', 'lifted-blacks-s-curve': 'Lifted Blacks S' } as Record<SCurveIntent, string>)[setting.sCurve]}`,
-    `肤色保护：${setting.protectSkin ? '开' : '关'}`,
+    `Lift：T${setting.lift.temperature > 0 ? '+' : ''}${setting.lift.temperature} / G${setting.lift.tint > 0 ? '+' : ''}${setting.lift.tint} / L${setting.lift.luminance > 0 ? '+' : ''}${setting.lift.luminance}`,
+    `Gamma：T${setting.gamma.temperature > 0 ? '+' : ''}${setting.gamma.temperature} / G${setting.gamma.tint > 0 ? '+' : ''}${setting.gamma.tint} / L${setting.gamma.luminance > 0 ? '+' : ''}${setting.gamma.luminance}`,
+    `Gain：T${setting.gain.temperature > 0 ? '+' : ''}${setting.gain.temperature} / G${setting.gain.tint > 0 ? '+' : ''}${setting.gain.tint} / L${setting.gain.luminance > 0 ? '+' : ''}${setting.gain.luminance}`,
+    `曲线：${setting.curve.shape} / ${setting.curve.rgbBias}`,
+    `肤色保护：${setting.qualifier.protectSkin ? '开' : '关'}`,
+    `纹理：${setting.texture.grain !== 'none' ? `grain ${setting.texture.grain}` : '无噪点'}`,
   ]
-
   return lines.join('\n')
 }

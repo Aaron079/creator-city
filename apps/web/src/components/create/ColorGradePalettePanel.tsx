@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { Check, Copy, X } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { Check, Copy, X, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import {
   COLOR_GRADE_PRESETS,
   createDefaultColorGradeSetting,
@@ -12,16 +12,13 @@ import {
   hasColorGradePrompt,
   type ColorGradePresetId,
   type ColorGradeSetting,
-  type ContrastLevel,
-  type BlacksIntent,
-  type WhitesIntent,
-  type SaturationIntent,
-  type ColorBoostIntent,
-  type MidtoneDetailIntent,
-  type SCurveIntent,
-  type SkyIntent,
-  type FoliageIntent,
-  type AccentIntent,
+  type WheelSetting,
+  type CurveShape,
+  type RgbBias,
+  type RangeIntent,
+  type LumIntent,
+  type GrainType,
+  type EffectLevel,
 } from '@/lib/canvas/color-grade-palette'
 
 interface GradeNode {
@@ -39,35 +36,294 @@ interface ColorGradePalettePanelProps {
   defaultSelectedNodeId?: string
 }
 
-// ─── Small helpers ─────────────────────────────────────────────────────────────
+type ActiveTab = 'wheels' | 'curves' | 'qualifier' | 'texture' | 'output'
 
-function SegmentControl<T extends string>({
+// ─── Color Wheel Visual ───────────────────────────────────────────────────────
+
+function ColorWheel({
+  wheel,
+  size = 88,
+  onChange,
+}: {
+  wheel: WheelSetting
+  size?: number
+  onChange: (patch: Partial<WheelSetting>) => void
+}) {
+  // Dot position: temperature maps to x, tint maps to y (inverted)
+  const maxOffset = 0.35
+  const dotX = 50 + (wheel.temperature / 100) * maxOffset * 100
+  const dotY = 50 - (wheel.tint / 100) * maxOffset * 100
+  const isNeutral = wheel.temperature === 0 && wheel.tint === 0
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      {/* Wheel disc */}
+      <div
+        className="relative flex-shrink-0 rounded-full border border-white/10"
+        style={{
+          width: size,
+          height: size,
+          background: `
+            radial-gradient(circle at center, rgba(0,0,0,0.55) 0%, transparent 60%),
+            conic-gradient(
+              hsl(0,75%,55%) 0deg,
+              hsl(30,75%,55%) 30deg,
+              hsl(60,75%,55%) 60deg,
+              hsl(120,75%,55%) 120deg,
+              hsl(180,75%,55%) 180deg,
+              hsl(210,75%,55%) 210deg,
+              hsl(240,75%,55%) 240deg,
+              hsl(270,75%,55%) 270deg,
+              hsl(300,75%,55%) 300deg,
+              hsl(330,75%,55%) 330deg,
+              hsl(360,75%,55%) 360deg
+            )
+          `,
+        }}
+      >
+        {/* Center dot */}
+        <div
+          className="absolute rounded-full border-2 border-white shadow-lg"
+          style={{
+            width: 9,
+            height: 9,
+            left: `${dotX}%`,
+            top: `${dotY}%`,
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: isNeutral ? 'rgba(255,255,255,0.6)' : 'white',
+            boxShadow: '0 0 4px rgba(0,0,0,0.8)',
+          }}
+        />
+        {/* Reset button */}
+        {!isNeutral && (
+          <button
+            type="button"
+            onClick={() => onChange({ temperature: 0, tint: 0 })}
+            className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[7px] text-white/50 hover:text-white/80"
+            title="Reset hue"
+          >
+            ↺
+          </button>
+        )}
+      </div>
+      {/* Temp axis label */}
+      <div className="flex w-full items-center justify-between px-0.5 text-[7.5px] text-white/25">
+        <span>◀ Cool</span>
+        <span>Warm ▶</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Wheel Card ───────────────────────────────────────────────────────────────
+
+function WheelCard({
   label,
-  value,
-  options,
+  labelZh,
+  wheel,
   onChange,
 }: {
   label: string
-  value: T
-  options: Array<{ value: T; label: string }>
-  onChange: (v: T) => void
+  labelZh: string
+  wheel: WheelSetting
+  onChange: (patch: Partial<WheelSetting>) => void
 }) {
   return (
-    <div className="space-y-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">{label}</p>
-      <div className="flex gap-1">
-        {options.map((opt) => (
+    <div className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/2 p-2.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">{label}</span>
+        <span className="text-[9px] text-white/30">{labelZh}</span>
+      </div>
+
+      <ColorWheel wheel={wheel} size={88} onChange={onChange} />
+
+      {/* Temperature slider */}
+      <SliderRow
+        label="Temp"
+        value={wheel.temperature}
+        min={-100} max={100} step={5}
+        leftLabel="Cool" rightLabel="Warm"
+        trackColor="linear-gradient(90deg, #4488ff, #888, #ff8833)"
+        onChange={(v) => onChange({ temperature: v })}
+      />
+      {/* Tint slider */}
+      <SliderRow
+        label="Tint"
+        value={wheel.tint}
+        min={-100} max={100} step={5}
+        leftLabel="Green" rightLabel="Mag"
+        trackColor="linear-gradient(90deg, #22cc44, #888, #cc44aa)"
+        onChange={(v) => onChange({ tint: v })}
+      />
+      {/* Luminance slider */}
+      <SliderRow
+        label="Lum"
+        value={wheel.luminance}
+        min={-100} max={100} step={5}
+        leftLabel="Dark" rightLabel="Bright"
+        trackColor="linear-gradient(90deg, #111, #888, #fff)"
+        onChange={(v) => onChange({ luminance: v })}
+      />
+      {/* Saturation slider */}
+      <SliderRow
+        label="Sat"
+        value={wheel.saturation}
+        min={-100} max={100} step={5}
+        leftLabel="Desat" rightLabel="Sat"
+        trackColor="linear-gradient(90deg, #444, #888, #f55)"
+        onChange={(v) => onChange({ saturation: v })}
+      />
+    </div>
+  )
+}
+
+// ─── Slider Row ───────────────────────────────────────────────────────────────
+
+function SliderRow({
+  label, value, min, max, step,
+  leftLabel, rightLabel, trackColor, onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  leftLabel: string
+  rightLabel: string
+  trackColor: string
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[8.5px] font-medium text-white/40">{label}</span>
+        <span className={`text-[8.5px] font-mono ${value === 0 ? 'text-white/25' : 'text-indigo-300'}`}>
+          {value > 0 ? `+${value}` : value}
+        </span>
+      </div>
+      <div className="relative flex items-center gap-1">
+        <span className="w-6 text-[7px] text-white/20 text-right">{leftLabel}</span>
+        <div className="relative flex-1">
+          <div
+            className="absolute inset-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full opacity-40"
+            style={{ background: trackColor }}
+          />
+          <input
+            type="range"
+            min={min} max={max} step={step}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="relative w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/30 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow"
+          />
+        </div>
+        <span className="w-6 text-[7px] text-white/20">{rightLabel}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Curve SVG ────────────────────────────────────────────────────────────────
+
+const CURVE_PATHS: Record<CurveShape, string> = {
+  neutral: 'M 0 100 L 100 0',
+  'gentle-s': 'M 0 100 C 20 90, 30 60, 50 50 C 70 40, 80 10, 100 0',
+  'standard-s': 'M 0 100 C 15 95, 25 70, 50 50 C 75 30, 85 5, 100 0',
+  'steep-s': 'M 0 100 C 10 98, 20 80, 50 50 C 80 20, 90 2, 100 0',
+  'lifted-blacks': 'M 0 85 C 15 80, 30 65, 50 48 C 70 32, 85 5, 100 0',
+}
+
+const RGB_BIAS_COLORS: Record<RgbBias, { shadow: string; highlight: string }> = {
+  'neutral': { shadow: '#888', highlight: '#888' },
+  'warm-hi-cool-sh': { shadow: '#4488ff', highlight: '#ff8833' },
+  'cool-hi-warm-sh': { shadow: '#ff8833', highlight: '#44aaff' },
+  'green-sh-mag-hi': { shadow: '#44cc66', highlight: '#cc44aa' },
+  'teal-orange': { shadow: '#00aaaa', highlight: '#ff6600' },
+}
+
+function CurveSVG({ shape, rgbBias }: { shape: CurveShape; rgbBias: RgbBias }) {
+  const path = CURVE_PATHS[shape]
+  const bias = RGB_BIAS_COLORS[rgbBias]
+  return (
+    <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
+      {/* Grid */}
+      <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
+      <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
+      <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.04)" strokeWidth="0.3" />
+      <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.04)" strokeWidth="0.3" />
+      {/* Shadow color indicator */}
+      <circle cx="8" cy="92" r="4" fill={bias.shadow} opacity="0.7" />
+      {/* Highlight color indicator */}
+      <circle cx="92" cy="8" r="4" fill={bias.highlight} opacity="0.7" />
+      {/* Curve */}
+      <path
+        d={path}
+        fill="none"
+        stroke="rgba(255,255,255,0.7)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      {/* Reference diagonal (neutral) */}
+      {shape !== 'neutral' && (
+        <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.12)" strokeWidth="0.8" strokeDasharray="3,3" />
+      )}
+    </svg>
+  )
+}
+
+// ─── Small helpers ────────────────────────────────────────────────────────────
+
+function ToggleRow({ label, checked, onChange, locked = false }: { label: string; checked: boolean; onChange?: (v: boolean) => void; locked?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+        {locked && <Lock size={9} className="text-emerald-400/60" />}
+        <span className="text-[10px] text-white/60">{label}</span>
+      </div>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => onChange?.(!checked)}
+        className={`relative h-4 w-7 rounded-full transition ${checked ? 'bg-emerald-500/70' : 'bg-white/10'} ${locked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+      >
+        <span
+          className="absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all"
+          style={{ left: checked ? '14px' : '2px' }}
+        />
+      </button>
+    </div>
+  )
+}
+
+function RangeBar({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-3 w-3 flex-shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+      <span className="text-[9px] text-white/50">{label}</span>
+    </div>
+  )
+}
+
+function ThreeWayControl<T extends string>({
+  label, value,
+  options,
+  onChange,
+}: { label: string; value: T; options: [T, string, T, string, T, string]; onChange: (v: T) => void }) {
+  const [lo, loLabel, mid, midLabel, hi, hiLabel] = options
+  return (
+    <div className="space-y-0.5">
+      <span className="text-[8.5px] text-white/40">{label}</span>
+      <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-white/8 p-0.5">
+        {([lo, loLabel, mid, midLabel, hi, hiLabel] as [T, string, T, string, T, string]).reduce<[T, string][]>(
+          (acc, _, i) => { if (i % 2 === 0) acc.push([options[i] as T, options[i + 1] as string]); return acc },
+          [],
+        ).map(([v, l]) => (
           <button
-            key={opt.value}
+            key={v}
             type="button"
-            onClick={() => onChange(opt.value)}
-            className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${
-              value === opt.value
-                ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-300'
-                : 'border-white/8 bg-white/3 text-white/50 hover:border-white/16 hover:bg-white/6 hover:text-white/75'
-            }`}
+            onClick={() => onChange(v)}
+            className={`rounded py-1 text-[9px] transition ${value === v ? 'bg-indigo-500/30 text-indigo-200 font-medium' : 'text-white/35 hover:bg-white/5 hover:text-white/60'}`}
           >
-            {opt.label}
+            {l}
           </button>
         ))}
       </div>
@@ -75,44 +331,7 @@ function SegmentControl<T extends string>({
   )
 }
 
-function ToggleRow({
-  label,
-  checked,
-  onChange,
-  note,
-}: {
-  label: string
-  checked: boolean
-  onChange: (v: boolean) => void
-  note?: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-[11px] text-white/70">{label}</p>
-        {note && <p className="text-[9px] text-white/35">{note}</p>}
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 flex-shrink-0 rounded-full border transition ${
-          checked
-            ? 'border-indigo-500/60 bg-indigo-500/30'
-            : 'border-white/15 bg-white/5'
-        }`}
-        aria-pressed={checked}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full transition-all ${
-            checked ? 'left-4 bg-indigo-400' : 'left-0.5 bg-white/30'
-          }`}
-        />
-      </button>
-    </div>
-  )
-}
-
-// ─── Main panel ───────────────────────────────────────────────────────────────
+// ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function ColorGradePalettePanel({
   nodes,
@@ -120,11 +339,21 @@ export function ColorGradePalettePanel({
   onClose,
   defaultSelectedNodeId,
 }: ColorGradePalettePanelProps) {
+  const [setting, setSetting] = useState<ColorGradeSetting>(createDefaultColorGradeSetting)
+  const [activeTab, setActiveTab] = useState<ActiveTab>('wheels')
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [previewText, setPreviewText] = useState<string | null>(null)
+  const [previewResults, setPreviewResults] = useState<ReturnType<typeof previewColorGradeApply> | null>(null)
+  const [applySuccess, setApplySuccess] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showPromptPreview, setShowPromptPreview] = useState(false)
+
   const eligibleNodes = useMemo(
     () => nodes.filter((n) => n.kind === 'image' || n.kind === 'video'),
     [nodes],
   )
 
+  // Initialize selection once
   const defaultSelected = useMemo(() => {
     if (defaultSelectedNodeId) {
       const found = eligibleNodes.find((n) => n.id === defaultSelectedNodeId)
@@ -133,50 +362,40 @@ export function ColorGradePalettePanel({
     const first = eligibleNodes[0]
     if (first) return [first.id]
     return []
-  }, [eligibleNodes, defaultSelectedNodeId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(defaultSelected)
-  const [setting, setSetting] = useState<ColorGradeSetting>(createDefaultColorGradeSetting())
-  const [previewText, setPreviewText] = useState<string | null>(null)
-  const [previewResults, setPreviewResults] = useState<ReturnType<typeof previewColorGradeApply> | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [applySuccess, setApplySuccess] = useState(false)
-  const [sectionOpen, setSectionOpen] = useState({
-    tone: true,
-    saturation: true,
-    sCurve: true,
-    hsl: true,
-    output: true,
-  })
+  const [initDone, setInitDone] = useState(false)
+  if (!initDone && defaultSelected.length > 0) {
+    setSelectedNodeIds(defaultSelected)
+    setInitDone(true)
+  }
+
+  const patchSetting = useCallback((patch: Partial<ColorGradeSetting>) => {
+    setSetting((prev) => ({ ...prev, ...patch, presetId: 'none' }))
+    setPreviewText(null)
+    setPreviewResults(null)
+    setApplySuccess(false)
+  }, [])
+
+  const patchWheel = useCallback((wheel: 'lift' | 'gamma' | 'gain' | 'offset', patch: Partial<WheelSetting>) => {
+    setSetting((prev) => ({ ...prev, presetId: 'none', [wheel]: { ...prev[wheel], ...patch } }))
+    setPreviewText(null)
+    setPreviewResults(null)
+    setApplySuccess(false)
+  }, [])
+
+  const applyPreset = (presetId: ColorGradePresetId) => {
+    setSetting(applyColorGradePreset(presetId))
+    setPreviewText(null)
+    setPreviewResults(null)
+    setApplySuccess(false)
+  }
 
   const toggleNode = (id: string) => {
     setSelectedNodeIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     )
-    setPreviewText(null)
-    setPreviewResults(null)
-    setApplySuccess(false)
-  }
-
-  const selectAll = () => {
-    setSelectedNodeIds(eligibleNodes.map((n) => n.id))
-    setPreviewText(null)
-    setPreviewResults(null)
-  }
-
-  const patchSetting = (patch: Partial<ColorGradeSetting>) => {
-    setSetting((prev) => ({ ...prev, ...patch, presetId: 'none' }))
-    setPreviewText(null)
-    setPreviewResults(null)
-    setApplySuccess(false)
-  }
-
-  const applyPreset = (presetId: ColorGradePresetId) => {
-    if (presetId === 'none') {
-      setSetting(createDefaultColorGradeSetting())
-    } else {
-      setSetting(applyColorGradePreset(presetId))
-    }
     setPreviewText(null)
     setPreviewResults(null)
     setApplySuccess(false)
@@ -188,9 +407,7 @@ export function ColorGradePalettePanel({
     const firstActive = results.find((r) => !r.skipped)
     if (firstActive) {
       setPreviewText(buildColorGradePrompt(setting, 'image'))
-    } else {
-      // All skipped
-      setPreviewText(null)
+      setShowPromptPreview(true)
     }
   }
 
@@ -213,26 +430,13 @@ export function ColorGradePalettePanel({
       '=== Color Grade Palette / 调色盘 ===',
       `目标节点：${nodesSummary}`,
       '',
-      '--- 调色参数 ---',
       summarizeColorGradeSetting(setting),
       '',
-      '--- 追加调色指令 ---',
       buildColorGradePrompt(setting, 'image'),
     ].join('\n')
-    try {
-      await navigator.clipboard.writeText(reportText)
-    } catch {
-      // fallback: skip
-    }
+    try { await navigator.clipboard.writeText(reportText) } catch { /* noop */ }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleReset = () => {
-    setSetting(createDefaultColorGradeSetting())
-    setPreviewText(null)
-    setPreviewResults(null)
-    setApplySuccess(false)
   }
 
   const skippedNodes = previewResults?.filter((r) => r.skipped && r.skipReason === 'already-has-grade') ?? []
@@ -240,22 +444,26 @@ export function ColorGradePalettePanel({
   const canApply = previewResults !== null && activeResults.length > 0 && !applySuccess
   const canPreview = selectedNodeIds.length > 0
 
-  const toggleSection = (key: keyof typeof sectionOpen) => {
-    setSectionOpen((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
+  const TABS: { id: ActiveTab; label: string; zh: string }[] = [
+    { id: 'wheels', label: 'Wheels', zh: '色轮' },
+    { id: 'curves', label: 'Curves', zh: '曲线' },
+    { id: 'qualifier', label: 'Qualifier', zh: 'HSL' },
+    { id: 'texture', label: 'Texture', zh: '纹理' },
+    { id: 'output', label: 'Output', zh: '输出' },
+  ]
 
   return (
     <div
-      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[88vh] w-[320px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f14]/97 shadow-2xl backdrop-blur-xl"
+      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[680px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f14]/97 shadow-2xl backdrop-blur-xl"
       data-no-node-drag="true"
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* ── Header ── */}
-      <div className="flex items-start justify-between border-b border-white/8 px-4 pb-3 pt-4">
+      <div className="flex items-start justify-between border-b border-white/8 px-4 pb-2.5 pt-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">Editing · 剪辑</p>
-          <h2 className="mt-0.5 text-[13px] font-bold text-white/90">Color Grade Palette</h2>
-          <p className="text-[10px] text-white/40">调色盘 · 专业影调与色彩控制</p>
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">Editing · 剪辑</p>
+          <h2 className="mt-0.5 text-[14px] font-bold tracking-tight text-white/90">Color Grade Palette</h2>
+          <p className="text-[9px] text-white/35">调色盘 · Prompt-level grading · 非像素级调色</p>
         </div>
         <button
           type="button"
@@ -267,420 +475,479 @@ export function ColorGradePalettePanel({
         </button>
       </div>
 
-      {/* ── Amber safety notice ── */}
-      <div className="mx-3 mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5">
-        <p className="text-[10px] font-semibold text-amber-400/90">Prompt 级调色控制 — 非像素级调色</p>
-        <p className="mt-0.5 text-[9.5px] leading-relaxed text-amber-300/60">
-          当前已生成图片/视频不会立即变化。应用后需要重新生成才会看到效果。
-          会加入主体保护约束，尽量保持人物、产品和构图不变。
-        </p>
+      {/* ── Gallery Strip (preset chips) ── */}
+      <div className="border-b border-white/6 px-3 py-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => applyPreset('none')}
+            className={`flex-shrink-0 rounded-lg border px-2.5 py-1 text-[9px] font-medium transition ${setting.presetId === 'none' ? 'border-white/30 bg-white/10 text-white/80' : 'border-white/8 text-white/35 hover:border-white/16 hover:text-white/60'}`}
+          >
+            Manual
+          </button>
+          {COLOR_GRADE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p.id)}
+              className={`flex-shrink-0 overflow-hidden rounded-lg border px-2.5 py-1 transition ${setting.presetId === p.id ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200' : 'border-white/8 text-white/40 hover:border-white/16 hover:text-white/65'}`}
+            >
+              <div className="mb-0.5 h-0.5 w-full rounded-full" style={{ background: p.accentColor }} />
+              <span className="text-[9px] font-medium leading-none">{p.nameZh}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── Scrollable body ── */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 pt-3 space-y-4">
+      {/* ── Body: 3-column ── */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
 
-        {/* ── Node selection ── */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">选择节点</p>
-            {eligibleNodes.length > 1 && (
-              <button
-                type="button"
-                onClick={selectAll}
-                className="text-[9px] text-indigo-400/70 hover:text-indigo-300 transition"
-              >
-                全选
-              </button>
-            )}
+        {/* ── Left: Clip Strip ── */}
+        <div className="flex w-[140px] flex-shrink-0 flex-col border-r border-white/6">
+          <div className="border-b border-white/6 px-2.5 py-2">
+            <p className="text-[8px] font-semibold uppercase tracking-widest text-white/25">Clip Strip</p>
           </div>
-          {eligibleNodes.length === 0 && (
-            <p className="rounded-xl border border-white/8 bg-white/3 px-3 py-3 text-[11px] text-white/35">
-              当前画布暂无图片/视频节点。请先添加节点再使用调色盘。
-            </p>
-          )}
-          <div className="space-y-1.5">
+          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+            {eligibleNodes.length === 0 && (
+              <p className="text-[9px] leading-relaxed text-white/30">无图片/视频节点</p>
+            )}
             {eligibleNodes.map((node) => {
               const isSelected = selectedNodeIds.includes(node.id)
               const hasGrade = hasColorGradePrompt(node.prompt ?? '')
-              const prompt = node.prompt ?? ''
-              const promptPreview = prompt.replace(/\[Color Grade Palette\][\s\S]*/g, '').trim()
               return (
                 <button
                   key={node.id}
                   type="button"
                   onClick={() => toggleNode(node.id)}
-                  className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                    isSelected
-                      ? 'border-indigo-500/50 bg-indigo-500/10'
-                      : 'border-white/8 bg-white/3 hover:border-white/16 hover:bg-white/5'
-                  }`}
+                  className={`w-full rounded-lg border px-2 py-1.5 text-left transition ${isSelected ? 'border-indigo-500/50 bg-indigo-500/12' : 'border-white/6 bg-white/2 hover:border-white/12 hover:bg-white/4'}`}
                 >
-                  <div className="flex items-center gap-2">
-                    <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${isSelected ? 'border-indigo-400 bg-indigo-500/30' : 'border-white/20 bg-transparent'}`}>
-                      {isSelected && <Check size={9} strokeWidth={3} className="text-indigo-300" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-medium text-white/80 truncate">
-                          {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
-                        </span>
-                        <span className={`rounded px-1 text-[8px] font-medium ${node.kind === 'image' ? 'bg-sky-500/15 text-sky-400' : 'bg-violet-500/15 text-violet-400'}`}>
-                          {node.kind === 'image' ? 'IMG' : 'VID'}
-                        </span>
-                        {hasGrade && (
-                          <span className="rounded px-1 text-[8px] font-medium bg-amber-500/15 text-amber-400">已调色</span>
-                        )}
-                      </div>
-                      {promptPreview && (
-                        <p className="mt-0.5 truncate text-[9px] text-white/30">{promptPreview.slice(0, 55)}{promptPreview.length > 55 ? '…' : ''}</p>
-                      )}
-                    </div>
+                  {/* Thumbnail placeholder */}
+                  <div className={`mb-1 h-10 w-full rounded border ${isSelected ? 'border-indigo-500/30 bg-indigo-500/8' : 'border-white/6 bg-white/4'} flex items-center justify-center`}>
+                    <span className={`text-[9px] font-bold ${node.kind === 'image' ? 'text-sky-400/60' : 'text-violet-400/60'}`}>
+                      {node.kind === 'image' ? 'IMG' : 'VID'}
+                    </span>
+                  </div>
+                  <p className="truncate text-[9px] font-medium text-white/70">
+                    {node.title ?? (node.kind === 'image' ? '图片' : '视频')}
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-1">
+                    {isSelected && <span className="text-[7px] text-indigo-400">●</span>}
+                    {hasGrade && <span className="text-[7px] text-amber-400">已调</span>}
                   </div>
                 </button>
               )
             })}
+            {eligibleNodes.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setSelectedNodeIds(eligibleNodes.map((n) => n.id))}
+                className="w-full rounded-lg border border-white/6 py-1 text-[8px] text-white/30 hover:border-white/14 hover:text-white/55 transition"
+              >
+                全选
+              </button>
+            )}
           </div>
         </div>
 
-        {/* ── Preset strip ── */}
-        <div className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">调色预设</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {/* None card */}
-            <button
-              type="button"
-              onClick={() => applyPreset('none')}
-              className={`rounded-xl border px-3 py-2 text-left transition ${
-                setting.presetId === 'none'
-                  ? 'border-white/25 bg-white/8'
-                  : 'border-white/8 bg-white/3 hover:border-white/16 hover:bg-white/5'
-              }`}
-            >
-              <p className="text-[10px] font-semibold text-white/70">手动</p>
-              <p className="text-[8.5px] text-white/30">自定义参数</p>
-            </button>
-            {COLOR_GRADE_PRESETS.map((preset) => (
+        {/* ── Center: Main Area ── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+
+          {/* Intent Monitor strip */}
+          <div className="border-b border-white/6 bg-[#0a0c10] px-3 py-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[7.5px] font-semibold uppercase tracking-widest text-white/20">Intent Monitor — no pixel analysis</p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <div className={`h-1.5 w-8 rounded-full ${
+                    setting.lift.luminance < -20 || setting.gamma.luminance < -15 ? 'bg-zinc-600' :
+                    setting.lift.luminance > 20 || setting.gamma.luminance > 15 ? 'bg-zinc-200' : 'bg-zinc-400'
+                  }`} />
+                  <span className="text-[7.5px] text-white/25">Wave</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="h-2 w-2 rounded-full" style={{
+                    background: setting.lift.temperature < -20 ? '#4488ff' :
+                      setting.gain.temperature > 20 ? '#ff8833' : '#888',
+                  }} />
+                  <span className="text-[7.5px] text-white/25">Vect</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`text-[7.5px] font-medium ${setting.qualifier.protectSkin ? 'text-emerald-400/70' : 'text-white/20'}`}>
+                    Skin {setting.qualifier.protectSkin ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[7.5px] text-white/25">
+                    {[setting.lift, setting.gamma, setting.gain, setting.offset].filter(
+                      w => w.temperature !== 0 || w.tint !== 0 || w.luminance !== 0 || w.saturation !== 0,
+                    ).length}/4 wheels active
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex border-b border-white/6">
+            {TABS.map((tab) => (
               <button
-                key={preset.id}
+                key={tab.id}
                 type="button"
-                onClick={() => applyPreset(preset.id)}
-                className={`rounded-xl border px-3 py-2 text-left transition overflow-hidden ${
-                  setting.presetId === preset.id
-                    ? 'border-indigo-500/60 bg-indigo-500/10'
-                    : 'border-white/8 bg-white/3 hover:border-white/16 hover:bg-white/5'
-                }`}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 py-2 text-center transition ${activeTab === tab.id ? 'border-b-2 border-indigo-400 text-indigo-300' : 'text-white/35 hover:text-white/60'}`}
               >
-                {/* Accent strip */}
-                <div
-                  className="mb-1.5 h-1 w-full rounded-full"
-                  style={{ background: preset.accentColor }}
-                />
-                <p className="text-[10px] font-semibold text-white/80 leading-tight">{preset.nameZh}</p>
-                <p className="text-[8px] text-white/35 leading-tight">{preset.nameEn}</p>
+                <span className="block text-[9.5px] font-semibold">{tab.label}</span>
+                <span className="block text-[7.5px] text-current/60">{tab.zh}</span>
               </button>
             ))}
           </div>
-        </div>
 
-        {/* ── Tone Controls ── */}
-        <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('tone')}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-white/3 transition"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Tone Controls · 影调控制</p>
-            <span className="text-[9px] text-white/25">{sectionOpen.tone ? '▾' : '▸'}</span>
-          </button>
-          {sectionOpen.tone && (
-            <div className="space-y-3 border-t border-white/6 px-3 py-3">
-              <SegmentControl<ContrastLevel>
-                label="Contrast 对比度"
-                value={setting.contrast}
-                options={[
-                  { value: 'low', label: '低' },
-                  { value: 'medium', label: '中' },
-                  { value: 'high', label: '高' },
-                ]}
-                onChange={(v) => patchSetting({ contrast: v })}
-              />
-              <SegmentControl<BlacksIntent>
-                label="Blacks 黑位"
-                value={setting.blacks}
-                options={[
-                  { value: 'preserve-detail', label: '保留细节' },
-                  { value: 'neutral', label: '中性' },
-                  { value: 'deepen', label: '压暗' },
-                ]}
-                onChange={(v) => patchSetting({ blacks: v })}
-              />
-              <SegmentControl<WhitesIntent>
-                label="Whites 白位"
-                value={setting.whites}
-                options={[
-                  { value: 'protect-highlights', label: '保护高光' },
-                  { value: 'neutral', label: '中性' },
-                  { value: 'brighten', label: '提亮' },
-                ]}
-                onChange={(v) => patchSetting({ whites: v })}
-              />
-            </div>
-          )}
-        </div>
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto p-3">
 
-        {/* ── Saturation Controls ── */}
-        <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('saturation')}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-white/3 transition"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Saturation · 饱和度控制</p>
-            <span className="text-[9px] text-white/25">{sectionOpen.saturation ? '▾' : '▸'}</span>
-          </button>
-          {sectionOpen.saturation && (
-            <div className="space-y-3 border-t border-white/6 px-3 py-3">
-              <SegmentControl<SaturationIntent>
-                label="Master Saturation 饱和度"
-                value={setting.saturation}
-                options={[
-                  { value: 'low', label: '低' },
-                  { value: 'slightly-muted', label: '轻降' },
-                  { value: 'neutral', label: '中性' },
-                  { value: 'slightly-boosted', label: '轻升' },
-                  { value: 'high', label: '高' },
-                ]}
-                onChange={(v) => patchSetting({ saturation: v })}
-              />
-              <SegmentControl<ColorBoostIntent>
-                label="Color Boost 色彩自然增强"
-                value={setting.colorBoost}
-                options={[
-                  { value: 'off', label: '关' },
-                  { value: 'subtle', label: '轻微' },
-                  { value: 'medium', label: '中等' },
-                  { value: 'strong', label: '强' },
-                ]}
-                onChange={(v) => patchSetting({ colorBoost: v })}
-              />
-              <SegmentControl<MidtoneDetailIntent>
-                label="Midtone Detail 纹理细节"
-                value={setting.midtoneDetail}
-                options={[
-                  { value: 'soften', label: '柔化' },
-                  { value: 'off', label: '关' },
-                  { value: 'subtle', label: '轻度' },
-                  { value: 'medium', label: '中度' },
-                ]}
-                onChange={(v) => patchSetting({ midtoneDetail: v })}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* ── S-Curve Intent ── */}
-        <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('sCurve')}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-white/3 transition"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">S-Curve Intent · 曲线意图</p>
-            <span className="text-[9px] text-white/25">{sectionOpen.sCurve ? '▾' : '▸'}</span>
-          </button>
-          {sectionOpen.sCurve && (
-            <div className="space-y-1.5 border-t border-white/6 px-3 py-3">
-              {(
-                [
-                  { value: 'none', label: '无', desc: '线性，不添加曲线' },
-                  { value: 'gentle-s-curve', label: '轻柔 S-Curve', desc: '自然对比，保留所有细节' },
-                  { value: 'standard-s-curve', label: '标准 S-Curve', desc: '电影感对比，胶片调性' },
-                  { value: 'steep-s-curve', label: '陡峭 S-Curve', desc: '戏剧高对比，Noir 感' },
-                  { value: 'lifted-blacks-s-curve', label: 'Lifted Blacks S', desc: '黑位提升+胶片 S 曲线' },
-                ] as Array<{ value: SCurveIntent; label: string; desc: string }>
-              ).map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => patchSetting({ sCurve: opt.value })}
-                  className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${
-                    setting.sCurve === opt.value
-                      ? 'border-indigo-500/50 bg-indigo-500/10'
-                      : 'border-white/6 bg-white/2 hover:border-white/14 hover:bg-white/5'
-                  }`}
-                >
-                  <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${setting.sCurve === opt.value ? 'border-indigo-400 bg-indigo-500/30' : 'border-white/20'}`}>
-                    {setting.sCurve === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-indigo-300" />}
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-medium text-white/80">{opt.label}</p>
-                    <p className="text-[9px] text-white/35">{opt.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── HSL Intent ── */}
-        <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('hsl')}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-white/3 transition"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">HSL Intent · 色相保护意图</p>
-            <span className="text-[9px] text-white/25">{sectionOpen.hsl ? '▾' : '▸'}</span>
-          </button>
-          {sectionOpen.hsl && (
-            <div className="space-y-3 border-t border-white/6 px-3 py-3">
-              <p className="text-[9px] text-white/30 italic">prompt-level only — 非真实像素选区</p>
-
-              <ToggleRow
-                label="皮肤保护"
-                checked={setting.protectSkin}
-                onChange={(v) => patchSetting({ protectSkin: v })}
-                note="protect skin tones unchanged"
-              />
-
-              <SegmentControl<SkyIntent>
-                label="Sky 天空"
-                value={setting.sky}
-                options={[
-                  { value: 'none', label: '不处理' },
-                  { value: 'deepen-blue', label: '加深蓝色' },
-                  { value: 'dramatic-dark', label: '压暗戏剧' },
-                  { value: 'airy-bright', label: '提亮空灵' },
-                ]}
-                onChange={(v) => patchSetting({ sky: v })}
-              />
-
-              <SegmentControl<FoliageIntent>
-                label="Foliage 植被"
-                value={setting.foliage}
-                options={[
-                  { value: 'none', label: '不处理' },
-                  { value: 'reduce-green-saturation', label: '降绿饱和' },
-                  { value: 'vibrant-foliage', label: '提升活力' },
-                ]}
-                onChange={(v) => patchSetting({ foliage: v })}
-              />
-
-              <SegmentControl<AccentIntent>
-                label="Accent 色彩强调"
-                value={setting.accent}
-                options={[
-                  { value: 'none', label: '不处理' },
-                  { value: 'warm-emphasis', label: '暖色调' },
-                  { value: 'cool-emphasis', label: '冷色调' },
-                  { value: 'neon-emphasis', label: '霓虹' },
-                ]}
-                onChange={(v) => patchSetting({ accent: v })}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* ── Output Protection ── */}
-        <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('output')}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-white/3 transition"
-          >
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Output Protection · 输出保护</p>
-              <span className="rounded px-1 py-0.5 text-[8px] bg-emerald-500/15 text-emerald-400 font-medium">始终开启</span>
-            </div>
-            <span className="text-[9px] text-white/25">{sectionOpen.output ? '▾' : '▸'}</span>
-          </button>
-          {sectionOpen.output && (
-            <div className="space-y-3 border-t border-white/6 px-3 py-3">
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2 space-y-0.5">
-                <p className="text-[9.5px] text-emerald-400/80 font-medium">强制保护（不可关闭）</p>
-                <p className="text-[9px] text-white/35">preserve original subject, composition, and characters</p>
-              </div>
-              <ToggleRow
-                label="无高光截断"
-                checked={setting.protectHighlights}
-                onChange={(v) => patchSetting({ protectHighlights: v })}
-                note="no blown highlights"
-              />
-              <ToggleRow
-                label="无阴影截断"
-                checked={setting.protectShadows}
-                onChange={(v) => patchSetting({ protectShadows: v })}
-                note="no crushed blacks"
-              />
-              <ToggleRow
-                label="皮肤色调准确"
-                checked={setting.accurateSkin}
-                onChange={(v) => patchSetting({ accurateSkin: v })}
-                note="accurate skin tone reproduction"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* ── Future note ── */}
-        <p className="text-center text-[8.5px] text-white/20">
-          Primary Wheels · HDR Zones · Scopes · Qualifier · Power Windows — 将在后续高级版加入
-        </p>
-
-        {/* ── Prompt preview ── */}
-        {(previewText !== null || (previewResults && skippedNodes.length > 0)) && (
-          <div className="space-y-2">
-            {skippedNodes.length > 0 && (
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5">
-                <p className="text-[10px] font-semibold text-amber-400/90">部分节点已有调色盘段落</p>
-                <p className="mt-0.5 text-[9px] text-amber-300/60">
-                  MVP 将跳过这些节点。若要重新调色，请手动删除旧 [Color Grade Palette] 段落后再应用。
+            {/* ── Wheels Tab ── */}
+            {activeTab === 'wheels' && (
+              <div className="space-y-3">
+                <p className="text-[8.5px] text-white/25">
+                  Primary color correction · Lift / Gamma / Gain / Offset
                 </p>
-                <div className="mt-1.5 space-y-0.5">
-                  {skippedNodes.map((r) => {
-                    const node = eligibleNodes.find((n) => n.id === r.nodeId)
-                    return (
-                      <p key={r.nodeId} className="text-[9px] text-amber-300/50">
-                        · {node?.title ?? r.nodeId}（已跳过）
-                      </p>
-                    )
-                  })}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <WheelCard label="LIFT" labelZh="暗部" wheel={setting.lift} onChange={(p) => patchWheel('lift', p)} />
+                  <WheelCard label="GAMMA" labelZh="中间调" wheel={setting.gamma} onChange={(p) => patchWheel('gamma', p)} />
+                  <WheelCard label="GAIN" labelZh="高光" wheel={setting.gain} onChange={(p) => patchWheel('gain', p)} />
+                  <WheelCard label="OFFSET" labelZh="全局" wheel={setting.offset} onChange={(p) => patchWheel('offset', p)} />
                 </div>
               </div>
             )}
-            {previewText && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">调色指令预览</p>
+
+            {/* ── Curves Tab ── */}
+            {activeTab === 'curves' && (
+              <div className="space-y-4">
+                {/* SVG Curve display */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">Tone Curve</p>
+                    <div className="flex items-center gap-1">
+                      <div className="h-2 w-2 rounded-full" style={{ background: RGB_BIAS_COLORS[setting.curve.rgbBias].shadow }} />
+                      <span className="text-[7.5px] text-white/30">Shadow</span>
+                      <div className="ml-1 h-2 w-2 rounded-full" style={{ background: RGB_BIAS_COLORS[setting.curve.rgbBias].highlight }} />
+                      <span className="text-[7.5px] text-white/30">Highlight</span>
+                    </div>
+                  </div>
+                  <div className="h-32 w-full rounded-xl border border-white/8 bg-[#080a0e] p-2">
+                    <CurveSVG shape={setting.curve.shape} rgbBias={setting.curve.rgbBias} />
+                  </div>
                 </div>
-                <textarea
-                  readOnly
-                  value={previewText}
-                  className="w-full resize-none rounded-xl border border-white/8 bg-white/3 p-3 font-mono text-[9px] leading-relaxed text-white/55 focus:outline-none"
-                  rows={10}
+
+                {/* Curve shape selector */}
+                <div className="space-y-1.5">
+                  <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">Curve Shape</p>
+                  {(
+                    [
+                      ['neutral', '线性 Neutral', '无S曲线，线性输出'],
+                      ['gentle-s', 'Gentle S-Curve', '轻柔S曲线，自然对比'],
+                      ['standard-s', 'Standard S-Curve', '电影感S曲线，标准调性'],
+                      ['steep-s', 'Steep S-Curve', '陡峭S曲线，戏剧高对比'],
+                      ['lifted-blacks', 'Lifted Blacks Film', '黑位提升+胶片S'],
+                    ] as [CurveShape, string, string][]
+                  ).map(([v, l, d]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => patchSetting({ curve: { ...setting.curve, shape: v } })}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${setting.curve.shape === v ? 'border-indigo-500/50 bg-indigo-500/12' : 'border-white/6 bg-white/2 hover:border-white/12 hover:bg-white/5'}`}
+                    >
+                      <div className={`h-3.5 w-3.5 rounded-full border flex-shrink-0 flex items-center justify-center ${setting.curve.shape === v ? 'border-indigo-400 bg-indigo-500/30' : 'border-white/20'}`}>
+                        {setting.curve.shape === v && <span className="h-1.5 w-1.5 rounded-full bg-indigo-300" />}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-medium text-white/80">{l}</p>
+                        <p className="text-[8px] text-white/35">{d}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* RGB Bias */}
+                <div className="space-y-1.5">
+                  <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">RGB Bias / 色彩偏向</p>
+                  {(
+                    [
+                      ['neutral', 'Neutral', '无色彩偏向'],
+                      ['warm-hi-cool-sh', 'Warm High / Cool Shadow', '暖色高光 + 冷色阴影'],
+                      ['cool-hi-warm-sh', 'Cool High / Warm Shadow', '冷色高光 + 暖色阴影'],
+                      ['green-sh-mag-hi', 'Green Shadow / Magenta High', '绿色阴影 + 洋红高光'],
+                      ['teal-orange', 'Teal Shadow / Orange High', '青色阴影 + 橙色高光'],
+                    ] as [RgbBias, string, string][]
+                  ).map(([v, l, d]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => patchSetting({ curve: { ...setting.curve, rgbBias: v } })}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${setting.curve.rgbBias === v ? 'border-indigo-500/50 bg-indigo-500/12' : 'border-white/6 bg-white/2 hover:border-white/12 hover:bg-white/5'}`}
+                    >
+                      <div className="flex flex-shrink-0 gap-0.5">
+                        <div className="h-3 w-3 rounded-sm" style={{ background: RGB_BIAS_COLORS[v].shadow }} />
+                        <div className="h-3 w-3 rounded-sm" style={{ background: RGB_BIAS_COLORS[v].highlight }} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-medium text-white/80">{l}</p>
+                        <p className="text-[8px] text-white/35">{d}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Qualifier Tab ── */}
+            {activeTab === 'qualifier' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">HSL Qualifier Intent</p>
+                  <p className="mt-0.5 text-[8px] italic text-white/20">Prompt-level only — not a real pixel qualifier</p>
+                </div>
+
+                {/* Color range bars */}
+                <div className="space-y-1">
+                  <p className="text-[8px] text-white/25">Color Range Reference</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                    <RangeBar color="#cc2222" label="Reds" />
+                    <RangeBar color="#dd7722" label="Oranges / Skin" />
+                    <RangeBar color="#cccc22" label="Yellows" />
+                    <RangeBar color="#22aa44" label="Greens" />
+                    <RangeBar color="#22aacc" label="Cyans" />
+                    <RangeBar color="#2244cc" label="Blues" />
+                    <RangeBar color="#aa44cc" label="Magentas" />
+                  </div>
+                </div>
+
+                {/* Skin */}
+                <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-sm bg-orange-400" />
+                    <p className="text-[9px] font-semibold text-orange-300/80">Skin / Oranges</p>
+                  </div>
+                  <ToggleRow label="Protect Skin Tones" checked={setting.qualifier.protectSkin} onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, protectSkin: v } })} />
+                  <ThreeWayControl<RangeIntent>
+                    label="Saturation"
+                    value={setting.qualifier.skinSat}
+                    options={['cut', '降', 'neutral', '中', 'boost', '升']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, skinSat: v } })}
+                  />
+                  <ThreeWayControl<LumIntent>
+                    label="Luminance"
+                    value={setting.qualifier.skinLum}
+                    options={['darken', '压暗', 'neutral', '中', 'brighten', '提亮']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, skinLum: v } })}
+                  />
+                </div>
+
+                {/* Blues */}
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-sm bg-blue-400" />
+                    <p className="text-[9px] font-semibold text-blue-300/80">Blues / Sky</p>
+                  </div>
+                  <ThreeWayControl<RangeIntent>
+                    label="Saturation"
+                    value={setting.qualifier.bluesSat}
+                    options={['cut', '降', 'neutral', '中', 'boost', '升']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, bluesSat: v } })}
+                  />
+                  <ThreeWayControl<LumIntent>
+                    label="Luminance"
+                    value={setting.qualifier.bluesLum}
+                    options={['darken', '压暗', 'neutral', '中', 'brighten', '提亮']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, bluesLum: v } })}
+                  />
+                </div>
+
+                {/* Greens */}
+                <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-sm bg-green-400" />
+                    <p className="text-[9px] font-semibold text-green-300/80">Greens / Foliage</p>
+                  </div>
+                  <ThreeWayControl<RangeIntent>
+                    label="Saturation"
+                    value={setting.qualifier.greensSat}
+                    options={['cut', '降', 'neutral', '中', 'boost', '升']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, greensSat: v } })}
+                  />
+                  <ThreeWayControl<LumIntent>
+                    label="Luminance"
+                    value={setting.qualifier.greensLum}
+                    options={['darken', '压暗', 'neutral', '中', 'brighten', '提亮']}
+                    onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, greensLum: v } })}
+                  />
+                </div>
+
+                {/* Neon */}
+                <ToggleRow
+                  label="Neon Accent Isolation"
+                  checked={setting.qualifier.neonAccent}
+                  onChange={(v) => patchSetting({ qualifier: { ...setting.qualifier, neonAccent: v } })}
                 />
               </div>
             )}
-          </div>
-        )}
 
-        {/* ── Apply success ── */}
-        {applySuccess && (
-          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-3">
-            <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述 — 请重新生成查看效果</p>
-          </div>
-        )}
+            {/* ── Texture Tab ── */}
+            {activeTab === 'texture' && (
+              <div className="space-y-4">
+                <p className="text-[8.5px] text-white/25">Texture · Grain · Optical FX · prompt-level only</p>
 
+                {/* Sharpness */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-medium text-white/50">Sharpness 锐度</span>
+                    <span className={`text-[9px] font-mono ${setting.texture.sharpness === 0 ? 'text-white/20' : 'text-indigo-300'}`}>
+                      {setting.texture.sharpness > 0 ? `+${setting.texture.sharpness}` : setting.texture.sharpness}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-2} max={2} step={1}
+                    value={setting.texture.sharpness}
+                    onChange={(e) => patchSetting({ texture: { ...setting.texture, sharpness: Number(e.target.value) } })}
+                    className="w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/30 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow"
+                  />
+                  <div className="flex justify-between text-[7.5px] text-white/20">
+                    <span>Soft</span><span>Neutral</span><span>Sharp</span>
+                  </div>
+                </div>
+
+                {/* Grain */}
+                <div className="space-y-1.5">
+                  <p className="text-[9px] font-medium text-white/50">Grain 颗粒感</p>
+                  <div className="grid grid-cols-4 gap-1">
+                    {(['none', 'fine', 'medium', 'heavy'] as GrainType[]).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => patchSetting({ texture: { ...setting.texture, grain: g } })}
+                        className={`rounded-lg border py-1.5 text-[9px] transition ${setting.texture.grain === g ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200' : 'border-white/8 text-white/35 hover:border-white/16 hover:text-white/60'}`}
+                      >
+                        {g === 'none' ? '无' : g === 'fine' ? '细腻' : g === 'medium' ? '中等' : '重'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Effect rows */}
+                {(
+                  [
+                    ['halation', 'Halation 光晕', setting.texture.halation],
+                    ['glow', 'Glow 辉光', setting.texture.glow],
+                    ['vignette', 'Vignette 暗角', setting.texture.vignette],
+                  ] as [keyof typeof setting.texture, string, EffectLevel][]
+                ).map(([key, label, val]) => (
+                  <div key={key} className="space-y-1">
+                    <p className="text-[9px] font-medium text-white/50">{label}</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(['none', 'subtle', 'strong'] as EffectLevel[]).map((lv) => (
+                        <button
+                          key={lv}
+                          type="button"
+                          onClick={() => patchSetting({ texture: { ...setting.texture, [key]: lv } })}
+                          className={`rounded-lg border py-1.5 text-[9px] transition ${val === lv ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200' : 'border-white/8 text-white/35 hover:border-white/16 hover:text-white/60'}`}
+                        >
+                          {lv === 'none' ? '无' : lv === 'subtle' ? '轻微' : '强'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <ToggleRow
+                  label="Clean Shadows 清洁暗部"
+                  checked={setting.texture.cleanShadows}
+                  onChange={(v) => patchSetting({ texture: { ...setting.texture, cleanShadows: v } })}
+                />
+              </div>
+            )}
+
+            {/* ── Output Tab ── */}
+            {activeTab === 'output' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">Output Protection</p>
+                  <p className="mt-0.5 text-[8px] italic text-white/20">All subject/composition locks are always on — cannot be disabled</p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2.5">
+                  <p className="text-[9px] font-semibold text-emerald-400/80">Locked Safety Constraints</p>
+                  <ToggleRow label="Subject Preservation" checked={true} locked />
+                  <ToggleRow label="Face / Clothing Preservation" checked={true} locked />
+                  <ToggleRow label="Product Shape Preservation" checked={true} locked />
+                  <ToggleRow label="Composition Preservation" checked={true} locked />
+                  <ToggleRow label="Avoid Overprocessed HDR" checked={true} locked />
+                  <ToggleRow label="Avoid Plastic AI Texture" checked={true} locked />
+                </div>
+
+                <div className="rounded-xl border border-white/6 bg-white/2 p-3 space-y-1">
+                  <p className="text-[9px] font-semibold text-white/40">Negative Constraints (always active)</p>
+                  <p className="text-[8.5px] leading-relaxed text-white/25">
+                    No face change · No product redesign · No scene replacement ·
+                    No lighting direction change · No new unrelated colors ·
+                    No composition change
+                  </p>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* Prompt Preview (collapsible) */}
+          <div className="border-t border-white/6">
+            <button
+              type="button"
+              onClick={() => setShowPromptPreview((v) => !v)}
+              className="flex w-full items-center justify-between px-3 py-2 hover:bg-white/3 transition"
+            >
+              <span className="text-[8.5px] font-semibold uppercase tracking-widest text-white/30">Prompt Preview</span>
+              {showPromptPreview ? <ChevronUp size={12} className="text-white/25" /> : <ChevronDown size={12} className="text-white/25" />}
+            </button>
+            {showPromptPreview && (
+              <div className="border-t border-white/6 px-3 pb-3 pt-2">
+                {skippedNodes.length > 0 && (
+                  <div className="mb-2 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2">
+                    <p className="text-[9px] font-semibold text-amber-400/90">部分节点已有调色段落，MVP 跳过</p>
+                    <p className="text-[8px] text-amber-300/60">手动删除旧 [Color Grade Palette] 后再应用</p>
+                  </div>
+                )}
+                {previewText ? (
+                  <textarea
+                    readOnly
+                    value={previewText}
+                    className="w-full resize-none rounded-xl border border-white/8 bg-white/3 p-2.5 font-mono text-[8.5px] leading-relaxed text-white/50 focus:outline-none"
+                    rows={10}
+                  />
+                ) : (
+                  <p className="text-[9px] text-white/25">先点击【生成调色预览】查看 Prompt 内容</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Apply success */}
+          {applySuccess && (
+            <div className="mx-3 mb-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2">
+              <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述 — 请重新生成查看效果</p>
+            </div>
+          )}
+
+        </div>
       </div>
 
       {/* ── Footer Apply Bar ── */}
-      <div className="border-t border-white/8 px-3 py-3 space-y-2">
+      <div className="border-t border-white/8 px-3 py-2.5 space-y-2">
         <div className="flex gap-2">
           <button
             type="button"
             onClick={handlePreview}
             disabled={!canPreview}
-            className="flex-1 rounded-xl border border-indigo-500/40 bg-indigo-500/15 py-2 text-[11px] font-semibold text-indigo-300 transition hover:bg-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 rounded-xl border border-indigo-500/40 bg-indigo-500/15 py-2 text-[11px] font-semibold text-indigo-300 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             生成调色预览
           </button>
@@ -688,7 +955,7 @@ export function ColorGradePalettePanel({
             type="button"
             onClick={handleApply}
             disabled={!canApply}
-            className="flex-1 rounded-xl border border-emerald-500/40 bg-emerald-500/15 py-2 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 rounded-xl border border-emerald-500/40 bg-emerald-500/15 py-2 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             追加到 Prompt
           </button>
@@ -696,7 +963,7 @@ export function ColorGradePalettePanel({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={handleReset}
+            onClick={() => { setSetting(createDefaultColorGradeSetting()); setPreviewText(null); setPreviewResults(null); setApplySuccess(false) }}
             className="flex-1 rounded-xl border border-white/8 bg-white/3 py-1.5 text-[10px] text-white/40 transition hover:bg-white/6 hover:text-white/60"
           >
             重置调色
@@ -706,7 +973,7 @@ export function ColorGradePalettePanel({
             onClick={handleCopyReport}
             className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-white/8 bg-white/3 py-1.5 text-[10px] text-white/40 transition hover:bg-white/6 hover:text-white/60"
           >
-            {copied ? <Check size={10} strokeWidth={2.5} className="text-emerald-400" /> : <Copy size={10} strokeWidth={2} />}
+            {copied ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
             {copied ? '已复制' : '复制报告'}
           </button>
         </div>
