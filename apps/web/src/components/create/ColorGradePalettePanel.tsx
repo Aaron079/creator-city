@@ -10,6 +10,7 @@ import {
   previewColorGradeApply,
   summarizeColorGradeSetting,
   hasColorGradePrompt,
+  buildPreviewCssFilter,
   type ColorGradePresetId,
   type ColorGradeSetting,
   type WheelSetting,
@@ -404,77 +405,107 @@ function TextureSlider({
   )
 }
 
-// ─── Node Target Banner ───────────────────────────────────────────────────────
-// Shown directly below the panel header — immediately communicates which
-// image/video node is being graded, so the user never has to choose again.
+// ─── Preview Monitor ─────────────────────────────────────────────────────────
+// Large side monitor with CSS-filter-based live preview.
+// Applies CSS filter to img/video for instant visual feedback while dragging.
+// Preview-only: does NOT modify original assets, no pixel output, no API.
 
-function NodeTargetBanner({ node }: { node: GradeNode }) {
-  const hasImage = Boolean(node.resultImageUrl?.trim())
-  const hasVideo = Boolean(node.resultVideoUrl?.trim())
-  const promptSnippet = node.prompt?.trim()
-    ? node.prompt.trim().slice(0, 72) + (node.prompt.trim().length > 72 ? '…' : '')
-    : null
+function PreviewMonitor({
+  node,
+  cssFilter,
+}: {
+  node: GradeNode | null
+  cssFilter: string
+}) {
+  const hasImage = Boolean(node?.resultImageUrl?.trim())
+  const hasVideo = Boolean(node?.resultVideoUrl?.trim())
+  const hasMedia = hasImage || hasVideo
+  const filterActive = cssFilter !== 'none'
 
   return (
-    <div className="flex gap-3 border-b border-white/7 bg-[#09090d] px-3 py-2">
-      {/* Thumbnail / video preview */}
-      <div className="relative h-[72px] w-[108px] flex-shrink-0 overflow-hidden rounded-lg border border-white/8 bg-black/50">
+    <div className="flex h-full flex-col border-l border-white/5 bg-[#06080d]">
+      {/* Label */}
+      <div className="flex-shrink-0 border-b border-white/5 px-2.5 py-1.5">
+        <p className="text-[7px] font-bold uppercase tracking-widest text-white/22">Preview Monitor</p>
+        <p className="text-[6px] text-white/14">当前素材预览 · CSS filter only</p>
+      </div>
+
+      {/* Media area — fills available height, min 220px */}
+      <div className="relative flex-1 overflow-hidden bg-black" style={{ minHeight: 220 }}>
         {hasImage && (
           <img
-            src={node.resultImageUrl!}
+            src={node!.resultImageUrl!}
             alt=""
-            className="h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-contain transition duration-75"
+            style={{ filter: filterActive ? cssFilter : undefined }}
           />
         )}
         {hasVideo && !hasImage && (
           <video
-            src={node.resultVideoUrl!}
+            src={node!.resultVideoUrl!}
             controls
+            muted
             preload="metadata"
-            className="h-full w-full object-cover"
-            style={{ minHeight: 0 }}
+            className="absolute inset-0 h-full w-full object-contain transition duration-75"
+            style={{ filter: filterActive ? cssFilter : undefined }}
           />
         )}
-        {!hasImage && !hasVideo && (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1">
-            <span className={`text-[9px] font-bold ${node.kind === 'image' ? 'text-sky-400/45' : 'text-violet-400/45'}`}>
-              {node.kind === 'image' ? 'IMG' : 'VID'}
+        {!hasMedia && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
+            <span className={`text-[14px] font-bold ${node?.kind === 'image' ? 'text-sky-400/28' : node?.kind === 'video' ? 'text-violet-400/28' : 'text-white/15'}`}>
+              {node?.kind === 'image' ? 'IMG' : node?.kind === 'video' ? 'VID' : '—'}
             </span>
-            <span className="text-center text-[6.5px] leading-tight text-white/22">暂无结果<br/>生成后可见</span>
+            <p className="text-[8px] leading-relaxed text-white/28">
+              当前节点暂无可预览资产。<br />
+              你仍可追加调色 Prompt，<br />
+              重新生成后生效。
+            </p>
           </div>
         )}
-        {/* Kind badge overlay */}
-        <div className="absolute left-1 top-1">
-          <span className={`rounded px-0.5 py-[1px] text-[6px] font-bold ${node.kind === 'image' ? 'bg-sky-900/80 text-sky-300' : 'bg-violet-900/80 text-violet-300'}`}>
-            {node.kind === 'image' ? 'IMG' : 'VID'}
-          </span>
-        </div>
-      </div>
 
-      {/* Info */}
-      <div className="flex min-w-0 flex-1 flex-col justify-between">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="flex-shrink-0 rounded-full bg-indigo-500/15 px-1.5 py-[1.5px] text-[7px] font-semibold text-indigo-300/75">
-              当前调色目标
+        {/* Filter badge overlay */}
+        {hasMedia && (
+          <div className="pointer-events-none absolute inset-x-1.5 bottom-1.5 flex items-end justify-between gap-1">
+            <span className="whitespace-nowrap rounded bg-black/80 px-1.5 py-[3px] text-[6px] font-semibold text-amber-300/85">
+              Preview filter only · 非最终输出
             </span>
-            {node.status && (
-              <span className={`text-[7px] ${node.status === 'done' ? 'text-emerald-400/65' : node.status === 'error' || node.status === 'failed' ? 'text-red-400/65' : 'text-white/25'}`}>
-                {node.status}
+            {filterActive && (
+              <span className="max-w-[55%] truncate rounded bg-indigo-950/80 px-1 py-[3px] font-mono text-[5.5px] text-indigo-300/75">
+                {cssFilter}
               </span>
             )}
           </div>
-          <p className="truncate text-[9.5px] font-semibold text-white/75">
-            {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
-          </p>
-          {promptSnippet && (
-            <p className="line-clamp-2 text-[7.5px] leading-relaxed text-white/25">{promptSnippet}</p>
-          )}
-        </div>
-        <p className="text-[7px] italic text-white/18">
-          {hasImage || hasVideo
-            ? '预览仅供参考 · 调色 Prompt 追加后需重新生成才生效'
-            : '暂无生成结果 · 调色指令仍可追加 · 重新生成后生效'}
+        )}
+      </div>
+
+      {/* Bottom info */}
+      <div className="flex-shrink-0 space-y-1.5 border-t border-white/5 px-2.5 py-2">
+        {/* Node row */}
+        {node && (
+          <div className="flex items-center gap-1.5">
+            <span className={`flex-shrink-0 rounded px-1 py-[1px] text-[6px] font-bold ${node.kind === 'image' ? 'bg-sky-900/80 text-sky-300' : 'bg-violet-900/80 text-violet-300'}`}>
+              {node.kind === 'image' ? 'IMG' : 'VID'}
+            </span>
+            {node.status && (
+              <span className={`flex-shrink-0 text-[6.5px] ${node.status === 'done' ? 'text-emerald-400/65' : node.status === 'error' || node.status === 'failed' ? 'text-red-400/55' : 'text-white/22'}`}>
+                {node.status}
+              </span>
+            )}
+            <span className="min-w-0 truncate text-[7.5px] font-medium text-white/55">
+              {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
+            </span>
+          </div>
+        )}
+
+        {/* Drag hint */}
+        <p className={`text-[6px] ${filterActive ? 'text-indigo-300/55' : 'text-white/20'}`}>
+          拖动色轮会即时改变这里的预览，但不会修改原资产。
+        </p>
+
+        {/* Safety disclaimer */}
+        <p className="text-[6px] italic leading-relaxed text-white/16">
+          Preview Mode: CSS filter approximation · Intent monitor only — no pixel analysis<br />
+          右侧画面仅为浏览器近似预览，真实生成效果以重新生成后的模型输出为准。
         </p>
       </div>
     </div>
@@ -527,6 +558,9 @@ export function ColorGradePalettePanel({
     () => eligibleNodes.find((n) => n.id === (selectedNodeIds[0] ?? defaultSelectedNodeId)) ?? null,
     [eligibleNodes, selectedNodeIds, defaultSelectedNodeId],
   )
+
+  // CSS filter for live preview — recomputed on every setting change (wheel drag / slider)
+  const cssFilter = useMemo(() => buildPreviewCssFilter(setting), [setting])
 
   const resetPreview = () => {
     setPreviewText(null)
@@ -620,7 +654,7 @@ export function ColorGradePalettePanel({
 
   return (
     <div
-      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[700px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c0e13]/98 shadow-2xl backdrop-blur-xl"
+      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[920px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c0e13]/98 shadow-2xl backdrop-blur-xl"
       data-no-node-drag="true"
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -645,9 +679,6 @@ export function ColorGradePalettePanel({
           <X size={15} strokeWidth={2.2} />
         </button>
       </div>
-
-      {/* ── Node Target Banner — shows which node is being graded ── */}
-      {primaryNode && <NodeTargetBanner node={primaryNode} />}
 
       {/* ── Gallery Strip (preset chips) ── */}
       <div className="border-b border-white/5 px-3 py-1.5">
@@ -733,7 +764,7 @@ export function ColorGradePalettePanel({
           <div className="border-b border-white/5 bg-[#09090d] px-3 py-1.5">
             <div className="flex items-center justify-between gap-4">
               <p className="flex-shrink-0 text-[6.5px] font-bold uppercase tracking-widest text-white/18">
-                Intent Monitor — no pixel analysis
+                Intent Monitor — no pixel analysis · Preview: CSS filter approx
               </p>
               <div className="flex items-center gap-3 overflow-hidden">
                 {/* Waveform intent bar */}
@@ -1125,6 +1156,11 @@ export function ColorGradePalettePanel({
             </div>
           )}
 
+        </div>
+
+        {/* ── Right: Preview Monitor ── */}
+        <div className="flex w-[240px] flex-shrink-0 flex-col overflow-hidden">
+          <PreviewMonitor node={primaryNode} cssFilter={cssFilter} />
         </div>
       </div>
 

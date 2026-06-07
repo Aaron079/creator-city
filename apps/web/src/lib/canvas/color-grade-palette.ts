@@ -417,6 +417,55 @@ export function previewColorGradeApply(
   })
 }
 
+// ─── CSS Preview Filter ───────────────────────────────────────────────────────
+// Translates the current ColorGradeSetting into a CSS filter string for
+// live browser preview. Preview-only: no pixel manipulation, no API calls.
+// Ranges are intentionally conservative to stay visually honest.
+
+export function buildPreviewCssFilter(setting: ColorGradeSetting): string {
+  // Weighted luminance: gamma and offset dominate perceptual brightness
+  const weightedLum =
+    setting.lift.luminance * 0.15 +
+    setting.gamma.luminance * 0.35 +
+    setting.gain.luminance * 0.25 +
+    setting.offset.luminance * 0.25
+  const brightness = Math.max(0.75, Math.min(1.35, 1 + weightedLum * 1.2))
+
+  // Contrast from curve shape (0.75–1.45)
+  const contrastMap: Record<ContrastCurve, number> = {
+    'neutral': 1.0,
+    'gentle-s-curve': 1.1,
+    'standard-s-curve': 1.2,
+    'steep-s-curve': 1.38,
+    'lifted-blacks-film-curve': 1.08,
+  }
+  const contrast = Math.max(0.75, Math.min(1.45, contrastMap[setting.curves.contrastCurve]))
+
+  // Saturation: ASC CDL multiplier ≈ CSS saturate() (both use 1.0 = neutral)
+  const avgSat =
+    (setting.lift.saturation + setting.gamma.saturation + setting.gain.saturation + setting.offset.saturation) / 4
+  const saturate = Math.max(0.25, Math.min(1.8, avgSat))
+
+  // Hue-rotate: warm temp → orange shift (−deg), cool → blue (+deg); tint → small adjustment
+  const avgTemp =
+    (setting.lift.temperature + setting.gamma.temperature + setting.gain.temperature + setting.offset.temperature) / 4
+  const avgTint =
+    (setting.lift.tint + setting.gamma.tint + setting.gain.tint + setting.offset.tint) / 4
+  const hueRotateDeg = Math.max(-20, Math.min(20, -avgTemp * 18 + avgTint * 8))
+
+  // Sepia: subtle warm-tone approximation (0–0.25)
+  const sepia = Math.max(0, Math.min(0.25, Math.max(0, avgTemp) * 0.28))
+
+  const parts: string[] = []
+  if (Math.abs(brightness - 1) > 0.005) parts.push(`brightness(${brightness.toFixed(3)})`)
+  if (Math.abs(contrast - 1) > 0.005) parts.push(`contrast(${contrast.toFixed(3)})`)
+  if (Math.abs(saturate - 1) > 0.02) parts.push(`saturate(${saturate.toFixed(3)})`)
+  if (Math.abs(hueRotateDeg) > 0.5) parts.push(`hue-rotate(${hueRotateDeg.toFixed(1)}deg)`)
+  if (sepia > 0.01) parts.push(`sepia(${sepia.toFixed(3)})`)
+
+  return parts.length > 0 ? parts.join(' ') : 'none'
+}
+
 export function summarizeColorGradeSetting(setting: ColorGradeSetting): string {
   const presetLabel = setting.presetId === 'none'
     ? '手动'
