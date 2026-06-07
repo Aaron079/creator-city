@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-07
-Last valid commit: Tool 11 Look Package Applier — CLOSED / validated
+Last valid commit: Shot List Builder 批量草案节点布局修复 — CLOSED / validated
 Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -67,7 +67,8 @@ Production validated: 2026-06-07 (Workflow Connection Context Tools + Stronger E
 | Workflow Continue Options in Source Menu（继续创作三选项接入引用该节点生成菜单顶部） | ✅ CLOSED / validated | `f607a53` |
 | Canvas Smart Tools Tool 5 — A/B Compare Panel（版本对比 · Asset 分组子工具） | ✅ CLOSED / validated | `66da5b5` |
 | Canvas Smart Tools Tool 6 — Keyframe Extractor（关键帧提取器 · Asset 分组子工具） | ✅ CLOSED / validated | `ccb5f42` (build fix: `9e9b340`) |
-| Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`) |
+| Canvas Smart Tools Tool 7 — Shot List Builder（分镜清单生成器 · Director 分组子工具） | ✅ CLOSED / validated | `26f8d16` (UX fix: `5cfb912`, editable source: `97ff477`, layout fix: `2cf744a`) |
+| Shot List Builder 批量草案节点布局修复（多节点不再堆叠同一位置） | ✅ CLOSED / validated | `2cf744a` |
 | Canvas Smart Tools Tool 8 — Continuity Checker（连贯性检查器 · Director 分组子工具） | ✅ CLOSED / validated | `1e9b737` |
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
@@ -610,7 +611,7 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Workflow Continue Options in Source Menu（引用该节点生成菜单接入继续创作三选项） | ✅ validated |
 | A/B Compare / Version Compare Panel | ✅ validated（Asset 分组子工具；`66da5b5`）|
 | Keyframe Extractor / 关键帧提取器 | ✅ validated（Asset 分组子工具；`ccb5f42`；build fix `9e9b340`）|
-| Shot List Builder / 分镜清单生成器 | ✅ validated（Director 分组子工具；`26f8d16` · `5cfb912` · `97ff477`）|
+| Shot List Builder / 分镜清单生成器 | ✅ validated（Director 分组子工具；`26f8d16` · `5cfb912` · `97ff477` · layout fix `2cf744a`）|
 | Continuity Checker / 连贯性检查器 | ✅ validated（Director 分组子工具；`1e9b737`；6 维规则引擎；overallScore + issue 列表 + 定位节点 + 复制报告）|
 | Prompt Booster / 提示词增强器 | ✅ validated（Prompt 分组子工具；`6e1a24f`；image 7维 / video 7维 / text 6维规则引擎；score 0-100；用户点击追加，不自动覆盖；重复检测；可忽略/重新分析/复制报告）|
 | Sequence Board / 镜头序列编排器 | ❌ removed / not validated（product review: redundant with Shot List Builder + Continuity Checker + canvas edges as workflow order；`37a43da` 从 UI 撤下）|
@@ -3600,17 +3601,67 @@ Modules confirmed working as of `8119eb0`:
 - 若节点 Prompt 为空（无主体描述），只有风格词无法驱动模型生成有效图片；UI 显示 amber 警告。
 - Look Package V2 可扩展到 30+ Look，但必须在 MVP 稳定后，且高级风格迁移须先评估 vision 能力。
 
-### Next Phase — Tool 12 前重新评估高级版方向
+### Next Phase — Tool 12 — Look Strength Control / 视觉风格强度控制
 
-下一步不继续堆静态 Look 数量，先重新评估：
+不继续堆静态 Look 数量，下一步在现有 Look 框架内增加强度控制：
 
-| 高级版方向 | 说明 | 前提 |
+| 强度级别 | 说明 | 实现方式 |
 |---|---|---|
-| Reference-preserving Style Transfer / 参考保护式风格迁移 | 在迁移风格时保留原始主体身份 | 需要图生图/参考图/vision provider 能力 |
-| Style Bible Extract & Apply / 风格圣经提取与应用 | 从成功资产提取项目视觉圣经，持续应用 | 需要 vision model 接入，单独评估 |
-| Vision-based Color Analysis / 视觉色彩分析 | 分析已生成图的色彩结构并推荐 Look | 需要 vision model 接入，单独评估 |
-| Product/Character Consistency Guard / 主体一致性保护 | 跨节点主体身份一致性强化 | 需要 vision 或参考图能力 |
-| Edit Handoff Pack / 剪辑交付包规划器 | 生成后剪辑交付规划 | 独立评估 |
-| Look Package V2（30+ Look） | 扩展 Look 数量 | MVP 稳定后，不需 vision |
+| 轻度调色 | 只改 color grade / contrast / saturation / black levels / highlight roll-off | 只追加 colorGrade 维度关键词 + 轻量约束 |
+| 中度风格 | 调色 + 光线氛围 + 胶片质感 | 追加 colorGrade + lighting + texture 三维度 |
+| 强风格化 | 允许更明显导演风格，但仍加入主体保护 | 四维度全追加 + 较宽泛主体保护约束 |
 
-任何高级版若要新增 API/schema/provider capability，必须先单独评估并等待用户确认后再实施。
+实现约束：不新增 API / schema / provider capability；不自动生成；不消耗 credits；只改 prompt 追加逻辑。
+
+**评估后高级版方向（Tool 12+ 之后，需单独确认）：**
+
+| 高级版方向 | 前提 |
+|---|---|
+| Reference-preserving Style Transfer / 参考保护式风格迁移 | 需要图生图/参考图/vision provider 能力 |
+| Style Bible Extract & Apply / 风格圣经提取与应用 | 需要 vision model 接入，单独评估 |
+| Vision-based Color Analysis / 视觉色彩分析 | 需要 vision model 接入，单独评估 |
+| Product/Character Consistency Guard / 主体一致性保护 | 需要 vision 或参考图能力 |
+| Look Package V2（30+ Look） | MVP 稳定后 |
+
+---
+
+## Shot List Builder 批量草案节点布局修复 — CLOSED / validated
+
+**Commit:** `2cf744a`
+**Status:** ✅ CLOSED / validated
+**Date validated:** 2026-06-07
+
+### 问题背景
+
+Shot List Builder 批量创建草案节点（`onCreateNode` 多次调用）时，所有新节点堆叠在画布同一位置，用户无法分辨各节点，需手动拖开。
+
+### 根因分析
+
+`resolveNonOverlappingPosition` 读取的是 React `nodes` 状态（渲染周期快照），而 `commitNodes` 用 `latestNodesRef.current` 做函数式更新（同步）。批量创建时，第 N 次调用 `createNode` 时 `nodes` 状态尚未反映第 1...N-1 个刚创建的节点，所有调用都算出相同的 `basePosition`，最终所有节点落在同一坐标。
+
+### 修复方案
+
+在 `ShotListBuilderPanel.tsx` 中为每次 `onCreateNode` 调用传入 `index` 和 `total`；在 `VisualCanvasWorkspace.tsx` 的 `onCreateNode` handler 里，**提前用 index 计算各节点独立坐标**，绕过 `resolveNonOverlappingPosition` 的过时状态问题：
+
+- 父节点存在时：从父节点右侧 240px 展开，以父节点 y 为中心纵向排列，每节点间距 340px
+- 无父节点时：从视口中心计算基准点，纵向排列（最多 5 行后换列，列间距 460px）
+- 节点间距（340px 垂直 / 460px 水平）均大于最大节点尺寸（320px 高 / 380px 宽），不重叠
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `apps/web/src/components/create/ShotListBuilderPanel.tsx` | `onCreateNode` 调用传入 `index` 和 `total` |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | `onCreateNode` handler 计算每节点独立 `position` |
+
+### 验收结果
+
+| 验收项 | 结果 |
+|---|---|
+| 批量创建 3 个节点，3 个节点各自独立，不重叠 | ✅ |
+| 批量创建 5 个节点，纵向整齐排列 | ✅ |
+| 超过 5 个节点，自动换列 | ✅ |
+| 有父节点时，新节点从父节点右侧排列 | ✅ |
+| 无父节点时，新节点从视口中心区域排列 | ✅ |
+| 单个节点创建行为不变 | ✅ |
+| type-check 通过 | ✅ |
