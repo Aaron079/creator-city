@@ -9,7 +9,6 @@ import {
   buildColorGradePrompt,
   previewColorGradeApply,
   summarizeColorGradeSetting,
-  hasColorGradePrompt,
   buildPreviewCssFilter,
   type ColorGradePresetId,
   type ColorGradeSetting,
