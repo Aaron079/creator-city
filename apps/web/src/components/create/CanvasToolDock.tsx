@@ -23,7 +23,7 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
+  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor' | 'character-reference') => void
   onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
 }
@@ -151,6 +151,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🎞</span>
                     <span>关键帧提取</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
+                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('character-reference') }}
+                  >
+                    <span className="text-[13px]">👤</span>
+                    <span>人物参考 / 四视图</span>
                   </button>
                 </motion.div>
               ) : null}

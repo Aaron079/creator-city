@@ -31,6 +31,7 @@ import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
+import { CharacterReferenceGridPanel, type CreateCharacterReferenceRequest } from '@/components/create/CharacterReferenceGridPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2383,6 +2384,7 @@ export function VisualCanvasWorkspace({
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
+  const [isCharacterReferenceOpen, setIsCharacterReferenceOpen] = useState(false)
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
@@ -7913,6 +7915,7 @@ export function VisualCanvasWorkspace({
             setIsVariantPlannerOpen(tool === 'variant-planner')
             setIsABCompareOpen(tool === 'ab-compare')
             setIsKeyframeExtractorOpen(tool === 'keyframe-extractor')
+            if (tool === 'character-reference') setIsCharacterReferenceOpen(true)
           }}
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
@@ -8258,6 +8261,42 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setIsColorGradePaletteOpen(false)}
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
+          />
+        </>
+      ) : null}
+
+      {/* Character Reference Grid — Tool 13, Asset group */}
+      {isCharacterReferenceOpen && saveStatus !== 'opening' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => setIsCharacterReferenceOpen(false)}
+          />
+          <CharacterReferenceGridPanel
+            nodes={nodes}
+            defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
+            onCreateReferenceNode={(req: CreateCharacterReferenceRequest) => {
+              const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
+              const modeLabel = req.mode === 'turnaround4' ? '人物四视图' : '人物九宫格'
+              const sourceTitle = sourceNode?.title?.trim()
+              const title = sourceTitle ? `${modeLabel} · ${sourceTitle}` : modeLabel
+              const basePosition = sourceNode
+                ? { x: sourceNode.x + (sourceNode.width ?? 360) + 240, y: sourceNode.y + 160 }
+                : undefined
+              createNode('image', {
+                title,
+                prompt: req.prompt,
+                parentNodeId: req.sourceNodeId,
+                status: 'idle',
+                metadataJson: req.metadataJson,
+                position: basePosition,
+              })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+              showCanvasFeedback('已创建人物参考草案节点，请在新节点中手动生成。')
+            }}
+            onClose={() => setIsCharacterReferenceOpen(false)}
           />
         </>
       ) : null}
@@ -8650,6 +8689,7 @@ export function VisualCanvasWorkspace({
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
             onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
             onOpenLookPackage={() => setIsLookPackageOpen(true)}
+            onOpenCharacterReference={() => setIsCharacterReferenceOpen(true)}
           />
         </div>
       ) : null}
