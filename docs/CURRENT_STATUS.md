@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-08
-Last valid commit: Tool 13 Character Turnaround & Grid — 1ec9ec6 — IMPLEMENTED / browser validation pending
+Last valid commit: Tool 13 multi-node fix — 7f21acf — IMPLEMENTED / browser validation pending
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -4050,7 +4050,7 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 ## Tool 13 — Character Turnaround & Grid / 人物四视图与九宫格参考生成器 — IMPLEMENTED / browser validation pending
 
-**Commit:** `1ec9ec6`
+**Commit:** `1ec9ec6` (initial) → `7f21acf` (multi-node fix)
 **Status:** 🚧 IMPLEMENTED / browser validation pending
 **Date implemented:** 2026-06-08
 
@@ -4075,12 +4075,14 @@ no subject replacement, no face change, no product redesign, no composition chan
 | 节点顶部 AssetAgentToolbar → "资产" → "👤 人物参考" | image/video（有媒体结果） | 有 resultImageUrl 或 resultVideoUrl |
 | 左侧 CanvasToolDock 资产工具菜单 → "👤 人物参考 / 四视图" | image / video / text（所有节点） | 任意时刻 |
 
-### 支持模式
+### 支持模式（7f21acf 修复后）
 
-| 模式 | 说明 | Prompt 结构 |
-|------|------|-------------|
-| 人物四视图（turnaround4） | 四角度正交视图：正面 / 三分之三侧 / 侧面 / 背面 | 四角度结构 + 一致性约束 + 负向约束 |
-| 人物九宫格（grid9） | 3×3 网格：面部 3 + 全身 3 + 表情/服装/动作 | 九格结构 + 一致性约束 + 负向约束 |
+| 模式 | 创建节点数 | 节点视图 | 布局 |
+|------|-----------|---------|------|
+| 人物四视图（turnaround4） | **4 个独立 image 节点** | 正面 / 四分之三 / 侧面 / 背面 | 2×2 grid（source.x+460/780, y+0/280） |
+| 人物九宫格 MVP（grid5） | **5 个核心 image 节点** | 全身正面 / 全身四分之三 / 表情 / 服装细节 / 动作姿态 | 3+2（source.x+460/780/1100, y+0/280） |
+
+研究结论：单节点混合多视图 prompt 在 AI 模型（Seedream/SDXL）中成功率仅 50–70%，且结果不可控。拆分为独立节点后每个 prompt 只描述一个视角，稳定性和可控性均提升。
 
 ### Prompt 结构
 
@@ -4098,20 +4100,20 @@ no subject replacement, no face change, no product redesign, no composition chan
 **负向约束（始终追加）：**
 `no different characters, no inconsistent facial features, no outfit changes between views, no random accessories, no identity drift, no scene background clutter, no cropped limbs`
 
-### 创建节点行为
+### 创建节点行为（7f21acf 修复后）
 
 | 行为 | 说明 |
 |------|------|
 | 新节点类型 | `image` |
-| 新节点 title | `人物四视图 · {source title}` 或 `人物九宫格 · {source title}` |
+| 新节点 title | `人物四视图 · 正面 · {source title}`（每个视图独立标题） |
 | 新节点 status | `idle` |
 | 自动生成 | 否 |
 | 消耗 credits | 否 |
 | 伪造 assetId | 否 |
-| source → new node edge | 是（parentNodeId） |
-| metadataJson | `{ sourceNodeId, characterReference: { type, source, consistencyOptions, style, layout, previewOnly: false } }` |
-| 位置 | sourceNode.x + sourceNode.width + 240, sourceNode.y + 160（resolveNonOverlappingPosition） |
-| 创建后 toast | "已创建人物参考草案节点，请在新节点中手动生成。" |
+| source → 每个新节点 | 是（parentNodeId） |
+| metadataJson | `{ sourceNodeId, characterReference: { type, source, groupId, viewKey, viewLabel, consistencyOptions, style, layout, nodeCount } }` |
+| 位置 | 四视图 2×2 grid；九宫格 3+2 grid（见上） |
+| 创建后 toast | "已创建 4 个人物参考草案节点，请在各节点中手动生成。" |
 
 ### 安全边界确认
 
