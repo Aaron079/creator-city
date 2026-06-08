@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-08
-Last valid commit: Tool 13 multi-node fix — 7f21acf — IMPLEMENTED / browser validation pending
+Last valid commit: Tool 13 visual board rework — 20279ad — IMPLEMENTED / browser validation pending
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -79,7 +79,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Color Grade 调色草案节点工作流（创建调色节点保存到画布 · idle · 不自动生成 · 不消耗 credits） | ✅ CLOSED / validated | `d221df6` · `65a4152` |
 | Color Grade 预览即时生效文案修正（Preview Monitor CSS filter 即时 · 不再写"需重新生成才生效"为主语义） | ✅ CLOSED / validated | `c5cefed` · `7a26d8d` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
-| Tool 13 — Character Turnaround & Grid / 人物四视图与九宫格参考生成器（资产工具入口 · idle 草案节点 · 不自动生成） | 🚧 IMPLEMENTED / browser validation pending | `1ec9ec6` |
+| Tool 13 — Character Reference Board / 人物参考板（四视图/九宫格槽位 · 视觉槽位卡 · idle 草案节点 · 不自动生成） | 🚧 IMPLEMENTED / browser validation pending | `20279ad` |
 
 ---
 
@@ -4048,25 +4048,38 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 ---
 
-## Tool 13 — Character Turnaround & Grid / 人物四视图与九宫格参考生成器 — IMPLEMENTED / browser validation pending
+## Tool 13 — Character Reference Board / 人物参考板 — IMPLEMENTED / browser validation pending
 
-**Commit:** `1ec9ec6` (initial) → `7f21acf` (multi-node fix)
+**Commits:** `1ec9ec6` (initial) → `7f21acf` (multi-node) → `20279ad` (visual board rework)
 **Status:** 🚧 IMPLEMENTED / browser validation pending
 **Date implemented:** 2026-06-08
 
-### 产品定位
+### 产品定位（20279ad 视觉参考板重构后）
 
-角色资产生产工具，不是 Prompt 工具。帮助用户从当前 image/video/text 节点中，创建标准化角色参考草案节点，供后续角色一致性、视频生成、分镜创作和资产复用使用。
+可视化人物参考板工具，不是 Prompt 工具。面板以槽位卡片（正面/四分之三/侧面/背面/表情/服装/动作）为主视觉，角色描述为辅助输入，内部 Prompt 隐藏在高级折叠区。
 
-### 新增 / 修改文件
+浏览器验收失败原因（7f21acf）：虽然创建了多个节点，用户看到的仍是"一堆普通 image prompt 节点/提示词草稿"，无法感知参考板的专业定位。
+
+20279ad 修复：
+- Panel 标题改为"人物参考板 / Character Reference Board"
+- 主界面以可视化槽位卡（4 / 5 个）为核心，不再显示 Prompt 预览
+- 角色描述 textarea 改名为"角色描述 / Character Brief"
+- 内部 Prompt 移入"高级选项"折叠区，默认隐藏
+- 移除"复制 Prompt"作为主功能
+- 主按钮改为"创建人物参考板 — N 个槽位节点"
+- 创建成功后提示改为"已创建人物参考板 — N 个槽位节点"
+- CanvasNodeCard：检测 `metadataJson.characterReference.viewLabel`，对 idle 人物参考节点显示"人物参考"badge + 槽位标签 + "待生成参考图"，区别于普通 prompt 草稿
+
+### 新增 / 修改文件（截至 20279ad）
 
 | 文件 | 说明 |
 |------|------|
-| `apps/web/src/lib/canvas/character-reference-grid.ts` | 新增：类型定义 / buildTurnaroundPrompt / buildGrid9Prompt / buildCharacterReferencePrompt / summarizeCharacterReference |
-| `apps/web/src/components/create/CharacterReferenceGridPanel.tsx` | 新增：完整人物参考面板 UI（模式选择、角色描述 textarea、一致性选项、风格/构图 select、媒体预览、创建草案节点） |
-| `apps/web/src/components/create/AssetAgentToolbar.tsx` | 修改：将"入库 soon"改为"资产"下拉菜单，含"👤 人物参考"入口 |
-| `apps/web/src/components/create/CanvasToolDock.tsx` | 修改：在资产工具菜单中新增"👤 人物参考 / 四视图"入口（适用所有节点类型） |
-| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | 修改：新增 isCharacterReferenceOpen state + 面板渲染 + onCreateReferenceNode handler + 两处入口 wiring |
+| `apps/web/src/lib/canvas/character-reference-grid.ts` | 类型定义 / buildTurnaroundPrompts / buildGrid5Prompts / buildCharacterReferencePrompts |
+| `apps/web/src/components/create/CharacterReferenceGridPanel.tsx` | 视觉参考板 UI（槽位卡 / 角色描述 / 一致性锁 / 高级选项折叠区） |
+| `apps/web/src/components/create/AssetAgentToolbar.tsx` | "资产"下拉菜单，含"👤 人物参考"入口 |
+| `apps/web/src/components/create/CanvasToolDock.tsx` | 资产工具菜单新增"👤 人物参考 / 四视图"入口 |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | isCharacterReferenceOpen state + N 节点创建 handler（2×2 / 3+2 grid 布局） |
+| `apps/web/src/components/create/CanvasNodeCard.tsx` | charRefMeta 检测：idle 参考节点显示槽位 badge UI |
 
 ### 入口位置
 
@@ -4100,20 +4113,21 @@ no subject replacement, no face change, no product redesign, no composition chan
 **负向约束（始终追加）：**
 `no different characters, no inconsistent facial features, no outfit changes between views, no random accessories, no identity drift, no scene background clutter, no cropped limbs`
 
-### 创建节点行为（7f21acf 修复后）
+### 创建节点行为（20279ad 重构后）
 
 | 行为 | 说明 |
 |------|------|
 | 新节点类型 | `image` |
 | 新节点 title | `人物四视图 · 正面 · {source title}`（每个视图独立标题） |
 | 新节点 status | `idle` |
+| 节点卡片空态 | 显示"人物参考"badge + 槽位标签 + "待生成参考图"（区别于普通 prompt 草稿） |
 | 自动生成 | 否 |
 | 消耗 credits | 否 |
 | 伪造 assetId | 否 |
 | source → 每个新节点 | 是（parentNodeId） |
 | metadataJson | `{ sourceNodeId, characterReference: { type, source, groupId, viewKey, viewLabel, consistencyOptions, style, layout, nodeCount } }` |
 | 位置 | 四视图 2×2 grid；九宫格 3+2 grid（见上） |
-| 创建后 toast | "已创建 4 个人物参考草案节点，请在各节点中手动生成。" |
+| 创建后 toast | "已创建人物参考板 — N 个槽位节点，请进入各槽位手动生成参考图。" |
 
 ### 安全边界确认
 
