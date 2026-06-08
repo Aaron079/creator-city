@@ -8324,7 +8324,7 @@ export function VisualCanvasWorkspace({
               })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
-              showCanvasFeedback(`已创建 ${req.items.length} 个人物参考草案节点，请在各节点中手动生成。`)
+              showCanvasFeedback(`已创建人物参考板 — ${req.items.length} 个槽位节点，请进入各槽位手动生成参考图。`)
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}
           />

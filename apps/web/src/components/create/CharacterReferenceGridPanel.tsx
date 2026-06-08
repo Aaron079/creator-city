@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Check, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import {
   buildCharacterReferencePrompts,
   STYLE_LABELS,
@@ -39,26 +39,46 @@ interface CharacterReferenceGridPanelProps {
   defaultSelectedNodeId?: string
 }
 
+// ─── Slot definitions ────────────────────────────────────────────────────────
+
+const TURNAROUND_SLOTS = [
+  { key: 'front', label: '正面', sub: 'Front View', icon: '◈', desc: '角色正面全身立绘' },
+  { key: '3quarter', label: '四分之三', sub: 'Three-quarter', icon: '◇', desc: '斜侧面角度参考' },
+  { key: 'side', label: '侧面', sub: 'Side Profile', icon: '▷', desc: '侧面轮廓与剪影' },
+  { key: 'back', label: '背面', sub: 'Back View', icon: '◁', desc: '背面服装与细节' },
+]
+
+const GRID5_SLOTS = [
+  { key: 'full-front', label: '全身正面', sub: 'Full Body Front', icon: '⊞', desc: '头顶到脚底完整正面' },
+  { key: 'full-3q', label: '全身四分之三', sub: 'Full Body 3/4', icon: '⊟', desc: '斜侧全身参考角度' },
+  { key: 'expression', label: '表情组', sub: 'Expression Sheet', icon: '◎', desc: '喜 / 中性 / 怒 / 惊四表情' },
+  { key: 'outfit', label: '服装细节', sub: 'Outfit Detail', icon: '◉', desc: '服装纹理与道具特写' },
+  { key: 'action', label: '动作姿态', sub: 'Action Pose', icon: '◐', desc: '动态姿势与身体轮廓' },
+]
+
 const MODES: Array<{
   id: CharacterReferenceMode
   label: string
-  sublabel: string
+  sub: string
   nodeCount: number
   description: string
+  slots: typeof TURNAROUND_SLOTS
 }> = [
   {
     id: 'turnaround4',
-    label: '人物四视图',
-    sublabel: '创建 4 个独立 Image 节点',
+    label: '四视图参考板',
+    sub: '正面 / 四分之三 / 侧面 / 背面',
     nodeCount: 4,
-    description: '更适合角色建模、视频一致性和正/侧/背面参考。',
+    description: '适合角色建模、视频一致性、正/侧/背面参考生成。',
+    slots: TURNAROUND_SLOTS,
   },
   {
     id: 'grid5',
-    label: '人物九宫格',
-    sublabel: '创建 5 个核心参考节点',
+    label: '九宫格参考板',
+    sub: '全身 / 表情 / 服装 / 动作',
     nodeCount: 5,
-    description: '更适合角色资产库、表情、服装、动作和分镜参考。',
+    description: '适合角色资产库、表情包、服装与动作分镜参考。',
+    slots: GRID5_SLOTS,
   },
 ]
 
@@ -82,7 +102,7 @@ export function CharacterReferenceGridPanel({
     null
 
   const [mode, setMode] = useState<CharacterReferenceMode>('turnaround4')
-  const [sourceText, setSourceText] = useState<string>(
+  const [characterBrief, setCharacterBrief] = useState<string>(
     (primaryNode?.prompt ?? primaryNode?.resultText ?? '').trim(),
   )
   const [style, setStyle] = useState<CharacterReferenceStyle>('film-character-design')
@@ -93,12 +113,14 @@ export function CharacterReferenceGridPanel({
   const [keepBody, setKeepBody] = useState(true)
   const [keepColorScheme, setKeepColorScheme] = useState(true)
   const [created, setCreated] = useState(false)
-  const [copiedAll, setCopiedAll] = useState(false)
-  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
 
   const opts: CharacterReferenceOptions = {
     mode,
-    sourcePrompt: sourceText,
+    sourcePrompt: characterBrief,
     style,
     layout,
     keepFace,
@@ -109,10 +131,7 @@ export function CharacterReferenceGridPanel({
   }
 
   const builtItems = buildCharacterReferencePrompts(opts)
-  // MODES is a non-empty const array; the find will always succeed for valid mode values
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
-  const canCreate = !!primaryNode && sourceText.trim().length > 0
+  const canCreate = !!primaryNode && characterBrief.trim().length > 0
 
   const proxiedImage = primaryNode?.resultImageUrl
     ? getProxiedMediaUrl(primaryNode.resultImageUrl)
@@ -131,7 +150,7 @@ export function CharacterReferenceGridPanel({
         sourceNodeId: primaryNode.id,
         characterReference: {
           type: mode,
-          source: 'CharacterReferenceGrid',
+          source: 'CharacterReferenceBoard',
           consistencyOptions: { keepFace, keepHair, keepOutfit, keepBody, keepColorScheme },
           style,
           layout,
@@ -142,24 +161,9 @@ export function CharacterReferenceGridPanel({
     setCreated(true)
   }
 
-  function handleCopyAll() {
-    const all = builtItems.map((item, i) => `[${i + 1}] ${item.label}\n${item.prompt}`).join('\n\n')
-    navigator.clipboard.writeText(all).then(() => {
-      setCopiedAll(true)
-      setTimeout(() => setCopiedAll(false), 2200)
-    })
-  }
-
-  function handleCopyItem(key: string, prompt: string) {
-    navigator.clipboard.writeText(prompt).then(() => {
-      setCopiedKey(key)
-      setTimeout(() => setCopiedKey(null), 2200)
-    })
-  }
-
   function handleReset() {
     setCreated(false)
-    setSourceText((primaryNode?.prompt ?? primaryNode?.resultText ?? '').trim())
+    setCharacterBrief((primaryNode?.prompt ?? primaryNode?.resultText ?? '').trim())
   }
 
   return (
@@ -175,8 +179,8 @@ export function CharacterReferenceGridPanel({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
-            <p className="text-[13px] font-semibold text-white/90">人物参考 / Character Reference</p>
-            <p className="text-[10px] text-white/35">创建多个独立角色参考草案节点，不自动生成，不消耗 credits</p>
+            <p className="text-[13px] font-semibold text-white/90">人物参考板 / Character Reference Board</p>
+            <p className="text-[10px] text-white/35">创建四视图或角色参考槽位，供后续逐个生成和保持角色一致性</p>
           </div>
           <button
             type="button"
@@ -190,14 +194,15 @@ export function CharacterReferenceGridPanel({
 
         {/* Body — scrollable */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Node context */}
+
+          {/* Source node context */}
           {primaryNode ? (
             <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
               <div className="flex items-start gap-3">
                 {proxiedImage && (
                   <img
                     src={proxiedImage}
-                    alt="节点预览"
+                    alt="角色来源"
                     className="h-12 w-12 shrink-0 rounded-lg object-cover border border-white/10"
                   />
                 )}
@@ -210,46 +215,36 @@ export function CharacterReferenceGridPanel({
                     preload="metadata"
                   />
                 )}
+                {!proxiedImage && !proxiedVideo && (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/4 text-[20px]">
+                    👤
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span
-                      style={{
-                        background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
-                        borderRadius: '50%',
-                        width: 6,
-                        height: 6,
-                        display: 'inline-block',
-                        flexShrink: 0,
-                      }}
-                      aria-hidden="true"
-                    />
                     <p className="truncate text-[11px] font-medium text-white/80">
-                      {primaryNode.title ?? primaryNode.id}
+                      {primaryNode.title ?? '未命名节点'}
                     </p>
                     <span className="rounded px-1 py-0.5 text-[9px] bg-white/8 text-white/40">
                       {primaryNode.kind.toUpperCase()}
                     </span>
                   </div>
-                  {(primaryNode.prompt ?? primaryNode.resultText) && (
-                    <p className="mt-0.5 line-clamp-2 text-[9px] leading-relaxed text-white/35">
-                      {(primaryNode.prompt ?? primaryNode.resultText ?? '').trim().slice(0, 120)}
-                    </p>
-                  )}
-                  <p className="mt-0.5 text-[9px] text-white/25">
-                    不会自动生成 · 只创建草案节点 · 请在新节点中逐个手动生成
+                  <p className="mt-0.5 text-[9px] text-white/30">当前角色来源节点</p>
+                  <p className="mt-0.5 text-[9px] text-white/20">
+                    不会自动生成 · 创建草案槽位后手动逐个生成
                   </p>
                 </div>
               </div>
             </div>
           ) : (
             <div className="shrink-0 border-b border-white/6 px-4 py-3">
-              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考</p>
+              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考板</p>
             </div>
           )}
 
-          {/* Mode selector */}
+          {/* Reference board type selector */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-2 text-[10px] font-semibold text-white/40">输出类型</p>
+            <p className="mb-2 text-[10px] font-semibold text-white/40">参考板类型</p>
             <div className="flex gap-2">
               {MODES.map((m) => (
                 <button
@@ -263,139 +258,144 @@ export function CharacterReferenceGridPanel({
                   }`}
                 >
                   <p className="text-[11px] font-semibold text-white/85">{m.label}</p>
-                  <p className="mt-0.5 text-[9px] text-white/40">{m.sublabel}</p>
+                  <p className="mt-0.5 text-[9px] text-white/35">{m.sub}</p>
                 </button>
               ))}
             </div>
-            {/* Mode description + user expectation */}
-            <div className="mt-2 rounded-lg bg-white/3 px-3 py-2 space-y-1">
-              <p className="text-[9px] text-white/50">{activeMode.description}</p>
-              <p className="text-[9px] text-white/30">
-                AI 角色一致性由 prompt 约束控制，可能需要多次生成选择最佳版本。
-              </p>
-            </div>
+            <p className="mt-2 text-[9px] text-white/35 leading-relaxed">{activeMode.description}</p>
           </div>
 
-          {/* Character source textarea */}
+          {/* Slot preview — primary visual element */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-1.5 text-[10px] font-semibold text-white/40">角色来源摘要</p>
-            <p className="mb-2 text-[9px] text-white/30">
-              补充年龄、性别、发型、脸型、服装、身材、关键道具等细节，生成参考越精确效果越好。
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold text-white/40">参考槽位</p>
+              <span className="rounded-full border border-white/10 px-2 py-0.5 text-[9px] text-white/30">
+                创建 {activeMode.nodeCount} 个独立节点
+              </span>
+            </div>
+            <div className={`grid gap-1.5 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {activeMode.slots.map((slot) => (
+                <div
+                  key={slot.key}
+                  className="flex flex-col rounded-xl border border-white/8 bg-white/3 px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[14px] text-white/40">{slot.icon}</span>
+                    <p className="text-[11px] font-semibold text-white/70">{slot.label}</p>
+                  </div>
+                  <p className="text-[9px] text-white/30 leading-tight">{slot.sub}</p>
+                  <p className="mt-1 text-[8.5px] text-white/20 leading-tight">{slot.desc}</p>
+                  <div className="mt-2 rounded-md border border-dashed border-white/10 py-1 text-center">
+                    <span className="text-[8px] text-white/20">待生成</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[9px] text-white/25 leading-relaxed">
+              AI 角色一致性由描述约束控制，可能需要多次生成选择最佳版本。
+            </p>
+          </div>
+
+          {/* Character brief */}
+          <div className="shrink-0 border-b border-white/6 px-4 py-3">
+            <p className="mb-1 text-[10px] font-semibold text-white/40">角色描述 / Character Brief</p>
+            <p className="mb-2 text-[9px] text-white/25">
+              年龄、性别、发型、脸型、服装、身材、关键道具 — 描述越精确，各槽位生成效果越好。
             </p>
             <textarea
-              value={sourceText}
-              onChange={(e) => { setSourceText(e.target.value); setCreated(false) }}
+              value={characterBrief}
+              onChange={(e) => { setCharacterBrief(e.target.value); setCreated(false) }}
               placeholder="例：20岁亚裔女性，短黑发，穿红色旗袍，身材纤细，手持折扇"
-              rows={4}
+              rows={3}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[11px] leading-relaxed text-white/85 placeholder-white/25 outline-none resize-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20"
               style={{ fontFamily: 'inherit' }}
             />
-            {sourceText.trim().length === 0 && (
-              <p className="mt-1 text-[9px] text-amber-400/60">请填写角色描述，风格词单独无法生成参考稿</p>
+            {characterBrief.trim().length === 0 && (
+              <p className="mt-1 text-[9px] text-amber-400/60">请填写角色描述，单独风格词无法确保各槽位一致</p>
             )}
           </div>
 
-          {/* Consistency options */}
+          {/* Consistency locks */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-2 text-[10px] font-semibold text-white/40">风格一致性</p>
+            <p className="mb-2 text-[10px] font-semibold text-white/40">一致性锁定</p>
             <div className="flex flex-wrap gap-2">
               {[
-                { key: 'keepFace' as const, label: '保持同一脸型', value: keepFace, set: setKeepFace },
-                { key: 'keepHair' as const, label: '保持同一发型', value: keepHair, set: setKeepHair },
-                { key: 'keepOutfit' as const, label: '保持同一服装', value: keepOutfit, set: setKeepOutfit },
-                { key: 'keepBody' as const, label: '保持同一体型', value: keepBody, set: setKeepBody },
-                { key: 'keepColorScheme' as const, label: '保持同一色彩', value: keepColorScheme, set: setKeepColorScheme },
+                { key: 'keepFace' as const, label: '🔒 脸型', value: keepFace, set: setKeepFace },
+                { key: 'keepHair' as const, label: '🔒 发型', value: keepHair, set: setKeepHair },
+                { key: 'keepOutfit' as const, label: '🔒 服装', value: keepOutfit, set: setKeepOutfit },
+                { key: 'keepBody' as const, label: '🔒 体型', value: keepBody, set: setKeepBody },
+                { key: 'keepColorScheme' as const, label: '🔒 色彩', value: keepColorScheme, set: setKeepColorScheme },
               ].map(({ key, label, value, set }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => { set(!value); setCreated(false) }}
-                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
                     value
                       ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/35'
-                      : 'bg-white/5 text-white/35 hover:bg-white/10 hover:text-white/55'
+                      : 'bg-white/5 text-white/30 hover:bg-white/10 hover:text-white/50'
                   }`}
                 >
-                  {value && <Check size={9} strokeWidth={2.5} />}
                   {label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Style + Layout selectors */}
-          <div className="shrink-0 border-b border-white/6 px-4 py-3 space-y-3">
-            <div>
-              <label className="mb-1.5 block text-[10px] font-semibold text-white/40">参考稿风格</label>
-              <select
-                value={style}
-                onChange={(e) => { setStyle(e.target.value as CharacterReferenceStyle); setCreated(false) }}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/80 outline-none focus:border-indigo-500/40"
-              >
-                {STYLES.map((s) => (
-                  <option key={s.id} value={s.id} style={{ background: '#0f1117' }}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[10px] font-semibold text-white/40">构图要求</label>
-              <select
-                value={layout}
-                onChange={(e) => { setLayout(e.target.value as CharacterReferenceLayout); setCreated(false) }}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/80 outline-none focus:border-indigo-500/40"
-              >
-                {LAYOUTS.map((l) => (
-                  <option key={l.id} value={l.id} style={{ background: '#0f1117' }}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Per-view prompt preview */}
-          <div className="shrink-0 px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-semibold text-white/30">
-                各节点 Prompt 预览（{builtItems.length} 个）
-              </p>
-              <button
-                type="button"
-                onClick={handleCopyAll}
-                className="flex items-center gap-1 text-[9px] text-white/35 hover:text-white/60 transition"
-              >
-                {copiedAll ? <Check size={9} strokeWidth={2.5} /> : <Copy size={9} strokeWidth={2} />}
-                <span>{copiedAll ? '已复制全部' : '复制全部'}</span>
-              </button>
-            </div>
-            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
-              {builtItems.map((item) => (
-                <div
-                  key={item.key}
-                  className="group rounded-lg border border-white/6 bg-white/2 px-2.5 py-2"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[9px] font-medium text-white/55">{item.label}</p>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyItem(item.key, item.prompt)}
-                      className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 text-[9px] text-white/35 hover:text-white/60 transition"
-                      title="复制此节点 Prompt"
-                    >
-                      {copiedKey === item.key
-                        ? <Check size={9} strokeWidth={2.5} className="text-emerald-400" />
-                        : <Copy size={9} strokeWidth={2} />
-                      }
-                    </button>
-                  </div>
-                  <p className="text-[8.5px] leading-relaxed text-white/30 line-clamp-2 break-words">
-                    {item.prompt}
-                  </p>
+          {/* Advanced options — collapsed by default */}
+          <div className="shrink-0 px-4 py-2">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex w-full items-center justify-between py-1 text-[10px] text-white/30 hover:text-white/50 transition"
+            >
+              <span>高级选项（风格 / 构图）</span>
+              <span>{showAdvanced ? '▲' : '▼'}</span>
+            </button>
+            {showAdvanced ? (
+              <div className="mt-2 space-y-2.5 pb-2">
+                <div>
+                  <label className="mb-1 block text-[9px] font-semibold text-white/30">参考稿风格</label>
+                  <select
+                    value={style}
+                    onChange={(e) => { setStyle(e.target.value as CharacterReferenceStyle); setCreated(false) }}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70 outline-none focus:border-indigo-500/40"
+                  >
+                    {STYLES.map((s) => (
+                      <option key={s.id} value={s.id} style={{ background: '#0f1117' }}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
+                <div>
+                  <label className="mb-1 block text-[9px] font-semibold text-white/30">构图要求</label>
+                  <select
+                    value={layout}
+                    onChange={(e) => { setLayout(e.target.value as CharacterReferenceLayout); setCreated(false) }}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70 outline-none focus:border-indigo-500/40"
+                  >
+                    {LAYOUTS.map((l) => (
+                      <option key={l.id} value={l.id} style={{ background: '#0f1117' }}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* Internal prompts — hidden by default, shown only in advanced */}
+                <div>
+                  <p className="mb-1 text-[9px] font-semibold text-white/30">内部描述（各槽位生成用，不作为主功能）</p>
+                  <div className="space-y-1 max-h-[140px] overflow-y-auto rounded-xl border border-white/6 bg-white/2 p-2">
+                    {builtItems.map((item) => (
+                      <div key={item.key} className="border-b border-white/5 pb-1 last:border-0 last:pb-0">
+                        <p className="text-[9px] font-medium text-white/40 mb-0.5">{item.label}</p>
+                        <p className="text-[8px] leading-relaxed text-white/20 break-words">{item.prompt}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -405,61 +405,37 @@ export function CharacterReferenceGridPanel({
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
                 <p className="text-[11px] font-semibold text-emerald-400 mb-1">
-                  已创建 {activeMode.nodeCount} 个人物参考草案节点 ✓
+                  人物参考板已创建 — {activeMode.nodeCount} 个槽位节点 ✓
                 </p>
-                <p className="text-[10px] leading-relaxed text-white/55">
-                  新节点已出现在画布中，状态均为 idle。请在各节点中选择 Provider 并逐个手动生成。
+                <p className="text-[10px] leading-relaxed text-white/50">
+                  画布中已出现 {activeMode.nodeCount} 个参考槽位节点，状态均为 idle。请进入各槽位节点选择 Provider 后手动生成。
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleCopyAll}
-                className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-medium transition ${
-                  copiedAll
-                    ? 'bg-emerald-500/15 text-emerald-400'
-                    : 'bg-white/6 text-white/60 hover:bg-white/10 hover:text-white/80'
-                }`}
-              >
-                {copiedAll ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-                {copiedAll ? '已复制全部 Prompt' : `复制全部 ${activeMode.nodeCount} 个 Prompt`}
-              </button>
               <button
                 type="button"
                 onClick={handleReset}
                 className="w-full rounded-xl py-2 text-[11px] text-white/40 hover:text-white/60 transition"
               >
-                继续创建其他参考类型
+                创建另一个参考板
               </button>
             </div>
           ) : (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleCopyAll}
-                className={`flex items-center justify-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-[11px] text-white/50 transition hover:bg-white/5 hover:text-white/70 ${
-                  copiedAll ? 'text-emerald-400' : ''
-                }`}
-                title="复制全部 Prompt"
-              >
-                {copiedAll ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-              </button>
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={!canCreate}
-                className={`flex-1 rounded-xl py-2.5 text-[11px] font-semibold transition ${
-                  canCreate
-                    ? 'bg-indigo-500 text-white hover:bg-indigo-400'
-                    : 'bg-white/6 text-white/25 cursor-not-allowed'
-                }`}
-              >
-                {!primaryNode
-                  ? '请从节点顶部资产菜单打开'
-                  : sourceText.trim().length === 0
-                    ? '请先填写角色描述'
-                    : `创建 ${activeMode.nodeCount} 个人物参考草案节点`}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={!canCreate}
+              className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
+                canCreate
+                  ? 'bg-indigo-500 text-white hover:bg-indigo-400'
+                  : 'bg-white/6 text-white/25 cursor-not-allowed'
+              }`}
+            >
+              {!primaryNode
+                ? '请从节点顶部资产菜单打开'
+                : characterBrief.trim().length === 0
+                  ? '请先填写角色描述'
+                  : `创建人物参考板 — ${activeMode.nodeCount} 个槽位节点`}
+            </button>
           )}
         </div>
       </div>

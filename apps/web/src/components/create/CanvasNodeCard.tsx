@@ -1399,6 +1399,19 @@ export function CanvasNodeCard({
   onWorkflowContinue,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
+
+  // Character reference slot detection — read-only, no side effects
+  const charRefMeta = (() => {
+    const rec = metadataRecord(node.metadataJson)
+    const cr = rec.characterReference
+    if (!cr || typeof cr !== 'object' || Array.isArray(cr)) return null
+    const crRec = cr as Record<string, unknown>
+    const slotLabel = typeof crRec.viewLabel === 'string' ? crRec.viewLabel : null
+    const slotKey = typeof crRec.viewKey === 'string' ? crRec.viewKey : null
+    if (!slotLabel || !slotKey) return null
+    return { slotLabel, slotKey }
+  })()
+
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const pointerDownInteractiveRef = useRef(false)
   const suppressInteractiveClickRef = useRef(false)
@@ -3428,6 +3441,29 @@ export function CanvasNodeCard({
           ) : node.status === 'error' || node.status === 'failed' || node.status === 'cancelled' ? (
             <div className="canvas-node-preview is-error-preview">
               <div className="canvas-node-preview-copy">{node.errorMessage || '生成失败，点击重试。'}</div>
+            </div>
+          ) : charRefMeta ? (
+            <div className={`canvas-node-empty empty-${node.kind}`} style={{ flexDirection: 'column', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{
+                display: 'inline-block',
+                borderRadius: 999,
+                background: 'rgba(99,102,241,0.15)',
+                border: '1px solid rgba(99,102,241,0.25)',
+                color: 'rgba(165,163,255,0.85)',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.07em',
+                padding: '2px 8px',
+                textTransform: 'uppercase',
+              }}>
+                人物参考
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.55)', textAlign: 'center' }}>
+                {charRefMeta.slotLabel.split(' / ')[0]}
+              </span>
+              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.22)', textAlign: 'center' }}>
+                待生成参考图
+              </span>
             </div>
           ) : (
             <div className={`canvas-node-empty empty-${node.kind}`}>
