@@ -1457,6 +1457,9 @@ export function CanvasNodeCard({
   const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? videoSource : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)
+  const colorGradeCssFilter = typeof nodeMetadata.colorGradeCssFilter === 'string' && nodeMetadata.colorGradeCssFilter !== 'none'
+    ? nodeMetadata.colorGradeCssFilter
+    : undefined
   const nodeAsset = getNodeAssetIdWithSource(node)
   const nodeAssetId = nodeAsset.value
   const assetIntelligenceTagCount = getAssetIntelligenceTagCount(nodeMetadata.assetIntelligence)
@@ -3266,7 +3269,7 @@ export function CanvasNodeCard({
                         muted
                         playsInline
                         preload="metadata"
-                        style={{ pointerEvents: 'none', ...getReframeStyle(reframeMode) }}
+                        style={{ pointerEvents: 'none', ...getReframeStyle(reframeMode), ...(colorGradeCssFilter ? { filter: colorGradeCssFilter } : {}) }}
                         onError={selectNextVideoCandidate}
                         onLoadedMetadata={() => setVideoLoadFailed(false)}
                         onCanPlay={() => setVideoLoadFailed(false)}
@@ -3337,7 +3340,7 @@ export function CanvasNodeCard({
                         className="canvas-node-preview-image"
                         loading="lazy"
                         draggable={false}
-                        style={{ pointerEvents: 'none', ...getReframeStyle(reframeMode) }}
+                        style={{ pointerEvents: 'none', ...getReframeStyle(reframeMode), ...(colorGradeCssFilter ? { filter: colorGradeCssFilter } : {}) }}
                         onLoad={(event) => {
                           setImageLoadFailed(false)
                           const { naturalWidth, naturalHeight } = event.currentTarget

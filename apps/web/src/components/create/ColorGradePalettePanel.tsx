@@ -34,6 +34,7 @@ interface CreateGradeNodeRequest {
   sourceNodeId: string
   kind: 'image' | 'video'
   prompt: string
+  cssFilter: string
 }
 
 interface ColorGradePalettePanelProps {
@@ -618,7 +619,7 @@ export function ColorGradePalettePanel({
     const sourcePrompt = primaryNode.prompt?.trimEnd() ?? ''
     const gradePrompt = buildColorGradePrompt(setting, kind)
     const fullPrompt = sourcePrompt ? `${sourcePrompt}\n\n${gradePrompt}` : gradePrompt
-    onCreateGradeNode?.({ sourceNodeId: primaryNode.id, kind, prompt: fullPrompt })
+    onCreateGradeNode?.({ sourceNodeId: primaryNode.id, kind, prompt: fullPrompt, cssFilter })
     setPreviewText(gradePrompt)
     setCreateSuccess(true)
   }
@@ -1121,7 +1122,7 @@ export function ColorGradePalettePanel({
           {/* Create grade node success */}
           {createSuccess && (
             <div className="mx-3 mb-1 rounded-xl border border-indigo-500/25 bg-indigo-500/8 px-3 py-2">
-              <p className="text-[11px] font-semibold text-indigo-300">✦ 已在画布创建调色草案节点 — 请在新节点中点击生成按钮查看最终效果</p>
+              <p className="text-[11px] font-semibold text-indigo-300">✦ 已输出到画布 — 新节点显示调色后的图像（CSS 滤镜预览）</p>
             </div>
           )}
 
@@ -1144,10 +1145,10 @@ export function ColorGradePalettePanel({
           disabled={!primaryNode}
           className="w-full rounded-xl border border-indigo-500/55 bg-indigo-500/18 py-2.5 text-[12px] font-bold text-indigo-200 transition hover:bg-indigo-500/28 disabled:cursor-not-allowed disabled:opacity-38"
         >
-          + 创建调色节点
+          应用调色到画布
         </button>
         <p className="text-center text-[7px] text-white/20">
-          在画布创建带调色 Prompt 的新节点（idle），不自动生成，不消耗 credits
+          复制当前素材到新节点并应用调色滤镜，不重新生成，不消耗 credits
         </p>
 
         {/* Secondary row */}

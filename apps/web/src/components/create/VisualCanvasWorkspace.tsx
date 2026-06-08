@@ -4305,6 +4305,9 @@ export function VisualCanvasWorkspace({
       position?: { x: number; y: number }
       status?: VisualCanvasNode['status']
       parentNodeId?: string
+      resultImageUrl?: string
+      resultVideoUrl?: string
+      metadataJson?: Record<string, unknown>
     },
   ) => {
     const meta = NODE_META[kind]
@@ -4343,6 +4346,9 @@ export function VisualCanvasWorkspace({
       ratio: options?.ratio ?? meta.ratio,
       status: options?.status ?? 'idle',
       resultPreview: undefined,
+      resultImageUrl: options?.resultImageUrl,
+      resultVideoUrl: options?.resultVideoUrl,
+      metadataJson: options?.metadataJson,
       x: position.x,
       y: position.y,
       width: size.width,
@@ -8233,11 +8239,19 @@ export function VisualCanvasWorkspace({
               const title = sourceTitle
                 ? `调色版 · ${sourceTitle}`
                 : (req.kind === 'image' ? '图片调色版' : '视频调色版')
+              const hasAsset = req.kind === 'image'
+                ? Boolean(sourceNode?.resultImageUrl?.trim())
+                : Boolean(sourceNode?.resultVideoUrl?.trim())
               createNode(req.kind as VisualCanvasNodeKind, {
                 title,
                 prompt: req.prompt,
                 parentNodeId: req.sourceNodeId,
-                status: 'idle',
+                status: hasAsset ? 'done' : 'idle',
+                resultImageUrl: req.kind === 'image' ? (sourceNode?.resultImageUrl ?? undefined) : undefined,
+                resultVideoUrl: req.kind === 'video' ? (sourceNode?.resultVideoUrl ?? undefined) : undefined,
+                metadataJson: req.cssFilter && req.cssFilter !== 'none'
+                  ? { colorGradeCssFilter: req.cssFilter }
+                  : undefined,
               })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
