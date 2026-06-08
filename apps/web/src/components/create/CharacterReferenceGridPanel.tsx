@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import { Copy, Check, X } from 'lucide-react'
 import {
-  buildCharacterReferencePrompt,
+  buildCharacterReferencePrompts,
   STYLE_LABELS,
   LAYOUT_LABELS,
   type CharacterReferenceMode,
   type CharacterReferenceStyle,
   type CharacterReferenceLayout,
   type CharacterReferenceOptions,
+  type CharacterReferencePromptItem,
 } from '@/lib/canvas/character-reference-grid'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 
@@ -27,7 +28,7 @@ interface CharacterSourceNode {
 export interface CreateCharacterReferenceRequest {
   sourceNodeId: string
   mode: CharacterReferenceMode
-  prompt: string
+  items: CharacterReferencePromptItem[]
   metadataJson: Record<string, unknown>
 }
 
@@ -38,9 +39,27 @@ interface CharacterReferenceGridPanelProps {
   defaultSelectedNodeId?: string
 }
 
-const MODES: Array<{ id: CharacterReferenceMode; label: string; sublabel: string }> = [
-  { id: 'turnaround4', label: '人物四视图', sublabel: '正面 · 侧面 · 背面 · 四分之三侧' },
-  { id: 'grid9', label: '人物九宫格', sublabel: '面部 · 全身 · 表情 · 服装 · 动作' },
+const MODES: Array<{
+  id: CharacterReferenceMode
+  label: string
+  sublabel: string
+  nodeCount: number
+  description: string
+}> = [
+  {
+    id: 'turnaround4',
+    label: '人物四视图',
+    sublabel: '创建 4 个独立 Image 节点',
+    nodeCount: 4,
+    description: '更适合角色建模、视频一致性和正/侧/背面参考。',
+  },
+  {
+    id: 'grid5',
+    label: '人物九宫格',
+    sublabel: '创建 5 个核心参考节点',
+    nodeCount: 5,
+    description: '更适合角色资产库、表情、服装、动作和分镜参考。',
+  },
 ]
 
 const STYLES: Array<{ id: CharacterReferenceStyle; label: string }> = Object.entries(STYLE_LABELS).map(
@@ -74,7 +93,8 @@ export function CharacterReferenceGridPanel({
   const [keepBody, setKeepBody] = useState(true)
   const [keepColorScheme, setKeepColorScheme] = useState(true)
   const [created, setCreated] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copiedAll, setCopiedAll] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   const opts: CharacterReferenceOptions = {
     mode,
@@ -88,8 +108,10 @@ export function CharacterReferenceGridPanel({
     keepColorScheme,
   }
 
-  const builtPrompt = buildCharacterReferencePrompt(opts)
-
+  const builtItems = buildCharacterReferencePrompts(opts)
+  // MODES is a non-empty const array; the find will always succeed for valid mode values
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
   const canCreate = !!primaryNode && sourceText.trim().length > 0
 
   const proxiedImage = primaryNode?.resultImageUrl
@@ -101,33 +123,37 @@ export function CharacterReferenceGridPanel({
 
   function handleCreate() {
     if (!primaryNode || !canCreate) return
-    const modeLabel = mode === 'turnaround4' ? '人物四视图' : '人物九宫格'
-    const sourceTitle = primaryNode.title?.trim()
-    const title = sourceTitle ? `${modeLabel} · ${sourceTitle}` : modeLabel
     onCreateReferenceNode({
       sourceNodeId: primaryNode.id,
       mode,
-      prompt: builtPrompt,
+      items: builtItems,
       metadataJson: {
         sourceNodeId: primaryNode.id,
         characterReference: {
           type: mode,
           source: 'CharacterReferenceGrid',
-          title,
           consistencyOptions: { keepFace, keepHair, keepOutfit, keepBody, keepColorScheme },
           style,
           layout,
-          previewOnly: false,
+          nodeCount: builtItems.length,
         },
       },
     })
     setCreated(true)
   }
 
-  function handleCopyPrompt() {
-    navigator.clipboard.writeText(builtPrompt).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2200)
+  function handleCopyAll() {
+    const all = builtItems.map((item, i) => `[${i + 1}] ${item.label}\n${item.prompt}`).join('\n\n')
+    navigator.clipboard.writeText(all).then(() => {
+      setCopiedAll(true)
+      setTimeout(() => setCopiedAll(false), 2200)
+    })
+  }
+
+  function handleCopyItem(key: string, prompt: string) {
+    navigator.clipboard.writeText(prompt).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2200)
     })
   }
 
@@ -143,14 +169,14 @@ export function CharacterReferenceGridPanel({
       data-no-node-drag="true"
     >
       <div
-        className="flex w-[440px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/97 shadow-2xl backdrop-blur-xl"
+        className="flex w-[460px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/97 shadow-2xl backdrop-blur-xl"
         style={{ maxHeight: 'calc(100vh - 48px)' }}
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <p className="text-[13px] font-semibold text-white/90">人物参考 / Character Reference</p>
-            <p className="text-[10px] text-white/35">创建角色四视图或九宫格草案节点，用于角色一致性和后续生成参考</p>
+            <p className="text-[10px] text-white/35">创建多个独立角色参考草案节点，不自动生成，不消耗 credits</p>
           </div>
           <button
             type="button"
@@ -168,7 +194,6 @@ export function CharacterReferenceGridPanel({
           {primaryNode ? (
             <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
               <div className="flex items-start gap-3">
-                {/* Media preview */}
                 {proxiedImage && (
                   <img
                     src={proxiedImage}
@@ -211,14 +236,14 @@ export function CharacterReferenceGridPanel({
                     </p>
                   )}
                   <p className="mt-0.5 text-[9px] text-white/25">
-                    不会自动生成 · 只创建草案节点 · 用户在新节点中手动生成
+                    不会自动生成 · 只创建草案节点 · 请在新节点中逐个手动生成
                   </p>
                 </div>
               </div>
             </div>
           ) : (
             <div className="shrink-0 border-b border-white/6 px-4 py-3">
-              <p className="text-[10px] text-amber-400/70">请从画布节点顶部&ldquo;资产&rdquo;菜单打开人物参考</p>
+              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考</p>
             </div>
           )}
 
@@ -238,9 +263,16 @@ export function CharacterReferenceGridPanel({
                   }`}
                 >
                   <p className="text-[11px] font-semibold text-white/85">{m.label}</p>
-                  <p className="mt-0.5 text-[9px] text-white/35">{m.sublabel}</p>
+                  <p className="mt-0.5 text-[9px] text-white/40">{m.sublabel}</p>
                 </button>
               ))}
+            </div>
+            {/* Mode description + user expectation */}
+            <div className="mt-2 rounded-lg bg-white/3 px-3 py-2 space-y-1">
+              <p className="text-[9px] text-white/50">{activeMode.description}</p>
+              <p className="text-[9px] text-white/30">
+                AI 角色一致性由 prompt 约束控制，可能需要多次生成选择最佳版本。
+              </p>
             </div>
           </div>
 
@@ -323,11 +355,46 @@ export function CharacterReferenceGridPanel({
             </div>
           </div>
 
-          {/* Prompt preview */}
+          {/* Per-view prompt preview */}
           <div className="shrink-0 px-4 py-3">
-            <p className="mb-1.5 text-[9px] font-semibold text-white/30">生成 Prompt 预览（只读）</p>
-            <div className="rounded-xl border border-white/6 bg-white/2 px-3 py-2.5 max-h-[80px] overflow-y-auto">
-              <p className="text-[9px] leading-relaxed text-white/40 whitespace-pre-wrap break-words">{builtPrompt}</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[9px] font-semibold text-white/30">
+                各节点 Prompt 预览（{builtItems.length} 个）
+              </p>
+              <button
+                type="button"
+                onClick={handleCopyAll}
+                className="flex items-center gap-1 text-[9px] text-white/35 hover:text-white/60 transition"
+              >
+                {copiedAll ? <Check size={9} strokeWidth={2.5} /> : <Copy size={9} strokeWidth={2} />}
+                <span>{copiedAll ? '已复制全部' : '复制全部'}</span>
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
+              {builtItems.map((item) => (
+                <div
+                  key={item.key}
+                  className="group rounded-lg border border-white/6 bg-white/2 px-2.5 py-2"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[9px] font-medium text-white/55">{item.label}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyItem(item.key, item.prompt)}
+                      className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 text-[9px] text-white/35 hover:text-white/60 transition"
+                      title="复制此节点 Prompt"
+                    >
+                      {copiedKey === item.key
+                        ? <Check size={9} strokeWidth={2.5} className="text-emerald-400" />
+                        : <Copy size={9} strokeWidth={2} />
+                      }
+                    </button>
+                  </div>
+                  <p className="text-[8.5px] leading-relaxed text-white/30 line-clamp-2 break-words">
+                    {item.prompt}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -337,22 +404,24 @@ export function CharacterReferenceGridPanel({
           {created ? (
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-emerald-400 mb-1">已创建人物参考草案节点 ✓</p>
+                <p className="text-[11px] font-semibold text-emerald-400 mb-1">
+                  已创建 {activeMode.nodeCount} 个人物参考草案节点 ✓
+                </p>
                 <p className="text-[10px] leading-relaxed text-white/55">
-                  新节点已出现在画布中，状态为 idle。请在新节点中选择 Provider 并手动点击生成。
+                  新节点已出现在画布中，状态均为 idle。请在各节点中选择 Provider 并逐个手动生成。
                 </p>
               </div>
               <button
                 type="button"
-                onClick={handleCopyPrompt}
+                onClick={handleCopyAll}
                 className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-medium transition ${
-                  copied
+                  copiedAll
                     ? 'bg-emerald-500/15 text-emerald-400'
                     : 'bg-white/6 text-white/60 hover:bg-white/10 hover:text-white/80'
                 }`}
               >
-                {copied ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-                {copied ? '已复制参考 Prompt' : '复制参考 Prompt'}
+                {copiedAll ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
+                {copiedAll ? '已复制全部 Prompt' : `复制全部 ${activeMode.nodeCount} 个 Prompt`}
               </button>
               <button
                 type="button"
@@ -366,13 +435,13 @@ export function CharacterReferenceGridPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={handleCopyPrompt}
+                onClick={handleCopyAll}
                 className={`flex items-center justify-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-[11px] text-white/50 transition hover:bg-white/5 hover:text-white/70 ${
-                  copied ? 'text-emerald-400' : ''
+                  copiedAll ? 'text-emerald-400' : ''
                 }`}
-                title="复制参考 Prompt"
+                title="复制全部 Prompt"
               >
-                {copied ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
+                {copiedAll ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
               </button>
               <button
                 type="button"
@@ -388,7 +457,7 @@ export function CharacterReferenceGridPanel({
                   ? '请从节点顶部资产菜单打开'
                   : sourceText.trim().length === 0
                     ? '请先填写角色描述'
-                    : '创建人物参考节点'}
+                    : `创建 ${activeMode.nodeCount} 个人物参考草案节点`}
               </button>
             </div>
           )}

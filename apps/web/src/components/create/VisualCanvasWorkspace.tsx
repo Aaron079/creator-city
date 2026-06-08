@@ -8280,21 +8280,51 @@ export function VisualCanvasWorkspace({
               const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
               const modeLabel = req.mode === 'turnaround4' ? '人物四视图' : '人物九宫格'
               const sourceTitle = sourceNode?.title?.trim()
-              const title = sourceTitle ? `${modeLabel} · ${sourceTitle}` : modeLabel
-              const basePosition = sourceNode
-                ? { x: sourceNode.x + (sourceNode.width ?? 360) + 240, y: sourceNode.y + 160 }
-                : undefined
-              createNode('image', {
-                title,
-                prompt: req.prompt,
-                parentNodeId: req.sourceNodeId,
-                status: 'idle',
-                metadataJson: req.metadataJson,
-                position: basePosition,
+              const sourceX = sourceNode?.x ?? 200
+              const sourceY = sourceNode?.y ?? 200
+              const groupId = `char-ref-${Date.now()}`
+
+              // Grid positions: turnaround4 → 2×2, grid5 → 3+2
+              const positions =
+                req.mode === 'turnaround4'
+                  ? [
+                      { x: sourceX + 460, y: sourceY },
+                      { x: sourceX + 780, y: sourceY },
+                      { x: sourceX + 460, y: sourceY + 280 },
+                      { x: sourceX + 780, y: sourceY + 280 },
+                    ]
+                  : [
+                      { x: sourceX + 460, y: sourceY },
+                      { x: sourceX + 780, y: sourceY },
+                      { x: sourceX + 1100, y: sourceY },
+                      { x: sourceX + 460, y: sourceY + 280 },
+                      { x: sourceX + 780, y: sourceY + 280 },
+                    ]
+
+              req.items.forEach((item, i) => {
+                const title = sourceTitle
+                  ? `${modeLabel} · ${item.titleSuffix} · ${sourceTitle}`
+                  : `${modeLabel} · ${item.titleSuffix}`
+                createNode('image', {
+                  title,
+                  prompt: item.prompt,
+                  parentNodeId: req.sourceNodeId,
+                  status: 'idle',
+                  metadataJson: {
+                    ...req.metadataJson,
+                    characterReference: {
+                      ...((req.metadataJson.characterReference as Record<string, unknown>) ?? {}),
+                      groupId,
+                      viewKey: item.key,
+                      viewLabel: item.label,
+                    },
+                  },
+                  position: positions[i],
+                })
               })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
-              showCanvasFeedback('已创建人物参考草案节点，请在新节点中手动生成。')
+              showCanvasFeedback(`已创建 ${req.items.length} 个人物参考草案节点，请在各节点中手动生成。`)
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}
           />

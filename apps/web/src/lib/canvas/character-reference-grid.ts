@@ -1,4 +1,4 @@
-export type CharacterReferenceMode = 'turnaround4' | 'grid9'
+export type CharacterReferenceMode = 'turnaround4' | 'grid5'
 
 export type CharacterReferenceStyle =
   | 'film-character-design'
@@ -25,6 +25,14 @@ export interface CharacterReferenceOptions {
   keepColorScheme: boolean
 }
 
+export interface CharacterReferencePromptItem {
+  key: string
+  label: string
+  titleSuffix: string
+  prompt: string
+  mode: CharacterReferenceMode
+}
+
 export const STYLE_LABELS: Record<CharacterReferenceStyle, string> = {
   'film-character-design': '影视角色设计稿',
   'animation-model-sheet': '动画角色设定',
@@ -39,6 +47,11 @@ export const LAYOUT_LABELS: Record<CharacterReferenceLayout, string> = {
   'design-grid': '设计稿网格',
   'cinematic-concept-board': '电影概念设定板',
 }
+
+const NEGATIVE_CONSTRAINTS =
+  'no different character, no inconsistent face, no changed hairstyle, no different outfit, ' +
+  'no random accessories, no age change, no face drift, no body proportion drift, ' +
+  'no cropped body, no partial body, no background clutter, no extra limbs, no deformed anatomy'
 
 function buildConsistencyConstraints(opts: CharacterReferenceOptions): string {
   const parts: string[] = []
@@ -69,26 +82,106 @@ function buildStyleDescription(style: CharacterReferenceStyle): string {
   }
 }
 
-export function buildTurnaroundPrompt(opts: CharacterReferenceOptions): string {
+function buildSharedSuffix(opts: CharacterReferenceOptions): string {
   const consistency = buildConsistencyConstraints(opts)
-  const layout = buildLayoutDescription(opts.layout)
   const style = buildStyleDescription(opts.style)
-  const subject = opts.sourcePrompt.trim() || 'a character'
-
-  return `character design turnaround reference sheet, ${subject}, four orthographic views arranged on one sheet: front view at 0 degrees, three-quarter view at 45 degrees, side profile view at 90 degrees, back view at 180 degrees, full body visible in all four views, all views showing the same character, ${consistency}, clear spacing between views, each angle clearly readable, character design sheet layout, ${layout}, ${style}, [Character Reference Consistency] same face same hair same costume same body proportions across all four views, no perspective distortion, character centered in each panel, [Character Reference Negative Constraints] no different characters, no inconsistent facial features, no outfit changes between views, no random accessories not present in source, no identity drift between views, no scene background clutter, no cropped limbs, no partial views`
+  const layout = buildLayoutDescription(opts.layout)
+  return `same character identity, ${consistency}, ${style}, ${layout}, [Negative: ${NEGATIVE_CONSTRAINTS}]`
 }
 
-export function buildGrid9Prompt(opts: CharacterReferenceOptions): string {
-  const consistency = buildConsistencyConstraints(opts)
-  const layout = buildLayoutDescription(opts.layout)
-  const style = buildStyleDescription(opts.style)
+export function buildTurnaroundPrompts(opts: CharacterReferenceOptions): CharacterReferencePromptItem[] {
   const subject = opts.sourcePrompt.trim() || 'a character'
+  const shared = buildSharedSuffix(opts)
 
-  return `character reference grid sheet, ${subject}, nine panels arranged in a 3x3 grid: panel 1 front face portrait (top-left), panel 2 side profile portrait (top-center), panel 3 three-quarter face portrait (top-right), panel 4 full body front view (center-left), panel 5 full body side view (center), panel 6 full body back view (center-right), panel 7 facial expression variation (bottom-left), panel 8 outfit and costume detail close-up (bottom-center), panel 9 signature action or character pose (bottom-right), same character identity in all nine panels, ${consistency}, clear 3x3 grid layout with thin dividers, each panel evenly sized, ${layout}, ${style}, [Character Reference Consistency] same face same hair same costume same body across all panels, [Character Reference Negative Constraints] no different characters, no inconsistent face, no outfit changes between panels, no identity drift, no background scene clutter, no duplicate identity drift, no merged panels, no cropped figures`
+  const views: Array<{ key: string; label: string; titleSuffix: string; viewDesc: string }> = [
+    {
+      key: 'front',
+      label: '正面 / Front View',
+      titleSuffix: '正面',
+      viewDesc: 'full body, front view, facing camera directly, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: '3quarter',
+      label: '四分之三 / Three-quarter',
+      titleSuffix: '四分之三',
+      viewDesc: 'full body, three-quarter front view, turned slightly to the right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: 'side',
+      label: '侧面 / Side Profile',
+      titleSuffix: '侧面',
+      viewDesc: 'full body, side profile view, facing right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: 'back',
+      label: '背面 / Back View',
+      titleSuffix: '背面',
+      viewDesc: 'full body, back view, facing away from camera, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+  ]
+
+  return views.map(({ key, label, titleSuffix, viewDesc }) => ({
+    key,
+    label,
+    titleSuffix,
+    mode: 'turnaround4' as const,
+    prompt: `${subject}, ${viewDesc}, ${shared}`,
+  }))
 }
 
+export function buildGrid5Prompts(opts: CharacterReferenceOptions): CharacterReferencePromptItem[] {
+  const subject = opts.sourcePrompt.trim() || 'a character'
+  const shared = buildSharedSuffix(opts)
+
+  const panels: Array<{ key: string; label: string; titleSuffix: string; panelDesc: string }> = [
+    {
+      key: 'full-front',
+      label: '全身正面 / Full Body Front',
+      titleSuffix: '全身正面',
+      panelDesc: 'full body front view, complete character from head to toe, neutral standing pose, character design reference',
+    },
+    {
+      key: 'full-3q',
+      label: '全身四分之三 / Full Body 3/4',
+      titleSuffix: '全身四分之三',
+      panelDesc: 'full body three-quarter view, turned slightly, complete character from head to toe, character design reference',
+    },
+    {
+      key: 'expression',
+      label: '面部表情 / Expression Sheet',
+      titleSuffix: '表情',
+      panelDesc: 'expression sheet, same character face, neutral expression, happy expression, angry expression, surprised expression, consistent facial structure, face portrait reference',
+    },
+    {
+      key: 'outfit',
+      label: '服装细节 / Outfit Detail',
+      titleSuffix: '服装细节',
+      panelDesc: 'costume detail reference, close-up details of clothing, accessories, fabric texture, same outfit design, clean reference layout',
+    },
+    {
+      key: 'action',
+      label: '动作姿态 / Action Pose',
+      titleSuffix: '动作姿态',
+      panelDesc: 'action pose reference, same character identity, dynamic but readable pose, clear body silhouette, consistent costume and body proportions',
+    },
+  ]
+
+  return panels.map(({ key, label, titleSuffix, panelDesc }) => ({
+    key,
+    label,
+    titleSuffix,
+    mode: 'grid5' as const,
+    prompt: `${subject}, ${panelDesc}, ${shared}`,
+  }))
+}
+
+export function buildCharacterReferencePrompts(opts: CharacterReferenceOptions): CharacterReferencePromptItem[] {
+  return opts.mode === 'turnaround4' ? buildTurnaroundPrompts(opts) : buildGrid5Prompts(opts)
+}
+
+// Compat wrapper — returns first item prompt only; prefer buildCharacterReferencePrompts
 export function buildCharacterReferencePrompt(opts: CharacterReferenceOptions): string {
-  return opts.mode === 'turnaround4' ? buildTurnaroundPrompt(opts) : buildGrid9Prompt(opts)
+  return buildCharacterReferencePrompts(opts)[0]?.prompt ?? ''
 }
 
 export function summarizeCharacterReference(opts: CharacterReferenceOptions): string {
