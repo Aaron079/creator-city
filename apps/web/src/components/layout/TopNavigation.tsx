@@ -18,7 +18,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: '创作', key: 'create',
     items: [
       { label: 'AI 画布', href: '/create' },
-      { label: 'Canvas V2', href: '/create-v2', badge: 'Beta' },
       { label: '生成任务', href: '/tasks' },
       { label: 'API 中心', href: '/providers' },
     ],
