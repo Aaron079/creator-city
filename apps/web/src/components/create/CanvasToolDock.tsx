@@ -264,14 +264,6 @@ export function CanvasToolDock({
                     <span className="text-[13px]">⚡</span>
                     <span>批量 Prompt 重写器</span>
                   </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsPromptMenuOpen(false); onOpenPromptTool('look-package') }}
-                  >
-                    <span className="text-[13px]">🎨</span>
-                    <span>视觉风格包</span>
-                  </button>
                 </motion.div>
               ) : null}
             </AnimatePresence>

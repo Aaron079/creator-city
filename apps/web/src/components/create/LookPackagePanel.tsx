@@ -9,7 +9,6 @@ import {
   DEFAULT_SELECTED_CATEGORIES,
   filterLookPackages,
   buildLookApplyReportText,
-  hasSimilarLook,
   previewLookApply,
   type LookCategory,
   type LookPackage,
@@ -105,20 +104,19 @@ function LookCard({
 export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedNodeId }: LookPackagePanelProps) {
   const [categoryFilter, setCategoryFilter] = useState<LookCategory | 'all'>('all')
   const [selectedLookId, setSelectedLookId] = useState<string | null>(null)
-  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => {
-    if (defaultSelectedNodeId) {
-      return new Set([defaultSelectedNodeId])
-    }
-    const ids = new Set<string>()
-    for (const n of nodes) {
-      if (n.kind === 'image' || n.kind === 'video') ids.add(n.id)
-    }
-    return ids
-  })
   const [selectedCategories, setSelectedCategories] = useState<SelectedLookCategories>(DEFAULT_SELECTED_CATEGORIES)
   const [targets, setTargets] = useState<LookApplyTarget[] | null>(null)
   const [applied, setApplied] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // Single-node mode: always operate on the one node opened from node top toolbar
+  const primaryNode = useMemo(
+    () =>
+      nodes.find((n) => n.id === defaultSelectedNodeId) ??
+      nodes.find((n) => n.kind === 'image' || n.kind === 'video') ??
+      null,
+    [nodes, defaultSelectedNodeId],
+  )
 
   const filteredLooks = useMemo(
     () => filterLookPackages(LOOK_PACKAGES, categoryFilter),
@@ -130,31 +128,6 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
     [selectedLookId],
   )
 
-  const selectableNodes = nodes.filter(
-    (n) => n.kind === 'text' || n.kind === 'image' || n.kind === 'video',
-  )
-
-  function toggleNode(id: string) {
-    setSelectedNodeIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setTargets(null)
-    setApplied(false)
-  }
-
-  function toggleAllNodes() {
-    if (selectedNodeIds.size === selectableNodes.length) {
-      setSelectedNodeIds(new Set())
-    } else {
-      setSelectedNodeIds(new Set(selectableNodes.map((n) => n.id)))
-    }
-    setTargets(null)
-    setApplied(false)
-  }
-
   function toggleCategory(key: keyof SelectedLookCategories) {
     setSelectedCategories((prev) => ({ ...prev, [key]: !prev[key] }))
     setTargets(null)
@@ -162,8 +135,8 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
   }
 
   function handlePreview() {
-    if (!selectedLook || selectedNodeIds.size === 0) return
-    const result = previewLookApply(nodes, selectedNodeIds, selectedLook, selectedCategories)
+    if (!selectedLook || !primaryNode) return
+    const result = previewLookApply(nodes, new Set([primaryNode.id]), selectedLook, selectedCategories)
     setTargets(result)
     setApplied(false)
   }
@@ -194,22 +167,17 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
   }
 
   const hasAnyCategory = Object.values(selectedCategories).some(Boolean)
-  const canPreview = !!selectedLook && selectedNodeIds.size > 0 && !targets && hasAnyCategory
+  const canPreview = !!selectedLook && !!primaryNode && !targets && hasAnyCategory
   const canApply = !!targets && !applied && targets.some((t) => !t.alreadyContains)
   const updatedCount = targets ? targets.filter((t) => !t.alreadyContains).length : 0
   const skippedCount = targets ? targets.filter((t) => t.alreadyContains).length : 0
-  const defaultNode = defaultSelectedNodeId
-    ? nodes.find((n) => n.id === defaultSelectedNodeId)
-    : undefined
 
-  // Warn when selected nodes have empty prompts — look block alone has no subject to generate
-  const emptyPromptNodeTitles = selectableNodes
-    .filter((n) => selectedNodeIds.has(n.id))
-    .filter((n) => {
-      const p = (n.prompt ?? n.resultText ?? '').trim()
-      return !p || p.startsWith('[视觉风格:') || p.startsWith('[Look:')
-    })
-    .map((n) => n.title ?? n.id)
+  const emptyPromptWarning = primaryNode
+    ? (() => {
+        const p = (primaryNode.prompt ?? primaryNode.resultText ?? '').trim()
+        return !p || p.startsWith('[视觉风格:') || p.startsWith('[Look:')
+      })()
+    : false
 
   return (
     <div
@@ -239,8 +207,8 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
 
         {/* Body — scrollable */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Node context hint — shown when opened from node dialog */}
-          {defaultNode ? (
+          {/* Single-node target banner */}
+          {primaryNode ? (
             <div className="shrink-0 border-b border-white/6 px-4 py-2.5 space-y-0.5">
               <div className="flex items-center gap-2">
                 <span
@@ -255,14 +223,18 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                   }}
                 />
                 <p className="text-[10px] text-white/60 truncate">
-                  正在为节点应用视觉风格：<span className="text-white/80 font-medium">{defaultNode.title ?? defaultNode.id}</span>
+                  正在为节点应用视觉风格：<span className="text-white/80 font-medium">{primaryNode.title ?? primaryNode.id}</span>
                 </p>
               </div>
               <p className="pl-[15px] text-[9px] text-white/35 leading-relaxed">
-                只改变调色/光线/质感，尽量保持主体和构图不变。若模型不支持参考图，身份一致性仍取决于生成模型。
+                视觉风格包 → 修改 Prompt 风格词 · 调色盘 → 调整色彩参数。两者互补，可叠加使用。
               </p>
             </div>
-          ) : null}
+          ) : (
+            <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
+              <p className="text-[10px] text-amber-400/70">请从画布节点顶部「剪辑」菜单打开视觉风格包</p>
+            </div>
+          )}
 
           {/* Safety notice — always shown */}
           <div className="shrink-0 border-b border-white/6 px-4 py-2">
@@ -373,74 +345,16 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
               <p className="text-[10px] text-white/30">选择一个风格包查看详情</p>
             </div>
           )}
-
-          {/* Node selection */}
-          <div className="mx-3 mb-3 shrink-0 rounded-xl border border-white/8 bg-white/3 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[10px] font-semibold text-white/60">应用到节点</p>
-              <button
-                type="button"
-                onClick={toggleAllNodes}
-                className="text-[9px] text-indigo-400/70 hover:text-indigo-300 transition"
-              >
-                {selectedNodeIds.size === selectableNodes.length ? '取消全选' : '全选'}
-              </button>
-            </div>
-            {selectableNodes.length === 0 ? (
-              <p className="text-[10px] text-white/30">画布上没有可用节点</p>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {selectableNodes.map((node) => {
-                  const isChecked = selectedNodeIds.has(node.id)
-                  const alreadyHasLook = selectedLook
-                    ? hasSimilarLook((node.prompt ?? node.resultText ?? '').trim(), selectedLook)
-                    : false
-                  return (
-                    <button
-                      key={node.id}
-                      type="button"
-                      onClick={() => toggleNode(node.id)}
-                      className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition ${
-                        isChecked
-                          ? 'bg-indigo-500/12 text-white/80'
-                          : 'bg-white/3 text-white/45 hover:bg-white/6 hover:text-white/60'
-                      }`}
-                    >
-                      <span
-                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition ${
-                          isChecked
-                            ? 'border-indigo-500 bg-indigo-500'
-                            : 'border-white/20 bg-transparent'
-                        }`}
-                      >
-                        {isChecked && <Check size={9} strokeWidth={3} className="text-white" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[10px]">{node.title ?? node.id}</span>
-                        <span className="text-[9px] text-white/30">
-                          {node.kind.toUpperCase()}
-                          {alreadyHasLook ? ' · 已含此风格' : ''}
-                        </span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Footer */}
         <div className="shrink-0 border-t border-white/8 px-4 py-3">
-          {/* Empty-prompt warning — shown when selected nodes have no subject description */}
-          {emptyPromptNodeTitles.length > 0 && (
+          {/* Empty-prompt warning */}
+          {emptyPromptWarning && primaryNode && (
             <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5">
               <p className="text-[10px] font-semibold text-amber-400 mb-1">⚠ 节点 Prompt 为空</p>
               <p className="text-[9px] leading-relaxed text-white/55">
-                以下节点没有主体描述，只有风格词无法生成图片。请先在 Prompt 框中写明主体（如「一个穿旗袍的女孩站在稻田中」），再应用视觉风格：
-              </p>
-              <p className="mt-1 text-[9px] text-amber-300/70 truncate">
-                {emptyPromptNodeTitles.join('、')}
+                节点「{primaryNode.title ?? primaryNode.id}」没有主体描述，只有风格词无法生成图片。请先在 Prompt 框中写明主体（如「一个穿旗袍的女孩站在稻田中」），再应用视觉风格。
               </p>
             </div>
           )}
@@ -450,13 +364,13 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
             <div className="mb-3 rounded-xl border border-white/8 bg-white/3 p-3">
               <p className="mb-1 text-[10px] font-semibold text-white/60">预览结果</p>
               {updatedCount > 0 && (
-                <p className="text-[10px] text-emerald-400/80">✓ {updatedCount} 个节点将被追加</p>
+                <p className="text-[10px] text-emerald-400/80">✓ 节点将被追加视觉风格词</p>
               )}
               {skippedCount > 0 && (
-                <p className="text-[10px] text-amber-400/60">⚠ {skippedCount} 个节点已含类似片段，跳过</p>
+                <p className="text-[10px] text-amber-400/60">⚠ 节点已含类似片段，跳过</p>
               )}
               {updatedCount === 0 && skippedCount > 0 && (
-                <p className="text-[10px] text-white/40">所有选中节点已含该风格包，无需更新</p>
+                <p className="text-[10px] text-white/40">该节点已含此风格包，无需更新</p>
               )}
             </div>
           ) : null}
@@ -525,10 +439,10 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                       : 'bg-white/4 text-white/25 cursor-not-allowed'
                   }`}
                 >
-                  {!selectedLook
-                    ? '请先选择风格包'
-                    : selectedNodeIds.size === 0
-                      ? '请选择要应用的节点'
+                  {!primaryNode
+                    ? '请从节点顶部剪辑菜单打开'
+                    : !selectedLook
+                      ? '请先选择风格包'
                       : !hasAnyCategory
                         ? '请至少选择一个维度'
                         : '生成预览'}

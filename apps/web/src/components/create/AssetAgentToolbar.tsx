@@ -32,6 +32,7 @@ export interface AssetAgentToolbarProps {
   reframeMode: ReframeMode
   onReframeChange: (mode: ReframeMode) => void
   onOpenColorGrade?: () => void
+  onOpenLookPackage?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -47,6 +48,7 @@ export function AssetAgentToolbar({
   reframeMode,
   onReframeChange,
   onOpenColorGrade,
+  onOpenLookPackage,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
   const [clipMenuOpen, setClipMenuOpen] = useState(false)
@@ -177,6 +179,14 @@ export function AssetAgentToolbar({
               onClick={(e) => { stopEvent(e); onOpenColorGrade?.(); setClipMenuOpen(false) }}
             >
               🎛 调色盘
+            </button>
+            <button
+              type="button"
+              data-no-node-drag="true"
+              className="asset-agent-reframe-chip"
+              onClick={(e) => { stopEvent(e); onOpenLookPackage?.(); setClipMenuOpen(false) }}
+            >
+              🎨 视觉风格包
             </button>
             <div style={{ padding: '4px 10px 2px', fontSize: 10, color: 'rgba(255,255,255,0.22)', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span>✂ 剪辑建议 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
