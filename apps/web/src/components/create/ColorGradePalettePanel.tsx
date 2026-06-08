@@ -543,7 +543,6 @@ export function ColorGradePalettePanel({
 }: ColorGradePalettePanelProps) {
   const [setting, setSetting] = useState<ColorGradeSetting>(createDefaultColorGradeSetting)
   const [activeTab, setActiveTab] = useState<ActiveTab>('wheels')
-  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [previewText, setPreviewText] = useState<string | null>(null)
   const [previewResults, setPreviewResults] = useState<ReturnType<typeof previewColorGradeApply> | null>(null)
   const [applySuccess, setApplySuccess] = useState(false)
@@ -557,29 +556,11 @@ export function ColorGradePalettePanel({
     [nodes],
   )
 
-  // Initialize selection once on mount
-  const defaultSelected = useMemo(() => {
-    if (defaultSelectedNodeId) {
-      const found = eligibleNodes.find((n) => n.id === defaultSelectedNodeId)
-      if (found) return [found.id]
-    }
-    const first = eligibleNodes[0]
-    if (first) return [first.id]
-    return []
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const [initDone, setInitDone] = useState(false)
-  if (!initDone && defaultSelected.length > 0) {
-    setSelectedNodeIds(defaultSelected)
-    setInitDone(true)
-  }
-
-  // The primary node is the first selected node (or the defaultSelectedNodeId fallback).
-  // This drives the NodeTargetBanner and the intent monitor.
+  // Single-node mode: always target the node that opened the panel.
+  // No multi-select — to grade a different node, close the panel and open it from that node.
   const primaryNode = useMemo(
-    () => eligibleNodes.find((n) => n.id === (selectedNodeIds[0] ?? defaultSelectedNodeId)) ?? null,
-    [eligibleNodes, selectedNodeIds, defaultSelectedNodeId],
+    () => eligibleNodes.find((n) => n.id === defaultSelectedNodeId) ?? eligibleNodes[0] ?? null,
+    [eligibleNodes, defaultSelectedNodeId],
   )
 
   // CSS filter for live preview — recomputed on every setting change (wheel drag / slider)
@@ -609,15 +590,8 @@ export function ColorGradePalettePanel({
     resetPreview()
   }
 
-  const toggleNode = (id: string) => {
-    setSelectedNodeIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    )
-    resetPreview()
-  }
-
   const handlePreview = () => {
-    const results = previewColorGradeApply(eligibleNodes, selectedNodeIds, setting)
+    const results = previewColorGradeApply(eligibleNodes, primaryNode ? [primaryNode.id] : [], setting)
     setPreviewResults(results)
     const firstActive = results.find((r) => !r.skipped)
     if (firstActive) {
@@ -651,9 +625,7 @@ export function ColorGradePalettePanel({
   }
 
   const handleCopyReport = async () => {
-    const nodesSummary = selectedNodeIds
-      .map((id) => eligibleNodes.find((n) => n.id === id)?.title ?? id)
-      .join(', ')
+    const nodesSummary = primaryNode?.title ?? primaryNode?.id ?? '未知节点'
     const reportText = [
       '=== Color Grade Palette / 调色盘 ===',
       `目标节点：${nodesSummary}`,
@@ -670,7 +642,7 @@ export function ColorGradePalettePanel({
   const skippedNodes = previewResults?.filter((r) => r.skipped && r.skipReason === 'already-has-grade') ?? []
   const activeResults = previewResults?.filter((r) => !r.skipped) ?? []
   const canApply = previewResults !== null && activeResults.length > 0 && !applySuccess
-  const canPreview = selectedNodeIds.length > 0
+  const canPreview = primaryNode !== null
 
   // Intent Monitor derived values
   const avgLum = (setting.lift.luminance + setting.gamma.luminance + setting.gain.luminance) / 3
@@ -752,59 +724,10 @@ export function ColorGradePalettePanel({
         </div>
       </div>
 
-      {/* ── Body: 2-column (Left: Clip Strip / Right: Controls) ── */}
+      {/* ── Body: Controls ── */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
 
-        {/* ── Left: Clip Strip (secondary — for switching target) ── */}
-        <div className="flex w-[132px] flex-shrink-0 flex-col border-r border-white/5">
-          <div className="border-b border-white/5 px-2.5 py-1.5">
-            <p className="text-[7px] font-bold uppercase tracking-widest text-white/22">项目素材 / 切换</p>
-            <p className="mt-0.5 text-[6px] text-white/16">可切换调色目标</p>
-          </div>
-          <div className="flex-1 space-y-1 overflow-y-auto px-1.5 py-1.5">
-            {eligibleNodes.length === 0 && (
-              <p className="px-1 text-[8.5px] leading-relaxed text-white/28">无图片/视频节点</p>
-            )}
-            {eligibleNodes.map((node) => {
-              const isSelected = selectedNodeIds.includes(node.id)
-              const isDefault = node.id === defaultSelectedNodeId
-              const hasGrade = hasColorGradePrompt(node.prompt ?? '')
-              return (
-                <button
-                  key={node.id}
-                  type="button"
-                  onClick={() => toggleNode(node.id)}
-                  className={`w-full rounded-lg border px-1.5 py-1.5 text-left transition ${isSelected ? 'border-indigo-500/45 bg-indigo-500/10' : 'border-white/5 bg-white/[0.015] hover:border-white/10 hover:bg-white/[0.03]'}`}
-                >
-                  <div className={`mb-1 flex h-9 w-full items-center justify-center rounded border ${isSelected ? 'border-indigo-500/28 bg-indigo-500/7' : 'border-white/5 bg-white/3'}`}>
-                    <span className={`text-[8px] font-bold ${node.kind === 'image' ? 'text-sky-400/55' : 'text-violet-400/55'}`}>
-                      {node.kind === 'image' ? 'IMG' : 'VID'}
-                    </span>
-                  </div>
-                  <p className="truncate text-[8.5px] font-medium text-white/65">
-                    {node.title ?? (node.kind === 'image' ? '图片节点' : '视频节点')}
-                  </p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                    {isDefault && <span className="text-[6px] font-semibold text-indigo-400/80">当前目标</span>}
-                    {!isDefault && isSelected && <span className="text-[6px] text-indigo-400/60">● 已选</span>}
-                    {hasGrade && <span className="text-[6px] text-amber-400/70">已调色</span>}
-                  </div>
-                </button>
-              )
-            })}
-            {eligibleNodes.length > 1 && (
-              <button
-                type="button"
-                onClick={() => setSelectedNodeIds(eligibleNodes.map((n) => n.id))}
-                className="w-full rounded-lg border border-white/5 py-1 text-[7.5px] text-white/28 transition hover:border-white/12 hover:text-white/50"
-              >
-                批量全选 {eligibleNodes.length} 个
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ── Center + Right ── */}
+        {/* ── Controls ── */}
         <div className="flex min-w-0 flex-1 flex-col">
 
           {/* Intent Monitor strip */}
