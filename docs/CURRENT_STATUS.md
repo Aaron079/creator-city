@@ -1,8 +1,8 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-08
-Last valid commit: Tool 11 Look Package Applier — Post Suite relocation b053a84 — browser validation pending
-Production validated: 2026-06-08 (Canvas Smart Tools Tool 12 — Color Grade Palette / 调色盘 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
+Last valid commit: Color Suite / 调色入口 — Tool 12 Color Grade Palette + Look Package Applier relocation — CLOSED / validated — docs close 6fca0c9
+Production validated: 2026-06-08 (Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
 
@@ -73,8 +73,9 @@ Production validated: 2026-06-08 (Canvas Smart Tools Tool 12 — Color Grade Pal
 | Canvas Smart Tools Tool 9 — Prompt Booster（提示词增强器 · Prompt 分组子工具） | ✅ CLOSED / validated | `6e1a24f` |
 | Canvas Smart Tools Tool 10 — Sequence Board（镜头序列编排器） | ❌ REMOVED / not validated / removed from UI after product review | `37a43da` |
 | Canvas Smart Tools Tool 10 — Batch Prompt Rewriter（批量 Prompt 重写器 · Prompt 分组子工具） | ✅ CLOSED / validated | `e3c3a2b` (readability fix: `e5bb57a`) |
-| Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · Post Suite 剪辑入口 · 单节点模式） | ✅ CLOSED / validated · Post Suite 归位 IMPLEMENTED / browser validation pending | feat: `a8d6c10` · dialog entry: `888d9dd` · subject fix: `55aebc9` · feedback fix: `0610a1e` · token fix: `75a1771` · Chinese keywords: `27552ca` · empty-prompt warning: `2ee0a67` · post-suite relocation: `b053a84` |
-| Canvas Smart Tools Tool 12 — Color Grade Palette / 调色盘（image/video 节点顶部 Post Suite / 剪辑入口） | ✅ CLOSED / validated | `a8753b4` · `46831e3` · `c5cefed` · `7a26d8d` · `d221df6` · `e08a09f` · `65a4152` · `c74e7e9` · `2c4fd15` |
+| Canvas Smart Tools Tool 11 — Look Package Applier（视觉风格包应用器 · 节点顶部"调色 / Color Suite"入口 · 单节点模式） | ✅ CLOSED / validated | feat: `a8d6c10` · dialog entry: `888d9dd` · subject fix: `55aebc9` · feedback fix: `0610a1e` · token fix: `75a1771` · Chinese keywords: `27552ca` · empty-prompt warning: `2ee0a67` · Color Suite relocation: `b053a84` |
+| Canvas Smart Tools Tool 12 — Color Grade Palette / 调色盘（image/video 节点顶部"调色 / Color Suite"入口 · 单节点模式） | ✅ CLOSED / validated | `a8753b4` · `5c9e6ef` · `46831e3` · `c5cefed` · `7a26d8d` · `d221df6` · `e08a09f` · `65a4152` · `c74e7e9` · `2c4fd15` |
+| Color Suite / 节点顶部"调色"入口（含调色盘 + 视觉风格包 · 均为当前节点单选工作流） | ✅ CLOSED / validated | `b053a84` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
 
 ---
@@ -3857,10 +3858,162 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 ### Next Phase
 
-| 工具 | 状态 |
+当前 Color Suite / Tool 12 / Look Package Applier 归位均已 CLOSED / validated。不继续打磨 Tool 12 / Color Suite UI。推荐进入以下二选一：
+
+| 工具 | 状态 | 说明 |
+|------|------|------|
+| Tool 12.5 — WebGL / LUT Preview（glsl-lut / glfx.js 近似预览） | 📋 待单独评估 | 需评估许可证/OSS/队列；不应塞进当前 Tool 12 |
+| Tool 13 — FFmpeg worker + LUT3D 媒体处理 | 📋 待单独评估 | 需评估部署/许可证/成本；不应塞进当前 Tool 12 |
+| OpenColorIO color pipeline | 📋 远期 | 长期规划 |
+| IA-NILUT / VideoColorGrading AI LUT | 📋 远期 | 长期 AI 调色规划 |
+| Reference-preserving Style Transfer | 📋 远期 | 需图生图/vision provider |
+
+> **注意：** FFmpeg / OpenColorIO / IA-NILUT / VideoColorGrading 不应塞进当前 Tool 12 / Color Suite。Tool 12.5 / Tool 13 必须单独评估部署、许可证、成本、OSS、队列后再立项。
+
+---
+
+## Color Suite / 调色入口 — CLOSED / validated
+
+**Date validated:** 2026-06-08
+**Status:** ✅ CLOSED / validated
+
+### 关键 commits
+
+| commit | 描述 |
+|--------|------|
+| `a8753b4` | Tool 12 Phase 1 初版（Color Grade Palette · Editing 分组入口） |
+| `5c9e6ef` | Preview section / 成功提示修复（7 个 prompt 段落始终输出） |
+| `46831e3` | Color Page 工作台重构 / 节点顶部后期入口（从左侧 Dock 移至节点对话框） |
+| `c5cefed` | Preview Monitor 初版 + CSS filter 反馈 |
+| `7a26d8d` | Preview filter 显著化 + 可调整大小浮动预览窗 |
+| `2c4fd15` | Preview Monitor 高度修复，解决图片缩成缩略图问题（fixed 容器需要显式 height） |
+| `e08a09f` | 移除 Clip Strip，Color Grade Palette 改为单节点模式 |
+| `65a4152` | 调色输出资产直接到画布（done-status 节点继承 resultImageUrl/resultVideoUrl + metadataJson.colorGradeCssFilter） |
+| `c74e7e9` | Preview Monitor OSS CORS 修复（getProxiedMediaUrl） |
+| `b053a84` | 视觉风格包归入节点顶部"调色 / Color Suite"入口；Prompt 分组移除视觉风格包；LookPackagePanel 改为单节点模式 |
+
+### 问题背景
+
+- 用户认为节点顶部"剪辑"入口命名不准确，当前开放的是调色盘和视觉风格包，而非剪辑。
+- 用户要求将入口改名为"调色"，定位为 Color Suite / 调色套件。
+- 用户要求视觉风格包从 Prompt 分组迁入该入口，只服务当前单选 image/video 节点。
+- Prompt 分组只保留真正的 Prompt 工具（Prompt Booster / Batch Prompt Rewriter）。
+
+### 当前 Color Suite 入口结构
+
+- image/video 节点顶部工具栏（AssetAgentToolbar）→ 点击"调色"→ 弹出 Color Suite 菜单
+- 菜单包含：
+  - **🎛 调色盘**（Color Grade Palette）— 参数调色（曝光/影调/色轮/曲线/质感/输出保护）
+  - **🎨 视觉风格包**（Look Package Applier）— 电影/胶片/广告/空间 Look
+- 两者均为当前节点单选工作流，不批量操作
+- 两者均为 prompt-level control，需要重新生成后才生效
+- 不自动生成，不消耗 credits，不新增 API，不调用 vision AI
+- 不接 WebGL / glfx / FFmpeg / OpenColorIO
+- 不改 schema / generate routes / provider adapter / billing
+
+### Tool 12 — Color Grade Palette 已验收能力
+
+| 能力 | 状态 |
 |------|------|
-| Tool 12.5 — WebGL / LUT Preview（glsl-lut / glfx.js 近似预览） | 📋 待单独评估（许可证/OSS/队列） |
-| Tool 13 — FFmpeg worker + LUT3D 媒体处理 | 📋 待单独评估（部署/许可证/成本） |
-| OpenColorIO color pipeline | 📋 远期 |
-| IA-NILUT / VideoColorGrading AI LUT | 📋 远期 |
-| Reference-preserving Style Transfer | 📋 远期（需图生图/vision provider） |
+| 从 image/video 节点顶部"调色 → 调色盘"打开 | ✅ |
+| 当前节点默认选中（单节点模式，无多选） | ✅ |
+| Primary Wheels：Lift / Gamma / Gain / Offset（visual puck + Temp/Tint/Lum/Sat） | ✅ |
+| Curves 标签（简化曲线图） | ✅ |
+| Qualifier 标签（HSL 色彩范围条） | ✅ |
+| Texture 标签（sharpness / midtone detail / grain / halation / glow / vignette / clean shadows） | ✅ |
+| Output 标签（locked subject / face / product / composition protection） | ✅ |
+| Intent Monitor（明确 no pixel analysis） | ✅ |
+| Preview Monitor（显示当前 image/video，支持 CSS filter approximation） | ✅ |
+| Preview Monitor 可调整大小 | ✅ |
+| Preview Monitor fixed 容器高度修复（explicit height，解决图片缩成缩略图） | ✅ |
+| filter string 实时显示；neutral 时显示 neutral (no filter) | ✅ |
+| Preview filter only / 非最终输出标签可见 | ✅ |
+| 拖动参数后预览图片/视频有明显 CSS filter 变化 | ✅ |
+| 应用调色到画布（done-status 节点，继承 resultImageUrl/resultVideoUrl） | ✅ |
+| CSS filter 存储在 metadataJson.colorGradeCssFilter，CanvasNodeCard 渲染时应用 | ✅ |
+| Prompt 包含全部 7 段：[Color Grade Palette] / [Primary Wheels] / [Curves] / [Qualifier Intent] / [Texture] / [Output Protection] / [Color Grade Negative Constraints] | ✅ |
+| 已有 [Color Grade Palette] 段落 → 跳过，不自动替换 | ✅ |
+| 只追加 prompt，不覆盖原 prompt | ✅ |
+| 应用后提示需重新生成 | ✅ |
+| 不自动生成，不消耗 credits，不新增 API，不调用 vision AI | ✅ |
+| 不接 WebGL / glfx / FFmpeg / OpenColorIO | ✅ |
+| 不改 schema / generate routes / provider / billing | ✅ |
+
+### Tool 11 — Look Package Applier 归位已验收能力
+
+| 能力 | 状态 |
+|------|------|
+| 视觉风格包已从 Prompt 分组迁入节点顶部"调色 / Color Suite"入口 | ✅ |
+| Prompt 分组不再显示视觉风格包，避免与 Prompt Booster / Batch Rewriter 混淆 | ✅ |
+| image/video 节点顶部"调色"菜单显示"🎨 视觉风格包" | ✅ |
+| 从当前 image/video 节点打开后，LookPackagePanel 绑定当前节点（单节点模式） | ✅ |
+| 不显示多节点选择 UI，不显示批量应用控件 | ✅ |
+| 显示当前节点目标 banner（节点名 + 关系说明） | ✅ |
+| 关系说明：视觉风格包改 Prompt 风格词 · 调色盘改色彩参数，两者互补可叠加 | ✅ |
+| 选择 Look 后 Prompt Preview 保留 Preserve Original Subject / Asset | ✅ |
+| 保留 Look Negative Constraints | ✅ |
+| 点击"追加到当前 Prompt"只追加当前节点 prompt | ✅ |
+| 不覆盖原 prompt | ✅ |
+| 已有类似 Look 时提示 / 跳过，不自动替换 | ✅ |
+| 应用后提示需重新生成查看效果 | ✅ |
+| Prompt Booster 不受影响 | ✅ |
+| Batch Prompt Rewriter 不受影响 | ✅ |
+| 不自动生成，不消耗 credits，不新增 API，不调用 vision AI | ✅ |
+| 不做真实像素级输出 | ✅ |
+| 不改 schema / generate routes / provider / billing | ✅ |
+
+### 浏览器验收结论（2026-06-08）
+
+| 验收项 | 结果 |
+|--------|------|
+| image/video 节点顶部"剪辑"已改为"调色" | ✅ |
+| 点击"调色"后菜单显示"🎛 调色盘" | ✅ |
+| 点击"调色"后菜单显示"🎨 视觉风格包" | ✅ |
+| 调色盘可正常打开，单节点工作流 | ✅ |
+| 视觉风格包可正常打开，单节点工作流 | ✅ |
+| 调色盘只作用当前节点 | ✅ |
+| 视觉风格包只作用当前节点 | ✅ |
+| Prompt 分组不再显示视觉风格包 | ✅ |
+| Prompt Booster 不受影响 | ✅ |
+| Batch Prompt Rewriter 不受影响 | ✅ |
+| Color Grade Palette 功能无回归 | ✅ |
+| Look Package Applier 功能无回归 | ✅ |
+| Text / Image / Video 生成链路无回归 | ✅ |
+| 不自动生成 | ✅ |
+| 不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不调用 vision AI | ✅ |
+| 不改 schema / generate / provider / billing | ✅ |
+
+### 能力矩阵（截至 2026-06-08）
+
+| 工具 | 状态 | 入口 |
+|------|------|------|
+| Color Suite / 节点顶部调色入口 | ✅ validated | image/video 节点顶部工具栏 |
+| Color Grade Palette / 调色盘 | ✅ validated | 节点顶部"调色"菜单 |
+| Look Package Applier / 视觉风格包 | ✅ validated | 节点顶部"调色"菜单 |
+| Prompt Booster / 提示词增强器 | ✅ validated | Prompt 分组 |
+| Batch Prompt Rewriter / 批量重写器 | ✅ validated | Prompt 分组 |
+| Look Strength Control | ❌ cancelled | 被 Color Grade Palette 分离取代 |
+| Pixel-level Color Grading | 📋 not implemented | future |
+| WebGL / LUT Preview | 📋 not implemented | future Tool 12.5 |
+| FFmpeg worker + LUT3D | 📋 not implemented | future Tool 13 |
+| OpenColorIO color pipeline | 📋 not implemented | 远期 |
+| IA-NILUT / VideoColorGrading | 📋 not implemented | 远期 AI 调色 |
+| Reference-preserving Style Transfer | 📋 not implemented | 远期（需 vision provider） |
+
+### 安全边界确认
+
+| 安全项 | 状态 |
+|--------|------|
+| prompt-level only，不直接改像素 | ✅ |
+| 不自动生成，不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不调用 vision AI | ✅ |
+| 不接 WebGL / glfx / FFmpeg / OpenColorIO | ✅ |
+| 不改 schema / generate routes / provider / billing | ✅ |
+| 不改 cn-executor | ✅ |
+| 不伪造 assetId | ✅ |
+| 只追加 prompt，不覆盖原 prompt | ✅ |
+| 已有同类段落 → 跳过，不自动替换 | ✅ |
+| 应用后需重新生成才生效（UI 明确说明） | ✅ |
