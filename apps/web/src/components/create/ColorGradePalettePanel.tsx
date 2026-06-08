@@ -435,7 +435,7 @@ function PreviewMonitor({
   const proxiedVideoSrc = getProxiedMediaUrl(node?.resultVideoUrl)
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#06080d]">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#06080d]">
       {/* Header */}
       <div className="flex flex-shrink-0 items-center justify-between border-b border-white/8 px-3 py-2">
         <div>
@@ -1198,11 +1198,12 @@ export function ColorGradePalettePanel({
     {/* ── Floating Preview Monitor — independent resizable overlay ── */}
     {showPreview && (
       <div
-        className="fixed z-[1201] flex flex-col overflow-auto rounded-xl border border-white/10 bg-[#06080d]/98 shadow-2xl backdrop-blur-xl"
+        className="fixed z-[1201] flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[#06080d]/98 shadow-2xl backdrop-blur-xl"
         style={{
           top: '8vh',
           left: 810,
           width: 440,
+          height: 520,
           minWidth: 320,
           minHeight: 280,
           maxHeight: '84vh',
