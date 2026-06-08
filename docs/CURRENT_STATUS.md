@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-08
-Last valid commit: Color Suite 最终收口 — Tool 12 调色盘 + Look Package 归位 + 调色草案节点 + 预览即时生效文案修正 — CLOSED / validated — docs close f5be18b+
+Last valid commit: Tool 13 Character Turnaround & Grid — 1ec9ec6 — IMPLEMENTED / browser validation pending
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -79,6 +79,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Color Grade 调色草案节点工作流（创建调色节点保存到画布 · idle · 不自动生成 · 不消耗 credits） | ✅ CLOSED / validated | `d221df6` · `65a4152` |
 | Color Grade 预览即时生效文案修正（Preview Monitor CSS filter 即时 · 不再写"需重新生成才生效"为主语义） | ✅ CLOSED / validated | `c5cefed` · `7a26d8d` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
+| Tool 13 — Character Turnaround & Grid / 人物四视图与九宫格参考生成器（资产工具入口 · idle 草案节点 · 不自动生成） | 🚧 IMPLEMENTED / browser validation pending | `1ec9ec6` |
 
 ---
 
@@ -4044,3 +4045,108 @@ no subject replacement, no face change, no product redesign, no composition chan
 | 调色 Preview Monitor 即时生效（CSS filter approximation，非最终模型输出） | ✅ |
 | 调色草案节点 idle，不自动生成（正式结果需用户手动生成） | ✅ |
 | 视觉风格包 prompt 追加后，正式结果需用户手动生成 | ✅ |
+
+---
+
+## Tool 13 — Character Turnaround & Grid / 人物四视图与九宫格参考生成器 — IMPLEMENTED / browser validation pending
+
+**Commit:** `1ec9ec6`
+**Status:** 🚧 IMPLEMENTED / browser validation pending
+**Date implemented:** 2026-06-08
+
+### 产品定位
+
+角色资产生产工具，不是 Prompt 工具。帮助用户从当前 image/video/text 节点中，创建标准化角色参考草案节点，供后续角色一致性、视频生成、分镜创作和资产复用使用。
+
+### 新增 / 修改文件
+
+| 文件 | 说明 |
+|------|------|
+| `apps/web/src/lib/canvas/character-reference-grid.ts` | 新增：类型定义 / buildTurnaroundPrompt / buildGrid9Prompt / buildCharacterReferencePrompt / summarizeCharacterReference |
+| `apps/web/src/components/create/CharacterReferenceGridPanel.tsx` | 新增：完整人物参考面板 UI（模式选择、角色描述 textarea、一致性选项、风格/构图 select、媒体预览、创建草案节点） |
+| `apps/web/src/components/create/AssetAgentToolbar.tsx` | 修改：将"入库 soon"改为"资产"下拉菜单，含"👤 人物参考"入口 |
+| `apps/web/src/components/create/CanvasToolDock.tsx` | 修改：在资产工具菜单中新增"👤 人物参考 / 四视图"入口（适用所有节点类型） |
+| `apps/web/src/components/create/VisualCanvasWorkspace.tsx` | 修改：新增 isCharacterReferenceOpen state + 面板渲染 + onCreateReferenceNode handler + 两处入口 wiring |
+
+### 入口位置
+
+| 入口 | 适用节点 | 触发条件 |
+|------|----------|----------|
+| 节点顶部 AssetAgentToolbar → "资产" → "👤 人物参考" | image/video（有媒体结果） | 有 resultImageUrl 或 resultVideoUrl |
+| 左侧 CanvasToolDock 资产工具菜单 → "👤 人物参考 / 四视图" | image / video / text（所有节点） | 任意时刻 |
+
+### 支持模式
+
+| 模式 | 说明 | Prompt 结构 |
+|------|------|-------------|
+| 人物四视图（turnaround4） | 四角度正交视图：正面 / 三分之三侧 / 侧面 / 背面 | 四角度结构 + 一致性约束 + 负向约束 |
+| 人物九宫格（grid9） | 3×3 网格：面部 3 + 全身 3 + 表情/服装/动作 | 九格结构 + 一致性约束 + 负向约束 |
+
+### Prompt 结构
+
+**四视图包含：** `character design turnaround reference sheet` + 角色描述 + 四角度说明 + 一致性约束 + `[Character Reference Consistency]` + `[Character Reference Negative Constraints]`
+
+**九宫格包含：** `character reference grid sheet` + 角色描述 + 九格说明 + 一致性约束 + `[Character Reference Consistency]` + `[Character Reference Negative Constraints]`
+
+**一致性约束选项（用户可勾选）：**
+- 保持同一脸型（same facial features and face shape）
+- 保持同一发型（same hairstyle and hair color）
+- 保持同一服装（same outfit and costume throughout）
+- 保持同一体型（same body proportions and height）
+- 保持同一色彩（same overall color scheme）
+
+**负向约束（始终追加）：**
+`no different characters, no inconsistent facial features, no outfit changes between views, no random accessories, no identity drift, no scene background clutter, no cropped limbs`
+
+### 创建节点行为
+
+| 行为 | 说明 |
+|------|------|
+| 新节点类型 | `image` |
+| 新节点 title | `人物四视图 · {source title}` 或 `人物九宫格 · {source title}` |
+| 新节点 status | `idle` |
+| 自动生成 | 否 |
+| 消耗 credits | 否 |
+| 伪造 assetId | 否 |
+| source → new node edge | 是（parentNodeId） |
+| metadataJson | `{ sourceNodeId, characterReference: { type, source, consistencyOptions, style, layout, previewOnly: false } }` |
+| 位置 | sourceNode.x + sourceNode.width + 240, sourceNode.y + 160（resolveNonOverlappingPosition） |
+| 创建后 toast | "已创建人物参考草案节点，请在新节点中手动生成。" |
+
+### 安全边界确认
+
+| 安全项 | 状态 |
+|--------|------|
+| 不自动生成，不消耗 credits | ✅ |
+| 不新增 API | ✅ |
+| 不调用 vision AI | ✅ |
+| 不上传 OSS | ✅ |
+| 不伪造 assetId | ✅ |
+| 不改 generate routes / provider adapter / billing | ✅ |
+| 不改 Prisma schema / migrations / cn-executor | ✅ |
+| 不改 Tool 1–12 核心逻辑 | ✅ |
+| 不改右侧工具栏 | ✅ |
+| 不做真实图像处理 | ✅ |
+| 不读取图像内容（无 vision AI） | ✅ |
+| 新节点 idle，用户手动生成正式结果 | ✅ |
+
+### 浏览器验收步骤
+
+1. 打开有生成结果的 image 节点 → 顶部工具栏出现"资产"按钮（替换原"入库 soon"）
+2. 点击"资产" → 菜单显示"👤 人物参考"、"⊕ 入库 soon"、"⊞ 版本管理 soon"
+3. 点击"👤 人物参考" → CharacterReferenceGridPanel 打开
+4. Panel 显示当前节点标题 / kind / 图片预览（如有）/ prompt 摘要
+5. 可选择"人物四视图"或"人物九宫格"
+6. 角色来源摘要 textarea 默认填入节点 prompt，字体清晰可见（白字深底）
+7. 可修改 textarea 补充年龄/发型/服装等
+8. 可开关脸型/发型/服装/体型/色彩一致性 toggle
+9. 可选择参考稿风格（5 种）
+10. 可选择构图要求（4 种）
+11. Prompt 预览区显示完整 Prompt（只读）
+12. 点击"创建人物参考节点" → 画布出现新 image 节点，title 含"人物四视图"或"人物九宫格"
+13. 新节点 status = idle，不自动生成
+14. source → new node edge 可见
+15. 新节点位置不与 source 重叠
+16. 左下 toast 显示"已创建人物参考草案节点，请在新节点中手动生成。"
+17. 左侧 CanvasToolDock 资产工具菜单也出现"👤 人物参考 / 四视图"入口（适用所有节点）
+18. Tool 1–12 不回归，生成链路不回归
