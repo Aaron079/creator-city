@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { Check, Copy, X, ChevronDown, ChevronUp, Lock } from 'lucide-react'
+import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import {
   COLOR_GRADE_PRESETS,
   createDefaultColorGradeSetting,
@@ -430,6 +431,8 @@ function PreviewMonitor({
   const hasVideo = Boolean(node?.resultVideoUrl?.trim())
   const hasMedia = hasImage || hasVideo
   const filterActive = cssFilter !== 'none'
+  const proxiedImageSrc = getProxiedMediaUrl(node?.resultImageUrl)
+  const proxiedVideoSrc = getProxiedMediaUrl(node?.resultVideoUrl)
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#06080d]">
@@ -452,7 +455,7 @@ function PreviewMonitor({
       <div className="relative flex-1 overflow-hidden bg-black" style={{ minHeight: 200 }}>
         {hasImage && (
           <img
-            src={node!.resultImageUrl!}
+            src={proxiedImageSrc}
             alt=""
             className="absolute inset-0 h-full w-full object-contain"
             style={{ filter: filterActive ? cssFilter : undefined, transition: 'filter 80ms ease' }}
@@ -460,7 +463,7 @@ function PreviewMonitor({
         )}
         {hasVideo && !hasImage && (
           <video
-            src={node!.resultVideoUrl!}
+            src={proxiedVideoSrc}
             controls
             muted
             preload="metadata"
