@@ -31,9 +31,16 @@ interface GradeNode {
   resultVideoUrl?: string | null
 }
 
+interface CreateGradeNodeRequest {
+  sourceNodeId: string
+  kind: 'image' | 'video'
+  prompt: string
+}
+
 interface ColorGradePalettePanelProps {
   nodes: GradeNode[]
   onApplyGrade: (updates: Array<{ nodeId: string; prompt: string }>) => void
+  onCreateGradeNode?: (req: CreateGradeNodeRequest) => void
   onClose: () => void
   defaultSelectedNodeId?: string
 }
@@ -515,7 +522,7 @@ function PreviewMonitor({
         </p>
         <p className="text-[6px] italic text-white/15">
           Preview Mode: CSS filter approximation · Intent monitor only — no pixel analysis<br />
-          右侧画面仅为浏览器近似预览，真实生成效果以重新生成后的模型输出为准。
+          这是预览，不会保存为资产。点击【创建调色节点】会在画布创建一个带调色 Prompt 的新节点，需要在新节点中手动生成最终结果。
         </p>
         <p className="text-[6px] text-white/18">
           ↘ 可拖拽右下角调整预览大小
@@ -530,6 +537,7 @@ function PreviewMonitor({
 export function ColorGradePalettePanel({
   nodes,
   onApplyGrade,
+  onCreateGradeNode,
   onClose,
   defaultSelectedNodeId,
 }: ColorGradePalettePanelProps) {
@@ -539,6 +547,7 @@ export function ColorGradePalettePanel({
   const [previewText, setPreviewText] = useState<string | null>(null)
   const [previewResults, setPreviewResults] = useState<ReturnType<typeof previewColorGradeApply> | null>(null)
   const [applySuccess, setApplySuccess] = useState(false)
+  const [createSuccess, setCreateSuccess] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showPromptPreview, setShowPromptPreview] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
@@ -580,6 +589,7 @@ export function ColorGradePalettePanel({
     setPreviewText(null)
     setPreviewResults(null)
     setApplySuccess(false)
+    setCreateSuccess(false)
   }
 
   const patchSetting = useCallback((patch: Partial<ColorGradeSetting>) => {
@@ -625,6 +635,19 @@ export function ColorGradePalettePanel({
       onApplyGrade(updates)
       setApplySuccess(true)
     }
+  }
+
+  // Creates a new idle draft node on the canvas with the color grade prompt appended.
+  // Does NOT generate, does NOT consume credits, does NOT modify the source node.
+  const handleCreateGradeNode = () => {
+    if (!primaryNode) return
+    const kind: 'image' | 'video' = primaryNode.kind === 'video' ? 'video' : 'image'
+    const sourcePrompt = primaryNode.prompt?.trimEnd() ?? ''
+    const gradePrompt = buildColorGradePrompt(setting, kind)
+    const fullPrompt = sourcePrompt ? `${sourcePrompt}\n\n${gradePrompt}` : gradePrompt
+    onCreateGradeNode?.({ sourceNodeId: primaryNode.id, kind, prompt: fullPrompt })
+    setPreviewText(gradePrompt)
+    setCreateSuccess(true)
   }
 
   const handleCopyReport = async () => {
@@ -1173,10 +1196,17 @@ export function ColorGradePalettePanel({
             )}
           </div>
 
+          {/* Create grade node success */}
+          {createSuccess && (
+            <div className="mx-3 mb-1 rounded-xl border border-indigo-500/25 bg-indigo-500/8 px-3 py-2">
+              <p className="text-[11px] font-semibold text-indigo-300">✦ 已在画布创建调色草案节点 — 请在新节点中点击生成按钮查看最终效果</p>
+            </div>
+          )}
+
           {/* Apply success */}
           {applySuccess && (
-            <div className="mx-3 mb-2 rounded-xl border border-emerald-500/22 bg-emerald-500/7 px-3 py-2">
-              <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述 — 请重新生成查看效果</p>
+            <div className="mx-3 mb-1 rounded-xl border border-emerald-500/22 bg-emerald-500/7 px-3 py-2">
+              <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述到当前节点 — 请重新生成查看效果</p>
             </div>
           )}
 
@@ -1184,29 +1214,45 @@ export function ColorGradePalettePanel({
       </div>
 
       {/* ── Footer Apply Bar ── */}
-      <div className="border-t border-white/7 px-3 py-2.5 space-y-2">
-        <div className="flex gap-2">
+      <div className="border-t border-white/7 px-3 py-2.5 space-y-1.5">
+        {/* Primary: Create grade node on canvas */}
+        <button
+          type="button"
+          onClick={handleCreateGradeNode}
+          disabled={!primaryNode}
+          className="w-full rounded-xl border border-indigo-500/55 bg-indigo-500/18 py-2.5 text-[12px] font-bold text-indigo-200 transition hover:bg-indigo-500/28 disabled:cursor-not-allowed disabled:opacity-38"
+        >
+          + 创建调色节点
+        </button>
+        <p className="text-center text-[7px] text-white/20">
+          在画布创建带调色 Prompt 的新节点（idle），不自动生成，不消耗 credits
+        </p>
+
+        {/* Secondary row */}
+        <div className="flex gap-2 pt-0.5">
           <button
             type="button"
             onClick={handlePreview}
             disabled={!canPreview}
-            className="flex-1 rounded-xl border border-indigo-500/38 bg-indigo-500/13 py-2 text-[11px] font-semibold text-indigo-300 transition hover:bg-indigo-500/22 disabled:cursor-not-allowed disabled:opacity-38"
+            className="flex-1 rounded-xl border border-white/8 bg-white/[0.03] py-1.5 text-[9.5px] text-white/45 transition hover:bg-white/[0.06] hover:text-white/65 disabled:cursor-not-allowed disabled:opacity-38"
           >
-            生成调色预览
+            预览 Prompt
           </button>
           <button
             type="button"
             onClick={handleApply}
             disabled={!canApply}
-            className="flex-1 rounded-xl border border-emerald-500/38 bg-emerald-500/13 py-2 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/22 disabled:cursor-not-allowed disabled:opacity-38"
+            className="flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/7 py-1.5 text-[9.5px] text-emerald-400/75 transition hover:bg-emerald-500/14 disabled:cursor-not-allowed disabled:opacity-38"
           >
-            追加到 Prompt
+            追加到当前 Prompt
           </button>
         </div>
+
+        {/* Utility row */}
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => { setSetting(createDefaultColorGradeSetting()); setPreviewText(null); setPreviewResults(null); setApplySuccess(false) }}
+            onClick={() => { setSetting(createDefaultColorGradeSetting()); setPreviewText(null); setPreviewResults(null); setApplySuccess(false); setCreateSuccess(false) }}
             className="flex-1 rounded-xl border border-white/7 bg-white/[0.025] py-1.5 text-[9.5px] text-white/38 transition hover:bg-white/5 hover:text-white/58"
           >
             重置调色

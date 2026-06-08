@@ -8227,6 +8227,21 @@ export function VisualCanvasWorkspace({
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
+            onCreateGradeNode={(req) => {
+              const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
+              const sourceTitle = sourceNode?.title?.trim()
+              const title = sourceTitle
+                ? `调色版 · ${sourceTitle}`
+                : (req.kind === 'image' ? '图片调色版' : '视频调色版')
+              createNode(req.kind as VisualCanvasNodeKind, {
+                title,
+                prompt: req.prompt,
+                parentNodeId: req.sourceNodeId,
+                status: 'idle',
+              })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
             onClose={() => setIsColorGradePaletteOpen(false)}
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
           />
