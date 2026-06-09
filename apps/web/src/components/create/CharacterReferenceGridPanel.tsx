@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import {
   buildAssetSlotPrompts,
+  buildDescriptionOnlySlotPrompts,
   STYLE_LABELS,
   LAYOUT_LABELS,
   type CharacterReferenceMode,
@@ -175,9 +176,16 @@ export function CharacterReferenceGridPanel({
 
   // Panel state
   const [mode, setMode] = useState<CharacterReferenceMode>('turnaround4')
-  const [characterBrief, setCharacterBrief] = useState<string>(
-    (primaryNode?.prompt ?? primaryNode?.resultText ?? '').trim(),
-  )
+  const [characterBrief, setCharacterBrief] = useState<string>(() => {
+    // Auto-populate from node context — prefer prompt (usually the generation prompt describing
+    // the character), fall back to title.
+    const raw = (primaryNode?.prompt ?? primaryNode?.resultText ?? primaryNode?.title ?? '').trim()
+    // Truncate very long prompts to keep it manageable for the textarea
+    return raw.length > 400 ? raw.slice(0, 400) : raw
+  })
+  // useRefImage: false = description mode (text-only, clean white background — recommended)
+  //              true  = reference-image mode (sends source image to Seedream, may copy scene)
+  const [useRefImage, setUseRefImage] = useState(false)
   const [style, setStyle] = useState<CharacterReferenceStyle>('film-character-design')
   const [layout, setLayout] = useState<CharacterReferenceLayout>('clean-white')
   const [keepFace, setKeepFace] = useState(true)
@@ -193,6 +201,11 @@ export function CharacterReferenceGridPanel({
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generationSuccess, setGenerationSuccess] = useState(false)
   const [generatedCount, setGeneratedCount] = useState(0)
+  // Per-view progress: key → 'pending' | 'generating' | 'done' | 'failed'
+  const [viewProgress, setViewProgress] = useState<Record<string, 'pending' | 'generating' | 'done' | 'failed'>>({})
+
+  // In description mode, require a character brief to generate
+  const briefMissing = !useRefImage && !characterBrief.trim()
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
@@ -207,8 +220,8 @@ export function CharacterReferenceGridPanel({
     ? (isFullImage ? FULL_IMAGE_CROP : cropBox)
     : null
 
-  // Generate is only enabled when there is a real image asset
-  const canGenerate = !!primaryNode && !!sourceImageUrl && !generating
+  // Generate requires: a source node with image, not already generating, and in description mode a brief
+  const canGenerate = !!primaryNode && !!sourceImageUrl && !generating && !briefMissing
 
   // ─── Crop pointer handlers ────────────────────────────────────────────────
 
@@ -272,7 +285,7 @@ export function CharacterReferenceGridPanel({
   // ─── Generate handler ─────────────────────────────────────────────────────
 
   async function handleGenerate() {
-    if (!primaryNode || !sourceImageUrl || generating) return
+    if (!primaryNode || !sourceImageUrl || generating || briefMissing) return
 
     const opts: CharacterReferenceOptions = {
       mode,
@@ -285,24 +298,31 @@ export function CharacterReferenceGridPanel({
       keepBody,
       keepColorScheme,
     }
-    const slotPrompts = buildAssetSlotPrompts(opts, {
-      assetId: sourceAssetId,
-      imageUrl: sourceImageUrl,
-      videoUrl: null,
-      cropBox: effectiveCropBox,
+
+    // Description mode: text-only prompts — no reference image sent to provider.
+    // Reference mode: asset-based prompts with referenceImages sent to Seedream.
+    const slotPrompts = useRefImage
+      ? buildAssetSlotPrompts(opts, { assetId: sourceAssetId, imageUrl: sourceImageUrl, videoUrl: null, cropBox: effectiveCropBox })
+      : buildDescriptionOnlySlotPrompts(opts)
+
+    console.log('[CharacterRef] handleGenerate', {
+      mode,
+      generationMode: useRefImage ? 'reference-image' : 'description-only',
+      nodeId: primaryNode.id,
+      briefExcerpt: characterBrief.slice(0, 80),
+      slotCount: slotPrompts.length,
+      slots: slotPrompts.map((s) => ({ key: s.key, label: s.label, promptExcerpt: s.prompt.slice(0, 100) })),
     })
 
-    console.log('[CharacterRef] handleGenerate called', {
-      nodeId: primaryNode.id,
-      sourceImageUrlExcerpt: sourceImageUrl.slice(0, 60),
-      mode,
-      slotCount: slotPrompts.length,
-      slots: slotPrompts.map((s) => ({ key: s.key, label: s.label, promptExcerpt: s.prompt.slice(0, 120) })),
-    })
+    // Initialise per-view progress
+    const initialProgress: Record<string, 'pending' | 'generating' | 'done' | 'failed'> = {}
+    for (const s of slotPrompts) initialProgress[s.key] = 'pending'
+    setViewProgress(initialProgress)
 
     setGenerating(true)
     setGenerationError(null)
-    setGenerationProgress('正在生成人物参考图，可能需要 30–60 秒...')
+    const modeLabel = useRefImage ? '参考图辅助' : '设计稿描述'
+    setGenerationProgress(`[${modeLabel}模式] 正在生成 ${slotPrompts.length} 张参考图，每张约 15–30 秒...`)
 
     try {
       const requestPayload = {
@@ -310,14 +330,15 @@ export function CharacterReferenceGridPanel({
         characterId: sourceAssetId ?? primaryNode.id,
         items: slotPrompts.map((s) => ({ kind: s.key, label: s.label, prompt: s.prompt })),
         providerId: 'volcengine-seedream-image',
+        useReferenceImage: useRefImage,
         projectId,
         workflowId,
         nodeId: primaryNode.id,
       }
-      console.log('[CharacterRef] POSTing to /api/generate/character-reference', {
+
+      console.log('[CharacterRef] POST /api/generate/character-reference', {
         itemCount: requestPayload.items.length,
-        providerId: requestPayload.providerId,
-        projectId: requestPayload.projectId,
+        useReferenceImage: requestPayload.useReferenceImage,
       })
 
       const res = await fetch('/api/generate/character-reference', {
@@ -349,13 +370,17 @@ export function CharacterReferenceGridPanel({
         errorCode?: string
       }
 
-      console.log('[CharacterRef] response data', {
+      // Update per-view progress based on results
+      const progressUpdate: Record<string, 'pending' | 'generating' | 'done' | 'failed'> = { ...initialProgress }
+      for (const ref of data.references ?? []) progressUpdate[ref.kind] = 'done'
+      for (const err of data.errors ?? []) progressUpdate[err.kind] = 'failed'
+      setViewProgress(progressUpdate)
+
+      console.log('[CharacterRef] response', {
         success: data.success,
         partialSuccess: data.partialSuccess,
         referencesCount: data.references?.length ?? 0,
         errorsCount: data.errors?.length ?? 0,
-        errorCode: data.errorCode,
-        message: data.message,
         references: data.references?.map((r) => ({
           kind: r.kind,
           hasAssetId: Boolean(r.assetId),
@@ -383,25 +408,20 @@ export function CharacterReferenceGridPanel({
       })
 
       if (references.length === 0) {
-        setGenerationError('生成失败：API 未返回任何参考图。')
+        setGenerationError(`生成失败：API 未返回任何参考图。${data.errors?.[0] ? ` 错误：${data.errors[0].message}` : ''}`)
         return
       }
 
-      // Warn if provider returned duplicate URLs (model may have cloned the source)
+      // Detect duplicate URLs (provider returning same image for all slots)
       const uniqueUrls = new Set(references.map((r) => r.imageUrl))
       if (uniqueUrls.size === 1 && references.length > 1) {
-        console.warn('[CharacterRef] WARNING: all references have the same imageUrl — provider may have returned duplicate images', {
-          sharedUrl: references[0]?.imageUrl?.slice(0, 70),
-        })
+        console.warn('[CharacterRef] WARNING: provider returned identical imageUrl for all slots', references[0]?.imageUrl?.slice(0, 70))
       }
       const duplicateSources = references.filter((r) => r.imageUrl === sourceImageUrl)
       if (duplicateSources.length > 0) {
-        console.warn('[CharacterRef] WARNING: some references have imageUrl === sourceImageUrl — these are NOT new images', {
-          count: duplicateSources.length,
-        })
+        console.warn('[CharacterRef] WARNING: some references have imageUrl === sourceImageUrl (source was returned as result)', duplicateSources.length)
       }
 
-      console.log('[CharacterRef] calling onReferenceGenerated with', references.length, 'references')
       setGenerationSuccess(true)
       setGeneratedCount(references.length)
       onReferenceGenerated({
@@ -425,6 +445,7 @@ export function CharacterReferenceGridPanel({
     setGenerationSuccess(false)
     setGenerationError(null)
     setGeneratedCount(0)
+    setViewProgress({})
   }
 
   // ─── Crop box visual values ───────────────────────────────────────────────
@@ -629,69 +650,144 @@ export function CharacterReferenceGridPanel({
             </div>
           </div>
 
+          {/* ── Generation mode selector ── */}
+          <div className="shrink-0 border-b border-white/6 px-4 py-3">
+            <p className="mb-2 text-[10px] font-semibold text-white/40">生成模式</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setUseRefImage(false); handleReset() }}
+                className={`flex-1 rounded-xl border px-3 py-2 text-left transition ${
+                  !useRefImage
+                    ? 'border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]'
+                    : 'border-white/8 bg-white/3 hover:border-white/16 hover:bg-white/6'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  {!useRefImage && <span className="text-[9px] text-emerald-400">✓</span>}
+                  <p className="text-[10px] font-semibold text-white/85">设计稿描述模式</p>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[7px] font-bold text-emerald-400">推荐</span>
+                </div>
+                <p className="text-[8px] text-white/35 leading-snug">纯文字生成 · 白底中性站姿 · 不受原图场景影响</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUseRefImage(true); handleReset() }}
+                className={`flex-1 rounded-xl border px-3 py-2 text-left transition ${
+                  useRefImage
+                    ? 'border-indigo-500/50 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
+                    : 'border-white/8 bg-white/3 hover:border-white/16 hover:bg-white/6'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  {useRefImage && <span className="text-[9px] text-indigo-400">✓</span>}
+                  <p className="text-[10px] font-semibold text-white/85">参考图辅助模式</p>
+                </div>
+                <p className="text-[8px] text-white/35 leading-snug">发送来源图 · 面部更接近 · 可能受原图构图影响</p>
+              </button>
+            </div>
+          </div>
+
+          {/* ── Character brief ── */}
+          <div className="shrink-0 border-b border-white/6 px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[10px] font-semibold text-white/40">
+                角色外貌描述
+                {!useRefImage && <span className="ml-1 text-amber-400/80">（设计稿模式必填）</span>}
+              </p>
+              {characterBrief.trim() && (
+                <span className="text-[8px] text-emerald-400/70">✓ 已填写</span>
+              )}
+            </div>
+            {!useRefImage && (
+              <p className="mb-1.5 text-[8px] leading-snug text-amber-300/60">
+                描述角色的性别、年龄、民族、服装、发型、肤色、面部特征等。描述越详细，生成结果越精确。
+              </p>
+            )}
+            {useRefImage && (
+              <p className="mb-1.5 text-[8px] text-white/25 leading-snug">
+                可选。与来源图共同约束角色一致性。
+              </p>
+            )}
+            <textarea
+              value={characterBrief}
+              onChange={(e) => { setCharacterBrief(e.target.value) }}
+              placeholder={
+                useRefImage
+                  ? '可选：例：20岁亚裔女性，短黑发，穿红色旗袍'
+                  : '必填：例：三国猛将张飞，黑色铠甲，红色披风，黑色浓须，圆脸，高大壮硕，手持长枪（设计稿中不握武器）'
+              }
+              rows={3}
+              className={`w-full rounded-xl border px-3 py-2.5 text-[11px] leading-relaxed text-white/85 placeholder-white/25 outline-none resize-none transition ${
+                briefMissing
+                  ? 'border-amber-500/40 bg-amber-500/5 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20'
+                  : 'border-white/10 bg-white/5 focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20'
+              }`}
+              style={{ fontFamily: 'inherit' }}
+            />
+            {briefMissing && (
+              <p className="mt-1 text-[8px] text-amber-400/70">请填写角色描述后再生成（设计稿模式依赖文字描述作为唯一身份锚点）</p>
+            )}
+          </div>
+
           {/* ── Slot preview ── */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-semibold text-white/40">生成视角</p>
               <span className="rounded-full border border-white/8 px-2 py-0.5 text-[9px] text-white/25">
-                {activeMode.nodeCount} 张真实参考图
+                {activeMode.nodeCount} 张参考图
               </span>
             </div>
             <div className={`grid gap-1.5 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
-              {activeMode.slots.map((slot) => (
-                <div
-                  key={slot.key}
-                  className="relative overflow-hidden rounded-lg border border-white/8"
-                  style={{ aspectRatio: '1/1' }}
-                >
-                  {proxiedImage && effectiveCropBox ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={proxiedImage}
-                      alt={slot.label}
-                      style={{
-                        position: 'absolute',
-                        width: `${100 / effectiveCropBox.width}%`,
-                        height: `${100 / effectiveCropBox.height}%`,
-                        left: `-${(effectiveCropBox.x / effectiveCropBox.width) * 100}%`,
-                        top: `-${(effectiveCropBox.y / effectiveCropBox.height) * 100}%`,
-                        opacity: 0.40,
-                        objectFit: 'cover',
-                      }}
-                    />
-                  ) : null}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
-                    {!proxiedImage && (
-                      <span className="text-[14px] text-white/15 mb-1">{slot.icon}</span>
-                    )}
-                    <span className="text-[10px] font-semibold text-white/85">{slot.label}</span>
-                    <span className="text-[8px] text-white/35">{slot.sub}</span>
-                    {sourceImageUrl && (
-                      <span className="mt-1 text-[7px] font-semibold text-emerald-400/70">资产参考已绑定</span>
-                    )}
+              {activeMode.slots.map((slot) => {
+                const vp = viewProgress[slot.key]
+                return (
+                  <div
+                    key={slot.key}
+                    className={`relative overflow-hidden rounded-lg border transition ${
+                      vp === 'done' ? 'border-emerald-500/40' : vp === 'failed' ? 'border-red-500/40' : 'border-white/8'
+                    }`}
+                    style={{ aspectRatio: '1/1' }}
+                  >
+                    {/* Faint source image preview (description mode: no preview since result will be different) */}
+                    {!useRefImage ? null : proxiedImage && effectiveCropBox ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={proxiedImage}
+                        alt={slot.label}
+                        style={{
+                          position: 'absolute',
+                          width: `${100 / effectiveCropBox.width}%`,
+                          height: `${100 / effectiveCropBox.height}%`,
+                          left: `-${(effectiveCropBox.x / effectiveCropBox.width) * 100}%`,
+                          top: `-${(effectiveCropBox.y / effectiveCropBox.height) * 100}%`,
+                          opacity: 0.30,
+                          objectFit: 'cover',
+                        }}
+                      />
+                    ) : null}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
+                      {!proxiedImage && (
+                        <span className="text-[14px] text-white/15 mb-1">{slot.icon}</span>
+                      )}
+                      <span className="text-[10px] font-semibold text-white/85">{slot.label}</span>
+                      <span className="text-[8px] text-white/35">{slot.sub}</span>
+                      {vp === 'done' && <span className="mt-1 text-[8px] font-bold text-emerald-400">✓ 已生成</span>}
+                      {vp === 'failed' && <span className="mt-1 text-[8px] font-bold text-red-400">✗ 失败</span>}
+                      {vp === 'pending' && generating && <span className="mt-1 text-[7px] text-white/25">等待中...</span>}
+                      {!vp && sourceImageUrl && !generating && (
+                        <span className="mt-1 text-[7px] font-semibold text-white/30">待生成</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             <p className="mt-1.5 text-[9px] text-white/20 leading-relaxed">
-              每个视角调用 Seedream 参考图 API，生成真实图片并直接保存为画布节点（status: done）。
+              {useRefImage
+                ? '参考图模式：将来源图发送给 Seedream 作为身份参考，构图可能受原图影响。'
+                : '设计稿模式：纯文字生成，白底中性站姿，不受原图场景构图影响。每张约 15–30 秒。'}
             </p>
-          </div>
-
-          {/* ── Character brief ── */}
-          <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-1 text-[10px] font-semibold text-white/40">角色描述 / Character Brief（可选）</p>
-            <p className="mb-2 text-[9px] text-white/25">
-              与来源图片共同约束角色一致性。若为空则仅使用来源图片作为参考。
-            </p>
-            <textarea
-              value={characterBrief}
-              onChange={(e) => { setCharacterBrief(e.target.value) }}
-              placeholder="例：20岁亚裔女性，短黑发，穿红色旗袍，身材纤细，手持折扇"
-              rows={3}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[11px] leading-relaxed text-white/85 placeholder-white/25 outline-none resize-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20"
-              style={{ fontFamily: 'inherit' }}
-            />
           </div>
 
           {/* ── Consistency locks ── */}
@@ -808,24 +904,37 @@ export function CharacterReferenceGridPanel({
               <p className="text-center text-[9px] text-white/20">请勿关闭，生成完成后自动更新画布</p>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => void handleGenerate()}
-              disabled={!canGenerate}
-              className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
-                canGenerate
-                  ? 'bg-indigo-500 text-white hover:bg-indigo-400'
-                  : 'bg-white/6 text-white/25 cursor-not-allowed'
-              }`}
-            >
-              {!primaryNode
-                ? '请从节点顶部资产菜单打开'
-                : !sourceImageUrl
-                  ? (sourceVideoUrl
-                      ? '视频来源暂不支持，请先生成关键帧'
-                      : '当前节点无图片资产，无法生成')
-                  : `生成 ${activeMode.nodeCount} 张${activeMode.label}参考图`}
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => void handleGenerate()}
+                disabled={!canGenerate}
+                className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
+                  canGenerate
+                    ? useRefImage
+                      ? 'bg-indigo-500 text-white hover:bg-indigo-400'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                    : 'bg-white/6 text-white/25 cursor-not-allowed'
+                }`}
+              >
+                {!primaryNode
+                  ? '请从节点顶部资产菜单打开'
+                  : !sourceImageUrl
+                    ? (sourceVideoUrl
+                        ? '视频来源暂不支持，请先生成关键帧'
+                        : '当前节点无图片资产，无法生成')
+                    : briefMissing
+                      ? '请先填写角色外貌描述'
+                      : `生成 ${activeMode.nodeCount} 张${activeMode.label}参考图（${useRefImage ? '参考图' : '设计稿描述'}模式）`}
+              </button>
+              {canGenerate && (
+                <p className="text-center text-[8px] text-white/20">
+                  {useRefImage
+                    ? '发送来源图给 Seedream · 面部参考 · 可能受原图场景影响'
+                    : '纯文字生成 · 白底中性站姿 · 完全脱离原图构图'}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

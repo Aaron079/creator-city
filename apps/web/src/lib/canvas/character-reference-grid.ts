@@ -361,3 +361,109 @@ export function summarizeCharacterReference(opts: CharacterReferenceOptions): st
   const layoutLabel = LAYOUT_LABELS[opts.layout]
   return `${modeLabel} · ${styleLabel} · ${layoutLabel}`
 }
+
+// ─── Description-only prompt builder (no reference image) ────────────────────
+// Used when the user chooses "设计稿描述模式": text-first generation that
+// ignores the source image's scene/composition entirely.  The characterBrief
+// (opts.sourcePrompt) is the sole identity anchor.
+const DESCRIPTION_MODE_NEGATIVES =
+  NEGATIVE_CONSTRAINTS +
+  ', no cinematic lighting, no dramatic scene, no movie poster, no action photo, ' +
+  'no environment background, no props unless part of costume, no scene storytelling, ' +
+  'no bokeh, no depth-of-field blur, no vignette, no color grading filter'
+
+export function buildDescriptionOnlySlotPrompts(
+  opts: CharacterReferenceOptions,
+): CharacterReferencePromptItem[] {
+  const subject = opts.sourcePrompt.trim() || 'a character'
+  const styleDesc = buildStyleDescription(opts.style)
+
+  type SlotDef = { key: string; label: string; titleSuffix: string; slotDescription: string; poseDesc: string }
+
+  const turnaroundSlots: SlotDef[] = [
+    {
+      key: 'front',
+      label: '正面 / Front View',
+      titleSuffix: '正面',
+      slotDescription: '正面全身设计稿',
+      poseDesc: 'FRONT VIEW: character faces the camera directly, both arms hanging naturally at sides, feet together, completely upright posture, neutral face expression, eyes looking forward',
+    },
+    {
+      key: '3quarter',
+      label: '四分之三 / Three-quarter',
+      titleSuffix: '四分之三',
+      slotDescription: '四分之三视图设计稿',
+      poseDesc: 'THREE-QUARTER VIEW: character body rotated 45 degrees to the right, head turned slightly toward viewer, arms relaxed at sides, upright posture',
+    },
+    {
+      key: 'side',
+      label: '侧面 / Side Profile',
+      titleSuffix: '侧面',
+      slotDescription: '侧面视图设计稿',
+      poseDesc: 'SIDE PROFILE: character stands perfectly sideways facing right, arms at sides, upright posture, full head-to-toe visible',
+    },
+    {
+      key: 'back',
+      label: '背面 / Back View',
+      titleSuffix: '背面',
+      slotDescription: '背面视图设计稿',
+      poseDesc: 'BACK VIEW: character faces completely away from the camera, arms at sides, upright posture, full back visible head-to-toe',
+    },
+  ]
+
+  const grid5Slots: SlotDef[] = [
+    {
+      key: 'full-front',
+      label: '全身正面 / Full Body Front',
+      titleSuffix: '全身正面',
+      slotDescription: '全身正面设计稿',
+      poseDesc: 'full body FRONT VIEW, head-to-toe, arms naturally at sides, neutral standing, direct eye contact with camera',
+    },
+    {
+      key: 'full-3q',
+      label: '全身四分之三 / Full Body 3/4',
+      titleSuffix: '全身四分之三',
+      slotDescription: '全身四分之三设计稿',
+      poseDesc: 'full body THREE-QUARTER VIEW, body turned 45 degrees right, head toward viewer, arms at sides, neutral standing',
+    },
+    {
+      key: 'expression',
+      label: '面部表情 / Expression Sheet',
+      titleSuffix: '表情',
+      slotDescription: '表情组合设计稿',
+      poseDesc: 'facial EXPRESSION SHEET close-up portrait, same character face in four expressions arranged in a 2x2 grid: [top-left] neutral calm, [top-right] happy smile, [bottom-left] angry frown, [bottom-right] surprised eyes wide',
+    },
+    {
+      key: 'outfit',
+      label: '服装细节 / Outfit Detail',
+      titleSuffix: '服装细节',
+      slotDescription: '服装细节设计稿',
+      poseDesc: 'COSTUME DETAIL reference, character in T-pose or neutral standing, flat even lighting to show fabric texture and material details, close-up view of outfit components and accessories',
+    },
+    {
+      key: 'action',
+      label: '动作姿态 / Action Pose',
+      titleSuffix: '动作姿态',
+      slotDescription: '动作姿态设计稿',
+      poseDesc: 'dynamic ACTION POSE, clear readable silhouette, confident hero stance, full body from head to toe, one dynamic arm gesture, costume and body proportions clearly visible',
+    },
+  ]
+
+  const slots = opts.mode === 'turnaround4' ? turnaroundSlots : grid5Slots
+
+  return slots.map(({ key, label, titleSuffix, slotDescription, poseDesc }) => ({
+    key,
+    label,
+    titleSuffix,
+    slotDescription,
+    mode: opts.mode,
+    prompt: [
+      `Professional character design reference sheet illustration.`,
+      `Character subject: ${subject}.`,
+      `${poseDesc}.`,
+      `Background: pure clean white (#FFFFFF), flat even studio lighting, no shadows, no backdrop gradients, no environment.`,
+      `Style: ${styleDesc}, full-body character design turnaround reference, animation-ready, head-to-toe complete figure, centered composition, character design sheet format.`,
+      `[Negative: ${DESCRIPTION_MODE_NEGATIVES}]`,
+    ].join(' '),
+  }))
+}

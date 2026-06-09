@@ -43,6 +43,9 @@ type RequestBody = {
   projectId?: string
   workflowId?: string
   nodeId?: string
+  // When false: text-only generation — do NOT send sourceImageUrl as reference image.
+  // Default true keeps backwards compatibility.
+  useReferenceImage?: boolean
 }
 
 const REFERENCE_SUPPORTED_PROVIDERS = new Set([
@@ -59,13 +62,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, errorCode: 'INVALID_INPUT', message: 'Invalid JSON' }, { status: 400 })
     }
 
-    const { sourceImageUrl, characterId, items, providerId = 'volcengine-seedream-image', template } = body
+    const {
+      sourceImageUrl,
+      characterId,
+      items,
+      providerId = 'volcengine-seedream-image',
+      template,
+      useReferenceImage = true,
+    } = body
 
     console.log('[char-ref] request received', {
       sourceImageUrlDomain: urlDomainExcerpt(sourceImageUrl),
       characterId,
       itemCount: items?.length ?? 0,
       providerId,
+      useReferenceImage,
     })
 
     if (!sourceImageUrl?.trim()) {
@@ -143,9 +154,17 @@ export async function POST(request: NextRequest) {
       })
 
       try {
+        // Description mode: no reference image → pure text-to-image (avoids scene copying).
+        // Reference mode: send sourceImageUrl as identity reference.
+        const referenceImages = useReferenceImage && sourceImageUrl ? [sourceImageUrl] : []
+        console.log('[char-ref] generation input', {
+          kind: item.kind,
+          useReferenceImage,
+          referenceImageCount: referenceImages.length,
+        })
         const result = providerId === 'volcengine-seedream-image'
-          ? await generateSeedreamImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages: [sourceImageUrl] })
-          : await generateJimengImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages: [sourceImageUrl] })
+          ? await generateSeedreamImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages })
+          : await generateJimengImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages })
 
         console.log('[char-ref] generation result', {
           kind: item.kind,
