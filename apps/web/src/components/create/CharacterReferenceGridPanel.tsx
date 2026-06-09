@@ -3,14 +3,11 @@
 import { useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import {
-  buildAssetSlotPrompts,
-  buildDescriptionOnlySlotPrompts,
   STYLE_LABELS,
   LAYOUT_LABELS,
   type CharacterReferenceMode,
   type CharacterReferenceStyle,
   type CharacterReferenceLayout,
-  type CharacterReferenceOptions,
   type CharacterReferenceCropBox,
 } from '@/lib/canvas/character-reference-grid'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
@@ -158,9 +155,9 @@ function actionCursor(action: DragAction | null): string {
 
 export function CharacterReferenceGridPanel({
   nodes,
-  projectId,
-  workflowId,
-  onReferenceGenerated,
+  projectId: _projectId,
+  workflowId: _workflowId,
+  onReferenceGenerated: _onReferenceGenerated,
   onClose,
   defaultSelectedNodeId,
 }: CharacterReferenceGridPanelProps) {
@@ -197,15 +194,6 @@ export function CharacterReferenceGridPanel({
   const [keepColorScheme, setKeepColorScheme] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  // Generation state
-  const [generating, setGenerating] = useState(false)
-  const [generationProgress, setGenerationProgress] = useState<string | null>(null)
-  const [generationError, setGenerationError] = useState<string | null>(null)
-  const [generationSuccess, setGenerationSuccess] = useState(false)
-  const [generatedCount, setGeneratedCount] = useState(0)
-  // Per-view progress: key → 'pending' | 'generating' | 'done' | 'failed'
-  const [viewProgress, setViewProgress] = useState<Record<string, 'pending' | 'generating' | 'done' | 'failed'>>({})
-
   // In description mode, require a character brief to generate
   const briefMissing = !useRefImage && !characterBrief.trim()
 
@@ -215,15 +203,12 @@ export function CharacterReferenceGridPanel({
   // Asset detection
   const sourceImageUrl = primaryNode?.resultImageUrl ?? null
   const sourceVideoUrl = primaryNode?.resultVideoUrl ?? null
-  const sourceAssetId = primaryNode?.assetId ?? null
+
   const proxiedImage = sourceImageUrl ? getProxiedMediaUrl(sourceImageUrl) : null
 
   const effectiveCropBox: CharacterReferenceCropBox | null = proxiedImage
     ? (isFullImage ? FULL_IMAGE_CROP : cropBox)
     : null
-
-  // Generate requires: a source node with image, not already generating, and in description mode a brief
-  const canGenerate = !!primaryNode && !!sourceImageUrl && !generating && !briefMissing
 
   // ─── Crop pointer handlers ────────────────────────────────────────────────
 
@@ -284,205 +269,6 @@ export function CharacterReferenceGridPanel({
     dragRef.current = null
   }
 
-  // ─── Generate handler ─────────────────────────────────────────────────────
-
-  async function handleGenerate() {
-    if (!primaryNode || !sourceImageUrl || generating || briefMissing) return
-
-    const opts: CharacterReferenceOptions = {
-      mode,
-      sourcePrompt: characterBrief,
-      style,
-      layout,
-      keepFace,
-      keepHair,
-      keepOutfit,
-      keepBody,
-      keepColorScheme,
-    }
-
-    // Description mode: text-only prompts — no reference image sent to provider.
-    // Reference mode: asset-based prompts with referenceImages sent to Seedream.
-    const slotPrompts = useRefImage
-      ? buildAssetSlotPrompts(opts, { assetId: sourceAssetId, imageUrl: sourceImageUrl, videoUrl: null, cropBox: effectiveCropBox })
-      : buildDescriptionOnlySlotPrompts(opts)
-
-    console.log('[CharacterRef] handleGenerate', {
-      mode,
-      generationMode: useRefImage ? 'reference-image' : 'description-only',
-      nodeId: primaryNode.id,
-      briefExcerpt: characterBrief.slice(0, 80),
-      slotCount: slotPrompts.length,
-      slots: slotPrompts.map((s) => ({ key: s.key, label: s.label, promptExcerpt: s.prompt.slice(0, 100) })),
-    })
-
-    // Initialise per-view progress
-    const initialProgress: Record<string, 'pending' | 'generating' | 'done' | 'failed'> = {}
-    for (const s of slotPrompts) initialProgress[s.key] = 'pending'
-    setViewProgress(initialProgress)
-
-    setGenerating(true)
-    setGenerationError(null)
-    const modeLabel = useRefImage ? '参考图辅助' : '设计稿描述'
-    setGenerationProgress(`[${modeLabel}模式] 正在生成 ${slotPrompts.length} 张参考图，每张约 15–30 秒...`)
-
-    // Serial per-slot requests: one POST per slot avoids a single 4×60s request
-    // that would exceed Vercel's function timeout and cause ERR_CONNECTION_CLOSED.
-    const allReferences: GeneratedReferenceItem[] = []
-    let firstFatalError: string | null = null
-
-    try {
-      const characterId = sourceAssetId ?? primaryNode.id
-
-      for (let slotIdx = 0; slotIdx < slotPrompts.length; slotIdx++) {
-        const slot = slotPrompts[slotIdx]!
-        // Mark this slot as in-progress
-        setViewProgress((prev) => ({ ...prev, [slot.key]: 'pending' }))
-        setGenerationProgress(`[${modeLabel}模式] ${slot.label} (${allReferences.length + 1}/${slotPrompts.length}) 生成中...`)
-
-        const payload = {
-          sourceImageUrl,
-          characterId,
-          items: [{ kind: slot.key, label: slot.label, prompt: slot.prompt }],
-          providerId: 'volcengine-seedream-image',
-          useReferenceImage: useRefImage,
-          projectId,
-          workflowId,
-          nodeId: primaryNode.id,
-        }
-
-        console.log('[CharacterRef] POST slot', { kind: slot.key, useReferenceImage: useRefImage })
-
-        let data: {
-          success: boolean
-          partialSuccess?: boolean
-          references?: Array<{ id: string; kind: string; label: string; imageUrl: string; assetId?: string; sourceImageUrl: string }>
-          errors?: Array<{ kind: string; label: string; errorCode?: string; message: string; upstreamMessage?: string }>
-          message?: string
-          errorCode?: string
-          detail?: string
-          retryable?: boolean
-        }
-
-        try {
-          const res = await fetch('/api/generate/character-reference', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-
-          console.log('[CharacterRef] slot response', { kind: slot.key, status: res.status })
-
-          // Always try to parse JSON; fall back to text if the body is not JSON
-          const contentType = res.headers.get('content-type') ?? ''
-          if (!contentType.includes('application/json')) {
-            const rawText = await res.text()
-            console.error('[CharacterRef] non-JSON response', { kind: slot.key, status: res.status, rawText: rawText.slice(0, 300) })
-            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
-            if (!firstFatalError) {
-              firstFatalError = res.status === 503
-                ? `${slot.label} 生成失败：服务暂时不可用 (HTTP ${res.status})`
-                : `${slot.label} 服务器返回非 JSON 响应 (HTTP ${res.status}): ${rawText.slice(0, 120)}`
-            }
-            continue
-          }
-
-          data = await res.json()
-
-          if (res.status === 401) {
-            firstFatalError = '请先登录后再生成参考图。'
-            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
-            break  // auth error affects all remaining slots
-          }
-          if (res.status === 503 || data.errorCode === 'AUTH_SESSION_ERROR' || data.errorCode === 'DB_UNAVAILABLE') {
-            const msg = data.message ?? '服务暂时不可用，请稍候几秒后重试。'
-            console.warn('[CharacterRef] 503/DB error on slot', { kind: slot.key, errorCode: data.errorCode, msg })
-            if (!firstFatalError) firstFatalError = `[${data.errorCode ?? 'SERVICE_UNAVAILABLE'}] ${msg}`
-            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
-            continue
-          }
-        } catch (fetchErr) {
-          // TypeError: Failed to fetch — network cut or Vercel connection closed
-          const isNetwork = fetchErr instanceof TypeError
-          console.error('[CharacterRef] fetch exception on slot', { kind: slot.key, isNetwork, error: fetchErr })
-          setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
-          if (!firstFatalError) {
-            firstFatalError = isNetwork
-              ? `[NETWORK_OR_SERVER_UNAVAILABLE] 网络连接中断或服务暂时不可用，请稍后重试。`
-              : `[REQUEST_FAILED] ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
-          }
-          continue
-        }
-
-        // Process result
-        console.log('[CharacterRef] slot data', {
-          kind: slot.key,
-          success: data.success,
-          errorCode: data.errorCode,
-          referencesCount: data.references?.length ?? 0,
-          errors: data.errors,
-        })
-
-        const ref = data.references?.[0]
-        if (data.success && ref?.imageUrl) {
-          const item: GeneratedReferenceItem = {
-            key: ref.kind,
-            label: ref.label ?? slot.label,
-            slotDescription: slot.slotDescription ?? '',
-            prompt: slot.prompt,
-            assetId: ref.assetId,
-            imageUrl: ref.imageUrl,
-            slotIndex: slotIdx,
-            totalSlots: slotPrompts.length,
-          }
-          allReferences.push(item)
-          setViewProgress((prev) => ({ ...prev, [slot.key]: 'done' }))
-          // Fire onReferenceGenerated incrementally so the canvas updates slot-by-slot
-          onReferenceGenerated({
-            sourceNodeId: primaryNode.id,
-            mode,
-            sourceImageUrl,
-            sourceAssetId,
-            cropBox: effectiveCropBox,
-            references: [item],
-          })
-        } else {
-          setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
-          const slotErr = data.errors?.[0]
-          const errMsg = slotErr
-            ? `[${slotErr.errorCode ?? 'GENERATION_FAILED'}] ${slotErr.message}${slotErr.upstreamMessage ? ` (${slotErr.upstreamMessage.slice(0, 100)})` : ''}`
-            : (data.message ?? `${slot.label} 生成失败`)
-          console.warn('[CharacterRef] slot failed', { kind: slot.key, errMsg })
-          if (!firstFatalError) firstFatalError = `${slot.label}: ${errMsg}`
-        }
-      }
-
-      if (allReferences.length === 0) {
-        setGenerationError(firstFatalError ?? '所有槽位生成失败，请重试。')
-      } else {
-        setGenerationSuccess(true)
-        setGeneratedCount(allReferences.length)
-        if (firstFatalError) {
-          // Partial success — show a non-fatal warning in the progress area but don't block
-          console.warn('[CharacterRef] partial success, some slots failed', firstFatalError)
-        }
-      }
-    } catch (err) {
-      console.error('[CharacterRef] unexpected error in generate loop', err)
-      setGenerationError(err instanceof Error ? err.message : '生成请求失败，请检查网络后重试。')
-    } finally {
-      setGenerating(false)
-      setGenerationProgress(null)
-    }
-  }
-
-  function handleReset() {
-    setGenerationSuccess(false)
-    setGenerationError(null)
-    setGeneratedCount(0)
-    setViewProgress({})
-  }
-
   // ─── Crop box visual values ───────────────────────────────────────────────
 
   const cb = isFullImage ? FULL_IMAGE_CROP : cropBox
@@ -511,11 +297,24 @@ export function CharacterReferenceGridPanel({
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <p className="text-[13px] font-semibold text-white/90">人物参考生成 / Character Reference</p>
-            <p className="text-[10px] text-white/35">从已有资产中提取人物，直接生成四视图或九宫格真实参考图</p>
+            <p className="text-[10px] text-amber-400/70">专业人物参考 Skill · 专用 Worker 接入中</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-white/40 transition hover:bg-white/8 hover:text-white/70" aria-label="关闭">
             <X size={16} strokeWidth={2} />
           </button>
+        </div>
+
+        {/* Worker required — Seedream route paused */}
+        <div className="shrink-0 border-b border-amber-500/20 bg-amber-500/8 px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 shrink-0 text-[13px] text-amber-400">⚠</span>
+            <div>
+              <p className="text-[11px] font-semibold text-amber-300">专业人物参考 Skill · 专用 Worker 接入中</p>
+              <p className="mt-1 text-[9px] leading-relaxed text-amber-200/60">
+                四视图/九宫格需要人物主体提取、人脸身份锁定和姿态控制能力。当前 Seedream 参考图路线已暂停，正式版本将通过专用 Character Skill Worker 生成真实参考图资产。现有框选区域和槽位设置将在 Worker 接入后作为输入参数保留。
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -670,7 +469,7 @@ export function CharacterReferenceGridPanel({
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => { setMode(m.id); handleReset() }}
+                  onClick={() => { setMode(m.id); undefined }}
                   className={`flex-1 rounded-xl border px-3 py-2.5 text-left transition ${
                     mode === m.id
                       ? 'border-indigo-500/60 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.3)]'
@@ -691,7 +490,7 @@ export function CharacterReferenceGridPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => { setUseRefImage(false); handleReset() }}
+                onClick={() => { setUseRefImage(false); undefined }}
                 className={`flex-1 rounded-xl border px-3 py-2 text-left transition ${
                   !useRefImage
                     ? 'border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]'
@@ -707,7 +506,7 @@ export function CharacterReferenceGridPanel({
               </button>
               <button
                 type="button"
-                onClick={() => { setUseRefImage(true); handleReset() }}
+                onClick={() => { setUseRefImage(true); undefined }}
                 className={`flex-1 rounded-xl border px-3 py-2 text-left transition ${
                   useRefImage
                     ? 'border-indigo-500/50 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
@@ -775,13 +574,10 @@ export function CharacterReferenceGridPanel({
             </div>
             <div className={`grid gap-1.5 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
               {activeMode.slots.map((slot) => {
-                const vp = viewProgress[slot.key]
                 return (
                   <div
                     key={slot.key}
-                    className={`relative overflow-hidden rounded-lg border transition ${
-                      vp === 'done' ? 'border-emerald-500/40' : vp === 'failed' ? 'border-red-500/40' : 'border-white/8'
-                    }`}
+                    className="relative overflow-hidden rounded-lg border border-amber-500/15 transition"
                     style={{ aspectRatio: '1/1' }}
                   >
                     {/* Faint source image preview (description mode: no preview since result will be different) */}
@@ -807,21 +603,14 @@ export function CharacterReferenceGridPanel({
                       )}
                       <span className="text-[10px] font-semibold text-white/85">{slot.label}</span>
                       <span className="text-[8px] text-white/35">{slot.sub}</span>
-                      {vp === 'done' && <span className="mt-1 text-[8px] font-bold text-emerald-400">✓ 已生成</span>}
-                      {vp === 'failed' && <span className="mt-1 text-[8px] font-bold text-red-400">✗ 失败</span>}
-                      {vp === 'pending' && generating && <span className="mt-1 text-[7px] text-white/25">等待中...</span>}
-                      {!vp && sourceImageUrl && !generating && (
-                        <span className="mt-1 text-[7px] font-semibold text-white/30">待生成</span>
-                      )}
+                      <span className="mt-1 text-[7px] text-amber-400/50">等待 Worker 接入</span>
                     </div>
                   </div>
                 )
               })}
             </div>
-            <p className="mt-1.5 text-[9px] text-white/20 leading-relaxed">
-              {useRefImage
-                ? '参考图模式：将来源图发送给 Seedream 作为身份参考，构图可能受原图影响。'
-                : '设计稿模式：纯文字生成，白底中性站姿，不受原图场景构图影响。每张约 15–30 秒。'}
+            <p className="mt-1.5 text-[9px] text-amber-400/40 leading-relaxed">
+              槽位设置已保留，将在专用 Character Skill Worker 接入后作为生成输入参数使用。
             </p>
           </div>
 
@@ -893,84 +682,18 @@ export function CharacterReferenceGridPanel({
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer — generation disabled, worker required */}
         <div className="shrink-0 border-t border-white/8 px-4 py-3">
-          {generationSuccess ? (
-            <div className="space-y-2">
-              <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-emerald-400 mb-1">
-                  已生成真实人物参考图 {generatedCount} 张 ✓
-                </p>
-                <p className="text-[10px] leading-relaxed text-white/50">
-                  已保存为画布节点，每张参考图均含真实 assetId 与 resultImageUrl。
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="w-full rounded-xl py-2 text-[11px] text-white/40 hover:text-white/60 transition"
-              >
-                生成另一组参考图
-              </button>
-            </div>
-          ) : generationError ? (
-            <div className="space-y-2">
-              <div className="rounded-xl border border-red-500/25 bg-red-500/6 px-3 py-2.5">
-                <p className="text-[10px] font-semibold text-red-400/80 mb-0.5">生成失败</p>
-                <p className="text-[9px] text-white/40 leading-relaxed">{generationError}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleGenerate()}
-                disabled={generating || !canGenerate}
-                className="w-full rounded-xl bg-red-500/15 py-2.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                重试
-              </button>
-            </div>
-          ) : generating ? (
-            <div className="space-y-2">
-              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/6 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-indigo-400/60 border-t-indigo-400" />
-                  <p className="text-[10px] text-indigo-300">{generationProgress ?? '生成中...'}</p>
-                </div>
-              </div>
-              <p className="text-center text-[9px] text-white/20">请勿关闭，生成完成后自动更新画布</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => void handleGenerate()}
-                disabled={!canGenerate}
-                className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
-                  canGenerate
-                    ? useRefImage
-                      ? 'bg-indigo-500 text-white hover:bg-indigo-400'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-500'
-                    : 'bg-white/6 text-white/25 cursor-not-allowed'
-                }`}
-              >
-                {!primaryNode
-                  ? '请从节点顶部资产菜单打开'
-                  : !sourceImageUrl
-                    ? (sourceVideoUrl
-                        ? '视频来源暂不支持，请先生成关键帧'
-                        : '当前节点无图片资产，无法生成')
-                    : briefMissing
-                      ? '请先填写角色外貌描述'
-                      : `生成 ${activeMode.nodeCount} 张${activeMode.label}参考图（${useRefImage ? '参考图' : '设计稿描述'}模式）`}
-              </button>
-              {canGenerate && (
-                <p className="text-center text-[8px] text-white/20">
-                  {useRefImage
-                    ? '发送来源图给 Seedream · 面部参考 · 可能受原图场景影响'
-                    : '纯文字生成 · 白底中性站姿 · 完全脱离原图构图'}
-                </p>
-              )}
-            </div>
-          )}
+          <button
+            type="button"
+            disabled
+            className="w-full cursor-not-allowed rounded-xl border border-amber-500/30 bg-amber-500/10 py-2.5 text-[11px] font-semibold text-amber-400/60"
+          >
+            专用 Worker 接入中 · 暂不可用
+          </button>
+          <p className="mt-2 text-center text-[8px] leading-relaxed text-white/20">
+            Seedream 参考图路线已暂停 · 正式版需人脸锁定 + 姿态控制 · 敬请期待
+          </p>
         </div>
       </div>
     </div>

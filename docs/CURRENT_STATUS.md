@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
 Last updated: 2026-06-09
-Last valid commit: Tool 13 Asset Character Reference Skill — IMPLEMENTED / browser validation pending
+Last valid commit: Tool 13 Character Reference Skill — PAUSED / Seedream route suspended / worker required
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -79,7 +79,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Color Grade 调色草案节点工作流（创建调色节点保存到画布 · idle · 不自动生成 · 不消耗 credits） | ✅ CLOSED / validated | `d221df6` · `65a4152` |
 | Color Grade 预览即时生效文案修正（Preview Monitor CSS filter 即时 · 不再写"需重新生成才生效"为主语义） | ✅ CLOSED / validated | `c5cefed` · `7a26d8d` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
-| Tool 13 — Character Reference Board / 人物参考板（四视图/九宫格槽位 · 视觉槽位卡 · idle 草案节点 · 不自动生成） | 🚧 IMPLEMENTED / browser validation pending | `20279ad` |
+| Tool 13 — Character Reference Skill Agent / 人物参考板（四视图/九宫格） | ⏸ PAUSED / Seedream route suspended / Character Skill Worker required | `20279ad` |
 
 ---
 
@@ -4048,27 +4048,51 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 ---
 
-## Tool 13 — Character Reference Board / 人物参考板 — IMPLEMENTED / browser validation pending
+## Tool 13 — Character Reference Skill Agent / 人物参考板 — PAUSED / worker required
 
-**Commits:** `1ec9ec6` (initial) → `7f21acf` (multi-node) → `20279ad` (visual board rework)
-**Status:** 🚧 IMPLEMENTED / browser validation pending
-**Date implemented:** 2026-06-08
+**Commits:** `1ec9ec6` (initial) → `7f21acf` (multi-node) → `20279ad` (visual board rework) → `3fc5d84` (route DB error handling) → `e4cb867` (per-slot requests + maxDuration)
+**Status:** ⏸ PAUSED — Seedream character-reference route suspended — Character Skill Worker required
+**Date paused:** 2026-06-09
 
-### 产品定位（20279ad 视觉参考板重构后）
+### 暂停原因
 
-可视化人物参考板工具，不是 Prompt 工具。面板以槽位卡片（正面/四分之三/侧面/背面/表情/服装/动作）为主视觉，角色描述为辅助输入，内部 Prompt 隐藏在高级折叠区。
+多轮实测结论：Seedream `/images/generations` 无法满足专业四视图/九宫格需求：
+- `body.image` 是 img2img 模式，复制源图构图，无法生成中性站姿四视图
+- Seedream 没有 Face Identity Lock（人脸跨视角一致性）
+- Seedream 没有 ControlNet / OpenPose 姿态控制
+- Vercel Serverless 不适合运行多张串行长图生成
+- prompt 优化/Negative prompts 均无法弥补能力边界缺失
 
-浏览器验收失败原因（7f21acf）：虽然创建了多个节点，用户看到的仍是"一堆普通 image prompt 节点/提示词草稿"，无法感知参考板的专业定位。
+### 正式方向
 
-20279ad 修复：
-- Panel 标题改为"人物参考板 / Character Reference Board"
-- 主界面以可视化槽位卡（4 / 5 个）为核心，不再显示 Prompt 预览
-- 角色描述 textarea 改名为"角色描述 / Character Brief"
-- 内部 Prompt 移入"高级选项"折叠区，默认隐藏
-- 移除"复制 Prompt"作为主功能
-- 主按钮改为"创建人物参考板 — N 个槽位节点"
-- 创建成功后提示改为"已创建人物参考板 — N 个槽位节点"
-- CanvasNodeCard：检测 `metadataJson.characterReference.viewLabel`，对 idle 人物参考节点显示"人物参考"badge + 槽位标签 + "待生成参考图"，区别于普通 prompt 草稿
+**Character Reference Skill Agent** 需要：
+1. **人物主体提取** — SAM / BiRefNet / RMBG
+2. **人脸/身份锁定** — InstantID / PuLID / IP-Adapter FaceID
+3. **姿态控制** — ControlNet OpenPose（正面 / 四分之三 / 侧面 / 背面）
+4. **生成** — SDXL / Flux（白底输出）
+5. **OSS 持久化** — 输出真实资产
+6. **回写 canvas done 节点** — source → generated reference nodes edge
+
+### 下一阶段路线
+
+- **Phase 1 POC**：Hosted Face-ID API（fal.ai InstantID / Replicate InstantID）验证人脸身份一致性
+- **Phase 2**：四视图 POC（front / 3q / side / back）+ ControlNet 姿态控制
+- **Phase 3**：Creator City Character Skill Worker（独立服务 / BullMQ 队列 / OSS 上传 / canvas 回写）
+
+### 当前 UI 状态（Phase 0 暂停处理）
+
+- 生成按钮已替换为 amber disabled "专用 Worker 接入中 · 暂不可用"
+- 面板顶部显示 amber warning banner 说明路线暂停原因
+- 槽位预览保留，显示"等待 Worker 接入"
+- cropBox / 角色描述 / 一致性锁定 UI 保留，将作为未来 Worker 输入参数
+- `/api/generate/character-reference` route 保留为实验存档，不暴露
+
+### 已暂停的路线（不再投入）
+
+- Seedream prompt-only / CHARACTER_CONSTRAINT 优化
+- idle 草稿槽位节点
+- cropBox-only metadata 方案
+- Seedream route debugging（503 / ERR_CONNECTION_CLOSED）
 
 ### 新增 / 修改文件（截至 20279ad）
 
