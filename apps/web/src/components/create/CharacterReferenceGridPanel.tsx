@@ -292,24 +292,41 @@ export function CharacterReferenceGridPanel({
       cropBox: effectiveCropBox,
     })
 
+    console.log('[CharacterRef] handleGenerate called', {
+      nodeId: primaryNode.id,
+      sourceImageUrlExcerpt: sourceImageUrl.slice(0, 60),
+      mode,
+      slotCount: slotPrompts.length,
+      slots: slotPrompts.map((s) => ({ key: s.key, label: s.label, promptExcerpt: s.prompt.slice(0, 120) })),
+    })
+
     setGenerating(true)
     setGenerationError(null)
     setGenerationProgress('正在生成人物参考图，可能需要 30–60 秒...')
 
     try {
+      const requestPayload = {
+        sourceImageUrl,
+        characterId: sourceAssetId ?? primaryNode.id,
+        items: slotPrompts.map((s) => ({ kind: s.key, label: s.label, prompt: s.prompt })),
+        providerId: 'volcengine-seedream-image',
+        projectId,
+        workflowId,
+        nodeId: primaryNode.id,
+      }
+      console.log('[CharacterRef] POSTing to /api/generate/character-reference', {
+        itemCount: requestPayload.items.length,
+        providerId: requestPayload.providerId,
+        projectId: requestPayload.projectId,
+      })
+
       const res = await fetch('/api/generate/character-reference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceImageUrl,
-          characterId: sourceAssetId ?? primaryNode.id,
-          items: slotPrompts.map((s) => ({ kind: s.key, label: s.label, prompt: s.prompt })),
-          providerId: 'volcengine-seedream-image',
-          projectId,
-          workflowId,
-          nodeId: primaryNode.id,
-        }),
+        body: JSON.stringify(requestPayload),
       })
+
+      console.log('[CharacterRef] response status', res.status)
 
       if (res.status === 401) {
         setGenerationError('请先登录后再生成参考图。')
@@ -331,6 +348,22 @@ export function CharacterReferenceGridPanel({
         message?: string
         errorCode?: string
       }
+
+      console.log('[CharacterRef] response data', {
+        success: data.success,
+        partialSuccess: data.partialSuccess,
+        referencesCount: data.references?.length ?? 0,
+        errorsCount: data.errors?.length ?? 0,
+        errorCode: data.errorCode,
+        message: data.message,
+        references: data.references?.map((r) => ({
+          kind: r.kind,
+          hasAssetId: Boolean(r.assetId),
+          imageUrlExcerpt: r.imageUrl?.slice(0, 70),
+          isSameAsSource: r.imageUrl === sourceImageUrl,
+        })),
+        errors: data.errors,
+      })
 
       if (!data.success && !data.partialSuccess) {
         setGenerationError(data.message ?? '生成失败，请重试。')
@@ -354,6 +387,21 @@ export function CharacterReferenceGridPanel({
         return
       }
 
+      // Warn if provider returned duplicate URLs (model may have cloned the source)
+      const uniqueUrls = new Set(references.map((r) => r.imageUrl))
+      if (uniqueUrls.size === 1 && references.length > 1) {
+        console.warn('[CharacterRef] WARNING: all references have the same imageUrl — provider may have returned duplicate images', {
+          sharedUrl: references[0]?.imageUrl?.slice(0, 70),
+        })
+      }
+      const duplicateSources = references.filter((r) => r.imageUrl === sourceImageUrl)
+      if (duplicateSources.length > 0) {
+        console.warn('[CharacterRef] WARNING: some references have imageUrl === sourceImageUrl — these are NOT new images', {
+          count: duplicateSources.length,
+        })
+      }
+
+      console.log('[CharacterRef] calling onReferenceGenerated with', references.length, 'references')
       setGenerationSuccess(true)
       setGeneratedCount(references.length)
       onReferenceGenerated({
@@ -365,6 +413,7 @@ export function CharacterReferenceGridPanel({
         references,
       })
     } catch (err) {
+      console.error('[CharacterRef] fetch error', err)
       setGenerationError(err instanceof Error ? err.message : '生成请求失败，请检查网络后重试。')
     } finally {
       setGenerating(false)

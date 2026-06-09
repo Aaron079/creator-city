@@ -66,7 +66,11 @@ export const LAYOUT_LABELS: Record<CharacterReferenceLayout, string> = {
 const NEGATIVE_CONSTRAINTS =
   'no different character, no inconsistent face, no changed hairstyle, no different outfit, ' +
   'no random accessories, no age change, no face drift, no body proportion drift, ' +
-  'no cropped body, no partial body, no background clutter, no extra limbs, no deformed anatomy'
+  'no cropped body, no partial body, no background clutter, no extra limbs, no deformed anatomy, ' +
+  'no battlefield, no combat scene, no action scene, no weapon pose, no spear, no sword, no gun, ' +
+  'no original action pose copied, no smoke, no fire, no explosion, no dramatic cinematic background, ' +
+  'no copied composition from source image, no movie still, no screenshot aesthetic, ' +
+  'no dynamic action, no fighting stance, no hero pose with weapon'
 
 function buildConsistencyConstraints(opts: CharacterReferenceOptions): string {
   const parts: string[] = []
@@ -267,28 +271,32 @@ export function buildAssetSlotPrompts(
       label: '正面 / Front View',
       titleSuffix: '正面',
       slotDescription: '正面全身视图',
-      viewDesc: 'full body, front view, facing camera directly, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+      viewDesc: 'CHARACTER DESIGN SHEET: full body FRONT VIEW, character facing camera directly, both arms hanging relaxed at sides, feet together, neutral A-pose, CLEAN WHITE BACKGROUND, studio reference lighting, character design turnaround sheet aesthetic. ' +
+        'THIS IS NOT an action scene. This is NOT a movie shot. NO weapons in hands. NO dramatic pose.',
     },
     {
       key: '3quarter',
       label: '四分之三 / Three-quarter',
       titleSuffix: '四分之三',
       slotDescription: '四分之三视图',
-      viewDesc: 'full body, three-quarter front view, turned slightly to the right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+      viewDesc: 'CHARACTER DESIGN SHEET: full body THREE-QUARTER VIEW, character body turned 45 degrees to the right, head facing slightly toward camera, arms relaxed at sides, CLEAN WHITE BACKGROUND, studio reference lighting, character design turnaround sheet aesthetic. ' +
+        'THIS IS NOT an action scene. NO weapons. NO dramatic pose.',
     },
     {
       key: 'side',
       label: '侧面 / Side Profile',
       titleSuffix: '侧面',
       slotDescription: '侧面视图',
-      viewDesc: 'full body, side profile view, facing right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+      viewDesc: 'CHARACTER DESIGN SHEET: full body SIDE PROFILE VIEW, character facing right, arms relaxed at sides, CLEAN WHITE BACKGROUND, studio reference lighting, character design turnaround sheet aesthetic. ' +
+        'THIS IS NOT an action scene. NO weapons in hands. NO dramatic pose.',
     },
     {
       key: 'back',
       label: '背面 / Back View',
       titleSuffix: '背面',
       slotDescription: '背面视图',
-      viewDesc: 'full body, back view, facing away from camera, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+      viewDesc: 'CHARACTER DESIGN SHEET: full body BACK VIEW, character facing away from camera, arms relaxed at sides, CLEAN WHITE BACKGROUND, studio reference lighting, character design turnaround sheet aesthetic. ' +
+        'THIS IS NOT an action scene. NO weapons visible. NO dramatic pose.',
     },
   ]
 

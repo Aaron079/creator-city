@@ -9,8 +9,23 @@ import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// Route-level override: generate a neutral reference pose — do NOT copy the original scene.
+// This is appended AFTER the slot prompt so it takes precedence over the source image style.
 const CHARACTER_CONSTRAINT =
-  '请以来源参考图中的同一角色为唯一角色，保持脸型、年龄、发型、服装、气质、关键道具一致。不要改变角色身份，不要卡通化，不要更换服装，不要改变性别和年龄。'
+  'Use the provided reference image ONLY for character identity (face, age, hairstyle, body proportions, outfit color palette). ' +
+  'Generate a brand-new character reference image with a CLEAN WHITE BACKGROUND and a NEUTRAL STANDING POSE. ' +
+  'IMPORTANT: Do NOT recreate the original scene, background, action pose, combat stance, weapon pose, battlefield environment, smoke, fire, or any cinematic composition from the source image. ' +
+  'The output must look like a professional character design sheet reference, NOT like a screenshot or movie still.'
+
+function urlDomainExcerpt(url: string | undefined): string {
+  if (!url) return '(none)'
+  try {
+    const u = new URL(url)
+    return `${u.hostname}...${u.pathname.slice(-20)}`
+  } catch {
+    return url.slice(0, 60)
+  }
+}
 
 type GenerateItem = {
   kind: string
@@ -45,6 +60,13 @@ export async function POST(request: NextRequest) {
     }
 
     const { sourceImageUrl, characterId, items, providerId = 'volcengine-seedream-image', template } = body
+
+    console.log('[char-ref] request received', {
+      sourceImageUrlDomain: urlDomainExcerpt(sourceImageUrl),
+      characterId,
+      itemCount: items?.length ?? 0,
+      providerId,
+    })
 
     if (!sourceImageUrl?.trim()) {
       return NextResponse.json({ success: false, errorCode: 'SOURCE_IMAGE_REQUIRED', message: '请提供角色源图 URL。' }, { status: 400 })
@@ -82,6 +104,8 @@ export async function POST(request: NextRequest) {
     if (!currentUser) {
       return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
     }
+    console.log('[char-ref] auth ok', { userId: currentUser.id })
+
     const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
 
     const references: Array<{
@@ -111,10 +135,24 @@ export async function POST(request: NextRequest) {
 
     for (const item of items) {
       const fullPrompt = [item.prompt, CHARACTER_CONSTRAINT].join(' ')
+      console.log('[char-ref] generating item', {
+        kind: item.kind,
+        label: item.label,
+        promptExcerpt: item.prompt.slice(0, 120),
+        referenceImages: [urlDomainExcerpt(sourceImageUrl)],
+      })
+
       try {
         const result = providerId === 'volcengine-seedream-image'
           ? await generateSeedreamImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages: [sourceImageUrl] })
           : await generateJimengImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages: [sourceImageUrl] })
+
+        console.log('[char-ref] generation result', {
+          kind: item.kind,
+          success: result.success,
+          errorCode: result.success ? undefined : (result as { errorCode?: string }).errorCode,
+          rawImageUrlExcerpt: result.success ? urlDomainExcerpt(result.imageUrl) : undefined,
+        })
 
         if (result.success) {
           const imageUrl = result.imageUrl ?? result.dataUrl
@@ -147,6 +185,13 @@ export async function POST(request: NextRequest) {
                   generationTemplate: template,
                 },
               })
+              console.log('[char-ref] persistence result', {
+                kind: item.kind,
+                ok: persistence.ok,
+                stableUrlExcerpt: persistence.ok ? urlDomainExcerpt(persistence.stableUrl) : undefined,
+                assetId: persistence.ok ? persistence.assetId : undefined,
+                errorCode: persistence.ok ? undefined : persistence.errorCode,
+              })
               if (persistence.ok) {
                 finalImageUrl = persistence.stableUrl
                 assetId = persistence.assetId
@@ -160,6 +205,12 @@ export async function POST(request: NextRequest) {
                 warning = '角色参考图生成成功，但媒体转存失败，该链接可能会过期。'
               }
             }
+
+            console.log('[char-ref] reference ready', {
+              kind: item.kind,
+              finalImageUrlExcerpt: urlDomainExcerpt(finalImageUrl),
+              hasAssetId: Boolean(assetId),
+            })
 
             references.push({
               id: crypto.randomUUID(),
@@ -179,17 +230,21 @@ export async function POST(request: NextRequest) {
               createdAt: new Date().toISOString(),
             })
           } else {
+            console.warn('[char-ref] no imageUrl in successful result', { kind: item.kind })
             errors.push({ kind: item.kind, label: item.label, errorCode: 'NO_IMAGE_URL', message: '生成成功但未返回图片 URL' })
           }
         } else {
+          const failResult = result as { errorCode?: string; message?: string }
+          console.warn('[char-ref] generation failed', { kind: item.kind, errorCode: failResult.errorCode, message: failResult.message })
           errors.push({
             kind: item.kind,
             label: item.label,
-            errorCode: result.errorCode ?? 'GENERATION_FAILED',
-            message: result.message ?? '生成失败',
+            errorCode: failResult.errorCode ?? 'GENERATION_FAILED',
+            message: failResult.message ?? '生成失败',
           })
         }
       } catch (err) {
+        console.error('[char-ref] generation exception', { kind: item.kind, error: err instanceof Error ? err.message : String(err) })
         errors.push({
           kind: item.kind,
           label: item.label,
@@ -198,6 +253,8 @@ export async function POST(request: NextRequest) {
         })
       }
     }
+
+    console.log('[char-ref] done', { referencesCount: references.length, errorsCount: errors.length })
 
     return NextResponse.json({
       success: references.length > 0,
