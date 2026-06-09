@@ -53,6 +53,10 @@ const REFERENCE_SUPPORTED_PROVIDERS = new Set([
   'jimeng-image',
 ])
 
+function isSessionDbError(err: unknown): boolean {
+  return err instanceof Error && (err as Error & { code?: string }).code === 'SESSION_DB_UNAVAILABLE'
+}
+
 export async function POST(request: NextRequest) {
   try {
     let body: RequestBody
@@ -82,6 +86,14 @@ export async function POST(request: NextRequest) {
     if (!sourceImageUrl?.trim()) {
       return NextResponse.json({ success: false, errorCode: 'SOURCE_IMAGE_REQUIRED', message: '请提供角色源图 URL。' }, { status: 400 })
     }
+    // Reject proxy/internal URLs — Volcengine cannot fetch relative or server-side proxy URLs
+    if (sourceImageUrl.startsWith('/api/') || sourceImageUrl.startsWith('/media/')) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'INVALID_SOURCE_IMAGE',
+        message: '来源图片为内部代理链接，Volcengine 无法访问。请使用已持久化的资产 URL（R2/OSS 链接）。',
+      }, { status: 400 })
+    }
     if (!characterId?.trim()) {
       return NextResponse.json({ success: false, errorCode: 'CHARACTER_ID_REQUIRED', message: '请指定角色 ID。' }, { status: 400 })
     }
@@ -98,7 +110,21 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    const status = await buildProviderManagementStatus()
+    let status
+    try {
+      status = await buildProviderManagementStatus()
+    } catch (err) {
+      console.error('[char-ref] buildProviderManagementStatus failed', err)
+      if (isSessionDbError(err)) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'AUTH_SESSION_ERROR',
+          message: '数据库暂时不可用，请稍候几秒后重试。',
+          retryable: true,
+        }, { status: 503 })
+      }
+      throw err
+    }
     const providerRow = status.providers.find((p) => p.providerId === providerId)
     if (!providerRow?.available) {
       return NextResponse.json({
@@ -110,7 +136,21 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    const currentUser = await getCurrentUser()
+    let currentUser
+    try {
+      currentUser = await getCurrentUser()
+    } catch (err) {
+      console.error('[char-ref] getCurrentUser failed', err)
+      if (isSessionDbError(err)) {
+        return NextResponse.json({
+          success: false,
+          errorCode: 'AUTH_SESSION_ERROR',
+          message: '登录状态暂时无法验证，请稍候几秒后重试。',
+          retryable: true,
+        }, { status: 503 })
+      }
+      throw err
+    }
     // TODO: production billing required before public launch
     if (!currentUser) {
       return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
@@ -142,6 +182,7 @@ export async function POST(request: NextRequest) {
       label: string
       errorCode?: string
       message: string
+      upstreamMessage?: string
     }> = []
 
     for (const item of items) {
@@ -162,8 +203,10 @@ export async function POST(request: NextRequest) {
           useReferenceImage,
           referenceImageCount: referenceImages.length,
         })
+        // aspectRatio omitted → Seedream defaults to '2K'. Passing '1:1' would fall through
+        // normalizeSeedreamSize unchanged and send an invalid size param to the API.
         const result = providerId === 'volcengine-seedream-image'
-          ? await generateSeedreamImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages })
+          ? await generateSeedreamImage({ prompt: fullPrompt, referenceImages })
           : await generateJimengImage({ prompt: fullPrompt, aspectRatio: '1:1', referenceImages })
 
         console.log('[char-ref] generation result', {
@@ -253,13 +296,14 @@ export async function POST(request: NextRequest) {
             errors.push({ kind: item.kind, label: item.label, errorCode: 'NO_IMAGE_URL', message: '生成成功但未返回图片 URL' })
           }
         } else {
-          const failResult = result as { errorCode?: string; message?: string }
-          console.warn('[char-ref] generation failed', { kind: item.kind, errorCode: failResult.errorCode, message: failResult.message })
+          const failResult = result as { errorCode?: string; message?: string; upstreamMessage?: string }
+          console.warn('[char-ref] generation failed', { kind: item.kind, errorCode: failResult.errorCode, message: failResult.message, upstreamMessage: failResult.upstreamMessage?.slice(0, 200) })
           errors.push({
             kind: item.kind,
             label: item.label,
             errorCode: failResult.errorCode ?? 'GENERATION_FAILED',
             message: failResult.message ?? '生成失败',
+            upstreamMessage: failResult.upstreamMessage,
           })
         }
       } catch (err) {
@@ -280,6 +324,12 @@ export async function POST(request: NextRequest) {
       references,
       errors: errors.length > 0 ? errors : undefined,
       partialSuccess: references.length > 0 && errors.length > 0,
+      // Provide a top-level message when all items failed so the panel can surface a real cause
+      ...((): Record<string, string> => {
+        const first = references.length === 0 && errors.length > 0 ? errors[0] : undefined
+        if (!first) return {}
+        return { message: first.message + (first.upstreamMessage ? ` (${first.upstreamMessage.slice(0, 120)})` : '') }
+      })(),
     })
   } catch (err) {
     console.error('[api/generate/character-reference]', err)

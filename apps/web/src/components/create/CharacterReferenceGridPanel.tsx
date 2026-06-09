@@ -349,11 +349,6 @@ export function CharacterReferenceGridPanel({
 
       console.log('[CharacterRef] response status', res.status)
 
-      if (res.status === 401) {
-        setGenerationError('请先登录后再生成参考图。')
-        return
-      }
-
       const data = await res.json() as {
         success: boolean
         partialSuccess?: boolean
@@ -365,9 +360,19 @@ export function CharacterReferenceGridPanel({
           assetId?: string
           sourceImageUrl: string
         }>
-        errors?: Array<{ kind: string; label: string; errorCode?: string; message: string }>
+        errors?: Array<{ kind: string; label: string; errorCode?: string; message: string; upstreamMessage?: string }>
         message?: string
         errorCode?: string
+        retryable?: boolean
+      }
+
+      if (res.status === 401) {
+        setGenerationError('请先登录后再生成参考图。')
+        return
+      }
+      if (res.status === 503 || data.errorCode === 'AUTH_SESSION_ERROR') {
+        setGenerationError(data.message ?? '服务暂时不可用，请稍候几秒后重试。')
+        return
       }
 
       // Update per-view progress based on results
@@ -391,7 +396,8 @@ export function CharacterReferenceGridPanel({
       })
 
       if (!data.success && !data.partialSuccess) {
-        setGenerationError(data.message ?? '生成失败，请重试。')
+        const itemErrors = data.errors?.map((e) => `${e.label}: ${e.message}`).join('; ')
+        setGenerationError(data.message ?? (itemErrors ? `生成失败：${itemErrors}` : '生成失败，请重试。'))
         return
       }
 
