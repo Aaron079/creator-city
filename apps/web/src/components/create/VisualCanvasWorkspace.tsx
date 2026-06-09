@@ -8278,53 +8278,23 @@ export function VisualCanvasWorkspace({
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
             onCreateReferenceNode={(req: CreateCharacterReferenceRequest) => {
               const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
-              const modeLabel = req.mode === 'turnaround4' ? '人物四视图' : '人物九宫格'
+              const modeLabel = req.mode === 'turnaround4' ? '角色四视图参考板' : '角色九宫格参考板'
               const sourceTitle = sourceNode?.title?.trim()
-              const sourceX = sourceNode?.x ?? 200
-              const sourceY = sourceNode?.y ?? 200
-              const groupId = `char-ref-${Date.now()}`
-
-              // Grid positions: turnaround4 → 2×2, grid5 → 3+2
-              const positions =
-                req.mode === 'turnaround4'
-                  ? [
-                      { x: sourceX + 460, y: sourceY },
-                      { x: sourceX + 780, y: sourceY },
-                      { x: sourceX + 460, y: sourceY + 280 },
-                      { x: sourceX + 780, y: sourceY + 280 },
-                    ]
-                  : [
-                      { x: sourceX + 460, y: sourceY },
-                      { x: sourceX + 780, y: sourceY },
-                      { x: sourceX + 1100, y: sourceY },
-                      { x: sourceX + 460, y: sourceY + 280 },
-                      { x: sourceX + 780, y: sourceY + 280 },
-                    ]
-
-              req.items.forEach((item, i) => {
-                const title = sourceTitle
-                  ? `${modeLabel} · ${item.titleSuffix} · ${sourceTitle}`
-                  : `${modeLabel} · ${item.titleSuffix}`
-                createNode('image', {
-                  title,
-                  prompt: item.prompt,
-                  parentNodeId: req.sourceNodeId,
-                  status: 'idle',
-                  metadataJson: {
-                    ...req.metadataJson,
-                    characterReference: {
-                      ...((req.metadataJson.characterReference as Record<string, unknown>) ?? {}),
-                      groupId,
-                      viewKey: item.key,
-                      viewLabel: item.label,
-                    },
-                  },
-                  position: positions[i],
-                })
+              const title = sourceTitle ? `${modeLabel} · ${sourceTitle}` : modeLabel
+              const position = sourceNode
+                ? { x: sourceNode.x + (sourceNode.width ?? 360) + 240, y: sourceNode.y }
+                : undefined
+              createNode('image', {
+                title,
+                prompt: req.prompt,
+                parentNodeId: req.sourceNodeId,
+                status: 'idle',
+                metadataJson: req.metadataJson,
+                position,
               })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
-              showCanvasFeedback(`已创建人物参考板 — ${req.items.length} 个槽位节点，请进入各槽位手动生成参考图。`)
+              showCanvasFeedback(`已创建${modeLabel}，请在节点中手动生成参考图。`)
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}
           />

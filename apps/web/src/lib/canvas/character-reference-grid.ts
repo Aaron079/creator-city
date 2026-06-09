@@ -179,7 +179,44 @@ export function buildCharacterReferencePrompts(opts: CharacterReferenceOptions):
   return opts.mode === 'turnaround4' ? buildTurnaroundPrompts(opts) : buildGrid5Prompts(opts)
 }
 
-// Compat wrapper — returns first item prompt only; prefer buildCharacterReferencePrompts
+// Single composite prompt — generates one image containing all views in a grid layout.
+// This is the primary function used by the reference board panel.
+export function buildBoardPrompt(opts: CharacterReferenceOptions): string {
+  const subject = opts.sourcePrompt.trim() || 'a character'
+  const consistency = buildConsistencyConstraints(opts)
+  const style = buildStyleDescription(opts.style)
+  const layout = buildLayoutDescription(opts.layout)
+  const shared = `same character identity, ${consistency}, ${style}, ${layout}`
+
+  if (opts.mode === 'turnaround4') {
+    return (
+      `character design turnaround reference sheet, ${subject}, ` +
+      `four views arranged in a 2x2 grid layout: ` +
+      `[top-left] full body front view facing camera directly, ` +
+      `[top-right] full body three-quarter view turned slightly right, ` +
+      `[bottom-left] full body side profile view facing right, ` +
+      `[bottom-right] full body back view facing away from camera, ` +
+      `all four panels showing the exact same character, ${shared}, ` +
+      `neutral standing pose in every view, arms relaxed at sides, head-to-toe complete figure, ` +
+      `clean white background, thin panel dividers, evenly spaced, labeled reference sheet, ` +
+      `[Negative: ${NEGATIVE_CONSTRAINTS}, no merged panels, no single view only, no partial figures]`
+    )
+  }
+  return (
+    `character reference grid sheet, ${subject}, ` +
+    `five reference panels in a clean grid layout: ` +
+    `[1-top-left] full body front view, complete character head to toe, ` +
+    `[2-top-center] full body three-quarter view turned slightly, ` +
+    `[3-top-right] facial expression sheet with neutral, happy, angry expressions, ` +
+    `[4-bottom-left] costume and outfit detail close-up reference, ` +
+    `[5-bottom-right] dynamic action pose with clear body silhouette, ` +
+    `same character identity in all five panels, ${shared}, ` +
+    `clean white background, grid dividers, labeled panels, reference sheet layout, ` +
+    `[Negative: ${NEGATIVE_CONSTRAINTS}, no merged panels, no cropped figures]`
+  )
+}
+
+// Compat wrapper — returns first item prompt only; prefer buildBoardPrompt for the panel
 export function buildCharacterReferencePrompt(opts: CharacterReferenceOptions): string {
   return buildCharacterReferencePrompts(opts)[0]?.prompt ?? ''
 }

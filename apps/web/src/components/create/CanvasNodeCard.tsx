@@ -1406,10 +1406,15 @@ export function CanvasNodeCard({
     const cr = rec.characterReference
     if (!cr || typeof cr !== 'object' || Array.isArray(cr)) return null
     const crRec = cr as Record<string, unknown>
-    const slotLabel = typeof crRec.viewLabel === 'string' ? crRec.viewLabel : null
-    const slotKey = typeof crRec.viewKey === 'string' ? crRec.viewKey : null
-    if (!slotLabel || !slotKey) return null
-    return { slotLabel, slotKey }
+    // 1-node composite board format: boardType field
+    const boardType = typeof crRec.boardType === 'string' ? crRec.boardType : null
+    // Legacy multi-node format: viewLabel + viewKey fields
+    const viewLabel = typeof crRec.viewLabel === 'string' ? crRec.viewLabel : null
+    const displayLabel = viewLabel ??
+      (boardType === 'turnaround4' ? '四视图参考板' :
+       boardType === 'grid5' ? '九宫格参考板' : null)
+    if (!displayLabel) return null
+    return { slotLabel: displayLabel }
   })()
 
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
