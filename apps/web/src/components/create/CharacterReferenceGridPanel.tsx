@@ -36,6 +36,8 @@ export interface GeneratedReferenceItem {
   prompt: string
   assetId: string | undefined
   imageUrl: string
+  slotIndex: number   // position in the full slot list — used for grid layout
+  totalSlots: number  // total slots in this generation set
 }
 
 export interface GenerateCharacterReferenceResult {
@@ -324,122 +326,149 @@ export function CharacterReferenceGridPanel({
     const modeLabel = useRefImage ? '参考图辅助' : '设计稿描述'
     setGenerationProgress(`[${modeLabel}模式] 正在生成 ${slotPrompts.length} 张参考图，每张约 15–30 秒...`)
 
+    // Serial per-slot requests: one POST per slot avoids a single 4×60s request
+    // that would exceed Vercel's function timeout and cause ERR_CONNECTION_CLOSED.
+    const allReferences: GeneratedReferenceItem[] = []
+    let firstFatalError: string | null = null
+
     try {
-      const requestPayload = {
-        sourceImageUrl,
-        characterId: sourceAssetId ?? primaryNode.id,
-        items: slotPrompts.map((s) => ({ kind: s.key, label: s.label, prompt: s.prompt })),
-        providerId: 'volcengine-seedream-image',
-        useReferenceImage: useRefImage,
-        projectId,
-        workflowId,
-        nodeId: primaryNode.id,
-      }
+      const characterId = sourceAssetId ?? primaryNode.id
 
-      console.log('[CharacterRef] POST /api/generate/character-reference', {
-        itemCount: requestPayload.items.length,
-        useReferenceImage: requestPayload.useReferenceImage,
-      })
+      for (let slotIdx = 0; slotIdx < slotPrompts.length; slotIdx++) {
+        const slot = slotPrompts[slotIdx]!
+        // Mark this slot as in-progress
+        setViewProgress((prev) => ({ ...prev, [slot.key]: 'pending' }))
+        setGenerationProgress(`[${modeLabel}模式] ${slot.label} (${allReferences.length + 1}/${slotPrompts.length}) 生成中...`)
 
-      const res = await fetch('/api/generate/character-reference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestPayload),
-      })
-
-      console.log('[CharacterRef] response status', res.status)
-
-      const data = await res.json() as {
-        success: boolean
-        partialSuccess?: boolean
-        references?: Array<{
-          id: string
-          kind: string
-          label: string
-          imageUrl: string
-          assetId?: string
-          sourceImageUrl: string
-        }>
-        errors?: Array<{ kind: string; label: string; errorCode?: string; message: string; upstreamMessage?: string }>
-        message?: string
-        errorCode?: string
-        retryable?: boolean
-      }
-
-      if (res.status === 401) {
-        setGenerationError('请先登录后再生成参考图。')
-        return
-      }
-      if (res.status === 503 || data.errorCode === 'AUTH_SESSION_ERROR') {
-        setGenerationError(data.message ?? '服务暂时不可用，请稍候几秒后重试。')
-        return
-      }
-
-      // Update per-view progress based on results
-      const progressUpdate: Record<string, 'pending' | 'generating' | 'done' | 'failed'> = { ...initialProgress }
-      for (const ref of data.references ?? []) progressUpdate[ref.kind] = 'done'
-      for (const err of data.errors ?? []) progressUpdate[err.kind] = 'failed'
-      setViewProgress(progressUpdate)
-
-      console.log('[CharacterRef] response', {
-        success: data.success,
-        partialSuccess: data.partialSuccess,
-        referencesCount: data.references?.length ?? 0,
-        errorsCount: data.errors?.length ?? 0,
-        references: data.references?.map((r) => ({
-          kind: r.kind,
-          hasAssetId: Boolean(r.assetId),
-          imageUrlExcerpt: r.imageUrl?.slice(0, 70),
-          isSameAsSource: r.imageUrl === sourceImageUrl,
-        })),
-        errors: data.errors,
-      })
-
-      if (!data.success && !data.partialSuccess) {
-        const itemErrors = data.errors?.map((e) => `${e.label}: ${e.message}`).join('; ')
-        setGenerationError(data.message ?? (itemErrors ? `生成失败：${itemErrors}` : '生成失败，请重试。'))
-        return
-      }
-
-      const references: GeneratedReferenceItem[] = (data.references ?? []).map((ref) => {
-        const slot = slotPrompts.find((s) => s.key === ref.kind)
-        return {
-          key: ref.kind,
-          label: ref.label ?? slot?.label ?? ref.kind,
-          slotDescription: slot?.slotDescription ?? '',
-          prompt: slot?.prompt ?? '',
-          assetId: ref.assetId,
-          imageUrl: ref.imageUrl,
+        const payload = {
+          sourceImageUrl,
+          characterId,
+          items: [{ kind: slot.key, label: slot.label, prompt: slot.prompt }],
+          providerId: 'volcengine-seedream-image',
+          useReferenceImage: useRefImage,
+          projectId,
+          workflowId,
+          nodeId: primaryNode.id,
         }
-      })
 
-      if (references.length === 0) {
-        setGenerationError(`生成失败：API 未返回任何参考图。${data.errors?.[0] ? ` 错误：${data.errors[0].message}` : ''}`)
-        return
+        console.log('[CharacterRef] POST slot', { kind: slot.key, useReferenceImage: useRefImage })
+
+        let data: {
+          success: boolean
+          partialSuccess?: boolean
+          references?: Array<{ id: string; kind: string; label: string; imageUrl: string; assetId?: string; sourceImageUrl: string }>
+          errors?: Array<{ kind: string; label: string; errorCode?: string; message: string; upstreamMessage?: string }>
+          message?: string
+          errorCode?: string
+          detail?: string
+          retryable?: boolean
+        }
+
+        try {
+          const res = await fetch('/api/generate/character-reference', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+
+          console.log('[CharacterRef] slot response', { kind: slot.key, status: res.status })
+
+          // Always try to parse JSON; fall back to text if the body is not JSON
+          const contentType = res.headers.get('content-type') ?? ''
+          if (!contentType.includes('application/json')) {
+            const rawText = await res.text()
+            console.error('[CharacterRef] non-JSON response', { kind: slot.key, status: res.status, rawText: rawText.slice(0, 300) })
+            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
+            if (!firstFatalError) {
+              firstFatalError = res.status === 503
+                ? `${slot.label} 生成失败：服务暂时不可用 (HTTP ${res.status})`
+                : `${slot.label} 服务器返回非 JSON 响应 (HTTP ${res.status}): ${rawText.slice(0, 120)}`
+            }
+            continue
+          }
+
+          data = await res.json()
+
+          if (res.status === 401) {
+            firstFatalError = '请先登录后再生成参考图。'
+            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
+            break  // auth error affects all remaining slots
+          }
+          if (res.status === 503 || data.errorCode === 'AUTH_SESSION_ERROR' || data.errorCode === 'DB_UNAVAILABLE') {
+            const msg = data.message ?? '服务暂时不可用，请稍候几秒后重试。'
+            console.warn('[CharacterRef] 503/DB error on slot', { kind: slot.key, errorCode: data.errorCode, msg })
+            if (!firstFatalError) firstFatalError = `[${data.errorCode ?? 'SERVICE_UNAVAILABLE'}] ${msg}`
+            setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
+            continue
+          }
+        } catch (fetchErr) {
+          // TypeError: Failed to fetch — network cut or Vercel connection closed
+          const isNetwork = fetchErr instanceof TypeError
+          console.error('[CharacterRef] fetch exception on slot', { kind: slot.key, isNetwork, error: fetchErr })
+          setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
+          if (!firstFatalError) {
+            firstFatalError = isNetwork
+              ? `[NETWORK_OR_SERVER_UNAVAILABLE] 网络连接中断或服务暂时不可用，请稍后重试。`
+              : `[REQUEST_FAILED] ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
+          }
+          continue
+        }
+
+        // Process result
+        console.log('[CharacterRef] slot data', {
+          kind: slot.key,
+          success: data.success,
+          errorCode: data.errorCode,
+          referencesCount: data.references?.length ?? 0,
+          errors: data.errors,
+        })
+
+        const ref = data.references?.[0]
+        if (data.success && ref?.imageUrl) {
+          const item: GeneratedReferenceItem = {
+            key: ref.kind,
+            label: ref.label ?? slot.label,
+            slotDescription: slot.slotDescription ?? '',
+            prompt: slot.prompt,
+            assetId: ref.assetId,
+            imageUrl: ref.imageUrl,
+            slotIndex: slotIdx,
+            totalSlots: slotPrompts.length,
+          }
+          allReferences.push(item)
+          setViewProgress((prev) => ({ ...prev, [slot.key]: 'done' }))
+          // Fire onReferenceGenerated incrementally so the canvas updates slot-by-slot
+          onReferenceGenerated({
+            sourceNodeId: primaryNode.id,
+            mode,
+            sourceImageUrl,
+            sourceAssetId,
+            cropBox: effectiveCropBox,
+            references: [item],
+          })
+        } else {
+          setViewProgress((prev) => ({ ...prev, [slot.key]: 'failed' }))
+          const slotErr = data.errors?.[0]
+          const errMsg = slotErr
+            ? `[${slotErr.errorCode ?? 'GENERATION_FAILED'}] ${slotErr.message}${slotErr.upstreamMessage ? ` (${slotErr.upstreamMessage.slice(0, 100)})` : ''}`
+            : (data.message ?? `${slot.label} 生成失败`)
+          console.warn('[CharacterRef] slot failed', { kind: slot.key, errMsg })
+          if (!firstFatalError) firstFatalError = `${slot.label}: ${errMsg}`
+        }
       }
 
-      // Detect duplicate URLs (provider returning same image for all slots)
-      const uniqueUrls = new Set(references.map((r) => r.imageUrl))
-      if (uniqueUrls.size === 1 && references.length > 1) {
-        console.warn('[CharacterRef] WARNING: provider returned identical imageUrl for all slots', references[0]?.imageUrl?.slice(0, 70))
+      if (allReferences.length === 0) {
+        setGenerationError(firstFatalError ?? '所有槽位生成失败，请重试。')
+      } else {
+        setGenerationSuccess(true)
+        setGeneratedCount(allReferences.length)
+        if (firstFatalError) {
+          // Partial success — show a non-fatal warning in the progress area but don't block
+          console.warn('[CharacterRef] partial success, some slots failed', firstFatalError)
+        }
       }
-      const duplicateSources = references.filter((r) => r.imageUrl === sourceImageUrl)
-      if (duplicateSources.length > 0) {
-        console.warn('[CharacterRef] WARNING: some references have imageUrl === sourceImageUrl (source was returned as result)', duplicateSources.length)
-      }
-
-      setGenerationSuccess(true)
-      setGeneratedCount(references.length)
-      onReferenceGenerated({
-        sourceNodeId: primaryNode.id,
-        mode,
-        sourceImageUrl,
-        sourceAssetId,
-        cropBox: effectiveCropBox,
-        references,
-      })
     } catch (err) {
-      console.error('[CharacterRef] fetch error', err)
+      console.error('[CharacterRef] unexpected error in generate loop', err)
       setGenerationError(err instanceof Error ? err.message : '生成请求失败，请检查网络后重试。')
     } finally {
       setGenerating(false)

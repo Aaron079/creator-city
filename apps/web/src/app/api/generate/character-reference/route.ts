@@ -5,9 +5,12 @@ import { generateJimengImage } from '@/lib/providers/china/jimeng'
 import { generateSeedreamImage } from '@/lib/providers/china/volcengine'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
+import { isDbConnectionError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+// One Seedream call = up to 60s generation + OSS upload. Keep under Pro plan limit.
+export const maxDuration = 90
 
 // Route-level override: generate a neutral reference pose — do NOT copy the original scene.
 // This is appended AFTER the slot prompt so it takes precedence over the source image style.
@@ -55,6 +58,10 @@ const REFERENCE_SUPPORTED_PROVIDERS = new Set([
 
 function isSessionDbError(err: unknown): boolean {
   return err instanceof Error && (err as Error & { code?: string }).code === 'SESSION_DB_UNAVAILABLE'
+}
+
+function isAnyDbError(err: unknown): boolean {
+  return isSessionDbError(err) || isDbConnectionError(err)
 }
 
 export async function POST(request: NextRequest) {
@@ -115,15 +122,15 @@ export async function POST(request: NextRequest) {
       status = await buildProviderManagementStatus()
     } catch (err) {
       console.error('[char-ref] buildProviderManagementStatus failed', err)
-      if (isSessionDbError(err)) {
-        return NextResponse.json({
-          success: false,
-          errorCode: 'AUTH_SESSION_ERROR',
-          message: '数据库暂时不可用，请稍候几秒后重试。',
-          retryable: true,
-        }, { status: 503 })
-      }
-      throw err
+      return NextResponse.json({
+        success: false,
+        errorCode: isAnyDbError(err) ? 'DB_UNAVAILABLE' : 'PROVIDER_STATUS_ERROR',
+        message: isAnyDbError(err)
+          ? '数据库暂时不可用，请稍候几秒后重试。'
+          : `Provider 状态查询失败：${err instanceof Error ? err.message : String(err)}`,
+        detail: err instanceof Error ? err.message : String(err),
+        retryable: isAnyDbError(err),
+      }, { status: 503 })
     }
     const providerRow = status.providers.find((p) => p.providerId === providerId)
     if (!providerRow?.available) {
@@ -141,15 +148,15 @@ export async function POST(request: NextRequest) {
       currentUser = await getCurrentUser()
     } catch (err) {
       console.error('[char-ref] getCurrentUser failed', err)
-      if (isSessionDbError(err)) {
-        return NextResponse.json({
-          success: false,
-          errorCode: 'AUTH_SESSION_ERROR',
-          message: '登录状态暂时无法验证，请稍候几秒后重试。',
-          retryable: true,
-        }, { status: 503 })
-      }
-      throw err
+      return NextResponse.json({
+        success: false,
+        errorCode: 'AUTH_SESSION_ERROR',
+        message: isAnyDbError(err)
+          ? '登录状态暂时无法验证，请稍候几秒后重试。'
+          : `登录验证失败：${err instanceof Error ? err.message : String(err)}`,
+        detail: err instanceof Error ? err.message : String(err),
+        retryable: true,
+      }, { status: 503 })
     }
     // TODO: production billing required before public launch
     if (!currentUser) {
@@ -332,11 +339,17 @@ export async function POST(request: NextRequest) {
       })(),
     })
   } catch (err) {
-    console.error('[api/generate/character-reference]', err)
+    console.error('[api/generate/character-reference] unhandled', err)
+    const isDb = isAnyDbError(err)
+    // Always return JSON — never let a raw Vercel HTML 5xx reach the client
     return NextResponse.json({
       success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: err instanceof Error ? err.message : '生成请求失败',
-    }, { status: 500 })
+      errorCode: isDb ? 'DB_UNAVAILABLE' : 'UNKNOWN_CHARACTER_REFERENCE_ERROR',
+      message: isDb
+        ? '服务暂时不可用，请稍候几秒后重试。'
+        : (err instanceof Error ? err.message : '生成请求失败'),
+      detail: err instanceof Error ? err.message : String(err),
+      retryable: isDb,
+    }, { status: isDb ? 503 : 500 })
   }
 }

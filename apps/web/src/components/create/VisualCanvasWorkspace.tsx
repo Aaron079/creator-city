@@ -8296,8 +8296,10 @@ export function VisualCanvasWorkspace({
               const startY = sourceNode?.y ?? 100
 
               const newNodes: VisualCanvasNode[] = result.references.map((ref, i) => {
-                const col = i % cols
-                const row = Math.floor(i / cols)
+                // slotIndex/totalSlots let per-slot incremental calls position correctly
+                const gridIdx = ref.slotIndex ?? i
+                const col = gridIdx % cols
+                const row = Math.floor(gridIdx / cols)
                 const chineseLabel = ref.label.split(' / ')[0] ?? ref.label
                 return {
                   id: createNodeId('image'),
