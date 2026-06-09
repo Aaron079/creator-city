@@ -80,6 +80,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Color Grade 预览即时生效文案修正（Preview Monitor CSS filter 即时 · 不再写"需重新生成才生效"为主语义） | ✅ CLOSED / validated | `c5cefed` · `7a26d8d` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
 | Tool 13 — Character Reference Skill Agent / 人物参考板（四视图/九宫格） | ⏸ PAUSED / Seedream route suspended / Character Skill Worker required | `20279ad` |
+| Character Skill Worker — Face-ID POC route | 🔬 IMPLEMENTED (dev-only) / `POST /api/skills/character-reference/face-id-poc` / not connected to UI / requires `CHARACTER_FACE_ID_POC_ENABLED=true` + `FAL_KEY` or `REPLICATE_API_TOKEN` | uncommitted |
 
 ---
 
@@ -646,6 +647,103 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Video timeline editor | ❌ not implemented / not now |
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。Tool 11 Look Package Applier 已验收，Tool 12 Color Grade Palette 已浏览器验收通过并 CLOSED。下一步不继续打磨 Tool 12 UI。推荐二选一：**Tool 12.5 — WebGL / LUT Preview 研究或原型**（CSS filter 升级为真实 WebGL LUT 近似预览，需评估 glsl-lut / glfx.js 许可证 + OSS + 队列）；**Tool 13 — FFmpeg worker + LUT3D 媒体处理研究**（真实像素级调色输出，需单独评估部署/许可证/成本）。Tool 12.5 / Tool 13 必须单独评估，不应塞进当前 Tool 12。当前 Tool 12 已 CLOSED / validated。任何高级版若要新增 API/schema/provider capability，必须先单独评估并等待用户确认后再实施。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+
+---
+
+## Character Skill Worker — Phase 1 POC
+
+**Status:** Face-ID POC route IMPLEMENTED (dev-only) · not connected to Tool 13 UI · not committed
+
+### Architecture Decision: Where Does the Worker Live?
+
+| Option | Verdict |
+|---|---|
+| **A. apps/web dev-only route** | ✅ **POC Phase 1 — use this now.** Route exists, no new infra, env-gated, zero risk to main chain. |
+| **B. apps/server (NestJS)** | ✅ **Long-term target.** Has `ioredis`, Prisma, asset/canvas modules. Add BullMQ queue here for Phase 3 production worker. |
+| **C. apps/cn-executor extension** | ❌ Forbidden. China-region executor only. Do not extend. |
+| **D. Fully external worker** | ⬜ Only if self-hosted GPU needed (Phase 4+). |
+
+### Provider Comparison
+
+| Provider | Face Lock | Full Body | Pose Control | 4-View | Hosted API | Cost | Speed | China Risk | Commercial | POC? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **fal.ai InstantID** | ✅ | ✅ | partial | buildable | ✅ | ~$0.05/img | ~15s | ⚠️ blocked | check license | ✅ **RECOMMENDED** |
+| **Replicate InstantID** | ✅ | ✅ | partial | buildable | ✅ | ~$0.05/img | ~25s + polling | ⚠️ blocked | check license | ✅ fallback |
+| **Replicate PuLID** | ✅ better ID | ✅ | partial | buildable | ✅ | ~$0.05/img | ~30s | ⚠️ blocked | check license | ⬜ Phase 1.5 |
+| **PhotoMaker hosted** | ✅ | partial | ❌ | difficult | ✅ Replicate | ~$0.05/img | ~30s | ⚠️ blocked | check license | ⬜ |
+| **HuggingFace Endpoint** | varies | varies | varies | varies | ✅ | $0.06+/hr cold | slow cold | ⚠️ blocked | model-dependent | ❌ too slow |
+| **ComfyUI self-hosted** | ✅ full | ✅ full | ✅ full | ✅ best | requires GPU server | GPU cost | 30-60s | ✅ if self-hosted CN | full control | Phase 3+ |
+| **Flux + IP-Adapter + ControlNet self-hosted** | ✅ best | ✅ best | ✅ best | ✅ best | requires GPU server | GPU cost | 30-60s | ✅ if CN GPU | full control | Phase 4+ |
+
+**POC choice: fal.ai InstantID (primary) → Replicate InstantID (fallback)**
+
+### Phase 1 POC — Implemented
+
+**Route:** `POST /api/skills/character-reference/face-id-poc`
+**File:** `apps/web/src/app/api/skills/character-reference/face-id-poc/route.ts`
+
+**Required env to activate:**
+```
+CHARACTER_FACE_ID_POC_ENABLED=true
+FACE_ID_PROVIDER=fal           # or: replicate / auto
+FAL_KEY=your_fal_key           # primary
+REPLICATE_API_TOKEN=your_key   # fallback
+```
+
+**Without env keys → returns:**
+```json
+{ "success": false, "errorCode": "FACE_ID_PROVIDER_NOT_CONFIGURED",
+  "message": "No Face-ID provider API key is configured.",
+  "requiredEnv": ["CHARACTER_FACE_ID_POC_ENABLED", "FAL_KEY or REPLICATE_API_TOKEN"] }
+```
+
+**With env keys → calls fal.ai InstantID:**
+```
+POST https://fal.run/fal-ai/instantid
+{ face_image_url, prompt, guidance_scale: 5, ip_adapter_scale: 0.8 }
+→ { success: true, provider: "fal", imageUrl, prompt }
+```
+
+**POC constraints (all enforced in route):**
+- ❌ No OSS upload
+- ❌ No canvas node creation
+- ❌ No credits deducted
+- ❌ Not connected to Tool 13 UI
+- ❌ API key never logged
+- ✅ Auth required (getCurrentUser)
+- ✅ Env flag gate
+- ✅ URL validation (rejects blob/data/localhost/internal proxy)
+
+### Phase 2 → Phase 3 Roadmap
+
+| Phase | Goal | Blocking on |
+|---|---|---|
+| **Phase 1** | Single-image Face-ID POC | `FAL_KEY` — need key to test |
+| **Phase 2** | Four-view (front/3q/side/back) with ControlNet | fal.ai ControlNet endpoint or Replicate pose-control |
+| **Phase 3** | Full Character Skill Worker | BullMQ in apps/server + OSS + asset create + canvas node callback |
+| **Phase 4** | Production Tool 13 | Billing integration + self-hosted GPU if needed for CN access |
+
+### Why Vercel Serverless Can't Run 4-View Sync
+
+- 4 images × ~15s each = 60s minimum
+- Vercel Pro `maxDuration = 90` — cuts it close and any cold start or provider slowness causes timeout
+- No retry / resume possible in a single HTTP request
+- Solution: async job queue (BullMQ in apps/server) with polling endpoint
+
+### Long-Term Worker API (Design — not implemented)
+
+```
+POST /api/skills/character-reference/jobs
+{ sourceAssetId, sourceImageUrl, mode: "turnaround4"|"grid9",
+  identityLock: true, outfitLock: true }
+→ { jobId, status: "queued" }
+
+GET /api/skills/character-reference/jobs/:jobId
+→ { status, outputs: [{ slotKey, assetId, imageUrl, nodeId }] }
+```
+
+Worker flow:
+sourceAsset → matting/crop → face identity extraction → pose slot generation (parallel) → OSS upload × N → asset.create × N → canvas node done × N
 
 ---
 
