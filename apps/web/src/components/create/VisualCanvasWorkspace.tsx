@@ -8284,9 +8284,9 @@ export function VisualCanvasWorkspace({
               const imageSize = getNodeSize('image')
               const providerId = normalizeProviderId(imageMeta.model)
               const now = Date.now()
+              const groupId = `char-ref-${req.sourceNodeId}-${now}`
 
-              // Grid layout — pre-calculated positions bypass resolveNonOverlappingPosition stacking issue
-              // turnaround4: 2 cols; grid5: 3+2 layout
+              // Grid layout — pre-calculated positions; batch commitNodes bypasses resolveNonOverlappingPosition stacking
               const cols = req.mode === 'turnaround4' ? 2 : 3
               const colGap = imageSize.width + 40
               const rowGap = imageSize.height + 40
@@ -8298,9 +8298,8 @@ export function VisualCanvasWorkspace({
               const newNodes: VisualCanvasNode[] = req.slots.map((slot, i) => {
                 const col = i % cols
                 const row = Math.floor(i / cols)
-                const slotTitle = sourceTitle
-                  ? `${sourceTitle} · ${slot.label.split(' / ')[0]}`
-                  : (slot.label.split(' / ')[0] ?? slot.label)
+                const chineseLabel = slot.label.split(' / ')[0] ?? slot.label
+                const slotTitle = sourceTitle ? `人物参考 · ${chineseLabel}` : `人物参考 · ${chineseLabel}`
                 return {
                   id: createNodeId('image'),
                   type: 'image' as const,
@@ -8318,15 +8317,18 @@ export function VisualCanvasWorkspace({
                   resultVideoUrl: undefined,
                   metadataJson: {
                     characterReference: {
-                      source: 'CharacterReferenceSkill',
+                      source: 'AssetCharacterExtractionSkill',
                       boardType: req.mode,
+                      groupId,
                       slotKey: slot.key,
                       slotLabel: slot.label,
                       slotDescription: slot.slotDescription,
+                      internalPrompt: slot.prompt,
                       sourceNodeId: req.sourceNodeId,
                       sourceAssetId: req.sourceAssetId,
                       sourceImageUrl: req.sourceImageUrl,
                       sourceVideoUrl: req.sourceVideoUrl,
+                      cropBox: req.cropBox,
                       referenceMode: req.referenceMode,
                       consistencyOptions: req.consistencyOptions,
                       style: req.style,
@@ -8353,8 +8355,15 @@ export function VisualCanvasWorkspace({
               ])
               flushLocalSnapshot()
               scheduleCanvasSave(0)
+              const refModeLabel = req.referenceMode === 'asset-crop-reference'
+                ? '（框选人物已绑定）'
+                : req.referenceMode === 'asset-full-image'
+                  ? '（整图参考已绑定）'
+                  : req.referenceMode === 'video-reference'
+                    ? '（视频参考已绑定）'
+                    : '（文字描述模式）'
               showCanvasFeedback(
-                `已创建 ${newNodes.length} 个${modeLabel}槽位节点${req.referenceMode === 'asset-reference' ? '（来源资产已绑定）' : '（文字描述模式）'}，请在各节点中手动生成参考图。`
+                `已创建 ${newNodes.length} 个${modeLabel}槽位节点${refModeLabel}，请在各节点中手动生成参考图。`
               )
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}

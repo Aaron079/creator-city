@@ -34,10 +34,18 @@ export interface CharacterReferencePromptItem {
   mode: CharacterReferenceMode
 }
 
+export type CharacterReferenceCropBox = {
+  x: number      // 0-1 normalized (left edge of crop region)
+  y: number      // 0-1 normalized (top edge)
+  width: number  // 0-1 normalized
+  height: number // 0-1 normalized
+}
+
 export interface CharacterReferenceAssetInfo {
   assetId: string | null
   imageUrl: string | null
   videoUrl: string | null
+  cropBox: CharacterReferenceCropBox | null
 }
 
 export const STYLE_LABELS: Record<CharacterReferenceStyle, string> = {
@@ -239,9 +247,14 @@ export function buildAssetSlotPrompts(
   const style = buildStyleDescription(opts.style)
   const layout = buildLayoutDescription(opts.layout)
   const hasAsset = !!(assetInfo.imageUrl || assetInfo.videoUrl || assetInfo.assetId)
+  const hasCrop = !!assetInfo.cropBox &&
+    (assetInfo.cropBox.width < 0.99 || assetInfo.cropBox.height < 0.99 ||
+     assetInfo.cropBox.x > 0.01 || assetInfo.cropBox.y > 0.01)
 
   const assetSection = hasAsset
-    ? '[Source Asset Reference] Use the source character asset as the identity reference. Preserve the same face, hairstyle, outfit, body proportions, and color palette.'
+    ? hasCrop
+      ? '[Source Character Reference] Character has been extracted from source asset (user-defined crop region). Use this as the primary identity reference. Preserve the same face, hairstyle, outfit, body proportions, and color palette.'
+      : '[Source Character Reference] Use the full source character asset as the identity reference. Preserve the same face, hairstyle, outfit, body proportions, and color palette.'
     : ''
   const consistencySection = `[Consistency Constraints] same character identity, ${consistency}, ${style}, ${layout}`
   const negativeSection = `[Negative Constraints] ${NEGATIVE_CONSTRAINTS}`

@@ -1406,10 +1406,20 @@ export function CanvasNodeCard({
     const cr = rec.characterReference
     if (!cr || typeof cr !== 'object' || Array.isArray(cr)) return null
     const crRec = cr as Record<string, unknown>
-    // Asset-based skill format: slotLabel + slotKey
+    // Asset extraction skill format: slotLabel + cropBox + sourceImageUrl
     const slotLabel = typeof crRec.slotLabel === 'string' ? crRec.slotLabel : null
     const referenceMode = typeof crRec.referenceMode === 'string' ? crRec.referenceMode : null
     const slotDescription = typeof crRec.slotDescription === 'string' ? crRec.slotDescription : null
+    const sourceImageUrl = typeof crRec.sourceImageUrl === 'string' ? crRec.sourceImageUrl : null
+    // cropBox: read if present
+    const rawCrop = crRec.cropBox
+    let cropBox: { x: number; y: number; width: number; height: number } | null = null
+    if (rawCrop && typeof rawCrop === 'object' && !Array.isArray(rawCrop)) {
+      const cb = rawCrop as Record<string, unknown>
+      if (typeof cb.x === 'number' && typeof cb.y === 'number' && typeof cb.width === 'number' && typeof cb.height === 'number') {
+        cropBox = { x: cb.x, y: cb.y, width: cb.width, height: cb.height }
+      }
+    }
     // Legacy composite board format: boardType
     const boardType = typeof crRec.boardType === 'string' ? crRec.boardType : null
     // Legacy multi-node format: viewLabel
@@ -1418,7 +1428,7 @@ export function CanvasNodeCard({
       (boardType === 'turnaround4' ? '四视图参考板' :
        boardType === 'grid5' ? '九宫格参考板' : null)
     if (!displayLabel) return null
-    return { slotLabel: displayLabel, referenceMode, slotDescription }
+    return { slotLabel: displayLabel, referenceMode, slotDescription, sourceImageUrl, cropBox }
   })()
 
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -3452,39 +3462,73 @@ export function CanvasNodeCard({
               <div className="canvas-node-preview-copy">{node.errorMessage || '生成失败，点击重试。'}</div>
             </div>
           ) : charRefMeta ? (
-            <div className={`canvas-node-empty empty-${node.kind}`} style={{ flexDirection: 'column', gap: 5, alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{
-                display: 'inline-block',
-                borderRadius: 999,
-                background: 'rgba(99,102,241,0.15)',
-                border: '1px solid rgba(99,102,241,0.25)',
-                color: 'rgba(165,163,255,0.85)',
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.07em',
-                padding: '2px 8px',
-                textTransform: 'uppercase',
-              }}>
-                人物参考
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.60)', textAlign: 'center', maxWidth: '80%' }}>
-                {charRefMeta.slotLabel.split(' / ')[0]}
-              </span>
-              {charRefMeta.slotDescription && (
-                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>
-                  {charRefMeta.slotDescription}
-                </span>
+            <div
+              className={`canvas-node-empty empty-${node.kind}`}
+              style={{ flexDirection: 'column', gap: 0, padding: 0, position: 'relative', overflow: 'hidden' }}
+            >
+              {/* Crop region preview as background */}
+              {charRefMeta.sourceImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={getProxiedMediaUrl(charRefMeta.sourceImageUrl)}
+                  alt=""
+                  style={{
+                    position: 'absolute',
+                    objectFit: 'cover',
+                    opacity: 0.30,
+                    width: charRefMeta.cropBox ? `${100 / charRefMeta.cropBox.width}%` : '100%',
+                    height: charRefMeta.cropBox ? `${100 / charRefMeta.cropBox.height}%` : '100%',
+                    left: charRefMeta.cropBox ? `-${(charRefMeta.cropBox.x / charRefMeta.cropBox.width) * 100}%` : '0',
+                    top: charRefMeta.cropBox ? `-${(charRefMeta.cropBox.y / charRefMeta.cropBox.height) * 100}%` : '0',
+                  }}
+                />
               )}
-              <span style={{
-                fontSize: 9,
-                fontWeight: 600,
-                color: charRefMeta.referenceMode === 'asset-reference'
-                  ? 'rgba(110,231,183,0.75)'
-                  : 'rgba(251,191,36,0.55)',
+              {/* Labels overlay */}
+              <div style={{
+                position: 'relative',
+                zIndex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+                width: '100%',
+                height: '100%',
+                padding: '10px 8px',
               }}>
-                {charRefMeta.referenceMode === 'asset-reference' ? '来源资产：已绑定' : '来源资产：仅文字'}
-              </span>
-              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)' }}>待生成参考图</span>
+                <span style={{
+                  display: 'inline-block',
+                  borderRadius: 999,
+                  background: 'rgba(99,102,241,0.18)',
+                  border: '1px solid rgba(99,102,241,0.30)',
+                  color: 'rgba(165,163,255,0.90)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.07em',
+                  padding: '2px 8px',
+                  textTransform: 'uppercase',
+                }}>
+                  人物参考
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.75)', textAlign: 'center', maxWidth: '90%' }}>
+                  {charRefMeta.slotLabel.split(' / ')[0]}
+                </span>
+                {charRefMeta.slotDescription && (
+                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', textAlign: 'center' }}>
+                    {charRefMeta.slotDescription}
+                  </span>
+                )}
+                <span style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: charRefMeta.referenceMode === 'text-only'
+                    ? 'rgba(251,191,36,0.60)'
+                    : 'rgba(110,231,183,0.80)',
+                }}>
+                  {charRefMeta.referenceMode === 'text-only' ? '仅文字参考' : '人物参考已绑定'}
+                </span>
+                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)' }}>待生成参考图</span>
+              </div>
             </div>
           ) : (
             <div className={`canvas-node-empty empty-${node.kind}`}>
