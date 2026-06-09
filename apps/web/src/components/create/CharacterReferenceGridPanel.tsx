@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import {
-  buildBoardPrompt,
+  buildAssetSlotPrompts,
   STYLE_LABELS,
   LAYOUT_LABELS,
   type CharacterReferenceMode,
@@ -21,14 +21,34 @@ interface CharacterSourceNode {
   resultText?: string | null
   resultImageUrl?: string | null
   resultVideoUrl?: string | null
+  assetId?: string | null
   status?: string | null
+}
+
+export interface CharacterReferenceSlotRequest {
+  key: string
+  label: string
+  slotDescription: string
+  prompt: string
 }
 
 export interface CreateCharacterReferenceRequest {
   sourceNodeId: string
   mode: CharacterReferenceMode
-  prompt: string
-  metadataJson: Record<string, unknown>
+  referenceMode: 'asset-reference' | 'text-only'
+  sourceAssetId: string | null
+  sourceImageUrl: string | null
+  sourceVideoUrl: string | null
+  slots: CharacterReferenceSlotRequest[]
+  consistencyOptions: {
+    keepFace: boolean
+    keepHair: boolean
+    keepOutfit: boolean
+    keepBody: boolean
+    keepColorScheme: boolean
+  }
+  style: CharacterReferenceStyle
+  layout: CharacterReferenceLayout
 }
 
 interface CharacterReferenceGridPanelProps {
@@ -38,7 +58,7 @@ interface CharacterReferenceGridPanelProps {
   defaultSelectedNodeId?: string
 }
 
-// ─── Slot definitions (used as expected-output wireframe preview) ─────────────
+// ─── Slot wireframe definitions ──────────────────────────────────────────────
 
 const TURNAROUND_SLOTS = [
   { key: 'front',    label: '正面',      sub: 'Front',     icon: '◈' },
@@ -48,35 +68,35 @@ const TURNAROUND_SLOTS = [
 ]
 
 const GRID5_SLOTS = [
-  { key: 'full-front', label: '全身正面',   sub: 'Full Front',    icon: '⊞' },
+  { key: 'full-front', label: '全身正面',    sub: 'Full Front',    icon: '⊞' },
   { key: 'full-3q',    label: '全身四分之三', sub: 'Full 3/4',      icon: '⊟' },
-  { key: 'expression', label: '表情组',     sub: 'Expressions',   icon: '◎' },
-  { key: 'outfit',     label: '服装细节',   sub: 'Outfit Detail', icon: '◉' },
-  { key: 'action',     label: '动作姿态',   sub: 'Action Pose',   icon: '◐' },
+  { key: 'expression', label: '表情组',      sub: 'Expressions',   icon: '◎' },
+  { key: 'outfit',     label: '服装细节',    sub: 'Outfit Detail', icon: '◉' },
+  { key: 'action',     label: '动作姿态',    sub: 'Action Pose',   icon: '◐' },
 ]
 
 const MODES: Array<{
   id: CharacterReferenceMode
   label: string
   sub: string
-  description: string
+  nodeCount: number
   gridLabel: string
   slots: typeof TURNAROUND_SLOTS
 }> = [
   {
     id: 'turnaround4',
-    label: '四视图参考板',
+    label: '四视图参考',
     sub: '正面 / 四分之三 / 侧面 / 背面',
-    description: '生成一张包含四个角度的角色转面参考图。适合角色建模、视频一致性参考。',
-    gridLabel: '2×2 视图布局（单张合成图）',
+    nodeCount: 4,
+    gridLabel: '4 个独立参考节点（2×2 布局）',
     slots: TURNAROUND_SLOTS,
   },
   {
     id: 'grid5',
-    label: '九宫格参考板',
+    label: '九宫格参考',
     sub: '全身 / 表情 / 服装 / 动作',
-    description: '生成一张包含五个参考面板的角色资产图。适合表情包、服装与分镜参考。',
-    gridLabel: '5 格参考布局（单张合成图）',
+    nodeCount: 5,
+    gridLabel: '5 个独立参考节点（3+2 布局）',
     slots: GRID5_SLOTS,
   },
 ]
@@ -84,7 +104,6 @@ const MODES: Array<{
 const STYLES: Array<{ id: CharacterReferenceStyle; label: string }> = Object.entries(STYLE_LABELS).map(
   ([id, label]) => ({ id: id as CharacterReferenceStyle, label }),
 )
-
 const LAYOUTS: Array<{ id: CharacterReferenceLayout; label: string }> = Object.entries(LAYOUT_LABELS).map(
   ([id, label]) => ({ id: id as CharacterReferenceLayout, label }),
 )
@@ -117,6 +136,16 @@ export function CharacterReferenceGridPanel({
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
 
+  // ─── Asset detection ────────────────────────────────────────────────────────
+  const sourceImageUrl = primaryNode?.resultImageUrl ?? null
+  const sourceVideoUrl = primaryNode?.resultVideoUrl ?? null
+  const sourceAssetId = primaryNode?.assetId ?? null
+  const hasAsset = !!(sourceImageUrl || sourceVideoUrl || sourceAssetId)
+  const referenceMode: 'asset-reference' | 'text-only' = hasAsset ? 'asset-reference' : 'text-only'
+
+  const proxiedImage = sourceImageUrl ? getProxiedMediaUrl(sourceImageUrl) : null
+  const proxiedVideo = sourceVideoUrl ? getProxiedMediaUrl(sourceVideoUrl) : null
+
   const opts: CharacterReferenceOptions = {
     mode,
     sourcePrompt: characterBrief,
@@ -129,32 +158,33 @@ export function CharacterReferenceGridPanel({
     keepColorScheme,
   }
 
-  const boardPrompt = buildBoardPrompt(opts)
   const canCreate = !!primaryNode && characterBrief.trim().length > 0
-
-  const proxiedImage = primaryNode?.resultImageUrl
-    ? getProxiedMediaUrl(primaryNode.resultImageUrl)
-    : null
-  const proxiedVideo = primaryNode?.resultVideoUrl
-    ? getProxiedMediaUrl(primaryNode.resultVideoUrl)
-    : null
 
   function handleCreate() {
     if (!primaryNode || !canCreate) return
+
+    const slotPrompts = buildAssetSlotPrompts(opts, {
+      assetId: sourceAssetId,
+      imageUrl: sourceImageUrl,
+      videoUrl: sourceVideoUrl,
+    })
+
     onCreateReferenceNode({
       sourceNodeId: primaryNode.id,
       mode,
-      prompt: boardPrompt,
-      metadataJson: {
-        sourceNodeId: primaryNode.id,
-        characterReference: {
-          boardType: mode,
-          source: 'CharacterReferenceBoard',
-          consistencyOptions: { keepFace, keepHair, keepOutfit, keepBody, keepColorScheme },
-          style,
-          layout,
-        },
-      },
+      referenceMode,
+      sourceAssetId,
+      sourceImageUrl,
+      sourceVideoUrl,
+      slots: slotPrompts.map((item) => ({
+        key: item.key,
+        label: item.label,
+        slotDescription: item.slotDescription ?? item.titleSuffix,
+        prompt: item.prompt,
+      })),
+      consistencyOptions: { keepFace, keepHair, keepOutfit, keepBody, keepColorScheme },
+      style,
+      layout,
     })
     setCreated(true)
   }
@@ -177,8 +207,8 @@ export function CharacterReferenceGridPanel({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
-            <p className="text-[13px] font-semibold text-white/90">人物参考板 / Character Reference Board</p>
-            <p className="text-[10px] text-white/35">创建合成参考板节点，生成一张包含多角度的角色参考图</p>
+            <p className="text-[13px] font-semibold text-white/90">人物参考 Skill / Character Reference</p>
+            <p className="text-[10px] text-white/35">基于已有资产创建角色参考槽位节点</p>
           </div>
           <button
             type="button"
@@ -193,54 +223,87 @@ export function CharacterReferenceGridPanel({
         {/* Body — scrollable */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
-          {/* Source node */}
+          {/* Source asset display */}
           {primaryNode ? (
-            <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
-              <div className="flex items-start gap-3">
-                {proxiedImage && (
+            <div className="shrink-0 border-b border-white/6 px-4 py-3">
+              {/* Asset available: image */}
+              {proxiedImage && (
+                <div className="mb-2">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold text-emerald-400 ring-1 ring-emerald-500/25">
+                      来源资产参考
+                    </span>
+                    <span className="text-[9px] text-white/30">{primaryNode.title ?? '未命名节点'}</span>
+                  </div>
                   <img
                     src={proxiedImage}
-                    alt="角色来源"
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover border border-white/10"
+                    alt="来源人物资产"
+                    className="w-full max-h-[120px] rounded-xl object-contain border border-white/10 bg-white/3"
                   />
-                )}
-                {!proxiedImage && proxiedVideo && (
-                  <video
-                    src={proxiedVideo}
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover border border-white/10"
-                    muted playsInline preload="metadata"
-                  />
-                )}
-                {!proxiedImage && !proxiedVideo && (
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/4 text-xl">
-                    👤
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="truncate text-[11px] font-medium text-white/80">
-                      {primaryNode.title ?? '未命名节点'}
-                    </p>
-                    <span className="rounded px-1 py-0.5 text-[9px] bg-white/8 text-white/40">
-                      {primaryNode.kind.toUpperCase()}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-[9px] text-white/25">
-                    创建 1 个合成参考板节点 · 手动生成后得到完整参考图
+                  <p className="mt-1 text-[9px] text-emerald-400/60">
+                    已检测到角色图片资产，将作为各槽位的来源参考保存。
                   </p>
                 </div>
+              )}
+              {/* Asset available: video */}
+              {!proxiedImage && proxiedVideo && (
+                <div className="mb-2">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold text-sky-400 ring-1 ring-sky-500/25">
+                      来源视频参考
+                    </span>
+                    <span className="text-[9px] text-white/30">{primaryNode.title ?? '未命名节点'}</span>
+                  </div>
+                  <video
+                    src={proxiedVideo}
+                    controls
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="w-full max-h-[100px] rounded-xl border border-white/10 bg-black"
+                  />
+                  <p className="mt-1 text-[9px] text-sky-400/60">
+                    视频参考已保存为来源资产引用。当前版本按角色描述与资产链接创建槽位，后续可扩展关键帧参考。
+                  </p>
+                </div>
+              )}
+              {/* No asset */}
+              {!proxiedImage && !proxiedVideo && (
+                <div className="flex items-start gap-2.5 mb-1 rounded-xl border border-amber-500/20 bg-amber-500/6 px-3 py-2">
+                  <span className="mt-0.5 text-[14px]">⚠</span>
+                  <div>
+                    <p className="text-[10px] font-semibold text-amber-400/80">当前节点暂无可用资产</p>
+                    <p className="text-[9px] text-white/35 mt-0.5 leading-relaxed">
+                      将只使用角色描述创建参考槽位（文字一致性模式）。若需要资产参考，请先在源节点生成图片。
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Node info row */}
+              <div className="flex items-center gap-2 mt-1">
+                <span className="rounded px-1.5 py-0.5 text-[9px] bg-white/8 text-white/40">
+                  {primaryNode.kind.toUpperCase()}
+                </span>
+                <span className="text-[10px] text-white/55 truncate">{primaryNode.title ?? '未命名节点'}</span>
+                <span className={`ml-auto rounded-full px-2 py-0.5 text-[8px] font-semibold ${
+                  referenceMode === 'asset-reference'
+                    ? 'bg-emerald-500/12 text-emerald-400'
+                    : 'bg-amber-500/12 text-amber-400/70'
+                }`}>
+                  {referenceMode === 'asset-reference' ? '资产参考模式' : '仅文字模式'}
+                </span>
               </div>
             </div>
           ) : (
             <div className="shrink-0 border-b border-white/6 px-4 py-3">
-              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考板</p>
+              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考 Skill</p>
             </div>
           )}
 
           {/* Board type selector */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-2 text-[10px] font-semibold text-white/40">参考板类型</p>
-            <div className="flex gap-2 mb-2">
+            <p className="mb-2 text-[10px] font-semibold text-white/40">参考类型</p>
+            <div className="flex gap-2">
               {MODES.map((m) => (
                 <button
                   key={m.id}
@@ -254,58 +317,49 @@ export function CharacterReferenceGridPanel({
                 >
                   <p className="text-[11px] font-semibold text-white/85">{m.label}</p>
                   <p className="mt-0.5 text-[9px] text-white/35">{m.sub}</p>
+                  <p className="mt-1 text-[8px] text-white/20">{m.gridLabel}</p>
                 </button>
               ))}
             </div>
-            <p className="text-[9px] text-white/35 leading-relaxed">{activeMode.description}</p>
           </div>
 
-          {/* Slot preview — wireframe of expected output layout */}
+          {/* Slot preview — expected layout */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-semibold text-white/40">期望输出布局</p>
+              <p className="text-[10px] font-semibold text-white/40">槽位预览</p>
               <span className="rounded-full border border-white/8 px-2 py-0.5 text-[9px] text-white/25">
-                {activeMode.gridLabel}
+                创建 {activeMode.nodeCount} 个独立参考节点
               </span>
             </div>
-            {/* Source image composite mockup (if available) */}
-            {proxiedImage ? (
-              <div className={`grid gap-1 mb-2 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                {activeMode.slots.map((slot) => (
-                  <div
-                    key={slot.key}
-                    className="relative overflow-hidden rounded-lg border border-white/10"
-                    style={{ aspectRatio: '1/1' }}
-                  >
+            <div className={`grid gap-1.5 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {activeMode.slots.map((slot) => (
+                <div
+                  key={slot.key}
+                  className="relative overflow-hidden rounded-lg border border-white/8"
+                  style={{ aspectRatio: '1/1' }}
+                >
+                  {proxiedImage && (
                     <img
                       src={proxiedImage}
                       alt={slot.label}
-                      className="absolute inset-0 h-full w-full object-cover opacity-35"
+                      className="absolute inset-0 h-full w-full object-cover opacity-25"
                     />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-[10px] font-semibold text-white/80">{slot.label}</span>
-                      <span className="text-[8px] text-white/40">{slot.sub}</span>
-                    </div>
+                  )}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/[0.02]">
+                    {!proxiedImage && (
+                      <span className="text-[16px] text-white/15">{slot.icon}</span>
+                    )}
+                    <span className="text-[10px] font-semibold text-white/70 mt-1">{slot.label}</span>
+                    <span className="text-[8px] text-white/30">{slot.sub}</span>
+                    {referenceMode === 'asset-reference' && (
+                      <span className="mt-1 text-[7px] text-emerald-400/50">资产已绑定</span>
+                    )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className={`grid gap-1 mb-2 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                {activeMode.slots.map((slot) => (
-                  <div
-                    key={slot.key}
-                    className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 bg-white/2 py-3"
-                    style={{ aspectRatio: '1/1' }}
-                  >
-                    <span className="text-[16px] text-white/20">{slot.icon}</span>
-                    <span className="mt-1 text-[10px] font-medium text-white/45">{slot.label}</span>
-                    <span className="text-[8px] text-white/20">{slot.sub}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="text-[9px] text-white/25 leading-relaxed">
-              以上为生成后的期望布局。生成完成后，一张图中将包含上述所有角度。
+                </div>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[9px] text-white/20 leading-relaxed">
+              每个槽位将创建独立的 image 节点，状态为 idle。请在各节点中手动选择 Provider 并生成参考图。
             </p>
           </div>
 
@@ -313,7 +367,9 @@ export function CharacterReferenceGridPanel({
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
             <p className="mb-1 text-[10px] font-semibold text-white/40">角色描述 / Character Brief</p>
             <p className="mb-2 text-[9px] text-white/25">
-              填写年龄、性别、发型、脸型、服装、身材等细节，描述越精确参考图越准确。
+              {referenceMode === 'asset-reference'
+                ? '角色描述将与来源资产引用共同嵌入各槽位生成指令中，确保角色一致性。'
+                : '仅文字模式：角色描述是唯一的一致性约束，建议详细描述外貌、服装、发型等。'}
             </p>
             <textarea
               value={characterBrief}
@@ -324,7 +380,7 @@ export function CharacterReferenceGridPanel({
               style={{ fontFamily: 'inherit' }}
             />
             {characterBrief.trim().length === 0 && (
-              <p className="mt-1 text-[9px] text-amber-400/60">请填写角色描述，风格词单独无法确保各视图一致</p>
+              <p className="mt-1 text-[9px] text-amber-400/60">请填写角色描述</p>
             )}
           </div>
 
@@ -362,10 +418,10 @@ export function CharacterReferenceGridPanel({
               onClick={() => setShowAdvanced((v) => !v)}
               className="flex w-full items-center justify-between py-1 text-[10px] text-white/30 hover:text-white/50 transition"
             >
-              <span>高级选项（风格 / 构图 / 内部描述）</span>
+              <span>高级选项（风格 / 构图）</span>
               <span>{showAdvanced ? '▲' : '▼'}</span>
             </button>
-            {showAdvanced ? (
+            {showAdvanced && (
               <div className="mt-2 space-y-2.5 pb-2">
                 <div>
                   <label className="mb-1 block text-[9px] font-semibold text-white/30">参考稿风格</label>
@@ -391,14 +447,15 @@ export function CharacterReferenceGridPanel({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <p className="mb-1 text-[9px] font-semibold text-white/30">内部合成描述（只读）</p>
-                  <div className="rounded-xl border border-white/6 bg-white/2 px-3 py-2 max-h-[80px] overflow-y-auto">
-                    <p className="text-[8px] leading-relaxed text-white/25 break-words">{boardPrompt}</p>
-                  </div>
+                <div className="rounded-xl border border-white/6 bg-white/2 px-3 py-2">
+                  <p className="text-[8px] font-semibold text-white/25 mb-1">槽位生成说明</p>
+                  <p className="text-[8px] leading-relaxed text-white/20">
+                    该槽位已绑定来源资产。当前版本会保存来源资产引用与角色一致性指令；正式参考图仍需用户在槽位节点中手动生成。
+                    若当前模型暂不支持参考图，则会使用文字一致性约束。
+                  </p>
                 </div>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 
@@ -407,9 +464,13 @@ export function CharacterReferenceGridPanel({
           {created ? (
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-emerald-400 mb-1">人物参考板节点已创建 ✓</p>
+                <p className="text-[11px] font-semibold text-emerald-400 mb-1">
+                  {activeMode.nodeCount} 个参考槽位节点已创建 ✓
+                </p>
                 <p className="text-[10px] leading-relaxed text-white/50">
-                  参考板节点已出现在画布中，状态为 idle。在节点中选择 Provider 后点击生成，即可得到包含{activeMode.slots.length}个视角的合成参考图。
+                  节点已出现在画布中，状态为 idle。
+                  {referenceMode === 'asset-reference' ? '来源资产已绑定到各槽位 metadata。' : '已使用文字描述模式。'}
+                  请在各节点中选择 Provider 并手动生成参考图。
                 </p>
               </div>
               <button
@@ -417,7 +478,7 @@ export function CharacterReferenceGridPanel({
                 onClick={handleReset}
                 className="w-full rounded-xl py-2 text-[11px] text-white/40 hover:text-white/60 transition"
               >
-                创建另一个参考板
+                创建另一组参考节点
               </button>
             </div>
           ) : (
@@ -435,7 +496,7 @@ export function CharacterReferenceGridPanel({
                 ? '请从节点顶部资产菜单打开'
                 : characterBrief.trim().length === 0
                   ? '请先填写角色描述'
-                  : `创建${activeMode.label}节点`}
+                  : `创建 ${activeMode.nodeCount} 个${activeMode.label}槽位节点`}
             </button>
           )}
         </div>

@@ -1406,15 +1406,19 @@ export function CanvasNodeCard({
     const cr = rec.characterReference
     if (!cr || typeof cr !== 'object' || Array.isArray(cr)) return null
     const crRec = cr as Record<string, unknown>
-    // 1-node composite board format: boardType field
+    // Asset-based skill format: slotLabel + slotKey
+    const slotLabel = typeof crRec.slotLabel === 'string' ? crRec.slotLabel : null
+    const referenceMode = typeof crRec.referenceMode === 'string' ? crRec.referenceMode : null
+    const slotDescription = typeof crRec.slotDescription === 'string' ? crRec.slotDescription : null
+    // Legacy composite board format: boardType
     const boardType = typeof crRec.boardType === 'string' ? crRec.boardType : null
-    // Legacy multi-node format: viewLabel + viewKey fields
+    // Legacy multi-node format: viewLabel
     const viewLabel = typeof crRec.viewLabel === 'string' ? crRec.viewLabel : null
-    const displayLabel = viewLabel ??
+    const displayLabel = slotLabel ?? viewLabel ??
       (boardType === 'turnaround4' ? '四视图参考板' :
        boardType === 'grid5' ? '九宫格参考板' : null)
     if (!displayLabel) return null
-    return { slotLabel: displayLabel }
+    return { slotLabel: displayLabel, referenceMode, slotDescription }
   })()
 
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
@@ -3448,7 +3452,7 @@ export function CanvasNodeCard({
               <div className="canvas-node-preview-copy">{node.errorMessage || '生成失败，点击重试。'}</div>
             </div>
           ) : charRefMeta ? (
-            <div className={`canvas-node-empty empty-${node.kind}`} style={{ flexDirection: 'column', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+            <div className={`canvas-node-empty empty-${node.kind}`} style={{ flexDirection: 'column', gap: 5, alignItems: 'center', justifyContent: 'center' }}>
               <span style={{
                 display: 'inline-block',
                 borderRadius: 999,
@@ -3463,12 +3467,24 @@ export function CanvasNodeCard({
               }}>
                 人物参考
               </span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.55)', textAlign: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.60)', textAlign: 'center', maxWidth: '80%' }}>
                 {charRefMeta.slotLabel.split(' / ')[0]}
               </span>
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.22)', textAlign: 'center' }}>
-                待生成参考图
+              {charRefMeta.slotDescription && (
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>
+                  {charRefMeta.slotDescription}
+                </span>
+              )}
+              <span style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: charRefMeta.referenceMode === 'asset-reference'
+                  ? 'rgba(110,231,183,0.75)'
+                  : 'rgba(251,191,36,0.55)',
+              }}>
+                {charRefMeta.referenceMode === 'asset-reference' ? '来源资产：已绑定' : '来源资产：仅文字'}
               </span>
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)' }}>待生成参考图</span>
             </div>
           ) : (
             <div className={`canvas-node-empty empty-${node.kind}`}>

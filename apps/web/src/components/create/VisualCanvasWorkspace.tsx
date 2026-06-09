@@ -8278,23 +8278,84 @@ export function VisualCanvasWorkspace({
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
             onCreateReferenceNode={(req: CreateCharacterReferenceRequest) => {
               const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
-              const modeLabel = req.mode === 'turnaround4' ? '角色四视图参考板' : '角色九宫格参考板'
+              const modeLabel = req.mode === 'turnaround4' ? '角色四视图参考' : '角色九宫格参考'
               const sourceTitle = sourceNode?.title?.trim()
-              const title = sourceTitle ? `${modeLabel} · ${sourceTitle}` : modeLabel
-              const position = sourceNode
-                ? { x: sourceNode.x + (sourceNode.width ?? 360) + 240, y: sourceNode.y }
-                : undefined
-              createNode('image', {
-                title,
-                prompt: req.prompt,
-                parentNodeId: req.sourceNodeId,
-                status: 'idle',
-                metadataJson: req.metadataJson,
-                position,
+              const imageMeta = NODE_META['image']
+              const imageSize = getNodeSize('image')
+              const providerId = normalizeProviderId(imageMeta.model)
+              const now = Date.now()
+
+              // Grid layout — pre-calculated positions bypass resolveNonOverlappingPosition stacking issue
+              // turnaround4: 2 cols; grid5: 3+2 layout
+              const cols = req.mode === 'turnaround4' ? 2 : 3
+              const colGap = imageSize.width + 40
+              const rowGap = imageSize.height + 40
+              const startX = sourceNode
+                ? sourceNode.x + (sourceNode.width ?? 380) + 80
+                : 500
+              const startY = sourceNode?.y ?? 100
+
+              const newNodes: VisualCanvasNode[] = req.slots.map((slot, i) => {
+                const col = i % cols
+                const row = Math.floor(i / cols)
+                const slotTitle = sourceTitle
+                  ? `${sourceTitle} · ${slot.label.split(' / ')[0]}`
+                  : (slot.label.split(' / ')[0] ?? slot.label)
+                return {
+                  id: createNodeId('image'),
+                  type: 'image' as const,
+                  kind: 'image' as const,
+                  title: slotTitle,
+                  subtitle: imageMeta.subtitle,
+                  prompt: slot.prompt,
+                  model: providerId,
+                  providerId,
+                  stage: promptStage,
+                  ratio: imageMeta.ratio,
+                  status: 'idle' as const,
+                  resultPreview: undefined,
+                  resultImageUrl: undefined,
+                  resultVideoUrl: undefined,
+                  metadataJson: {
+                    characterReference: {
+                      source: 'CharacterReferenceSkill',
+                      boardType: req.mode,
+                      slotKey: slot.key,
+                      slotLabel: slot.label,
+                      slotDescription: slot.slotDescription,
+                      sourceNodeId: req.sourceNodeId,
+                      sourceAssetId: req.sourceAssetId,
+                      sourceImageUrl: req.sourceImageUrl,
+                      sourceVideoUrl: req.sourceVideoUrl,
+                      referenceMode: req.referenceMode,
+                      consistencyOptions: req.consistencyOptions,
+                      style: req.style,
+                      layout: req.layout,
+                    },
+                  },
+                  x: startX + col * colGap,
+                  y: startY + row * rowGap,
+                  width: imageSize.width,
+                  height: imageSize.height,
+                  createdAt: now + i,
+                }
               })
+
+              commitNodes((current) => [...current, ...newNodes])
+              commitEdges((current) => [
+                ...current,
+                ...newNodes.map((n) => ({
+                  id: `edge-char-ref-${req.sourceNodeId}-${n.id}`,
+                  fromNodeId: req.sourceNodeId,
+                  toNodeId: n.id,
+                  status: 'idle' as const,
+                })),
+              ])
               flushLocalSnapshot()
               scheduleCanvasSave(0)
-              showCanvasFeedback(`已创建${modeLabel}，请在节点中手动生成参考图。`)
+              showCanvasFeedback(
+                `已创建 ${newNodes.length} 个${modeLabel}槽位节点${req.referenceMode === 'asset-reference' ? '（来源资产已绑定）' : '（文字描述模式）'}，请在各节点中手动生成参考图。`
+              )
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}
           />

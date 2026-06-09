@@ -29,8 +29,15 @@ export interface CharacterReferencePromptItem {
   key: string
   label: string
   titleSuffix: string
+  slotDescription?: string
   prompt: string
   mode: CharacterReferenceMode
+}
+
+export interface CharacterReferenceAssetInfo {
+  assetId: string | null
+  imageUrl: string | null
+  videoUrl: string | null
 }
 
 export const STYLE_LABELS: Record<CharacterReferenceStyle, string> = {
@@ -219,6 +226,112 @@ export function buildBoardPrompt(opts: CharacterReferenceOptions): string {
 // Compat wrapper — returns first item prompt only; prefer buildBoardPrompt for the panel
 export function buildCharacterReferencePrompt(opts: CharacterReferenceOptions): string {
   return buildCharacterReferencePrompts(opts)[0]?.prompt ?? ''
+}
+
+// Asset-based per-slot prompt builder.
+// Generates one structured prompt per slot, embedding [Source Asset Reference] when an asset is available.
+export function buildAssetSlotPrompts(
+  opts: CharacterReferenceOptions,
+  assetInfo: CharacterReferenceAssetInfo,
+): CharacterReferencePromptItem[] {
+  const subject = opts.sourcePrompt.trim() || 'a character'
+  const consistency = buildConsistencyConstraints(opts)
+  const style = buildStyleDescription(opts.style)
+  const layout = buildLayoutDescription(opts.layout)
+  const hasAsset = !!(assetInfo.imageUrl || assetInfo.videoUrl || assetInfo.assetId)
+
+  const assetSection = hasAsset
+    ? '[Source Asset Reference] Use the source character asset as the identity reference. Preserve the same face, hairstyle, outfit, body proportions, and color palette.'
+    : ''
+  const consistencySection = `[Consistency Constraints] same character identity, ${consistency}, ${style}, ${layout}`
+  const negativeSection = `[Negative Constraints] ${NEGATIVE_CONSTRAINTS}`
+
+  type SlotDef = { key: string; label: string; titleSuffix: string; slotDescription: string; viewDesc: string }
+
+  const turnaroundSlots: SlotDef[] = [
+    {
+      key: 'front',
+      label: '正面 / Front View',
+      titleSuffix: '正面',
+      slotDescription: '正面全身视图',
+      viewDesc: 'full body, front view, facing camera directly, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: '3quarter',
+      label: '四分之三 / Three-quarter',
+      titleSuffix: '四分之三',
+      slotDescription: '四分之三视图',
+      viewDesc: 'full body, three-quarter front view, turned slightly to the right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: 'side',
+      label: '侧面 / Side Profile',
+      titleSuffix: '侧面',
+      slotDescription: '侧面视图',
+      viewDesc: 'full body, side profile view, facing right, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+    {
+      key: 'back',
+      label: '背面 / Back View',
+      titleSuffix: '背面',
+      slotDescription: '背面视图',
+      viewDesc: 'full body, back view, facing away from camera, neutral standing pose, arms relaxed at sides, head-to-toe complete figure',
+    },
+  ]
+
+  const grid5Slots: SlotDef[] = [
+    {
+      key: 'full-front',
+      label: '全身正面 / Full Body Front',
+      titleSuffix: '全身正面',
+      slotDescription: '全身正面参考',
+      viewDesc: 'full body front view, complete character from head to toe, neutral standing pose, character design reference',
+    },
+    {
+      key: 'full-3q',
+      label: '全身四分之三 / Full Body 3/4',
+      titleSuffix: '全身四分之三',
+      slotDescription: '全身四分之三参考',
+      viewDesc: 'full body three-quarter view, turned slightly, complete character from head to toe, character design reference',
+    },
+    {
+      key: 'expression',
+      label: '面部表情 / Expression Sheet',
+      titleSuffix: '表情',
+      slotDescription: '表情组合参考',
+      viewDesc: 'expression sheet, same character face, neutral expression, happy expression, angry expression, surprised expression, consistent facial structure',
+    },
+    {
+      key: 'outfit',
+      label: '服装细节 / Outfit Detail',
+      titleSuffix: '服装细节',
+      slotDescription: '服装细节参考',
+      viewDesc: 'costume detail reference, close-up details of clothing, accessories, fabric texture, same outfit design, clean reference layout',
+    },
+    {
+      key: 'action',
+      label: '动作姿态 / Action Pose',
+      titleSuffix: '动作姿态',
+      slotDescription: '动态姿态参考',
+      viewDesc: 'action pose reference, same character identity, dynamic but readable pose, clear body silhouette, consistent costume and body proportions',
+    },
+  ]
+
+  const slots = opts.mode === 'turnaround4' ? turnaroundSlots : grid5Slots
+
+  return slots.map(({ key, label, titleSuffix, slotDescription, viewDesc }) => {
+    const slotSection = `[Character Reference Slot] ${label}`
+    const directionSection = `[Slot Direction] ${subject}, ${viewDesc}`
+    const parts = [slotSection, assetSection, directionSection, consistencySection, negativeSection].filter(Boolean)
+    return {
+      key,
+      label,
+      titleSuffix,
+      slotDescription,
+      mode: opts.mode,
+      prompt: parts.join('. '),
+    }
+  })
 }
 
 export function summarizeCharacterReference(opts: CharacterReferenceOptions): string {
