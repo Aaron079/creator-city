@@ -28,36 +28,29 @@ interface CharacterSourceNode {
   status?: string | null
 }
 
-export interface CharacterReferenceSlotRequest {
+export interface GeneratedReferenceItem {
   key: string
   label: string
   slotDescription: string
   prompt: string
+  assetId: string | undefined
+  imageUrl: string
 }
 
-export interface CreateCharacterReferenceRequest {
+export interface GenerateCharacterReferenceResult {
   sourceNodeId: string
   mode: CharacterReferenceMode
-  referenceMode: 'asset-crop-reference' | 'asset-full-image' | 'video-reference' | 'text-only'
+  sourceImageUrl: string
   sourceAssetId: string | null
-  sourceImageUrl: string | null
-  sourceVideoUrl: string | null
   cropBox: CharacterReferenceCropBox | null
-  slots: CharacterReferenceSlotRequest[]
-  consistencyOptions: {
-    keepFace: boolean
-    keepHair: boolean
-    keepOutfit: boolean
-    keepBody: boolean
-    keepColorScheme: boolean
-  }
-  style: CharacterReferenceStyle
-  layout: CharacterReferenceLayout
+  references: GeneratedReferenceItem[]
 }
 
 interface CharacterReferenceGridPanelProps {
   nodes: CharacterSourceNode[]
-  onCreateReferenceNode: (req: CreateCharacterReferenceRequest) => void
+  projectId?: string
+  workflowId?: string
+  onReferenceGenerated: (result: GenerateCharacterReferenceResult) => void
   onClose: () => void
   defaultSelectedNodeId?: string
 }
@@ -67,7 +60,7 @@ interface CharacterReferenceGridPanelProps {
 const DEFAULT_CROP: CharacterReferenceCropBox = { x: 0.2, y: 0.2, width: 0.6, height: 0.6 }
 const FULL_IMAGE_CROP: CharacterReferenceCropBox = { x: 0, y: 0, width: 1, height: 1 }
 
-const HANDLE_ZONE = 0.08 // normalized distance to detect corner handle click
+const HANDLE_ZONE = 0.08
 
 const TURNAROUND_SLOTS = [
   { key: 'front',    label: '正面',      sub: 'Front',     icon: '◈' },
@@ -97,7 +90,7 @@ const MODES: Array<{
     label: '四视图',
     sub: '正面 · 四分之三 · 侧面 · 背面',
     nodeCount: 4,
-    gridLabel: '4 个独立参考节点（2×2）',
+    gridLabel: '4 张真实参考图（2×2）',
     slots: TURNAROUND_SLOTS,
   },
   {
@@ -105,7 +98,7 @@ const MODES: Array<{
     label: '九宫格',
     sub: '全身 · 表情 · 服装 · 动作',
     nodeCount: 5,
-    gridLabel: '5 个独立参考节点（3+2）',
+    gridLabel: '5 张真实参考图（3+2）',
     slots: GRID5_SLOTS,
   },
 ]
@@ -162,7 +155,9 @@ function actionCursor(action: DragAction | null): string {
 
 export function CharacterReferenceGridPanel({
   nodes,
-  onCreateReferenceNode,
+  projectId,
+  workflowId,
+  onReferenceGenerated,
   onClose,
   defaultSelectedNodeId,
 }: CharacterReferenceGridPanelProps) {
@@ -190,8 +185,14 @@ export function CharacterReferenceGridPanel({
   const [keepOutfit, setKeepOutfit] = useState(true)
   const [keepBody, setKeepBody] = useState(true)
   const [keepColorScheme, setKeepColorScheme] = useState(true)
-  const [created, setCreated] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Generation state
+  const [generating, setGenerating] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState<string | null>(null)
+  const [generationError, setGenerationError] = useState<string | null>(null)
+  const [generationSuccess, setGenerationSuccess] = useState(false)
+  const [generatedCount, setGeneratedCount] = useState(0)
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const activeMode = (MODES.find((m) => m.id === mode) ?? MODES[0])!
@@ -201,19 +202,13 @@ export function CharacterReferenceGridPanel({
   const sourceVideoUrl = primaryNode?.resultVideoUrl ?? null
   const sourceAssetId = primaryNode?.assetId ?? null
   const proxiedImage = sourceImageUrl ? getProxiedMediaUrl(sourceImageUrl) : null
-  const proxiedVideo = sourceVideoUrl ? getProxiedMediaUrl(sourceVideoUrl) : null
-
-  const referenceMode: 'asset-crop-reference' | 'asset-full-image' | 'video-reference' | 'text-only' =
-    proxiedImage
-      ? isFullImage ? 'asset-full-image' : 'asset-crop-reference'
-      : proxiedVideo ? 'video-reference'
-      : 'text-only'
 
   const effectiveCropBox: CharacterReferenceCropBox | null = proxiedImage
     ? (isFullImage ? FULL_IMAGE_CROP : cropBox)
     : null
 
-  const canCreate = !!primaryNode && characterBrief.trim().length > 0
+  // Generate is only enabled when there is a real image asset
+  const canGenerate = !!primaryNode && !!sourceImageUrl && !generating
 
   // ─── Crop pointer handlers ────────────────────────────────────────────────
 
@@ -241,7 +236,6 @@ export function CharacterReferenceGridPanel({
     const norm = getContainerNorm(e)
     if (!norm) return
 
-    // Cursor preview when not dragging
     if (!dragRef.current) {
       if (!isFullImage) {
         const action = getDragAction(norm, cropBox)
@@ -275,10 +269,11 @@ export function CharacterReferenceGridPanel({
     dragRef.current = null
   }
 
-  // ─── Create handler ───────────────────────────────────────────────────────
+  // ─── Generate handler ─────────────────────────────────────────────────────
 
-  function handleCreate() {
-    if (!primaryNode || !canCreate) return
+  async function handleGenerate() {
+    if (!primaryNode || !sourceImageUrl || generating) return
+
     const opts: CharacterReferenceOptions = {
       mode,
       sourcePrompt: characterBrief,
@@ -293,42 +288,101 @@ export function CharacterReferenceGridPanel({
     const slotPrompts = buildAssetSlotPrompts(opts, {
       assetId: sourceAssetId,
       imageUrl: sourceImageUrl,
-      videoUrl: sourceVideoUrl,
+      videoUrl: null,
       cropBox: effectiveCropBox,
     })
-    onCreateReferenceNode({
-      sourceNodeId: primaryNode.id,
-      mode,
-      referenceMode,
-      sourceAssetId,
-      sourceImageUrl,
-      sourceVideoUrl,
-      cropBox: effectiveCropBox,
-      slots: slotPrompts.map((item) => ({
-        key: item.key,
-        label: item.label,
-        slotDescription: item.slotDescription ?? item.titleSuffix,
-        prompt: item.prompt,
-      })),
-      consistencyOptions: { keepFace, keepHair, keepOutfit, keepBody, keepColorScheme },
-      style,
-      layout,
-    })
-    setCreated(true)
+
+    setGenerating(true)
+    setGenerationError(null)
+    setGenerationProgress('正在生成人物参考图，可能需要 30–60 秒...')
+
+    try {
+      const res = await fetch('/api/generate/character-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceImageUrl,
+          characterId: sourceAssetId ?? primaryNode.id,
+          items: slotPrompts.map((s) => ({ kind: s.key, label: s.label, prompt: s.prompt })),
+          providerId: 'volcengine-seedream-image',
+          projectId,
+          workflowId,
+          nodeId: primaryNode.id,
+        }),
+      })
+
+      if (res.status === 401) {
+        setGenerationError('请先登录后再生成参考图。')
+        return
+      }
+
+      const data = await res.json() as {
+        success: boolean
+        partialSuccess?: boolean
+        references?: Array<{
+          id: string
+          kind: string
+          label: string
+          imageUrl: string
+          assetId?: string
+          sourceImageUrl: string
+        }>
+        errors?: Array<{ kind: string; label: string; errorCode?: string; message: string }>
+        message?: string
+        errorCode?: string
+      }
+
+      if (!data.success && !data.partialSuccess) {
+        setGenerationError(data.message ?? '生成失败，请重试。')
+        return
+      }
+
+      const references: GeneratedReferenceItem[] = (data.references ?? []).map((ref) => {
+        const slot = slotPrompts.find((s) => s.key === ref.kind)
+        return {
+          key: ref.kind,
+          label: ref.label ?? slot?.label ?? ref.kind,
+          slotDescription: slot?.slotDescription ?? '',
+          prompt: slot?.prompt ?? '',
+          assetId: ref.assetId,
+          imageUrl: ref.imageUrl,
+        }
+      })
+
+      if (references.length === 0) {
+        setGenerationError('生成失败：API 未返回任何参考图。')
+        return
+      }
+
+      setGenerationSuccess(true)
+      setGeneratedCount(references.length)
+      onReferenceGenerated({
+        sourceNodeId: primaryNode.id,
+        mode,
+        sourceImageUrl,
+        sourceAssetId,
+        cropBox: effectiveCropBox,
+        references,
+      })
+    } catch (err) {
+      setGenerationError(err instanceof Error ? err.message : '生成请求失败，请检查网络后重试。')
+    } finally {
+      setGenerating(false)
+      setGenerationProgress(null)
+    }
   }
 
   function handleReset() {
-    setCreated(false)
-    setCharacterBrief((primaryNode?.prompt ?? primaryNode?.resultText ?? '').trim())
+    setGenerationSuccess(false)
+    setGenerationError(null)
+    setGeneratedCount(0)
   }
 
   // ─── Crop box visual values ───────────────────────────────────────────────
 
   const cb = isFullImage ? FULL_IMAGE_CROP : cropBox
-  // SVG path: full rect minus crop box = darkened exterior
   const svgMaskPath = `M0,0 H1 V1 H0 Z M${cb.x},${cb.y} V${cb.y + cb.height} H${cb.x + cb.width} V${cb.y} Z`
 
-  // Corner handle positions (as %)
   const corners = [
     { key: 'nw', top: `${cb.y * 100}%`, left: `${cb.x * 100}%` },
     { key: 'ne', top: `${cb.y * 100}%`, left: `${(cb.x + cb.width) * 100}%` },
@@ -351,8 +405,8 @@ export function CharacterReferenceGridPanel({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
-            <p className="text-[13px] font-semibold text-white/90">人物参考提取 / Character Extract</p>
-            <p className="text-[10px] text-white/35">从已有资产中提取人物参考，创建四视图或九宫格槽位节点</p>
+            <p className="text-[13px] font-semibold text-white/90">人物参考生成 / Character Reference</p>
+            <p className="text-[10px] text-white/35">从已有资产中提取人物，直接生成四视图或九宫格真实参考图</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-white/40 transition hover:bg-white/8 hover:text-white/70" aria-label="关闭">
             <X size={16} strokeWidth={2} />
@@ -361,23 +415,23 @@ export function CharacterReferenceGridPanel({
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
-          {/* ── Source asset + crop extraction ── */}
+          {/* ── Source asset ── */}
           {primaryNode ? (
             <div className="shrink-0 border-b border-white/6 px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="text-[10px] font-semibold text-white/55">
-                    {proxiedImage ? '人物参考提取区域' : proxiedVideo ? '来源视频参考' : '当前节点暂无可提取资产'}
+                    {sourceImageUrl ? '来源图片资产（人物参考）' : sourceVideoUrl ? '来源视频' : '当前节点暂无图片资产'}
                   </p>
-                  <p className="text-[9px] text-white/25 mt-0.5">
-                    {proxiedImage ? '拖动框选人物主体区域作为参考来源' : ''}
-                  </p>
+                  {sourceImageUrl && (
+                    <p className="text-[9px] text-white/25 mt-0.5">可框选人物主体区域作为参考来源</p>
+                  )}
                 </div>
                 <span className="text-[9px] text-white/30 truncate max-w-[120px]">{primaryNode.title ?? '未命名节点'}</span>
               </div>
 
-              {/* Image crop extraction */}
-              {proxiedImage ? (
+              {/* Image source with crop tool */}
+              {sourceImageUrl && proxiedImage ? (
                 <>
                   <div
                     ref={cropContainerRef}
@@ -392,7 +446,6 @@ export function CharacterReferenceGridPanel({
                     onPointerUp={handleCropPointerUp}
                     onPointerLeave={handleCropPointerUp}
                   >
-                    {/* Source image — fills container */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={proxiedImage}
@@ -401,7 +454,6 @@ export function CharacterReferenceGridPanel({
                       draggable={false}
                     />
 
-                    {/* SVG overlay: darkened exterior + crop border */}
                     <svg
                       className="absolute inset-0 h-full w-full"
                       viewBox="0 0 1 1"
@@ -412,7 +464,6 @@ export function CharacterReferenceGridPanel({
                         <>
                           <path d={svgMaskPath} fill="rgba(0,0,0,0.58)" fillRule="evenodd" />
                           <rect x={cb.x} y={cb.y} width={cb.width} height={cb.height} fill="none" stroke="rgba(255,255,255,0.90)" strokeWidth="0.0045" />
-                          {/* Rule-of-thirds subtle grid */}
                           <line x1={cb.x + cb.width / 3} y1={cb.y} x2={cb.x + cb.width / 3} y2={cb.y + cb.height} stroke="rgba(255,255,255,0.18)" strokeWidth="0.002" />
                           <line x1={cb.x + (cb.width * 2) / 3} y1={cb.y} x2={cb.x + (cb.width * 2) / 3} y2={cb.y + cb.height} stroke="rgba(255,255,255,0.18)" strokeWidth="0.002" />
                           <line x1={cb.x} y1={cb.y + cb.height / 3} x2={cb.x + cb.width} y2={cb.y + cb.height / 3} stroke="rgba(255,255,255,0.18)" strokeWidth="0.002" />
@@ -423,7 +474,6 @@ export function CharacterReferenceGridPanel({
                       )}
                     </svg>
 
-                    {/* Corner handles (visual, pointer-events: none) */}
                     {!isFullImage && corners.map((c) => (
                       <div
                         key={c.key}
@@ -443,7 +493,6 @@ export function CharacterReferenceGridPanel({
                       />
                     ))}
 
-                    {/* Full-image overlay label */}
                     {isFullImage && (
                       <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents: 'none' }}>
                         <span className="rounded-lg bg-indigo-500/20 px-3 py-1 text-[10px] font-semibold text-indigo-300 ring-1 ring-indigo-500/30">
@@ -453,7 +502,6 @@ export function CharacterReferenceGridPanel({
                     )}
                   </div>
 
-                  {/* Crop controls */}
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       type="button"
@@ -473,40 +521,31 @@ export function CharacterReferenceGridPanel({
                     >
                       {isFullImage ? '✓ 整图参考' : '使用整张图'}
                     </button>
-                    <span className={`ml-auto text-[9px] font-semibold ${
-                      referenceMode === 'asset-crop-reference' ? 'text-emerald-400/80' : 'text-indigo-400/80'
-                    }`}>
-                      {referenceMode === 'asset-crop-reference' ? '框选人物参考' : '整图人物参考'}
+                    <span className="ml-auto text-[9px] font-semibold text-emerald-400/80">
+                      图片资产已就绪 ✓
                     </span>
                   </div>
                   <p className="mt-1.5 text-[8px] text-white/20 leading-relaxed">
-                    框选区域会保存为各槽位的来源参考坐标。当前版本保存 cropBox 数据与来源链接；正式参考图由用户在槽位节点中手动生成。
+                    框选区域仅供视觉参考；生成时 Seedream API 使用完整来源图片作为人物参考。
                   </p>
                 </>
-              ) : proxiedVideo ? (
-                <div>
-                  <video
-                    src={proxiedVideo}
-                    controls
-                    muted
-                    playsInline
-                    preload="metadata"
-                    className="w-full max-h-[120px] rounded-xl border border-white/10 bg-black"
-                  />
-                  <p className="mt-1.5 text-[9px] text-sky-400/60 leading-relaxed">
-                    视频人物提取暂按整段视频资产引用保存，后续可扩展关键帧提取。
-                  </p>
-                  <span className="mt-1 inline-block rounded-full bg-sky-500/12 px-2 py-0.5 text-[8px] font-semibold text-sky-400">
-                    视频参考模式
-                  </span>
+              ) : sourceVideoUrl ? (
+                <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/6 px-3 py-2.5">
+                  <span className="mt-0.5 text-[14px]">⚠</span>
+                  <div>
+                    <p className="text-[10px] font-semibold text-amber-400/80">视频来源暂不支持直接人物参考生成</p>
+                    <p className="text-[9px] text-white/35 mt-0.5 leading-relaxed">
+                      请先从视频中生成/选择关键帧图片，再使用图片节点进行人物参考提取。
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/6 px-3 py-2.5">
                   <span className="mt-0.5 text-[14px]">⚠</span>
                   <div>
-                    <p className="text-[10px] font-semibold text-amber-400/80">当前节点暂无可提取资产</p>
+                    <p className="text-[10px] font-semibold text-amber-400/80">当前节点没有可用图片资产</p>
                     <p className="text-[9px] text-white/35 mt-0.5 leading-relaxed">
-                      将仅使用角色描述创建参考槽位（文字一致性模式）。若需要资产参考，请先在源节点生成图片。
+                      无法生成资产参考图。请先生成或选择一个已有图片节点，再打开人物参考 Skill。
                     </p>
                   </div>
                 </div>
@@ -514,7 +553,7 @@ export function CharacterReferenceGridPanel({
             </div>
           ) : (
             <div className="shrink-0 border-b border-white/6 px-4 py-3">
-              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考提取 Skill</p>
+              <p className="text-[10px] text-amber-400/70">请从画布节点顶部资产菜单打开人物参考 Skill</p>
             </div>
           )}
 
@@ -526,7 +565,7 @@ export function CharacterReferenceGridPanel({
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => { setMode(m.id); setCreated(false) }}
+                  onClick={() => { setMode(m.id); handleReset() }}
                   className={`flex-1 rounded-xl border px-3 py-2.5 text-left transition ${
                     mode === m.id
                       ? 'border-indigo-500/60 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.3)]'
@@ -541,12 +580,12 @@ export function CharacterReferenceGridPanel({
             </div>
           </div>
 
-          {/* ── Slot preview with crop region ── */}
+          {/* ── Slot preview ── */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-semibold text-white/40">槽位预览</p>
+              <p className="text-[10px] font-semibold text-white/40">生成视角</p>
               <span className="rounded-full border border-white/8 px-2 py-0.5 text-[9px] text-white/25">
-                创建 {activeMode.nodeCount} 个节点
+                {activeMode.nodeCount} 张真实参考图
               </span>
             </div>
             <div className={`grid gap-1.5 ${activeMode.id === 'turnaround4' ? 'grid-cols-2' : 'grid-cols-3'}`}>
@@ -556,8 +595,8 @@ export function CharacterReferenceGridPanel({
                   className="relative overflow-hidden rounded-lg border border-white/8"
                   style={{ aspectRatio: '1/1' }}
                 >
-                  {/* Crop preview: show only the selected crop region */}
                   {proxiedImage && effectiveCropBox ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={proxiedImage}
                       alt={slot.label}
@@ -572,47 +611,38 @@ export function CharacterReferenceGridPanel({
                       }}
                     />
                   ) : null}
-                  {/* Labels overlay */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
                     {!proxiedImage && (
                       <span className="text-[14px] text-white/15 mb-1">{slot.icon}</span>
                     )}
                     <span className="text-[10px] font-semibold text-white/85">{slot.label}</span>
                     <span className="text-[8px] text-white/35">{slot.sub}</span>
-                    {referenceMode !== 'text-only' && (
-                      <span className="mt-1 text-[7px] font-semibold text-emerald-400/70">人物参考已绑定</span>
-                    )}
-                    {referenceMode === 'text-only' && (
-                      <span className="mt-1 text-[7px] text-amber-400/50">仅文字参考</span>
+                    {sourceImageUrl && (
+                      <span className="mt-1 text-[7px] font-semibold text-emerald-400/70">资产参考已绑定</span>
                     )}
                   </div>
                 </div>
               ))}
             </div>
             <p className="mt-1.5 text-[9px] text-white/20 leading-relaxed">
-              每个槽位创建独立 image 节点（idle），请在各节点中手动选择 Provider 并生成参考图。
+              每个视角调用 Seedream 参考图 API，生成真实图片并直接保存为画布节点（status: done）。
             </p>
           </div>
 
           {/* ── Character brief ── */}
           <div className="shrink-0 border-b border-white/6 px-4 py-3">
-            <p className="mb-1 text-[10px] font-semibold text-white/40">角色描述 / Character Brief</p>
+            <p className="mb-1 text-[10px] font-semibold text-white/40">角色描述 / Character Brief（可选）</p>
             <p className="mb-2 text-[9px] text-white/25">
-              {referenceMode !== 'text-only'
-                ? '角色描述与来源资产引用共同嵌入各槽位生成指令，双重约束角色一致性。'
-                : '仅文字模式：请详细描述外貌、服装、发型等。'}
+              与来源图片共同约束角色一致性。若为空则仅使用来源图片作为参考。
             </p>
             <textarea
               value={characterBrief}
-              onChange={(e) => { setCharacterBrief(e.target.value); setCreated(false) }}
+              onChange={(e) => { setCharacterBrief(e.target.value) }}
               placeholder="例：20岁亚裔女性，短黑发，穿红色旗袍，身材纤细，手持折扇"
               rows={3}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[11px] leading-relaxed text-white/85 placeholder-white/25 outline-none resize-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20"
               style={{ fontFamily: 'inherit' }}
             />
-            {characterBrief.trim().length === 0 && (
-              <p className="mt-1 text-[9px] text-amber-400/60">请填写角色描述</p>
-            )}
           </div>
 
           {/* ── Consistency locks ── */}
@@ -629,7 +659,7 @@ export function CharacterReferenceGridPanel({
                 <button
                   key={key}
                   type="button"
-                  onClick={() => { set(!value); setCreated(false) }}
+                  onClick={() => set(!value)}
                   className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
                     value
                       ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/35'
@@ -658,7 +688,7 @@ export function CharacterReferenceGridPanel({
                   <label className="mb-1 block text-[9px] font-semibold text-white/30">参考稿风格</label>
                   <select
                     value={style}
-                    onChange={(e) => { setStyle(e.target.value as CharacterReferenceStyle); setCreated(false) }}
+                    onChange={(e) => setStyle(e.target.value as CharacterReferenceStyle)}
                     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70 outline-none focus:border-indigo-500/40"
                   >
                     {STYLES.map((s) => (
@@ -670,19 +700,13 @@ export function CharacterReferenceGridPanel({
                   <label className="mb-1 block text-[9px] font-semibold text-white/30">构图要求</label>
                   <select
                     value={layout}
-                    onChange={(e) => { setLayout(e.target.value as CharacterReferenceLayout); setCreated(false) }}
+                    onChange={(e) => setLayout(e.target.value as CharacterReferenceLayout)}
                     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/70 outline-none focus:border-indigo-500/40"
                   >
                     {LAYOUTS.map((l) => (
                       <option key={l.id} value={l.id} style={{ background: '#0f1117' }}>{l.label}</option>
                     ))}
                   </select>
-                </div>
-                <div className="rounded-xl border border-white/6 bg-white/2 px-3 py-2">
-                  <p className="text-[8px] leading-relaxed text-white/20">
-                    该槽位已绑定来源人物参考。当前版本会保存人物参考区域与一致性指令；正式生成由用户在槽位节点中手动触发。
-                    若当前模型暂不支持参考图，则会使用文字一致性约束。
-                  </p>
                 </div>
               </div>
             )}
@@ -691,44 +715,67 @@ export function CharacterReferenceGridPanel({
 
         {/* Footer */}
         <div className="shrink-0 border-t border-white/8 px-4 py-3">
-          {created ? (
+          {generationSuccess ? (
             <div className="space-y-2">
               <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
                 <p className="text-[11px] font-semibold text-emerald-400 mb-1">
-                  {activeMode.nodeCount} 个人物参考节点已创建 ✓
+                  已生成真实人物参考图 {generatedCount} 张 ✓
                 </p>
                 <p className="text-[10px] leading-relaxed text-white/50">
-                  节点已出现在画布中，状态为 idle。
-                  {referenceMode === 'asset-crop-reference'
-                    ? '人物框选区域已绑定到各槽位 metadata。'
-                    : referenceMode === 'asset-full-image'
-                      ? '整图参考已绑定到各槽位 metadata。'
-                      : referenceMode === 'video-reference'
-                        ? '视频资产引用已绑定。'
-                        : '已使用文字描述模式。'}
-                  请在各节点中选择 Provider 并手动生成参考图。
+                  已保存为画布节点，每张参考图均含真实 assetId 与 resultImageUrl。
                 </p>
               </div>
-              <button type="button" onClick={handleReset} className="w-full rounded-xl py-2 text-[11px] text-white/40 hover:text-white/60 transition">
-                创建另一组参考节点
+              <button
+                type="button"
+                onClick={handleReset}
+                className="w-full rounded-xl py-2 text-[11px] text-white/40 hover:text-white/60 transition"
+              >
+                生成另一组参考图
               </button>
+            </div>
+          ) : generationError ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-red-500/25 bg-red-500/6 px-3 py-2.5">
+                <p className="text-[10px] font-semibold text-red-400/80 mb-0.5">生成失败</p>
+                <p className="text-[9px] text-white/40 leading-relaxed">{generationError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleGenerate()}
+                disabled={generating || !canGenerate}
+                className="w-full rounded-xl bg-red-500/15 py-2.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                重试
+              </button>
+            </div>
+          ) : generating ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/6 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-indigo-400/60 border-t-indigo-400" />
+                  <p className="text-[10px] text-indigo-300">{generationProgress ?? '生成中...'}</p>
+                </div>
+              </div>
+              <p className="text-center text-[9px] text-white/20">请勿关闭，生成完成后自动更新画布</p>
             </div>
           ) : (
             <button
               type="button"
-              onClick={handleCreate}
-              disabled={!canCreate}
+              onClick={() => void handleGenerate()}
+              disabled={!canGenerate}
               className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
-                canCreate
+                canGenerate
                   ? 'bg-indigo-500 text-white hover:bg-indigo-400'
                   : 'bg-white/6 text-white/25 cursor-not-allowed'
               }`}
             >
               {!primaryNode
                 ? '请从节点顶部资产菜单打开'
-                : characterBrief.trim().length === 0
-                  ? '请先填写角色描述'
-                  : `提取人物参考 · 创建 ${activeMode.nodeCount} 个${activeMode.label}节点`}
+                : !sourceImageUrl
+                  ? (sourceVideoUrl
+                      ? '视频来源暂不支持，请先生成关键帧'
+                      : '当前节点无图片资产，无法生成')
+                  : `生成 ${activeMode.nodeCount} 张${activeMode.label}参考图`}
             </button>
           )}
         </div>

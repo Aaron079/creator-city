@@ -3420,6 +3420,51 @@ export function CanvasNodeCard({
                       >
                         ⤢
                       </button>
+                      {/* Character reference badge for generated nodes */}
+                      {charRefMeta && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: 8,
+                            left: 8,
+                            zIndex: 5,
+                            display: 'flex',
+                            gap: 4,
+                            alignItems: 'center',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          <span
+                            style={{
+                              borderRadius: 999,
+                              background: 'rgba(99,102,241,0.80)',
+                              color: 'white',
+                              fontSize: 8,
+                              fontWeight: 700,
+                              letterSpacing: '0.05em',
+                              padding: '2px 7px',
+                              backdropFilter: 'blur(8px)',
+                              WebkitBackdropFilter: 'blur(8px)',
+                            }}
+                          >
+                            人物参考
+                          </span>
+                          <span
+                            style={{
+                              borderRadius: 999,
+                              background: 'rgba(16,185,129,0.70)',
+                              color: 'white',
+                              fontSize: 8,
+                              fontWeight: 600,
+                              padding: '2px 7px',
+                              backdropFilter: 'blur(8px)',
+                              WebkitBackdropFilter: 'blur(8px)',
+                            }}
+                          >
+                            已生成参考图
+                          </span>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -3527,7 +3572,7 @@ export function CanvasNodeCard({
                 }}>
                   {charRefMeta.referenceMode === 'text-only' ? '仅文字参考' : '人物参考已绑定'}
                 </span>
-                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)' }}>待生成参考图</span>
+                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)' }}>待生成</span>
               </div>
             </div>
           ) : (

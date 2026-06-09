@@ -78,6 +78,10 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = await getCurrentUser()
+    // TODO: production billing required before public launch
+    if (!currentUser) {
+      return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
+    }
     const mediaPersistenceEnabled = process.env.MEDIA_PERSISTENCE_ENABLED !== 'false'
 
     const references: Array<{

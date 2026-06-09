@@ -31,7 +31,7 @@ import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
-import { CharacterReferenceGridPanel, type CreateCharacterReferenceRequest } from '@/components/create/CharacterReferenceGridPanel'
+import { CharacterReferenceGridPanel, type GenerateCharacterReferenceResult } from '@/components/create/CharacterReferenceGridPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -8275,19 +8275,19 @@ export function VisualCanvasWorkspace({
           />
           <CharacterReferenceGridPanel
             nodes={nodes}
+            projectId={projectId}
+            workflowId={workflowId || undefined}
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
-            onCreateReferenceNode={(req: CreateCharacterReferenceRequest) => {
-              const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
-              const modeLabel = req.mode === 'turnaround4' ? '角色四视图参考' : '角色九宫格参考'
-              const sourceTitle = sourceNode?.title?.trim()
+            onReferenceGenerated={(result: GenerateCharacterReferenceResult) => {
+              const sourceNode = nodes.find((n) => n.id === result.sourceNodeId)
+              const modeLabel = result.mode === 'turnaround4' ? '四视图' : '九宫格'
               const imageMeta = NODE_META['image']
               const imageSize = getNodeSize('image')
-              const providerId = normalizeProviderId(imageMeta.model)
               const now = Date.now()
-              const groupId = `char-ref-${req.sourceNodeId}-${now}`
+              const groupId = `char-ref-${result.sourceNodeId}-${now}`
 
-              // Grid layout — pre-calculated positions; batch commitNodes bypasses resolveNonOverlappingPosition stacking
-              const cols = req.mode === 'turnaround4' ? 2 : 3
+              // Pre-calculated 2×2 (turnaround4) or 3+2 (grid5) grid — bypasses resolveNonOverlappingPosition stacking
+              const cols = result.mode === 'turnaround4' ? 2 : 3
               const colGap = imageSize.width + 40
               const rowGap = imageSize.height + 40
               const startX = sourceNode
@@ -8295,44 +8295,41 @@ export function VisualCanvasWorkspace({
                 : 500
               const startY = sourceNode?.y ?? 100
 
-              const newNodes: VisualCanvasNode[] = req.slots.map((slot, i) => {
+              const newNodes: VisualCanvasNode[] = result.references.map((ref, i) => {
                 const col = i % cols
                 const row = Math.floor(i / cols)
-                const chineseLabel = slot.label.split(' / ')[0] ?? slot.label
-                const slotTitle = sourceTitle ? `人物参考 · ${chineseLabel}` : `人物参考 · ${chineseLabel}`
+                const chineseLabel = ref.label.split(' / ')[0] ?? ref.label
                 return {
                   id: createNodeId('image'),
                   type: 'image' as const,
                   kind: 'image' as const,
-                  title: slotTitle,
+                  title: `人物${modeLabel} · ${chineseLabel}`,
                   subtitle: imageMeta.subtitle,
-                  prompt: slot.prompt,
-                  model: providerId,
-                  providerId,
+                  prompt: ref.prompt,
+                  model: 'volcengine-seedream-image',
+                  providerId: 'volcengine-seedream-image',
                   stage: promptStage,
                   ratio: imageMeta.ratio,
-                  status: 'idle' as const,
-                  resultPreview: undefined,
-                  resultImageUrl: undefined,
+                  status: 'done' as const,
+                  assetId: ref.assetId,
+                  resultImageUrl: ref.imageUrl,
                   resultVideoUrl: undefined,
                   metadataJson: {
+                    assetId: ref.assetId,
                     characterReference: {
-                      source: 'AssetCharacterExtractionSkill',
-                      boardType: req.mode,
+                      source: 'CharacterReferenceApi',
+                      boardType: result.mode,
                       groupId,
-                      slotKey: slot.key,
-                      slotLabel: slot.label,
-                      slotDescription: slot.slotDescription,
-                      internalPrompt: slot.prompt,
-                      sourceNodeId: req.sourceNodeId,
-                      sourceAssetId: req.sourceAssetId,
-                      sourceImageUrl: req.sourceImageUrl,
-                      sourceVideoUrl: req.sourceVideoUrl,
-                      cropBox: req.cropBox,
-                      referenceMode: req.referenceMode,
-                      consistencyOptions: req.consistencyOptions,
-                      style: req.style,
-                      layout: req.layout,
+                      slotKey: ref.key,
+                      slotLabel: ref.label,
+                      slotDescription: ref.slotDescription,
+                      internalPrompt: ref.prompt,
+                      sourceNodeId: result.sourceNodeId,
+                      sourceImageUrl: result.sourceImageUrl,
+                      sourceAssetId: result.sourceAssetId,
+                      cropBox: result.cropBox,
+                      generatedAssetId: ref.assetId,
+                      generatedImageUrl: ref.imageUrl,
                     },
                   },
                   x: startX + col * colGap,
@@ -8347,24 +8344,15 @@ export function VisualCanvasWorkspace({
               commitEdges((current) => [
                 ...current,
                 ...newNodes.map((n) => ({
-                  id: `edge-char-ref-${req.sourceNodeId}-${n.id}`,
-                  fromNodeId: req.sourceNodeId,
+                  id: `edge-char-ref-${result.sourceNodeId}-${n.id}`,
+                  fromNodeId: result.sourceNodeId,
                   toNodeId: n.id,
                   status: 'idle' as const,
                 })),
               ])
               flushLocalSnapshot()
               scheduleCanvasSave(0)
-              const refModeLabel = req.referenceMode === 'asset-crop-reference'
-                ? '（框选人物已绑定）'
-                : req.referenceMode === 'asset-full-image'
-                  ? '（整图参考已绑定）'
-                  : req.referenceMode === 'video-reference'
-                    ? '（视频参考已绑定）'
-                    : '（文字描述模式）'
-              showCanvasFeedback(
-                `已创建 ${newNodes.length} 个${modeLabel}槽位节点${refModeLabel}，请在各节点中手动生成参考图。`
-              )
+              showCanvasFeedback(`已生成真实人物参考图并保存为画布节点。`)
             }}
             onClose={() => setIsCharacterReferenceOpen(false)}
           />
