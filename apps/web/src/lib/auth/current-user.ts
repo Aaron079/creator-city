@@ -9,6 +9,7 @@ export interface CurrentUser {
   role: string
   status: string
   avatarUrl: string | null
+  createdAt: string
   profile: {
     username: string | null
     bio: string | null
@@ -36,6 +37,7 @@ function mapSessionToUser(session: Awaited<ReturnType<typeof getSession>>): Curr
     role: user.role,
     status: user.status,
     avatarUrl: user.profile?.avatarUrl ?? null,
+    createdAt: user.createdAt.toISOString(),
     profile: user.profile
       ? {
           username: user.profile.username ?? null,

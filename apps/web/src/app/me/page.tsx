@@ -1,163 +1,92 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DashboardShell } from '@/components/layout/DashboardShell'
-import { PersonalCommandCenter } from '@/components/me/PersonalCommandCenter'
-import { ProfileView } from '@/components/profile/ProfileView'
-import { QuickActionsCard, RiskOrWaitingCard, StatusSummaryCard } from '@/components/projects/EntrySummaryCards'
-import { UserProjectPortfolio } from '@/components/projects/UserProjectPortfolio'
-import { WorkspaceSwitcher } from '@/components/projects/WorkspaceSwitcher'
-import { AccessNotice } from '@/components/roles/AccessNotice'
-import { RoleBadge } from '@/components/roles/RoleBadge'
-import { InvitationInbox } from '@/components/team/InvitationInbox'
-import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
-import { buildCrossProjectEntryData } from '@/lib/projects/entry-layer'
-import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
-import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
-import { getActionTarget } from '@/lib/routing/actions'
-import { useApprovalStore } from '@/store/approval.store'
 import { useAuthStore } from '@/store/auth.store'
-import { useDeliveryPackageStore } from '@/store/delivery-package.store'
-import { useDirectorNotesStore } from '@/store/director-notes.store'
-import { useJobsStore } from '@/store/jobs.store'
-import { useNotificationsStore } from '@/store/notifications.store'
-import { useOrderStore } from '@/store/order.store'
-import { useProfileStore } from '@/store/profile.store'
-import { useProjectRoleStore } from '@/store/project-role.store'
-import { useTaskStore } from '@/store/task.store'
-import { useTeamStore } from '@/store/team.store'
-import { useVersionHistoryStore } from '@/store/version-history.store'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface UserProfile {
+  displayName?: string | null
+  username?: string | null
+  bio?: string | null
+  avatarUrl?: string | null
+  city?: string | null
+  company?: string | null
+  websiteUrl?: string | null
+}
+
+interface MeStats {
+  assets: {
+    total: number
+    image: number
+    video: number
+    audio: number
+    public: number
+    private: number
+    ready: number
+  }
+  licenseIntent: Record<string, number>
+  projects: { total: number }
+}
+
+interface MiniAsset {
+  id: string
+  title?: string | null
+  name: string
+  type: string
+  isPublic?: boolean | null
+  resolvedUrl?: string | null
+  thumbnailUrl?: string | null
+  url?: string | null
+  metadataJson?: unknown
+  createdAt: string
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MePage() {
   const router = useRouter()
-  const currentUserId = useProfileStore((s) => s.currentUserId)
   const authUser = useAuthStore((s) => s.user)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const inboxProfileId = authUser?.id ?? currentUserId
-  const assignments = useProjectRoleStore((s) => s.assignments)
-  const approvals = useApprovalStore((s) => s.approvals)
-  const approvalGates = useApprovalStore((s) => s.gates)
-  const deliveryPackages = useDeliveryPackageStore((s) => s.deliveryPackages)
-  const notes = useDirectorNotesStore((s) => s.notes)
-  const jobs = useJobsStore((s) => s.jobs)
-  const notificationItems = useNotificationsStore((s) => s.items)
-  const orders = useOrderStore((s) => s.orders)
-  const tasks = useTaskStore((s) => s.tasks)
-  const teams = useTeamStore((s) => s.teams)
-  const versions = useVersionHistoryStore((s) => s.versions)
-  const invitations = useTeamStore((s) => s.getInvitationsForProfile(inboxProfileId))
-  const acceptInvitation = useTeamStore((s) => s.acceptInvitation)
-  const declineInvitation = useTeamStore((s) => s.declineInvitation)
-  const pendingInvitations = useMemo(
-    () => invitations.filter((item) => item.status === 'pending'),
-    [invitations],
-  )
-  const activeAssignments = useMemo(
-    () => assignments.filter((item) => item.status === 'active' && (item.userId === (authUser?.id ?? null) || item.userId === currentUserId)),
-    [assignments, authUser?.id, currentUserId],
-  )
-  const dashboard = useMemo(
-    () => aggregateProducerDashboard({
-      teams,
-      approvals,
-      approvalGates,
-      notes,
-      tasks,
-      orders,
-      jobs,
-      deliveryPackages,
-      versions,
-    }),
-    [teams, approvals, approvalGates, notes, tasks, orders, jobs, deliveryPackages, versions],
-  )
-  const workQueue = useMemo(
-    () => buildPersonalWorkQueue({
-      userId: authUser?.id ?? currentUserId ?? 'user-me',
-      profileId: inboxProfileId ?? authUser?.id ?? currentUserId ?? 'user-me',
-      invitations,
-      assignments,
-      tasks,
-      teams,
-      approvals,
-      deliveryPackages,
-      notifications: notificationItems,
-    }),
-    [approvals, assignments, authUser?.id, currentUserId, deliveryPackages, inboxProfileId, invitations, notificationItems, tasks, teams],
-  )
-  const portfolio = useMemo(
-    () => buildWorkspacePortfolio({
-      userId: authUser?.id ?? currentUserId ?? 'user-me',
-      profileId: inboxProfileId ?? authUser?.id ?? currentUserId ?? 'user-me',
-      assignments,
-      teams,
-      invitations,
-      dashboard,
-      workQueue,
-      notifications: notificationItems,
-      deliveryPackages,
-      approvals,
-    }),
-    [approvals, assignments, authUser?.id, currentUserId, dashboard, deliveryPackages, inboxProfileId, invitations, notificationItems, teams, workQueue],
-  )
-  const entryData = useMemo(
-    () => buildCrossProjectEntryData({
-      portfolio,
-      queue: workQueue,
-      invitationCount: pendingInvitations.length,
-      queueHref: '#personal-command-center',
-    }),
-    [pendingInvitations.length, portfolio, workQueue],
-  )
-  const pendingInvitationAction = pendingInvitations[0]
-    ? getActionTarget({
-        actionType: 'invitation-inbox',
-        projectId: pendingInvitations[0].projectId,
-        actionLabel: '查看邀请',
-      })
-    : getActionTarget({
-        actionType: 'me',
-        actionLabel: '查看邀请',
-    })
+
   const [projectSummary, setProjectSummary] = useState({
     ownedProjectsCount: 0,
-    activeMembershipsCount: 0,
+    loading: true,
     currentProjectId: null as string | null,
     recentProjectTitle: null as string | null,
-    loading: true,
-    message: '',
   })
 
   useEffect(() => {
     if (!isAuthenticated || !authUser) return
     let cancelled = false
     fetch('/api/projects', { credentials: 'include' })
-      .then((response) => response.json() as Promise<{
-        projects?: Array<{ id: string; title?: string; ownerRole?: string | null; membershipRole?: string | null }>
-        summary?: { ownedProjectsCount?: number; activeMembershipsCount?: number; currentProjectId?: string | null; recentProject?: { title?: string } | null }
-        message?: string
-      }>)
+      .then(
+        (r) =>
+          r.json() as Promise<{
+            projects?: Array<{ id: string; title?: string; ownerRole?: string | null }>
+            summary?: {
+              ownedProjectsCount?: number
+              currentProjectId?: string | null
+              recentProject?: { title?: string } | null
+            }
+          }>,
+      )
       .then((data) => {
         if (cancelled) return
         const projects = data.projects ?? []
         setProjectSummary({
-          ownedProjectsCount: data.summary?.ownedProjectsCount ?? projects.filter((project) => project.ownerRole === 'OWNER').length,
-          activeMembershipsCount: data.summary?.activeMembershipsCount ?? projects.filter((project) => project.membershipRole).length,
+          ownedProjectsCount:
+            data.summary?.ownedProjectsCount ?? projects.filter((p) => p.ownerRole === 'OWNER').length,
+          loading: false,
           currentProjectId: data.summary?.currentProjectId ?? projects[0]?.id ?? null,
           recentProjectTitle: data.summary?.recentProject?.title ?? projects[0]?.title ?? null,
-          loading: false,
-          message: data.message ?? '',
         })
       })
-      .catch((error) => {
-        if (!cancelled) {
-          setProjectSummary((current) => ({
-            ...current,
-            loading: false,
-            message: error instanceof Error ? error.message : '加载项目身份失败。',
-          }))
-        }
+      .catch(() => {
+        if (!cancelled) setProjectSummary((c) => ({ ...c, loading: false }))
       })
     return () => {
       cancelled = true
@@ -166,11 +95,12 @@ export default function MePage() {
 
   async function handleEnsureProject() {
     const response = await fetch('/api/projects/ensure', { method: 'POST', credentials: 'include' })
-    const data = await response.json().catch(() => ({})) as { project?: { id: string }; workflow?: { id: string }; message?: string }
-    if (!response.ok || !data.project?.id) {
-      setProjectSummary((current) => ({ ...current, message: data.message ?? '创建项目失败。' }))
-      return
+    const data = (await response.json().catch(() => ({}))) as {
+      project?: { id: string }
+      workflow?: { id: string }
+      message?: string
     }
+    if (!response.ok || !data.project?.id) return
     try {
       window.localStorage.setItem('creator-city:last-project-id', data.project.id)
       if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
@@ -209,115 +139,243 @@ export default function MePage() {
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
-        <ProfileView userId={authUser.id} />
-        <div className="px-4">
-          {pendingInvitations.length > 0 ? (
-            <div className="mb-6">
-              <AccessNotice
-                title="你有待处理的项目邀请"
-                message="在接受项目邀请之前，相关 create / dashboard 入口不会完全开放。先处理邀请，再进入对应项目页，权限会按你的项目角色自动生效。"
-                details={pendingInvitations.slice(0, 3).map((invitation) => (
-                  `${invitation.projectTitle ?? invitation.projectId} · ${invitation.role} · 邀请人 ${invitation.invitedByName ?? invitation.invitedByUserId}`
-                ))}
-                href={pendingInvitationAction.actionHref}
-                ctaLabel={pendingInvitationAction.actionLabel}
-              />
-            </div>
-          ) : null}
-          <div className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
-            <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Current Identity</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-[11px] text-white/45">当前账号</div>
-                <div className="mt-1 text-sm font-semibold text-white">{authUser.displayName}</div>
-                <div className="mt-1 text-xs text-white/45">{authUser.email}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-[11px] text-white/45">账号 ID</div>
-                <div className="mt-1 text-sm font-semibold text-white font-mono text-xs">{authUser.id.slice(0, 12)}…</div>
-                <div className="mt-1 text-xs text-white/45">Role: {authUser.role}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-[11px] text-white/45">Project Identity</div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                  Owned {projectSummary.ownedProjectsCount} · Memberships {projectSummary.activeMembershipsCount}
-                </div>
-                <div className="mt-1 text-xs text-white/45">
-                  当前项目：{projectSummary.recentProjectTitle ?? projectSummary.currentProjectId ?? (projectSummary.loading ? '加载中...' : '无')}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {projectSummary.ownedProjectsCount > 0 && projectSummary.activeMembershipsCount === 0 ? (
-                    <span className="text-xs text-emerald-200/80">你是项目 Owner，可直接进入项目。</span>
-                  ) : activeAssignments.length > 0 ? activeAssignments.map((assignment) => (
-                    <div key={assignment.id} className="flex items-center gap-2 rounded-xl border border-white/8 px-2 py-1">
-                      <RoleBadge role={assignment.role} />
-                      <span className="text-[11px] text-white/55">{assignment.projectId}</span>
-                    </div>
-                  )) : projectSummary.ownedProjectsCount === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => { void handleEnsureProject() }}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/85"
-                    >
-                      创建项目
-                    </button>
-                  ) : (
-                    <span className="text-xs text-white/45">{projectSummary.message || '真实项目身份已加载。'}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mb-6 space-y-6">
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <StatusSummaryCard
-                title="Status Summary"
-                subtitle="Me / Projects / Project Home 统一使用这套入口指标。"
-                metrics={entryData.statusMetrics}
-              />
-              <QuickActionsCard
-                title="Quick Actions"
-                subtitle="把最常用的项目入口、待办入口和邀请入口放在一处。"
-                actions={entryData.quickActions}
-              />
-            </div>
-            <RiskOrWaitingCard
-              title="Risk / Waiting"
-              subtitle="当前最值得先切换、先处理的项目会统一出现在这里。"
-              items={entryData.waitingItems}
-            />
-            <WorkspaceSwitcher
-              recentProjects={portfolio.recentProjects}
-              highPriorityProjects={portfolio.highPriorityProjects}
-              waitingProjects={portfolio.waitingProjects}
-            />
-            <UserProjectPortfolio
-              data={portfolio}
-              title="Cross-project Summary"
-              subtitle="在进入单个项目前，先看你当前参与项目里哪些正在等你、哪些风险最高、哪些最值得优先切换。"
-            />
-          </div>
-          <PersonalCommandCenter queue={workQueue} />
-          <InvitationInbox
-            invitations={invitations}
-            onAccept={acceptInvitation}
-            onDecline={declineInvitation}
-          />
-          <MyAssetsBlock />
-        </div>
+      <div className="space-y-6 px-4">
+        <PassportCard authUser={authUser} projectSummary={projectSummary} onEnsureProject={handleEnsureProject} />
+        <StatsCard />
+        <MyAssetsBlock />
       </div>
     </DashboardShell>
+  )
+}
+
+// ─── Passport Card ────────────────────────────────────────────────────────────
+
+interface AuthUser {
+  id: string
+  email: string
+  displayName: string
+  role: string
+}
+
+function PassportCard({
+  authUser,
+  projectSummary,
+  onEnsureProject,
+}: {
+  authUser: AuthUser
+  projectSummary: {
+    ownedProjectsCount: number
+    loading: boolean
+    recentProjectTitle: string | null
+  }
+  onEnsureProject: () => Promise<void>
+}) {
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/user/profile', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ profile?: UserProfile }>)
+      .then((data) => {
+        if (!cancelled) setProfile(data.profile ?? null)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingProfile(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const displayName = profile?.displayName ?? authUser.displayName
+  const bio = profile?.bio
+  const city = profile?.city
+  const company = profile?.company
+  const websiteUrl = profile?.websiteUrl
+  const avatarUrl = profile?.avatarUrl
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">Creator Passport</p>
+
+      <div className="mt-4 flex items-start gap-4">
+        <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-2xl text-white/30">🎬</span>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-white truncate">{displayName}</h2>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
+              {authUser.role}
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs text-white/40 truncate">{authUser.email}</p>
+          {!loadingProfile && bio && <p className="mt-2 text-xs text-white/50 line-clamp-2">{bio}</p>}
+          {!loadingProfile && (city || company) && (
+            <p className="mt-1 text-xs text-white/35">{[company, city].filter(Boolean).join(' · ')}</p>
+          )}
+          {!loadingProfile && websiteUrl && (
+            <a
+              href={websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 text-xs text-white/35 hover:text-white/60 transition truncate block"
+            >
+              {websiteUrl}
+            </a>
+          )}
+        </div>
+
+        <Link href="/profile/edit" className="flex-shrink-0 text-xs text-white/30 hover:text-white/60 transition">
+          编辑
+        </Link>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+          <div className="text-[10px] text-white/40">账号 ID</div>
+          <div className="mt-1 text-xs font-mono text-white/70">{authUser.id.slice(0, 10)}…</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+          <div className="text-[10px] text-white/40">拥有项目</div>
+          <div className="mt-1 text-sm font-semibold text-white">
+            {projectSummary.loading ? '…' : projectSummary.ownedProjectsCount}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+          <div className="text-[10px] text-white/40">最近项目</div>
+          <div className="mt-1 text-xs text-white/70 truncate">
+            {projectSummary.loading ? '…' : (projectSummary.recentProjectTitle ?? '无')}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        {projectSummary.ownedProjectsCount > 0 ? (
+          <Link
+            href="/create"
+            className="rounded-lg bg-white px-4 py-1.5 text-xs font-semibold text-black transition hover:bg-white/85"
+          >
+            进入创作 →
+          </Link>
+        ) : !projectSummary.loading ? (
+          <button
+            type="button"
+            onClick={() => {
+              void onEnsureProject()
+            }}
+            className="rounded-lg bg-white px-4 py-1.5 text-xs font-semibold text-black transition hover:bg-white/85"
+          >
+            创建项目
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── Stats Card ───────────────────────────────────────────────────────────────
+
+const LICENSE_LABELS: Record<string, string> = {
+  private_only: '仅私有',
+  public_showcase: '公开展示',
+  reusable_noncommercial: '可复用（非商业）',
+  reusable_commercial: '可复用（商业）',
+  marketplace_license: '市场授权',
+  unset: '未设置',
+}
+
+function StatsCard() {
+  const [stats, setStats] = useState<MeStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/me/stats', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ success?: boolean } & Partial<MeStats>>)
+      .then((data) => {
+        if (!cancelled && data.assets && data.licenseIntent && data.projects) {
+          setStats({ assets: data.assets, licenseIntent: data.licenseIntent, projects: data.projects })
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+        <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">我的创作数据</p>
+        <p className="mt-3 text-xs text-white/30">加载中…</p>
+      </div>
+    )
+  }
+
+  if (!stats) return null
+
+  const rows = [
+    { label: '总素材', value: stats.assets.total },
+    { label: '图片', value: stats.assets.image },
+    { label: '视频', value: stats.assets.video },
+    { label: '项目', value: stats.projects.total },
+    { label: '公开素材', value: stats.assets.public },
+    { label: '私有素材', value: stats.assets.private },
+  ]
+
+  const licenseRows = Object.entries(stats.licenseIntent).filter(([, v]) => v > 0)
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">我的创作数据 · 真实统计</p>
+      <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-2xl border border-white/10 bg-black/20 p-3 text-center">
+            <div className="text-lg font-bold text-white">{row.value}</div>
+            <div className="mt-0.5 text-[10px] text-white/40">{row.label}</div>
+          </div>
+        ))}
+      </div>
+      {licenseRows.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/25 mb-2">授权分布</p>
+          <div className="flex flex-wrap gap-2">
+            {licenseRows.map(([mode, count]) => (
+              <span
+                key={mode}
+                className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-white/50"
+              >
+                {LICENSE_LABELS[mode] ?? mode} · {count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
 // ─── License badge helper ─────────────────────────────────────────────────────
 
 function LicenseBadge({ metadataJson, isPublic }: { metadataJson?: unknown; isPublic?: boolean | null }) {
-  const li = metadataJson && typeof metadataJson === 'object'
-    ? (metadataJson as Record<string, unknown>).licenseIntent
-    : null
-  const mode = li && typeof li === 'object' ? (li as Record<string, unknown>).mode as string | undefined : undefined
+  const li =
+    metadataJson && typeof metadataJson === 'object'
+      ? (metadataJson as Record<string, unknown>).licenseIntent
+      : null
+  const mode =
+    li && typeof li === 'object' ? ((li as Record<string, unknown>).mode as string | undefined) : undefined
 
   const BADGE_MAP: Record<string, { icon: string; bg: string; color: string }> = {
     private_only: { icon: '🔒', bg: 'rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.4)' },
@@ -331,30 +389,13 @@ function LicenseBadge({ metadataJson, isPublic }: { metadataJson?: unknown; isPu
   const cfg = BADGE_MAP[key] ?? BADGE_MAP['private_only']!
 
   return (
-    <span
-      className="rounded px-1 py-0.5 text-[8px] font-semibold"
-      style={{ background: cfg.bg, color: cfg.color }}
-    >
+    <span className="rounded px-1 py-0.5 text-[8px] font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
       {cfg.icon}
     </span>
   )
 }
 
 // ─── Real assets block ────────────────────────────────────────────────────────
-
-interface MiniAsset {
-  id: string
-  title?: string | null
-  name: string
-  type: string
-  isPublic?: boolean | null
-  providerId?: string | null
-  resolvedUrl?: string | null
-  thumbnailUrl?: string | null
-  url?: string | null
-  metadataJson?: unknown
-  createdAt: string
-}
 
 function MyAssetsBlock() {
   const [assets, setAssets] = useState<MiniAsset[]>([])
@@ -364,26 +405,30 @@ function MyAssetsBlock() {
     try {
       const res = await fetch('/api/assets?limit=12&type=IMAGE', { credentials: 'include', cache: 'no-store' })
       if (!res.ok) return
-      const data = await res.json() as { assets?: MiniAsset[] }
+      const data = (await res.json()) as { assets?: MiniAsset[] }
       setAssets((data.assets ?? []).slice(0, 12))
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+  }, [load])
 
   if (loading) return null
   if (assets.length === 0) return null
 
   return (
-    <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5">
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">My Assets · 我的作品</p>
           <p className="mt-1 text-xs text-white/35">最近生成的图片资产 — 真实数据</p>
         </div>
-        <Link href="/assets" className="text-xs text-white/40 hover:text-white/70 transition">查看全部 →</Link>
+        <Link href="/assets" className="text-xs text-white/40 hover:text-white/70 transition">
+          查看全部 →
+        </Link>
       </div>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
         {assets.map((a) => {

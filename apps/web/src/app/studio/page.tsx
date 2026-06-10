@@ -13,19 +13,18 @@ const MY_WORKS = [
 ]
 
 const MY_AGENTS = [
-  { icon:'⚡', name:'我的商业编剧',  style:'爆款流', uses:47, revenue:'¥23.5', status:'normal' },
-  { icon:'🎨', name:'情绪大师',      style:'情绪流', uses:31, revenue:'¥15.5', status:'normal' },
-  { icon:'🌑', name:'深渊叙事者',    style:'暗黑风', uses:12, revenue:'¥6.0',  status:'降权' },
+  { icon:'⚡', name:'我的商业编剧',  style:'爆款流', uses:47, status:'normal' },
+  { icon:'🎨', name:'情绪大师',      style:'情绪流', uses:31, status:'normal' },
+  { icon:'🌑', name:'深渊叙事者',    style:'暗黑风', uses:12, status:'降权' },
 ]
 
 const STATS = [
   { label:'总生成', value:'23', color:'text-city-accent-glow' },
   { label:'本月创作', value:'8',  color:'text-city-emerald' },
-  { label:'总收益',  value:'¥45', color:'text-city-gold' },
   { label:'最高分',  value:'97',  color:'text-city-rose' },
 ]
 
-const TABS = ['作品', 'Agent', '收益']
+const TABS = ['作品', 'Agent']
 
 export default function StudioPage() {
   const [tab, setTab] = useState('作品')
@@ -65,7 +64,7 @@ export default function StudioPage() {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               {STATS.map(s => (
                 <div key={s.label} className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-3 text-center">
                   <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
@@ -158,8 +157,7 @@ export default function StudioPage() {
                     <p className="text-xs text-gray-500 mt-0.5">{a.style} · {a.uses} 次使用</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold text-city-emerald">{a.revenue}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded border mt-1 inline-block ${
+                    <span className={`text-xs px-1.5 py-0.5 rounded border inline-block ${
                       a.status === '降权'
                         ? 'text-city-rose border-city-rose/30 bg-city-rose/5'
                         : 'text-city-emerald border-city-emerald/30 bg-city-emerald/5'
@@ -172,33 +170,6 @@ export default function StudioPage() {
             </div>
           )}
 
-          {tab === '收益' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {([
-                  ['总收益', '¥45.0', 'text-city-gold'],
-                  ['本月', '¥23.5', 'text-city-emerald'],
-                  ['本周', '¥12.0', 'text-city-accent-glow'],
-                  ['今日', '¥6.0', 'text-white'],
-                ] as [string, string, string][]).map(([l, v, c]) => (
-                  <div key={l} className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5 text-center">
-                    <p className={`text-2xl font-bold ${c}`}>{v}</p>
-                    <p className="text-xs text-gray-500 mt-1">{l}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5">
-                <p className="text-xs text-gray-500 mb-3">收益来源</p>
-                {MY_AGENTS.map(a => (
-                  <div key={a.name} className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
-                    <span className="text-sm">{a.icon}</span>
-                    <span className="flex-1 text-sm text-gray-300 truncate">{a.name}</span>
-                    <span className="text-sm font-semibold text-city-emerald">{a.revenue}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </main>
