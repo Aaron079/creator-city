@@ -33,7 +33,6 @@ export interface AssetAgentToolbarProps {
   onReframeChange: (mode: ReframeMode) => void
   onOpenColorGrade?: () => void
   onOpenLookPackage?: () => void
-  onOpenCharacterReference?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -50,7 +49,6 @@ export function AssetAgentToolbar({
   onReframeChange,
   onOpenColorGrade,
   onOpenLookPackage,
-  onOpenCharacterReference,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
   const [clipMenuOpen, setClipMenuOpen] = useState(false)
@@ -215,14 +213,6 @@ export function AssetAgentToolbar({
         {assetMenuOpen ? (
           <div className="asset-agent-reframe-popover" data-no-node-drag="true">
             <div className="asset-agent-reframe-title">资产工具</div>
-            <button
-              type="button"
-              data-no-node-drag="true"
-              className="asset-agent-reframe-chip"
-              onClick={(e) => { stopEvent(e); onOpenCharacterReference?.(); setAssetMenuOpen(false) }}
-            >
-              👤 人物参考
-            </button>
             <div style={{ padding: '4px 10px 2px', fontSize: 10, color: 'rgba(255,255,255,0.22)', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span>⊕ 入库 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
               <span>⊞ 版本管理 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>

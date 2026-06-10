@@ -31,7 +31,6 @@ import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
-import { CharacterReferenceGridPanel, type GenerateCharacterReferenceResult } from '@/components/create/CharacterReferenceGridPanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
@@ -2384,7 +2383,6 @@ export function VisualCanvasWorkspace({
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
-  const [isCharacterReferenceOpen, setIsCharacterReferenceOpen] = useState(false)
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
@@ -7915,7 +7913,6 @@ export function VisualCanvasWorkspace({
             setIsVariantPlannerOpen(tool === 'variant-planner')
             setIsABCompareOpen(tool === 'ab-compare')
             setIsKeyframeExtractorOpen(tool === 'keyframe-extractor')
-            if (tool === 'character-reference') setIsCharacterReferenceOpen(true)
           }}
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
@@ -8265,101 +8262,6 @@ export function VisualCanvasWorkspace({
         </>
       ) : null}
 
-      {/* Character Reference Grid — Tool 13, Asset group */}
-      {isCharacterReferenceOpen && saveStatus !== 'opening' ? (
-        <>
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => setIsCharacterReferenceOpen(false)}
-          />
-          <CharacterReferenceGridPanel
-            nodes={nodes}
-            projectId={projectId}
-            workflowId={workflowId || undefined}
-            defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
-            onReferenceGenerated={(result: GenerateCharacterReferenceResult) => {
-              const sourceNode = nodes.find((n) => n.id === result.sourceNodeId)
-              const modeLabel = result.mode === 'turnaround4' ? '四视图' : '九宫格'
-              const imageMeta = NODE_META['image']
-              const imageSize = getNodeSize('image')
-              const now = Date.now()
-              const groupId = `char-ref-${result.sourceNodeId}-${now}`
-
-              // Pre-calculated 2×2 (turnaround4) or 3+2 (grid5) grid — bypasses resolveNonOverlappingPosition stacking
-              const cols = result.mode === 'turnaround4' ? 2 : 3
-              const colGap = imageSize.width + 40
-              const rowGap = imageSize.height + 40
-              const startX = sourceNode
-                ? sourceNode.x + (sourceNode.width ?? 380) + 80
-                : 500
-              const startY = sourceNode?.y ?? 100
-
-              const newNodes: VisualCanvasNode[] = result.references.map((ref, i) => {
-                // slotIndex/totalSlots let per-slot incremental calls position correctly
-                const gridIdx = ref.slotIndex ?? i
-                const col = gridIdx % cols
-                const row = Math.floor(gridIdx / cols)
-                const chineseLabel = ref.label.split(' / ')[0] ?? ref.label
-                return {
-                  id: createNodeId('image'),
-                  type: 'image' as const,
-                  kind: 'image' as const,
-                  title: `人物${modeLabel} · ${chineseLabel}`,
-                  subtitle: imageMeta.subtitle,
-                  prompt: ref.prompt,
-                  model: 'volcengine-seedream-image',
-                  providerId: 'volcengine-seedream-image',
-                  stage: promptStage,
-                  ratio: imageMeta.ratio,
-                  status: 'done' as const,
-                  assetId: ref.assetId,
-                  resultImageUrl: ref.imageUrl,
-                  resultVideoUrl: undefined,
-                  metadataJson: {
-                    assetId: ref.assetId,
-                    characterReference: {
-                      source: 'CharacterReferenceApi',
-                      boardType: result.mode,
-                      groupId,
-                      slotKey: ref.key,
-                      slotLabel: ref.label,
-                      slotDescription: ref.slotDescription,
-                      internalPrompt: ref.prompt,
-                      sourceNodeId: result.sourceNodeId,
-                      sourceImageUrl: result.sourceImageUrl,
-                      sourceAssetId: result.sourceAssetId,
-                      cropBox: result.cropBox,
-                      generatedAssetId: ref.assetId,
-                      generatedImageUrl: ref.imageUrl,
-                    },
-                  },
-                  x: startX + col * colGap,
-                  y: startY + row * rowGap,
-                  width: imageSize.width,
-                  height: imageSize.height,
-                  createdAt: now + i,
-                }
-              })
-
-              commitNodes((current) => [...current, ...newNodes])
-              commitEdges((current) => [
-                ...current,
-                ...newNodes.map((n) => ({
-                  id: `edge-char-ref-${result.sourceNodeId}-${n.id}`,
-                  fromNodeId: result.sourceNodeId,
-                  toNodeId: n.id,
-                  status: 'idle' as const,
-                })),
-              ])
-              flushLocalSnapshot()
-              scheduleCanvasSave(0)
-              showCanvasFeedback(`已生成真实人物参考图并保存为画布节点。`)
-            }}
-            onClose={() => setIsCharacterReferenceOpen(false)}
-          />
-        </>
-      ) : null}
 
       {saveStatus !== 'opening' ? (
         <CanvasSmartToolbar
@@ -8749,7 +8651,6 @@ export function VisualCanvasWorkspace({
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
             onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
             onOpenLookPackage={() => setIsLookPackageOpen(true)}
-            onOpenCharacterReference={() => setIsCharacterReferenceOpen(true)}
           />
         </div>
       ) : null}

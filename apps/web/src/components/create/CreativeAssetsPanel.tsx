@@ -12,12 +12,10 @@ import {
 import type { SceneBible } from '@/lib/scenes'
 import { SceneBiblePanel } from './SceneBiblePanel'
 import { SceneLabPanel } from './SceneLabPanel'
-import { CharacterReferenceBoard } from './CharacterReferenceBoard'
-import { CharacterReferencePackGenerator } from './CharacterReferencePackGenerator'
 import { AssetIntelligencePanel } from './AssetIntelligencePanel'
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 
-type CharacterSubTab = 'settings' | 'references' | 'generator'
+type CharacterSubTab = 'settings'
 type CreativeAssetTab = 'intelligence' | 'characters' | 'scenes' | 'palette' | 'props' | 'camera'
 type CreativeAssetInitialTab = CreativeAssetTab | 'scene-lab'
 type SceneSubTab = 'library' | 'plugins'
@@ -59,8 +57,6 @@ const TABS: Array<{ id: CreativeAssetTab; label: string }> = [
 
 const CHARACTER_SUB_TABS: Array<{ id: CharacterSubTab; label: string }> = [
   { id: 'settings', label: '角色设定' },
-  { id: 'references', label: '参考资产' },
-  { id: 'generator', label: '生成参考包' },
 ]
 
 const SCENE_SUB_TABS: Array<{ id: SceneSubTab; label: string }> = [
@@ -219,18 +215,6 @@ export function CreativeAssetsPanel({
   )
   const selectedCharacterIdSet = new Set(selectedCharacterIds)
   const selectedSceneIdSet = new Set(selectedSceneIds)
-
-  // Save references directly (not via draft) — preserves unsaved character form edits
-  const handleReferencesBibleSave = (updatedBible: CharacterBible) => {
-    setDraftCharacterBible((currentDraft) => ({
-      ...updatedBible,
-      characters: currentDraft.characters.map((c) => {
-        const updated = updatedBible.characters.find((uc) => uc.id === c.id)
-        return updated ? { ...c, referencePack: updated.referencePack } : c
-      }),
-    }))
-    onCharacterBibleSave(updatedBible)
-  }
 
   const patchSelectedCharacter = (patch: Partial<CharacterProfile>) => {
     if (!selectedCharacter) return
@@ -472,24 +456,6 @@ export function CreativeAssetsPanel({
                 </div>
               ) : null}
 
-              {/* 参考资产 */}
-              {characterSubTab === 'references' ? (
-                <CharacterReferenceBoard
-                  characterBible={draftCharacterBible}
-                  currentNode={currentNode}
-                  selectedCharacterIds={selectedCharacterIds}
-                  onSaveCharacterBible={handleReferencesBibleSave}
-                />
-              ) : null}
-
-              {/* 生成参考包 */}
-              {characterSubTab === 'generator' ? (
-                <CharacterReferencePackGenerator
-                  characterBible={draftCharacterBible}
-                  currentNode={currentNode}
-                  onSaveCharacterBible={handleReferencesBibleSave}
-                />
-              ) : null}
             </div>
           ) : null}
 

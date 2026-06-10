@@ -79,8 +79,8 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Color Grade 调色草案节点工作流（创建调色节点保存到画布 · idle · 不自动生成 · 不消耗 credits） | ✅ CLOSED / validated | `d221df6` · `65a4152` |
 | Color Grade 预览即时生效文案修正（Preview Monitor CSS filter 即时 · 不再写"需重新生成才生效"为主语义） | ✅ CLOSED / validated | `c5cefed` · `7a26d8d` |
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
-| Tool 13 — Character Reference Skill Agent / 人物参考板（四视图/九宫格） | ⏸ PAUSED / Seedream route suspended / Character Skill Worker required | `20279ad` |
-| Character Skill Worker — Face-ID POC route | 🔬 IMPLEMENTED (dev-only) / `POST /api/skills/character-reference/face-id-poc` / not connected to UI / requires `CHARACTER_FACE_ID_POC_ENABLED=true` + `FAL_KEY` or `REPLICATE_API_TOKEN` | uncommitted |
+| Tool 13 — Character Reference / Turnaround / Grid（四视图/九宫格） | 🚫 DEFERRED / REMOVED_FROM_UI / no UI entry point / dev-only route preserved | `20279ad` · deferred commit pending |
+| Character Skill Worker — Face-ID POC route | 🔬 dev-only / `POST /api/skills/character-reference/face-id-poc` / requires env flag / not exposed in UI | `9403f60` |
 
 ---
 
@@ -647,6 +647,33 @@ Creator City **不是中心化 API 转售平台**。商业模型为：
 | Video timeline editor | ❌ not implemented / not now |
 
 **下一步商业优先级（2026-06）：** 平台服务费策略只读审计已完成（结论：**当前不启用**）。Tool 11 Look Package Applier 已验收，Tool 12 Color Grade Palette 已浏览器验收通过并 CLOSED。下一步不继续打磨 Tool 12 UI。推荐二选一：**Tool 12.5 — WebGL / LUT Preview 研究或原型**（CSS filter 升级为真实 WebGL LUT 近似预览，需评估 glsl-lut / glfx.js 许可证 + OSS + 队列）；**Tool 13 — FFmpeg worker + LUT3D 媒体处理研究**（真实像素级调色输出，需单独评估部署/许可证/成本）。Tool 12.5 / Tool 13 必须单独评估，不应塞进当前 Tool 12。当前 Tool 12 已 CLOSED / validated。任何高级版若要新增 API/schema/provider capability，必须先单独评估并等待用户确认后再实施。价格/服务费静态说明页面已上线（`/pricing-preview`），AI 帮助已能回答费用相关问题。Service Credits 数据模型只读审计已完成（结论：**推荐 Option B 独立 wallet，9 项 no-go 条件全部未满足，继续观察**）。Admin 模拟服务积分视图已上线并验收（`cee4f9d`）。Admin BYOK 商业指标只读看板已上线并验收（`9e80027`）。BYOK 观察摘要已实现（可复制中文周报）。UsageLog.platformServiceFeeCredits 固定为 0，所有 UI 显示"未启用"。下一步：继续观察 BYOK 用量 30–60 天，无需立即动作；用 `/admin/usage` BYOK 商业指标看板定期审阅 BYOK 调用占比/高频用户/daily trend；判断门槛：BYOK 用量比例 > 30% 且高频用户 ≥ 50 人后再考虑 Phase M1（新表，不写数据）→ Phase M2（懒创建 wallet）→ Phase M5（feature flag 内测）。暂不做 schema migration，暂不启用服务费扣费，暂不启动 Seedance Video BYOK 实施。
+
+---
+
+## Tool 13 — Character Reference / Turnaround / Grid: DEFERRED
+
+**Status:** DEFERRED / REMOVED_FROM_UI
+
+**Reason:**
+- Current implementation requires a third-party API or cloud GPU worker to generate multi-view character references at production quality.
+- Local ComfyUI POC is suitable for individual use only — not a viable open-platform feature.
+- Seedream img2img route is paused and not a formal solution.
+- Hosted fal.ai / Replicate Face-ID POC route (`9403f60`) remains dev-only, requires `CHARACTER_FACE_ID_POC_ENABLED=true` env flag, and is not exposed in any UI.
+
+**What was removed from UI:**
+- CanvasToolDock: "人物参考 / 四视图" menu item removed from Asset group
+- AssetAgentToolbar: "👤 人物参考" button removed from per-node asset menu
+- VisualCanvasWorkspace: CharacterReferenceGridPanel render block removed; `isCharacterReferenceOpen` state removed
+- CreativeAssetsPanel: "参考资产" and "生成参考包" character sub-tabs removed
+
+**What is preserved (not deleted):**
+- `apps/web/src/app/api/generate/character-reference/route.ts` — kept, not called from UI
+- `apps/web/src/app/api/skills/character-reference/face-id-poc/route.ts` — dev-only POC, env-gated
+- `apps/web/src/components/create/CharacterReferenceGridPanel.tsx` — file kept, not imported by any UI
+- `CanvasNodeCard.tsx` badge logic for existing historical char-ref nodes — kept so old nodes still render correctly as image nodes
+
+**Future:**
+Revisit when a production-grade third-party API or hosted worker (e.g., commercial InstantID, PhotoMaker, or self-hosted GPU endpoint) is selected and contracted.
 
 ---
 
