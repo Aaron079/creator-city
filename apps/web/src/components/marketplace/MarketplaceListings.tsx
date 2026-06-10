@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,13 +36,163 @@ interface ListingItem {
 
 // ─── Listing Card ─────────────────────────────────────────────────────────────
 
-function ListingCard({ item }: { item: ListingItem }) {
+function ListingCard({
+  item,
+  currentUserId,
+}: {
+  item: ListingItem
+  currentUserId: string | null
+}) {
   const thumb = item.asset.thumbnailUrl ?? item.asset.url ?? ''
+  const isSeller = currentUserId === item.sellerId
+  const isFree = item.priceCredits === 0
+
+  const [grantState, setGrantState] = useState<'idle' | 'loading' | 'granted' | 'error'>('idle')
+  const [grantChecked, setGrantChecked] = useState(false)
+
+  // Check existing grant on mount (only for eligible non-seller buyers)
+  useEffect(() => {
+    if (!currentUserId || isSeller || !isFree) return
+    let cancelled = false
+    fetch(`/api/marketplace/listings/${item.id}/grant`, { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ granted?: boolean }>)
+      .then((data) => {
+        if (!cancelled && data.granted) setGrantState('granted')
+      })
+      .catch(() => { /* ignore */ })
+      .finally(() => { if (!cancelled) setGrantChecked(true) })
+    return () => { cancelled = true }
+  }, [item.id, currentUserId, isSeller, isFree])
+
+  const handleGrant = useCallback(async () => {
+    if (grantState !== 'idle') return
+    setGrantState('loading')
+    try {
+      const res = await fetch(`/api/marketplace/listings/${item.id}/grant`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = (await res.json()) as { errorCode?: string }
+      if (res.ok || res.status === 201) {
+        setGrantState('granted')
+      } else if (data.errorCode === 'ALREADY_GRANTED') {
+        setGrantState('granted')
+      } else {
+        setGrantState('error')
+        setTimeout(() => setGrantState('idle'), 2500)
+      }
+    } catch {
+      setGrantState('error')
+      setTimeout(() => setGrantState('idle'), 2500)
+    }
+  }, [item.id, grantState])
 
   const licenseColor =
     item.licenseMode === 'reusable_commercial'
       ? { bg: 'rgba(251,146,60,0.12)', color: '#fdba74', label: '💼 商用复用' }
       : { bg: 'rgba(96,165,250,0.12)', color: '#93c5fd', label: '🔄 非商用复用' }
+
+  // Determine action button
+  const renderActionButton = () => {
+    if (isSeller) {
+      return (
+        <span
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 12,
+            padding: '7px 0',
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.20)',
+            userSelect: 'none',
+          }}
+        >
+          你的上架资产
+        </span>
+      )
+    }
+
+    if (!isFree || item.priceCredits === null) {
+      return (
+        <span
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 12,
+            padding: '7px 0',
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.04)',
+            color: 'rgba(255,255,255,0.18)',
+            cursor: 'not-allowed',
+            userSelect: 'none',
+          }}
+        >
+          申请授权 · 即将开放
+        </span>
+      )
+    }
+
+    // Free listing — show grant button
+    if (grantState === 'granted') {
+      return (
+        <span
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 12,
+            padding: '7px 0',
+            borderRadius: 10,
+            border: '1px solid rgba(74,222,128,0.25)',
+            color: '#4ade80',
+            userSelect: 'none',
+          }}
+        >
+          ✓ 已获取授权
+        </span>
+      )
+    }
+
+    if (grantState === 'error') {
+      return (
+        <span
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 12,
+            padding: '7px 0',
+            borderRadius: 10,
+            border: '1px solid rgba(248,113,113,0.25)',
+            color: 'rgba(248,113,113,0.8)',
+            userSelect: 'none',
+          }}
+        >
+          领取失败，请重试
+        </span>
+      )
+    }
+
+    return (
+      <button
+        onClick={handleGrant}
+        disabled={grantState === 'loading' || (!grantChecked && !!currentUserId)}
+        style={{
+          flex: 1,
+          textAlign: 'center',
+          fontSize: 12,
+          padding: '7px 0',
+          borderRadius: 10,
+          border: '1px solid rgba(96,165,250,0.35)',
+          color: grantState === 'loading' ? 'rgba(255,255,255,0.3)' : '#93c5fd',
+          background: 'transparent',
+          cursor: grantState === 'loading' ? 'wait' : 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        {grantState === 'loading' ? '处理中…' : '免费领取授权'}
+      </button>
+    )
+  }
 
   return (
     <div
@@ -112,16 +262,16 @@ function ListingCard({ item }: { item: ListingItem }) {
         >
           {licenseColor.label}
         </span>
-        {item.commercialUse ? null : (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.28)' }}>
-            非商用
+        {isFree && (
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: 'rgba(74,222,128,0.7)', fontWeight: 600 }}>
+            免费
           </span>
         )}
-      </div>
-
-      {/* Price */}
-      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)' }}>
-        {item.priceCredits != null ? `标价：${item.priceCredits} 积分（购买功能规划中）` : '标价：待定'}
+        {!isFree && item.priceCredits != null && (
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.28)' }}>
+            {item.priceCredits} 积分（规划中）
+          </span>
+        )}
       </div>
 
       {/* Actions */}
@@ -141,21 +291,7 @@ function ListingCard({ item }: { item: ListingItem }) {
         >
           查看资产
         </Link>
-        <span
-          style={{
-            flex: 1,
-            textAlign: 'center',
-            fontSize: 12,
-            padding: '7px 0',
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.04)',
-            color: 'rgba(255,255,255,0.18)',
-            cursor: 'not-allowed',
-            userSelect: 'none',
-          }}
-        >
-          申请授权 · 即将开放
-        </span>
+        {renderActionButton()}
       </div>
     </div>
   )
@@ -167,13 +303,26 @@ export function MarketplaceListings() {
   const [items, setItems] = useState<ListingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/marketplace/listings', { credentials: 'include' })
-      .then((r) => r.json() as Promise<{ items?: ListingItem[]; message?: string }>)
-      .then((data) => {
-        if (!cancelled) setItems(data.items ?? [])
+
+    // Load current user id and listings in parallel
+    Promise.all([
+      fetch('/api/auth/me', { credentials: 'include' })
+        .then((r) => r.json() as Promise<{ user?: { id: string } }>)
+        .then((d) => d.user?.id ?? null)
+        .catch(() => null),
+      fetch('/api/marketplace/listings', { credentials: 'include' })
+        .then((r) => r.json() as Promise<{ items?: ListingItem[] }>)
+        .then((d) => d.items ?? []),
+    ])
+      .then(([userId, listingItems]) => {
+        if (!cancelled) {
+          setCurrentUserId(userId)
+          setItems(listingItems)
+        }
       })
       .catch(() => {
         if (!cancelled) setError('加载失败，请刷新页面重试')
@@ -181,9 +330,8 @@ export function MarketplaceListings() {
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
+
+    return () => { cancelled = true }
   }, [])
 
   return (
@@ -207,7 +355,7 @@ export function MarketplaceListings() {
         以下为创作者正式上架的可复用资产 Listing。
         <br />
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-          购买授权、定价、收益分成将在后续 Marketplace 阶段接入。所有申请授权按钮当前为只读。
+          免费资产可直接领取授权。付费授权定价、收益分成将在后续 Marketplace 阶段接入。
         </span>
       </p>
 
@@ -240,7 +388,7 @@ export function MarketplaceListings() {
           }}
         >
           {items.map((item) => (
-            <ListingCard key={item.id} item={item} />
+            <ListingCard key={item.id} item={item} currentUserId={currentUserId} />
           ))}
         </div>
       )}

@@ -11,7 +11,7 @@ export async function GET(_request: NextRequest) {
     const user = await getCurrentUser()
     if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
-    const [assets, projectCount, activeListingCount, draftListingCount] = await Promise.all([
+    const [assets, projectCount, activeListingCount, draftListingCount, grantsReceivedCount, grantsIssuedCount] = await Promise.all([
       db.asset.findMany({
         where: { ownerId: user.id },
         select: { type: true, isPublic: true, metadataJson: true, status: true },
@@ -19,6 +19,8 @@ export async function GET(_request: NextRequest) {
       db.project.count({ where: { ownerId: user.id } }),
       db.assetListing.count({ where: { sellerId: user.id, status: 'ACTIVE' } }),
       db.assetListing.count({ where: { sellerId: user.id, status: 'DRAFT' } }),
+      db.licenseGrant.count({ where: { buyerId: user.id, status: 'ACTIVE' } }),
+      db.licenseGrant.count({ where: { sellerId: user.id, status: 'ACTIVE' } }),
     ])
 
     const assetStats = {
@@ -87,7 +89,7 @@ export async function GET(_request: NextRequest) {
       assets: assetStats,
       licenseIntent,
       projects: { total: projectCount },
-      marketplace: { marketplaceReady, marketplaceIntentCount, activeListingCount, draftListingCount },
+      marketplace: { marketplaceReady, marketplaceIntentCount, activeListingCount, draftListingCount, grantsReceivedCount, grantsIssuedCount },
     })
   } catch (error) {
     console.error('[me/stats] failed', { error })

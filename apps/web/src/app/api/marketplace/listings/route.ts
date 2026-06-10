@@ -31,8 +31,11 @@ export async function GET(request: NextRequest) {
           status: { not: AssetListingStatus.ARCHIVED },
         },
         orderBy: { createdAt: 'desc' },
+        include: { _count: { select: { grants: { where: { status: 'ACTIVE' } } } } },
       })
-      return jsonOk({ listing: listing ? serializeListing(listing) : null })
+      if (!listing) return jsonOk({ listing: null, grantCount: 0 })
+      const { _count, ...listingData } = listing
+      return jsonOk({ listing: serializeListing(listingData), grantCount: _count.grants })
     }
 
     // Public marketplace: all ACTIVE listings on public READY assets

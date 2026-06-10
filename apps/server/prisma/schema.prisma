@@ -258,6 +258,8 @@ model User {
   auditLogs           AuditLog[]
   providerAccounts    UserProviderAccount[]
   assetListings       AssetListing[]         @relation("AssetListingSeller")
+  licenseGrantsBought LicenseGrant[]         @relation("LicenseGrantBuyer")
+  licenseGrantsSold   LicenseGrant[]         @relation("LicenseGrantSeller")
 
   @@index([username])
   @@index([email])
@@ -623,6 +625,7 @@ model Asset {
   projectAssets ProjectAsset[]
   deliveryItems DeliveryItem[]
   listings      AssetListing[]
+  licenseGrants LicenseGrant[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -1368,10 +1371,50 @@ model AssetListing {
 
   asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
   seller User  @relation("AssetListingSeller", fields: [sellerId], references: [id])
+  grants LicenseGrant[]
 
   @@index([assetId])
   @@index([sellerId])
   @@index([status])
   @@index([createdAt])
   @@index([publishedAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETPLACE — P0-5 LicenseGrant (free-only, no payment, no wallet)
+// Only priceCredits=0 listings can be granted. No MarketplaceOrder.
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum LicenseGrantStatus {
+  ACTIVE
+  REVOKED
+}
+
+model LicenseGrant {
+  id          String             @id @default(uuid())
+  listingId   String
+  buyerId     String
+  sellerId    String
+  assetId     String
+
+  licenseMode String
+  paidCredits Int                @default(0)
+  status      LicenseGrantStatus @default(ACTIVE)
+  grantedAt   DateTime           @default(now())
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  termsJson   Json?
+
+  listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer    User         @relation("LicenseGrantBuyer",  fields: [buyerId],  references: [id])
+  seller   User         @relation("LicenseGrantSeller", fields: [sellerId], references: [id])
+  asset    Asset        @relation(fields: [assetId],    references: [id])
+
+  @@unique([listingId, buyerId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([assetId])
+  @@index([listingId])
+  @@index([status])
+  @@index([grantedAt])
 }

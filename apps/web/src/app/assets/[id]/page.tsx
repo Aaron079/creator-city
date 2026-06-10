@@ -19,6 +19,18 @@ import {
 
 type AssetListingStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'
 
+interface LicenseGrant {
+  id: string
+  listingId: string
+  assetId: string
+  licenseMode: string
+  paidCredits: number
+  status: string
+  grantedAt: string
+  expiresAt: string | null
+  termsJson: unknown
+}
+
 interface AssetListing {
   id: string
   assetId: string
@@ -688,6 +700,7 @@ function AssetListingSection({
   licenseMode,
   marketplaceIntent,
   listing,
+  grantCount,
   onListingChange,
 }: {
   assetId: string
@@ -695,6 +708,7 @@ function AssetListingSection({
   licenseMode: string | null
   marketplaceIntent: MarketplaceIntent | null
   listing: AssetListing | null
+  grantCount: number | null
   onListingChange: (l: AssetListing | null) => void
 }) {
   const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
@@ -848,6 +862,13 @@ function AssetListingSection({
         {listing.publishedAt ? (
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)' }}>上架于 {new Date(listing.publishedAt).toLocaleDateString('zh-CN')}</span>
         ) : null}
+        {grantCount != null && grantCount > 0 ? (
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: 'rgba(74,222,128,0.7)', fontWeight: 600 }}>
+            已授权 {grantCount} 人
+          </span>
+        ) : grantCount === 0 ? (
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)' }}>暂无授权记录</span>
+        ) : null}
       </div>
 
       {/* Edit fields (draft only) */}
@@ -937,6 +958,8 @@ export default function AssetDetailPage() {
   const [togglingPublic, setTogglingPublic] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [listing, setListing] = useState<AssetListing | null>(null)
+  const [grantCount, setGrantCount] = useState<number | null>(null)
+  const [myGrant, setMyGrant] = useState<LicenseGrant | null>(null)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -954,13 +977,24 @@ export default function AssetDetailPage() {
       if (loadedAsset?.isOwner) {
         try {
           const lr = await fetch(`/api/marketplace/listings?assetId=${assetId}&mine=true`, { credentials: 'include' })
-          const ld = await lr.json() as { listing?: AssetListing | null }
+          const ld = await lr.json() as { listing?: AssetListing | null; grantCount?: number }
           setListing(ld.listing ?? null)
+          setGrantCount(ld.grantCount ?? null)
         } catch {
           setListing(null)
+          setGrantCount(null)
         }
       } else {
         setListing(null)
+        setGrantCount(null)
+        // Fetch buyer's own grant for this asset
+        try {
+          const gr = await fetch(`/api/me/licenses/${assetId}`, { credentials: 'include' })
+          const gd = await gr.json() as { granted?: boolean; grant?: LicenseGrant }
+          setMyGrant(gd.granted && gd.grant ? gd.grant : null)
+        } catch {
+          setMyGrant(null)
+        }
       }
     } catch {
       setError('网络错误，请稍后重试')
@@ -1201,10 +1235,44 @@ export default function AssetDetailPage() {
                     licenseMode={licenseIntent?.mode ?? null}
                     marketplaceIntent={marketplaceIntentData}
                     listing={listing}
+                    grantCount={grantCount}
                     onListingChange={setListing}
                   />
                 ) : (
-                  <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
+                  <>
+                    {myGrant ? (
+                      <div style={{ padding: '12px 0' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, background: 'rgba(74,222,128,0.1)', color: '#4ade80', fontWeight: 600 }}>
+                            ✓ 已获得授权
+                          </span>
+                          <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.38)' }}>
+                            {myGrant.licenseMode === 'reusable_commercial' ? '💼 商用复用' : '🔄 非商用复用'}
+                          </span>
+                          {myGrant.paidCredits === 0 ? (
+                            <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, background: 'rgba(74,222,128,0.06)', color: 'rgba(74,222,128,0.6)' }}>
+                              免费
+                            </span>
+                          ) : null}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
+                          授权时间：{new Date(myGrant.grantedAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {myGrant.expiresAt ? (
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>
+                            到期：{new Date(myGrant.expiresAt).toLocaleDateString('zh-CN')}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>永久授权</div>
+                        )}
+                        <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>
+                          授权凭证仅做记录，不代表平台核查或正式法律合同。
+                        </div>
+                      </div>
+                    ) : (
+                      <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
+                    )}
+                  </>
                 )}
               </MetaSection>
             </div>
