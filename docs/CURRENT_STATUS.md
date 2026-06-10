@@ -85,7 +85,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Auth/me DB fallback — SESSION_DB_UNAVAILABLE 阻断修复 | ✅ VALIDATED / 90s session cache + longer retries + pool_timeout in db.ts | `b4d966d` |
 | Web3 Foundation P0-1B — 资产授权意图 metadata-only | ✅ VALIDATED / Asset.metadataJson.licenseIntent · 4 可用 mode · marketplace_license disabled · /assets/[id] owner 编辑器 · /me license badge · 不改 schema · 不做交易 | `5c52d47` |
 | Fix: Asset.size BigInt serialization（资产详情 GET 500） | ✅ VALIDATED / serializeAsset 加入 size BigInt 转换 | `aed884a` |
-| Web3 Foundation P0-1C — 资产 Provenance / 复用关系展示 | ✅ AUDITED + Step A2 IMPLEMENTED / 只读展示 metadataJson.sourceAssetIds · 私有资产权限保护 · GET /api/assets/[assetId] 返回 sourceAssets · /assets/[id] 展示来源区块 · 不改 generate route · 不改 schema | pending |
+| Web3 Foundation P0-1C — 资产 Provenance / 复用关系展示 | ✅ AUDITED + Step A2 IMPLEMENTED / 只读展示 metadataJson.sourceAssetIds · 私有资产权限保护 · GET /api/assets/[assetId] 返回 sourceAssets · /assets/[id] 展示来源区块 · 不改 generate route · 不改 schema | `b3b7434` |
 
 ---
 
