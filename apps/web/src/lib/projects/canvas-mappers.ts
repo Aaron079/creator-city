@@ -127,9 +127,10 @@ export function toAssetType(input: string | undefined): AssetType {
   return 'DOCUMENT'
 }
 
-export function serializeAsset<T extends { sizeBytes?: bigint | number | null }>(asset: T) {
+export function serializeAsset<T extends { sizeBytes?: bigint | number | null; size?: bigint | number | null }>(asset: T) {
   return {
     ...asset,
+    size: typeof asset.size === 'bigint' ? Number(asset.size) : asset.size,
     sizeBytes: typeof asset.sizeBytes === 'bigint' ? Number(asset.sizeBytes) : asset.sizeBytes,
   }
 }
