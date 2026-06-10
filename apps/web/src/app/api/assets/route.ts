@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { normalizeAssetType as normalizeAssetTypeValue } from '@/lib/assets/normalize'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { classifyAssetUrl, resolveAssetUrl } from '@/lib/assets/storage-adapter'
+import { isDbConnectionError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -124,6 +125,9 @@ export async function GET(request: NextRequest) {
     return jsonOk({ assets: await Promise.all(assets.map(serializeAssetForList)) })
   } catch (error) {
     console.error('[assets] failed to list assets', error)
+    if (isDbConnectionError(error)) {
+      return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
+    }
     return jsonError('ASSETS_LOAD_FAILED', safeErrorMessage(error, '加载素材失败。'), 500)
   }
 }

@@ -4,7 +4,8 @@
  * so callers can return 503 instead of 500 or 401.
  */
 
-const DB_ERROR_CODES = new Set(['P2024', 'P1001', 'P1002', 'P1008', 'P1017'])
+// SESSION_DB_UNAVAILABLE is thrown by lib/auth/session.ts when all session lookup retries fail
+const DB_ERROR_CODES = new Set(['P2024', 'P1001', 'P1002', 'P1008', 'P1017', 'SESSION_DB_UNAVAILABLE'])
 
 const DB_ERROR_PATTERNS = [
   'timed out fetching a new connection',

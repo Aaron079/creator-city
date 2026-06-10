@@ -5,6 +5,7 @@ import { getProjectAccess } from '@/lib/projects/ensure-active-project'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { serializeAsset } from '@/lib/projects/canvas-mappers'
 import { resolveAssetUrl } from '@/lib/assets/storage-adapter'
+import { isDbConnectionError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,6 +99,9 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     })
   } catch (error) {
     console.error('[assets] failed to get asset', { assetId: params.assetId, error })
+    if (isDbConnectionError(error)) {
+      return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
+    }
     return jsonError('ASSET_FETCH_FAILED', safeErrorMessage(error, '获取素材失败。'), 500)
   }
 }
@@ -157,6 +161,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     return jsonOk({ asset: serializeAsset(updated) })
   } catch (error) {
     console.error('[assets] failed to update asset', { assetId: params.assetId, error })
+    if (isDbConnectionError(error)) {
+      return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
+    }
     return jsonError('ASSET_UPDATE_FAILED', safeErrorMessage(error, '更新素材失败。'), 500)
   }
 }

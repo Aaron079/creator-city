@@ -349,6 +349,11 @@ export default function AssetsPage() {
         setAssets([])
         return
       }
+      if (res.status === 503 || data.errorCode === 'SERVICE_UNAVAILABLE') {
+        setError('服务暂时不可用，请稍后重试。')
+        setAssets([])
+        return
+      }
       if (!res.ok) {
         setError(data.message ?? data.errorCode ?? '加载资产失败')
         setAssets([])
