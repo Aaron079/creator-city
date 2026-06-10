@@ -11,6 +11,19 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SourceAssetItem {
+  id: string
+  unavailable?: boolean
+  reason?: string
+  title?: string | null
+  type?: string
+  resolvedUrl?: string | null
+  thumbnailUrl?: string | null
+  provider?: string | null
+  source?: string | null
+  mimeType?: string | null
+}
+
 interface AssetDetail {
   id: string
   name: string
@@ -44,6 +57,7 @@ interface AssetDetail {
   updatedAt: string
   owner?: { id: string; displayName: string }
   project?: { id: string; title: string } | null
+  sourceAssets?: SourceAssetItem[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -93,6 +107,62 @@ function MetaSection({ title, children }: { title: string; children: React.React
     <div style={{ marginTop: '20px' }}>
       <div style={{ fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: '4px', fontWeight: 600 }}>{title}</div>
       <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0 14px' }}>{children}</div>
+    </div>
+  )
+}
+
+// ─── Provenance Section ───────────────────────────────────────────────────────
+
+function ProvenanceSection({ sourceAssets }: { sourceAssets?: SourceAssetItem[] }) {
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <div style={{ fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: '4px', fontWeight: 600 }}>Provenance / 创作来源</div>
+      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px 14px' }}>
+        {sourceAssets && sourceAssets.length > 0 ? (
+          <>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginBottom: '10px' }}>此资产基于以下来源资产创作</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {sourceAssets.map((src) =>
+                src.unavailable ? (
+                  <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', flexShrink: 0, fontSize: '16px' }}>🔒</div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>私有资产（无访问权限）</div>
+                      <code style={{ fontSize: '10px', fontFamily: 'ui-monospace,monospace', color: 'rgba(255,255,255,0.18)' }}>{src.id.slice(0, 12)}…</code>
+                    </div>
+                  </div>
+                ) : (
+                  <a key={src.id} href={`/assets/${src.id}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', textDecoration: 'none' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '6px', overflow: 'hidden', background: 'rgba(255,255,255,0.04)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {(src.resolvedUrl ?? src.thumbnailUrl) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={src.resolvedUrl ?? src.thumbnailUrl ?? ''} alt={src.title ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span style={{ fontSize: '16px', opacity: 0.3 }}>{src.type === 'VIDEO' ? '🎬' : src.type === 'AUDIO' ? '🎵' : '🖼️'}</span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.65)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.title ?? src.id.slice(0, 16)}</div>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '2px', alignItems: 'center' }}>
+                        {src.type ? <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)' }}>{src.type}</span> : null}
+                        {src.provider ?? src.source ? <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)' }}>· {src.provider ?? src.source}</span> : null}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>→</span>
+                  </a>
+                )
+              )}
+            </div>
+            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.04)', fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>创作来源为元数据声明，不代表平台核查或正式法律确权。</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '6px' }}>无输入资产记录（v0 生成或旧资产）</div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.22)', lineHeight: 1.6 }}>后续版本将在生成时记录 inputAssetIds，用于追踪资产复用关系。</div>
+            <div style={{ marginTop: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>创作来源为元数据声明，不代表平台核查或正式法律确权。</div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -450,6 +520,9 @@ export default function AssetDetailPage() {
                 {asset.nodeId ? <Row label="画布节点 ID"><code style={{ fontSize: '10px', fontFamily: 'ui-monospace,monospace' }}>{asset.nodeId}</code></Row> : null}
                 {asset.workflowId ? <Row label="Workflow ID"><code style={{ fontSize: '10px', fontFamily: 'ui-monospace,monospace' }}>{asset.workflowId.slice(0, 16)}…</code></Row> : null}
               </MetaSection>
+
+              {/* Provenance */}
+              <ProvenanceSection sourceAssets={asset.sourceAssets} />
 
               {/* Provider / Generation */}
               {(asset.provider ?? asset.providerId ?? asset.providerJobId ?? asset.generationJobId) ? (

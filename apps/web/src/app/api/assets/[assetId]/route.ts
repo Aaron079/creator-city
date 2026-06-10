@@ -76,6 +76,71 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const resolved = await resolveAssetUrl(asset)
     const isOwner = asset.ownerId === user.id
 
+    // Read-only provenance: fetch source assets referenced in metadataJson.sourceAssetIds
+    const assetMeta = asset.metadataJson && typeof asset.metadataJson === 'object' && !Array.isArray(asset.metadataJson)
+      ? asset.metadataJson as Record<string, unknown>
+      : {}
+    const sourceAssetIds = Array.isArray(assetMeta.sourceAssetIds)
+      ? (assetMeta.sourceAssetIds as unknown[]).filter((x): x is string => typeof x === 'string')
+      : []
+
+    type SourceAssetEntry = {
+      id: string
+      unavailable?: true
+      reason?: string
+      title?: string | null
+      type?: string
+      resolvedUrl?: string | null
+      thumbnailUrl?: string | null
+      provider?: string | null
+      source?: string | null
+      mimeType?: string | null
+    }
+
+    let sourceAssets: SourceAssetEntry[] = []
+    if (sourceAssetIds.length > 0) {
+      const dbSources = await db.asset.findMany({
+        where: { id: { in: sourceAssetIds } },
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          type: true,
+          url: true,
+          dataUrl: true,
+          thumbnailUrl: true,
+          storageKey: true,
+          storageProvider: true,
+          bucket: true,
+          isPublic: true,
+          ownerId: true,
+          provider: true,
+          source: true,
+          mimeType: true,
+        },
+      })
+      const srcMap = new Map(dbSources.map(s => [s.id, s]))
+      sourceAssets = await Promise.all(
+        sourceAssetIds.map(async (sid): Promise<SourceAssetEntry> => {
+          const src = srcMap.get(sid)
+          if (!src || (!src.isPublic && src.ownerId !== user.id)) {
+            return { id: sid, unavailable: true, reason: 'private_or_missing' }
+          }
+          const srcResolved = await resolveAssetUrl(src)
+          return {
+            id: src.id,
+            title: src.title ?? src.name,
+            type: src.type,
+            resolvedUrl: srcResolved.url || null,
+            thumbnailUrl: src.thumbnailUrl ?? null,
+            provider: src.provider ?? null,
+            source: src.source ?? null,
+            mimeType: src.mimeType,
+          }
+        })
+      )
+    }
+
     return jsonOk({
       asset: {
         ...serializeAsset(asset),
@@ -96,6 +161,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
         nodeId: asset.nodeId,
         project: asset.project,
         storageProvider: asset.storageProvider,
+        sourceAssets,
       },
     })
   } catch (error) {
