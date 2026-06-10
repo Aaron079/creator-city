@@ -25,7 +25,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: '市场', key: 'market',
     items: [
-      { label: '市场总览', href: '/marketplace-preview' },
+      { label: '市场总览', href: '/marketplace' },
       { label: '创作者主页', href: '/creator-profile-preview' },
       { label: '需求广场', href: '/demand-board-preview' },
       { label: '报价方案', href: '/proposal-flow-preview' },
@@ -74,7 +74,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: 'AI 画布', href: '/create', group: '创作', keywords: ['创作', '生成', '画布', 'canvas', 'image', 'video'] },
   { label: '生成任务', href: '/tasks', group: '创作', keywords: ['任务', '生成', 'status'] },
   { label: 'API 中心', href: '/providers', group: '创作', keywords: ['api', 'provider', '模型'] },
-  { label: '市场总览', href: '/marketplace-preview', group: '市场', keywords: ['市场', '交易', '创作者市场'] },
+  { label: '市场总览', href: '/marketplace', group: '市场', keywords: ['市场', '交易', '创作者市场'] },
   { label: '创作者主页', href: '/creator-profile-preview', group: '市场', keywords: ['创作者', '作品集', '主页'] },
   { label: '需求广场', href: '/demand-board-preview', group: '市场', keywords: ['需求', 'brief', '项目方'] },
   { label: '报价方案', href: '/proposal-flow-preview', group: '市场', keywords: ['报价', '方案', 'proposal'] },
@@ -101,7 +101,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
 
 const SEARCH_DEFAULTS = new Set([
   '/create',
-  '/marketplace-preview',
+  '/marketplace',
   '/demand-board-preview',
   '/proposal-flow-preview',
   '/milestone-delivery-preview',
