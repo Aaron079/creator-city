@@ -311,6 +311,35 @@ export default function MePage() {
   )
 }
 
+// ─── License badge helper ─────────────────────────────────────────────────────
+
+function LicenseBadge({ metadataJson, isPublic }: { metadataJson?: unknown; isPublic?: boolean | null }) {
+  const li = metadataJson && typeof metadataJson === 'object'
+    ? (metadataJson as Record<string, unknown>).licenseIntent
+    : null
+  const mode = li && typeof li === 'object' ? (li as Record<string, unknown>).mode as string | undefined : undefined
+
+  const BADGE_MAP: Record<string, { icon: string; bg: string; color: string }> = {
+    private_only: { icon: '🔒', bg: 'rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.4)' },
+    public_showcase: { icon: '🌐', bg: 'rgba(52,211,153,0.2)', color: '#6ee7b7' },
+    reusable_noncommercial: { icon: '🔄', bg: 'rgba(96,165,250,0.2)', color: '#93c5fd' },
+    reusable_commercial: { icon: '💼', bg: 'rgba(251,146,60,0.2)', color: '#fdba74' },
+    marketplace_license: { icon: '🏪', bg: 'rgba(167,139,250,0.2)', color: '#c4b5fd' },
+  }
+
+  const key = mode && BADGE_MAP[mode] ? mode : isPublic ? 'public_showcase' : 'private_only'
+  const cfg = BADGE_MAP[key] ?? BADGE_MAP['private_only']!
+
+  return (
+    <span
+      className="rounded px-1 py-0.5 text-[8px] font-semibold"
+      style={{ background: cfg.bg, color: cfg.color }}
+    >
+      {cfg.icon}
+    </span>
+  )
+}
+
 // ─── Real assets block ────────────────────────────────────────────────────────
 
 interface MiniAsset {
@@ -323,6 +352,7 @@ interface MiniAsset {
   resolvedUrl?: string | null
   thumbnailUrl?: string | null
   url?: string | null
+  metadataJson?: unknown
   createdAt: string
 }
 
@@ -375,15 +405,7 @@ function MyAssetsBlock() {
                 <p className="truncate text-[9px] text-white/70">{a.title ?? a.name}</p>
               </div>
               <div className="absolute right-1 top-1">
-                <span
-                  className="rounded px-1 py-0.5 text-[8px] font-semibold"
-                  style={{
-                    background: a.isPublic ? 'rgba(52,211,153,0.2)' : 'rgba(0,0,0,0.5)',
-                    color: a.isPublic ? '#6ee7b7' : 'rgba(255,255,255,0.4)',
-                  }}
-                >
-                  {a.isPublic ? '🌐' : '🔒'}
-                </span>
+                <LicenseBadge metadataJson={a.metadataJson} isPublic={a.isPublic} />
               </div>
             </Link>
           )

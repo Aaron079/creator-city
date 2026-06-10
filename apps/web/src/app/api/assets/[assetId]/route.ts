@@ -6,6 +6,7 @@ import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { serializeAsset } from '@/lib/projects/canvas-mappers'
 import { resolveAssetUrl } from '@/lib/assets/storage-adapter'
 import { isDbConnectionError } from '@/lib/db-error'
+import { isValidLicenseMode, deriveLicenseFields } from '@/lib/assets/license-intent'
 
 export const dynamic = 'force-dynamic'
 
@@ -110,6 +111,7 @@ type PatchAssetBody = {
   projectId?: string | null
   title?: string
   isPublic?: boolean
+  licenseIntent?: { mode: string } | null
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
@@ -124,9 +126,19 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return jsonError('VALIDATION_FAILED', 'Invalid JSON', 400)
     }
 
+    // Validate licenseIntent if provided
+    if (body.licenseIntent !== undefined && body.licenseIntent !== null) {
+      if (typeof body.licenseIntent !== 'object' || !isValidLicenseMode(body.licenseIntent.mode)) {
+        return jsonError('VALIDATION_FAILED', '无效的授权意图模式。', 400)
+      }
+      if (body.licenseIntent.mode === 'marketplace_license') {
+        return jsonError('MARKETPLACE_LICENSE_NOT_AVAILABLE', '市场授权将在 Marketplace 阶段开放。', 400)
+      }
+    }
+
     const asset = await db.asset.findFirst({
       where: { id: params.assetId, ownerId: user.id },
-      select: { id: true },
+      select: { id: true, metadataJson: true },
     })
     if (!asset) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
 
@@ -141,13 +153,41 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const nextTitle = body.title === undefined ? undefined : body.title.trim()
     const nextIsPublic = typeof body.isPublic === 'boolean' ? body.isPublic : undefined
 
+    // Build metadataJson update — always merge, never overwrite other keys
+    let nextMetadataJson: Record<string, unknown> | undefined
+    if (body.licenseIntent !== undefined) {
+      const existing: Record<string, unknown> =
+        asset.metadataJson && typeof asset.metadataJson === 'object' && !Array.isArray(asset.metadataJson)
+          ? (asset.metadataJson as Record<string, unknown>)
+          : {}
+      if (body.licenseIntent === null) {
+        const { licenseIntent: _removed, ...rest } = existing
+        void _removed
+        nextMetadataJson = rest
+      } else {
+        const mode = body.licenseIntent.mode as Parameters<typeof deriveLicenseFields>[0]
+        nextMetadataJson = {
+          ...existing,
+          licenseIntent: {
+            mode,
+            ...deriveLicenseFields(mode),
+            updatedAt: new Date().toISOString(),
+            updatedBy: user.id,
+          },
+        }
+      }
+    }
+
+    const updateData: Parameters<typeof db.asset.update>[0]['data'] = {}
+    if (nextProjectId !== undefined) updateData.projectId = nextProjectId
+    if (nextTitle !== undefined) updateData.title = nextTitle || null
+    if (nextIsPublic !== undefined) updateData.isPublic = nextIsPublic
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (nextMetadataJson !== undefined) updateData.metadataJson = nextMetadataJson as any
+
     const updated = await db.asset.update({
       where: { id: params.assetId },
-      data: {
-        ...(nextProjectId !== undefined ? { projectId: nextProjectId } : {}),
-        ...(nextTitle !== undefined ? { title: nextTitle || null } : {}),
-        ...(nextIsPublic !== undefined ? { isPublic: nextIsPublic } : {}),
-      },
+      data: updateData,
       include: { project: { select: { id: true, title: true } } },
     })
     if (nextProjectId) {

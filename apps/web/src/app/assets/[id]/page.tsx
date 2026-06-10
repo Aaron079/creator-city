@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import {
+  LICENSE_MODES,
+  LICENSE_MODE_CONFIG,
+  getLicenseIntent,
+  type LicenseMode,
+} from '@/lib/assets/license-intent'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +97,158 @@ function MetaSection({ title, children }: { title: string; children: React.React
   )
 }
 
+// ─── License Intent Editor ────────────────────────────────────────────────────
+
+const DISCLAIMER = '授权意图为创作者本人声明，不代表平台核查、链上确权或正式法律合同。正式授权交易、定价和收益分成将在 Marketplace 阶段接入。'
+
+function LicenseIntentEditor({
+  assetId,
+  currentMode,
+  onSaved,
+}: {
+  assetId: string
+  currentMode: LicenseMode | null
+  onSaved: (mode: LicenseMode) => void
+}) {
+  const [selected, setSelected] = useState<LicenseMode>(currentMode ?? 'private_only')
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  async function save() {
+    setSaving(true)
+    setSaveResult(null)
+    try {
+      const res = await fetch(`/api/assets/${assetId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licenseIntent: { mode: selected } }),
+      })
+      const data = await res.json() as { message?: string; errorCode?: string }
+      if (!res.ok) {
+        setSaveResult({ ok: false, msg: data.message ?? data.errorCode ?? '保存失败' })
+        return
+      }
+      setSaveResult({ ok: true, msg: '授权意图已保存' })
+      onSaved(selected)
+      setTimeout(() => setSaveResult(null), 3000)
+    } catch {
+      setSaveResult({ ok: false, msg: '网络错误，请稍后重试' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '14px 0 6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {LICENSE_MODES.map((mode) => {
+          const cfg = LICENSE_MODE_CONFIG[mode]
+          const isSelected = selected === mode
+          const isDisabled = !cfg.available
+
+          return (
+            <button
+              key={mode}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => { if (!isDisabled) setSelected(mode) }}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                padding: '10px 12px',
+                borderRadius: '9px',
+                border: isSelected
+                  ? '1px solid rgba(147,197,253,0.45)'
+                  : '1px solid rgba(255,255,255,0.07)',
+                background: isSelected
+                  ? 'rgba(147,197,253,0.07)'
+                  : isDisabled
+                    ? 'rgba(255,255,255,0.01)'
+                    : 'rgba(255,255,255,0.02)',
+                cursor: isDisabled ? 'not-allowed' : 'pointer',
+                opacity: isDisabled ? 0.45 : 1,
+                textAlign: 'left',
+                width: '100%',
+              }}
+            >
+              <div
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  border: isSelected ? '4px solid #93c5fd' : '2px solid rgba(255,255,255,0.25)',
+                  flexShrink: 0,
+                  marginTop: '2px',
+                  background: 'transparent',
+                }}
+              />
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: isDisabled ? 'rgba(255,255,255,0.3)' : isSelected ? '#93c5fd' : 'rgba(255,255,255,0.75)' }}>
+                  {cfg.label}
+                </div>
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '2px', lineHeight: 1.5 }}>
+                  {cfg.description}
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <button
+          type="button"
+          onClick={() => { void save() }}
+          disabled={saving}
+          style={{
+            padding: '7px 18px',
+            borderRadius: '8px',
+            border: '1px solid rgba(147,197,253,0.3)',
+            background: saving ? 'rgba(147,197,253,0.04)' : 'rgba(147,197,253,0.1)',
+            color: '#93c5fd',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: saving ? 'not-allowed' : 'pointer',
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          {saving ? '保存中…' : '保存授权意图'}
+        </button>
+        {saveResult ? (
+          <span style={{ fontSize: '12px', color: saveResult.ok ? '#6ee7b7' : 'rgba(248,113,113,0.85)' }}>
+            {saveResult.msg}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '10px', color: 'rgba(255,255,255,0.3)', lineHeight: 1.7 }}>
+        ⚠️ {DISCLAIMER}
+      </div>
+    </div>
+  )
+}
+
+function LicenseIntentReadOnly({ mode, isPublic }: { mode: LicenseMode | null; isPublic: boolean }) {
+  const effectiveMode = mode ?? (isPublic ? 'public_showcase' : 'private_only')
+  const cfg = LICENSE_MODE_CONFIG[effectiveMode]
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+        <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.65)' }}>{cfg.label}</span>
+        {!mode ? (
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>（默认）</span>
+        ) : null}
+      </div>
+      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', lineHeight: 1.6 }}>{cfg.description}</div>
+      <div style={{ marginTop: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.2)', lineHeight: 1.6 }}>
+        {DISCLAIMER}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssetDetailPage() {
@@ -149,7 +307,25 @@ export default function AssetDetailPage() {
     }
   }
 
+  function handleLicenseSaved(mode: LicenseMode) {
+    setAsset((prev) => {
+      if (!prev) return prev
+      const existing: Record<string, unknown> =
+        prev.metadataJson && typeof prev.metadataJson === 'object' && !Array.isArray(prev.metadataJson)
+          ? (prev.metadataJson as Record<string, unknown>)
+          : {}
+      return {
+        ...prev,
+        metadataJson: {
+          ...existing,
+          licenseIntent: { mode },
+        },
+      }
+    })
+  }
+
   const mediaUrl = asset?.resolvedUrl ?? asset?.url ?? ''
+  const licenseIntent = asset ? getLicenseIntent(asset.metadataJson) : null
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
@@ -308,13 +484,20 @@ export default function AssetDetailPage() {
                 <Row label="更新时间">{formatDate(asset.updatedAt)}</Row>
               </MetaSection>
 
-              {/* License placeholder — no fake fields */}
-              <MetaSection title="License / 授权">
-                <div style={{ padding: '12px 0', fontSize: '11px', color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
-                  授权模型待接入。当前阶段仅展示公开/私有状态。
-                  <br />
-                  <span style={{ color: 'rgba(255,255,255,0.18)' }}>商用授权、衍生权益、版税规则将在 Web3 Foundation P1 实现。</span>
-                </div>
+              {/* License Intent — replaces placeholder */}
+              <MetaSection title="License / 授权意图">
+                {asset.isOwner ? (
+                  <LicenseIntentEditor
+                    assetId={asset.id}
+                    currentMode={licenseIntent?.mode ?? null}
+                    onSaved={handleLicenseSaved}
+                  />
+                ) : (
+                  <LicenseIntentReadOnly
+                    mode={licenseIntent?.mode ?? null}
+                    isPublic={asset.isPublic}
+                  />
+                )}
               </MetaSection>
             </div>
           </div>
