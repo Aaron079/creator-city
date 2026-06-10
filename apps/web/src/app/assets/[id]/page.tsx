@@ -697,6 +697,7 @@ function ListingStatusBadge({ status }: { status: AssetListingStatus }) {
 function AssetListingSection({
   assetId,
   isPublic,
+  assetStatus,
   licenseMode,
   marketplaceIntent,
   listing,
@@ -705,6 +706,7 @@ function AssetListingSection({
 }: {
   assetId: string
   isPublic: boolean
+  assetStatus: string | null
   licenseMode: string | null
   marketplaceIntent: MarketplaceIntent | null
   listing: AssetListing | null
@@ -712,7 +714,9 @@ function AssetListingSection({
   onListingChange: (l: AssetListing | null) => void
 }) {
   const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
-  const canCreateListing = isPublic && licenseMode !== null && REUSABLE_MODES.has(licenseMode)
+  const isReady = assetStatus === 'READY'
+  const isReusable = licenseMode !== null && REUSABLE_MODES.has(licenseMode)
+  const canCreateListing = isPublic && isReady && isReusable
 
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -733,27 +737,50 @@ function AssetListingSection({
     setEditPrice(listing?.priceCredits != null ? String(listing.priceCredits) : '')
   }, [listing?.id])
 
-  async function apiPost(url: string, body: unknown): Promise<{ ok: boolean; listing?: AssetListing; message?: string }> {
+  type ApiResult = { listing?: AssetListing; message?: string; errorCode?: string }
+
+  async function apiPost(url: string, body: unknown): Promise<ApiResult> {
     const res = await fetch(url, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return res.json() as Promise<{ ok: boolean; listing?: AssetListing; message?: string }>
+    return res.json() as Promise<ApiResult>
   }
 
-  async function apiPatch(listingId: string, body: unknown): Promise<{ ok: boolean; listing?: AssetListing; message?: string }> {
+  async function apiPatch(listingId: string, body: unknown): Promise<ApiResult> {
     const res = await fetch(`/api/marketplace/listings/${listingId}`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return res.json() as Promise<{ ok: boolean; listing?: AssetListing; message?: string }>
+    return res.json() as Promise<ApiResult>
   }
 
-  async function runAction(label: string, fn: () => Promise<{ listing?: AssetListing; message?: string } | null>) {
+  function errorToMessage(errorCode: string | undefined, fallback: string | undefined): string {
+    switch (errorCode) {
+      case 'ASSET_NOT_PUBLIC':
+        return '请先在左侧将资产设为公开，再创建 Listing。'
+      case 'ASSET_NOT_READY':
+        return fallback ?? '资产尚未就绪（非 READY 状态），请等待处理完成后再创建 Listing。'
+      case 'LICENSE_INTENT_REQUIRED':
+        return '请先在上方「授权意图」区域选择授权类型并点击「保存授权意图」，再创建 Listing。'
+      case 'LICENSE_INTENT_NOT_REUSABLE':
+        return '当前授权意图不支持上架。请选择「可复用 · 非商用」或「可复用 · 可商用」并保存后，再创建 Listing。'
+      case 'LISTING_ALREADY_EXISTS':
+        return fallback ?? '该资产已有进行中的 Listing，请先归档后再创建。'
+      case 'UNAUTHORIZED':
+        return '请先登录后再操作。'
+      case 'SERVICE_UNAVAILABLE':
+        return '服务暂时不可用，请稍后重试。'
+      default:
+        return fallback ?? '操作失败，请稍后重试。'
+    }
+  }
+
+  async function runAction(label: string, fn: () => Promise<ApiResult | null>) {
     setActionLoading(label)
     setActionError(null)
     setActionMsg(null)
@@ -763,8 +790,8 @@ function AssetListingSection({
         onListingChange(result.listing)
         setActionMsg(label === 'create' ? 'Listing 草稿已创建' : '已更新')
         setTimeout(() => setActionMsg(null), 3000)
-      } else if (result?.message) {
-        setActionError(result.message)
+      } else if (result?.errorCode ?? result?.message) {
+        setActionError(errorToMessage(result?.errorCode, result?.message))
       }
     } catch {
       setActionError('网络错误，请稍后重试')
@@ -799,26 +826,69 @@ function AssetListingSection({
     )
   }
 
+  // ── Pre-condition checklist (always shown when no active listing) ──
+  function PreConditionChecklist() {
+    const checks = [
+      {
+        ok: isPublic,
+        label: '资产已设为公开',
+        hint: '请在左侧「可见性」切换为公开',
+      },
+      {
+        ok: isReady,
+        label: `资产已就绪（当前状态：${assetStatus ?? '—'}）`,
+        hint: '请等待资产处理完成（状态变为 READY）',
+      },
+      {
+        ok: isReusable,
+        label: licenseMode
+          ? `授权意图：${licenseMode === 'reusable_commercial' ? '可复用 · 可商用' : licenseMode === 'reusable_noncommercial' ? '可复用 · 非商用' : licenseMode}`
+          : '授权意图：未保存',
+        hint: '请在上方「授权意图」区域选择「可复用 · 非商用」或「可复用 · 可商用」并保存',
+      },
+    ]
+    return (
+      <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {checks.map((c) => (
+          <div key={c.label} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 11 }}>
+            <span style={{ flexShrink: 0, color: c.ok ? '#4ade80' : 'rgba(248,113,113,0.7)', marginTop: 1 }}>
+              {c.ok ? '✓' : '✗'}
+            </span>
+            <div>
+              <span style={{ color: c.ok ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.45)' }}>{c.label}</span>
+              {!c.ok ? (
+                <div style={{ fontSize: 10, color: 'rgba(251,191,36,0.6)', marginTop: 2 }}>{c.hint}</div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   // ── No listing ──
   if (!listing) {
-    if (!canCreateListing) {
-      return (
-        <div style={{ padding: '12px 0' }}>
-          <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.12)', fontSize: 12, color: 'rgba(251,191,36,0.65)', lineHeight: 1.65 }}>
-            创建 Listing 前，请先将资产设为公开，并选择可复用授权意图（非商用复用 / 商用复用）。
-          </div>
-        </div>
-      )
-    }
     return (
       <div style={{ padding: '12px 0' }}>
+        <PreConditionChecklist />
         {marketplaceIntent?.wantsToList ? (
           <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 7, background: 'rgba(110,231,183,0.06)', border: '1px solid rgba(110,231,183,0.15)', fontSize: 12, color: '#6ee7b7' }}>
             📋 发布意向已登记，可升级为正式 Listing。
           </div>
         ) : null}
-        {btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' })}
-        {actionError ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{actionError}</div> : null}
+        {canCreateListing
+          ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' })
+          : (
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.04)', border: '1px solid rgba(251,191,36,0.10)', fontSize: 11, color: 'rgba(251,191,36,0.55)', lineHeight: 1.6 }}>
+              请先满足上方所有条件后再创建 Listing。
+            </div>
+          )
+        }
+        {actionError ? (
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', fontSize: 11, color: 'rgba(248,113,113,0.85)', lineHeight: 1.6 }}>
+            {actionError}
+          </div>
+        ) : null}
         {actionMsg ? <div style={{ marginTop: 6, fontSize: 11, color: '#6ee7b7' }}>{actionMsg}</div> : null}
         <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.25)', lineHeight: 1.6 }}>⚠️ {LISTING_DISCLAIMER}</div>
       </div>
@@ -833,9 +903,16 @@ function AssetListingSection({
           <ListingStatusBadge status="ARCHIVED" />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>归档于 {listing.updatedAt ? new Date(listing.updatedAt).toLocaleDateString('zh-CN') : '—'}</span>
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>已归档的 Listing 不可恢复。如需重新上架，请创建新 Listing。</div>
-        {canCreateListing ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { marginTop: 8, border: '1px solid rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.5)' }) : null}
-        {actionError ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{actionError}</div> : null}
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6, marginBottom: 10 }}>已归档的 Listing 不可恢复。如需重新上架，请创建新 Listing。</div>
+        <PreConditionChecklist />
+        {canCreateListing
+          ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.5)' })
+          : null}
+        {actionError ? (
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', fontSize: 11, color: 'rgba(248,113,113,0.85)', lineHeight: 1.6 }}>
+            {actionError}
+          </div>
+        ) : null}
         {actionMsg ? <div style={{ marginTop: 6, fontSize: 11, color: '#6ee7b7' }}>{actionMsg}</div> : null}
       </div>
     )
@@ -935,7 +1012,11 @@ function AssetListingSection({
         </span>
       </div>
 
-      {actionError ? <div style={{ fontSize: 11, color: 'rgba(248,113,113,0.8)', marginBottom: 6 }}>{actionError}</div> : null}
+      {actionError ? (
+        <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', fontSize: 11, color: 'rgba(248,113,113,0.85)', lineHeight: 1.6, marginBottom: 6 }}>
+          {actionError}
+        </div>
+      ) : null}
       {actionMsg ? <div style={{ fontSize: 11, color: '#6ee7b7', marginBottom: 6 }}>{actionMsg}</div> : null}
 
       <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 10, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7 }}>
@@ -1232,6 +1313,7 @@ export default function AssetDetailPage() {
                   <AssetListingSection
                     assetId={asset.id}
                     isPublic={asset.isPublic}
+                    assetStatus={asset.status ?? null}
                     licenseMode={licenseIntent?.mode ?? null}
                     marketplaceIntent={marketplaceIntentData}
                     listing={listing}

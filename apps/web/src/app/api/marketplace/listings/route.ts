@@ -144,10 +144,12 @@ export async function POST(request: NextRequest) {
       where: { id: assetId },
       select: { id: true, ownerId: true, isPublic: true, status: true, title: true, name: true, metadataJson: true },
     })
-    if (!asset) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
-    if (asset.ownerId !== user.id) return jsonError('FORBIDDEN', '只有资产 Owner 可以创建 Listing。', 403)
-    if (!asset.isPublic) return jsonError('ASSET_NOT_PUBLIC', '资产必须设为公开才能创建 Listing。', 400)
-    if (asset.status !== 'READY') return jsonError('ASSET_NOT_READY', '资产必须是 READY 状态。', 400)
+    if (!asset) return jsonError('ASSET_NOT_FOUND', '资产不存在或无权访问。', 404)
+    if (asset.ownerId !== user.id) return jsonError('FORBIDDEN', '只有资产所有者可以创建 Listing。', 403)
+    if (!asset.isPublic) return jsonError('ASSET_NOT_PUBLIC', '请先在资产详情页将资产设为公开，再创建 Listing。', 400)
+    if (asset.status !== 'READY') {
+      return jsonError('ASSET_NOT_READY', `资产当前状态为 ${asset.status ?? '未知'}，必须等资产变为 READY 状态后才能创建 Listing。`, 400)
+    }
 
     // Resolve licenseMode
     const assetMeta =
@@ -160,8 +162,11 @@ export async function POST(request: NextRequest) {
         : null
     const assetLicenseMode = li && typeof li.mode === 'string' ? li.mode : null
     const licenseMode = (body.licenseMode ?? assetLicenseMode) as string | null
-    if (!licenseMode || !REUSABLE_MODES.has(licenseMode)) {
-      return jsonError('INVALID_LICENSE_MODE', '授权模式必须是 reusable_noncommercial 或 reusable_commercial。请先在资产页设置可复用授权意图。', 400)
+    if (!licenseMode) {
+      return jsonError('LICENSE_INTENT_REQUIRED', '请先在授权意图区域选择授权类型并保存，再创建 Listing。', 400)
+    }
+    if (!REUSABLE_MODES.has(licenseMode)) {
+      return jsonError('LICENSE_INTENT_NOT_REUSABLE', `当前授权意图（${licenseMode}）不支持上架。请选择「可复用 · 非商用」或「可复用 · 可商用」并保存后，再创建 Listing。`, 400)
     }
 
     // Check for existing non-archived listing
@@ -169,7 +174,7 @@ export async function POST(request: NextRequest) {
       where: { assetId, status: { not: AssetListingStatus.ARCHIVED } },
     })
     if (existing) {
-      return jsonError('LISTING_ALREADY_EXISTS', '该资产已有进行中的 Listing，请先归档后再创建新 Listing。', 409)
+      return jsonError('LISTING_ALREADY_EXISTS', `该资产已有进行中的 Listing（状态：${existing.status}），请先归档后再创建新 Listing。`, 409)
     }
 
     const commercialUse = licenseMode === 'reusable_commercial'
@@ -203,7 +208,12 @@ export async function POST(request: NextRequest) {
     if (isDbConnectionError(error)) {
       return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
     }
-    return jsonError('LISTING_CREATE_FAILED', '创建 Listing 失败。', 500)
+    // Catch Prisma unique constraint (P2002) — race condition duplicate listing
+    const prismaCode = (error as { code?: string }).code
+    if (prismaCode === 'P2002') {
+      return jsonError('LISTING_ALREADY_EXISTS', '该资产已有进行中的 Listing，请刷新页面后再试。', 409)
+    }
+    return jsonError('LISTING_CREATE_FAILED', '创建 Listing 失败，请稍后重试。如问题持续，请检查资产状态和授权意图是否正确保存。', 500)
   }
 }
 
