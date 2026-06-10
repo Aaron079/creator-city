@@ -96,6 +96,10 @@ export async function GET(request: NextRequest) {
     if (isDbConnectionError(error)) {
       return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
     }
+    const prismaCode = (error as { code?: string }).code
+    if (prismaCode === 'P2021' || prismaCode === 'P2022') {
+      return jsonError('LISTING_SCHEMA_NOT_DEPLOYED', '市场数据表尚未完成部署，请稍后重试或联系管理员。', 503)
+    }
     return jsonError('LISTINGS_FETCH_FAILED', '获取市场列表失败。', 500)
   }
 }
@@ -208,10 +212,12 @@ export async function POST(request: NextRequest) {
     if (isDbConnectionError(error)) {
       return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
     }
-    // Catch Prisma unique constraint (P2002) — race condition duplicate listing
     const prismaCode = (error as { code?: string }).code
     if (prismaCode === 'P2002') {
       return jsonError('LISTING_ALREADY_EXISTS', '该资产已有进行中的 Listing，请刷新页面后再试。', 409)
+    }
+    if (prismaCode === 'P2021' || prismaCode === 'P2022') {
+      return jsonError('LISTING_SCHEMA_NOT_DEPLOYED', '市场数据表尚未完成部署，请稍后重试或联系管理员。', 503)
     }
     return jsonError('LISTING_CREATE_FAILED', '创建 Listing 失败，请稍后重试。如问题持续，请检查资产状态和授权意图是否正确保存。', 500)
   }
