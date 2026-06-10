@@ -16,6 +16,9 @@ function buildDatabaseUrl(): string | undefined {
     if (!params.has('pgbouncer')) params.set('pgbouncer', 'true')
     if (!params.has('sslmode')) params.set('sslmode', 'require')
     if (!params.has('connection_limit')) params.set('connection_limit', '1')
+    // Give the pooler more time to hand out a connection and the server to accept it.
+    if (!params.has('pool_timeout')) params.set('pool_timeout', '20')
+    if (!params.has('connect_timeout')) params.set('connect_timeout', '10')
     return url.toString()
   } catch {
     // Malformed URL — return as-is, let Prisma surface the real error

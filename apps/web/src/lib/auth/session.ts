@@ -31,33 +31,28 @@ export async function createSession(
 
 export async function getSession(token: string) {
   const tokenHash = hashToken(token)
+  const DELAYS = [250, 600, 1500]
   let session
-  try {
-    session = await db.session.findUnique({
-      where: { tokenHash },
-      include: { user: { include: { profile: true } } },
-    })
-  } catch (err) {
-    console.warn('[auth/session] db.session.findUnique failed — retrying (1/2)', err)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
     try {
       session = await db.session.findUnique({
         where: { tokenHash },
         include: { user: { include: { profile: true } } },
       })
-    } catch (err2) {
-      console.warn('[auth/session] retry 1 failed — retrying (2/2)', err2)
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      try {
-        session = await db.session.findUnique({
-          where: { tokenHash },
-          include: { user: { include: { profile: true } } },
-        })
-      } catch (retryErr) {
-        console.error('[auth/session] all retries failed — session DB unavailable', retryErr)
-        throw Object.assign(new Error('Session DB temporarily unavailable'), { code: 'SESSION_DB_UNAVAILABLE', cause: retryErr })
+      lastErr = undefined
+      break
+    } catch (err) {
+      lastErr = err
+      if (attempt < DELAYS.length) {
+        console.warn(`[auth/session] db.session.findUnique failed — retrying (${attempt + 1}/${DELAYS.length})`, err)
+        await new Promise((resolve) => setTimeout(resolve, DELAYS[attempt]))
       }
     }
+  }
+  if (lastErr !== undefined) {
+    console.error('[auth/session] all retries failed — session DB unavailable', lastErr)
+    throw Object.assign(new Error('Session DB temporarily unavailable'), { code: 'SESSION_DB_UNAVAILABLE', cause: lastErr })
   }
   if (!session) return null
   if (session.expiresAt < new Date()) {

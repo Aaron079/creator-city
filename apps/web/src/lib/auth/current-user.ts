@@ -1,5 +1,5 @@
 import { getSessionToken } from './cookies'
-import { getSession } from './session'
+import { getSession, hashToken } from './session'
 
 export interface CurrentUser {
   id: string
@@ -18,13 +18,15 @@ export interface CurrentUser {
   } | null
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const token = getSessionToken()
-  if (!token) return null
+// In-memory session cache to avoid redundant DB round-trips within the same
+// function instance and to survive brief DB blips (Supabase cold start / pool
+// exhaustion). TTL is intentionally short (90 s) so revoked sessions still
+// expire quickly. The cache is keyed by tokenHash (never the raw token).
+const SESSION_CACHE_TTL_MS = 90_000
+const sessionCache = new Map<string, { user: CurrentUser; expiresAt: number }>()
 
-  const session = await getSession(token)
+function mapSessionToUser(session: Awaited<ReturnType<typeof getSession>>): CurrentUser | null {
   if (!session) return null
-
   const { user } = session
   return {
     id: user.id,
@@ -44,6 +46,46 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         }
       : null,
   }
+}
+
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const token = getSessionToken()
+  if (!token) return null
+
+  const tokenHash = hashToken(token)
+  const now = Date.now()
+
+  // Return a fresh cache hit immediately (avoids DB on every request when warm).
+  const cached = sessionCache.get(tokenHash)
+  if (cached && cached.expiresAt > now) {
+    return cached.user
+  }
+
+  try {
+    const session = await getSession(token)
+    if (!session) {
+      sessionCache.delete(tokenHash)
+      return null
+    }
+    const currentUser = mapSessionToUser(session)
+    if (currentUser) {
+      sessionCache.set(tokenHash, { user: currentUser, expiresAt: now + SESSION_CACHE_TTL_MS })
+    }
+    return currentUser
+  } catch (error) {
+    const code = (error as Error & { code?: string })?.code
+    if (code === 'SESSION_DB_UNAVAILABLE' && cached) {
+      // DB is temporarily unavailable but we have a recent cached identity.
+      // Use the stale entry so protected routes can still serve the user.
+      console.warn('[auth/current-user] DB unavailable — using stale session cache for', tokenHash.slice(0, 8))
+      return cached.user
+    }
+    throw error
+  }
+}
+
+export function evictSessionCache(token: string): void {
+  sessionCache.delete(hashToken(token))
 }
 
 export function isAdminEmail(email: string): boolean {
