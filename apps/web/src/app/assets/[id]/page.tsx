@@ -17,6 +17,25 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type AssetListingStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'
+
+interface AssetListing {
+  id: string
+  assetId: string
+  sellerId: string
+  status: AssetListingStatus
+  licenseMode: string
+  priceCredits: number | null
+  title: string | null
+  description: string | null
+  commercialUse: boolean
+  derivativeAllowed: boolean
+  attributionRequired: boolean
+  publishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 interface SourceAssetItem {
   id: string
   unavailable?: boolean
@@ -332,6 +351,7 @@ const REUSABLE_MODES_SET = new Set(['reusable_noncommercial', 'reusable_commerci
 const MARKETPLACE_DISCLAIMER =
   '当前仅记录发布意向，不代表正式上架、交易、付款或收益分成。正式 Marketplace 交易功能规划中。'
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarketplaceIntentEditor({
   assetId,
   isPublic,
@@ -638,6 +658,272 @@ function MarketplaceIntentReadOnly({ intent }: { intent: MarketplaceIntent | nul
   )
 }
 
+// ─── Asset Listing Section ────────────────────────────────────────────────────
+
+const LISTING_DISCLAIMER = '购买/授权功能规划中，当前仅供上架展示，不代表正式交易、付款或收益分成。'
+
+const LICENSE_LABEL: Record<string, string> = {
+  reusable_noncommercial: '🔄 非商用复用',
+  reusable_commercial: '💼 商用复用',
+}
+
+function ListingStatusBadge({ status }: { status: AssetListingStatus }) {
+  const cfg: Record<AssetListingStatus, { bg: string; color: string; label: string }> = {
+    DRAFT:    { bg: 'rgba(251,191,36,0.1)',  color: '#fde68a', label: '草稿' },
+    ACTIVE:   { bg: 'rgba(110,231,183,0.1)', color: '#6ee7b7', label: '✅ 已上架' },
+    PAUSED:   { bg: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', label: '⏸ 已暂停' },
+    ARCHIVED: { bg: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)', label: '🗂 已归档' },
+  }
+  const c = cfg[status]
+  return (
+    <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 5, background: c.bg, color: c.color, fontWeight: 600 }}>
+      {c.label}
+    </span>
+  )
+}
+
+function AssetListingSection({
+  assetId,
+  isPublic,
+  licenseMode,
+  marketplaceIntent,
+  listing,
+  onListingChange,
+}: {
+  assetId: string
+  isPublic: boolean
+  licenseMode: string | null
+  marketplaceIntent: MarketplaceIntent | null
+  listing: AssetListing | null
+  onListingChange: (l: AssetListing | null) => void
+}) {
+  const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
+  const canCreateListing = isPublic && licenseMode !== null && REUSABLE_MODES.has(licenseMode)
+
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState<string | null>(null)
+
+  // Draft edit state
+  const [editTitle, setEditTitle] = useState(listing?.title ?? '')
+  const [editDesc, setEditDesc] = useState(listing?.description ?? '')
+  const [editPrice, setEditPrice] = useState(listing?.priceCredits != null ? String(listing.priceCredits) : '')
+
+  // Sync edit state when listing changes
+  // Sync edit fields when listing id changes — intentionally not including title/desc/price
+  // to avoid overwriting in-progress edits on re-renders.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setEditTitle(listing?.title ?? '')
+    setEditDesc(listing?.description ?? '')
+    setEditPrice(listing?.priceCredits != null ? String(listing.priceCredits) : '')
+  }, [listing?.id])
+
+  async function apiPost(url: string, body: unknown): Promise<{ ok: boolean; listing?: AssetListing; message?: string }> {
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.json() as Promise<{ ok: boolean; listing?: AssetListing; message?: string }>
+  }
+
+  async function apiPatch(listingId: string, body: unknown): Promise<{ ok: boolean; listing?: AssetListing; message?: string }> {
+    const res = await fetch(`/api/marketplace/listings/${listingId}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.json() as Promise<{ ok: boolean; listing?: AssetListing; message?: string }>
+  }
+
+  async function runAction(label: string, fn: () => Promise<{ listing?: AssetListing; message?: string } | null>) {
+    setActionLoading(label)
+    setActionError(null)
+    setActionMsg(null)
+    try {
+      const result = await fn()
+      if (result?.listing) {
+        onListingChange(result.listing)
+        setActionMsg(label === 'create' ? 'Listing 草稿已创建' : '已更新')
+        setTimeout(() => setActionMsg(null), 3000)
+      } else if (result?.message) {
+        setActionError(result.message)
+      }
+    } catch {
+      setActionError('网络错误，请稍后重试')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  function btn(label: string, onClick: () => void, style?: React.CSSProperties, disabled?: boolean) {
+    const loading = actionLoading === label
+    return (
+      <button
+        key={label}
+        type="button"
+        onClick={onClick}
+        disabled={disabled || loading || actionLoading !== null}
+        style={{
+          padding: '6px 14px',
+          borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.10)',
+          background: 'rgba(255,255,255,0.04)',
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.55)',
+          cursor: (disabled || loading || actionLoading !== null) ? 'not-allowed' : 'pointer',
+          opacity: (disabled || loading || actionLoading !== null) ? 0.6 : 1,
+          whiteSpace: 'nowrap',
+          ...style,
+        }}
+      >
+        {loading ? '…' : label}
+      </button>
+    )
+  }
+
+  // ── No listing ──
+  if (!listing) {
+    if (!canCreateListing) {
+      return (
+        <div style={{ padding: '12px 0' }}>
+          <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.12)', fontSize: 12, color: 'rgba(251,191,36,0.65)', lineHeight: 1.65 }}>
+            创建 Listing 前，请先将资产设为公开，并选择可复用授权意图（非商用复用 / 商用复用）。
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div style={{ padding: '12px 0' }}>
+        {marketplaceIntent?.wantsToList ? (
+          <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 7, background: 'rgba(110,231,183,0.06)', border: '1px solid rgba(110,231,183,0.15)', fontSize: 12, color: '#6ee7b7' }}>
+            📋 发布意向已登记，可升级为正式 Listing。
+          </div>
+        ) : null}
+        {btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' })}
+        {actionError ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{actionError}</div> : null}
+        {actionMsg ? <div style={{ marginTop: 6, fontSize: 11, color: '#6ee7b7' }}>{actionMsg}</div> : null}
+        <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.25)', lineHeight: 1.6 }}>⚠️ {LISTING_DISCLAIMER}</div>
+      </div>
+    )
+  }
+
+  // ── Archived ──
+  if (listing.status === 'ARCHIVED') {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <ListingStatusBadge status="ARCHIVED" />
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>归档于 {listing.updatedAt ? new Date(listing.updatedAt).toLocaleDateString('zh-CN') : '—'}</span>
+        </div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>已归档的 Listing 不可恢复。如需重新上架，请创建新 Listing。</div>
+        {canCreateListing ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { marginTop: 8, border: '1px solid rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.5)' }) : null}
+        {actionError ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{actionError}</div> : null}
+        {actionMsg ? <div style={{ marginTop: 6, fontSize: 11, color: '#6ee7b7' }}>{actionMsg}</div> : null}
+      </div>
+    )
+  }
+
+  // ── Editable fields (draft only) ──
+  const showEdit = listing.status === 'DRAFT'
+
+  async function saveEdit() {
+    const price = editPrice ? parseInt(editPrice, 10) : null
+    return apiPatch(listing!.id, {
+      title: editTitle || null,
+      description: editDesc || null,
+      priceCredits: price,
+    })
+  }
+
+  return (
+    <div style={{ padding: '14px 0 6px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <ListingStatusBadge status={listing.status} />
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{LICENSE_LABEL[listing.licenseMode] ?? listing.licenseMode}</span>
+        {listing.publishedAt ? (
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)' }}>上架于 {new Date(listing.publishedAt).toLocaleDateString('zh-CN')}</span>
+        ) : null}
+      </div>
+
+      {/* Edit fields (draft only) */}
+      {showEdit ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginBottom: 4, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>标题</div>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Listing 标题"
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', fontSize: 12, color: 'rgba(255,255,255,0.65)', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginBottom: 4, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>标价积分（规划中，最多 999999）</div>
+            <input
+              type="number"
+              min={0}
+              max={999999}
+              value={editPrice}
+              onChange={(e) => setEditPrice(e.target.value)}
+              placeholder="留空表示待定"
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', fontSize: 12, color: 'rgba(255,255,255,0.65)', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginBottom: 4, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>说明（最多 500 字）</div>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              maxLength={500}
+              rows={3}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', fontSize: 12, color: 'rgba(255,255,255,0.65)', outline: 'none', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box' }}
+            />
+          </div>
+          {btn('保存编辑', () => { void runAction('保存编辑', saveEdit) })}
+        </div>
+      ) : (
+        /* Read-only info for ACTIVE/PAUSED */
+        <div style={{ marginBottom: 10 }}>
+          {listing.title ? <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>{listing.title}</div> : null}
+          {listing.priceCredits != null ? (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}>标价：{listing.priceCredits} 积分（购买功能规划中）</div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginBottom: 4 }}>标价：待定</div>
+          )}
+          {listing.description ? (
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{listing.description}</div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {listing.status === 'DRAFT' ? btn('激活上架', () => { void runAction('激活上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
+        {listing.status === 'ACTIVE' ? btn('暂停', () => { void runAction('暂停', () => apiPatch(listing.id, { status: 'PAUSED' })) }) : null}
+        {listing.status === 'PAUSED' ? btn('重新上架', () => { void runAction('重新上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
+        {btn('归档', () => { void runAction('归档', () => apiPatch(listing.id, { status: 'ARCHIVED' })) }, { border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.55)' })}
+        {/* Purchase always disabled */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', fontSize: 11, color: 'rgba(255,255,255,0.15)', cursor: 'not-allowed', userSelect: 'none' }}>
+          申请授权 · 即将开放
+        </span>
+      </div>
+
+      {actionError ? <div style={{ fontSize: 11, color: 'rgba(248,113,113,0.8)', marginBottom: 6 }}>{actionError}</div> : null}
+      {actionMsg ? <div style={{ fontSize: 11, color: '#6ee7b7', marginBottom: 6 }}>{actionMsg}</div> : null}
+
+      <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 10, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7 }}>
+        ⚠️ {LISTING_DISCLAIMER}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssetDetailPage() {
@@ -650,6 +936,7 @@ export default function AssetDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [togglingPublic, setTogglingPublic] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
+  const [listing, setListing] = useState<AssetListing | null>(null)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -662,7 +949,19 @@ export default function AssetDetailPage() {
         setError(data.message ?? data.errorCode ?? '加载失败')
         return
       }
-      setAsset(data.asset ?? null)
+      const loadedAsset = data.asset ?? null
+      setAsset(loadedAsset)
+      if (loadedAsset?.isOwner) {
+        try {
+          const lr = await fetch(`/api/marketplace/listings?assetId=${assetId}&mine=true`, { credentials: 'include' })
+          const ld = await lr.json() as { listing?: AssetListing | null }
+          setListing(ld.listing ?? null)
+        } catch {
+          setListing(null)
+        }
+      } else {
+        setListing(null)
+      }
     } catch {
       setError('网络错误，请稍后重试')
     } finally {
@@ -710,22 +1009,6 @@ export default function AssetDetailPage() {
           licenseIntent: { mode },
         },
       }
-    })
-  }
-
-  function handleMarketplaceIntentSaved(intent: MarketplaceIntent | null) {
-    setAsset((prev) => {
-      if (!prev) return prev
-      const existing: Record<string, unknown> =
-        prev.metadataJson && typeof prev.metadataJson === 'object' && !Array.isArray(prev.metadataJson)
-          ? (prev.metadataJson as Record<string, unknown>)
-          : {}
-      if (intent === null) {
-        const { marketplaceIntent: _removed, ...rest } = existing
-        void _removed
-        return { ...prev, metadataJson: rest }
-      }
-      return { ...prev, metadataJson: { ...existing, marketplaceIntent: intent } }
     })
   }
 
@@ -912,12 +1195,13 @@ export default function AssetDetailPage() {
               {/* Marketplace / 发布意向 */}
               <MetaSection title="Marketplace / 发布意向">
                 {asset.isOwner ? (
-                  <MarketplaceIntentEditor
+                  <AssetListingSection
                     assetId={asset.id}
                     isPublic={asset.isPublic}
                     licenseMode={licenseIntent?.mode ?? null}
-                    currentIntent={marketplaceIntentData}
-                    onSaved={handleMarketplaceIntentSaved}
+                    marketplaceIntent={marketplaceIntentData}
+                    listing={listing}
+                    onListingChange={setListing}
                   />
                 ) : (
                   <MarketplaceIntentReadOnly intent={marketplaceIntentData} />

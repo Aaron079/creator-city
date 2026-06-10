@@ -5,51 +5,44 @@ import Link from 'next/link'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface MarketplaceItem {
+interface ListingItem {
   id: string
-  title: string
-  type: string
-  url: string | null
-  thumbnailUrl: string | null
-  owner: {
+  assetId: string
+  sellerId: string
+  status: string
+  licenseMode: string
+  priceCredits: number | null
+  title: string | null
+  description: string | null
+  commercialUse: boolean
+  derivativeAllowed: boolean
+  attributionRequired: boolean
+  publishedAt: string | null
+  asset: {
+    id: string
+    title: string | null
+    type: string
+    url: string | null
+    thumbnailUrl: string | null
+    provider: string | null
+  }
+  seller: {
     id: string
     displayName: string
     username: string | null
     avatarUrl: string | null
   }
-  licenseIntent: unknown
-  marketplaceIntent: unknown
-  provider: string | null
-  createdAt: string
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Listing Card ─────────────────────────────────────────────────────────────
 
-function getLicenseMode(licenseIntent: unknown): string | null {
-  if (!licenseIntent || typeof licenseIntent !== 'object') return null
-  const li = licenseIntent as Record<string, unknown>
-  return typeof li.mode === 'string' ? li.mode : null
-}
+function ListingCard({ item }: { item: ListingItem }) {
+  const thumb = item.asset.thumbnailUrl ?? item.asset.url ?? ''
 
-function getWantsToList(marketplaceIntent: unknown): boolean {
-  if (!marketplaceIntent || typeof marketplaceIntent !== 'object') return false
-  const mi = marketplaceIntent as Record<string, unknown>
-  return mi.wantsToList === true
-}
-
-function getSuggestedPrice(marketplaceIntent: unknown): number | null {
-  if (!marketplaceIntent || typeof marketplaceIntent !== 'object') return null
-  const mi = marketplaceIntent as Record<string, unknown>
-  return typeof mi.suggestedPriceCredits === 'number' ? mi.suggestedPriceCredits : null
-}
-
-// ─── Asset Card ───────────────────────────────────────────────────────────────
-
-function AssetCard({ item }: { item: MarketplaceItem }) {
-  const thumb = item.thumbnailUrl ?? item.url ?? ''
-  const licenseMode = getLicenseMode(item.licenseIntent)
-  const wantsToList = getWantsToList(item.marketplaceIntent)
-  const suggestedPrice = getSuggestedPrice(item.marketplaceIntent)
+  const licenseColor =
+    item.licenseMode === 'reusable_commercial'
+      ? { bg: 'rgba(251,146,60,0.12)', color: '#fdba74', label: '💼 商用复用' }
+      : { bg: 'rgba(96,165,250,0.12)', color: '#93c5fd', label: '🔄 非商用复用' }
 
   return (
     <div
@@ -79,15 +72,15 @@ function AssetCard({ item }: { item: MarketplaceItem }) {
       >
         {thumb ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumb} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={thumb} alt={item.title ?? item.asset.title ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <span style={{ fontSize: 28, opacity: 0.2 }}>
-            {item.type === 'VIDEO' ? '🎬' : item.type === 'AUDIO' ? '🎵' : '🖼️'}
+            {item.asset.type === 'VIDEO' ? '🎬' : item.asset.type === 'AUDIO' ? '🎵' : '🖼️'}
           </span>
         )}
       </div>
 
-      {/* Title + creator */}
+      {/* Title + seller */}
       <div>
         <div
           style={{
@@ -100,53 +93,41 @@ function AssetCard({ item }: { item: MarketplaceItem }) {
             whiteSpace: 'nowrap',
           }}
         >
-          {item.title}
+          {item.title ?? item.asset.title ?? '未命名'}
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{item.owner.displayName}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{item.seller.displayName}</div>
       </div>
 
       {/* Badges */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', minHeight: 20 }}>
-        {licenseMode ? (
-          <span
-            style={{
-              fontSize: 10,
-              padding: '2px 7px',
-              borderRadius: 5,
-              background: licenseMode === 'reusable_commercial' ? 'rgba(251,146,60,0.12)' : 'rgba(96,165,250,0.12)',
-              color: licenseMode === 'reusable_commercial' ? '#fdba74' : '#93c5fd',
-              fontWeight: 600,
-            }}
-          >
-            {licenseMode === 'reusable_commercial' ? '💼 商用复用' : '🔄 非商用复用'}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+        <span
+          style={{
+            fontSize: 10,
+            padding: '2px 7px',
+            borderRadius: 5,
+            background: licenseColor.bg,
+            color: licenseColor.color,
+            fontWeight: 600,
+          }}
+        >
+          {licenseColor.label}
+        </span>
+        {item.commercialUse ? null : (
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.28)' }}>
+            非商用
           </span>
-        ) : null}
-        {wantsToList ? (
-          <span
-            style={{
-              fontSize: 10,
-              padding: '2px 7px',
-              borderRadius: 5,
-              background: 'rgba(110,231,183,0.08)',
-              color: '#6ee7b7',
-            }}
-          >
-            📋 发布意向已登记
-          </span>
-        ) : null}
+        )}
       </div>
 
-      {/* Suggested price */}
-      {suggestedPrice != null ? (
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)' }}>
-          建议价：{suggestedPrice} 积分（规划中）
-        </div>
-      ) : null}
+      {/* Price */}
+      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)' }}>
+        {item.priceCredits != null ? `标价：${item.priceCredits} 积分（购买功能规划中）` : '标价：待定'}
+      </div>
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 7, marginTop: 2 }}>
         <Link
-          href={`/assets/${item.id}`}
+          href={`/assets/${item.asset.id}`}
           style={{
             flex: 1,
             textAlign: 'center',
@@ -183,14 +164,14 @@ function AssetCard({ item }: { item: MarketplaceItem }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function MarketplaceListings() {
-  const [items, setItems] = useState<MarketplaceItem[]>([])
+  const [items, setItems] = useState<ListingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     fetch('/api/marketplace/listings', { credentials: 'include' })
-      .then((r) => r.json() as Promise<{ items?: MarketplaceItem[]; message?: string }>)
+      .then((r) => r.json() as Promise<{ items?: ListingItem[]; message?: string }>)
       .then((data) => {
         if (!cancelled) setItems(data.items ?? [])
       })
@@ -217,13 +198,13 @@ export function MarketplaceListings() {
       }}
     >
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.24em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)' }}>
-        公开可复用素材 · Real Assets
+        正式上架资产 · Active Listings
       </div>
       <div style={{ marginTop: 10, fontSize: 22, fontWeight: 300, letterSpacing: '-0.04em', color: '#fff' }}>
-        真实公开资产
+        已上架资产
       </div>
       <p style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: 'rgba(255,255,255,0.42)' }}>
-        以下为平台内公开且设置为可复用授权意图的真实资产。
+        以下为创作者正式上架的可复用资产 Listing。
         <br />
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
           购买授权、定价、收益分成将在后续 Marketplace 阶段接入。所有申请授权按钮当前为只读。
@@ -244,9 +225,9 @@ export function MarketplaceListings() {
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>暂无公开可复用资产</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>暂无正式上架资产</div>
           <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.2)', lineHeight: 1.6 }}>
-            你可以在资产详情页将资产设为公开，并选择可复用授权意图，再登记发布意向。
+            创作者可在资产详情页设置可复用授权意图，然后创建 Listing 草稿并激活上架。
           </div>
         </div>
       ) : (
@@ -259,7 +240,7 @@ export function MarketplaceListings() {
           }}
         >
           {items.map((item) => (
-            <AssetCard key={item.id} item={item} />
+            <ListingCard key={item.id} item={item} />
           ))}
         </div>
       )}

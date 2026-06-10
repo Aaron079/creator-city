@@ -257,6 +257,7 @@ model User {
   sessions            Session[]
   auditLogs           AuditLog[]
   providerAccounts    UserProviderAccount[]
+  assetListings       AssetListing[]         @relation("AssetListingSeller")
 
   @@index([username])
   @@index([email])
@@ -621,6 +622,7 @@ model Asset {
   workflow      CanvasWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   projectAssets ProjectAsset[]
   deliveryItems DeliveryItem[]
+  listings      AssetListing[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -1327,4 +1329,49 @@ model UserProviderAccount {
   @@index([userId])
   @@index([userId, providerId])
   @@index([userId, status])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETPLACE — P0-4 AssetListing schema-lite
+// Listing lifecycle only (draft→active→paused→archived).
+// No LicenseGrant, no MarketplaceOrder, no payment, no billing.
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum AssetListingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+model AssetListing {
+  id          String             @id @default(uuid())
+  assetId     String
+  sellerId    String
+  status      AssetListingStatus @default(DRAFT)
+
+  licenseMode String
+  priceCredits Int?
+
+  title       String?
+  description String?  @db.Text
+
+  commercialUse       Boolean @default(false)
+  derivativeAllowed   Boolean @default(false)
+  attributionRequired Boolean @default(true)
+
+  sourceMarketplaceIntentJson Json?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  seller User  @relation("AssetListingSeller", fields: [sellerId], references: [id])
+
+  @@index([assetId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([publishedAt])
 }
