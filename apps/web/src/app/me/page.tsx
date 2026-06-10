@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DashboardShell } from '@/components/layout/DashboardShell'
@@ -304,8 +304,91 @@ export default function MePage() {
             onAccept={acceptInvitation}
             onDecline={declineInvitation}
           />
+          <MyAssetsBlock />
         </div>
       </div>
     </DashboardShell>
+  )
+}
+
+// ─── Real assets block ────────────────────────────────────────────────────────
+
+interface MiniAsset {
+  id: string
+  title?: string | null
+  name: string
+  type: string
+  isPublic?: boolean | null
+  providerId?: string | null
+  resolvedUrl?: string | null
+  thumbnailUrl?: string | null
+  url?: string | null
+  createdAt: string
+}
+
+function MyAssetsBlock() {
+  const [assets, setAssets] = useState<MiniAsset[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/assets?limit=12&type=IMAGE', { credentials: 'include', cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json() as { assets?: MiniAsset[] }
+      setAssets((data.assets ?? []).slice(0, 12))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  if (loading) return null
+  if (assets.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">My Assets · 我的作品</p>
+          <p className="mt-1 text-xs text-white/35">最近生成的图片资产 — 真实数据</p>
+        </div>
+        <Link href="/assets" className="text-xs text-white/40 hover:text-white/70 transition">查看全部 →</Link>
+      </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+        {assets.map((a) => {
+          const thumb = a.resolvedUrl ?? a.thumbnailUrl ?? a.url ?? ''
+          return (
+            <Link
+              key={a.id}
+              href={`/assets/${a.id}`}
+              className="group relative overflow-hidden rounded-xl border border-white/8 bg-white/[0.03] hover:border-white/20 transition"
+              style={{ aspectRatio: '1' }}
+            >
+              {thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumb} alt={a.title ?? a.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-2xl opacity-20">🖼</div>
+              )}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition">
+                <p className="truncate text-[9px] text-white/70">{a.title ?? a.name}</p>
+              </div>
+              <div className="absolute right-1 top-1">
+                <span
+                  className="rounded px-1 py-0.5 text-[8px] font-semibold"
+                  style={{
+                    background: a.isPublic ? 'rgba(52,211,153,0.2)' : 'rgba(0,0,0,0.5)',
+                    color: a.isPublic ? '#6ee7b7' : 'rgba(255,255,255,0.4)',
+                  }}
+                >
+                  {a.isPublic ? '🌐' : '🔒'}
+                </span>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
   )
 }

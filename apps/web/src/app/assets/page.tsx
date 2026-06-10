@@ -24,6 +24,7 @@ interface AssetItem {
   generationJobId?: string | null
   projectId?: string | null
   nodeId?: string | null
+  isPublic?: boolean | null
   createdAt: string
   project?: { id: string; title: string } | null
 }
@@ -170,7 +171,50 @@ function VideoPreview({ asset }: { asset: AssetItem }) {
   )
 }
 
-function AssetCard({ asset }: { asset: AssetItem }) {
+function VisibilityToggle({ asset, onToggled }: { asset: AssetItem; onToggled: (id: string, next: boolean) => void }) {
+  const [busy, setBusy] = useState(false)
+  async function toggle(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/assets/${asset.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublic: !asset.isPublic }),
+      })
+      if (res.ok) onToggled(asset.id, !asset.isPublic)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { void toggle(e) }}
+      disabled={busy}
+      title={asset.isPublic ? '设为私有' : '设为公开'}
+      style={{
+        padding: '2px 8px',
+        borderRadius: '5px',
+        border: '1px solid rgba(255,255,255,0.09)',
+        background: asset.isPublic ? 'rgba(52,211,153,0.08)' : 'rgba(255,255,255,0.04)',
+        color: asset.isPublic ? '#6ee7b7' : 'rgba(255,255,255,0.35)',
+        fontSize: '10px',
+        cursor: busy ? 'not-allowed' : 'pointer',
+        opacity: busy ? 0.5 : 1,
+        whiteSpace: 'nowrap',
+        fontWeight: 500,
+      }}
+    >
+      {busy ? '…' : asset.isPublic ? '🌐 公开' : '🔒 私有'}
+    </button>
+  )
+}
+
+function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggled: (id: string, next: boolean) => void }) {
   const url = bestUrl(asset)
   const preview = promptPreview(asset.prompt)
   const bytes = formatBytes(asset.sizeBytes)
@@ -186,6 +230,7 @@ function AssetCard({ asset }: { asset: AssetItem }) {
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
       }}
     >
       {/* Media preview */}
@@ -194,10 +239,11 @@ function AssetCard({ asset }: { asset: AssetItem }) {
 
       {/* Card body */}
       <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-        {/* Top row: type chip + date */}
+        {/* Top row: type chip + visibility + date */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <TypeChip type={asset.type} />
           {dur ? <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>{dur}</span> : null}
+          <VisibilityToggle asset={asset} onToggled={onPublicToggled} />
           <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{formatDate(asset.createdAt)}</span>
         </div>
 
@@ -236,6 +282,12 @@ function AssetCard({ asset }: { asset: AssetItem }) {
 
         {/* Action row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <a
+            href={`/assets/${asset.id}`}
+            style={{ padding: '2px 9px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap', fontWeight: 500 }}
+          >
+            详情
+          </a>
           {url ? (
             <>
               <CopyButton text={url} label="复制 URL" />
@@ -426,7 +478,15 @@ export default function AssetsPage() {
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-            {displayed.map((asset) => <AssetCard key={asset.id} asset={asset} />)}
+            {displayed.map((asset) => (
+                <AssetCard
+                  key={asset.id}
+                  asset={asset}
+                  onPublicToggled={(id, next) => {
+                    setAssets((prev) => prev.map((a) => a.id === id ? { ...a, isPublic: next } : a))
+                  }}
+                />
+              ))}
           </div>
         )}
       </main>

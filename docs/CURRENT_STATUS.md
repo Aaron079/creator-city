@@ -1,7 +1,7 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-09
-Last valid commit: Tool 13 Character Reference Skill — PAUSED / Seedream route suspended / worker required
+Last updated: 2026-06-10
+Last valid commit: Web3 Foundation P0-1A — asset ownership visibility foundation
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
 ---
@@ -81,6 +81,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | Canvas V2 Beta 入口移除 | ✅ CLOSED / validated | `70e5c1e` |
 | Tool 13 — Character Reference / Turnaround / Grid（四视图/九宫格） | 🚫 DEFERRED / REMOVED_FROM_UI / no UI entry point / dev-only route preserved | `20279ad` · deferred commit pending |
 | Character Skill Worker — Face-ID POC route | 🔬 dev-only / `POST /api/skills/character-reference/face-id-poc` / requires env flag / not exposed in UI | `9403f60` |
+| Web3 Foundation P0-1A — 资产所有权可见性基础 | ✅ IMPLEMENTED / GET+PATCH `/api/assets/[assetId]` · asset detail page `/assets/[id]` · isPublic toggle in /assets list · real MyAssetsBlock in /me | pending commit |
 
 ---
 
