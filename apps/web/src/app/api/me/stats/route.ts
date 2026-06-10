@@ -54,10 +54,38 @@ export async function GET(_request: NextRequest) {
       }
     }
 
+    // marketplaceReady: public + reusable licenseIntent
+    const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
+    const marketplaceReady = assets.filter((a) => {
+      if (!a.isPublic) return false
+      const meta =
+        a.metadataJson && typeof a.metadataJson === 'object' && !Array.isArray(a.metadataJson)
+          ? (a.metadataJson as Record<string, unknown>)
+          : {}
+      const li =
+        meta.licenseIntent && typeof meta.licenseIntent === 'object' && !Array.isArray(meta.licenseIntent)
+          ? (meta.licenseIntent as Record<string, unknown>)
+          : null
+      return li && typeof li.mode === 'string' && REUSABLE_MODES.has(li.mode)
+    }).length
+
+    const marketplaceIntentCount = assets.filter((a) => {
+      const meta =
+        a.metadataJson && typeof a.metadataJson === 'object' && !Array.isArray(a.metadataJson)
+          ? (a.metadataJson as Record<string, unknown>)
+          : {}
+      const mi =
+        meta.marketplaceIntent && typeof meta.marketplaceIntent === 'object' && !Array.isArray(meta.marketplaceIntent)
+          ? (meta.marketplaceIntent as Record<string, unknown>)
+          : null
+      return mi?.wantsToList === true
+    }).length
+
     return jsonOk({
       assets: assetStats,
       licenseIntent,
       projects: { total: projectCount },
+      marketplace: { marketplaceReady, marketplaceIntentCount },
     })
   } catch (error) {
     console.error('[me/stats] failed', { error })

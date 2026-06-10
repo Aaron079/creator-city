@@ -7,6 +7,7 @@ import { serializeAsset } from '@/lib/projects/canvas-mappers'
 import { resolveAssetUrl } from '@/lib/assets/storage-adapter'
 import { isDbConnectionError } from '@/lib/db-error'
 import { isValidLicenseMode, deriveLicenseFields } from '@/lib/assets/license-intent'
+import { validateMarketplaceIntentInput, type MarketplaceIntentInput } from '@/lib/assets/marketplace-intent'
 
 export const dynamic = 'force-dynamic'
 
@@ -178,6 +179,7 @@ type PatchAssetBody = {
   title?: string
   isPublic?: boolean
   licenseIntent?: { mode: string } | null
+  marketplaceIntent?: MarketplaceIntentInput | null
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
@@ -202,9 +204,17 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
     }
 
+    // Validate marketplaceIntent if provided
+    if (body.marketplaceIntent !== undefined && body.marketplaceIntent !== null) {
+      const validation = validateMarketplaceIntentInput(body.marketplaceIntent)
+      if (!validation.valid) {
+        return jsonError('VALIDATION_FAILED', validation.error ?? '无效的发布意向数据。', 400)
+      }
+    }
+
     const asset = await db.asset.findFirst({
       where: { id: params.assetId, ownerId: user.id },
-      select: { id: true, metadataJson: true },
+      select: { id: true, metadataJson: true, isPublic: true },
     })
     if (!asset) return jsonError('ASSET_NOT_FOUND', '素材不存在。', 404)
 
@@ -220,28 +230,80 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const nextIsPublic = typeof body.isPublic === 'boolean' ? body.isPublic : undefined
 
     // Build metadataJson update — always merge, never overwrite other keys
+    const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
     let nextMetadataJson: Record<string, unknown> | undefined
-    if (body.licenseIntent !== undefined) {
+    if (body.licenseIntent !== undefined || body.marketplaceIntent !== undefined) {
       const existing: Record<string, unknown> =
         asset.metadataJson && typeof asset.metadataJson === 'object' && !Array.isArray(asset.metadataJson)
           ? (asset.metadataJson as Record<string, unknown>)
           : {}
-      if (body.licenseIntent === null) {
-        const { licenseIntent: _removed, ...rest } = existing
-        void _removed
-        nextMetadataJson = rest
-      } else {
-        const mode = body.licenseIntent.mode as Parameters<typeof deriveLicenseFields>[0]
-        nextMetadataJson = {
-          ...existing,
-          licenseIntent: {
-            mode,
-            ...deriveLicenseFields(mode),
-            updatedAt: new Date().toISOString(),
-            updatedBy: user.id,
-          },
+      let merged: Record<string, unknown> = { ...existing }
+
+      // licenseIntent — same logic as before
+      if (body.licenseIntent !== undefined) {
+        if (body.licenseIntent === null) {
+          const { licenseIntent: _removed, ...rest } = merged
+          void _removed
+          merged = rest
+        } else {
+          const mode = body.licenseIntent.mode as Parameters<typeof deriveLicenseFields>[0]
+          merged = {
+            ...merged,
+            licenseIntent: {
+              mode,
+              ...deriveLicenseFields(mode),
+              updatedAt: new Date().toISOString(),
+              updatedBy: user.id,
+            },
+          }
         }
       }
+
+      // marketplaceIntent — metadata-only, no schema change, no payment
+      if (body.marketplaceIntent !== undefined) {
+        if (body.marketplaceIntent === null) {
+          const { marketplaceIntent: _removed, ...rest } = merged
+          void _removed
+          merged = rest
+        } else if (!body.marketplaceIntent.wantsToList) {
+          merged = {
+            ...merged,
+            marketplaceIntent: {
+              wantsToList: false,
+              updatedAt: new Date().toISOString(),
+              updatedBy: user.id,
+            },
+          }
+        } else {
+          // wantsToList=true: pre-condition — asset must be public with reusable licenseIntent
+          const effectiveIsPublic = nextIsPublic !== undefined ? nextIsPublic : asset.isPublic
+          const currentLI =
+            merged.licenseIntent && typeof merged.licenseIntent === 'object' && !Array.isArray(merged.licenseIntent)
+              ? (merged.licenseIntent as Record<string, unknown>)
+              : null
+          const licenseMode = currentLI?.mode
+          if (!effectiveIsPublic || !licenseMode || !REUSABLE_MODES.has(licenseMode as string)) {
+            return jsonError(
+              'MARKETPLACE_INTENT_REQUIRES_REUSABLE_PUBLIC_ASSET',
+              '请先将资产设为公开，并选择可复用授权意图。',
+              400,
+            )
+          }
+          const mi = body.marketplaceIntent
+          const intent: Record<string, unknown> = {
+            wantsToList: true,
+            status: 'draft',
+            updatedAt: new Date().toISOString(),
+            updatedBy: user.id,
+          }
+          if (mi.suggestedLicense) intent.suggestedLicense = mi.suggestedLicense
+          if (mi.suggestedPriceCredits != null) intent.suggestedPriceCredits = Number(mi.suggestedPriceCredits)
+          if (mi.description?.trim()) intent.description = mi.description.trim()
+          merged = { ...merged, marketplaceIntent: intent }
+        }
+      }
+
+      nextMetadataJson = merged
     }
 
     const updateData: Parameters<typeof db.asset.update>[0]['data'] = {}

@@ -8,6 +8,12 @@ import {
   getLicenseIntent,
   type LicenseMode,
 } from '@/lib/assets/license-intent'
+import {
+  getMarketplaceIntent,
+  MARKETPLACE_INTENT_LICENSES,
+  type MarketplaceIntent,
+  type MarketplaceIntentLicense,
+} from '@/lib/assets/marketplace-intent'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -319,6 +325,319 @@ function LicenseIntentReadOnly({ mode, isPublic }: { mode: LicenseMode | null; i
   )
 }
 
+// ─── Marketplace Intent Editor ────────────────────────────────────────────────
+
+const REUSABLE_MODES_SET = new Set(['reusable_noncommercial', 'reusable_commercial'])
+
+const MARKETPLACE_DISCLAIMER =
+  '当前仅记录发布意向，不代表正式上架、交易、付款或收益分成。正式 Marketplace 交易功能规划中。'
+
+function MarketplaceIntentEditor({
+  assetId,
+  isPublic,
+  licenseMode,
+  currentIntent,
+  onSaved,
+}: {
+  assetId: string
+  isPublic: boolean
+  licenseMode: LicenseMode | null
+  currentIntent: MarketplaceIntent | null
+  onSaved: (intent: MarketplaceIntent | null) => void
+}) {
+  const canList = isPublic && licenseMode !== null && REUSABLE_MODES_SET.has(licenseMode)
+
+  const [wantsToList, setWantsToList] = useState(currentIntent?.wantsToList ?? false)
+  const [suggestedLicense, setSuggestedLicense] = useState<MarketplaceIntentLicense | null>(
+    currentIntent?.suggestedLicense ?? null,
+  )
+  const [priceCredits, setPriceCredits] = useState<string>(
+    currentIntent?.suggestedPriceCredits != null ? String(currentIntent.suggestedPriceCredits) : '',
+  )
+  const [description, setDescription] = useState(currentIntent?.description ?? '')
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  if (!canList) {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'rgba(251,191,36,0.05)',
+            border: '1px solid rgba(251,191,36,0.12)',
+            fontSize: '12px',
+            color: 'rgba(251,191,36,0.65)',
+            lineHeight: 1.65,
+          }}
+        >
+          发布到市场前，请先将资产设为公开，并选择可复用授权意图（非商用复用 / 商用复用）。
+        </div>
+      </div>
+    )
+  }
+
+  async function save() {
+    setSaving(true)
+    setSaveResult(null)
+    try {
+      const intentBody: Record<string, unknown> = { wantsToList }
+      if (wantsToList) {
+        if (suggestedLicense) intentBody.suggestedLicense = suggestedLicense
+        const price = parseInt(priceCredits, 10)
+        if (!isNaN(price) && price >= 0) intentBody.suggestedPriceCredits = price
+        if (description.trim()) intentBody.description = description.trim()
+      }
+      const res = await fetch(`/api/assets/${assetId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marketplaceIntent: intentBody }),
+      })
+      const data = (await res.json()) as { message?: string; errorCode?: string }
+      if (!res.ok) {
+        setSaveResult({ ok: false, msg: data.message ?? data.errorCode ?? '保存失败' })
+        return
+      }
+      setSaveResult({ ok: true, msg: '发布意向已保存' })
+      const saved: MarketplaceIntent = {
+        wantsToList,
+        status: 'draft',
+        updatedAt: new Date().toISOString(),
+        updatedBy: '',
+      }
+      if (wantsToList && suggestedLicense) saved.suggestedLicense = suggestedLicense
+      if (wantsToList && priceCredits) {
+        const p = parseInt(priceCredits, 10)
+        if (!isNaN(p)) saved.suggestedPriceCredits = p
+      }
+      if (wantsToList && description.trim()) saved.description = description.trim()
+      onSaved(saved)
+      setTimeout(() => setSaveResult(null), 3000)
+    } catch {
+      setSaveResult({ ok: false, msg: '网络错误，请稍后重试' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '14px 0 6px' }}>
+      {/* wantsToList toggle */}
+      <button
+        type="button"
+        onClick={() => setWantsToList((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          width: '100%',
+          padding: '10px 12px',
+          borderRadius: '9px',
+          border: wantsToList ? '1px solid rgba(110,231,183,0.35)' : '1px solid rgba(255,255,255,0.07)',
+          background: wantsToList ? 'rgba(110,231,183,0.06)' : 'rgba(255,255,255,0.02)',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <div
+          style={{
+            width: '14px',
+            height: '14px',
+            borderRadius: '50%',
+            border: wantsToList ? '4px solid #6ee7b7' : '2px solid rgba(255,255,255,0.25)',
+            flexShrink: 0,
+            background: 'transparent',
+          }}
+        />
+        <div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: wantsToList ? '#6ee7b7' : 'rgba(255,255,255,0.65)' }}>
+            {wantsToList ? '✓ 已登记发布意向' : '登记发布意向'}
+          </div>
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+            在市场中展示此资产，表明有授权意向（不代表立即可购买）
+          </div>
+        </div>
+      </button>
+
+      {/* Fields shown only when wantsToList */}
+      {wantsToList ? (
+        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* suggestedLicense */}
+          <div>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.28)', marginBottom: '5px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>建议授权类型</div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {MARKETPLACE_INTENT_LICENSES.map((lic) => (
+                <button
+                  key={lic}
+                  type="button"
+                  onClick={() => setSuggestedLicense(lic)}
+                  style={{
+                    flex: 1,
+                    padding: '6px 10px',
+                    borderRadius: '7px',
+                    border: suggestedLicense === lic ? '1px solid rgba(147,197,253,0.4)' : '1px solid rgba(255,255,255,0.07)',
+                    background: suggestedLicense === lic ? 'rgba(147,197,253,0.08)' : 'rgba(255,255,255,0.02)',
+                    fontSize: '11px',
+                    color: suggestedLicense === lic ? '#93c5fd' : 'rgba(255,255,255,0.5)',
+                    cursor: 'pointer',
+                    fontWeight: suggestedLicense === lic ? 600 : 400,
+                  }}
+                >
+                  {lic === 'reusable_noncommercial' ? '非商用复用' : '商用复用'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* suggestedPriceCredits */}
+          <div>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.28)', marginBottom: '5px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>建议价格（积分，规划中）</div>
+            <input
+              type="number"
+              min={0}
+              max={999999}
+              value={priceCredits}
+              onChange={(e) => setPriceCredits(e.target.value)}
+              placeholder="留空表示待定"
+              style={{
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.03)',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.65)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+          {/* description */}
+          <div>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.28)', marginBottom: '5px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>发布说明（可选，最多 500 字）</div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={500}
+              placeholder="描述资产的适用场景、授权范围说明等…"
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.03)',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.65)',
+                outline: 'none',
+                resize: 'vertical',
+                lineHeight: 1.5,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <button
+          type="button"
+          onClick={() => { void save() }}
+          disabled={saving}
+          style={{
+            padding: '7px 18px',
+            borderRadius: '8px',
+            border: '1px solid rgba(110,231,183,0.3)',
+            background: saving ? 'rgba(110,231,183,0.04)' : 'rgba(110,231,183,0.09)',
+            color: '#6ee7b7',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: saving ? 'not-allowed' : 'pointer',
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          {saving ? '保存中…' : '保存发布意向'}
+        </button>
+        {saveResult ? (
+          <span style={{ fontSize: '12px', color: saveResult.ok ? '#6ee7b7' : 'rgba(248,113,113,0.85)' }}>
+            {saveResult.msg}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '10px', color: 'rgba(255,255,255,0.3)', lineHeight: 1.7 }}>
+        ⚠️ {MARKETPLACE_DISCLAIMER}
+      </div>
+    </div>
+  )
+}
+
+function MarketplaceIntentReadOnly({ intent }: { intent: MarketplaceIntent | null }) {
+  const disabledBtn = (
+    <span
+      style={{
+        display: 'inline-block',
+        marginTop: '10px',
+        padding: '6px 16px',
+        borderRadius: '8px',
+        border: '1px solid rgba(255,255,255,0.06)',
+        fontSize: '12px',
+        color: 'rgba(255,255,255,0.2)',
+        cursor: 'not-allowed',
+        userSelect: 'none',
+      }}
+    >
+      申请授权 · 即将开放
+    </span>
+  )
+
+  if (!intent?.wantsToList) {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.32)', lineHeight: 1.6, marginBottom: '4px' }}>
+          创作者尚未登记市场发布意向。
+        </div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6, marginBottom: '8px' }}>
+          {MARKETPLACE_DISCLAIMER}
+        </div>
+        {disabledBtn}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+        <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '5px', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7', fontWeight: 600 }}>
+          📋 发布意向已登记
+        </span>
+        {intent.suggestedLicense ? (
+          <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '5px', background: intent.suggestedLicense === 'reusable_commercial' ? 'rgba(251,146,60,0.1)' : 'rgba(96,165,250,0.1)', color: intent.suggestedLicense === 'reusable_commercial' ? '#fdba74' : '#93c5fd', fontWeight: 600 }}>
+            {intent.suggestedLicense === 'reusable_commercial' ? '💼 商用复用' : '🔄 非商用复用'}
+          </span>
+        ) : null}
+      </div>
+      {intent.suggestedPriceCredits != null ? (
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)', marginBottom: '4px' }}>
+          建议价：{intent.suggestedPriceCredits} 积分（规划中）
+        </div>
+      ) : null}
+      {intent.description ? (
+        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {intent.description}
+        </div>
+      ) : null}
+      <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6, marginBottom: '4px' }}>
+        {MARKETPLACE_DISCLAIMER}
+      </div>
+      {disabledBtn}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssetDetailPage() {
@@ -394,8 +713,25 @@ export default function AssetDetailPage() {
     })
   }
 
+  function handleMarketplaceIntentSaved(intent: MarketplaceIntent | null) {
+    setAsset((prev) => {
+      if (!prev) return prev
+      const existing: Record<string, unknown> =
+        prev.metadataJson && typeof prev.metadataJson === 'object' && !Array.isArray(prev.metadataJson)
+          ? (prev.metadataJson as Record<string, unknown>)
+          : {}
+      if (intent === null) {
+        const { marketplaceIntent: _removed, ...rest } = existing
+        void _removed
+        return { ...prev, metadataJson: rest }
+      }
+      return { ...prev, metadataJson: { ...existing, marketplaceIntent: intent } }
+    })
+  }
+
   const mediaUrl = asset?.resolvedUrl ?? asset?.url ?? ''
   const licenseIntent = asset ? getLicenseIntent(asset.metadataJson) : null
+  const marketplaceIntentData = asset ? getMarketplaceIntent(asset.metadataJson) : null
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
@@ -570,6 +906,21 @@ export default function AssetDetailPage() {
                     mode={licenseIntent?.mode ?? null}
                     isPublic={asset.isPublic}
                   />
+                )}
+              </MetaSection>
+
+              {/* Marketplace / 发布意向 */}
+              <MetaSection title="Marketplace / 发布意向">
+                {asset.isOwner ? (
+                  <MarketplaceIntentEditor
+                    assetId={asset.id}
+                    isPublic={asset.isPublic}
+                    licenseMode={licenseIntent?.mode ?? null}
+                    currentIntent={marketplaceIntentData}
+                    onSaved={handleMarketplaceIntentSaved}
+                  />
+                ) : (
+                  <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
                 )}
               </MetaSection>
             </div>
