@@ -40,6 +40,19 @@ interface MarketplaceOrder {
   createdAt: string
 }
 
+interface PendingOrderItem {
+  id: string
+  priceCredits: number
+  message: string | null
+  createdAt: string
+  buyer: {
+    id: string
+    displayName: string
+    username: string | null
+    avatarUrl: string | null
+  }
+}
+
 interface AssetListing {
   id: string
   assetId: string
@@ -711,8 +724,9 @@ function AssetListingSection({
   marketplaceIntent,
   listing,
   grantCount,
-  pendingOrderCount,
+  pendingOrders,
   onListingChange,
+  onOrderRejected,
 }: {
   assetId: string
   isPublic: boolean
@@ -721,8 +735,9 @@ function AssetListingSection({
   marketplaceIntent: MarketplaceIntent | null
   listing: AssetListing | null
   grantCount: number | null
-  pendingOrderCount: number
+  pendingOrders: PendingOrderItem[]
   onListingChange: (l: AssetListing | null) => void
+  onOrderRejected: (orderId: string) => void
 }) {
   const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
   const isReady = assetStatus === 'READY'
@@ -732,6 +747,8 @@ function AssetListingSection({
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [showOrders, setShowOrders] = useState(false)
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
 
   // Draft edit state
   const [editTitle, setEditTitle] = useState(listing?.title ?? '')
@@ -941,6 +958,21 @@ function AssetListingSection({
     })
   }
 
+  async function rejectOrder(orderId: string) {
+    setRejectingId(orderId)
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${orderId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject' }),
+      })
+      if (res.ok) onOrderRejected(orderId)
+    } catch { /* ignore */ } finally {
+      setRejectingId(null)
+    }
+  }
+
   return (
     <div style={{ padding: '14px 0 6px' }}>
       {/* Header */}
@@ -957,12 +989,46 @@ function AssetListingSection({
         ) : grantCount === 0 ? (
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)' }}>暂无授权记录</span>
         ) : null}
-        {pendingOrderCount > 0 ? (
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)', fontWeight: 600 }}>
-            待处理付费申请 {pendingOrderCount} 个
-          </span>
+        {pendingOrders.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowOrders((v) => !v)}
+            style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+          >
+            待处理付费申请 {pendingOrders.length} 个 {showOrders ? '▲' : '▼'}
+          </button>
         ) : null}
       </div>
+
+      {/* Pending orders list (seller reject) */}
+      {showOrders && pendingOrders.length > 0 ? (
+        <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {pendingOrders.map((order) => (
+            <div key={order.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.15)', background: 'rgba(251,191,36,0.04)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
+                  {order.buyer.displayName}
+                  {order.buyer.username ? <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 5 }}>@{order.buyer.username}</span> : null}
+                </div>
+                {order.message ? (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2, lineHeight: 1.5 }}>{order.message}</div>
+                ) : null}
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>
+                  {new Date(order.createdAt).toLocaleDateString('zh-CN')} · {order.priceCredits} 积分
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { void rejectOrder(order.id) }}
+                disabled={rejectingId === order.id}
+                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.25)', background: 'rgba(248,113,113,0.06)', color: 'rgba(248,113,113,0.65)', fontSize: 11, cursor: rejectingId === order.id ? 'not-allowed' : 'pointer', opacity: rejectingId === order.id ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                {rejectingId === order.id ? '拒绝中…' : '拒绝'}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* Edit fields (draft only) */}
       {showEdit ? (
@@ -1061,7 +1127,8 @@ export default function AssetDetailPage() {
   const [grantCount, setGrantCount] = useState<number | null>(null)
   const [myGrant, setMyGrant] = useState<LicenseGrant | null>(null)
   const [myOrder, setMyOrder] = useState<MarketplaceOrder | null>(null)
-  const [pendingOrderCount, setPendingOrderCount] = useState<number>(0)
+  const [pendingOrders, setPendingOrders] = useState<PendingOrderItem[]>([])
+  const [cancelOrderState, setCancelOrderState] = useState<'idle' | 'loading'>('idle')
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -1082,11 +1149,11 @@ export default function AssetDetailPage() {
           const ld = await lr.json() as { listing?: AssetListing | null; grantCount?: number }
           setListing(ld.listing ?? null)
           setGrantCount(ld.grantCount ?? null)
-          // Fetch pending order count for seller
+          // Fetch pending orders for seller
           if (ld.listing?.id) {
             fetch(`/api/marketplace/listings/${ld.listing.id}/orders`, { credentials: 'include' })
-              .then((r) => r.json() as Promise<{ orders?: unknown[] }>)
-              .then((d) => setPendingOrderCount(d.orders?.length ?? 0))
+              .then((r) => r.json() as Promise<{ orders?: PendingOrderItem[] }>)
+              .then((d) => setPendingOrders(d.orders ?? []))
               .catch(() => { /* ignore */ })
           }
         } catch {
@@ -1104,11 +1171,12 @@ export default function AssetDetailPage() {
         } catch {
           setMyGrant(null)
         }
-        // Fetch buyer's own pending order for this asset
+        // Fetch buyer's most recent order for this asset (any status)
         fetch(`/api/me/marketplace-orders?role=buyer`, { credentials: 'include' })
           .then((r) => r.json() as Promise<{ items?: MarketplaceOrder[] }>)
           .then((d) => {
-            const order = d.items?.find((o) => o.assetId === assetId && o.status === 'PENDING') ?? null
+            // Items sorted desc by createdAt; first match per asset is most recent
+            const order = d.items?.find((o) => o.assetId === assetId) ?? null
             setMyOrder(order)
           })
           .catch(() => { /* ignore */ })
@@ -1161,6 +1229,22 @@ export default function AssetDetailPage() {
         },
       }
     })
+  }
+
+  async function cancelMyOrder() {
+    if (!myOrder || myOrder.status !== 'PENDING' || cancelOrderState === 'loading') return
+    setCancelOrderState('loading')
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      if (res.ok) setMyOrder((prev) => prev ? { ...prev, status: 'CANCELLED' } : prev)
+    } catch { /* ignore */ } finally {
+      setCancelOrderState('idle')
+    }
   }
 
   const mediaUrl = asset?.resolvedUrl ?? asset?.url ?? ''
@@ -1354,8 +1438,9 @@ export default function AssetDetailPage() {
                     marketplaceIntent={marketplaceIntentData}
                     listing={listing}
                     grantCount={grantCount}
-                    pendingOrderCount={pendingOrderCount}
+                    pendingOrders={pendingOrders}
                     onListingChange={setListing}
+                    onOrderRejected={(id) => setPendingOrders((prev) => prev.filter((o) => o.id !== id))}
                   />
                 ) : (
                   <>
@@ -1392,14 +1477,43 @@ export default function AssetDetailPage() {
                       <>
                         {myOrder ? (
                           <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10,
-                            border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.05)' }}>
-                            <div style={{ fontSize: 12, color: '#fbbf24', fontWeight: 500 }}>付费授权申请已提交</div>
-                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>
-                              申请时间：{new Date(myOrder.createdAt).toLocaleDateString('zh-CN')}
-                            </div>
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
-                              尚未扣款，尚未获得授权。
-                            </div>
+                            border: myOrder.status === 'PENDING' ? '1px solid rgba(251,191,36,0.2)'
+                              : myOrder.status === 'CANCELLED' ? '1px solid rgba(255,255,255,0.08)'
+                              : '1px solid rgba(248,113,113,0.2)',
+                            background: myOrder.status === 'PENDING' ? 'rgba(251,191,36,0.05)'
+                              : myOrder.status === 'CANCELLED' ? 'rgba(255,255,255,0.02)'
+                              : 'rgba(248,113,113,0.04)' }}>
+                            {myOrder.status === 'PENDING' ? (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ fontSize: 12, color: '#fbbf24', fontWeight: 500 }}>付费授权申请已提交</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => { void cancelMyOrder() }}
+                                    disabled={cancelOrderState === 'loading'}
+                                    style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.2)', background: 'transparent', color: 'rgba(248,113,113,0.6)', fontSize: 10, cursor: cancelOrderState === 'loading' ? 'not-allowed' : 'pointer', opacity: cancelOrderState === 'loading' ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}
+                                  >
+                                    {cancelOrderState === 'loading' ? '取消中…' : '取消申请'}
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>
+                                  申请时间：{new Date(myOrder.createdAt).toLocaleDateString('zh-CN')}
+                                </div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
+                                  尚未扣款，尚未获得授权。
+                                </div>
+                              </>
+                            ) : myOrder.status === 'CANCELLED' ? (
+                              <>
+                                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', fontWeight: 500 }}>申请已取消</div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>如需重新申请，请前往市场页面。</div>
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 12, color: 'rgba(248,113,113,0.75)', fontWeight: 500 }}>申请已被拒绝</div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>如需再次申请，请前往市场页面重新提交。</div>
+                              </>
+                            )}
                           </div>
                         ) : null}
                         <MarketplaceIntentReadOnly intent={marketplaceIntentData} />

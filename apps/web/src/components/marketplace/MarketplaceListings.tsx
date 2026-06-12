@@ -39,11 +39,11 @@ interface ListingItem {
 function ListingCard({
   item,
   currentUserId,
-  hasPendingOrder,
+  initialOrder,
 }: {
   item: ListingItem
   currentUserId: string | null
-  hasPendingOrder: boolean
+  initialOrder: { id: string; status: string } | null
 }) {
   const thumb = item.asset.thumbnailUrl ?? item.asset.url ?? ''
   const isSeller = currentUserId === item.sellerId
@@ -53,8 +53,12 @@ function ListingCard({
   const [grantState, setGrantState] = useState<'idle' | 'loading' | 'granted' | 'error'>('idle')
   const [grantChecked, setGrantChecked] = useState(false)
 
-  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'error'>(
-    hasPendingOrder ? 'submitted' : 'idle'
+  const [orderId, setOrderId] = useState<string | null>(initialOrder?.id ?? null)
+  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'cancelling' | 'cancelled' | 'rejected' | 'error'>(
+    initialOrder?.status === 'PENDING' ? 'submitted'
+    : initialOrder?.status === 'CANCELLED' ? 'cancelled'
+    : initialOrder?.status === 'REJECTED' ? 'rejected'
+    : 'idle'
   )
 
   // Check existing grant on mount (only for eligible non-seller buyers)
@@ -95,7 +99,7 @@ function ListingCard({
   }, [item.id, grantState])
 
   const handleOrderSubmit = useCallback(async () => {
-    if (orderState !== 'idle') return
+    if (orderState !== 'idle' && orderState !== 'cancelled') return
     setOrderState('loading')
     try {
       const res = await fetch(`/api/marketplace/listings/${item.id}/orders`, {
@@ -104,8 +108,11 @@ function ListingCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const data = (await res.json()) as { errorCode?: string }
-      if (res.ok || res.status === 201 || data.errorCode === 'ORDER_ALREADY_PENDING') {
+      const data = (await res.json()) as { errorCode?: string; order?: { id: string } }
+      if (res.ok || res.status === 201) {
+        setOrderId(data.order?.id ?? null)
+        setOrderState('submitted')
+      } else if (data.errorCode === 'ORDER_ALREADY_PENDING') {
         setOrderState('submitted')
       } else {
         setOrderState('error')
@@ -116,6 +123,26 @@ function ListingCard({
       setTimeout(() => setOrderState('idle'), 2500)
     }
   }, [item.id, orderState])
+
+  const handleOrderCancel = useCallback(async () => {
+    if (!orderId || orderState !== 'submitted') return
+    setOrderState('cancelling')
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${orderId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      if (res.ok) {
+        setOrderState('cancelled')
+      } else {
+        setOrderState('submitted')
+      }
+    } catch {
+      setOrderState('submitted')
+    }
+  }, [orderId, orderState])
 
   const licenseColor =
     item.licenseMode === 'reusable_commercial'
@@ -147,6 +174,43 @@ function ListingCard({
     if (isPaid) {
       if (orderState === 'submitted') {
         return (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span
+              style={{
+                textAlign: 'center',
+                fontSize: 12,
+                padding: '7px 0',
+                borderRadius: 10,
+                border: '1px solid rgba(251,191,36,0.25)',
+                color: '#fbbf24',
+                userSelect: 'none',
+              }}
+            >
+              ✓ 申请已提交
+            </span>
+            {orderId ? (
+              <button
+                onClick={handleOrderCancel}
+                style={{
+                  textAlign: 'center',
+                  fontSize: 10,
+                  padding: '2px 0',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(248,113,113,0.55)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                取消申请
+              </button>
+            ) : null}
+          </div>
+        )
+      }
+
+      if (orderState === 'cancelling') {
+        return (
           <span
             style={{
               flex: 1,
@@ -154,12 +218,53 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(251,191,36,0.25)',
-              color: '#fbbf24',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.3)',
               userSelect: 'none',
             }}
           >
-            ✓ 申请已提交
+            取消中…
+          </span>
+        )
+      }
+
+      if (orderState === 'cancelled') {
+        return (
+          <button
+            onClick={handleOrderSubmit}
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: 12,
+              padding: '7px 0',
+              borderRadius: 10,
+              border: '1px solid rgba(251,191,36,0.2)',
+              color: 'rgba(251,191,36,0.55)',
+              background: 'transparent',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            已取消 · 重新申请
+          </button>
+        )
+      }
+
+      if (orderState === 'rejected') {
+        return (
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: 12,
+              padding: '7px 0',
+              borderRadius: 10,
+              border: '1px solid rgba(248,113,113,0.2)',
+              color: 'rgba(248,113,113,0.65)',
+              userSelect: 'none',
+            }}
+          >
+            申请已被拒绝
           </span>
         )
       }
@@ -402,7 +507,7 @@ export function MarketplaceListings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [pendingOrderListingIds, setPendingOrderListingIds] = useState<Set<string>>(new Set())
+  const [orderByListingId, setOrderByListingId] = useState<Map<string, { id: string; status: string }>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -417,21 +522,24 @@ export function MarketplaceListings() {
         .then((r) => r.json() as Promise<{ items?: ListingItem[] }>)
         .then((d) => d.items ?? []),
       fetch('/api/me/marketplace-orders?role=buyer', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ items?: Array<{ listingId: string; status: string }> }>)
+        .then((r) => r.json() as Promise<{ items?: Array<{ id: string; listingId: string; status: string }> }>)
         .then((d) => {
-          const ids = new Set<string>()
+          const map = new Map<string, { id: string; status: string }>()
           for (const o of d.items ?? []) {
-            if (o.status === 'PENDING') ids.add(o.listingId)
+            // Items are sorted desc by createdAt; first match per listing is most recent
+            if (!map.has(o.listingId)) {
+              map.set(o.listingId, { id: o.id, status: o.status })
+            }
           }
-          return ids
+          return map
         })
-        .catch(() => new Set<string>()),
+        .catch(() => new Map<string, { id: string; status: string }>()),
     ])
-      .then(([userId, listingItems, orderIds]) => {
+      .then(([userId, listingItems, orderMap]) => {
         if (!cancelled) {
           setCurrentUserId(userId)
           setItems(listingItems)
-          setPendingOrderListingIds(orderIds)
+          setOrderByListingId(orderMap)
         }
       })
       .catch(() => {
@@ -502,7 +610,7 @@ export function MarketplaceListings() {
               key={item.id}
               item={item}
               currentUserId={currentUserId}
-              hasPendingOrder={pendingOrderListingIds.has(item.id)}
+              initialOrder={orderByListingId.get(item.id) ?? null}
             />
           ))}
         </div>
