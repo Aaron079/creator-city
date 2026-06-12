@@ -107,6 +107,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       where: { listingId: params.id, status: { in: ['PENDING', 'QUOTED', 'COMPLETED'] } },
       include: {
         buyer: { select: { id: true, displayName: true, username: true, profile: { select: { avatarUrl: true } } } },
+        refundRequest: { select: { id: true, status: true, reason: true, adminNote: true, createdAt: true, reviewedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -116,6 +117,14 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       orders: orders.map((o) => ({
         ...serializeOrder(o),
         buyer: { id: o.buyer.id, displayName: o.buyer.displayName, username: o.buyer.username ?? null, avatarUrl: o.buyer.profile?.avatarUrl ?? null },
+        refundRequest: o.refundRequest ? {
+          id: o.refundRequest.id,
+          status: o.refundRequest.status,
+          reason: o.refundRequest.reason,
+          adminNote: o.refundRequest.adminNote,
+          createdAt: o.refundRequest.createdAt.toISOString(),
+          reviewedAt: o.refundRequest.reviewedAt?.toISOString() ?? null,
+        } : null,
       })),
     })
   } catch (error) {

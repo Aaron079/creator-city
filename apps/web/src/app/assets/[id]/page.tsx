@@ -31,6 +31,16 @@ interface LicenseGrant {
   termsJson: unknown
 }
 
+interface RefundRequest {
+  id: string
+  orderId: string
+  status: string
+  reason: string
+  adminNote: string | null
+  createdAt: string
+  reviewedAt: string | null
+}
+
 interface MarketplaceOrder {
   id: string
   listingId: string
@@ -42,6 +52,7 @@ interface MarketplaceOrder {
   createdAt: string
   quotedAt?: string | null
   completedAt?: string | null
+  refundRequest?: RefundRequest | null
 }
 
 interface PendingOrderItem {
@@ -54,6 +65,7 @@ interface PendingOrderItem {
   status: string
   quotedAt?: string | null
   completedAt?: string | null
+  refundRequest?: RefundRequest | null
   buyer: {
     id: string
     displayName: string
@@ -1055,9 +1067,28 @@ function AssetListingSection({
                 </div>
               </div>
               {order.status === 'COMPLETED' ? (
-                <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.2)', color: 'rgba(74,222,128,0.75)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  ✓ 已完成
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.2)', color: 'rgba(74,222,128,0.75)', whiteSpace: 'nowrap' }}>
+                    ✓ 已完成
+                  </span>
+                  {order.refundRequest ? (
+                    <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 5, whiteSpace: 'nowrap',
+                      border: order.refundRequest.status === 'PENDING' ? '1px solid rgba(251,191,36,0.3)'
+                        : order.refundRequest.status === 'APPROVED' ? '1px solid rgba(74,222,128,0.2)'
+                        : order.refundRequest.status === 'REJECTED' ? '1px solid rgba(248,113,113,0.2)'
+                        : '1px solid rgba(255,255,255,0.08)',
+                      color: order.refundRequest.status === 'PENDING' ? 'rgba(251,191,36,0.8)'
+                        : order.refundRequest.status === 'APPROVED' ? 'rgba(74,222,128,0.7)'
+                        : order.refundRequest.status === 'REJECTED' ? 'rgba(248,113,113,0.7)'
+                        : 'rgba(255,255,255,0.28)',
+                    }}>
+                      {order.refundRequest.status === 'PENDING' ? '退款申请待审核'
+                        : order.refundRequest.status === 'APPROVED' ? '退款申请已通过'
+                        : order.refundRequest.status === 'REJECTED' ? '退款申请已驳回'
+                        : '退款申请已撤销'}
+                    </span>
+                  ) : null}
+                </div>
               ) : order.status === 'QUOTED' ? (
                 <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(147,197,253,0.2)', color: 'rgba(147,197,253,0.7)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                   等待买家支付
@@ -1189,6 +1220,10 @@ export default function AssetDetailPage() {
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
   const [payOrderState, setPayOrderState] = useState<'idle' | 'confirming' | 'loading'>('idle')
   const [payOrderError, setPayOrderError] = useState<string | null>(null)
+  const [refundRequest, setRefundRequest] = useState<RefundRequest | null>(null)
+  const [refundUiState, setRefundUiState] = useState<'idle' | 'form' | 'submitting' | 'cancelling'>('idle')
+  const [refundReason, setRefundReason] = useState('')
+  const [refundError, setRefundError] = useState<string | null>(null)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -1238,6 +1273,7 @@ export default function AssetDetailPage() {
             // Items sorted desc by createdAt; first match per asset is most recent
             const order = d.items?.find((o) => o.assetId === assetId) ?? null
             setMyOrder(order)
+            if (order?.refundRequest) setRefundRequest(order.refundRequest)
           })
           .catch(() => { /* ignore */ })
       }
@@ -1363,6 +1399,58 @@ export default function AssetDetailPage() {
       if (res.ok) setMyOrder((prev) => prev ? { ...prev, status: 'CANCELLED' } : prev)
     } catch { /* ignore */ } finally {
       setCancelOrderState('idle')
+    }
+  }
+
+  async function submitRefundRequest() {
+    if (!myOrder || refundUiState === 'submitting') return
+    if (refundReason.trim().length < 10) {
+      setRefundError('请填写退款申请原因（至少 10 个字）。')
+      return
+    }
+    setRefundUiState('submitting')
+    setRefundError(null)
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}/refund-request`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: refundReason.trim() }),
+      })
+      const data = await res.json() as { refundRequest?: RefundRequest; message?: string; errorCode?: string; details?: { refundRequest?: RefundRequest } }
+      if (!res.ok) {
+        if (res.status === 409 && data.details && typeof data.details === 'object' && 'refundRequest' in data.details) {
+          // Already exists — show it
+          setRefundRequest((data.details as { refundRequest: RefundRequest }).refundRequest)
+          setRefundUiState('idle')
+          return
+        }
+        setRefundError(data.message ?? data.errorCode ?? '提交失败，请稍后重试')
+        setRefundUiState('form')
+        return
+      }
+      if (data.refundRequest) setRefundRequest(data.refundRequest)
+      setRefundUiState('idle')
+    } catch {
+      setRefundError('网络错误，请稍后重试')
+      setRefundUiState('form')
+    }
+  }
+
+  async function cancelRefundRequest() {
+    if (!myOrder || refundUiState === 'cancelling') return
+    setRefundUiState('cancelling')
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}/refund-request`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      const data = await res.json() as { refundRequest?: RefundRequest }
+      if (res.ok && data.refundRequest) setRefundRequest(data.refundRequest)
+    } catch { /* ignore */ } finally {
+      setRefundUiState('idle')
     }
   }
 
@@ -1641,22 +1729,29 @@ export default function AssetDetailPage() {
                                   <div style={{ fontSize: 11, color: 'rgba(248,113,113,0.85)', marginTop: 5, lineHeight: 1.5 }}>{payOrderError}</div>
                                 ) : null}
                                 {payOrderState === 'confirming' ? (
-                                  <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.2)' }}>
-                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>
-                                      确认扣减 <strong>{myOrder.priceCredits}</strong> 积分？此操作不可撤销。
+                                  <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.18)' }}>
+                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', marginBottom: 8, fontWeight: 600 }}>
+                                      确认支付 <strong>{myOrder.priceCredits}</strong> 积分购买授权？
+                                    </div>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1.7, marginBottom: 10 }}>
+                                      • 积分支付成功后，授权凭证将立即生效。<br/>
+                                      • 本次消费为平台内虚拟服务积分，原则上不支持自助退款。<br/>
+                                      • 如有异议，可事后提交人工退款申请，由平台审核决定。<br/>
+                                      • 提交退款申请不代表一定通过；已发生的素材使用行为仍需双方自行协商。<br/>
+                                      • 授权凭证仅为平台记录，不代表链上 NFT、著作权转让或正式法律合同。
                                     </div>
                                     <div style={{ display: 'flex', gap: 6 }}>
                                       <button
                                         type="button"
                                         onClick={() => { void payMyOrder() }}
-                                        style={{ padding: '4px 14px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.35)', background: 'rgba(74,222,128,0.1)', color: '#4ade80', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                                        style={{ padding: '5px 16px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.35)', background: 'rgba(74,222,128,0.1)', color: '#4ade80', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
                                       >
                                         确认支付
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setPayOrderState('idle')}
-                                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}
+                                        style={{ padding: '5px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}
                                       >
                                         取消
                                       </button>
@@ -1672,8 +1767,8 @@ export default function AssetDetailPage() {
                                     {payOrderState === 'loading' ? '支付中…' : '立即支付并获得授权'}
                                   </button>
                                 )}
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 6, lineHeight: 1.6 }}>
-                                  支付后立即生效，积分从余额中扣减，不可退款。
+                                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 10, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7 }}>
+                                  ⚠️ 本次消费为平台内虚拟服务积分，原则上不支持自助退款。如有异议，可支付后通过&ldquo;申请人工退款&rdquo;提交审核申请（不代表一定通过）。授权凭证仅为平台记录，不代表正式法律合同。
                                 </div>
                               </>
                             ) : myOrder.status === 'COMPLETED' ? (
@@ -1683,6 +1778,106 @@ export default function AssetDetailPage() {
                                   已支付 {myOrder.priceCredits} 积分
                                   {myOrder.completedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.completedAt).toLocaleDateString('zh-CN')}</span> : null}
                                 </div>
+                                {/* Refund request section */}
+                                {!refundRequest ? (
+                                  <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600, marginBottom: 5, letterSpacing: '0.05em', textTransform: 'uppercase' }}>退款说明</div>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', lineHeight: 1.7, marginBottom: 8 }}>
+                                      • 本次支付为平台内虚拟服务积分消费，支付后授权凭证已即时创建。<br/>
+                                      • 当前不支持自助退款。<br/>
+                                      • 如有异议，可提交人工退款申请，由平台人工审核决定。<br/>
+                                      • 提交申请不代表一定退款；审核通过后的实际退款执行将在后续版本开放。
+                                    </div>
+                                    {refundUiState === 'form' || refundUiState === 'submitting' ? (
+                                      <div>
+                                        <textarea
+                                          value={refundReason}
+                                          onChange={(e) => setRefundReason(e.target.value)}
+                                          maxLength={500}
+                                          rows={3}
+                                          placeholder="请说明退款原因（至少 10 字，最多 500 字）…"
+                                          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', fontSize: 11, color: 'rgba(255,255,255,0.65)', outline: 'none', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box', marginBottom: 6 }}
+                                        />
+                                        {refundError ? <div style={{ fontSize: 10, color: 'rgba(248,113,113,0.85)', marginBottom: 5 }}>{refundError}</div> : null}
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => { void submitRefundRequest() }}
+                                            disabled={refundUiState === 'submitting'}
+                                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.07)', color: '#fbbf24', fontSize: 11, cursor: refundUiState === 'submitting' ? 'not-allowed' : 'pointer', opacity: refundUiState === 'submitting' ? 0.5 : 1, fontWeight: 600 }}
+                                          >
+                                            {refundUiState === 'submitting' ? '提交中…' : '提交退款申请'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => { setRefundUiState('idle'); setRefundError(null) }}
+                                            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'rgba(255,255,255,0.35)', fontSize: 11, cursor: 'pointer' }}
+                                          >
+                                            取消
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setRefundUiState('form')}
+                                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.25)', background: 'rgba(251,191,36,0.05)', color: 'rgba(251,191,36,0.75)', fontSize: 11, cursor: 'pointer' }}
+                                      >
+                                        申请人工退款
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8,
+                                    border: refundRequest.status === 'APPROVED' ? '1px solid rgba(74,222,128,0.2)'
+                                      : refundRequest.status === 'REJECTED' ? '1px solid rgba(248,113,113,0.2)'
+                                      : refundRequest.status === 'CANCELLED' ? '1px solid rgba(255,255,255,0.07)'
+                                      : '1px solid rgba(251,191,36,0.2)',
+                                    background: refundRequest.status === 'APPROVED' ? 'rgba(74,222,128,0.03)'
+                                      : refundRequest.status === 'REJECTED' ? 'rgba(248,113,113,0.03)'
+                                      : refundRequest.status === 'CANCELLED' ? 'rgba(255,255,255,0.01)'
+                                      : 'rgba(251,191,36,0.03)' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color:
+                                      refundRequest.status === 'APPROVED' ? '#4ade80'
+                                      : refundRequest.status === 'REJECTED' ? 'rgba(248,113,113,0.85)'
+                                      : refundRequest.status === 'CANCELLED' ? 'rgba(255,255,255,0.3)'
+                                      : '#fbbf24' }}>
+                                      {refundRequest.status === 'PENDING' ? '退款申请待审核'
+                                        : refundRequest.status === 'APPROVED' ? '退款申请已通过人工审核'
+                                        : refundRequest.status === 'REJECTED' ? '退款申请已驳回'
+                                        : '退款申请已撤销'}
+                                    </div>
+                                    {refundRequest.status === 'PENDING' ? (
+                                      <>
+                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>预计处理：3-5 个工作日。提交申请不代表积分立即返还。</div>
+                                        <button
+                                          type="button"
+                                          onClick={() => { void cancelRefundRequest() }}
+                                          disabled={refundUiState === 'cancelling'}
+                                          style={{ marginTop: 6, padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.35)', fontSize: 10, cursor: refundUiState === 'cancelling' ? 'not-allowed' : 'pointer', opacity: refundUiState === 'cancelling' ? 0.5 : 1 }}
+                                        >
+                                          {refundUiState === 'cancelling' ? '撤销中…' : '撤销申请'}
+                                        </button>
+                                      </>
+                                    ) : refundRequest.status === 'APPROVED' ? (
+                                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3, lineHeight: 1.6 }}>
+                                        已于 {new Date(refundRequest.reviewedAt ?? refundRequest.createdAt).toLocaleDateString('zh-CN')} 通过审核。<br/>
+                                        实际退款执行（积分返还）将由平台人工处理，请留意账户通知。
+                                      </div>
+                                    ) : refundRequest.status === 'REJECTED' ? (
+                                      <>
+                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>
+                                          审核于 {new Date(refundRequest.reviewedAt ?? refundRequest.createdAt).toLocaleDateString('zh-CN')} 完成。
+                                        </div>
+                                        {refundRequest.adminNote ? (
+                                          <div style={{ marginTop: 5, padding: '6px 8px', borderRadius: 5, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.12)', fontSize: 10, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
+                                            驳回原因：{refundRequest.adminNote}
+                                          </div>
+                                        ) : null}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                )}
                               </>
                             ) : myOrder.status === 'CANCELLED' ? (
                               <>

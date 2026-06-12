@@ -236,6 +236,71 @@ export async function register() {
     await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_PURCHASE'`)
     await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_CREDIT'`)
     console.log('[startup] Marketplace Settlement v1 migration checked')
+
+    // ── P1-1: MarketplaceRefundRequest ─────────────────────────────────────
+    const refundReqCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'MarketplaceRefundRequest'
+      ) AS exists
+    `
+    if (!refundReqCheck[0]?.exists) {
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          CREATE TYPE "MarketplaceRefundRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "MarketplaceRefundRequest" (
+          "id"         TEXT                             NOT NULL,
+          "orderId"    TEXT                             NOT NULL,
+          "buyerId"    TEXT                             NOT NULL,
+          "sellerId"   TEXT                             NOT NULL,
+          "assetId"    TEXT                             NOT NULL,
+          "status"     "MarketplaceRefundRequestStatus" NOT NULL DEFAULT 'PENDING',
+          "reason"     TEXT                             NOT NULL,
+          "adminNote"  TEXT,
+          "createdAt"  TIMESTAMP(3)                     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "reviewedAt" TIMESTAMP(3),
+          CONSTRAINT "MarketplaceRefundRequest_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "MarketplaceRefundRequest_orderId_key"   ON "MarketplaceRefundRequest"("orderId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceRefundRequest_buyerId_idx"          ON "MarketplaceRefundRequest"("buyerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceRefundRequest_sellerId_idx"         ON "MarketplaceRefundRequest"("sellerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceRefundRequest_status_idx"           ON "MarketplaceRefundRequest"("status")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceRefundRequest_createdAt_idx"        ON "MarketplaceRefundRequest"("createdAt")`)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceRefundRequest" ADD CONSTRAINT "MarketplaceRefundRequest_orderId_fkey"
+            FOREIGN KEY ("orderId") REFERENCES "MarketplaceOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceRefundRequest" ADD CONSTRAINT "MarketplaceRefundRequest_buyerId_fkey"
+            FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceRefundRequest" ADD CONSTRAINT "MarketplaceRefundRequest_sellerId_fkey"
+            FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceRefundRequest" ADD CONSTRAINT "MarketplaceRefundRequest_assetId_fkey"
+            FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      console.log('[startup] MarketplaceRefundRequest migration applied')
+    }
   } catch (err) {
     // Never crash the server due to migration errors — log and continue.
     console.error('[startup] migration check failed:', err)

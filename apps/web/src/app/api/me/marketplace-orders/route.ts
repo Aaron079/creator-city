@@ -36,6 +36,9 @@ export async function GET(request: NextRequest) {
         seller: {
           select: { id: true, displayName: true, username: true, profile: { select: { avatarUrl: true } } },
         },
+        refundRequest: {
+          select: { id: true, status: true, reason: true, adminNote: true, createdAt: true, reviewedAt: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -83,6 +86,14 @@ export async function GET(request: NextRequest) {
         username: o.seller.username ?? null,
         avatarUrl: o.seller.profile?.avatarUrl ?? null,
       },
+      refundRequest: o.refundRequest ? {
+        id: o.refundRequest.id,
+        status: o.refundRequest.status,
+        reason: o.refundRequest.reason,
+        adminNote: o.refundRequest.adminNote,
+        createdAt: o.refundRequest.createdAt.toISOString(),
+        reviewedAt: o.refundRequest.reviewedAt?.toISOString() ?? null,
+      } : null,
     }))
 
     return jsonOk({ items })

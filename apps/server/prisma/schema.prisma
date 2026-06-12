@@ -260,8 +260,10 @@ model User {
   assetListings       AssetListing[]         @relation("AssetListingSeller")
   licenseGrantsBought LicenseGrant[]         @relation("LicenseGrantBuyer")
   licenseGrantsSold   LicenseGrant[]         @relation("LicenseGrantSeller")
-  marketplaceOrdersBought MarketplaceOrder[] @relation("MarketplaceOrderBuyer")
-  marketplaceOrdersSold   MarketplaceOrder[] @relation("MarketplaceOrderSeller")
+  marketplaceOrdersBought   MarketplaceOrder[]          @relation("MarketplaceOrderBuyer")
+  marketplaceOrdersSold     MarketplaceOrder[]          @relation("MarketplaceOrderSeller")
+  refundRequestsMade        MarketplaceRefundRequest[]  @relation("RefundRequestBuyer")
+  refundRequestsReceived    MarketplaceRefundRequest[]  @relation("RefundRequestSeller")
 
   @@index([username])
   @@index([email])
@@ -629,6 +631,7 @@ model Asset {
   listings          AssetListing[]
   licenseGrants     LicenseGrant[]
   marketplaceOrders MarketplaceOrder[]
+  refundRequests    MarketplaceRefundRequest[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -1461,13 +1464,50 @@ model MarketplaceOrder {
   quotedAt            DateTime?
   completedAt         DateTime?
 
-  listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  buyer    User         @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])
-  seller   User         @relation("MarketplaceOrderSeller", fields: [sellerId], references: [id])
-  asset    Asset        @relation(fields: [assetId],        references: [id])
+  listing        AssetListing              @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer          User                      @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])
+  seller         User                      @relation("MarketplaceOrderSeller", fields: [sellerId], references: [id])
+  asset          Asset                     @relation(fields: [assetId],        references: [id])
+  refundRequest  MarketplaceRefundRequest?
 
   @@index([listingId])
   @@index([assetId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ── P1-1: Marketplace Refund Request ──────────────────────────────────────────
+// Records buyer's intent to request a refund. Does NOT execute any accounting.
+// Admin reviews and marks APPROVED/REJECTED. Actual refund execution is P1-2.
+
+enum MarketplaceRefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model MarketplaceRefundRequest {
+  id        String                         @id @default(uuid())
+  orderId   String                         @unique
+  buyerId   String
+  sellerId  String
+  assetId   String
+
+  status    MarketplaceRefundRequestStatus @default(PENDING)
+  reason    String                         @db.Text
+  adminNote String?                        @db.Text
+
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  order  MarketplaceOrder @relation(fields: [orderId],  references: [id], onDelete: Cascade)
+  buyer  User             @relation("RefundRequestBuyer",  fields: [buyerId],  references: [id])
+  seller User             @relation("RefundRequestSeller", fields: [sellerId], references: [id])
+  asset  Asset            @relation(fields: [assetId],     references: [id])
+
   @@index([buyerId])
   @@index([sellerId])
   @@index([status])
