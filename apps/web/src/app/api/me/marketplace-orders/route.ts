@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, displayName: true, username: true, profile: { select: { avatarUrl: true } } },
         },
         refundRequest: {
-          select: { id: true, status: true, reason: true, adminNote: true, createdAt: true, reviewedAt: true },
+          select: { id: true, status: true, reason: true, adminNote: true, executedAt: true, executionNote: true, createdAt: true, reviewedAt: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
       rejectedAt: o.rejectedAt?.toISOString() ?? null,
       quotedAt: o.quotedAt?.toISOString() ?? null,
       completedAt: o.completedAt?.toISOString() ?? null,
+      refundedAt: o.refundedAt?.toISOString() ?? null,
       listing: {
         id: o.listing.id,
         title: o.listing.title,
@@ -91,6 +92,8 @@ export async function GET(request: NextRequest) {
         status: o.refundRequest.status,
         reason: o.refundRequest.reason,
         adminNote: o.refundRequest.adminNote,
+        executedAt: o.refundRequest.executedAt?.toISOString() ?? null,
+        executionNote: o.refundRequest.executionNote,
         createdAt: o.refundRequest.createdAt.toISOString(),
         reviewedAt: o.refundRequest.reviewedAt?.toISOString() ?? null,
       } : null,

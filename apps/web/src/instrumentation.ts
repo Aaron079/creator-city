@@ -237,6 +237,17 @@ export async function register() {
     await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_CREDIT'`)
     console.log('[startup] Marketplace Settlement v1 migration checked')
 
+    // ── P1-2: Marketplace Refund Execution ─────────────────────────────────
+    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus"            ADD VALUE IF NOT EXISTS 'REFUNDED'`)
+    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_REFUND'`)
+    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_REVERSAL'`)
+    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTED'`)
+    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTION_FAILED'`)
+    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder"          ADD COLUMN IF NOT EXISTS "refundedAt"    TIMESTAMP(3)`)
+    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executedAt"   TIMESTAMP(3)`)
+    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executionNote" TEXT`)
+    console.log('[startup] Marketplace Refund Execution migration checked')
+
     // ── P1-1: MarketplaceRefundRequest ─────────────────────────────────────
     const refundReqCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
       SELECT EXISTS (

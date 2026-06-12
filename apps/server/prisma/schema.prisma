@@ -1055,8 +1055,10 @@ enum CreditLedgerType {
   REFUND                   // payment or job refund
   ADMIN_ADJUSTMENT         // administrator confirmed manual recharge/adjustment
   EXPIRE                   // credits expired
-  MARKETPLACE_PURCHASE     // -balance buyer pays for marketplace authorization
-  MARKETPLACE_SELLER_CREDIT // +balance seller receives marketplace payout
+  MARKETPLACE_PURCHASE          // -balance buyer pays for marketplace authorization
+  MARKETPLACE_SELLER_CREDIT     // +balance seller receives marketplace payout
+  MARKETPLACE_REFUND            // +balance buyer refund from marketplace order
+  MARKETPLACE_SELLER_REVERSAL   // -balance seller reversal from marketplace refund
 }
 
 enum CreditPackageStatus {
@@ -1439,6 +1441,7 @@ enum MarketplaceOrderStatus {
   REJECTED
   QUOTED
   COMPLETED
+  REFUNDED
 }
 
 model MarketplaceOrder {
@@ -1463,6 +1466,7 @@ model MarketplaceOrder {
   rejectedAt          DateTime?
   quotedAt            DateTime?
   completedAt         DateTime?
+  refundedAt          DateTime?
 
   listing        AssetListing              @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyer          User                      @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])
@@ -1487,6 +1491,8 @@ enum MarketplaceRefundRequestStatus {
   APPROVED
   REJECTED
   CANCELLED
+  EXECUTED
+  EXECUTION_FAILED
 }
 
 model MarketplaceRefundRequest {
@@ -1496,9 +1502,11 @@ model MarketplaceRefundRequest {
   sellerId  String
   assetId   String
 
-  status    MarketplaceRefundRequestStatus @default(PENDING)
-  reason    String                         @db.Text
-  adminNote String?                        @db.Text
+  status        MarketplaceRefundRequestStatus @default(PENDING)
+  reason        String                         @db.Text
+  adminNote     String?                        @db.Text
+  executedAt    DateTime?
+  executionNote String?                        @db.Text
 
   createdAt  DateTime  @default(now())
   reviewedAt DateTime?
