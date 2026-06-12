@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "prisma:generate": "pnpm exec prisma generate --schema ../server/prisma/schema.prisma",
-    "build": "pnpm exec prisma migrate deploy && pnpm prisma:generate && next build",
+    "build": "pnpm prisma:generate && next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
     "lint": "next lint",

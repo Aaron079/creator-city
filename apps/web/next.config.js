@@ -20,6 +20,8 @@ const nextConfig = {
     outputFileTracingExcludes: {
       "*": [".next/cache/**"],
     },
+    // Required for src/instrumentation.ts to run on server startup (Next.js 14).
+    instrumentationHook: true,
   },
   typescript: {
     tsconfigPath: "./tsconfig.next.json",
