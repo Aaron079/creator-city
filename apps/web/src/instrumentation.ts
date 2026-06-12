@@ -223,6 +223,12 @@ export async function register() {
 
       console.log('[startup] MarketplaceOrder migration applied')
     }
+
+    // ── P0-9: MarketplaceOrder QUOTED state ────────────────────────────────
+    // ALTER TYPE ADD VALUE cannot run inside a transaction block; run unconditionally.
+    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'QUOTED'`)
+    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "quotedAt" TIMESTAMP(3)`)
+    console.log('[startup] MarketplaceOrder QUOTED migration checked')
   } catch (err) {
     // Never crash the server due to migration errors — log and continue.
     console.error('[startup] migration check failed:', err)

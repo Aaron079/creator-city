@@ -38,6 +38,7 @@ interface MarketplaceOrder {
   priceCredits: number
   status: string
   createdAt: string
+  quotedAt?: string | null
 }
 
 interface PendingOrderItem {
@@ -45,6 +46,8 @@ interface PendingOrderItem {
   priceCredits: number
   message: string | null
   createdAt: string
+  status: string
+  quotedAt?: string | null
   buyer: {
     id: string
     displayName: string
@@ -727,6 +730,7 @@ function AssetListingSection({
   pendingOrders,
   onListingChange,
   onOrderRejected,
+  onOrderQuoted,
 }: {
   assetId: string
   isPublic: boolean
@@ -738,6 +742,7 @@ function AssetListingSection({
   pendingOrders: PendingOrderItem[]
   onListingChange: (l: AssetListing | null) => void
   onOrderRejected: (orderId: string) => void
+  onOrderQuoted: (orderId: string) => void
 }) {
   const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
   const isReady = assetStatus === 'READY'
@@ -749,6 +754,7 @@ function AssetListingSection({
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [showOrders, setShowOrders] = useState(false)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [quotingId, setQuotingId] = useState<string | null>(null)
 
   // Draft edit state
   const [editTitle, setEditTitle] = useState(listing?.title ?? '')
@@ -973,6 +979,21 @@ function AssetListingSection({
     }
   }
 
+  async function quoteOrder(orderId: string) {
+    setQuotingId(orderId)
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${orderId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'quote' }),
+      })
+      if (res.ok) onOrderQuoted(orderId)
+    } catch { /* ignore */ } finally {
+      setQuotingId(null)
+    }
+  }
+
   return (
     <div style={{ padding: '14px 0 6px' }}>
       {/* Header */}
@@ -995,16 +1016,16 @@ function AssetListingSection({
             onClick={() => setShowOrders((v) => !v)}
             style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)', fontWeight: 600, border: 'none', cursor: 'pointer' }}
           >
-            待处理付费申请 {pendingOrders.length} 个 {showOrders ? '▲' : '▼'}
+            付费申请 {pendingOrders.length} 个 {showOrders ? '▲' : '▼'}
           </button>
         ) : null}
       </div>
 
-      {/* Pending orders list (seller reject) */}
+      {/* Orders list (PENDING + QUOTED) — seller actions */}
       {showOrders && pendingOrders.length > 0 ? (
         <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {pendingOrders.map((order) => (
-            <div key={order.id} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.15)', background: 'rgba(251,191,36,0.04)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div key={order.id} style={{ padding: '8px 12px', borderRadius: 8, border: order.status === 'QUOTED' ? '1px solid rgba(147,197,253,0.15)' : '1px solid rgba(251,191,36,0.15)', background: order.status === 'QUOTED' ? 'rgba(147,197,253,0.03)' : 'rgba(251,191,36,0.04)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
                   {order.buyer.displayName}
@@ -1017,14 +1038,30 @@ function AssetListingSection({
                   {new Date(order.createdAt).toLocaleDateString('zh-CN')} · {order.priceCredits} 积分
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => { void rejectOrder(order.id) }}
-                disabled={rejectingId === order.id}
-                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.25)', background: 'rgba(248,113,113,0.06)', color: 'rgba(248,113,113,0.65)', fontSize: 11, cursor: rejectingId === order.id ? 'not-allowed' : 'pointer', opacity: rejectingId === order.id ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}
-              >
-                {rejectingId === order.id ? '拒绝中…' : '拒绝'}
-              </button>
+              {order.status === 'QUOTED' ? (
+                <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(147,197,253,0.2)', color: 'rgba(147,197,253,0.7)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  已确认报价
+                </span>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => { void quoteOrder(order.id) }}
+                    disabled={quotingId === order.id || rejectingId === order.id}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(147,197,253,0.25)', background: 'rgba(147,197,253,0.06)', color: 'rgba(147,197,253,0.75)', fontSize: 11, cursor: (quotingId === order.id || rejectingId === order.id) ? 'not-allowed' : 'pointer', opacity: (quotingId === order.id || rejectingId === order.id) ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                  >
+                    {quotingId === order.id ? '处理中…' : '确认报价意向'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void rejectOrder(order.id) }}
+                    disabled={rejectingId === order.id || quotingId === order.id}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.25)', background: 'rgba(248,113,113,0.06)', color: 'rgba(248,113,113,0.65)', fontSize: 11, cursor: (rejectingId === order.id || quotingId === order.id) ? 'not-allowed' : 'pointer', opacity: (rejectingId === order.id || quotingId === order.id) ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                  >
+                    {rejectingId === order.id ? '拒绝中…' : '拒绝'}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1441,6 +1478,7 @@ export default function AssetDetailPage() {
                     pendingOrders={pendingOrders}
                     onListingChange={setListing}
                     onOrderRejected={(id) => setPendingOrders((prev) => prev.filter((o) => o.id !== id))}
+                    onOrderQuoted={(id) => setPendingOrders((prev) => prev.map((o) => o.id === id ? { ...o, status: 'QUOTED' } : o))}
                   />
                 ) : (
                   <>
@@ -1478,9 +1516,11 @@ export default function AssetDetailPage() {
                         {myOrder ? (
                           <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10,
                             border: myOrder.status === 'PENDING' ? '1px solid rgba(251,191,36,0.2)'
+                              : myOrder.status === 'QUOTED' ? '1px solid rgba(147,197,253,0.25)'
                               : myOrder.status === 'CANCELLED' ? '1px solid rgba(255,255,255,0.08)'
                               : '1px solid rgba(248,113,113,0.2)',
                             background: myOrder.status === 'PENDING' ? 'rgba(251,191,36,0.05)'
+                              : myOrder.status === 'QUOTED' ? 'rgba(147,197,253,0.04)'
                               : myOrder.status === 'CANCELLED' ? 'rgba(255,255,255,0.02)'
                               : 'rgba(248,113,113,0.04)' }}>
                             {myOrder.status === 'PENDING' ? (
@@ -1501,6 +1541,17 @@ export default function AssetDetailPage() {
                                 </div>
                                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
                                   尚未扣款，尚未获得授权。
+                                </div>
+                              </>
+                            ) : myOrder.status === 'QUOTED' ? (
+                              <>
+                                <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 500 }}>卖家已确认报价意向</div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
+                                  报价：{myOrder.priceCredits} 积分
+                                  {myOrder.quotedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.quotedAt).toLocaleDateString('zh-CN')}</span> : null}
+                                </div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
+                                  尚未扣款，尚未获得授权。支付功能开放后才可完成正式授权。
                                 </div>
                               </>
                             ) : myOrder.status === 'CANCELLED' ? (

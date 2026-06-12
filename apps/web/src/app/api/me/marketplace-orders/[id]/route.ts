@@ -22,8 +22,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     const { action, failureReason } = body
 
-    if (action !== 'cancel' && action !== 'reject') {
-      return jsonError('INVALID_ACTION', 'action 必须为 cancel 或 reject。', 400)
+    if (action !== 'cancel' && action !== 'reject' && action !== 'quote') {
+      return jsonError('INVALID_ACTION', 'action 必须为 cancel、reject 或 quote。', 400)
     }
 
     const order = await db.marketplaceOrder.findUnique({ where: { id: params.id } })
@@ -47,17 +47,28 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return jsonOk({ order: serializeOrder(updated) })
     }
 
-    // action === 'reject'
+    if (action === 'reject') {
+      if (order.sellerId !== user.id) {
+        return jsonError('ACTION_NOT_ALLOWED', '只有卖家可以拒绝申请。', 403)
+      }
+      const updated = await db.marketplaceOrder.update({
+        where: { id: params.id },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          failureReason: failureReason?.trim() || null,
+        },
+      })
+      return jsonOk({ order: serializeOrder(updated) })
+    }
+
+    // action === 'quote'
     if (order.sellerId !== user.id) {
-      return jsonError('ACTION_NOT_ALLOWED', '只有卖家可以拒绝申请。', 403)
+      return jsonError('ACTION_NOT_ALLOWED', '只有卖家可以确认报价意向。', 403)
     }
     const updated = await db.marketplaceOrder.update({
       where: { id: params.id },
-      data: {
-        status: 'REJECTED',
-        rejectedAt: new Date(),
-        failureReason: failureReason?.trim() || null,
-      },
+      data: { status: 'QUOTED', quotedAt: new Date() },
     })
     return jsonOk({ order: serializeOrder(updated) })
   } catch (error) {
@@ -84,6 +95,7 @@ function serializeOrder(o: {
   updatedAt: Date
   cancelledAt: Date | null
   rejectedAt: Date | null
+  quotedAt: Date | null
 }) {
   return {
     id: o.id,
@@ -99,5 +111,6 @@ function serializeOrder(o: {
     updatedAt: o.updatedAt.toISOString(),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     rejectedAt: o.rejectedAt?.toISOString() ?? null,
+    quotedAt: o.quotedAt?.toISOString() ?? null,
   }
 }

@@ -92,7 +92,7 @@ export async function POST(_request: NextRequest, { params }: RouteContext) {
 }
 
 // ─── GET /api/marketplace/listings/[id]/orders ────────────────────────────────
-// Seller sees pending orders for their listing.
+// Seller sees active orders (PENDING + QUOTED) for their listing.
 
 export async function GET(_request: NextRequest, { params }: RouteContext) {
   try {
@@ -104,7 +104,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (listing.sellerId !== user.id) return jsonError('FORBIDDEN', '只有卖家可以查看订单列表。', 403)
 
     const orders = await db.marketplaceOrder.findMany({
-      where: { listingId: params.id, status: 'PENDING' },
+      where: { listingId: params.id, status: { in: ['PENDING', 'QUOTED'] } },
       include: {
         buyer: { select: { id: true, displayName: true, username: true, profile: { select: { avatarUrl: true } } } },
       },
@@ -144,6 +144,7 @@ function serializeOrder(o: {
   updatedAt: Date
   cancelledAt: Date | null
   rejectedAt: Date | null
+  quotedAt: Date | null
 }) {
   return {
     id: o.id,
@@ -157,5 +158,6 @@ function serializeOrder(o: {
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
+    quotedAt: o.quotedAt?.toISOString() ?? null,
   }
 }

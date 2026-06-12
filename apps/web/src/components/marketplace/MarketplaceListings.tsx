@@ -54,10 +54,11 @@ function ListingCard({
   const [grantChecked, setGrantChecked] = useState(false)
 
   const [orderId, setOrderId] = useState<string | null>(initialOrder?.id ?? null)
-  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'cancelling' | 'cancelled' | 'rejected' | 'error'>(
+  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'cancelling' | 'cancelled' | 'rejected' | 'quoted' | 'error'>(
     initialOrder?.status === 'PENDING' ? 'submitted'
     : initialOrder?.status === 'CANCELLED' ? 'cancelled'
     : initialOrder?.status === 'REJECTED' ? 'rejected'
+    : initialOrder?.status === 'QUOTED' ? 'quoted'
     : 'idle'
   )
 
@@ -266,6 +267,29 @@ function ListingCard({
           >
             申请已被拒绝
           </span>
+        )
+      }
+
+      if (orderState === 'quoted') {
+        return (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span
+              style={{
+                textAlign: 'center',
+                fontSize: 12,
+                padding: '7px 0',
+                borderRadius: 10,
+                border: '1px solid rgba(147,197,253,0.3)',
+                color: '#93c5fd',
+                userSelect: 'none',
+              }}
+            >
+              卖家已确认报价 · 等待支付功能开放
+            </span>
+            <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.28)', userSelect: 'none' }}>
+              尚未扣款，尚未获得授权，不代表成交。
+            </span>
+          </div>
         )
       }
 

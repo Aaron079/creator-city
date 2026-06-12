@@ -1424,7 +1424,7 @@ model LicenseGrant {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MARKETPLACE — P0-6 MarketplaceOrder PENDING-only
+// MARKETPLACE — P0-6 MarketplaceOrder PENDING-only (P0-9 adds QUOTED)
 // Paid authorization request only. No wallet, no LicenseGrant, no settlement.
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1432,6 +1432,7 @@ enum MarketplaceOrderStatus {
   PENDING
   CANCELLED
   REJECTED
+  QUOTED
 }
 
 model MarketplaceOrder {
@@ -1454,6 +1455,7 @@ model MarketplaceOrder {
   updatedAt           DateTime               @updatedAt
   cancelledAt         DateTime?
   rejectedAt          DateTime?
+  quotedAt            DateTime?
 
   listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyer    User         @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])

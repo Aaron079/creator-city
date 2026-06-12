@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       updatedAt: o.updatedAt.toISOString(),
       cancelledAt: o.cancelledAt?.toISOString() ?? null,
       rejectedAt: o.rejectedAt?.toISOString() ?? null,
+      quotedAt: o.quotedAt?.toISOString() ?? null,
       listing: {
         id: o.listing.id,
         title: o.listing.title,
