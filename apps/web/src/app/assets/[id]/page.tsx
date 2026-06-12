@@ -31,6 +31,15 @@ interface LicenseGrant {
   termsJson: unknown
 }
 
+interface MarketplaceOrder {
+  id: string
+  listingId: string
+  assetId: string
+  priceCredits: number
+  status: string
+  createdAt: string
+}
+
 interface AssetListing {
   id: string
   assetId: string
@@ -702,6 +711,7 @@ function AssetListingSection({
   marketplaceIntent,
   listing,
   grantCount,
+  pendingOrderCount,
   onListingChange,
 }: {
   assetId: string
@@ -711,6 +721,7 @@ function AssetListingSection({
   marketplaceIntent: MarketplaceIntent | null
   listing: AssetListing | null
   grantCount: number | null
+  pendingOrderCount: number
   onListingChange: (l: AssetListing | null) => void
 }) {
   const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
@@ -946,6 +957,11 @@ function AssetListingSection({
         ) : grantCount === 0 ? (
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)' }}>暂无授权记录</span>
         ) : null}
+        {pendingOrderCount > 0 ? (
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)', fontWeight: 600 }}>
+            待处理付费申请 {pendingOrderCount} 个
+          </span>
+        ) : null}
       </div>
 
       {/* Edit fields (draft only) */}
@@ -1021,6 +1037,9 @@ function AssetListingSection({
 
       <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 10, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7 }}>
         ⚠️ {LISTING_DISCLAIMER}
+        {listing.priceCredits != null && listing.priceCredits > 0 ? (
+          <div style={{ marginTop: 4, color: 'rgba(251,191,36,0.4)' }}>付费申请仅为意向，不代表成交或授权。</div>
+        ) : null}
       </div>
     </div>
   )
@@ -1041,6 +1060,8 @@ export default function AssetDetailPage() {
   const [listing, setListing] = useState<AssetListing | null>(null)
   const [grantCount, setGrantCount] = useState<number | null>(null)
   const [myGrant, setMyGrant] = useState<LicenseGrant | null>(null)
+  const [myOrder, setMyOrder] = useState<MarketplaceOrder | null>(null)
+  const [pendingOrderCount, setPendingOrderCount] = useState<number>(0)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -1061,6 +1082,13 @@ export default function AssetDetailPage() {
           const ld = await lr.json() as { listing?: AssetListing | null; grantCount?: number }
           setListing(ld.listing ?? null)
           setGrantCount(ld.grantCount ?? null)
+          // Fetch pending order count for seller
+          if (ld.listing?.id) {
+            fetch(`/api/marketplace/listings/${ld.listing.id}/orders`, { credentials: 'include' })
+              .then((r) => r.json() as Promise<{ orders?: unknown[] }>)
+              .then((d) => setPendingOrderCount(d.orders?.length ?? 0))
+              .catch(() => { /* ignore */ })
+          }
         } catch {
           setListing(null)
           setGrantCount(null)
@@ -1076,6 +1104,14 @@ export default function AssetDetailPage() {
         } catch {
           setMyGrant(null)
         }
+        // Fetch buyer's own pending order for this asset
+        fetch(`/api/me/marketplace-orders?role=buyer`, { credentials: 'include' })
+          .then((r) => r.json() as Promise<{ items?: MarketplaceOrder[] }>)
+          .then((d) => {
+            const order = d.items?.find((o) => o.assetId === assetId && o.status === 'PENDING') ?? null
+            setMyOrder(order)
+          })
+          .catch(() => { /* ignore */ })
       }
     } catch {
       setError('网络错误，请稍后重试')
@@ -1318,6 +1354,7 @@ export default function AssetDetailPage() {
                     marketplaceIntent={marketplaceIntentData}
                     listing={listing}
                     grantCount={grantCount}
+                    pendingOrderCount={pendingOrderCount}
                     onListingChange={setListing}
                   />
                 ) : (
@@ -1352,7 +1389,21 @@ export default function AssetDetailPage() {
                         </div>
                       </div>
                     ) : (
-                      <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
+                      <>
+                        {myOrder ? (
+                          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10,
+                            border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.05)' }}>
+                            <div style={{ fontSize: 12, color: '#fbbf24', fontWeight: 500 }}>付费授权申请已提交</div>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>
+                              申请时间：{new Date(myOrder.createdAt).toLocaleDateString('zh-CN')}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
+                              尚未扣款，尚未获得授权。
+                            </div>
+                          </div>
+                        ) : null}
+                        <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
+                      </>
                     )}
                   </>
                 )}

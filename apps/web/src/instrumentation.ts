@@ -145,6 +145,84 @@ export async function register() {
 
       console.log('[startup] LicenseGrant migration applied')
     }
+
+    // ── P0-6: MarketplaceOrder ──────────────────────────────────────────────
+
+    const orderCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'MarketplaceOrder'
+      ) AS exists
+    `
+
+    if (!orderCheck[0]?.exists) {
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          CREATE TYPE "MarketplaceOrderStatus" AS ENUM ('PENDING', 'CANCELLED', 'REJECTED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "MarketplaceOrder" (
+          "id"                  TEXT                     NOT NULL,
+          "listingId"           TEXT                     NOT NULL,
+          "assetId"             TEXT                     NOT NULL,
+          "buyerId"             TEXT                     NOT NULL,
+          "sellerId"            TEXT                     NOT NULL,
+          "priceCredits"        INTEGER                  NOT NULL,
+          "platformFeeCredits"  INTEGER,
+          "sellerAmountCredits" INTEGER,
+          "status"              "MarketplaceOrderStatus" NOT NULL DEFAULT 'PENDING',
+          "message"             TEXT,
+          "failureReason"       TEXT,
+          "metadataJson"        JSONB,
+          "createdAt"           TIMESTAMP(3)             NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt"           TIMESTAMP(3)             NOT NULL,
+          "cancelledAt"         TIMESTAMP(3),
+          "rejectedAt"          TIMESTAMP(3),
+          CONSTRAINT "MarketplaceOrder_pkey" PRIMARY KEY ("id")
+        )
+      `)
+
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_listingId_idx" ON "MarketplaceOrder"("listingId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_assetId_idx"   ON "MarketplaceOrder"("assetId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_buyerId_idx"   ON "MarketplaceOrder"("buyerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_sellerId_idx"  ON "MarketplaceOrder"("sellerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_status_idx"    ON "MarketplaceOrder"("status")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceOrder_createdAt_idx" ON "MarketplaceOrder"("createdAt")`)
+
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceOrder" ADD CONSTRAINT "MarketplaceOrder_listingId_fkey"
+            FOREIGN KEY ("listingId") REFERENCES "AssetListing"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceOrder" ADD CONSTRAINT "MarketplaceOrder_buyerId_fkey"
+            FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceOrder" ADD CONSTRAINT "MarketplaceOrder_sellerId_fkey"
+            FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceOrder" ADD CONSTRAINT "MarketplaceOrder_assetId_fkey"
+            FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      console.log('[startup] MarketplaceOrder migration applied')
+    }
   } catch (err) {
     // Never crash the server due to migration errors — log and continue.
     console.error('[startup] migration check failed:', err)

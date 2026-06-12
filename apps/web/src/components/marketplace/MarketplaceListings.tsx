@@ -39,16 +39,23 @@ interface ListingItem {
 function ListingCard({
   item,
   currentUserId,
+  hasPendingOrder,
 }: {
   item: ListingItem
   currentUserId: string | null
+  hasPendingOrder: boolean
 }) {
   const thumb = item.asset.thumbnailUrl ?? item.asset.url ?? ''
   const isSeller = currentUserId === item.sellerId
   const isFree = item.priceCredits === 0
+  const isPaid = item.priceCredits !== null && item.priceCredits > 0
 
   const [grantState, setGrantState] = useState<'idle' | 'loading' | 'granted' | 'error'>('idle')
   const [grantChecked, setGrantChecked] = useState(false)
+
+  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'error'>(
+    hasPendingOrder ? 'submitted' : 'idle'
+  )
 
   // Check existing grant on mount (only for eligible non-seller buyers)
   useEffect(() => {
@@ -87,6 +94,29 @@ function ListingCard({
     }
   }, [item.id, grantState])
 
+  const handleOrderSubmit = useCallback(async () => {
+    if (orderState !== 'idle') return
+    setOrderState('loading')
+    try {
+      const res = await fetch(`/api/marketplace/listings/${item.id}/orders`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = (await res.json()) as { errorCode?: string }
+      if (res.ok || res.status === 201 || data.errorCode === 'ORDER_ALREADY_PENDING') {
+        setOrderState('submitted')
+      } else {
+        setOrderState('error')
+        setTimeout(() => setOrderState('idle'), 2500)
+      }
+    } catch {
+      setOrderState('error')
+      setTimeout(() => setOrderState('idle'), 2500)
+    }
+  }, [item.id, orderState])
+
   const licenseColor =
     item.licenseMode === 'reusable_commercial'
       ? { bg: 'rgba(251,146,60,0.12)', color: '#fdba74', label: '💼 商用复用' }
@@ -113,7 +143,70 @@ function ListingCard({
       )
     }
 
-    if (!isFree || item.priceCredits === null) {
+    // Paid listing
+    if (isPaid) {
+      if (orderState === 'submitted') {
+        return (
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: 12,
+              padding: '7px 0',
+              borderRadius: 10,
+              border: '1px solid rgba(251,191,36,0.25)',
+              color: '#fbbf24',
+              userSelect: 'none',
+            }}
+          >
+            ✓ 申请已提交
+          </span>
+        )
+      }
+
+      if (orderState === 'error') {
+        return (
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: 12,
+              padding: '7px 0',
+              borderRadius: 10,
+              border: '1px solid rgba(248,113,113,0.25)',
+              color: 'rgba(248,113,113,0.8)',
+              userSelect: 'none',
+            }}
+          >
+            提交失败，请重试
+          </span>
+        )
+      }
+
+      return (
+        <button
+          onClick={handleOrderSubmit}
+          disabled={orderState === 'loading'}
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 12,
+            padding: '7px 0',
+            borderRadius: 10,
+            border: '1px solid rgba(251,191,36,0.35)',
+            color: orderState === 'loading' ? 'rgba(255,255,255,0.3)' : '#fbbf24',
+            background: 'transparent',
+            cursor: orderState === 'loading' ? 'wait' : 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          {orderState === 'loading' ? '提交中…' : '申请付费授权'}
+        </button>
+      )
+    }
+
+    // Null price (price not set)
+    if (item.priceCredits === null) {
       return (
         <span
           style={{
@@ -128,7 +221,7 @@ function ListingCard({
             userSelect: 'none',
           }}
         >
-          申请授权 · 即将开放
+          价格待定 · 暂不可申请
         </span>
       )
     }
@@ -267,9 +360,9 @@ function ListingCard({
             免费
           </span>
         )}
-        {!isFree && item.priceCredits != null && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.28)' }}>
-            {item.priceCredits} 积分（规划中）
+        {isPaid && (
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)' }}>
+            {item.priceCredits} 积分
           </span>
         )}
       </div>
@@ -293,6 +386,11 @@ function ListingCard({
         </Link>
         {renderActionButton()}
       </div>
+      {isPaid && !isSeller && (
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2, lineHeight: 1.5 }}>
+          当前仅提交申请，不扣款、不生成授权
+        </div>
+      )}
     </div>
   )
 }
@@ -304,11 +402,12 @@ export function MarketplaceListings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [pendingOrderListingIds, setPendingOrderListingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
 
-    // Load current user id and listings in parallel
+    // Load current user id, listings, and pending orders in parallel
     Promise.all([
       fetch('/api/auth/me', { credentials: 'include' })
         .then((r) => r.json() as Promise<{ user?: { id: string } }>)
@@ -317,11 +416,22 @@ export function MarketplaceListings() {
       fetch('/api/marketplace/listings', { credentials: 'include' })
         .then((r) => r.json() as Promise<{ items?: ListingItem[] }>)
         .then((d) => d.items ?? []),
+      fetch('/api/me/marketplace-orders?role=buyer', { credentials: 'include' })
+        .then((r) => r.json() as Promise<{ items?: Array<{ listingId: string; status: string }> }>)
+        .then((d) => {
+          const ids = new Set<string>()
+          for (const o of d.items ?? []) {
+            if (o.status === 'PENDING') ids.add(o.listingId)
+          }
+          return ids
+        })
+        .catch(() => new Set<string>()),
     ])
-      .then(([userId, listingItems]) => {
+      .then(([userId, listingItems, orderIds]) => {
         if (!cancelled) {
           setCurrentUserId(userId)
           setItems(listingItems)
+          setPendingOrderListingIds(orderIds)
         }
       })
       .catch(() => {
@@ -355,7 +465,7 @@ export function MarketplaceListings() {
         以下为创作者正式上架的可复用资产 Listing。
         <br />
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-          免费资产可直接领取授权。付费授权定价、收益分成将在后续 Marketplace 阶段接入。
+          免费资产可直接领取授权。付费授权可提交申请意向，不扣款、不生成正式授权。
         </span>
       </p>
 
@@ -388,7 +498,12 @@ export function MarketplaceListings() {
           }}
         >
           {items.map((item) => (
-            <ListingCard key={item.id} item={item} currentUserId={currentUserId} />
+            <ListingCard
+              key={item.id}
+              item={item}
+              currentUserId={currentUserId}
+              hasPendingOrder={pendingOrderListingIds.has(item.id)}
+            />
           ))}
         </div>
       )}

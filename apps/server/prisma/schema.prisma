@@ -260,6 +260,8 @@ model User {
   assetListings       AssetListing[]         @relation("AssetListingSeller")
   licenseGrantsBought LicenseGrant[]         @relation("LicenseGrantBuyer")
   licenseGrantsSold   LicenseGrant[]         @relation("LicenseGrantSeller")
+  marketplaceOrdersBought MarketplaceOrder[] @relation("MarketplaceOrderBuyer")
+  marketplaceOrdersSold   MarketplaceOrder[] @relation("MarketplaceOrderSeller")
 
   @@index([username])
   @@index([email])
@@ -624,8 +626,9 @@ model Asset {
   workflow      CanvasWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   projectAssets ProjectAsset[]
   deliveryItems DeliveryItem[]
-  listings      AssetListing[]
-  licenseGrants LicenseGrant[]
+  listings          AssetListing[]
+  licenseGrants     LicenseGrant[]
+  marketplaceOrders MarketplaceOrder[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -1371,7 +1374,8 @@ model AssetListing {
 
   asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
   seller User  @relation("AssetListingSeller", fields: [sellerId], references: [id])
-  grants LicenseGrant[]
+  grants            LicenseGrant[]
+  marketplaceOrders MarketplaceOrder[]
 
   @@index([assetId])
   @@index([sellerId])
@@ -1417,4 +1421,49 @@ model LicenseGrant {
   @@index([listingId])
   @@index([status])
   @@index([grantedAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETPLACE — P0-6 MarketplaceOrder PENDING-only
+// Paid authorization request only. No wallet, no LicenseGrant, no settlement.
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum MarketplaceOrderStatus {
+  PENDING
+  CANCELLED
+  REJECTED
+}
+
+model MarketplaceOrder {
+  id                  String                 @id @default(uuid())
+  listingId           String
+  assetId             String
+  buyerId             String
+  sellerId            String
+
+  priceCredits        Int
+  platformFeeCredits  Int?
+  sellerAmountCredits Int?
+  status              MarketplaceOrderStatus @default(PENDING)
+
+  message             String?                @db.Text
+  failureReason       String?
+  metadataJson        Json?
+
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  cancelledAt         DateTime?
+  rejectedAt          DateTime?
+
+  listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer    User         @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])
+  seller   User         @relation("MarketplaceOrderSeller", fields: [sellerId], references: [id])
+  asset    Asset        @relation(fields: [assetId],        references: [id])
+
+  @@index([listingId])
+  @@index([assetId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
 }
