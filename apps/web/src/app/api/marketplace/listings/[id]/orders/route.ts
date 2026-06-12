@@ -104,7 +104,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (listing.sellerId !== user.id) return jsonError('FORBIDDEN', '只有卖家可以查看订单列表。', 403)
 
     const orders = await db.marketplaceOrder.findMany({
-      where: { listingId: params.id, status: { in: ['PENDING', 'QUOTED'] } },
+      where: { listingId: params.id, status: { in: ['PENDING', 'QUOTED', 'COMPLETED'] } },
       include: {
         buyer: { select: { id: true, displayName: true, username: true, profile: { select: { avatarUrl: true } } } },
       },
@@ -145,6 +145,7 @@ function serializeOrder(o: {
   cancelledAt: Date | null
   rejectedAt: Date | null
   quotedAt: Date | null
+  completedAt: Date | null
 }) {
   return {
     id: o.id,
@@ -153,11 +154,14 @@ function serializeOrder(o: {
     buyerId: o.buyerId,
     sellerId: o.sellerId,
     priceCredits: o.priceCredits,
+    platformFeeCredits: o.platformFeeCredits,
+    sellerAmountCredits: o.sellerAmountCredits,
     status: o.status,
     message: o.message,
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     quotedAt: o.quotedAt?.toISOString() ?? null,
+    completedAt: o.completedAt?.toISOString() ?? null,
   }
 }

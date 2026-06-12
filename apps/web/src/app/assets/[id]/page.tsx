@@ -36,18 +36,24 @@ interface MarketplaceOrder {
   listingId: string
   assetId: string
   priceCredits: number
+  platformFeeCredits: number | null
+  sellerAmountCredits: number | null
   status: string
   createdAt: string
   quotedAt?: string | null
+  completedAt?: string | null
 }
 
 interface PendingOrderItem {
   id: string
   priceCredits: number
+  platformFeeCredits: number | null
+  sellerAmountCredits: number | null
   message: string | null
   createdAt: string
   status: string
   quotedAt?: string | null
+  completedAt?: string | null
   buyer: {
     id: string
     displayName: string
@@ -1021,11 +1027,18 @@ function AssetListingSection({
         ) : null}
       </div>
 
-      {/* Orders list (PENDING + QUOTED) — seller actions */}
+      {/* Orders list (PENDING + QUOTED + COMPLETED) — seller view */}
       {showOrders && pendingOrders.length > 0 ? (
         <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {pendingOrders.map((order) => (
-            <div key={order.id} style={{ padding: '8px 12px', borderRadius: 8, border: order.status === 'QUOTED' ? '1px solid rgba(147,197,253,0.15)' : '1px solid rgba(251,191,36,0.15)', background: order.status === 'QUOTED' ? 'rgba(147,197,253,0.03)' : 'rgba(251,191,36,0.04)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div key={order.id} style={{ padding: '8px 12px', borderRadius: 8,
+              border: order.status === 'COMPLETED' ? '1px solid rgba(74,222,128,0.15)'
+                : order.status === 'QUOTED' ? '1px solid rgba(147,197,253,0.15)'
+                : '1px solid rgba(251,191,36,0.15)',
+              background: order.status === 'COMPLETED' ? 'rgba(74,222,128,0.03)'
+                : order.status === 'QUOTED' ? 'rgba(147,197,253,0.03)'
+                : 'rgba(251,191,36,0.04)',
+              display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
                   {order.buyer.displayName}
@@ -1036,11 +1049,18 @@ function AssetListingSection({
                 ) : null}
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>
                   {new Date(order.createdAt).toLocaleDateString('zh-CN')} · {order.priceCredits} 积分
+                  {order.status === 'COMPLETED' && order.sellerAmountCredits != null ? (
+                    <span style={{ marginLeft: 6, color: 'rgba(74,222,128,0.65)' }}>→ 到账 {order.sellerAmountCredits} 积分</span>
+                  ) : null}
                 </div>
               </div>
-              {order.status === 'QUOTED' ? (
+              {order.status === 'COMPLETED' ? (
+                <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.2)', color: 'rgba(74,222,128,0.75)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  ✓ 已完成
+                </span>
+              ) : order.status === 'QUOTED' ? (
                 <span style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(147,197,253,0.2)', color: 'rgba(147,197,253,0.7)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  已确认报价
+                  等待买家支付
                 </span>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
@@ -1166,6 +1186,9 @@ export default function AssetDetailPage() {
   const [myOrder, setMyOrder] = useState<MarketplaceOrder | null>(null)
   const [pendingOrders, setPendingOrders] = useState<PendingOrderItem[]>([])
   const [cancelOrderState, setCancelOrderState] = useState<'idle' | 'loading'>('idle')
+  const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const [payOrderState, setPayOrderState] = useState<'idle' | 'confirming' | 'loading'>('idle')
+  const [payOrderError, setPayOrderError] = useState<string | null>(null)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -1226,6 +1249,65 @@ export default function AssetDetailPage() {
   }, [assetId])
 
   useEffect(() => { void fetchAsset() }, [fetchAsset])
+
+  // Fetch wallet balance when buyer has a QUOTED order (so they can see if they can pay)
+  useEffect(() => {
+    if (myOrder?.status !== 'QUOTED') return
+    fetch('/api/credits/balance', { credentials: 'include' })
+      .then((r) => r.json() as Promise<{ availableCredits?: number }>)
+      .then((d) => { if (d.availableCredits != null) setWalletBalance(d.availableCredits) })
+      .catch(() => { /* ignore */ })
+  }, [myOrder?.status])
+
+  async function payMyOrder() {
+    if (!myOrder || myOrder.status !== 'QUOTED' || payOrderState === 'loading') return
+    setPayOrderState('loading')
+    setPayOrderError(null)
+    try {
+      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pay' }),
+      })
+      const data = await res.json() as {
+        order?: MarketplaceOrder
+        grant?: { id: string; licenseMode: string; paidCredits: number; grantedAt: string; expiresAt: string | null; termsJson: unknown; status: string }
+        priceCredits?: number
+        message?: string
+        errorCode?: string
+        extra?: { requiredCredits?: number; availableCredits?: number }
+      }
+      if (!res.ok) {
+        if (data.errorCode === 'INSUFFICIENT_CREDITS') {
+          setPayOrderError(`积分余额不足。需要 ${data.extra?.requiredCredits ?? myOrder.priceCredits} 积分，当前余额 ${data.extra?.availableCredits ?? walletBalance ?? '?'} 积分。`)
+        } else {
+          setPayOrderError(data.message ?? data.errorCode ?? '支付失败，请稍后重试')
+        }
+        setPayOrderState('idle')
+        return
+      }
+      // Success — update order state and refresh grant
+      if (data.order) setMyOrder(data.order)
+      if (data.grant) {
+        setMyGrant({
+          id: data.grant.id,
+          listingId: myOrder.listingId,
+          assetId: myOrder.assetId,
+          licenseMode: data.grant.licenseMode,
+          paidCredits: data.grant.paidCredits,
+          status: data.grant.status,
+          grantedAt: data.grant.grantedAt,
+          expiresAt: data.grant.expiresAt,
+          termsJson: data.grant.termsJson,
+        })
+      }
+      setPayOrderState('idle')
+    } catch {
+      setPayOrderError('网络错误，请稍后重试')
+      setPayOrderState('idle')
+    }
+  }
 
   async function togglePublic() {
     if (!asset || !asset.isOwner) return
@@ -1545,13 +1627,61 @@ export default function AssetDetailPage() {
                               </>
                             ) : myOrder.status === 'QUOTED' ? (
                               <>
-                                <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 500 }}>卖家已确认报价意向</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
-                                  报价：{myOrder.priceCredits} 积分
-                                  {myOrder.quotedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.quotedAt).toLocaleDateString('zh-CN')}</span> : null}
+                                <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 500 }}>卖家已确认报价</div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
+                                  应付：<strong style={{ color: '#f0f0f8' }}>{myOrder.priceCredits} 积分</strong>
+                                  {myOrder.quotedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· 报价于 {new Date(myOrder.quotedAt).toLocaleDateString('zh-CN')}</span> : null}
                                 </div>
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
-                                  尚未扣款，尚未获得授权。支付功能开放后才可完成正式授权。
+                                {walletBalance != null ? (
+                                  <div style={{ fontSize: 10, color: walletBalance >= myOrder.priceCredits ? 'rgba(74,222,128,0.7)' : 'rgba(248,113,113,0.75)', marginTop: 3 }}>
+                                    当前余额：{walletBalance} 积分{walletBalance < myOrder.priceCredits ? '（余额不足）' : ''}
+                                  </div>
+                                ) : null}
+                                {payOrderError ? (
+                                  <div style={{ fontSize: 11, color: 'rgba(248,113,113,0.85)', marginTop: 5, lineHeight: 1.5 }}>{payOrderError}</div>
+                                ) : null}
+                                {payOrderState === 'confirming' ? (
+                                  <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>
+                                      确认扣减 <strong>{myOrder.priceCredits}</strong> 积分？此操作不可撤销。
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => { void payMyOrder() }}
+                                        style={{ padding: '4px 14px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.35)', background: 'rgba(74,222,128,0.1)', color: '#4ade80', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                                      >
+                                        确认支付
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPayOrderState('idle')}
+                                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}
+                                      >
+                                        取消
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPayOrderState('confirming')}
+                                    disabled={payOrderState === 'loading' || (walletBalance != null && walletBalance < myOrder.priceCredits)}
+                                    style={{ marginTop: 8, padding: '6px 16px', borderRadius: 7, border: '1px solid rgba(74,222,128,0.35)', background: 'rgba(74,222,128,0.09)', color: '#4ade80', fontSize: 12, fontWeight: 600, cursor: (payOrderState === 'loading' || (walletBalance != null && walletBalance < myOrder.priceCredits)) ? 'not-allowed' : 'pointer', opacity: (payOrderState === 'loading' || (walletBalance != null && walletBalance < myOrder.priceCredits)) ? 0.5 : 1 }}
+                                  >
+                                    {payOrderState === 'loading' ? '支付中…' : '立即支付并获得授权'}
+                                  </button>
+                                )}
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 6, lineHeight: 1.6 }}>
+                                  支付后立即生效，积分从余额中扣减，不可退款。
+                                </div>
+                              </>
+                            ) : myOrder.status === 'COMPLETED' ? (
+                              <>
+                                <div style={{ fontSize: 12, color: '#4ade80', fontWeight: 500 }}>✓ 授权已完成</div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
+                                  已支付 {myOrder.priceCredits} 积分
+                                  {myOrder.completedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.completedAt).toLocaleDateString('zh-CN')}</span> : null}
                                 </div>
                               </>
                             ) : myOrder.status === 'CANCELLED' ? (

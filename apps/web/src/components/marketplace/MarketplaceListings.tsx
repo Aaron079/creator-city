@@ -54,11 +54,12 @@ function ListingCard({
   const [grantChecked, setGrantChecked] = useState(false)
 
   const [orderId, setOrderId] = useState<string | null>(initialOrder?.id ?? null)
-  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'cancelling' | 'cancelled' | 'rejected' | 'quoted' | 'error'>(
+  const [orderState, setOrderState] = useState<'idle' | 'loading' | 'submitted' | 'cancelling' | 'cancelled' | 'rejected' | 'quoted' | 'completed' | 'error'>(
     initialOrder?.status === 'PENDING' ? 'submitted'
     : initialOrder?.status === 'CANCELLED' ? 'cancelled'
     : initialOrder?.status === 'REJECTED' ? 'rejected'
     : initialOrder?.status === 'QUOTED' ? 'quoted'
+    : initialOrder?.status === 'COMPLETED' ? 'completed'
     : 'idle'
   )
 
@@ -270,24 +271,45 @@ function ListingCard({
         )
       }
 
+      if (orderState === 'completed') {
+        return (
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontSize: 12,
+              padding: '7px 0',
+              borderRadius: 10,
+              border: '1px solid rgba(74,222,128,0.3)',
+              color: '#4ade80',
+              userSelect: 'none',
+            }}
+          >
+            ✓ 已获得授权
+          </span>
+        )
+      }
+
       if (orderState === 'quoted') {
         return (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span
+            <Link
+              href={`/assets/${item.assetId}`}
               style={{
                 textAlign: 'center',
                 fontSize: 12,
                 padding: '7px 0',
                 borderRadius: 10,
-                border: '1px solid rgba(147,197,253,0.3)',
+                border: '1px solid rgba(147,197,253,0.35)',
                 color: '#93c5fd',
-                userSelect: 'none',
+                textDecoration: 'none',
+                display: 'block',
               }}
             >
-              卖家已确认报价 · 等待支付功能开放
-            </span>
+              卖家已确认报价 · 去支付
+            </Link>
             <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.28)', userSelect: 'none' }}>
-              尚未扣款，尚未获得授权，不代表成交。
+              尚未扣款，点击资产页面完成支付。
             </span>
           </div>
         )

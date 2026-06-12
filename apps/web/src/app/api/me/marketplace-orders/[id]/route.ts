@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { isDbConnectionError } from '@/lib/db-error'
+import { settleMarketplaceOrder, MarketplaceSettleError } from '@/lib/marketplace/settle'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,8 @@ type RouteContext = { params: { id: string } }
 // ─── PATCH /api/me/marketplace-orders/[id] ────────────────────────────────────
 // action: 'cancel' → buyer cancels their PENDING order  (PENDING → CANCELLED)
 // action: 'reject' → seller rejects a PENDING order     (PENDING → REJECTED)
+// action: 'quote'  → seller confirms quote intent       (PENDING → QUOTED)
+// action: 'pay'    → buyer pays and settles             (QUOTED  → COMPLETED)
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
@@ -22,8 +25,35 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     const { action, failureReason } = body
 
-    if (action !== 'cancel' && action !== 'reject' && action !== 'quote') {
-      return jsonError('INVALID_ACTION', 'action 必须为 cancel、reject 或 quote。', 400)
+    if (action !== 'cancel' && action !== 'reject' && action !== 'quote' && action !== 'pay') {
+      return jsonError('INVALID_ACTION', 'action 必须为 cancel、reject、quote 或 pay。', 400)
+    }
+
+    // 'pay' has its own flow (requires QUOTED, not PENDING)
+    if (action === 'pay') {
+      try {
+        const result = await settleMarketplaceOrder(params.id, user.id)
+        const order = result.order!
+        return jsonOk({
+          idempotent: result.idempotent,
+          order: serializeOrder(order),
+          grant: result.grant ? serializeGrant(result.grant) : null,
+          priceCredits: result.priceCredits,
+          platformFeeCredits: result.platformFeeCredits,
+          sellerAmountCredits: result.sellerAmountCredits,
+        })
+      } catch (err) {
+        if (err instanceof MarketplaceSettleError) {
+          const status =
+            err.code === 'ORDER_NOT_FOUND' ? 404
+            : err.code === 'NOT_BUYER' || err.code === 'ACTION_NOT_ALLOWED' ? 403
+            : err.code === 'INSUFFICIENT_CREDITS' ? 402
+            : err.code === 'SETTLEMENT_FAILED' ? 409
+            : 400
+          return jsonError(err.code, err.message, status, err.extra)
+        }
+        throw err
+      }
     }
 
     const order = await db.marketplaceOrder.findUnique({ where: { id: params.id } })
@@ -96,6 +126,7 @@ function serializeOrder(o: {
   cancelledAt: Date | null
   rejectedAt: Date | null
   quotedAt: Date | null
+  completedAt: Date | null
 }) {
   return {
     id: o.id,
@@ -104,6 +135,8 @@ function serializeOrder(o: {
     buyerId: o.buyerId,
     sellerId: o.sellerId,
     priceCredits: o.priceCredits,
+    platformFeeCredits: o.platformFeeCredits,
+    sellerAmountCredits: o.sellerAmountCredits,
     status: o.status,
     message: o.message,
     failureReason: o.failureReason,
@@ -112,5 +145,36 @@ function serializeOrder(o: {
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     rejectedAt: o.rejectedAt?.toISOString() ?? null,
     quotedAt: o.quotedAt?.toISOString() ?? null,
+    completedAt: o.completedAt?.toISOString() ?? null,
+  }
+}
+
+function serializeGrant(g: {
+  id: string
+  listingId: string
+  buyerId: string
+  sellerId: string
+  assetId: string
+  licenseMode: string
+  paidCredits: number
+  status: string
+  grantedAt: Date
+  expiresAt: Date | null
+  revokedAt: Date | null
+  termsJson: unknown
+}) {
+  return {
+    id: g.id,
+    listingId: g.listingId,
+    buyerId: g.buyerId,
+    sellerId: g.sellerId,
+    assetId: g.assetId,
+    licenseMode: g.licenseMode,
+    paidCredits: g.paidCredits,
+    status: g.status,
+    grantedAt: g.grantedAt.toISOString(),
+    expiresAt: g.expiresAt?.toISOString() ?? null,
+    revokedAt: g.revokedAt?.toISOString() ?? null,
+    termsJson: g.termsJson,
   }
 }

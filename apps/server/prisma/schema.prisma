@@ -1042,16 +1042,18 @@ model EconomyTransaction {
 // ══════════════════════════════════════════════════════════════════════════════
 
 enum CreditLedgerType {
-  PURCHASE          // +balance from payment
-  BONUS             // +balance from package/admin grant
-  RESERVE           // -balance +frozen (job reserved)
-  FREEZE            // legacy alias for RESERVE
-  SETTLE            // -frozen (job completed, credits consumed)
-  RELEASE           // +balance -frozen (job cancelled before billing)
-  UNFREEZE          // legacy alias for RELEASE
-  REFUND            // payment or job refund
-  ADMIN_ADJUSTMENT  // administrator confirmed manual recharge/adjustment
-  EXPIRE            // credits expired
+  PURCHASE                 // +balance from payment
+  BONUS                    // +balance from package/admin grant
+  RESERVE                  // -balance +frozen (job reserved)
+  FREEZE                   // legacy alias for RESERVE
+  SETTLE                   // -frozen (job completed, credits consumed)
+  RELEASE                  // +balance -frozen (job cancelled before billing)
+  UNFREEZE                 // legacy alias for RELEASE
+  REFUND                   // payment or job refund
+  ADMIN_ADJUSTMENT         // administrator confirmed manual recharge/adjustment
+  EXPIRE                   // credits expired
+  MARKETPLACE_PURCHASE     // -balance buyer pays for marketplace authorization
+  MARKETPLACE_SELLER_CREDIT // +balance seller receives marketplace payout
 }
 
 enum CreditPackageStatus {
@@ -1433,6 +1435,7 @@ enum MarketplaceOrderStatus {
   CANCELLED
   REJECTED
   QUOTED
+  COMPLETED
 }
 
 model MarketplaceOrder {
@@ -1456,6 +1459,7 @@ model MarketplaceOrder {
   cancelledAt         DateTime?
   rejectedAt          DateTime?
   quotedAt            DateTime?
+  completedAt         DateTime?
 
   listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyer    User         @relation("MarketplaceOrderBuyer",  fields: [buyerId],  references: [id])

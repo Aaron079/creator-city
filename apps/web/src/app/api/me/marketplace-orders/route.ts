@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
       buyerId: o.buyerId,
       sellerId: o.sellerId,
       priceCredits: o.priceCredits,
+      platformFeeCredits: o.platformFeeCredits,
+      sellerAmountCredits: o.sellerAmountCredits,
       status: o.status,
       message: o.message,
       createdAt: o.createdAt.toISOString(),
@@ -55,6 +57,7 @@ export async function GET(request: NextRequest) {
       cancelledAt: o.cancelledAt?.toISOString() ?? null,
       rejectedAt: o.rejectedAt?.toISOString() ?? null,
       quotedAt: o.quotedAt?.toISOString() ?? null,
+      completedAt: o.completedAt?.toISOString() ?? null,
       listing: {
         id: o.listing.id,
         title: o.listing.title,
