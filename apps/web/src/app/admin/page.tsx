@@ -39,6 +39,7 @@ export default async function AdminIndexPage() {
   const user = await getCurrentUser()
 
   let pendingManualCount = 0
+  let pendingRefundCount = 0
   if (user?.role === 'ADMIN') {
     try {
       pendingManualCount = await db.paymentOrder.count({
@@ -46,6 +47,13 @@ export default async function AdminIndexPage() {
       })
     } catch {
       // non-fatal — badge will not show count
+    }
+    try {
+      pendingRefundCount = await db.marketplaceRefundRequest.count({
+        where: { status: 'PENDING' },
+      })
+    } catch {
+      // non-fatal
     }
   }
 
@@ -117,6 +125,13 @@ export default async function AdminIndexPage() {
               href="/admin/users"
               title="用户管理"
               description="查看用户列表、角色和状态。"
+            />
+            <AdminCard
+              href="/admin/marketplace"
+              title="市场管理"
+              description="查看 Marketplace 订单、退款申请与执行状态。退款执行不可逆，请谨慎操作。"
+              alertBadge={pendingRefundCount > 0 ? `待处理退款 ${pendingRefundCount}` : undefined}
+              badge={pendingRefundCount === 0 ? 'Marketplace' : undefined}
             />
           </div>
         </div>
