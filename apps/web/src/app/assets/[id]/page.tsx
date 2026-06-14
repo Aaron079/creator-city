@@ -16,7 +16,6 @@ import {
 } from '@/lib/assets/marketplace-intent'
 import { MembershipRequiredNotice } from '@/components/membership/MembershipRequiredNotice'
 
-const REFUND_REQUEST_ENABLED = process.env.NEXT_PUBLIC_MARKETPLACE_REFUND_REQUEST_ENABLED === 'true'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,21 +43,6 @@ interface RefundRequest {
   executionNote: string | null
   createdAt: string
   reviewedAt: string | null
-}
-
-interface MarketplaceOrder {
-  id: string
-  listingId: string
-  assetId: string
-  priceCredits: number
-  platformFeeCredits: number | null
-  sellerAmountCredits: number | null
-  status: string
-  createdAt: string
-  quotedAt?: string | null
-  completedAt?: string | null
-  refundedAt?: string | null
-  refundRequest?: RefundRequest | null
 }
 
 interface PendingOrderItem {
@@ -657,68 +641,6 @@ function MarketplaceIntentEditor({
   )
 }
 
-function MarketplaceIntentReadOnly({ intent }: { intent: MarketplaceIntent | null }) {
-  const disabledBtn = (
-    <span
-      style={{
-        display: 'inline-block',
-        marginTop: '10px',
-        padding: '6px 16px',
-        borderRadius: '8px',
-        border: '1px solid rgba(255,255,255,0.06)',
-        fontSize: '12px',
-        color: 'rgba(255,255,255,0.2)',
-        cursor: 'not-allowed',
-        userSelect: 'none',
-      }}
-    >
-      申请授权 · 即将开放
-    </span>
-  )
-
-  if (!intent?.wantsToList) {
-    return (
-      <div style={{ padding: '12px 0' }}>
-        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.32)', lineHeight: 1.6, marginBottom: '4px' }}>
-          创作者尚未登记市场发布意向。
-        </div>
-        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6, marginBottom: '8px' }}>
-          {MARKETPLACE_DISCLAIMER}
-        </div>
-        {disabledBtn}
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ padding: '12px 0' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-        <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '5px', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7', fontWeight: 600 }}>
-          📋 发布意向已登记
-        </span>
-        {intent.suggestedLicense ? (
-          <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '5px', background: intent.suggestedLicense === 'reusable_commercial' ? 'rgba(251,146,60,0.1)' : 'rgba(96,165,250,0.1)', color: intent.suggestedLicense === 'reusable_commercial' ? '#fdba74' : '#93c5fd', fontWeight: 600 }}>
-            {intent.suggestedLicense === 'reusable_commercial' ? '💼 商用复用' : '🔄 非商用复用'}
-          </span>
-        ) : null}
-      </div>
-      {intent.suggestedPriceCredits != null ? (
-        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.38)', marginBottom: '4px' }}>
-          建议价：{intent.suggestedPriceCredits} 积分（规划中）
-        </div>
-      ) : null}
-      {intent.description ? (
-        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {intent.description}
-        </div>
-      ) : null}
-      <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', lineHeight: 1.6, marginBottom: '4px' }}>
-        {MARKETPLACE_DISCLAIMER}
-      </div>
-      {disabledBtn}
-    </div>
-  )
-}
 
 // ─── Asset Listing Section ────────────────────────────────────────────────────
 
@@ -1242,6 +1164,362 @@ function AssetListingSection({
   )
 }
 
+// ─── MarketplaceInquiry types ────────────────────────────────────────────────
+
+interface MarketplaceInquiry {
+  id: string
+  listingId: string
+  assetId: string
+  buyerId: string
+  sellerId: string
+  status: string
+  message: string | null
+  sellerNote: string | null
+  createdAt: string
+  updatedAt: string
+  respondedAt: string | null
+  closedAt: string | null
+}
+
+const INQUIRY_DISCLAIMER = '提交合作意向不等于获得授权，不代表成交，不触发平台担保、资金托管、积分结算或授权凭证。正式授权条款请双方线下确认。'
+
+// ─── BuyerInquirySection ─────────────────────────────────────────────────────
+// Self-contained — fetches auth + listing + inquiry internally.
+// Shows submit form, status, and close action. No payment, no LicenseGrant.
+
+function BuyerInquirySection({ assetId }: { assetId: string }) {
+  type AuthState =
+    | null
+    | { loggedIn: false }
+    | { loggedIn: true; membershipActive: boolean }
+  const [auth, setAuth] = useState<AuthState>(null)
+  const [listingId, setListingId] = useState<string | 'none' | null>(null)
+  const [inquiry, setInquiry] = useState<MarketplaceInquiry | null | 'loading'>('loading')
+  const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const [authRes, listingsRes] = await Promise.all([
+        fetch('/api/auth/me', { credentials: 'include' }).catch(() => null),
+        fetch('/api/marketplace/listings', { credentials: 'include' }).catch(() => null),
+      ])
+      if (cancelled) return
+
+      let authState: AuthState = { loggedIn: false }
+      if (authRes?.ok) {
+        const d = await authRes.json() as { user?: { id?: string; membershipActive?: boolean; role?: string } }
+        if (d.user?.id) {
+          authState = {
+            loggedIn: true,
+            membershipActive: d.user.role === 'ADMIN' || (d.user.membershipActive ?? false),
+          }
+        }
+      }
+      if (cancelled) return
+      setAuth(authState)
+
+      let foundId: string | null = null
+      if (listingsRes?.ok) {
+        const ld = await listingsRes.json() as { listings?: Array<{ id: string; assetId: string; priceCredits: number | null }> }
+        const match = ld.listings?.find((l) => l.assetId === assetId && (l.priceCredits ?? 0) > 0)
+        foundId = match?.id ?? null
+      }
+      if (cancelled) return
+      setListingId(foundId ?? 'none')
+
+      if (authState.loggedIn && foundId) {
+        try {
+          const ir = await fetch(`/api/marketplace/listings/${foundId}/inquiries/me`, { credentials: 'include' })
+          if (cancelled) return
+          const id = await ir.json() as { inquiry?: MarketplaceInquiry | null }
+          setInquiry(id.inquiry ?? null)
+        } catch { setInquiry(null) }
+      } else {
+        setInquiry(null)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [assetId])
+
+  async function submit() {
+    if (!listingId || listingId === 'none' || submitting) return
+    setSubmitting(true); setError(null)
+    try {
+      const res = await fetch(`/api/marketplace/listings/${listingId}/inquiries`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message.trim() || undefined }),
+      })
+      const data = await res.json() as { inquiry?: MarketplaceInquiry; message?: string; errorCode?: string }
+      if (!res.ok) { setError(data.message ?? data.errorCode ?? '提交失败，请稍后重试'); return }
+      if (data.inquiry) { setInquiry(data.inquiry); setMessage('') }
+    } catch { setError('网络错误，请稍后重试') }
+    finally { setSubmitting(false) }
+  }
+
+  async function doClose() {
+    const inq = inquiry
+    if (!inq || inq === 'loading' || actionLoading) return
+    setActionLoading(true); setError(null)
+    try {
+      const res = await fetch(`/api/me/marketplace-inquiries/${inq.id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'close' }),
+      })
+      const data = await res.json() as { inquiry?: MarketplaceInquiry; message?: string }
+      if (!res.ok) { setError(data.message ?? '操作失败'); return }
+      if (data.inquiry) setInquiry(data.inquiry)
+    } catch { setError('网络错误，请稍后重试') }
+    finally { setActionLoading(false) }
+  }
+
+  if (auth === null || inquiry === 'loading') {
+    return <div style={{ padding: '12px 0', fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>加载中…</div>
+  }
+  if (listingId === 'none' || listingId === null) return null
+  if (!auth.loggedIn) {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 8 }}>
+          登录后可提交授权合作意向。
+        </div>
+        <a href="/api/auth/signin" style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.12)', fontSize: 12, color: 'rgba(255,255,255,0.55)', textDecoration: 'none' }}>
+          登录
+        </a>
+        <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>{INQUIRY_DISCLAIMER}</div>
+      </div>
+    )
+  }
+  if (!auth.membershipActive) {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <MembershipRequiredNotice feature="提交授权合作意向" />
+        <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>{INQUIRY_DISCLAIMER}</div>
+      </div>
+    )
+  }
+
+  const inqData = inquiry as MarketplaceInquiry | null
+
+  if (inqData?.status === 'PENDING') {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.04)' }}>
+          <div style={{ fontSize: 12, color: '#fbbf24', fontWeight: 500, marginBottom: 4 }}>合作意向已提交，等待创作者回复</div>
+          {inqData.message ? (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5, marginBottom: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{inqData.message}</div>
+          ) : null}
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginBottom: 8 }}>
+            提交于 {new Date(inqData.createdAt).toLocaleDateString('zh-CN')}
+          </div>
+          <button type="button" onClick={() => { void doClose() }} disabled={actionLoading}
+            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.32)', fontSize: 11, cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.5 : 1 }}>
+            {actionLoading ? '处理中…' : '关闭意向'}
+          </button>
+        </div>
+        {error ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{error}</div> : null}
+        <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>{INQUIRY_DISCLAIMER}</div>
+      </div>
+    )
+  }
+
+  if (inqData?.status === 'RESPONDED') {
+    return (
+      <div style={{ padding: '12px 0' }}>
+        <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(147,197,253,0.2)', background: 'rgba(147,197,253,0.03)' }}>
+          <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 500, marginBottom: 4 }}>创作者已回应你的合作意向</div>
+          {inqData.sellerNote ? (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, marginBottom: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{inqData.sellerNote}</div>
+          ) : null}
+          {inqData.respondedAt ? (
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginBottom: 8 }}>
+              回应于 {new Date(inqData.respondedAt).toLocaleDateString('zh-CN')}
+            </div>
+          ) : null}
+          <div style={{ padding: '7px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 10, color: 'rgba(255,255,255,0.28)', lineHeight: 1.7, marginBottom: 8 }}>
+            {INQUIRY_DISCLAIMER}
+          </div>
+          <button type="button" onClick={() => { void doClose() }} disabled={actionLoading}
+            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.32)', fontSize: 11, cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.5 : 1 }}>
+            {actionLoading ? '处理中…' : '关闭意向'}
+          </button>
+        </div>
+        {error ? <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{error}</div> : null}
+      </div>
+    )
+  }
+
+  // No inquiry, or REJECTED/CLOSED — show submit form
+  return (
+    <div style={{ padding: '12px 0' }}>
+      {inqData?.status === 'REJECTED' ? (
+        <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.15)', background: 'rgba(248,113,113,0.03)', fontSize: 11, color: 'rgba(255,255,255,0.42)', lineHeight: 1.5 }}>
+          创作者已拒绝此次合作意向。{inqData.sellerNote ? <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>（{inqData.sellerNote}）</span> : null}
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>你可以更新留言后重新提交。</div>
+        </div>
+      ) : inqData?.status === 'CLOSED' ? (
+        <div style={{ marginBottom: 8, padding: '7px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', fontSize: 11, color: 'rgba(255,255,255,0.32)', lineHeight: 1.5 }}>
+          意向已关闭。你可以重新提交新的合作意向。
+        </div>
+      ) : null}
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.42)', marginBottom: 6, fontWeight: 500 }}>提交授权合作意向</div>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="请简要说明你的授权用途、项目背景、联系方式或希望沟通的合作方式。（可选，最多 1000 字）"
+        maxLength={1000} rows={4}
+        style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: 'rgba(255,255,255,0.7)', fontSize: 12, padding: '8px 10px', resize: 'vertical', outline: 'none', lineHeight: 1.6, boxSizing: 'border-box' }}
+      />
+      {message.length > 900 ? (
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', textAlign: 'right', marginTop: 2 }}>{message.length}/1000</div>
+      ) : null}
+      <button type="button" onClick={() => { void submit() }} disabled={submitting}
+        style={{ marginTop: 8, padding: '7px 18px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.06)', color: '#fbbf24', fontSize: 12, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1 }}>
+        {submitting ? '提交中…' : '提交合作意向'}
+      </button>
+      {error ? <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{error}</div> : null}
+      <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>{INQUIRY_DISCLAIMER}</div>
+    </div>
+  )
+}
+
+// ─── SellerInquiryPanel ───────────────────────────────────────────────────────
+// Self-contained — shows all inquiries for a listing with respond/reject/close.
+
+interface SellerInquiryItem extends MarketplaceInquiry {
+  buyer: { id: string; displayName: string; username: string | null; avatarUrl: string | null }
+}
+
+function SellerInquiryPanel({ listingId }: { listingId: string | null }) {
+  const [inquiries, setInquiries] = useState<SellerInquiryItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({})
+  const [busyMap, setBusyMap] = useState<Record<string, boolean>>({})
+  const [errMap, setErrMap] = useState<Record<string, string>>({})
+
+  const load = useCallback(async () => {
+    if (!listingId) { setInquiries([]); return }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/me/marketplace-inquiries?role=seller', { credentials: 'include' })
+      const data = await res.json() as { items?: SellerInquiryItem[] }
+      setInquiries((data.items ?? []).filter((i) => i.listingId === listingId))
+    } catch { setInquiries([]) }
+    finally { setLoading(false) }
+  }, [listingId])
+
+  useEffect(() => { void load() }, [load])
+
+  async function doAction(id: string, action: 'respond' | 'reject' | 'close') {
+    if (busyMap[id]) return
+    setBusyMap((p) => ({ ...p, [id]: true }))
+    setErrMap((p) => ({ ...p, [id]: '' }))
+    try {
+      const res = await fetch(`/api/me/marketplace-inquiries/${id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, sellerNote: noteMap[id]?.trim() || undefined }),
+      })
+      const data = await res.json() as { message?: string; errorCode?: string }
+      if (!res.ok) { setErrMap((p) => ({ ...p, [id]: data.message ?? data.errorCode ?? '操作失败' })); return }
+      await load()
+    } catch { setErrMap((p) => ({ ...p, [id]: '网络错误，请稍后重试' })) }
+    finally { setBusyMap((p) => ({ ...p, [id]: false })) }
+  }
+
+  if (!listingId) return null
+
+  const statusBadge = (s: string) => {
+    const cfg: Record<string, { bg: string; color: string; label: string }> = {
+      PENDING:   { bg: 'rgba(251,191,36,0.1)',  color: '#fbbf24', label: '待回复' },
+      RESPONDED: { bg: 'rgba(147,197,253,0.1)', color: '#93c5fd', label: '已回复' },
+      REJECTED:  { bg: 'rgba(248,113,113,0.08)',color: 'rgba(248,113,113,0.75)', label: '已拒绝' },
+      CLOSED:    { bg: 'rgba(255,255,255,0.04)',color: 'rgba(255,255,255,0.25)', label: '已关闭' },
+    }
+    const c = cfg[s] ?? { bg: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)', label: s }
+    return <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: c.bg, color: c.color, fontWeight: 600 }}>{c.label}</span>
+  }
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 10, fontWeight: 600 }}>
+        授权合作意向 {inquiries != null ? `(${inquiries.length})` : ''}
+      </div>
+      {loading && !inquiries ? (
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)' }}>加载中…</div>
+      ) : !inquiries || inquiries.length === 0 ? (
+        <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
+          暂无合作意向申请。
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {inquiries.map((inq) => {
+            const isActive = inq.status === 'PENDING' || inq.status === 'RESPONDED'
+            const busy = !!busyMap[inq.id]
+            return (
+              <div key={inq.id} style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>{inq.buyer.displayName}</span>
+                    {inq.buyer.username ? <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)' }}>@{inq.buyer.username}</span> : null}
+                    {statusBadge(inq.status)}
+                  </div>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>{new Date(inq.createdAt).toLocaleDateString('zh-CN')}</span>
+                </div>
+                {inq.message ? (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.42)', lineHeight: 1.5, marginBottom: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{inq.message}</div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', marginBottom: 6 }}>（未填写留言）</div>
+                )}
+                {inq.sellerNote ? (
+                  <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 7, background: 'rgba(147,197,253,0.04)', border: '1px solid rgba(147,197,253,0.1)', fontSize: 11, color: 'rgba(147,197,253,0.65)', lineHeight: 1.5 }}>
+                    你的回复：{inq.sellerNote}
+                    {inq.respondedAt ? <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', marginLeft: 6 }}>· {new Date(inq.respondedAt).toLocaleDateString('zh-CN')}</span> : null}
+                  </div>
+                ) : null}
+                {errMap[inq.id] ? (
+                  <div style={{ marginBottom: 6, fontSize: 11, color: 'rgba(248,113,113,0.8)' }}>{errMap[inq.id]}</div>
+                ) : null}
+                {isActive ? (
+                  <div style={{ marginTop: 6 }}>
+                    <textarea
+                      value={noteMap[inq.id] ?? ''}
+                      onChange={(e) => setNoteMap((p) => ({ ...p, [inq.id]: e.target.value }))}
+                      placeholder={inq.status === 'PENDING' ? '回复内容（回应时必填）' : '更新回复内容（可选）'}
+                      maxLength={1000} rows={2}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: 'rgba(255,255,255,0.65)', fontSize: 11, padding: '6px 8px', resize: 'vertical', outline: 'none', lineHeight: 1.5, boxSizing: 'border-box', marginBottom: 6 }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => { void doAction(inq.id, 'respond') }} disabled={busy}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(147,197,253,0.25)', background: 'rgba(147,197,253,0.05)', color: '#93c5fd', fontSize: 11, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+                        {busy ? '…' : '回应'}
+                      </button>
+                      <button type="button" onClick={() => { void doAction(inq.id, 'reject') }} disabled={busy}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.04)', color: 'rgba(248,113,113,0.65)', fontSize: 11, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+                        {busy ? '…' : '拒绝'}
+                      </button>
+                      <button type="button" onClick={() => { void doAction(inq.id, 'close') }} disabled={busy}
+                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'rgba(255,255,255,0.28)', fontSize: 11, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+                        {busy ? '…' : '关闭'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssetDetailPage() {
@@ -1258,13 +1536,7 @@ export default function AssetDetailPage() {
   const [membershipActive, setMembershipActive] = useState(false)
   const [grantCount, setGrantCount] = useState<number | null>(null)
   const [myGrant, setMyGrant] = useState<LicenseGrant | null>(null)
-  const [myOrder, setMyOrder] = useState<MarketplaceOrder | null>(null)
   const [pendingOrders, setPendingOrders] = useState<PendingOrderItem[]>([])
-  const [cancelOrderState, setCancelOrderState] = useState<'idle' | 'loading'>('idle')
-  const [refundRequest, setRefundRequest] = useState<RefundRequest | null>(null)
-  const [refundUiState, setRefundUiState] = useState<'idle' | 'form' | 'submitting' | 'cancelling'>('idle')
-  const [refundReason, setRefundReason] = useState('')
-  const [refundError, setRefundError] = useState<string | null>(null)
 
   const fetchAsset = useCallback(async () => {
     if (!assetId) return
@@ -1315,16 +1587,6 @@ export default function AssetDetailPage() {
         } catch {
           setMyGrant(null)
         }
-        // Fetch buyer's most recent order for this asset (any status)
-        fetch(`/api/me/marketplace-orders?role=buyer`, { credentials: 'include' })
-          .then((r) => r.json() as Promise<{ items?: MarketplaceOrder[] }>)
-          .then((d) => {
-            // Items sorted desc by createdAt; first match per asset is most recent
-            const order = d.items?.find((o) => o.assetId === assetId) ?? null
-            setMyOrder(order)
-            if (order?.refundRequest) setRefundRequest(order.refundRequest)
-          })
-          .catch(() => { /* ignore */ })
       }
     } catch {
       setError('网络错误，请稍后重试')
@@ -1376,73 +1638,7 @@ export default function AssetDetailPage() {
     })
   }
 
-  async function cancelMyOrder() {
-    if (!myOrder || myOrder.status !== 'PENDING' || cancelOrderState === 'loading') return
-    setCancelOrderState('loading')
-    try {
-      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
-      })
-      if (res.ok) setMyOrder((prev) => prev ? { ...prev, status: 'CANCELLED' } : prev)
-    } catch { /* ignore */ } finally {
-      setCancelOrderState('idle')
-    }
-  }
 
-  async function submitRefundRequest() {
-    if (!myOrder || refundUiState === 'submitting') return
-    if (refundReason.trim().length < 10) {
-      setRefundError('请填写退款申请原因（至少 10 个字）。')
-      return
-    }
-    setRefundUiState('submitting')
-    setRefundError(null)
-    try {
-      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}/refund-request`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: refundReason.trim() }),
-      })
-      const data = await res.json() as { refundRequest?: RefundRequest; message?: string; errorCode?: string; details?: { refundRequest?: RefundRequest } }
-      if (!res.ok) {
-        if (res.status === 409 && data.details && typeof data.details === 'object' && 'refundRequest' in data.details) {
-          // Already exists — show it
-          setRefundRequest((data.details as { refundRequest: RefundRequest }).refundRequest)
-          setRefundUiState('idle')
-          return
-        }
-        setRefundError(data.message ?? data.errorCode ?? '提交失败，请稍后重试')
-        setRefundUiState('form')
-        return
-      }
-      if (data.refundRequest) setRefundRequest(data.refundRequest)
-      setRefundUiState('idle')
-    } catch {
-      setRefundError('网络错误，请稍后重试')
-      setRefundUiState('form')
-    }
-  }
-
-  async function cancelRefundRequest() {
-    if (!myOrder || refundUiState === 'cancelling') return
-    setRefundUiState('cancelling')
-    try {
-      const res = await fetch(`/api/me/marketplace-orders/${myOrder.id}/refund-request`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
-      })
-      const data = await res.json() as { refundRequest?: RefundRequest }
-      if (res.ok && data.refundRequest) setRefundRequest(data.refundRequest)
-    } catch { /* ignore */ } finally {
-      setRefundUiState('idle')
-    }
-  }
 
   const mediaUrl = asset?.resolvedUrl ?? asset?.url ?? ''
   const licenseIntent = asset ? getLicenseIntent(asset.metadataJson) : null
@@ -1627,20 +1823,23 @@ export default function AssetDetailPage() {
               {/* Marketplace / 发布意向 */}
               <MetaSection title="Marketplace / 发布意向">
                 {asset.isOwner ? (
-                  <AssetListingSection
-                    assetId={asset.id}
-                    isPublic={asset.isPublic}
-                    assetStatus={asset.status ?? null}
-                    licenseMode={licenseIntent?.mode ?? null}
-                    marketplaceIntent={marketplaceIntentData}
-                    listing={listing}
-                    grantCount={grantCount}
-                    pendingOrders={pendingOrders}
-                    membershipActive={membershipActive}
-                    onListingChange={setListing}
-                    onOrderRejected={(id) => setPendingOrders((prev) => prev.filter((o) => o.id !== id))}
-                    onOrderQuoted={(id) => setPendingOrders((prev) => prev.map((o) => o.id === id ? { ...o, status: 'QUOTED' } : o))}
-                  />
+                  <>
+                    <AssetListingSection
+                      assetId={asset.id}
+                      isPublic={asset.isPublic}
+                      assetStatus={asset.status ?? null}
+                      licenseMode={licenseIntent?.mode ?? null}
+                      marketplaceIntent={marketplaceIntentData}
+                      listing={listing}
+                      grantCount={grantCount}
+                      pendingOrders={pendingOrders}
+                      membershipActive={membershipActive}
+                      onListingChange={setListing}
+                      onOrderRejected={(id) => setPendingOrders((prev) => prev.filter((o) => o.id !== id))}
+                      onOrderQuoted={(id) => setPendingOrders((prev) => prev.map((o) => o.id === id ? { ...o, status: 'QUOTED' } : o))}
+                    />
+                    <SellerInquiryPanel listingId={listing?.status === 'ACTIVE' ? listing.id : null} />
+                  </>
                 ) : (
                   <>
                     {myGrant ? (
@@ -1672,209 +1871,8 @@ export default function AssetDetailPage() {
                           授权凭证仅做记录，不代表平台核查或正式法律合同。
                         </div>
                       </div>
-                    ) : (
-                      <>
-                        {myOrder ? (
-                          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10,
-                            border: myOrder.status === 'PENDING' ? '1px solid rgba(251,191,36,0.2)'
-                              : myOrder.status === 'QUOTED' ? '1px solid rgba(147,197,253,0.25)'
-                              : myOrder.status === 'CANCELLED' ? '1px solid rgba(255,255,255,0.08)'
-                              : '1px solid rgba(248,113,113,0.2)',
-                            background: myOrder.status === 'PENDING' ? 'rgba(251,191,36,0.05)'
-                              : myOrder.status === 'QUOTED' ? 'rgba(147,197,253,0.04)'
-                              : myOrder.status === 'CANCELLED' ? 'rgba(255,255,255,0.02)'
-                              : 'rgba(248,113,113,0.04)' }}>
-                            {myOrder.status === 'PENDING' ? (
-                              <>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                                  <div style={{ fontSize: 12, color: '#fbbf24', fontWeight: 500 }}>付费授权申请已提交</div>
-                                  <button
-                                    type="button"
-                                    onClick={() => { void cancelMyOrder() }}
-                                    disabled={cancelOrderState === 'loading'}
-                                    style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.2)', background: 'transparent', color: 'rgba(248,113,113,0.6)', fontSize: 10, cursor: cancelOrderState === 'loading' ? 'not-allowed' : 'pointer', opacity: cancelOrderState === 'loading' ? 0.5 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}
-                                  >
-                                    {cancelOrderState === 'loading' ? '取消中…' : '取消申请'}
-                                  </button>
-                                </div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 3 }}>
-                                  申请时间：{new Date(myOrder.createdAt).toLocaleDateString('zh-CN')}
-                                </div>
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>
-                                  尚未扣款，尚未获得授权。
-                                </div>
-                              </>
-                            ) : myOrder.status === 'QUOTED' ? (
-                              <>
-                                <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 500 }}>卖家已响应你的授权合作申请</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
-                                  报价参考：{myOrder.priceCredits} 积分
-                                  {myOrder.quotedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· 响应于 {new Date(myOrder.quotedAt).toLocaleDateString('zh-CN')}</span> : null}
-                                </div>
-                                <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(147,197,253,0.04)', border: '1px solid rgba(147,197,253,0.15)', fontSize: 10, color: 'rgba(255,255,255,0.45)', lineHeight: 1.7 }}>
-                                  第一版暂不开放平台积分结算，请通过创作者主页直接联系卖家沟通授权方式。平台积分结算功能将在后续阶段开放。
-                                </div>
-                              </>
-                            ) : myOrder.status === 'REFUNDED' ? (
-                              <>
-                                <div style={{ fontSize: 12, color: 'rgba(251,191,36,0.9)', fontWeight: 500 }}>订单已退款，授权已撤销</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
-                                  已返还 {myOrder.priceCredits} 积分至你的账户
-                                  {myOrder.refundedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.refundedAt).toLocaleDateString('zh-CN')}</span> : null}
-                                </div>
-                                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(251,191,36,0.04)', border: '1px solid rgba(251,191,36,0.12)', fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7 }}>
-                                  • 平台内授权凭证已撤销。<br/>
-                                  • 授权撤销仅影响平台内记录，不影响已在本地保存的文件。<br/>
-                                  • 积分返还为平台虚拟积分，不代表法币退款。
-                                </div>
-                              </>
-                            ) : myOrder.status === 'COMPLETED' ? (
-                              <>
-                                <div style={{ fontSize: 12, color: '#4ade80', fontWeight: 500 }}>✓ 授权已完成</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
-                                  已支付 {myOrder.priceCredits} 积分
-                                  {myOrder.completedAt ? <span style={{ marginLeft: 8, fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>· {new Date(myOrder.completedAt).toLocaleDateString('zh-CN')}</span> : null}
-                                </div>
-                                {/* Refund request section */}
-                                {!refundRequest ? (
-                                  <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600, marginBottom: 5, letterSpacing: '0.05em', textTransform: 'uppercase' }}>退款说明</div>
-                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', lineHeight: 1.7, marginBottom: 8 }}>
-                                      • 本次支付为平台内虚拟服务积分消费，支付后授权凭证已即时创建。<br/>
-                                      • 当前不支持自助退款。<br/>
-                                      {REFUND_REQUEST_ENABLED ? <>• 如有异议，可提交人工退款申请，由平台审核决定。<br/></> : null}
-                                      • 提交申请不代表一定退款；积分返还只返还平台积分，不代表法币退款。
-                                    </div>
-                                    {!REFUND_REQUEST_ENABLED ? (
-                                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                                        退款申请功能第一版暂未开放，如有争议请联系平台管理员。
-                                      </div>
-                                    ) : refundUiState === 'form' || refundUiState === 'submitting' ? (
-                                      <div>
-                                        <textarea
-                                          value={refundReason}
-                                          onChange={(e) => setRefundReason(e.target.value)}
-                                          maxLength={500}
-                                          rows={3}
-                                          placeholder="请说明退款原因（至少 10 字，最多 500 字）…"
-                                          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', fontSize: 11, color: 'rgba(255,255,255,0.65)', outline: 'none', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box', marginBottom: 6 }}
-                                        />
-                                        {refundError ? <div style={{ fontSize: 10, color: 'rgba(248,113,113,0.85)', marginBottom: 5 }}>{refundError}</div> : null}
-                                        <div style={{ display: 'flex', gap: 6 }}>
-                                          <button
-                                            type="button"
-                                            onClick={() => { void submitRefundRequest() }}
-                                            disabled={refundUiState === 'submitting'}
-                                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.07)', color: '#fbbf24', fontSize: 11, cursor: refundUiState === 'submitting' ? 'not-allowed' : 'pointer', opacity: refundUiState === 'submitting' ? 0.5 : 1, fontWeight: 600 }}
-                                          >
-                                            {refundUiState === 'submitting' ? '提交中…' : '提交退款申请'}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => { setRefundUiState('idle'); setRefundError(null) }}
-                                            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'rgba(255,255,255,0.35)', fontSize: 11, cursor: 'pointer' }}
-                                          >
-                                            取消
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => setRefundUiState('form')}
-                                        style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(251,191,36,0.25)', background: 'rgba(251,191,36,0.05)', color: 'rgba(251,191,36,0.75)', fontSize: 11, cursor: 'pointer' }}
-                                      >
-                                        申请人工退款
-                                      </button>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8,
-                                    border: refundRequest.status === 'EXECUTED' ? '1px solid rgba(74,222,128,0.25)'
-                                      : refundRequest.status === 'EXECUTION_FAILED' ? '1px solid rgba(248,113,113,0.2)'
-                                      : refundRequest.status === 'APPROVED' ? '1px solid rgba(74,222,128,0.15)'
-                                      : refundRequest.status === 'REJECTED' ? '1px solid rgba(248,113,113,0.2)'
-                                      : refundRequest.status === 'CANCELLED' ? '1px solid rgba(255,255,255,0.07)'
-                                      : '1px solid rgba(251,191,36,0.2)',
-                                    background: refundRequest.status === 'EXECUTED' ? 'rgba(74,222,128,0.04)'
-                                      : refundRequest.status === 'EXECUTION_FAILED' ? 'rgba(248,113,113,0.04)'
-                                      : refundRequest.status === 'APPROVED' ? 'rgba(74,222,128,0.03)'
-                                      : refundRequest.status === 'REJECTED' ? 'rgba(248,113,113,0.03)'
-                                      : refundRequest.status === 'CANCELLED' ? 'rgba(255,255,255,0.01)'
-                                      : 'rgba(251,191,36,0.03)' }}>
-                                    <div style={{ fontSize: 11, fontWeight: 600, color:
-                                      refundRequest.status === 'EXECUTED' ? '#4ade80'
-                                      : refundRequest.status === 'EXECUTION_FAILED' ? 'rgba(248,113,113,0.9)'
-                                      : refundRequest.status === 'APPROVED' ? '#4ade80'
-                                      : refundRequest.status === 'REJECTED' ? 'rgba(248,113,113,0.85)'
-                                      : refundRequest.status === 'CANCELLED' ? 'rgba(255,255,255,0.3)'
-                                      : '#fbbf24' }}>
-                                      {refundRequest.status === 'EXECUTED' ? '✓ 退款已执行'
-                                        : refundRequest.status === 'EXECUTION_FAILED' ? '退款执行失败，正在人工处理中'
-                                        : refundRequest.status === 'PENDING' ? '退款申请待审核'
-                                        : refundRequest.status === 'APPROVED' ? '退款申请已通过人工审核'
-                                        : refundRequest.status === 'REJECTED' ? '退款申请已驳回'
-                                        : '退款申请已撤销'}
-                                    </div>
-                                    {refundRequest.status === 'EXECUTED' ? (
-                                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4, lineHeight: 1.7 }}>
-                                        已返还 {myOrder.priceCredits} 积分至你的账户。<br/>
-                                        平台内授权凭证已撤销。<br/>
-                                        授权撤销仅影响平台内记录，不影响已在本地保存的文件。<br/>
-                                        积分返还为平台虚拟积分，不代表法币退款。
-                                      </div>
-                                    ) : refundRequest.status === 'EXECUTION_FAILED' ? (
-                                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4, lineHeight: 1.6 }}>
-                                        {refundRequest.executionNote ?? '退款执行未成功，请等待管理员进一步处理。'}
-                                      </div>
-                                    ) : refundRequest.status === 'PENDING' ? (
-                                      <>
-                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>预计处理：3-5 个工作日。提交申请不代表积分立即返还。</div>
-                                        <button
-                                          type="button"
-                                          onClick={() => { void cancelRefundRequest() }}
-                                          disabled={refundUiState === 'cancelling'}
-                                          style={{ marginTop: 6, padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'rgba(255,255,255,0.35)', fontSize: 10, cursor: refundUiState === 'cancelling' ? 'not-allowed' : 'pointer', opacity: refundUiState === 'cancelling' ? 0.5 : 1 }}
-                                        >
-                                          {refundUiState === 'cancelling' ? '撤销中…' : '撤销申请'}
-                                        </button>
-                                      </>
-                                    ) : refundRequest.status === 'APPROVED' ? (
-                                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3, lineHeight: 1.6 }}>
-                                        已于 {new Date(refundRequest.reviewedAt ?? refundRequest.createdAt).toLocaleDateString('zh-CN')} 通过审核。<br/>
-                                        退款执行中，积分将很快返还至你的账户。
-                                      </div>
-                                    ) : refundRequest.status === 'REJECTED' ? (
-                                      <>
-                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>
-                                          审核于 {new Date(refundRequest.reviewedAt ?? refundRequest.createdAt).toLocaleDateString('zh-CN')} 完成。
-                                        </div>
-                                        {refundRequest.adminNote ? (
-                                          <div style={{ marginTop: 5, padding: '6px 8px', borderRadius: 5, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.12)', fontSize: 10, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
-                                            驳回原因：{refundRequest.adminNote}
-                                          </div>
-                                        ) : null}
-                                      </>
-                                    ) : null}
-                                  </div>
-                                )}
-                              </>
-                            ) : myOrder.status === 'CANCELLED' ? (
-                              <>
-                                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', fontWeight: 500 }}>申请已取消</div>
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>如需重新申请，请前往市场页面。</div>
-                              </>
-                            ) : (
-                              <>
-                                <div style={{ fontSize: 12, color: 'rgba(248,113,113,0.75)', fontWeight: 500 }}>申请已被拒绝</div>
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)', marginTop: 3 }}>如需再次申请，请前往市场页面重新提交。</div>
-                              </>
-                            )}
-                          </div>
-                        ) : null}
-                        <MarketplaceIntentReadOnly intent={marketplaceIntentData} />
-                      </>
-                    )}
+                    ) : null}
+                    <BuyerInquirySection assetId={asset.id} />
                   </>
                 )}
               </MetaSection>

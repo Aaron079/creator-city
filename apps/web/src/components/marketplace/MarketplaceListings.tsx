@@ -340,7 +340,8 @@ function ListingCard({
       if (!CREDITS_PAYMENT_ENABLED) {
         return (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span
+            <Link
+              href={`/assets/${item.assetId}`}
               style={{
                 textAlign: 'center',
                 fontSize: 12,
@@ -348,13 +349,14 @@ function ListingCard({
                 borderRadius: 10,
                 border: '1px solid rgba(251,191,36,0.2)',
                 color: 'rgba(251,191,36,0.7)',
-                userSelect: 'none',
+                textDecoration: 'none',
+                display: 'block',
               }}
             >
-              申请授权合作
-            </span>
+              申请授权合作 →
+            </Link>
             <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.25)', userSelect: 'none', lineHeight: 1.5 }}>
-              第一版暂不支持平台内积分支付，请联系创作者沟通授权。
+              第一版暂不支持平台内积分支付，请点击查看资产详情联系创作者。
             </span>
           </div>
         )
