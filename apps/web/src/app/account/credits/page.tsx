@@ -34,6 +34,8 @@ interface ChinaPaymentProviderStatus {
 const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking' }
 const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
 
+const CREDITS_RECHARGE_ENABLED = process.env.NEXT_PUBLIC_PLATFORM_CREDITS_RECHARGE_ENABLED === 'true'
+
 interface CreditsBootstrapResponse {
   auth?: { authenticated?: boolean }
   packages?: CreditPackage[]
@@ -245,7 +247,7 @@ export default function AccountCreditsPage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-white">我的积分</h1>
-            <p className="mt-1 text-sm text-white/50">余额、充值申请、消耗流水。</p>
+            <p className="mt-1 text-sm text-white/50">{CREDITS_RECHARGE_ENABLED ? '余额、充值申请、消耗流水。' : '余额与消耗流水。'}</p>
           </div>
           <Link
             href="/account"
@@ -276,108 +278,127 @@ export default function AccountCreditsPage() {
 
         <WalletBalanceCard wallet={wallet} />
 
-        <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-white">支付宝充值</h2>
-              <p className="mt-1 text-sm text-white/45">扫码支付成功后，系统会通过支付宝回调自动发放积分。</p>
-            </div>
-            <div className="text-right text-xs">
-              <span className={`rounded-full px-2.5 py-1 ${alipayConfigured ? 'bg-emerald-400/15 text-emerald-200' : alipayChecking ? 'bg-sky-400/15 text-sky-200' : 'bg-white/10 text-white/45'}`}>
-                {alipayStatusText}
-              </span>
-              <div className="mt-2 text-white/35">
-                微信支付：{wechatpayStatusText}
-              </div>
-            </div>
-          </div>
-          {alipayStatus === 'not-configured' && (
-            <div className="mb-4 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-              缺少环境变量：{chinaProviders.alipay.missing?.length ? chinaProviders.alipay.missing.join(', ') : 'ALIPAY_*'}
-            </div>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {packages.map((pkg) => {
-              const price = pkg.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')
-              if (!price) return null
-              const credits = pkg.credits + pkg.bonusCredits
-              return (
-                <button
-                  key={pkg.id}
-                  type="button"
-                  onClick={() => { void handleAlipayRecharge(pkg.id) }}
-                  disabled={Boolean(payingPackageId) || !alipayConfigured}
-                  className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{pkg.name}</div>
-                      <div className="mt-1 text-xs text-white/45">{credits.toLocaleString()} 积分</div>
-                    </div>
-                    <div className="text-sm font-semibold text-emerald-200">
-                      ¥{(price.amount / 100).toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="mt-3 text-xs text-white/38">
-                    {!alipayConfigured
-                      ? `支付宝 ${alipayStatusText}`
-                      : payingPackageId === pkg.id
-                        ? '正在生成二维码...'
-                        : '支付宝扫码支付'}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-          {packages.length === 0 ? <p className="text-sm text-white/40">暂无可用积分套餐。</p> : null}
-        </section>
-
-        {pendingOrders.length > 0 && (
-          <section className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-5">
-            <h2 className="mb-3 text-sm font-semibold text-amber-300">待审核申请 ({pendingOrders.length})</h2>
-            <div className="space-y-2">
-              {pendingOrders.map((o) => (
-                <div key={o.id} className="flex items-center justify-between text-sm">
-                  <span className="text-white/70">{o.amountCredits.toLocaleString()} 积分</span>
-                  {o.note && <span className="truncate max-w-xs text-white/40">{o.note}</span>}
-                  <span className="text-white/40">{new Date(o.createdAt).toLocaleDateString('zh-CN')}</span>
+        {CREDITS_RECHARGE_ENABLED ? (
+          <>
+            <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-white">支付宝充值</h2>
+                  <p className="mt-1 text-sm text-white/45">扫码支付成功后，系统会通过支付宝回调自动发放积分。</p>
                 </div>
-              ))}
+                <div className="text-right text-xs">
+                  <span className={`rounded-full px-2.5 py-1 ${alipayConfigured ? 'bg-emerald-400/15 text-emerald-200' : alipayChecking ? 'bg-sky-400/15 text-sky-200' : 'bg-white/10 text-white/45'}`}>
+                    {alipayStatusText}
+                  </span>
+                  <div className="mt-2 text-white/35">
+                    微信支付：{wechatpayStatusText}
+                  </div>
+                </div>
+              </div>
+              {alipayStatus === 'not-configured' && (
+                <div className="mb-4 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                  缺少环境变量：{chinaProviders.alipay.missing?.length ? chinaProviders.alipay.missing.join(', ') : 'ALIPAY_*'}
+                </div>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {packages.map((pkg) => {
+                  const price = pkg.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')
+                  if (!price) return null
+                  const credits = pkg.credits + pkg.bonusCredits
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => { void handleAlipayRecharge(pkg.id) }}
+                      disabled={Boolean(payingPackageId) || !alipayConfigured}
+                      className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-white">{pkg.name}</div>
+                          <div className="mt-1 text-xs text-white/45">{credits.toLocaleString()} 积分</div>
+                        </div>
+                        <div className="text-sm font-semibold text-emerald-200">
+                          ¥{(price.amount / 100).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="mt-3 text-xs text-white/38">
+                        {!alipayConfigured
+                          ? `支付宝 ${alipayStatusText}`
+                          : payingPackageId === pkg.id
+                            ? '正在生成二维码...'
+                            : '支付宝扫码支付'}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              {packages.length === 0 ? <p className="text-sm text-white/40">暂无可用积分套餐。</p> : null}
+            </section>
+
+            {pendingOrders.length > 0 && (
+              <section className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-5">
+                <h2 className="mb-3 text-sm font-semibold text-amber-300">待审核申请 ({pendingOrders.length})</h2>
+                <div className="space-y-2">
+                  {pendingOrders.map((o) => (
+                    <div key={o.id} className="flex items-center justify-between text-sm">
+                      <span className="text-white/70">{o.amountCredits.toLocaleString()} 积分</span>
+                      {o.note && <span className="truncate max-w-xs text-white/40">{o.note}</span>}
+                      <span className="text-white/40">{new Date(o.createdAt).toLocaleDateString('zh-CN')}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
+              <h2 className="mb-4 text-base font-semibold text-white">申请人工充值</h2>
+              <form onSubmit={(e) => void handleRecharge(e)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs text-white/50">申请积分数量</label>
+                  <input
+                    type="number" min={1} max={1000000} value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="例：1000"
+                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs text-white/50">备注（可选，如转账凭证）</label>
+                  <input
+                    type="text" value={note} onChange={(e) => setNote(e.target.value)}
+                    maxLength={200} placeholder="备注信息"
+                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                  />
+                </div>
+                <button
+                  type="submit" disabled={submitting}
+                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 sm:shrink-0"
+                >
+                  {submitting ? '提交中…' : '提交申请'}
+                </button>
+              </form>
+              {submitMsg && (
+                <p className={`mt-3 text-sm ${submitMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{submitMsg.text}</p>
+              )}
+            </section>
+          </>
+        ) : (
+          <section className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-5 space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-white/70">积分充值</h2>
+              <p className="mt-1 text-xs text-white/35">第一版采用会员订阅 + 自带 API Key（BYOK）模式。平台积分充值和消费暂未向普通用户开放。</p>
+            </div>
+            <div className="rounded-lg border border-violet-400/15 bg-violet-400/5 px-4 py-3 space-y-2.5">
+              <p className="text-xs text-white/55 font-medium">推荐使用方式</p>
+              <div className="text-xs text-white/40 space-y-1.5 leading-relaxed">
+                <p>• <Link href="/account/providers" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">绑定自己的 Provider API Key（BYOK）</Link>，AI 生成费用由你直接支付给服务商，不经过平台积分。</p>
+                <p>• 如需使用平台代付 AI 生成（消耗平台积分），请联系管理员开通会员。会员可获得平台分配额度，无需自行充值。</p>
+                <p className="text-white/25">• 平台积分充值入口将在后续阶段开放。</p>
+              </div>
             </div>
           </section>
         )}
-
-        <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
-          <h2 className="mb-4 text-base font-semibold text-white">申请人工充值</h2>
-          <form onSubmit={(e) => void handleRecharge(e)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-white/50">申请积分数量</label>
-              <input
-                type="number" min={1} max={1000000} value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="例：1000"
-                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-white/50">备注（可选，如转账凭证）</label>
-              <input
-                type="text" value={note} onChange={(e) => setNote(e.target.value)}
-                maxLength={200} placeholder="备注信息"
-                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
-              />
-            </div>
-            <button
-              type="submit" disabled={submitting}
-              className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 sm:shrink-0"
-            >
-              {submitting ? '提交中…' : '提交申请'}
-            </button>
-          </form>
-          {submitMsg && (
-            <p className={`mt-3 text-sm ${submitMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{submitMsg.text}</p>
-          )}
-        </section>
 
         <section>
           <h2 className="mb-3 text-lg font-semibold text-white">积分流水</h2>
