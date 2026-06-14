@@ -565,9 +565,11 @@ export function CanvasPromptBox({
             <button type="button" className="canvas-icon-button" aria-label="语音输入">
               ◌
             </button>
-            <span className="canvas-footer-button is-credit-pill">
-              <span className="canvas-footer-button-value">{estimatedCredits ?? 120} credits</span>
-            </span>
+            {estimatedCredits != null && (
+              <span className="canvas-footer-button is-credit-pill">
+                <span className="canvas-footer-button-value">{estimatedCredits} credits</span>
+              </span>
+            )}
             {onGenerate ? (
               <button
                 type="button"
@@ -745,7 +747,7 @@ export function CanvasPromptBox({
               className="create-iridescent-button canvas-generate-button"
               aria-label={generateLabel}
             >
-              <span className="canvas-credit-pill">{generateLabel === '生成' ? `◉ ${estimatedCredits ?? 112}` : generateLabel}</span>
+              <span className="canvas-credit-pill">{generateLabel === '生成' && estimatedCredits != null ? `◉ ${estimatedCredits}` : generateLabel}</span>
               <span className="canvas-send-icon">↑</span>
             </button>
           ) : null}
@@ -765,7 +767,9 @@ export function CanvasPromptBox({
             <span className="canvas-footer-param-chip">{paramDuration}</span>
             {paramAudio ? <span className="canvas-footer-param-chip">♫</span> : null}
           </button>
-          <span className="canvas-footer-chip-pill">{estimatedCredits ?? 112} credits</span>
+          {estimatedCredits != null && (
+            <span className="canvas-footer-chip-pill">{estimatedCredits} credits</span>
+          )}
         </div>
       </div>
     </div>

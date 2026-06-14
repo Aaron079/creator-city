@@ -8912,7 +8912,8 @@ export function VisualCanvasWorkspace({
               videoGenerateDisabled ||
               isActiveGenerationStatus(editingNode.status) ||
               ((editingNode.kind === 'text' || editingNode.kind === 'image') && billingMode === 'user_provider_account' && !selectedUserAccountId) ||
-              (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId)
+              (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId) ||
+              (editingNode.kind === 'video' && billingMode === 'user_provider_account')
             }
             generateLabel={
               isActiveGenerationStatus(editingNode.status)
@@ -8935,7 +8936,11 @@ export function VisualCanvasWorkspace({
                           ? '检查中'
                           : '模拟生成'
             }
-            estimatedCredits={estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))}
+            estimatedCredits={
+              editingNode.kind === 'video' && billingMode === 'user_provider_account'
+                ? undefined
+                : estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))
+            }
             footerItems={promptFooterItems}
             videoModeInfo={editingNode.kind === 'video' ? videoModeInfo : undefined}
             onRequestReferenceImage={editingNode.kind === 'video' && videoModeInfo?.mode === 'text-to-video' ? () => setRefImagePickerOpen(true) : undefined}
@@ -8952,7 +8957,7 @@ export function VisualCanvasWorkspace({
               setIsBatchRewriterOpen(false)
             } : undefined}
           />
-          {(editingNode.kind === 'text' || editingNode.kind === 'image') && (
+          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
             <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-2">生成费用来源</p>
               <div className="flex gap-2">
@@ -8971,62 +8976,76 @@ export function VisualCanvasWorkspace({
                   平台额度
                 </button>
               </div>
-              {billingMode === 'platform_credits' && (
-                <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
-              )}
-              {billingMode === 'user_provider_account' && (
-                <div className="space-y-2">
-                  {editingNode.kind === 'image' ? (
-                    <p className="text-[10px] text-violet-300/50 leading-relaxed">
-                      使用你自己的火山方舟 API Key + Endpoint ID 生成 Seedream 图片，费用直接计入你的 Volcengine 账户，Creator City 不代扣。当前仅支持 Seedream 图片，Video 暂不支持。
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+              {editingNode.kind === 'video' ? (
+                billingMode === 'user_provider_account' ? (
+                  <p className="text-[10px] text-amber-400/70 leading-relaxed">
+                    视频生成 BYOK 即将开放。请先前往{' '}
+                    <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-300">API 账户中心</a>
+                    {' '}配置火山 / Seedance API Key，开放后即可使用。
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-white/25 leading-relaxed">平台积分视频生成暂未对外开放，不建议使用此模式。</p>
+                )
+              ) : (
+                <>
+                  {billingMode === 'platform_credits' && (
+                    <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
                   )}
-                  {userAccountsLoading ? (
-                    <p className="text-[11px] text-white/30">加载账户中…</p>
-                  ) : (() => {
-                    const matchingAccounts = editingNode.kind === 'image'
-                      ? userProviderAccounts.filter((a) => a.providerId === 'volcengine-seedream-image' && a.status === 'active')
-                      : userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
-                    if (matchingAccounts.length === 0) {
-                      return (
-                        <p className="text-[11px] text-amber-400/70">
-                          {editingNode.kind === 'image'
-                            ? '没有可用的 Volcengine / Seedream 账户（需要 API Key + Endpoint ID）。'
-                            : `没有与 ${normalizedPromptModel} 匹配的可用账户。`}
-                          <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">前往添加</a>
+                  {billingMode === 'user_provider_account' && (
+                    <div className="space-y-2">
+                      {editingNode.kind === 'image' ? (
+                        <p className="text-[10px] text-violet-300/50 leading-relaxed">
+                          使用你自己的火山方舟 API Key + Endpoint ID 生成 Seedream 图片，费用直接计入你的 Volcengine 账户，Creator City 不代扣。当前仅支持 Seedream 图片，Video 暂不支持。
                         </p>
-                      )
-                    }
-                    const selectedAcc = matchingAccounts.find((a) => a.id === selectedUserAccountId)
-                    const missingEndpointId = editingNode.kind === 'image' && Boolean(selectedUserAccountId) && !selectedAcc?.fieldMeta?.endpointId
-                    return (
-                      <>
-                        <select
-                          value={selectedUserAccountId}
-                          onChange={(e) => setSelectedUserAccountId(e.target.value)}
-                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
-                        >
-                          <option value="">— 选择账户 —</option>
-                          {matchingAccounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.accountLabel} ···· {a.keyLast4}
-                              {a.fieldMeta?.endpointId ? ` · EP:${a.fieldMeta.endpointId.last4}` : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {missingEndpointId && (
-                          <p className="text-[11px] text-amber-400/70">
-                            ⚠ 缺少 Endpoint ID，请到
-                            <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">我的 API 账户</a>
-                            补充火山方舟 Endpoint ID。
-                          </p>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
+                      ) : (
+                        <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+                      )}
+                      {userAccountsLoading ? (
+                        <p className="text-[11px] text-white/30">加载账户中…</p>
+                      ) : (() => {
+                        const matchingAccounts = editingNode.kind === 'image'
+                          ? userProviderAccounts.filter((a) => a.providerId === 'volcengine-seedream-image' && a.status === 'active')
+                          : userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
+                        if (matchingAccounts.length === 0) {
+                          return (
+                            <p className="text-[11px] text-amber-400/70">
+                              {editingNode.kind === 'image'
+                                ? '没有可用的 Volcengine / Seedream 账户（需要 API Key + Endpoint ID）。'
+                                : `没有与 ${normalizedPromptModel} 匹配的可用账户。`}
+                              <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">前往添加</a>
+                            </p>
+                          )
+                        }
+                        const selectedAcc = matchingAccounts.find((a) => a.id === selectedUserAccountId)
+                        const missingEndpointId = editingNode.kind === 'image' && Boolean(selectedUserAccountId) && !selectedAcc?.fieldMeta?.endpointId
+                        return (
+                          <>
+                            <select
+                              value={selectedUserAccountId}
+                              onChange={(e) => setSelectedUserAccountId(e.target.value)}
+                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
+                            >
+                              <option value="">— 选择账户 —</option>
+                              {matchingAccounts.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.accountLabel} ···· {a.keyLast4}
+                                  {a.fieldMeta?.endpointId ? ` · EP:${a.fieldMeta.endpointId.last4}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {missingEndpointId && (
+                              <p className="text-[11px] text-amber-400/70">
+                                ⚠ 缺少 Endpoint ID，请到
+                                <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">我的 API 账户</a>
+                                补充火山方舟 Endpoint ID。
+                              </p>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
