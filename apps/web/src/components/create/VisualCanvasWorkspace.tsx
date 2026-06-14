@@ -2386,7 +2386,7 @@ export function VisualCanvasWorkspace({
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
-  const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
+  const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('user_provider_account')
   const [selectedUserAccountId, setSelectedUserAccountId] = useState('')
   const [userProviderAccounts, setUserProviderAccounts] = useState<UserProviderAccount[]>([])
   const [userAccountsLoading, setUserAccountsLoading] = useState(false)
@@ -6583,9 +6583,9 @@ export function VisualCanvasWorkspace({
           const jobFallback = buildResultLabel(nodeSnapshot.title)
           if (!jobResult.success) {
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
-              handleNodePatch(nodeSnapshot.id, { status: nodeSnapshot.status ?? 'idle', errorMessage: undefined })
-              setCreditModal({ open: true, requiredCredits: jobResult.requiredCredits, availableCredits: jobResult.availableCredits })
-              setDialogError(null)
+              const byokMsg = '平台积分生成暂未对外开放。请切换至「我的 API 账户」并前往 /account/providers 添加你的 API Key。'
+              handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: byokMsg })
+              setDialogError(byokMsg)
               return
             }
             const errMsg = formatGenerateError(jobResult)
@@ -6674,9 +6674,9 @@ export function VisualCanvasWorkspace({
 
       if (!result.success) {
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
-          handleNodePatch(nodeSnapshot.id, { status: nodeSnapshot.status ?? 'idle', errorMessage: undefined })
-          setCreditModal({ open: true, requiredCredits: result.requiredCredits, availableCredits: result.availableCredits })
-          setDialogError(null)
+          const byokMsg = '平台积分生成暂未对外开放。请切换至「我的 API 账户」并前往 /account/providers 添加你的 API Key。'
+          handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: byokMsg })
+          setDialogError(byokMsg)
           return
         }
         const errMsg = formatGenerateError(result)
@@ -8958,17 +8958,17 @@ export function VisualCanvasWorkspace({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setBillingMode('platform_credits')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.09] text-white' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
-                >
-                  平台额度
-                </button>
-                <button
-                  type="button"
                   onClick={() => setBillingMode('user_provider_account')}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.1] text-violet-200' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
                 >
                   我的 API 账户
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingMode('platform_credits')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.09] text-white' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
+                >
+                  平台额度
                 </button>
               </div>
               {billingMode === 'platform_credits' && (

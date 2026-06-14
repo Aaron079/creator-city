@@ -516,26 +516,38 @@ export default function ProviderAccountsPage() {
           </div>
         </div>
 
+        {/* BYOK-first launch notice */}
+        <div className="mb-5 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-4 py-3.5">
+          <p className="text-xs font-semibold text-violet-300 mb-1">第一版默认使用你自己的 API Key（BYOK）</p>
+          <p className="text-xs text-white/45 leading-relaxed">
+            Creator City 会员费（¥100/月）是工作台与协作服务费，不包含第三方 AI API 调用成本。
+            生成图片、视频、文本时，平台直接使用你在此绑定的 API Key 调用对应 Provider，费用由你与服务商直接结算，Creator City 不代扣。
+          </p>
+          <p className="mt-1.5 text-[11px] text-white/30 leading-relaxed">
+            API Key 是 Provider 控制台生成的访问密钥（如 sk-xxx），不是你的网页登录账号密码。平台积分生成是未来 / 内部能力，第一版普通用户不默认使用。
+          </p>
+        </div>
+
         {/* Billing model info card */}
         <div className="mb-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-white/35 mb-3">账单模式</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-white/15 bg-white/[0.05] text-white/50">当前默认</span>
-              </div>
-              <p className="text-xs font-semibold text-white/70 mb-1">平台额度</p>
-              <p className="text-xs text-white/40 leading-relaxed">
-                购买 Creator City 积分，由平台代付 API 调用费用。适合轻度用户，无需管理 API Key。
-              </p>
-            </div>
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3.5">
               <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/[0.08] text-violet-300">此页面功能</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/[0.08] text-violet-300">第一版默认</span>
               </div>
               <p className="text-xs font-semibold text-violet-300 mb-1">我的 API 账户（BYOK）</p>
               <p className="text-xs text-white/40 leading-relaxed">
-                接入自己的 Provider API Key，API 费用由你直接支付给服务商，Creator City 不代扣。
+                接入自己的 Provider API Key，API 费用由你直接支付给服务商，Creator City 不代扣。会员费不包含第三方 AI API 调用成本。
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-white/15 bg-white/[0.05] text-white/30">内部 / 未来</span>
+              </div>
+              <p className="text-xs font-semibold text-white/50 mb-1">平台额度</p>
+              <p className="text-xs text-white/30 leading-relaxed">
+                平台代付 API 调用费用。第一版普通用户不默认使用此模式，积分充值暂未对外开放。
               </p>
             </div>
             <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[0.03] p-3.5">
