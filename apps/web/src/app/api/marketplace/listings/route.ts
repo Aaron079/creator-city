@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { isDbConnectionError } from '@/lib/db-error'
+import { membershipGateResponse } from '@/lib/membership/server'
 import { AssetListingStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -119,6 +120,9 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
     if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+
+    const membershipGate = membershipGateResponse(user)
+    if (membershipGate) return membershipGate
 
     let body: PostBody
     try {

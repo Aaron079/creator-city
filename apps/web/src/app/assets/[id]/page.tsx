@@ -14,6 +14,7 @@ import {
   type MarketplaceIntent,
   type MarketplaceIntentLicense,
 } from '@/lib/assets/marketplace-intent'
+import { MembershipRequiredNotice } from '@/components/membership/MembershipRequiredNotice'
 
 const REFUND_REQUEST_ENABLED = process.env.NEXT_PUBLIC_MARKETPLACE_REFUND_REQUEST_ENABLED === 'true'
 
@@ -752,6 +753,7 @@ function AssetListingSection({
   listing,
   grantCount,
   pendingOrders,
+  membershipActive,
   onListingChange,
   onOrderRejected,
   onOrderQuoted,
@@ -764,6 +766,7 @@ function AssetListingSection({
   listing: AssetListing | null
   grantCount: number | null
   pendingOrders: PendingOrderItem[]
+  membershipActive: boolean
   onListingChange: (l: AssetListing | null) => void
   onOrderRejected: (orderId: string) => void
   onOrderQuoted: (orderId: string) => void
@@ -831,6 +834,8 @@ function AssetListingSection({
         return fallback ?? '该资产已有进行中的 Listing，请先归档后再创建。'
       case 'UNAUTHORIZED':
         return '请先登录后再操作。'
+      case 'MEMBERSHIP_REQUIRED':
+        return '该功能需要 Creator City 会员。请前往会员中心开通后使用。'
       case 'SERVICE_UNAVAILABLE':
         return '服务暂时不可用，请稍后重试。'
       default:
@@ -934,7 +939,9 @@ function AssetListingSection({
             📋 发布意向已登记，可升级为正式 Listing。
           </div>
         ) : null}
-        {canCreateListing
+        {!membershipActive ? (
+          <MembershipRequiredNotice feature="上架 Marketplace" />
+        ) : canCreateListing
           ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' })
           : (
             <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.04)', border: '1px solid rgba(251,191,36,0.10)', fontSize: 11, color: 'rgba(251,191,36,0.55)', lineHeight: 1.6 }}>
@@ -963,7 +970,9 @@ function AssetListingSection({
         </div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6, marginBottom: 10 }}>已归档的 Listing 不可恢复。如需重新上架，请创建新 Listing。</div>
         <PreConditionChecklist />
-        {canCreateListing
+        {!membershipActive ? (
+          <MembershipRequiredNotice feature="上架 Marketplace" />
+        ) : canCreateListing
           ? btn('create', () => { void runAction('create', () => apiPost('/api/marketplace/listings', { assetId })) }, { border: '1px solid rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.5)' })
           : null}
         {actionError ? (
@@ -1196,16 +1205,25 @@ function AssetListingSection({
       )}
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        {listing.status === 'DRAFT' ? btn('激活上架', () => { void runAction('激活上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
-        {listing.status === 'ACTIVE' ? btn('暂停', () => { void runAction('暂停', () => apiPatch(listing.id, { status: 'PAUSED' })) }) : null}
-        {listing.status === 'PAUSED' ? btn('重新上架', () => { void runAction('重新上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
-        {btn('归档', () => { void runAction('归档', () => apiPatch(listing.id, { status: 'ARCHIVED' })) }, { border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.55)' })}
-        {/* Purchase always disabled */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', fontSize: 11, color: 'rgba(255,255,255,0.15)', cursor: 'not-allowed', userSelect: 'none' }}>
-          申请授权 · 即将开放
-        </span>
-      </div>
+      {!membershipActive && (listing.status === 'DRAFT' || listing.status === 'PAUSED') ? (
+        <div style={{ marginBottom: 8 }}>
+          <MembershipRequiredNotice feature={listing.status === 'DRAFT' ? '激活上架' : '重新上架'} />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {btn('归档', () => { void runAction('归档', () => apiPatch(listing.id, { status: 'ARCHIVED' })) }, { border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.55)' })}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {listing.status === 'DRAFT' ? btn('激活上架', () => { void runAction('激活上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
+          {listing.status === 'ACTIVE' ? btn('暂停', () => { void runAction('暂停', () => apiPatch(listing.id, { status: 'PAUSED' })) }) : null}
+          {listing.status === 'PAUSED' ? btn('重新上架', () => { void runAction('重新上架', () => apiPatch(listing.id, { status: 'ACTIVE' })) }, { border: '1px solid rgba(110,231,183,0.3)', background: 'rgba(110,231,183,0.08)', color: '#6ee7b7' }) : null}
+          {btn('归档', () => { void runAction('归档', () => apiPatch(listing.id, { status: 'ARCHIVED' })) }, { border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.55)' })}
+          {/* Purchase always disabled */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)', fontSize: 11, color: 'rgba(255,255,255,0.15)', cursor: 'not-allowed', userSelect: 'none' }}>
+            申请授权 · 即将开放
+          </span>
+        </div>
+      )}
 
       {actionError ? (
         <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', fontSize: 11, color: 'rgba(248,113,113,0.85)', lineHeight: 1.6, marginBottom: 6 }}>
@@ -1237,6 +1255,7 @@ export default function AssetDetailPage() {
   const [togglingPublic, setTogglingPublic] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [listing, setListing] = useState<AssetListing | null>(null)
+  const [membershipActive, setMembershipActive] = useState(false)
   const [grantCount, setGrantCount] = useState<number | null>(null)
   const [myGrant, setMyGrant] = useState<LicenseGrant | null>(null)
   const [myOrder, setMyOrder] = useState<MarketplaceOrder | null>(null)
@@ -1261,6 +1280,14 @@ export default function AssetDetailPage() {
       const loadedAsset = data.asset ?? null
       setAsset(loadedAsset)
       if (loadedAsset?.isOwner) {
+        // Fetch current user's membership status for listing gate UI
+        try {
+          const mr = await fetch('/api/auth/me', { credentials: 'include' })
+          const md = await mr.json() as { user?: { membershipActive?: boolean; role?: string } }
+          setMembershipActive(md.user?.role === 'ADMIN' || (md.user?.membershipActive ?? false))
+        } catch {
+          setMembershipActive(false)
+        }
         try {
           const lr = await fetch(`/api/marketplace/listings?assetId=${assetId}&mine=true`, { credentials: 'include' })
           const ld = await lr.json() as { listing?: AssetListing | null; grantCount?: number }
@@ -1609,6 +1636,7 @@ export default function AssetDetailPage() {
                     listing={listing}
                     grantCount={grantCount}
                     pendingOrders={pendingOrders}
+                    membershipActive={membershipActive}
                     onListingChange={setListing}
                     onOrderRejected={(id) => setPendingOrders((prev) => prev.filter((o) => o.id !== id))}
                     onOrderQuoted={(id) => setPendingOrders((prev) => prev.map((o) => o.id === id ? { ...o, status: 'QUOTED' } : o))}

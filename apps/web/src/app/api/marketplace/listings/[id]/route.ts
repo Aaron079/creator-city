@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
 import { isDbConnectionError } from '@/lib/db-error'
+import { membershipGateResponse } from '@/lib/membership/server'
 import { AssetListingStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -86,6 +87,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
 
       if (next === 'ACTIVE') {
+        const membershipGate = membershipGateResponse(user)
+        if (membershipGate) return membershipGate
         // Re-validate asset conditions
         if (listing.asset.ownerId !== user.id) return jsonError('FORBIDDEN', '资产所有权已变更。', 403)
         if (!listing.asset.isPublic) return jsonError('ASSET_NOT_PUBLIC', '资产必须是公开状态才能上架。', 400)

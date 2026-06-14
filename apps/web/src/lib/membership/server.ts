@@ -4,9 +4,28 @@
  * Does NOT touch PaymentOrder / CreditLedger / UserCreditWallet.
  */
 
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { jsonError } from '@/lib/api/json-response'
 import { MembershipStatus, MembershipOrderStatus } from '@prisma/client'
 import type { UserMembership } from '@prisma/client'
+
+// ── membershipGateResponse ────────────────────────────────────────────────────
+// Returns NextResponse (403/401) if user is not a member, null if allowed.
+// Accepts a minimal structural type to avoid importing CurrentUser.
+
+type MembershipGateUser = { role?: string | null; membershipActive?: boolean | null } | null
+
+export function membershipGateResponse(user: MembershipGateUser): NextResponse | null {
+  if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+  if (user.role === 'ADMIN') return null
+  if (user.membershipActive) return null
+  return jsonError(
+    'MEMBERSHIP_REQUIRED',
+    '该功能需要 Creator City 会员。请前往会员中心开通 ¥100/月会员后使用。',
+    403,
+  )
+}
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
