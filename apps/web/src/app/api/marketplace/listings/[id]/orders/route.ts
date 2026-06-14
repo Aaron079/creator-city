@@ -39,6 +39,15 @@ export async function POST(_request: NextRequest, { params }: RouteContext) {
     if (listing.priceCredits === 0) {
       return jsonError('FREE_LISTING_USE_GRANT', '免费资产请使用免费领取授权。', 400)
     }
+
+    // Feature flag: paid authorization flow is disabled for first launch
+    if (process.env.MARKETPLACE_CREDITS_PAYMENT_ENABLED !== 'true') {
+      return jsonError(
+        'FEATURE_DISABLED',
+        '平台积分支付功能第一版暂未开放，授权合作请直接联系创作者。',
+        503,
+      )
+    }
     if (listing.sellerId === user.id) {
       return jsonError('CANNOT_ORDER_OWN_LISTING', '不能申请自己上架的资产授权。', 400)
     }

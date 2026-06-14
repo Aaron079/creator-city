@@ -10,7 +10,7 @@ import { marketplaceRules, safetyTips, quickLinks } from '@/components/marketpla
 
 export const metadata = {
   title: '创作者市场 | Creator City',
-  description: '公开可复用资产展示与市场意向登记 — 购买授权功能规划中',
+  description: '创作者资产展示与授权意向登记 — 会员可直接联系创作者沟通授权合作',
 }
 
 const glassPanel = {
@@ -46,7 +46,7 @@ export default function MarketplacePage() {
       >
         <CommunitySectionHeader
           districtZh="交易市场"
-          desc="公开可复用资产展示与市场意向登记。"
+          desc="创作者资产展示 · 会员授权合作意向登记。"
           activeHref="/marketplace"
         />
 
@@ -102,10 +102,10 @@ export default function MarketplacePage() {
                   color: 'rgba(255,255,255,0.54)',
                 }}
               >
-                当前为公开可复用资产展示。
+                创作者资产展示与授权意向登记。
                 <br />
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.30)' }}>
-                  购买授权、定价、收益分成将在后续 Marketplace 阶段接入。所有交易功能当前不可用。
+                  第一版不开放平台内积分支付，如需授权合作请直接联系创作者。Creator City 会员可查看创作者联系方式并提交合作意向。
                 </span>
               </p>
             </div>
@@ -125,7 +125,7 @@ export default function MarketplacePage() {
                 flexShrink: 0,
               }}
             >
-              仅展示 · 不可交易
+              展示 · 意向登记 · 会员合作
             </span>
           </div>
 

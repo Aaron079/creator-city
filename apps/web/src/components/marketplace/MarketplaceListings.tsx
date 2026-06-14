@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 
+// First-launch feature flag: platform credit payment is disabled
+const CREDITS_PAYMENT_ENABLED = process.env.NEXT_PUBLIC_MARKETPLACE_CREDITS_PAYMENT_ENABLED === 'true'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ListingItem {
@@ -306,10 +309,10 @@ function ListingCard({
                 display: 'block',
               }}
             >
-              卖家已确认报价 · 去支付
+              {CREDITS_PAYMENT_ENABLED ? '卖家已确认报价 · 去支付' : '卖家已响应 · 查看详情'}
             </Link>
             <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.28)', userSelect: 'none' }}>
-              尚未扣款，点击资产页面完成支付。
+              {CREDITS_PAYMENT_ENABLED ? '尚未扣款，点击资产页面完成支付。' : '请通过创作者主页联系沟通授权方式。'}
             </span>
           </div>
         )
@@ -331,6 +334,29 @@ function ListingCard({
           >
             提交失败，请重试
           </span>
+        )
+      }
+
+      if (!CREDITS_PAYMENT_ENABLED) {
+        return (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span
+              style={{
+                textAlign: 'center',
+                fontSize: 12,
+                padding: '7px 0',
+                borderRadius: 10,
+                border: '1px solid rgba(251,191,36,0.2)',
+                color: 'rgba(251,191,36,0.7)',
+                userSelect: 'none',
+              }}
+            >
+              申请授权合作
+            </span>
+            <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.25)', userSelect: 'none', lineHeight: 1.5 }}>
+              第一版暂不支持平台内积分支付，请联系创作者沟通授权。
+            </span>
+          </div>
         )
       }
 

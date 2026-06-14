@@ -31,6 +31,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     // 'pay' has its own flow (requires QUOTED, not PENDING)
     if (action === 'pay') {
+      // Feature flag: credit settlement is disabled for first launch
+      if (process.env.MARKETPLACE_CREDITS_PAYMENT_ENABLED !== 'true') {
+        return jsonError('FEATURE_DISABLED', '积分结算功能第一版暂未开放。', 503)
+      }
       try {
         const result = await settleMarketplaceOrder(params.id, user.id)
         const order = result.order!

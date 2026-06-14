@@ -260,6 +260,14 @@ export default function AccountCreditsPage() {
           ) : null}
         </div>
 
+        {/* Membership-first launch notice */}
+        <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3.5 text-[11px] text-white/50 leading-relaxed space-y-1.5">
+          <p className="text-violet-300/80 font-semibold text-xs">Creator City 第一版 · 会员订阅模式</p>
+          <p>第一版以 <span className="text-violet-300/70 font-medium">会员订阅</span> 为主，平台积分充值功能暂未面向所有用户开放。如需使用平台代付 AI 生成，请联系我们升级为会员（100 CNY/月）。</p>
+          <p>会员也可以绑定 <Link href="/account/providers" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">自己的 API 账户（BYOK）</Link>，API 费用由你直接支付给服务商，不经过平台积分。</p>
+          <p><span className="text-white/25">市场交易积分结算</span>（授权购买）当前不开放，如有授权合作需求请直接联系创作者。</p>
+        </div>
+
         <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5 text-[11px] text-white/35 leading-relaxed space-y-1">
           <p>此页面显示 <span className="text-white/55 font-medium">平台额度</span> 的余额与流水——Creator City 代付 AI 模型 API 调用，消耗你充值的积分。</p>
           <p>使用 <span className="text-violet-300/60 font-medium">我的 API 账户</span> 生成时，API 费用由你直接支付给服务商，不经过平台积分，也不显示在此页面。</p>

@@ -18,6 +18,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const user = await getCurrentUser()
     if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
 
+    // Feature flag: refund request submission is disabled for first launch
+    if (process.env.MARKETPLACE_REFUND_REQUEST_ENABLED !== 'true') {
+      return jsonError('FEATURE_DISABLED', '退款申请功能第一版暂未开放。', 503)
+    }
+
     let body: { reason?: string } = {}
     try { body = await request.json() } catch { /* no body */ }
 
