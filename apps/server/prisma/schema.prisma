@@ -264,6 +264,8 @@ model User {
   marketplaceOrdersSold     MarketplaceOrder[]          @relation("MarketplaceOrderSeller")
   refundRequestsMade        MarketplaceRefundRequest[]  @relation("RefundRequestBuyer")
   refundRequestsReceived    MarketplaceRefundRequest[]  @relation("RefundRequestSeller")
+  membership                UserMembership?
+  membershipOrders          MembershipOrder[]
 
   @@index([username])
   @@index([email])
@@ -1518,6 +1520,58 @@ model MarketplaceRefundRequest {
 
   @@index([buyerId])
   @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMBERSHIP — P1-4B: 100 CNY/month membership subscription
+// No PaymentOrder reuse. No CreditLedger. No wallet changes.
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum MembershipStatus {
+  INACTIVE
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+enum MembershipOrderStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model UserMembership {
+  id            String           @id @default(uuid())
+  userId        String           @unique
+  user          User             @relation(fields: [userId], references: [id])
+  status        MembershipStatus @default(INACTIVE)
+  planCode      String           @default("pro_monthly_cny100")
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  sourceOrderId String?
+  adminNote     String?          @db.Text
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model MembershipOrder {
+  id           String                @id @default(uuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id])
+  planCode     String                @default("pro_monthly_cny100")
+  amountCny    Int                   @default(10000)
+  periodMonths Int                   @default(1)
+  status       MembershipOrderStatus @default(PENDING)
+  voucherNote  String?               @db.Text
+  adminUserId  String?
+  adminNote    String?               @db.Text
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([userId])
   @@index([status])
   @@index([createdAt])
 }
