@@ -392,6 +392,82 @@ export async function register() {
 
       console.log('[startup] UserMembership + MembershipOrder migration applied')
     }
+
+    // ── P1-4D: MarketplaceInquiry ─────────────────────────────────────────────
+    const inquiryCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'MarketplaceInquiry'
+      ) AS exists
+    `
+    if (!inquiryCheck[0]?.exists) {
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          CREATE TYPE "MarketplaceInquiryStatus" AS ENUM ('PENDING', 'RESPONDED', 'REJECTED', 'CLOSED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "MarketplaceInquiry" (
+          "id"          TEXT                       NOT NULL,
+          "listingId"   TEXT                       NOT NULL,
+          "assetId"     TEXT                       NOT NULL,
+          "buyerId"     TEXT                       NOT NULL,
+          "sellerId"    TEXT                       NOT NULL,
+          "status"      "MarketplaceInquiryStatus" NOT NULL DEFAULT 'PENDING',
+          "message"     TEXT,
+          "sellerNote"  TEXT,
+          "createdAt"   TIMESTAMP(3)               NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt"   TIMESTAMP(3)               NOT NULL,
+          "respondedAt" TIMESTAMP(3),
+          "closedAt"    TIMESTAMP(3),
+          CONSTRAINT "MarketplaceInquiry_pkey" PRIMARY KEY ("id")
+        )
+      `)
+
+      await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "MarketplaceInquiry_listingId_buyerId_key" ON "MarketplaceInquiry"("listingId", "buyerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_listingId_idx"  ON "MarketplaceInquiry"("listingId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_assetId_idx"    ON "MarketplaceInquiry"("assetId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_buyerId_idx"    ON "MarketplaceInquiry"("buyerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_sellerId_idx"   ON "MarketplaceInquiry"("sellerId")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_status_idx"     ON "MarketplaceInquiry"("status")`)
+      await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarketplaceInquiry_createdAt_idx"  ON "MarketplaceInquiry"("createdAt")`)
+
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceInquiry" ADD CONSTRAINT "MarketplaceInquiry_listingId_fkey"
+            FOREIGN KEY ("listingId") REFERENCES "AssetListing"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceInquiry" ADD CONSTRAINT "MarketplaceInquiry_assetId_fkey"
+            FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceInquiry" ADD CONSTRAINT "MarketplaceInquiry_buyerId_fkey"
+            FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      await db.$executeRawUnsafe(`
+        DO $$ BEGIN
+          ALTER TABLE "MarketplaceInquiry" ADD CONSTRAINT "MarketplaceInquiry_sellerId_fkey"
+            FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+
+      console.log('[startup] MarketplaceInquiry migration applied')
+    }
   } catch (err) {
     // Never crash the server due to migration errors — log and continue.
     console.error('[startup] migration check failed:', err)

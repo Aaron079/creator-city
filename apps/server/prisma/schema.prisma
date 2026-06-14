@@ -266,6 +266,8 @@ model User {
   refundRequestsReceived    MarketplaceRefundRequest[]  @relation("RefundRequestSeller")
   membership                UserMembership?
   membershipOrders          MembershipOrder[]
+  marketplaceInquiriesBought MarketplaceInquiry[] @relation("MarketplaceInquiryBuyer")
+  marketplaceInquiriesSold   MarketplaceInquiry[] @relation("MarketplaceInquirySeller")
 
   @@index([username])
   @@index([email])
@@ -632,8 +634,9 @@ model Asset {
   deliveryItems DeliveryItem[]
   listings          AssetListing[]
   licenseGrants     LicenseGrant[]
-  marketplaceOrders MarketplaceOrder[]
-  refundRequests    MarketplaceRefundRequest[]
+  marketplaceOrders    MarketplaceOrder[]
+  refundRequests       MarketplaceRefundRequest[]
+  marketplaceInquiries MarketplaceInquiry[]
 
   @@index([ownerId])
   @@index([projectId])
@@ -1385,6 +1388,7 @@ model AssetListing {
   seller User  @relation("AssetListingSeller", fields: [sellerId], references: [id])
   grants            LicenseGrant[]
   marketplaceOrders MarketplaceOrder[]
+  inquiries         MarketplaceInquiry[]
 
   @@index([assetId])
   @@index([sellerId])
@@ -1518,6 +1522,49 @@ model MarketplaceRefundRequest {
   seller User             @relation("RefundRequestSeller", fields: [sellerId], references: [id])
   asset  Asset            @relation(fields: [assetId],     references: [id])
 
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETPLACE — P1-4D MarketplaceInquiry (contact intent, no payment)
+// Replaces paid order flow for first launch. No wallet, no LicenseGrant, no settlement.
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum MarketplaceInquiryStatus {
+  PENDING
+  RESPONDED
+  REJECTED
+  CLOSED
+}
+
+model MarketplaceInquiry {
+  id          String                   @id @default(uuid())
+  listingId   String
+  assetId     String
+  buyerId     String
+  sellerId    String
+
+  status      MarketplaceInquiryStatus @default(PENDING)
+
+  message     String?                  @db.Text
+  sellerNote  String?                  @db.Text
+
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  respondedAt DateTime?
+  closedAt    DateTime?
+
+  listing  AssetListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  asset    Asset        @relation(fields: [assetId],   references: [id])
+  buyer    User         @relation("MarketplaceInquiryBuyer",  fields: [buyerId],  references: [id])
+  seller   User         @relation("MarketplaceInquirySeller", fields: [sellerId], references: [id])
+
+  @@unique([listingId, buyerId])
+  @@index([listingId])
+  @@index([assetId])
   @@index([buyerId])
   @@index([sellerId])
   @@index([status])
