@@ -393,7 +393,7 @@ export default function AccountCreditsPage() {
               <p className="text-xs text-white/55 font-medium">推荐使用方式</p>
               <div className="text-xs text-white/40 space-y-1.5 leading-relaxed">
                 <p>• <Link href="/account/providers" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">绑定自己的 Provider API Key（BYOK）</Link>，AI 生成费用由你直接支付给服务商，不经过平台积分。</p>
-                <p>• 如需使用平台代付 AI 生成（消耗平台积分），请联系管理员开通会员。会员可获得平台分配额度，无需自行充值。</p>
+                <p>• <Link href="/account/membership" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">开通会员（¥100/月）</Link>，享受平台创作工作台访问权益，会员费为平台服务费，不含 AI API 成本。</p>
                 <p className="text-white/25">• 平台积分充值入口将在后续阶段开放。</p>
               </div>
             </div>

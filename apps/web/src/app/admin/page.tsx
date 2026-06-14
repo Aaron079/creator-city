@@ -40,6 +40,7 @@ export default async function AdminIndexPage() {
 
   let pendingManualCount = 0
   let pendingRefundCount = 0
+  let pendingMembershipCount = 0
   if (user?.role === 'ADMIN') {
     try {
       pendingManualCount = await db.paymentOrder.count({
@@ -50,6 +51,13 @@ export default async function AdminIndexPage() {
     }
     try {
       pendingRefundCount = await db.marketplaceRefundRequest.count({
+        where: { status: 'PENDING' },
+      })
+    } catch {
+      // non-fatal
+    }
+    try {
+      pendingMembershipCount = await db.membershipOrder.count({
         where: { status: 'PENDING' },
       })
     } catch {
@@ -132,6 +140,13 @@ export default async function AdminIndexPage() {
               description="查看 Marketplace 订单、退款申请与执行状态。退款执行不可逆，请谨慎操作。"
               alertBadge={pendingRefundCount > 0 ? `待处理退款 ${pendingRefundCount}` : undefined}
               badge={pendingRefundCount === 0 ? 'Marketplace' : undefined}
+            />
+            <AdminCard
+              href="/admin/membership"
+              title="会员管理"
+              description="审核 100 元/月会员开通与续费申请。批准后自动开通/续期，不产生积分变动。"
+              alertBadge={pendingMembershipCount > 0 ? `待审核 ${pendingMembershipCount}` : undefined}
+              badge={pendingMembershipCount === 0 ? 'Membership' : undefined}
             />
           </div>
         </div>
