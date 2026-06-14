@@ -38,7 +38,7 @@ export async function getSession(token: string) {
     try {
       session = await db.session.findUnique({
         where: { tokenHash },
-        include: { user: { include: { profile: true } } },
+        include: { user: { include: { profile: true, membership: true } } },
       })
       lastErr = undefined
       break

@@ -1,5 +1,6 @@
 import { getSessionToken } from './cookies'
 import { getSession, hashToken } from './session'
+import { computeMembershipStatus } from '@/lib/membership/server'
 
 export interface CurrentUser {
   id: string
@@ -17,6 +18,11 @@ export interface CurrentUser {
     company: string | null
     websiteUrl: string | null
   } | null
+  // P1-4B-2: membership status (runtime-computed, cached for 90s with session)
+  membershipActive: boolean
+  membershipStatus: string
+  membershipExpiresAt: string | null
+  membershipPlanCode: string | null
 }
 
 // In-memory session cache to avoid redundant DB round-trips within the same
@@ -29,6 +35,7 @@ const sessionCache = new Map<string, { user: CurrentUser; expiresAt: number }>()
 function mapSessionToUser(session: Awaited<ReturnType<typeof getSession>>): CurrentUser | null {
   if (!session) return null
   const { user } = session
+  const ms = computeMembershipStatus(user.membership ?? null)
   return {
     id: user.id,
     email: user.email,
@@ -47,6 +54,10 @@ function mapSessionToUser(session: Awaited<ReturnType<typeof getSession>>): Curr
           websiteUrl: user.profile.websiteUrl ?? null,
         }
       : null,
+    membershipActive: ms.active,
+    membershipStatus: ms.status,
+    membershipExpiresAt: ms.expiresAt ? ms.expiresAt.toISOString() : null,
+    membershipPlanCode: ms.planCode,
   }
 }
 
