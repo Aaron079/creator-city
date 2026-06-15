@@ -1,6 +1,6 @@
 // Runs once on Next.js server startup (per cold-start instance).
-// Applies P0-4 (AssetListing) and P0-5 (LicenseGrant) migrations via raw SQL
-// so that prisma migrate deploy is never required at Vercel build time.
+// Applies incremental schema migrations via raw SQL so that
+// `prisma migrate deploy` is never required at Vercel build time.
 // All statements are idempotent (IF NOT EXISTS / DO…EXCEPTION).
 
 export async function register() {
@@ -9,16 +9,46 @@ export async function register() {
   try {
     const { db } = await import('@/lib/db')
 
-    // ── P0-4: AssetListing ──────────────────────────────────────────────────
-
-    const listingCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'AssetListing'
-      ) AS exists
+    // Single round-trip to check all migration state.
+    // Previously 7 separate SELECT EXISTS queries (serial, ~700 ms each under load).
+    // Now 1 query — 7× fewer DB calls on every cold start.
+    const stateRows = await db.$queryRaw<Array<{
+      has_asset_listing: boolean
+      has_license_grant: boolean
+      has_marketplace_order: boolean
+      has_refund_request: boolean
+      has_membership: boolean
+      has_inquiry: boolean
+      has_execution_note: boolean
+    }>>`
+      SELECT
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'AssetListing')             AS has_asset_listing,
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'LicenseGrant')             AS has_license_grant,
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'MarketplaceOrder')         AS has_marketplace_order,
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'MarketplaceRefundRequest') AS has_refund_request,
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'UserMembership')           AS has_membership,
+        EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'public' AND table_name = 'MarketplaceInquiry')       AS has_inquiry,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'MarketplaceRefundRequest' AND column_name = 'executionNote'
+        )                                                                                                                           AS has_execution_note
     `
+    // SELECT always returns exactly 1 row; fallback to all-false for type safety.
+    const state = stateRows[0] ?? {
+      has_asset_listing: false,
+      has_license_grant: false,
+      has_marketplace_order: false,
+      has_refund_request: false,
+      has_membership: false,
+      has_inquiry: false,
+      has_execution_note: false,
+    }
 
-    if (!listingCheck[0]?.exists) {
+    // In production (all migrations applied): all flags true → 0 additional DB calls.
+    console.log('[startup] migration state:', state)
+
+    // ── P0-4: AssetListing ──────────────────────────────────────────────────
+    if (!state.has_asset_listing) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "AssetListingStatus" AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED');
@@ -72,15 +102,7 @@ export async function register() {
     }
 
     // ── P0-5: LicenseGrant ──────────────────────────────────────────────────
-
-    const grantCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'LicenseGrant'
-      ) AS exists
-    `
-
-    if (!grantCheck[0]?.exists) {
+    if (!state.has_license_grant) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "LicenseGrantStatus" AS ENUM ('ACTIVE', 'REVOKED');
@@ -147,15 +169,7 @@ export async function register() {
     }
 
     // ── P0-6: MarketplaceOrder ──────────────────────────────────────────────
-
-    const orderCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'MarketplaceOrder'
-      ) AS exists
-    `
-
-    if (!orderCheck[0]?.exists) {
+    if (!state.has_marketplace_order) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "MarketplaceOrderStatus" AS ENUM ('PENDING', 'CANCELLED', 'REJECTED');
@@ -225,19 +239,12 @@ export async function register() {
     }
 
     // ── P0-9 / P1-0 / P1-2: incremental column + enum migrations ──────────
-    // ALTER TYPE ADD VALUE cannot run inside a transaction block; kept outside.
-    // Skip entire block on subsequent cold starts by checking for the last-added
-    // column (executionNote on MarketplaceRefundRequest). This saves ~14 sequential
-    // DB round-trips per cold start when all migrations have already been applied.
-    const incrementalMigrationApplied = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = 'MarketplaceRefundRequest'
-          AND column_name  = 'executionNote'
-      ) AS exists
-    `
-    if (!incrementalMigrationApplied[0]?.exists) {
+    // ALTER TYPE ADD VALUE cannot run inside a transaction block.
+    // Guarded by has_execution_note (last column added in this batch).
+    // In production: already applied → 0 extra queries.
+    if (!state.has_execution_note) {
+      // Only run ALTER TABLE on MarketplaceRefundRequest if the table exists
+      // (it may be created by the P1-1 block below if brand-new environment).
       await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'QUOTED'`)
       await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "quotedAt" TIMESTAMP(3)`)
       await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'COMPLETED'`)
@@ -250,21 +257,15 @@ export async function register() {
       await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTED'`)
       await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTION_FAILED'`)
       await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder"          ADD COLUMN IF NOT EXISTS "refundedAt"    TIMESTAMP(3)`)
-      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executedAt"   TIMESTAMP(3)`)
-      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executionNote" TEXT`)
+      if (state.has_refund_request) {
+        await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executedAt"   TIMESTAMP(3)`)
+        await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executionNote" TEXT`)
+      }
       console.log('[startup] incremental marketplace migrations applied (P0-9 / P1-0 / P1-2)')
-    } else {
-      console.log('[startup] incremental marketplace migrations already applied — skipped')
     }
 
     // ── P1-1: MarketplaceRefundRequest ─────────────────────────────────────
-    const refundReqCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'MarketplaceRefundRequest'
-      ) AS exists
-    `
-    if (!refundReqCheck[0]?.exists) {
+    if (!state.has_refund_request) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "MarketplaceRefundRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED');
@@ -323,14 +324,7 @@ export async function register() {
     }
 
     // ── P1-4B: UserMembership + MembershipOrder ─────────────────────────────
-    const membershipCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'UserMembership'
-      ) AS exists
-    `
-
-    if (!membershipCheck[0]?.exists) {
+    if (!state.has_membership) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "MembershipStatus" AS ENUM ('INACTIVE', 'ACTIVE', 'EXPIRED', 'SUSPENDED');
@@ -403,13 +397,7 @@ export async function register() {
     }
 
     // ── P1-4D: MarketplaceInquiry ─────────────────────────────────────────────
-    const inquiryCheck = await db.$queryRaw<Array<{ exists: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'MarketplaceInquiry'
-      ) AS exists
-    `
-    if (!inquiryCheck[0]?.exists) {
+    if (!state.has_inquiry) {
       await db.$executeRawUnsafe(`
         DO $$ BEGIN
           CREATE TYPE "MarketplaceInquiryStatus" AS ENUM ('PENDING', 'RESPONDED', 'REJECTED', 'CLOSED');
@@ -477,6 +465,7 @@ export async function register() {
 
       console.log('[startup] MarketplaceInquiry migration applied')
     }
+
   } catch (err) {
     // Never crash the server due to migration errors — log and continue.
     console.error('[startup] migration check failed:', err)
