@@ -24,7 +24,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
-  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker') => void
+  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
 }
 
@@ -211,6 +211,23 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🔍</span>
                     <span>连贯性检查器</span>
+                  </button>
+                  <div className="mx-3 my-1 border-t border-white/[0.06]" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('character-bible') }}
+                  >
+                    <span className="text-[13px]">👤</span>
+                    <span>角色圣经</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('scene-bible') }}
+                  >
+                    <span className="text-[13px]">🏞</span>
+                    <span>场景圣经</span>
                   </button>
                 </motion.div>
               ) : null}

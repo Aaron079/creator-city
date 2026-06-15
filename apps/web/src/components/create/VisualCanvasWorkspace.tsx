@@ -27,6 +27,8 @@ import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
+import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
+import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
 import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
@@ -2380,6 +2382,8 @@ export function VisualCanvasWorkspace({
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
+  const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
+  const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
@@ -7877,6 +7881,8 @@ export function VisualCanvasWorkspace({
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
             setIsContinuityCheckerOpen(tool === 'continuity-checker')
             if (tool === 'camera-lexicon') setIsLexiconOpen(true)
+            if (tool === 'character-bible') setIsCharacterBibleOpen(true)
+            if (tool === 'scene-bible') setIsSceneBibleOpen(true)
           }}
           onOpenPromptTool={(tool) => {
             setIsPromptBoosterOpen(tool === 'prompt-booster')
@@ -8097,6 +8103,24 @@ export function VisualCanvasWorkspace({
             onClose={() => setIsContinuityCheckerOpen(false)}
           />
         </>
+      ) : null}
+
+      {saveStatus !== 'opening' ? (
+        <CharacterBiblePanel
+          open={isCharacterBibleOpen}
+          bible={characterBible}
+          onClose={() => setIsCharacterBibleOpen(false)}
+          onSave={persistCharacterBibleSettings}
+        />
+      ) : null}
+
+      {saveStatus !== 'opening' ? (
+        <SceneBiblePanel
+          open={isSceneBibleOpen}
+          bible={sceneBible}
+          onClose={() => setIsSceneBibleOpen(false)}
+          onSave={persistSceneBibleSettings}
+        />
       ) : null}
 
       {isPromptBoosterOpen && saveStatus !== 'opening' ? (
