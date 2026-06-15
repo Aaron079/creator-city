@@ -315,9 +315,9 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   let _deadlineId: ReturnType<typeof setTimeout> | null = null
   const deadlinePromise = new Promise<Response>((resolve) => {
     _deadlineId = setTimeout(() => {
-      console.warn('[canvas-api] 55 s hard deadline fired — DB likely blocked', { projectId: params.projectId })
+      console.warn('[canvas-api] 20 s hard deadline fired — DB likely blocked', { projectId: params.projectId })
       resolve(jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：服务器响应缓慢，画布已缓存在本地，请稍后重试。', 503))
-    }, 55_000)
+    }, 20_000)
   })
   try {
     return await Promise.race([putImpl(request, params), deadlinePromise])

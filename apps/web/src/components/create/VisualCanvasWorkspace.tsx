@@ -2992,10 +2992,15 @@ export function VisualCanvasWorkspace({
     flushLocalSnapshot()
     setSaveStatus('saving')
     setSaveMessage('')
-    // AbortController is kept only for unmount / project-switch, not for save-vs-save cancellation.
     const controller = new AbortController()
     saveAbortRef.current = controller
     let lastResponseStatus = 0
+    let fetchTimedOut = false
+    // 15 s per-request timeout — distinct from the unmount/project-switch abort.
+    // With pool_timeout=6 and 4 session retries, worst-case server auth is ~18 s;
+    // our server-side Promise.race fires at 20 s. 15 s here gives the server
+    // a chance to return 503 first before we abort client-side.
+    const fetchTimeoutId = window.setTimeout(() => { fetchTimedOut = true; controller.abort() }, 15_000)
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -3062,35 +3067,42 @@ export function VisualCanvasWorkspace({
       setSaveMessage('已保存')
       saveRetryAttemptRef.current = 0
     } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') return
-      // 503/504: block new saves for 10 s — avoids hammering an already-overloaded DB pool.
-      if (lastResponseStatus === 503 || lastResponseStatus === 504) {
-        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 10_000)
+      if ((error as { name?: string }).name === 'AbortError') {
+        if (!fetchTimedOut) return
+        // Fetch timed out at 15 s without a server response — treat like 503.
+        lastResponseStatus = 503
       }
-      // Network error (status 0: ERR_NETWORK_CHANGED, ERR_FAILED, fetch throw) — back off 5 s
-      // to prevent rapid-retry storm when the connection is unstable.
+      saveRetryAttemptRef.current += 1
+      const attempt = saveRetryAttemptRef.current
+      // Exponential backoff: 10s → 20s → 40s → 60s cap for server errors / timeouts.
+      if (lastResponseStatus === 503 || lastResponseStatus === 504) {
+        const backoffMs = Math.min(10_000 * Math.pow(2, attempt - 1), 60_000)
+        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + backoffMs)
+      }
+      // Network errors: 5s → 10s → 20s → 60s cap.
       if (lastResponseStatus === 0) {
-        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 5_000)
+        const backoffMs = Math.min(5_000 * Math.pow(2, attempt - 1), 60_000)
+        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + backoffMs)
       }
       flushLocalSnapshot()
       setSaveStatus('failed')
-      setSaveMessage(lastResponseStatus === 0
-        ? '网络连接不稳定，画布已保留在本地草稿中，稍后将自动重试。'
-        : '数据库连接繁忙，画布已保留在本地草稿中，稍后将自动重试。')
+      if (attempt >= 3) {
+        const waitSec = Math.round(Math.max(0, saveBackoffUntilRef.current - Date.now()) / 1000)
+        setSaveMessage(`已保存到本地草稿，服务器暂时不可用，${waitSec > 0 ? `${waitSec}秒后` : '稍后'}自动重试（第${attempt}次）。`)
+      } else {
+        setSaveMessage(lastResponseStatus === 0
+          ? '网络连接不稳定，画布已保留在本地草稿中，稍后将自动重试。'
+          : '画布已保留在本地草稿中，稍后将自动重试。')
+      }
     } finally {
+      window.clearTimeout(fetchTimeoutId)
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
-      // If a save was requested while we were in-flight, fire it now with the latest snapshot.
-      // After a 503/504 DB overload response, back off 10 s before the pending save fires to
-      // avoid a save storm while the connection pool is still saturated.
-      // After a network error (status 0), back off 5 s for the same reason.
       if (pendingSaveRef.current && !isSwitchingProjectRef.current) {
         pendingSaveRef.current = false
         if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
         setSaveStatus('dirty')
-        const pendingDelay = (lastResponseStatus === 503 || lastResponseStatus === 504) ? 10_000
-          : lastResponseStatus === 0 ? 5_000
-          : 300
+        const pendingDelay = Math.max(300, saveBackoffUntilRef.current - Date.now())
         saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, pendingDelay)
       }
     }

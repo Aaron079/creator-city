@@ -20,7 +20,7 @@ function buildDatabaseUrl(): string | undefined {
     // Still conservative — avoids exhausting Supabase's pgBouncer slot budget.
     if (!params.has('connection_limit')) params.set('connection_limit', '2')
     // Give the pooler more time to hand out a connection under DB load.
-    if (!params.has('pool_timeout')) params.set('pool_timeout', '25')
+    if (!params.has('pool_timeout')) params.set('pool_timeout', '6')
     if (!params.has('connect_timeout')) params.set('connect_timeout', '10')
     return url.toString()
   } catch {
