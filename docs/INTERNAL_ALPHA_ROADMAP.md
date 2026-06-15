@@ -1,8 +1,8 @@
 # Creator City — Internal Alpha Roadmap
 
-**Status:** READY_FOR_INTERNAL_ALPHA  
+**Status:** READY_FOR_FIRST_USERS  
 **Date:** 2026-06-16  
-**Decision:** External first-user trial postponed. Priority shifted to core canvas moat completion.
+**Decision:** P2-CANVAS-1..4 implemented. Exit criteria code-verified. State: READY_FOR_INTERNAL_ALPHA → READY_FOR_FIRST_USERS.
 
 ---
 
