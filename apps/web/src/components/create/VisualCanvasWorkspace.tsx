@@ -92,6 +92,7 @@ import canvasStyles from '@/components/create/canvas.module.css'
 import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
+import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -6182,7 +6183,8 @@ export function VisualCanvasWorkspace({
           .trim()
       : ''
     const rawPrompt = trimmedPrompt || upstreamTextPrompt
-    const generationPrompt = rawPrompt
+    const bibleContext = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
+    const generationPrompt = appendBibleContextToPrompt(rawPrompt, bibleContext)
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
         const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl
@@ -6758,7 +6760,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, billingMode, buildResultLabel, canvasPrompt, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, selectedUserAccountId, setDialogError, showCanvasFeedback, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, billingMode, buildResultLabel, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, sceneBible, selectedUserAccountId, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -8914,6 +8916,25 @@ export function VisualCanvasWorkspace({
               setIsBatchRewriterOpen(false)
             } : undefined}
           />
+          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && hasBibleContent({ characterBible, sceneBible, styleBible }) && (
+            <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
+              {characterBible.characters.filter((c) => c.name?.trim()).length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
+                  ✦ 角色设定 ×{characterBible.characters.filter((c) => c.name?.trim()).length}
+                </span>
+              )}
+              {sceneBible.scenes.filter((s) => s.name?.trim()).length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
+                  ✦ 场景设定 ×{sceneBible.scenes.filter((s) => s.name?.trim()).length}
+                </span>
+              )}
+              {hasBibleContent({ styleBible }) && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
+                  ✦ 风格设定
+                </span>
+              )}
+            </div>
+          )}
           {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
             <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-2">生成费用来源</p>
