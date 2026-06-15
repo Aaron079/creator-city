@@ -142,10 +142,13 @@ export default function AccountPage() {
             <span className="flex items-center gap-2"><span className="text-base">📊</span><span>生成用量</span></span>
             <span className="text-[11px] text-sky-300/30">查看平台额度与我的 API 生成记录</span>
           </Link>
-          <div className="flex flex-col gap-1 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3.5 text-sm text-white/30 cursor-default select-none">
-            <span className="flex items-center gap-2"><span className="text-base">★</span><span>订阅与套餐</span></span>
-            <span className="text-[11px] text-white/18">平台服务费 · 即将开放</span>
-          </div>
+          <Link
+            href="/account/membership"
+            className="flex flex-col gap-1 rounded-xl border border-amber-500/15 bg-amber-500/[0.03] px-4 py-3.5 text-sm text-amber-300/70 hover:border-amber-500/25 hover:text-amber-200 transition"
+          >
+            <span className="flex items-center gap-2"><span className="text-base">★</span><span>会员中心</span></span>
+            <span className="text-[11px] text-amber-300/35">¥100/月 · 开通或续费</span>
+          </Link>
         </div>
         <div className="mt-3 mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/30 leading-relaxed">
           <span><span className="text-white/40">◎ 平台额度</span>：购买积分，Creator City 代付 API 调用</span>

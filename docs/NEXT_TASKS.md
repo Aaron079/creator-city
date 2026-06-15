@@ -21,7 +21,10 @@ Update status here after each task completes.
 | P2-ADMIN | Admin operations hardening | DONE | P2 | IMPLEMENTATION | Admin dashboards, audit trails, admin action logs | Launch QA (P1-4E) | Audit report | IMPLEMENTED 2026-06-16: inquiry tab + user membership overview; commit 633954f |
 | P2-ADMIN-LATER | Admin audit / credit ledger visibility | LATER | P2 | AUDIT_ONLY | Admin credit ledger view, admin action audit log | P2-ADMIN DONE | Audit report | Post-launch lower priority; first launch disables credits payment |
 | P2-LAUNCH-READINESS | First launch readiness polish | DONE | P1 | IMPLEMENTATION | TopNavigation fixes: membership link, pricing route, preview badges; copy audit | P2-ADMIN DONE | type-check PASS · lint PASS · commit bf9d210 | 5 fixes: "商业模式"→/pricing; "会员中心" active link; search index; preview badges on 5 market items; docs/LAUNCH_READINESS.md |
+| P2-FIRST-USERS | First users trial preparation | DONE | P0 | IMPLEMENTATION | docs/FIRST_USERS_GUIDE.md · docs/ADMIN_SOP.md · docs/KNOWN_LIMITATIONS.md · /feedback static page · /help/api-keys BYOK copy fix · /account "会员中心" link · nav "提交反馈" entry | P2-LAUNCH-READINESS DONE | type-check PASS · lint PASS | READY_FOR_FIRST_USERS |
+| P2-FIRST-USERS-QA | First users trial smoke QA | TODO | P0 | QA_ONLY | Smoke QA: /pricing /account/membership /account/providers /create-v2 /marketplace /assets /admin /feedback /help/api-keys | P2-FIRST-USERS | All routes load, no dead links, no misleading copy | Run with first invited user session |
 | P2-BILLING | Automatic membership payment | LATER | P2 | AUDIT_ONLY | Alipay/WeChat/Stripe webhook integration, membership renewal automation | Manual membership stable (P1-4B) | Audit report | Not first launch; payment provider integration required |
+| P2-AUTO-REFUND | Automatic refund | LATER | P2 | AUDIT_ONLY | Refund webhook, membership cancel flow | P2-BILLING | Audit report | Not first launch |
 | P2-WEB3 | Web3 identity / on-chain | LATER | P2 | AUDIT_ONLY | Wallet integration, NFT, on-chain asset provenance | Marketplace stable | Audit report | Not first launch; requires wallet/chain infrastructure |
 
 ## Status Values
