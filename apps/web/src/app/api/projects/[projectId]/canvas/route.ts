@@ -347,6 +347,17 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   if (invalidNode) {
     return jsonError('VALIDATION_FAILED', 'Each node requires id and kind.', 400)
   }
+  // Reject oversized payloads before they hit the DB and burn the single pgBouncer connection.
+  const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10)
+  if (contentLength > 3_000_000) {
+    return jsonError('CANVAS_PAYLOAD_TOO_LARGE', `画布数据过大（${Math.round(contentLength / 1024)}KB），请精简节点内容后重试。`, 413)
+  }
+  if (body.nodes.length > 200) {
+    return jsonError('CANVAS_TOO_MANY_NODES', `节点数量超限（${body.nodes.length}），当前限制 200 个。`, 413)
+  }
+  // Soft deadline: return 503 before Vercel's 60 s hard timeout produces an unstructured 504.
+  const saveStart = Date.now()
+  const SAVE_DEADLINE_MS = 52_000
 
   let saveStage = 'project_access'
   try {
@@ -402,6 +413,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     const validNodes = (body.nodes ?? []).filter((node) => node.id && node.kind)
     const nodeResults: PromiseSettledResult<unknown>[] = []
     for (let batchStart = 0; batchStart < validNodes.length; batchStart += BATCH_SIZE) {
+      if (Date.now() - saveStart > SAVE_DEADLINE_MS) {
+        console.warn('[canvas-api] save deadline reached during node upserts, returning 503', {
+          projectId: params.projectId, completedBatch: batchStart, totalNodes: validNodes.length,
+        })
+        return jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：数据库响应缓慢，部分节点已暂存，请稍后重试。', 503)
+      }
       const batchResults = await Promise.allSettled(
         validNodes.slice(batchStart, batchStart + BATCH_SIZE).map((node) => {
         const providerId = node.providerId ?? node.model ?? null
@@ -488,6 +505,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       }
     })
 
+    if (Date.now() - saveStart > SAVE_DEADLINE_MS) {
+      console.warn('[canvas-api] save deadline reached before edge upserts, returning 503', {
+        projectId: params.projectId, totalNodes: validNodes.length,
+      })
+      return jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：节点已暂存，边将在下次保存时同步，请稍后重试。', 503)
+    }
     saveStage = 'edge_upserts'
     // Parallel edge upserts for the same reason.
     const failedEdgeIds: string[] = []

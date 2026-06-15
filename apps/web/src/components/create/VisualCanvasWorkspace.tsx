@@ -3067,20 +3067,30 @@ export function VisualCanvasWorkspace({
       if (lastResponseStatus === 503 || lastResponseStatus === 504) {
         saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 10_000)
       }
+      // Network error (status 0: ERR_NETWORK_CHANGED, ERR_FAILED, fetch throw) — back off 5 s
+      // to prevent rapid-retry storm when the connection is unstable.
+      if (lastResponseStatus === 0) {
+        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + 5_000)
+      }
       flushLocalSnapshot()
       setSaveStatus('failed')
-      setSaveMessage('数据库连接繁忙，画布已保留在本地草稿中。' )
+      setSaveMessage(lastResponseStatus === 0
+        ? '网络连接不稳定，画布已保留在本地草稿中，稍后将自动重试。'
+        : '数据库连接繁忙，画布已保留在本地草稿中，稍后将自动重试。')
     } finally {
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
       // If a save was requested while we were in-flight, fire it now with the latest snapshot.
       // After a 503/504 DB overload response, back off 10 s before the pending save fires to
       // avoid a save storm while the connection pool is still saturated.
+      // After a network error (status 0), back off 5 s for the same reason.
       if (pendingSaveRef.current && !isSwitchingProjectRef.current) {
         pendingSaveRef.current = false
         if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
         setSaveStatus('dirty')
-        const pendingDelay = (lastResponseStatus === 503 || lastResponseStatus === 504) ? 10_000 : 300
+        const pendingDelay = (lastResponseStatus === 503 || lastResponseStatus === 504) ? 10_000
+          : lastResponseStatus === 0 ? 5_000
+          : 300
         saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, pendingDelay)
       }
     }
@@ -3171,7 +3181,7 @@ export function VisualCanvasWorkspace({
     setSaveMessage('继续使用本地草稿，点击保存可覆盖服务器版本')
   }, [])
 
-  const scheduleCanvasSave = useCallback((delay = 800) => {
+  const scheduleCanvasSave = useCallback((delay = 2000) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
     const backoffRemaining = Math.max(0, saveBackoffUntilRef.current - Date.now())
     const effectiveDelay = Math.max(delay, backoffRemaining)
