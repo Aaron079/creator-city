@@ -3056,7 +3056,7 @@ export function VisualCanvasWorkspace({
       }
       if (data.skipped) {
         setSaveStatus('saved')
-        setSaveMessage(data.reason === 'EMPTY_NODES_IGNORED' ? '空画布保存已跳过' : '已保存')
+        setSaveMessage('已同步到云端')
         saveRetryAttemptRef.current = 0
         return
       }
@@ -3064,47 +3064,20 @@ export function VisualCanvasWorkspace({
       deletedEdgeIdsRef.current = []
       flushLocalSnapshot(data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString())
       setSaveStatus('saved')
-      setSaveMessage('已保存')
+      setSaveMessage('已同步到云端')
       saveRetryAttemptRef.current = 0
     } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') {
-        if (!fetchTimedOut) return
-        // Fetch timed out at 15 s without a server response — treat like 503.
-        lastResponseStatus = 503
-      }
-      saveRetryAttemptRef.current += 1
-      const attempt = saveRetryAttemptRef.current
-      // Exponential backoff: 10s → 20s → 40s → 60s cap for server errors / timeouts.
-      if (lastResponseStatus === 503 || lastResponseStatus === 504) {
-        const backoffMs = Math.min(10_000 * Math.pow(2, attempt - 1), 60_000)
-        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + backoffMs)
-      }
-      // Network errors: 5s → 10s → 20s → 60s cap.
-      if (lastResponseStatus === 0) {
-        const backoffMs = Math.min(5_000 * Math.pow(2, attempt - 1), 60_000)
-        saveBackoffUntilRef.current = Math.max(saveBackoffUntilRef.current, Date.now() + backoffMs)
-      }
+      if ((error as { name?: string }).name === 'AbortError' && !fetchTimedOut) return
       flushLocalSnapshot()
       setSaveStatus('failed')
-      if (attempt >= 3) {
-        const waitSec = Math.round(Math.max(0, saveBackoffUntilRef.current - Date.now()) / 1000)
-        setSaveMessage(`已保存到本地草稿，服务器暂时不可用，${waitSec > 0 ? `${waitSec}秒后` : '稍后'}自动重试（第${attempt}次）。`)
-      } else {
-        setSaveMessage(lastResponseStatus === 0
-          ? '网络连接不稳定，画布已保留在本地草稿中，稍后将自动重试。'
-          : '画布已保留在本地草稿中，稍后将自动重试。')
-      }
+      setSaveMessage(lastResponseStatus === 0
+        ? '网络不稳定，云端保存失败，本地草稿已保存。'
+        : '云端保存暂不可用，本地草稿已保存。')
     } finally {
       window.clearTimeout(fetchTimeoutId)
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
-      if (pendingSaveRef.current && !isSwitchingProjectRef.current) {
-        pendingSaveRef.current = false
-        if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
-        setSaveStatus('dirty')
-        const pendingDelay = Math.max(300, saveBackoffUntilRef.current - Date.now())
-        saveTimerRef.current = window.setTimeout(() => { void saveCanvas() }, pendingDelay)
-      }
+      pendingSaveRef.current = false
     }
   }, [getCanvasSnapshot, projectId, router, workflowId, flushLocalSnapshot])
 
@@ -3193,16 +3166,14 @@ export function VisualCanvasWorkspace({
     setSaveMessage('继续使用本地草稿，点击保存可覆盖服务器版本')
   }, [])
 
-  const scheduleCanvasSave = useCallback((delay = 2000) => {
+  const scheduleCanvasSave = useCallback((_delay?: number) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
-    const backoffRemaining = Math.max(0, saveBackoffUntilRef.current - Date.now())
-    const effectiveDelay = Math.max(delay, backoffRemaining)
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
-    setSaveStatus('dirty')
-    saveTimerRef.current = window.setTimeout(() => {
-      void saveCanvas()
-    }, effectiveDelay)
-  }, [projectId, saveCanvas, workflowId])
+    // Autosave is local-only — no automatic server PUT.
+    // Cloud sync only happens when user clicks "保存到云端".
+    flushLocalSnapshot()
+    setSaveStatus('local-draft')
+    setSaveMessage('本地草稿已保存')
+  }, [projectId, workflowId, flushLocalSnapshot])
 
   const handleManualSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -3497,44 +3468,8 @@ export function VisualCanvasWorkspace({
             syncedAt: localCandidate.value.syncedAt,
             serverUpdatedAt: localCandidate.value.serverUpdatedAt,
           })
-          setSaveStatus('restored-draft')
-          setSaveMessage(serverIsNewer ? '服务器版本更新，是否切换到服务器版本？' : '已恢复本地草稿，正在同步服务器...')
-          if (!serverIsNewer && (serverNodes.length === 0 || localIsNewer)) {
-            void fetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}/canvas`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({
-                workflowId: effectiveWorkflowId,
-                viewport: localCandidate.value.viewport,
-                nodes: localCandidate.value.nodes,
-                edges: localCandidate.value.edges,
-                deletedNodeIds: [],
-                deletedEdgeIds: [],
-              }),
-            }).then(async (syncResponse) => {
-              const raw = await syncResponse.text().catch(() => '')
-              const syncData = raw ? JSON.parse(raw) as { savedAt?: string; serverUpdatedAt?: string; message?: string; errorCode?: string } : {}
-              if (!syncResponse.ok) throw new Error(syncData.message ?? syncData.errorCode ?? '同步本地草稿失败。')
-              if (cancelled) return
-              const savedAt = syncData.serverUpdatedAt ?? syncData.savedAt ?? new Date().toISOString()
-              writeUnifiedLocalSnapshot({
-                projectId: resolvedProjectId,
-                workflowId: effectiveWorkflowId,
-                nodes: localCandidate.value.nodes,
-                edges: localCandidate.value.edges,
-                viewport: localCandidate.value.viewport,
-                syncedAt: savedAt,
-                serverUpdatedAt: savedAt,
-              })
-              setSaveStatus('saved')
-              setSaveMessage('本地草稿已同步')
-            }).catch((error: unknown) => {
-              if (cancelled) return
-              setSaveStatus('local-draft')
-              setSaveMessage(error instanceof Error ? `${error.message}；已保留本地草稿` : '已保留本地草稿')
-            })
-          }
+          setSaveStatus('local-draft')
+          setSaveMessage(serverIsNewer ? '服务器版本更新，是否切换到服务器版本？' : '检测到本地草稿，点击"保存到云端"可同步。')
         } else {
           setDraftRestorePrompt(null)
           setServerVersionPrompt(null)
@@ -7713,18 +7648,18 @@ export function VisualCanvasWorkspace({
           {/* Save status pill */}
           <button
             type="button"
-            className={`canvas-topbar-status-pill${saveStatus === 'saving' ? ' is-saving' : saveStatus === 'failed' ? ' is-error' : ' is-saved'}`}
-            title={saveMessage || '立即保存画布'}
+            className={`canvas-topbar-status-pill${saveStatus === 'saving' ? ' is-saving' : saveStatus === 'failed' ? ' is-error' : saveStatus === 'saved' ? ' is-saved' : ' is-local'}`}
+            title={saveMessage || '将本地草稿同步到云端'}
             disabled={saveStatus === 'opening' || saveStatus === 'saving' || !projectId}
             onClick={handleManualSave}
           >
             {saveStatus === 'saving'
-              ? '保存中...'
+              ? '同步中...'
               : saveStatus === 'saved'
-                ? '已保存'
+                ? '已同步到云端'
                 : saveStatus === 'failed'
-                  ? '保存失败，重试'
-                  : '保存'}
+                  ? '云端保存失败，重试'
+                  : '保存到云端'}
           </button>
 
           {/* Link share — direct primary action */}

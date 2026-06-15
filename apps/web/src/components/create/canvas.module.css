@@ -3833,6 +3833,17 @@
   color: rgba(255, 175, 155, 1);
 }
 
+.scope :global(.canvas-topbar-status-pill.is-local) {
+  border-color: rgba(100, 180, 255, 0.22);
+  color: rgba(140, 210, 255, 0.85);
+  pointer-events: auto;
+}
+
+.scope :global(.canvas-topbar-status-pill.is-local:hover) {
+  border-color: rgba(100, 200, 255, 0.40);
+  color: rgba(160, 225, 255, 1);
+}
+
 @keyframes createStatusPulse {
   0%, 100% { opacity: 0.9; }
   50% { opacity: 0.48; }
