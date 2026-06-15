@@ -1,6 +1,6 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-15 (P1-4D-5 Marketplace Inquiry QA — CLOSED)
+Last updated: 2026-06-15 (P1-4E Unified Launch QA — PARTIAL / BLOCKED_ON_ADMIN_MEMBER_SELLER_SESSION)
 Last valid commit: P1-4A follow-up IMPLEMENTED — Hide Credits Recharge CTA for First Launch（新增 PLATFORM_CREDITS_RECHARGE_ENABLED env var，默认 false；/account/credits 支付宝充值套餐卡片 + 申请人工充值表单 + 充值按钮 当 flag 为 false 时完全隐藏，替换为"积分充值暂未开放"提示 + BYOK 引导 + 联系管理员开通会员说明；余额展示 + 历史账本保留不变；/admin/credits 不受影响；不改 schema，不改 payment API，不改 wallet/ledger）
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
@@ -10,6 +10,8 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 
 | Task | Status | Commit |
 |---|---|---|
+| P1-4E Unified Launch QA | ⏳ PARTIAL / BLOCKED_ON_ADMIN_MEMBER_SELLER_SESSION | QA-only |
+| P1-4B-4-QA Membership Gating QA | ✅ VALIDATED / CLOSED | QA-only |
 | P1-4D-5 Marketplace Inquiry QA | ✅ CLOSED | QA-only |
 | P0-PROD-CANVAS-SAVE-DISABLE-AUTOSAVE-CLOUD | ⏳ WAITING_PRODUCTION_VALIDATION | `fe72f63` |
 | P0-PROD-CANVAS-SAVE-ARCHITECTURE-FIX (pool_timeout=6, 20s deadline) | ⏳ WAITING_PRODUCTION_VALIDATION | `9b53962` |
@@ -105,7 +107,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 | P1-4B-2 — Membership Service Layer | ✅ IMPLEMENTED / apps/web/src/lib/membership/server.ts · computeMembershipStatus（纯函数，无 DB）· getUserMembership（读 UserMembership + 计算 runtime 状态）· submitMembershipOrder（幂等：已有 PENDING 则返回现有）· updateMembershipOrderVoucher（只允许 PENDING order）· approveMembershipOrder（$transaction：order→APPROVED + upsert UserMembership：续期叠加 or 重置 + 幂等重复 approve 保护）· rejectMembershipOrder（$transaction：order→REJECTED）· session.ts 加 membership: true include（单次 join，随 90s 缓存）· CurrentUser 接口加 membershipActive/membershipStatus/membershipExpiresAt/membershipPlanCode · mapSessionToUser 调用 computeMembershipStatus · /api/auth/me 自动返回新字段 · 不改 schema · 不改 PaymentOrder · 不改 CreditLedger / UserCreditWallet · 不做 UI 页面 · 不接自动支付 · 下一步 P1-4B-3：API routes + /account/membership + /admin/membership | `15d0d5e` |
 | P1-4B-3 — Membership API + UI | ✅ IMPLEMENTED / GET /api/me/membership（状态+plan info）· POST /api/me/membership/orders（幂等提交，返回 PENDING or existing）· GET /api/me/membership/orders（最近 20 条）· PATCH /api/me/membership/orders/[id]（更新 PENDING voucherNote）· GET /api/admin/membership/orders（?status=PENDING/APPROVED/REJECTED/CANCELLED/ALL）· POST /api/admin/membership/orders/[id]/approve（调用 approveMembershipOrder，幂等）· POST /api/admin/membership/orders/[id]/reject（需 adminNote，不改 UserMembership）· /pricing（静态 ¥100/月说明：权益 + 不含 AI API 成本 + 开通流程）· /account/membership（用户端：状态/提交申请/查看订单/编辑 voucherNote）· /admin/membership（管理员端：approve/reject + window.confirm + adminNote + status filter）· /admin 首页加"会员管理"AdminCard + pendingMembershipCount alertBadge · /account/credits BYOK notice 加 /account/membership 入口链接 · 不改 PaymentOrder · 不写 CreditLedger · 不改 wallet · 不接自动支付 | `59b92cd` |
 | Agent Loop Foundation | ✅ IMPLEMENTED / docs/PROJECT_MEMORY.md · docs/BOUNDARIES.md · docs/NEXT_TASKS.md · docs/AGENT_LOOP.md · docs/QA_RUNBOOK.md · docs/AGENT_REPORT_TEMPLATE.md · docs/AGENT_MODES.md · scripts/agent-loop-check.mjs · package.json agent:check script · type-check PASS · lint PASS (pre-existing warnings only) · build PASS · 不改业务逻辑 · 不改 schema · 不改 payment/wallet/generate/provider/cn-executor · 不引入新依赖 · 不做后台进程 | `924493a` |
-| P1-4B-4 — Membership Basic Gating | ✅ IMPLEMENTED / WAITING_QA / membershipGateResponse(user) helper（lib/membership/server.ts）返回 NextResponse 403 MEMBERSHIP_REQUIRED 或 null · POST /api/marketplace/listings（创建 DRAFT 须会员）· PATCH /api/marketplace/listings/[id]（仅 status→ACTIVE 须会员，PAUSED/ARCHIVED 不门控）· MembershipRequiredNotice 组件（components/membership/）· /assets/[id] 非会员 owner 显示 MembershipRequiredNotice（创建/激活/重新上架位置）· ADMIN 用户完全 bypass · BYOK 生成不受影响 · GET listings 不受影响 · 免费授权 grant 不受影响 · 不改 schema · 不改 payment/wallet/ledger · 不改 generate routes · type-check PASS · lint PASS · build PASS | `2e45d5c` |
+| P1-4B-4 — Membership Basic Gating | ✅ IMPLEMENTED / QA VALIDATED / membershipGateResponse(user) helper（lib/membership/server.ts）返回 NextResponse 403 MEMBERSHIP_REQUIRED 或 null · POST /api/marketplace/listings（创建 DRAFT 须会员）· PATCH /api/marketplace/listings/[id]（仅 status→ACTIVE 须会员，PAUSED/ARCHIVED 不门控）· MembershipRequiredNotice 组件（components/membership/）· /assets/[id] 非会员 owner 显示 MembershipRequiredNotice（创建/激活/重新上架位置）· ADMIN 用户完全 bypass · BYOK 生成不受影响 · GET listings 不受影响 · 免费授权 grant 不受影响 · 不改 schema · 不改 payment/wallet/ledger · 不改 generate routes · type-check PASS · lint PASS · build PASS | `2e45d5c` |
 | P1-4C-1 — BYOK-first Generation UX Hotfix | ✅ IMPLEMENTED / default billingMode 改为 user_provider_account · provider selector 排序：我的 API 账户在前、平台额度在后 · INSUFFICIENT_CREDITS 不再打开充值 modal，改为 inline 错误提示引导 /account/providers · /account/providers 移除「当前默认」（平台额度），BYOK 卡片改为「第一版默认」，新增 BYOK-first launch notice banner · 不改 provider adapter · 不改 reserve/finalize/refund 签名 · 不改 schema/payment/wallet/ledger · type-check PASS · lint PASS · build PASS | `ee96b33` |
 | P1-4C-1-followup — Video Panel BYOK-first UX Fix | ✅ IMPLEMENTED / 根因：生成费用来源 section 只对 text/image 渲染，video 节点完全被排除 · 修复：条件扩展到 video · video+BYOK 模式：显示「视频生成 BYOK 即将开放」+ /account/providers CTA，generate 按钮 disabled · video+platform_credits 模式：显示「暂未对外开放」提示 · CanvasPromptBox credits pill：estimatedCredits 为 undefined 时不显示（删除 ?? 120/112 fallback） · video+BYOK 不传 estimatedCredits · 不改 provider adapter · 不改 reserve/finalize/refund · 不改 schema/payment/wallet/ledger · type-check PASS · lint PASS · build PASS | `7bd5b3e` |
 | P1-4D-1 — MarketplaceInquiry Schema Foundation | ✅ IMPLEMENTED / MarketplaceInquiryStatus enum（PENDING/RESPONDED/REJECTED/CLOSED）· MarketplaceInquiry model（id/listingId/assetId/buyerId/sellerId/status/message/sellerNote/createdAt/updatedAt/respondedAt/closedAt）· @@unique[listingId,buyerId] · User.marketplaceInquiriesBought+Sold · AssetListing.inquiries · Asset.marketplaceInquiries · migration 20260615000000_add_marketplace_inquiry · instrumentation.ts P1-4D 幂等 DDL block · prisma generate PASS · type-check PASS · lint PASS · build PASS · 不改 MarketplaceOrder/LicenseGrant/CreditLedger/UserCreditWallet · 不做 API/UI/service | `447843b` |
@@ -4348,3 +4350,62 @@ no subject replacement, no face change, no product redesign, no composition chan
 16. 左下 toast 显示"已创建人物参考草案节点，请在新节点中手动生成。"
 17. 左侧 CanvasToolDock 资产工具菜单也出现"👤 人物参考 / 四视图"入口（适用所有节点）
 18. Tool 1–12 不回归，生成链路不回归
+
+---
+
+## P1-4B-4-QA — Membership Gating QA — VALIDATED / CLOSED
+
+**Date:** 2026-06-15  
+**Scope:** POST /api/marketplace/listings · PATCH→ACTIVE · ADMIN bypass · GET unaffected  
+**Status:** VALIDATED / CLOSED
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| POST /api/marketplace/listings 非会员 → 403 MEMBERSHIP_REQUIRED | ✅ PASS | Live: `{"errorCode":"MEMBERSHIP_REQUIRED"}` |
+| PATCH listing → status:ACTIVE 须会员 | ✅ PASS (code) | `listings/[id]/route.ts:89-91`：`if (next==='ACTIVE') membershipGateResponse(user)` |
+| ADMIN bypass | ✅ PASS (code) | `lib/membership/server.ts`：`if (user.role==='ADMIN') return null` |
+| GET /api/marketplace/listings 不受影响 | ✅ PASS | 已登录用户正常返回 listing 数据 |
+| BYOK 生成不受影响 | ✅ PASS | 门控仅在 POST create + PATCH→ACTIVE，generate routes 不受影响 |
+| Side-effect clean | ✅ PASS | qa-nonmember orders=[] licenses=[] inquiries=[] credits balance=0 |
+
+---
+
+## P1-4E — Unified Launch QA — PARTIAL / BLOCKED_ON_ADMIN_MEMBER_SELLER_SESSION
+
+**Date:** 2026-06-15  
+**Scope:** Membership + BYOK + Canvas save + Marketplace inquiry + Disabled credits/payment  
+**Status:** PARTIAL / BLOCKED — 需要 ADMIN session 完成会员审批与 seller/admin 浏览器验证
+
+### 已验证项（PASS）
+
+| Phase | 检查项 | 结果 | Evidence |
+|---|---|---|---|
+| A | /pricing：¥100/月、BYOK 模型说明、无充值 CTA、平台服务费免责声明 | ✅ PASS | Live HTML confirmed |
+| A | /api/me/membership plan：pro_monthly_cny100 / ¥100 | ✅ PASS | `{"plan":{"code":"pro_monthly_cny100","amountCny":10000}}` |
+| B | 非会员 session 有效（membershipActive=false） | ✅ PASS | /api/auth/me live |
+| B | POST /api/me/membership/orders 创建 PENDING 订单 | ✅ PASS | Order `134a62b8` PENDING |
+| B | GET /api/me/membership/orders 返回正确状态 | ✅ PASS | `{"orders":[{"status":"PENDING"}]}` |
+| C | GET /api/provider-accounts 返回空列表（非会员无绑定） | ✅ PASS | `{"accounts":[]}` |
+| D | scheduleCanvasSave 只写 localStorage，无自动 PUT | ✅ PASS (code) | commit `fe72f63`：pendingSaveRef=false，无 reschedule |
+| D | saveCanvas 仅由手动按钮触发 | ✅ PASS (code) | `handleManualSave` 为唯一调用方 |
+| D | 20s hard deadline + 15s fetch abort | ✅ PASS (code) | canvas route + VisualCanvasWorkspace.tsx |
+| E | 未登录 POST inquiry → 401 UNAUTHORIZED | ✅ PASS | Live: `{"errorCode":"UNAUTHORIZED"}` |
+| E | 非会员 POST inquiry → 403 MEMBERSHIP_REQUIRED | ✅ PASS | Live: `{"errorCode":"MEMBERSHIP_REQUIRED"}` |
+| E | 待审核会员（membershipActive=false）POST inquiry → 403 | ✅ PASS | Live confirmed |
+| G | POST /api/me/marketplace-orders → 405（无 POST handler） | ✅ PASS | HTTP 405 |
+| G | POST /api/me/credits/recharge → 404（路由不存在） | ✅ PASS | HTTP 404 |
+| G | POST /api/marketplace/listings 非会员 → 403 | ✅ PASS | Live: MEMBERSHIP_REQUIRED |
+| I | qa-nonmember 全局副作用干净 | ✅ PASS | orders=[] licenses=[] inquiries=[] balance=0 |
+
+### BLOCKED 项
+
+| Phase | 检查项 | 原因 |
+|---|---|---|
+| B | 会员审批（approve order → membershipActive=true） | 无 ADMIN session |
+| E | 已批准会员 submit inquiry → 201 | 无已批准会员 session |
+| F | Seller respond/reject/close inquiry | 无 seller/ADMIN session |
+| H | Admin pages smoke（/admin/membership · /admin/marketplace） | 无 ADMIN session |
+
+### 下一步
+
+见 P1-4E-FOLLOWUP 任务。Aaron 手动审批 QA 订单（`c9ebb805` 或 `134a62b8`）后可继续。
