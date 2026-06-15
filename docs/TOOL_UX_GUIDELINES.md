@@ -88,21 +88,36 @@ Best fits:
 
 ## Audit: Current Tool Interaction Types
 
-| Tool | Current UX | Pain Points | Recommended |
+| Tool | Current UX | Pain Points | Status |
 |---|---|---|---|
-| ShotListBuilderPanel — outputMode | `<select>` | Invisible options, no icons | VisualTagPicker ✅ DONE |
-| ShotListBuilderPanel — pacing | `<select>` | No progressive feel | VisualTagPicker ✅ DONE |
-| ShotListBuilderPanel — shotSizeStrategy | `<select>` | Abstract labels | VisualTagPicker ✅ DONE |
-| ShotListBuilderPanel — per-shot shotSize | `<select>` | Cramped, no visual | VisualTagPicker ✅ DONE |
-| ShotListBuilderPanel — per-shot duration | `<select>` | Only 2 options | Pill toggle ✅ DONE |
+| ShotListBuilderPanel — outputMode | `<select>` | Invisible options, no icons | VisualTagPicker ✅ DONE P2-TOOL-UX-1 |
+| ShotListBuilderPanel — pacing | `<select>` | No progressive feel | VisualTagPicker ✅ DONE P2-TOOL-UX-1 |
+| ShotListBuilderPanel — shotSizeStrategy | `<select>` | Abstract labels | VisualTagPicker ✅ DONE P2-TOOL-UX-1 |
+| ShotListBuilderPanel — per-shot shotSize | `<select>` | Cramped, no visual | VisualTagPicker ✅ DONE P2-TOOL-UX-1 |
+| ShotListBuilderPanel — per-shot duration | `<select>` | Only 2 options | Pill toggle ✅ DONE P2-TOOL-UX-1 |
 | CameraLexiconPanel — category tabs | Pill tabs | Already good | Fine as-is |
-| CameraLexiconPanel — term cards | 2-col card grid | Text only, no visual icon | Add icon/emoji per term (P2-TOOL-UX-2) |
-| CharacterBiblePanel — all fields | textarea/input | Pure form, no visual | Chips for role/temperament/props (P2-TOOL-UX-3) |
-| SceneBiblePanel — weather/era/atmosphere | textarea/input | Pure form | VisualTagPicker for bounded fields (P2-TOOL-UX-3) |
-| ColorGradePalettePanel — presets | Preset strip with accent bar | Close to done | Add mood preview on hover (P2-TOOL-UX-4) |
+| CameraLexiconPanel — term cards | 2-col card grid | Text only | Icon + label ✅ DONE P2-TOOL-UX-2 — 34 icons across 5 categories |
+| CharacterBiblePanel — role/appearance/temperament | textarea/input | Pure form | Quick chip tags ✅ DONE P2-TOOL-UX-3 |
+| CharacterBiblePanel — costume/props | textarea | Pure form | Quick chip tags ✅ DONE P2-TOOL-UX-3 |
+| SceneBiblePanel — location/era/atmosphere | textarea/input | Pure form | Quick chip tags ✅ DONE P2-TOOL-UX-3 |
+| SceneBiblePanel — lighting/weather | textarea/input | Pure form | Quick chip tags ✅ DONE P2-TOOL-UX-3 |
+| ColorGradePalettePanel — presets | Preset strip with accent bar | Close to done | Fine as-is |
 | LookPackagePanel — look cards | Cards with color swatch | Good base | Fine as-is |
-| Generation dialog — provider | `<select>` | Not iconic | Future icon cards (P2-TOOL-UX-5) |
-| Generation dialog — aspect ratio | Buttons (unknown) | TBD | Visual ratio cards (P2-TOOL-UX-5) |
+| Generation dialog — provider | `<select>` | Not iconic | Future icon cards (P2-TOOL-UX-4) |
+| Generation dialog — aspect ratio | Buttons | TBD | Visual ratio cards (P2-TOOL-UX-4) |
+
+## Bible Visual Tags — Design Rule
+
+Tag chips in Bible panels use an **append** pattern, not a replace pattern:
+- Clicking a chip appends the tag text to the existing field value with `、` separator
+- If the tag already exists in the field, it is not duplicated
+- Free-text textarea remains the primary input — chips are accelerators
+- `appendToField(current, tag)` helper in each Bible panel component
+
+This ensures:
+1. User prose is never lost
+2. Tags compose with existing descriptions
+3. `biblePromptContext.ts` reads the string fields as-is — prompt injection is unaffected
 
 ---
 

@@ -18,25 +18,77 @@ interface SceneBiblePanelProps {
   onOpenSceneLab?: () => void
 }
 
+type QuickTag = { label: string }
+
 const SCENE_FIELDS: Array<{
   key: keyof Pick<SceneProfile, 'name' | 'logline' | 'location' | 'era' | 'atmosphere' | 'architecture' | 'lighting' | 'weather' | 'colorRules' | 'keyObjects' | 'continuityRules' | 'negativeRules'>
   label: string
   placeholder: string
   multiline?: boolean
+  quickTags?: QuickTag[]
 }> = [
   { key: 'name', label: '场景名', placeholder: '未来雨夜城市街区' },
   { key: 'logline', label: '一句话描述', placeholder: '霓虹灯照亮的高密度未来城市街道，雨水反射蓝紫色光。', multiline: true },
-  { key: 'location', label: '地点', placeholder: '未来城市商业区' },
-  { key: 'era', label: '时代', placeholder: '近未来' },
-  { key: 'atmosphere', label: '氛围', placeholder: '孤独、潮湿、冷峻、电影感', multiline: true },
+  {
+    key: 'location',
+    label: '地点',
+    placeholder: '未来城市商业区',
+    quickTags: [
+      { label: '地铁' }, { label: '屋顶' }, { label: '雨巷' }, { label: '废墟' },
+      { label: '办公室' }, { label: '沙漠' }, { label: '海边' }, { label: '太空舱' },
+    ],
+  },
+  {
+    key: 'era',
+    label: '时代',
+    placeholder: '近未来',
+    quickTags: [
+      { label: '现代' }, { label: '近未来' }, { label: '赛博朋克' },
+      { label: '末日废土' }, { label: '古典' }, { label: '复古' },
+    ],
+  },
+  {
+    key: 'atmosphere',
+    label: '氛围',
+    placeholder: '孤独、潮湿、冷峻、电影感',
+    multiline: true,
+    quickTags: [
+      { label: '紧张' }, { label: '梦幻' }, { label: '压迫' },
+      { label: '孤独' }, { label: '史诗' }, { label: '悬疑' }, { label: '浪漫' },
+    ],
+  },
   { key: 'architecture', label: '建筑/空间结构', placeholder: '高楼、玻璃幕墙、窄街、发光广告牌', multiline: true },
-  { key: 'lighting', label: '光线', placeholder: '霓虹蓝紫，高反差，湿地反光', multiline: true },
-  { key: 'weather', label: '天气', placeholder: '雨夜' },
+  {
+    key: 'lighting',
+    label: '光线',
+    placeholder: '霓虹蓝紫，高反差，湿地反光',
+    multiline: true,
+    quickTags: [
+      { label: '霓虹' }, { label: '逆光' }, { label: '柔光' },
+      { label: '硬光' }, { label: '低调光' }, { label: '冷光' }, { label: '暖光' },
+    ],
+  },
+  {
+    key: 'weather',
+    label: '天气',
+    placeholder: '雨夜',
+    quickTags: [
+      { label: '雨夜' }, { label: '暴雨' }, { label: '大雾' },
+      { label: '雪夜' }, { label: '烈日' }, { label: '黎明' }, { label: '黄昏' },
+    ],
+  },
   { key: 'colorRules', label: '色彩规则', placeholder: '冷色调为主，蓝紫霓虹，避免暖色阳光。', multiline: true },
   { key: 'keyObjects', label: '关键物件', placeholder: '悬浮车、广告屏、雨伞、湿润街道', multiline: true },
   { key: 'continuityRules', label: '连续性规则', placeholder: '始终保持雨夜、霓虹、湿润反光和高楼压迫感', multiline: true },
   { key: 'negativeRules', label: '禁止变化项', placeholder: '不要变成白天，不要乡村，不要暖色阳光，不要卡通化', multiline: true },
 ]
+
+function appendToField(current: string, tag: string): string {
+  const c = current.trim()
+  if (!c) return tag
+  if (c.includes(tag)) return current
+  return c + '、' + tag
+}
 
 const inputClassName = 'h-9 rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 text-sm text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
 const textareaClassName = 'min-h-[74px] resize-y rounded-md border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-sm leading-6 text-white outline-none placeholder:text-[rgba(255,255,255,0.45)] focus:border-cyan-200/60'
@@ -213,8 +265,22 @@ export function SceneBiblePanel({
 
               <div className="grid gap-3">
                 {SCENE_FIELDS.map((field) => (
-                  <label key={field.key} className="grid gap-1.5">
+                  <div key={field.key} className="grid gap-1.5">
                     <span className="text-xs font-semibold text-white/56">{field.label}</span>
+                    {field.quickTags && field.quickTags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {field.quickTags.map((tag) => (
+                          <button
+                            key={tag.label}
+                            type="button"
+                            onClick={() => patchSelected({ [field.key]: appendToField(String(selectedScene[field.key] ?? ''), tag.label) })}
+                            className="inline-flex items-center rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[9px] text-white/40 transition hover:border-cyan-400/30 hover:bg-cyan-500/[0.07] hover:text-cyan-200/80"
+                          >
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                     {field.multiline ? (
                       <textarea
                         value={String(selectedScene[field.key] ?? '')}
@@ -231,7 +297,7 @@ export function SceneBiblePanel({
                         className={inputClassName}
                       />
                     )}
-                  </label>
+                  </div>
                 ))}
 
                 <label className="grid gap-1.5">

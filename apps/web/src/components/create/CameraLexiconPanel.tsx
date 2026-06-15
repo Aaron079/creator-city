@@ -34,6 +34,9 @@ function TermButton({
           : 'border-white/[0.07] bg-white/[0.02] text-white/60 hover:border-white/20 hover:bg-white/[0.04] hover:text-white/80'
       }`}
     >
+      {term.icon ? (
+        <span className="mb-1 text-[18px] leading-none">{term.icon}</span>
+      ) : null}
       <span className="text-[12px] font-semibold leading-tight">{term.zhLabel}</span>
       <span className={`text-[10px] leading-tight ${selected ? 'text-violet-300/60' : 'text-white/25'}`}>
         {term.enLabel}

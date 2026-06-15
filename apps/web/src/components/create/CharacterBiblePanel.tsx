@@ -16,23 +16,76 @@ interface CharacterBiblePanelProps {
   onSave: (bible: CharacterBible) => void
 }
 
+type QuickTag = { label: string }
+
 const CHARACTER_FIELDS: Array<{
   key: keyof Pick<CharacterProfile, 'name' | 'role' | 'logline' | 'appearance' | 'ageAndTemperament' | 'costume' | 'hairstyle' | 'props' | 'behaviorRules' | 'negativeRules'>
   label: string
   placeholder: string
   multiline?: boolean
+  quickTags?: QuickTag[]
 }> = [
   { key: 'name', label: '角色名', placeholder: '未来城市信使' },
-  { key: 'role', label: '一句话身份', placeholder: '在雨夜城市中传递秘密文件的孤独信使' },
+  {
+    key: 'role',
+    label: '一句话身份',
+    placeholder: '在雨夜城市中传递秘密文件的孤独信使',
+    quickTags: [
+      { label: '主角' }, { label: '反派' }, { label: '导师' },
+      { label: '搭档' }, { label: '神秘人' }, { label: '群演' },
+    ],
+  },
   { key: 'logline', label: '身份补充', placeholder: '角色在故事中的目标、关系或秘密。', multiline: true },
-  { key: 'appearance', label: '外貌特征', placeholder: '黑色长风衣，冷峻眼神，瘦高身材', multiline: true },
-  { key: 'ageAndTemperament', label: '年龄/气质', placeholder: '二十多岁，克制、警觉、孤独。' },
-  { key: 'costume', label: '服装', placeholder: '黑色防水长风衣，深色内搭，旧皮靴', multiline: true },
+  {
+    key: 'appearance',
+    label: '外貌特征',
+    placeholder: '黑色长风衣，冷峻眼神，瘦高身材',
+    multiline: true,
+    quickTags: [
+      { label: '银发' }, { label: '黑衣' }, { label: '伤疤' },
+      { label: '机械义肢' }, { label: '雨衣' }, { label: '制服' }, { label: '霓虹反光' },
+    ],
+  },
+  {
+    key: 'ageAndTemperament',
+    label: '年龄/气质',
+    placeholder: '二十多岁，克制、警觉、孤独。',
+    quickTags: [
+      { label: '冷静' }, { label: '冲动' }, { label: '疲惫' },
+      { label: '孤独' }, { label: '危险' }, { label: '温柔' }, { label: '精准' },
+    ],
+  },
+  {
+    key: 'costume',
+    label: '服装',
+    placeholder: '黑色防水长风衣，深色内搭，旧皮靴',
+    multiline: true,
+    quickTags: [
+      { label: '风衣' }, { label: '制服' }, { label: '战甲' },
+      { label: '便服' }, { label: '礼服' }, { label: '伪装服' },
+    ],
+  },
   { key: 'hairstyle', label: '发型', placeholder: '短发，略凌乱，被雨水打湿' },
-  { key: 'props', label: '关键道具', placeholder: '金属信筒、旧式纸质信件', multiline: true },
+  {
+    key: 'props',
+    label: '关键道具',
+    placeholder: '金属信筒、旧式纸质信件',
+    multiline: true,
+    quickTags: [
+      { label: '手电' }, { label: '相机' }, { label: '终端机' },
+      { label: '武器' }, { label: '日记' }, { label: '耳机' },
+    ],
+  },
   { key: 'behaviorRules', label: '行为规则', placeholder: '说话简短，行动迅速，始终保护信件。', multiline: true },
   { key: 'negativeRules', label: '禁止变化项', placeholder: '不要变成儿童，不要更换红色衣服，不要变成卡通角色', multiline: true },
 ]
+
+function appendToField(current: string, tag: string): string {
+  const c = current.trim()
+  if (!c) return tag
+  if (c.includes(tag)) return current
+  return c + '、' + tag
+}
 
 function formatCharacterForCopy(character: CharacterProfile) {
   const keywords = character.referenceKeywords?.filter(Boolean).join(', ')
@@ -214,8 +267,22 @@ export function CharacterBiblePanel({
 
                 <div className="grid gap-3">
                   {CHARACTER_FIELDS.map((field) => (
-                    <label key={field.key} className="grid gap-1.5">
+                    <div key={field.key} className="grid gap-1.5">
                       <span className="text-xs font-semibold text-white/56">{field.label}</span>
+                      {field.quickTags && field.quickTags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {field.quickTags.map((tag) => (
+                            <button
+                              key={tag.label}
+                              type="button"
+                              onClick={() => patchSelected({ [field.key]: appendToField(String(selectedCharacter[field.key] ?? ''), tag.label) })}
+                              className="inline-flex items-center rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[9px] text-white/40 transition hover:border-cyan-400/30 hover:bg-cyan-500/[0.07] hover:text-cyan-200/80"
+                            >
+                              {tag.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                       {field.multiline ? (
                         <textarea
                           value={String(selectedCharacter[field.key] ?? '')}
@@ -232,7 +299,7 @@ export function CharacterBiblePanel({
                           className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
                         />
                       )}
-                    </label>
+                    </div>
                   ))}
 
                   <label className="grid gap-1.5">
