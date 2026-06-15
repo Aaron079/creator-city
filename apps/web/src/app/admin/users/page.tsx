@@ -21,6 +21,11 @@ interface AdminUser {
     city: string | null
     company: string | null
   } | null
+  membershipActive: boolean
+  membershipStatus: string
+  membershipExpiresAt: string | null
+  membershipPlanCode: string | null
+  providerAccountCount: number
 }
 
 export default function AdminUsersPage() {
@@ -83,6 +88,9 @@ export default function AdminUsersPage() {
                   <th className="px-4 py-3">用户</th>
                   <th className="px-4 py-3">邮箱</th>
                   <th className="px-4 py-3">角色</th>
+                  <th className="px-4 py-3">会员</th>
+                  <th className="px-4 py-3">到期时间</th>
+                  <th className="px-4 py-3">API 账户</th>
                   <th className="px-4 py-3">状态</th>
                   <th className="px-4 py-3">最近登录</th>
                   <th className="px-4 py-3">注册时间</th>
@@ -111,6 +119,25 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
+                      {u.membershipActive ? (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-500/15 text-emerald-300">
+                          会员
+                        </span>
+                      ) : (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-white/[0.05] text-white/30">
+                          未开通
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-white/45 text-xs whitespace-nowrap">
+                      {u.membershipExpiresAt ? formatAdminDate(u.membershipExpiresAt) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-sm font-medium ${u.providerAccountCount > 0 ? 'text-white/70' : 'text-white/20'}`}>
+                        {u.providerAccountCount}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider font-medium ${u.status === 'ACTIVE' ? 'bg-green-500/15 text-green-300' : 'bg-rose-500/15 text-rose-300'}`}>
                         {u.status}
                       </span>
@@ -130,8 +157,10 @@ export default function AdminUsersPage() {
           <div className="mt-6 text-sm text-white/40">暂无用户数据。</div>
         ) : null}
 
-        <div className="mt-6 text-xs text-white/30">
-          共 {users.length} 位用户 · 不显示已删除账号
+        <div className="mt-6 flex flex-wrap gap-4 text-xs text-white/30">
+          <span>共 {users.length} 位用户 · 不显示已删除账号</span>
+          <span>会员人数：{users.filter((u) => u.membershipActive).length}</span>
+          <span>已绑定 API Key：{users.filter((u) => u.providerAccountCount > 0).length} 人</span>
         </div>
       </main>
     </DashboardShell>

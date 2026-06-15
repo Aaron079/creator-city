@@ -7,6 +7,21 @@ import { formatAdminDateTime } from '@/lib/format/adminDate'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface AdminInquiry {
+  id: string
+  status: string
+  message: string | null
+  sellerNote: string | null
+  createdAt: string
+  updatedAt: string
+  respondedAt: string | null
+  closedAt: string | null
+  buyer: { id: string; displayName: string; email: string }
+  seller: { id: string; displayName: string; email: string }
+  asset: { id: string; title: string; type: string }
+  listing: { id: string; title: string; status: string }
+}
+
 interface RefundRequest {
   id: string
   orderId: string
@@ -378,6 +393,145 @@ function RefundRequestsTab() {
   )
 }
 
+// ─── Inquiry Tab (readonly) ───────────────────────────────────────────────────
+
+const INQUIRY_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待回应',
+  RESPONDED: '已回应',
+  REJECTED: '已拒绝',
+  CLOSED: '已关闭',
+}
+
+const INQUIRY_STATUS_CLASSES: Record<string, string> = {
+  PENDING: 'bg-amber-400/15 text-amber-200 border-amber-400/20',
+  RESPONDED: 'bg-sky-400/15 text-sky-200 border-sky-400/20',
+  REJECTED: 'bg-white/8 text-white/40 border-white/10',
+  CLOSED: 'bg-white/8 text-white/35 border-white/10',
+}
+
+type InquiryStatusFilter = 'ALL' | 'PENDING' | 'RESPONDED' | 'REJECTED' | 'CLOSED'
+const INQUIRY_FILTER_TABS: InquiryStatusFilter[] = ['ALL', 'PENDING', 'RESPONDED', 'REJECTED', 'CLOSED']
+const INQUIRY_FILTER_LABELS: Record<InquiryStatusFilter, string> = {
+  ALL: '全部',
+  PENDING: '待回应',
+  RESPONDED: '已回应',
+  REJECTED: '已拒绝',
+  CLOSED: '已关闭',
+}
+
+function InquiryTab() {
+  const [statusFilter, setStatusFilter] = useState<InquiryStatusFilter>('ALL')
+  const [inquiries, setInquiries] = useState<AdminInquiry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const qs = statusFilter === 'ALL' ? '' : `?status=${statusFilter}`
+    const res = await fetch(`/api/admin/marketplace/inquiries${qs}`, { credentials: 'include' })
+    if (res.ok) {
+      const data = await res.json() as { items: AdminInquiry[] }
+      setInquiries(data.items)
+    }
+    setLoading(false)
+  }, [statusFilter])
+
+  useEffect(() => { void load() }, [load])
+
+  return (
+    <div>
+      {/* Notice */}
+      <div className="mb-4 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5 text-xs text-white/40">
+        只读视图 · 合作意向仅记录双方沟通意向，不触发授权成交或积分结算。
+      </div>
+
+      {/* Status filter */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {INQUIRY_FILTER_TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setStatusFilter(t)}
+            className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+              statusFilter === t ? 'bg-white text-slate-950' : 'text-white/50 hover:text-white'
+            }`}
+          >
+            {INQUIRY_FILTER_LABELS[t]}
+          </button>
+        ))}
+        <button onClick={() => void load()} className="ml-auto text-xs text-white/30 hover:text-white/60">↻ 刷新</button>
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-sm text-white/40">加载中…</div>
+      ) : inquiries.length === 0 ? (
+        <div className="rounded-lg border border-white/10 p-8 text-center text-sm text-white/40">
+          暂无{statusFilter !== 'ALL' ? `「${INQUIRY_FILTER_LABELS[statusFilter]}」` : ''}合作意向记录
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-white/10">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/35">
+              <tr>
+                <th className="px-4 py-3 whitespace-nowrap">状态</th>
+                <th className="px-4 py-3 whitespace-nowrap">资产</th>
+                <th className="px-4 py-3 whitespace-nowrap">买家</th>
+                <th className="px-4 py-3 whitespace-nowrap">卖家</th>
+                <th className="px-4 py-3 whitespace-nowrap">意向内容</th>
+                <th className="px-4 py-3 whitespace-nowrap">卖家回复</th>
+                <th className="px-4 py-3 whitespace-nowrap">提交时间</th>
+                <th className="px-4 py-3 whitespace-nowrap">回应时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inquiries.map((inq) => (
+                <tr key={inq.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${INQUIRY_STATUS_CLASSES[inq.status] ?? 'bg-white/8 text-white/40 border-white/10'}`}>
+                      {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link href={`/assets/${inq.asset.id}`} className="text-white/80 hover:text-white underline underline-offset-2 whitespace-nowrap">
+                      {inq.asset.title}
+                    </Link>
+                    <div className="text-[11px] text-white/35">{inq.asset.type}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-white/80 whitespace-nowrap">{inq.buyer.displayName}</div>
+                    <div className="text-[11px] text-white/35">{inq.buyer.email}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-white/80 whitespace-nowrap">{inq.seller.displayName}</div>
+                    <div className="text-[11px] text-white/35">{inq.seller.email}</div>
+                  </td>
+                  <td className="px-4 py-3 max-w-[200px]">
+                    <p className="truncate text-white/60 text-xs" title={inq.message ?? ''}>
+                      {inq.message ?? <span className="text-white/25">—</span>}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 max-w-[200px]">
+                    <p className="truncate text-white/60 text-xs" title={inq.sellerNote ?? ''}>
+                      {inq.sellerNote ?? <span className="text-white/25">—</span>}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 text-white/35 whitespace-nowrap text-xs">
+                    {formatAdminDateTime(inq.createdAt)}
+                  </td>
+                  <td className="px-4 py-3 text-white/35 whitespace-nowrap text-xs">
+                    {inq.respondedAt ? formatAdminDateTime(inq.respondedAt) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="border-t border-white/5 px-4 py-2 text-xs text-white/25">
+            共 {inquiries.length} 条 · 只读 · 不支持管理员代操作
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Orders Overview Tab ──────────────────────────────────────────────────────
 
 type OrderStatusFilter = 'ALL' | 'PENDING' | 'QUOTED' | 'COMPLETED' | 'REFUNDED' | 'CANCELLED' | 'REJECTED'
@@ -510,7 +664,7 @@ function OrdersTab() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type MainTab = 'refunds' | 'orders'
+type MainTab = 'refunds' | 'orders' | 'inquiries'
 
 export default function AdminMarketplacePage() {
   const [authError, setAuthError] = useState<string | null>(null)
@@ -578,7 +732,7 @@ export default function AdminMarketplacePage() {
 
         {/* Main tabs */}
         <div className="flex gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1 w-fit">
-          {([['refunds', '退款申请'], ['orders', '订单概览']] as [MainTab, string][]).map(([key, label]) => (
+          {([['refunds', '退款申请'], ['orders', '订单概览'], ['inquiries', '合作意向']] as [MainTab, string][]).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -592,7 +746,7 @@ export default function AdminMarketplacePage() {
         </div>
 
         {/* Tab content */}
-        {tab === 'refunds' ? <RefundRequestsTab /> : <OrdersTab />}
+        {tab === 'refunds' ? <RefundRequestsTab /> : tab === 'orders' ? <OrdersTab /> : <InquiryTab />}
 
       </main>
     </DashboardShell>
