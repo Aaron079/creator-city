@@ -10,11 +10,27 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { getOrCreateWallet } from '@/lib/credits/server'
+import { isDbConnectionError } from '@/lib/db-error'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const user = await getCurrentUser()
+  let user: Awaited<ReturnType<typeof getCurrentUser>>
+  try {
+    user = await getCurrentUser()
+  } catch (err) {
+    console.error('[credits/balance] auth error', err)
+    if (isDbConnectionError(err)) {
+      return NextResponse.json(
+        { success: false, errorCode: 'SERVICE_UNAVAILABLE', message: '服务暂时不可用，请稍后重试' },
+        { status: 503 },
+      )
+    }
+    return NextResponse.json(
+      { success: false, errorCode: 'AUTH_ERROR', message: '认证失败，请刷新后重试' },
+      { status: 500 },
+    )
+  }
   if (!user) {
     return NextResponse.json(
       { success: false, errorCode: 'UNAUTHENTICATED', message: '请先登录' },
@@ -34,6 +50,12 @@ export async function GET() {
     })
   } catch (err) {
     console.error('[credits/balance]', err)
+    if (isDbConnectionError(err)) {
+      return NextResponse.json(
+        { success: false, errorCode: 'SERVICE_UNAVAILABLE', message: '服务繁忙，请稍后重试' },
+        { status: 503 },
+      )
+    }
     return NextResponse.json(
       { success: false, errorCode: 'WALLET_ERROR', message: '获取余额失败' },
       { status: 500 },

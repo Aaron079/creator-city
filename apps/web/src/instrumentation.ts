@@ -224,29 +224,38 @@ export async function register() {
       console.log('[startup] MarketplaceOrder migration applied')
     }
 
-    // ── P0-9: MarketplaceOrder QUOTED state ────────────────────────────────
-    // ALTER TYPE ADD VALUE cannot run inside a transaction block; run unconditionally.
-    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'QUOTED'`)
-    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "quotedAt" TIMESTAMP(3)`)
-    console.log('[startup] MarketplaceOrder QUOTED migration checked')
-
-    // ── P1-0: Marketplace Settlement v1 ────────────────────────────────────
-    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'COMPLETED'`)
-    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "completedAt" TIMESTAMP(3)`)
-    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_PURCHASE'`)
-    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_CREDIT'`)
-    console.log('[startup] Marketplace Settlement v1 migration checked')
-
-    // ── P1-2: Marketplace Refund Execution ─────────────────────────────────
-    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus"            ADD VALUE IF NOT EXISTS 'REFUNDED'`)
-    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_REFUND'`)
-    await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_REVERSAL'`)
-    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTED'`)
-    await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTION_FAILED'`)
-    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder"          ADD COLUMN IF NOT EXISTS "refundedAt"    TIMESTAMP(3)`)
-    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executedAt"   TIMESTAMP(3)`)
-    await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executionNote" TEXT`)
-    console.log('[startup] Marketplace Refund Execution migration checked')
+    // ── P0-9 / P1-0 / P1-2: incremental column + enum migrations ──────────
+    // ALTER TYPE ADD VALUE cannot run inside a transaction block; kept outside.
+    // Skip entire block on subsequent cold starts by checking for the last-added
+    // column (executionNote on MarketplaceRefundRequest). This saves ~14 sequential
+    // DB round-trips per cold start when all migrations have already been applied.
+    const incrementalMigrationApplied = await db.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name   = 'MarketplaceRefundRequest'
+          AND column_name  = 'executionNote'
+      ) AS exists
+    `
+    if (!incrementalMigrationApplied[0]?.exists) {
+      await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'QUOTED'`)
+      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "quotedAt" TIMESTAMP(3)`)
+      await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus" ADD VALUE IF NOT EXISTS 'COMPLETED'`)
+      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder" ADD COLUMN IF NOT EXISTS "completedAt" TIMESTAMP(3)`)
+      await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_PURCHASE'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType" ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_CREDIT'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceOrderStatus"            ADD VALUE IF NOT EXISTS 'REFUNDED'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_REFUND'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "CreditLedgerType"                  ADD VALUE IF NOT EXISTS 'MARKETPLACE_SELLER_REVERSAL'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTED'`)
+      await db.$executeRawUnsafe(`ALTER TYPE "MarketplaceRefundRequestStatus"    ADD VALUE IF NOT EXISTS 'EXECUTION_FAILED'`)
+      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceOrder"          ADD COLUMN IF NOT EXISTS "refundedAt"    TIMESTAMP(3)`)
+      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executedAt"   TIMESTAMP(3)`)
+      await db.$executeRawUnsafe(`ALTER TABLE "MarketplaceRefundRequest"  ADD COLUMN IF NOT EXISTS "executionNote" TEXT`)
+      console.log('[startup] incremental marketplace migrations applied (P0-9 / P1-0 / P1-2)')
+    } else {
+      console.log('[startup] incremental marketplace migrations already applied — skipped')
+    }
 
     // ── P1-1: MarketplaceRefundRequest ─────────────────────────────────────
     const refundReqCheck = await db.$queryRaw<Array<{ exists: boolean }>>`

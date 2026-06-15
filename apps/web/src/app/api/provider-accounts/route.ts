@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { jsonError, jsonOk } from '@/lib/api/json-response'
+import { isDbConnectionError } from '@/lib/db-error'
 import {
   listUserProviderAccounts,
   createUserProviderAccount,
@@ -15,7 +16,16 @@ export const runtime = 'nodejs'
 // Never returns encryptedApiKey or the original API key.
 
 export async function GET() {
-  const user = await getCurrentUser()
+  let user: Awaited<ReturnType<typeof getCurrentUser>>
+  try {
+    user = await getCurrentUser()
+  } catch (err) {
+    console.error('[provider-accounts] auth error', err)
+    if (isDbConnectionError(err)) {
+      return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
+    }
+    return jsonError('AUTH_ERROR', '认证失败，请刷新后重试。', 500)
+  }
   if (!user) return jsonError('UNAUTHORIZED', '请先登录后再管理 Provider API 账户。', 401)
 
   try {
@@ -24,6 +34,9 @@ export async function GET() {
   } catch (err) {
     if (isConfigError(err)) {
       return jsonError('SERVICE_UNAVAILABLE', 'Provider Key 加密服务暂时不可用，请稍后再试。', 503)
+    }
+    if (isDbConnectionError(err)) {
+      return jsonError('SERVICE_UNAVAILABLE', '数据库暂时不可用，请稍后重试。', 503)
     }
     return jsonError('INTERNAL_ERROR', '获取账户列表失败，请稍后再试。', 500)
   }
@@ -45,7 +58,16 @@ type CreateBody = {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser()
+  let user: Awaited<ReturnType<typeof getCurrentUser>>
+  try {
+    user = await getCurrentUser()
+  } catch (err) {
+    console.error('[provider-accounts] POST auth error', err)
+    if (isDbConnectionError(err)) {
+      return jsonError('SERVICE_UNAVAILABLE', '服务暂时不可用，请稍后重试。', 503)
+    }
+    return jsonError('AUTH_ERROR', '认证失败，请刷新后重试。', 500)
+  }
   if (!user) return jsonError('UNAUTHORIZED', '请先登录后再管理 Provider API 账户。', 401)
 
   let body: CreateBody
@@ -90,6 +112,9 @@ export async function POST(request: NextRequest) {
     }
     if (isConfigError(err)) {
       return jsonError('SERVICE_UNAVAILABLE', 'Provider Key 加密服务暂时不可用，请稍后再试。', 503)
+    }
+    if (isDbConnectionError(err)) {
+      return jsonError('SERVICE_UNAVAILABLE', '数据库暂时不可用，请稍后重试。', 503)
     }
     return jsonError('INTERNAL_ERROR', '创建账户失败，请稍后再试。', 500)
   }
