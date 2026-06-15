@@ -6,13 +6,12 @@ import {
   parseShotList,
   buildShotListReport,
   SHOT_SIZE_LABELS,
-  OUTPUT_MODE_LABELS,
-  PACING_LABELS,
-  STRATEGY_LABELS,
   DEFAULT_SHOT_OPTIONS,
 } from '@/lib/canvas/shot-list'
 import type { ShotDraft, ShotSize, ShotKind, ShotListOptions } from '@/lib/canvas/shot-list'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { VisualTagPicker } from '@/components/toolkit/VisualTagPicker'
+import type { VisualTagOption } from '@/components/toolkit/VisualTagPicker'
 
 interface SourceNode {
   id: string
@@ -30,7 +29,26 @@ interface ShotListBuilderPanelProps {
   onClose: () => void
 }
 
-const SHOT_SIZE_OPTIONS: Array<{ value: ShotSize; label: string }> = [
+const OUTPUT_MODE_OPTIONS: VisualTagOption<ShotListOptions['outputMode']>[] = [
+  { value: 'image', label: '纯图片', icon: '🖼' },
+  { value: 'mixed', label: '图+视频', icon: '🎬' },
+  { value: 'video', label: '纯视频', icon: '📹' },
+]
+
+const PACING_OPTIONS: VisualTagOption<ShotListOptions['pacing']>[] = [
+  { value: 'slow_cinematic', label: '慢', sublabel: '电影感', icon: '🐢' },
+  { value: 'standard', label: '标准', icon: '⚡' },
+  { value: 'fast_social', label: '快', sublabel: '短视频', icon: '🚀' },
+]
+
+const STRATEGY_OPTIONS: VisualTagOption<ShotListOptions['shotSizeStrategy']>[] = [
+  { value: 'auto', label: '自动', icon: '🎯' },
+  { value: 'wide_to_close', label: '全→特', icon: '📐' },
+  { value: 'close_heavy', label: '特写重', icon: '🔍' },
+  { value: 'wide_heavy', label: '全景重', icon: '🌅' },
+]
+
+const SHOT_SIZE_VISUAL_OPTIONS: VisualTagOption<ShotSize>[] = [
   { value: 'wide', label: '全景' },
   { value: 'medium', label: '中景' },
   { value: 'close', label: '近景' },
@@ -334,46 +352,32 @@ export function ShotListBuilderPanel({
             {/* Output mode */}
             <div>
               <label className="mb-1.5 block text-[10px] text-white/40">输出类型</label>
-              <select
+              <VisualTagPicker
+                options={OUTPUT_MODE_OPTIONS}
                 value={outputMode}
-                onChange={(e) => setOutputMode(e.target.value as ShotListOptions['outputMode'])}
-                className={selClass}
-              >
-                {(Object.keys(OUTPUT_MODE_LABELS) as Array<ShotListOptions['outputMode']>).map((k) => (
-                  <option key={k} value={k}>{OUTPUT_MODE_LABELS[k]}</option>
-                ))}
-              </select>
+                onChange={setOutputMode}
+              />
             </div>
           </div>
 
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            {/* Pacing */}
-            <div>
-              <label className="mb-1.5 block text-[10px] text-white/40">节奏</label>
-              <select
-                value={pacing}
-                onChange={(e) => setPacing(e.target.value as ShotListOptions['pacing'])}
-                className={selClass}
-              >
-                {(Object.keys(PACING_LABELS) as Array<ShotListOptions['pacing']>).map((k) => (
-                  <option key={k} value={k}>{PACING_LABELS[k]}</option>
-                ))}
-              </select>
-            </div>
+          {/* Pacing */}
+          <div className="mb-3">
+            <label className="mb-1.5 block text-[10px] text-white/40">节奏</label>
+            <VisualTagPicker
+              options={PACING_OPTIONS}
+              value={pacing}
+              onChange={setPacing}
+            />
+          </div>
 
-            {/* Shot size strategy */}
-            <div>
-              <label className="mb-1.5 block text-[10px] text-white/40">景别策略</label>
-              <select
-                value={strategy}
-                onChange={(e) => setStrategy(e.target.value as ShotListOptions['shotSizeStrategy'])}
-                className={selClass}
-              >
-                {(Object.keys(STRATEGY_LABELS) as Array<ShotListOptions['shotSizeStrategy']>).map((k) => (
-                  <option key={k} value={k}>{STRATEGY_LABELS[k]}</option>
-                ))}
-              </select>
-            </div>
+          {/* Shot size strategy */}
+          <div className="mb-3">
+            <label className="mb-1.5 block text-[10px] text-white/40">景别策略</label>
+            <VisualTagPicker
+              options={STRATEGY_OPTIONS}
+              value={strategy}
+              onChange={setStrategy}
+            />
           </div>
 
           {/* User instruction */}
@@ -438,7 +442,7 @@ export function ShotListBuilderPanel({
                   }`}
                 >
                   {/* Shot header row */}
-                  <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                  <div className="mb-1.5 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => patchShot(shot.id, { selected: !shot.selected })}
@@ -472,28 +476,35 @@ export function ShotListBuilderPanel({
                       ))}
                     </div>
 
-                    {/* Shot size */}
-                    <select
-                      value={shot.shotSize}
-                      onChange={(e) => patchShot(shot.id, { shotSize: e.target.value as ShotSize })}
-                      className="rounded-md border border-white/10 bg-[#1a1d26] px-1.5 py-0.5 text-[10px] text-slate-100 outline-none"
-                    >
-                      {SHOT_SIZE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-
                     {/* Duration — video only */}
                     {shot.kind === 'video' ? (
-                      <select
-                        value={shot.duration}
-                        onChange={(e) => patchShot(shot.id, { duration: Number(e.target.value) as 5 | 10 })}
-                        className="rounded-md border border-white/10 bg-[#1a1d26] px-1.5 py-0.5 text-[10px] text-slate-100 outline-none"
-                      >
-                        <option value={5}>5s</option>
-                        <option value={10}>10s</option>
-                      </select>
+                      <div className="flex overflow-hidden rounded-md border border-white/10">
+                        {([5, 10] as const).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => patchShot(shot.id, { duration: d })}
+                            className={`px-2 py-0.5 text-[10px] transition ${
+                              shot.duration === d
+                                ? 'bg-white/12 text-white/90'
+                                : 'text-white/35 hover:text-white/60'
+                            }`}
+                          >
+                            {d}s
+                          </button>
+                        ))}
+                      </div>
                     ) : null}
+                  </div>
+
+                  {/* Shot size visual picker */}
+                  <div className="mb-2">
+                    <VisualTagPicker
+                      size="sm"
+                      options={SHOT_SIZE_VISUAL_OPTIONS}
+                      value={shot.shotSize}
+                      onChange={(v) => patchShot(shot.id, { shotSize: v })}
+                    />
                   </div>
 
                   {/* Description */}
