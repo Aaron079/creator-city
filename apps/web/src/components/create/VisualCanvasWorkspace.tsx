@@ -2384,6 +2384,7 @@ export function VisualCanvasWorkspace({
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
+  const [pendingAutoGenerateIds, setPendingAutoGenerateIds] = useState<string[]>([])
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
@@ -4376,7 +4377,9 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback(errMsg)
       return
     }
-    const prompt = node.prompt?.trim()
+    const rawPrompt = node.prompt?.trim() ?? ''
+    const bibleCtx = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
+    const prompt = appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt
     const fallbackProviderId = providerForRegenerationNode(node)
     const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
@@ -4718,7 +4721,20 @@ export function VisualCanvasWorkspace({
         clearRegenerationLoading()
       }
     })()
-  }, [beginNodeGeneration, commitNodes, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+  }, [beginNodeGeneration, characterBible, commitNodes, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, projectId, sceneBible, scheduleCanvasSave, showCanvasFeedback, styleBible, workflowId])
+
+  useEffect(() => {
+    if (pendingAutoGenerateIds.length === 0) return
+    const found = pendingAutoGenerateIds.filter((id) => nodes.some((n) => n.id === id))
+    if (found.length === 0) return
+    setPendingAutoGenerateIds((prev) => prev.filter((id) => !found.includes(id)))
+    for (const nodeId of found) {
+      const node = nodes.find((n) => n.id === nodeId)
+      if (node && node.kind === 'image') {
+        handleRegenerateNodeFromPrompt(node)
+      }
+    }
+  }, [pendingAutoGenerateIds, nodes, handleRegenerateNodeFromPrompt])
 
   const assetResolveKey = useMemo(() => nodes
     .filter((node) => node.kind === 'image' || node.kind === 'video')
@@ -8073,8 +8089,10 @@ export function VisualCanvasWorkspace({
                 x: baseX + column * 460,
                 y: baseY + row * 340,
               }
-              createNode(kind, { ...rest, parentNodeId, position })
+              const created = createNode(kind, { ...rest, parentNodeId, position })
+              return created.id
             }}
+            onAutoGenerateNodes={(nodeIds) => setPendingAutoGenerateIds(nodeIds)}
             onClose={() => setIsShotListBuilderOpen(false)}
           />
         </>

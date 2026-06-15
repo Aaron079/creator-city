@@ -25,7 +25,8 @@ interface SourceNode {
 interface ShotListBuilderPanelProps {
   nodes: SourceNode[]
   initialNodeId?: string
-  onCreateNode: (kind: VisualCanvasNodeKind, options: { title?: string; prompt?: string; parentNodeId?: string; index?: number; total?: number }) => void
+  onCreateNode: (kind: VisualCanvasNodeKind, options: { title?: string; prompt?: string; parentNodeId?: string; index?: number; total?: number }) => string
+  onAutoGenerateNodes?: (nodeIds: string[]) => void
   onClose: () => void
 }
 
@@ -57,6 +58,7 @@ export function ShotListBuilderPanel({
   nodes,
   initialNodeId,
   onCreateNode,
+  onAutoGenerateNodes,
   onClose,
 }: ShotListBuilderPanelProps) {
   // All nodes are usable as source (any with text content)
@@ -169,6 +171,28 @@ export function ShotListBuilderPanel({
       })
     })
     setCreatedCount(toCreate.length)
+  }
+
+  const handleCreateAndGenerate = () => {
+    const toCreate = shots.filter((s) => s.selected)
+    if (toCreate.length === 0) return
+    const createdIds: string[] = []
+    toCreate.forEach((shot, index) => {
+      const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
+      const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
+      const title = `镜头 · ${sizeLabel} · ${kindLabel}`
+      const prompt = `${shot.description}\n\n[${shot.cinematicNote}]`
+      const nodeId = onCreateNode(shot.kind as VisualCanvasNodeKind, {
+        title,
+        prompt,
+        parentNodeId: selectedNodeId || undefined,
+        index,
+        total: toCreate.length,
+      })
+      if (nodeId) createdIds.push(nodeId)
+    })
+    setCreatedCount(toCreate.length)
+    if (createdIds.length > 0) onAutoGenerateNodes?.(createdIds)
   }
 
   const selectedCount = shots.filter((s) => s.selected).length
@@ -523,13 +547,26 @@ export function ShotListBuilderPanel({
               type="button"
               onClick={handleCreate}
               disabled={selectedCount === 0}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600/80 px-4 py-2 text-[12px] font-semibold text-white/90 transition hover:bg-indigo-500/90 disabled:cursor-not-allowed disabled:opacity-35"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] text-white/60 transition hover:bg-white/8 hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-35"
             >
               <Plus size={13} strokeWidth={2.5} />
               <span>
-                {selectedCount > 0 ? `创建 ${selectedCount} 个草案节点` : '请选择镜头'}
+                {selectedCount > 0 ? `创建节点` : '请选择'}
               </span>
             </button>
+            {onAutoGenerateNodes && (
+              <button
+                type="button"
+                onClick={handleCreateAndGenerate}
+                disabled={selectedCount === 0}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600/80 px-4 py-2 text-[12px] font-semibold text-white/90 transition hover:bg-violet-500/90 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <span>✦</span>
+                <span>
+                  {selectedCount > 0 ? `生成全部镜头 (${selectedCount})` : '请选择镜头'}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       ) : null}
