@@ -8542,6 +8542,10 @@ export function VisualCanvasWorkspace({
                   onWorkflowContinue={upstreamContextMap.has(node.id)
                     ? (e) => handleWorkflowContinue(node.id, e)
                     : undefined}
+                  onCreateDerivedVideo={node.kind === 'image' && node.status === 'done' && node.resultImageUrl ? () => {
+                    const videoNode = createNode('video', { parentNodeId: node.id })
+                    setEditingNodeId(videoNode.id)
+                  } : undefined}
                 />
               </CanvasNodeErrorBoundary>
             </div>

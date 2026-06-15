@@ -81,6 +81,7 @@ interface CanvasNodeCardProps {
   reframeMode?: ReframeMode
   workflowIncomingContext?: { sourceNode: VisualCanvasNode; isPortraitLikely: boolean }
   onWorkflowContinue?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onCreateDerivedVideo?: () => void
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1397,6 +1398,7 @@ export function CanvasNodeCard({
   reframeMode = 'original',
   workflowIncomingContext,
   onWorkflowContinue,
+  onCreateDerivedVideo,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
 
@@ -3619,6 +3621,21 @@ export function CanvasNodeCard({
           title="打开智能资产"
         >
           AI Tags: {assetIntelligenceTagCount}
+        </button>
+      ) : null}
+      {node.kind === 'image' && node.status === 'done' && node.resultImageUrl && onCreateDerivedVideo ? (
+        <button
+          type="button"
+          className="absolute bottom-2 right-2 z-[7] inline-flex items-center gap-1 rounded-full border border-cyan-500/25 bg-black/70 px-2.5 py-1 text-[11px] leading-none text-cyan-300/80 shadow-lg backdrop-blur-sm transition hover:border-cyan-500/40 hover:text-cyan-200"
+          data-no-node-drag="true"
+          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCreateDerivedVideo() }}
+          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+          aria-label="生成衍生视频"
+          title="基于此图片生成视频"
+        >
+          <span className="text-cyan-400/60">▻</span>
+          <span>生成衍生视频</span>
         </button>
       ) : null}
       {workflowIncomingContext && onWorkflowContinue ? (
