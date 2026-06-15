@@ -309,6 +309,24 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteContext) {
+  // Hard deadline: ensures we return 503 before Vercel's 60 s maxDuration causes a raw 504.
+  // Soft per-batch checks only fire inside the node upsert loop — any hang in getCurrentUser()
+  // or requireProjectAccess() while waiting for a pgBouncer connection bypasses them entirely.
+  let _deadlineId: ReturnType<typeof setTimeout> | null = null
+  const deadlinePromise = new Promise<Response>((resolve) => {
+    _deadlineId = setTimeout(() => {
+      console.warn('[canvas-api] 55 s hard deadline fired — DB likely blocked', { projectId: params.projectId })
+      resolve(jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：服务器响应缓慢，画布已缓存在本地，请稍后重试。', 503))
+    }, 55_000)
+  })
+  try {
+    return await Promise.race([putImpl(request, params), deadlinePromise])
+  } finally {
+    if (_deadlineId !== null) clearTimeout(_deadlineId)
+  }
+}
+
+async function putImpl(request: NextRequest, params: { projectId: string }): Promise<Response> {
   let user
   try {
     user = await getCurrentUser()
