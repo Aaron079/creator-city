@@ -1,8 +1,16 @@
 # Creator City — Internal Alpha Roadmap
 
-**Status:** READY_FOR_FIRST_USERS  
+**Status:** READY_FOR_FIRST_USERS_WITH_CAVEATS  
 **Date:** 2026-06-16  
-**Decision:** P2-CANVAS-1..4 implemented. Exit criteria code-verified. State: READY_FOR_INTERNAL_ALPHA → READY_FOR_FIRST_USERS.
+**Decision:** P2-CANVAS-1..4 implemented. Exit criteria code-verified. P2-FIRST-USERS-QA CLOSED with minor browser caveats.
+
+**Before first external user invite — founder must complete:**
+1. Login to production; confirm /api/credits/balance returns 200 (not 401)
+2. Navigate to /admin; confirm pages load
+3. Submit 1 test inquiry as a member; confirm no unintended side-effects
+4. Mark P2-FIRST-USERS-SPOTCHECK DONE in docs/NEXT_TASKS.md
+
+**State:** READY_FOR_INTERNAL_ALPHA → READY_FOR_FIRST_USERS (code-QA PASS) → READY_FOR_FIRST_USERS_WITH_CAVEATS (pending founder spot-check before external invite)
 
 ---
 

@@ -1,6 +1,6 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-16 (P2-TOOL-UX-WHEEL-TAGS — Tool UX audit + visual controls prototype; VisualTagPicker + WheelSelector components; ShotListBuilderPanel 5 selects → visual; TOOL_UX_GUIDELINES.md)
+Last updated: 2026-06-16 (P2-TOOL-UX-1 DONE — VisualTagPicker + WheelSelector + ShotListBuilder visual controls; TOOL_UX_GUIDELINES.md; P2-FIRST-USERS-QA CLOSED_WITH_MINOR_BROWSER_CAVEATS; project state: READY_FOR_FIRST_USERS_WITH_CAVEATS — founder spot-check before external invite)
 Last valid commit: P1-4A follow-up IMPLEMENTED — Hide Credits Recharge CTA for First Launch（新增 PLATFORM_CREDITS_RECHARGE_ENABLED env var，默认 false；/account/credits 支付宝充值套餐卡片 + 申请人工充值表单 + 充值按钮 当 flag 为 false 时完全隐藏，替换为"积分充值暂未开放"提示 + BYOK 引导 + 联系管理员开通会员说明；余额展示 + 历史账本保留不变；/admin/credits 不受影响；不改 schema，不改 payment API，不改 wallet/ledger）
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
@@ -10,8 +10,16 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 
 | Task | Status | Commit |
 |---|---|---|
+| P2-TOOL-UX-1 ShotListBuilder visual controls + toolkit components | ✅ DONE | `f9473d6` |
+| P2-TOOL-UX-AUDIT Tool UX design audit + TOOL_UX_GUIDELINES.md | ✅ AUDIT_COMPLETE | `f9473d6` |
+| P2-FIRST-USERS-QA First users smoke QA | ✅ CLOSED_WITH_MINOR_BROWSER_CAVEATS | QA-only |
+| P2-CANVAS-5 Internal Alpha end-to-end QA | ✅ CODE-QA PASS → READY_FOR_FIRST_USERS | `940b676` |
+| P2-CANVAS-4 Image-to-Video UX shortcut | ✅ DONE | `61efd14` |
+| P2-CANVAS-3 ShotList auto-generate sequence | ✅ DONE | `cac2c01` |
+| P2-CANVAS-2 CharacterBible + SceneBible in canvas | ✅ DONE | `03a3103` |
+| P2-CANVAS-1 Bible→Prompt reconnection | ✅ DONE | `b693a6f` |
 | P2-CORE-CANVAS-MOAT Canvas/Tools Audit | ✅ AUDIT_COMPLETE | (docs only) |
-| P2-FIRST-USERS First Users Trial Materials | ✅ IMPLEMENTED (external trial POSTPONED) | `14a03ff` |
+| P2-FIRST-USERS First Users Trial Materials | ✅ IMPLEMENTED (external trial POSTPONED → unblocked after spot-check) | `14a03ff` |
 | P2-LAUNCH-READINESS Navigation + Copy Polish | ✅ IMPLEMENTED | `bf9d210` |
 | P2-ADMIN Admin Operations Hardening | ✅ IMPLEMENTED | `633954f` |
 | P1-4E Unified Launch QA | ✅ VALIDATED / CLOSED | QA-only |
