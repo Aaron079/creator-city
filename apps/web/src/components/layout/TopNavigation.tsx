@@ -26,11 +26,11 @@ const NAV_GROUPS: NavGroup[] = [
     label: '市场', key: 'market',
     items: [
       { label: '市场总览', href: '/marketplace' },
-      { label: '创作者主页', href: '/creator-profile-preview' },
-      { label: '需求广场', href: '/demand-board-preview' },
-      { label: '报价方案', href: '/proposal-flow-preview' },
-      { label: '阶段交付', href: '/milestone-delivery-preview' },
-      { label: '托管结算', href: '/escrow-preview' },
+      { label: '创作者主页', href: '/creator-profile-preview', badge: '即将' },
+      { label: '需求广场', href: '/demand-board-preview', badge: '即将' },
+      { label: '报价方案', href: '/proposal-flow-preview', badge: '即将' },
+      { label: '阶段交付', href: '/milestone-delivery-preview', badge: '即将' },
+      { label: '托管结算', href: '/escrow-preview', badge: '即将' },
     ],
   },
   {
@@ -54,7 +54,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: '平台', key: 'platform',
     items: [
       { label: '路线图', href: '/roadmap' },
-      { label: '商业模式', href: '/pricing-preview' },
+      { label: '商业模式', href: '/pricing' },
       { label: '协议版权', href: '/terms-preview' },
       { label: '本地部署', href: '/local-deploy-preview' },
       { label: '企业版', href: '/enterprise-preview' },
@@ -84,7 +84,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '资产中心', href: '/assets', group: '工作台', keywords: ['资产', '素材', 'asset'] },
   { label: 'Dashboard', href: '/dashboard', group: '工作台', keywords: ['dashboard', '控制台'] },
   { label: '路线图', href: '/roadmap', group: '平台', keywords: ['路线图', 'roadmap'] },
-  { label: '商业模式', href: '/pricing-preview', group: '平台', keywords: ['商业', '价格', 'pricing'] },
+  { label: '商业模式', href: '/pricing', group: '平台', keywords: ['商业', '价格', 'pricing'] },
   { label: '协议版权', href: '/terms-preview', group: '平台', keywords: ['协议', '版权', 'terms'] },
   { label: '本地部署', href: '/local-deploy-preview', group: '平台', keywords: ['本地', '部署'] },
   { label: '企业版', href: '/enterprise-preview', group: '平台', keywords: ['企业', '权限'] },
@@ -96,7 +96,7 @@ const NAV_SEARCH_ITEMS: SearchItem[] = [
   { label: '平台模型中心', href: '/providers', group: '我的 API', keywords: ['平台模型', 'provider center', 'model', 'api center'] },
   { label: '生成用量', href: '/account/usage', group: '账户', keywords: ['用量', '用量历史', 'usage', '生成记录', 'byok用量', 'api用量'] },
   { label: '积分与充值', href: '/account/credits', group: '账户', keywords: ['积分', '充值', '钱包', 'credits', 'billing', '平台额度'] },
-  { label: '订阅与套餐', href: '/pricing-preview', group: '账户', keywords: ['订阅', '套餐', '计划', 'subscription', 'plan', '平台服务费', 'pricing'] },
+  { label: '会员中心', href: '/account/membership', group: '账户', keywords: ['订阅', '套餐', '计划', 'subscription', 'plan', '平台服务费', 'pricing', '会员', 'membership'] },
 ]
 
 const SEARCH_DEFAULTS = new Set([
@@ -391,10 +391,13 @@ export function TopNavigation() {
                   >
                     <span>◎</span> 积分与充值
                   </Link>
-                  <div className="flex w-full items-center justify-between gap-2 px-3.5 py-[7px] text-[12px] text-white/28 cursor-default select-none">
-                    <span className="flex items-center gap-2.5"><span>★</span> 订阅与套餐</span>
-                    <span className="rounded-full bg-white/[0.05] px-1.5 py-0.5 text-[9px] text-white/22">即将开放</span>
-                  </div>
+                  <Link
+                    href="/account/membership"
+                    className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-amber-300/70 transition hover:bg-amber-500/[0.06] hover:text-amber-200"
+                    onClick={() => setOpenMenu(null)}
+                  >
+                    <span>★</span> 会员中心
+                  </Link>
 
                   <div className="mx-2 my-1 border-t border-white/[0.07]" />
 
