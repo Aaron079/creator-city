@@ -1,6 +1,6 @@
 # Creator City — Current Status
 
-Last updated: 2026-06-15 (P1-4E Unified Launch QA — PARTIAL / BLOCKED_ON_ADMIN_MEMBER_SELLER_SESSION)
+Last updated: 2026-06-16 (P1-4E Unified Launch QA — VALIDATED / CLOSED)
 Last valid commit: P1-4A follow-up IMPLEMENTED — Hide Credits Recharge CTA for First Launch（新增 PLATFORM_CREDITS_RECHARGE_ENABLED env var，默认 false；/account/credits 支付宝充值套餐卡片 + 申请人工充值表单 + 充值按钮 当 flag 为 false 时完全隐藏，替换为"积分充值暂未开放"提示 + BYOK 引导 + 联系管理员开通会员说明；余额展示 + 历史账本保留不变；/admin/credits 不受影响；不改 schema，不改 payment API，不改 wallet/ledger）
 Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated · Color Grade draft node workflow validated · Color Grade preview copy clarification validated · Color Suite / 调色入口 browser validated · Tool 12 Color Grade Palette / 调色盘 browser validated · Look Package Applier 归入节点顶部调色入口 browser validated · Canvas V2 Beta entry removed · Workflow Connection Context Tools + Stronger Edges browser validated · Reference Image Picker for video nodes browser validated · Canvas Tool Dock Grouping validated · Workflow Context Target Binding Fix validated · Make Workflow Continue Button Visible validated · Workflow Continue Options in Source Menu validated · User Usage History browser validated · Provider Account Center auth blank screen fix validated · Seedance Video BYOK security review completed · Provider API Key Guide browser validated · Provider Account Usage Summary browser validated · Provider Account Detail / Health Status browser validated · Subpage Navigation Polish browser validated · Provider Account Center UX Polish Batch validated · Account / Billing / BYOK Messaging validated · Provider Account Health Guidance validated · Seedance Video BYOK Safe Logging / Feature Flag Skeleton validated · Platform Service Fee Strategy Audit read-only completed · Pricing / Service Credits Static Preview validated · AI Help Billing Knowledge Sync validated · Service Credits Data Model Audit read-only completed · Admin Simulated Service Credits View validated · Admin BYOK Business Metrics Dashboard validated · BYOK Observation Summary / Admin Copy Report validated · BYOK Observation Playbook validated · Canvas Cinematic Controls shipped · Canvas Smart Tools — Generate Readiness Check validated · Camera Lexicon browser validated · Canvas Smart Tools Toolbar Cleanup + Camera Lexicon Navigation Placement browser validated · Canvas Smart Tools Tool 3A — Asset Variant Planner browser validated · /api/media/proxy 502 audit completed · Media Preview Fallback browser validated · Canvas Smart Tools Tool 4 — Character Lock Basic browser validated · Canvas Smart Tools Tool 5 — A/B Compare Panel validated · Canvas Smart Tools Tool 6 — Keyframe Extractor validated · Canvas Smart Tools Tool 7 — Shot List Builder validated · Canvas Smart Tools Tool 8 — Continuity Checker validated · Canvas Smart Tools Tool 9 — Prompt Booster validated · Canvas Smart Tools Tool 10 — Sequence Board removed from UI after product review · Canvas Smart Tools Tool 10 — Batch Prompt Rewriter validated · Canvas Smart Tools Tool 11 — Look Package Applier validated)
 
@@ -10,7 +10,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 
 | Task | Status | Commit |
 |---|---|---|
-| P1-4E Unified Launch QA | ⏳ PARTIAL / BLOCKED_ON_ADMIN_MEMBER_SELLER_SESSION | QA-only |
+| P1-4E Unified Launch QA | ✅ VALIDATED / CLOSED | QA-only |
 | P1-4B-4-QA Membership Gating QA | ✅ VALIDATED / CLOSED | QA-only |
 | P1-4D-5 Marketplace Inquiry QA | ✅ CLOSED | QA-only |
 | P0-PROD-CANVAS-SAVE-DISABLE-AUTOSAVE-CLOUD | ⏳ WAITING_PRODUCTION_VALIDATION | `fe72f63` |
@@ -4374,7 +4374,7 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 **Date:** 2026-06-15  
 **Scope:** Membership + BYOK + Canvas save + Marketplace inquiry + Disabled credits/payment  
-**Status:** PARTIAL / BLOCKED — 需要 ADMIN session 完成会员审批与 seller/admin 浏览器验证
+**Status:** VALIDATED / CLOSED — 2026-06-16 全部 phases PASS
 
 ### 已验证项（PASS）
 
@@ -4406,6 +4406,16 @@ no subject replacement, no face change, no product redesign, no composition chan
 | F | Seller respond/reject/close inquiry | 无 seller/ADMIN session |
 | H | Admin pages smoke（/admin/membership · /admin/marketplace） | 无 ADMIN session |
 
-### 下一步
+### P1-4E-FOLLOWUP 补测结果（2026-06-16）
 
-见 P1-4E-FOLLOWUP 任务。Aaron 手动审批 QA 订单（`c9ebb805` 或 `134a62b8`）后可继续。
+| Phase | 状态 | 证据 |
+|---|---|---|
+| Phase 1 — Admin membership approval | ✅ PASS (live) | membershipActive=true, membershipStatus=ACTIVE, expiresAt=2026-07-15（两 QA 账号 live 确认）|
+| Phase 2 — Member inquiry submit | ✅ PASS (live) | inquiryId `b4ee0386`, status=PENDING, disclaimer present, idempotent |
+| Phase 3 — Seller respond | ✅ PASS (user-certified) | Aaron seller 浏览器确认 respond 成功 |
+| Phase 4 — Buyer close + resubmit | ✅ PASS (live) | CLOSED live; resubmit→PENDING reset live |
+| Phase 5 — Admin pages smoke | ✅ PASS (user-certified) | /admin /admin/membership /admin/marketplace /admin/providers /admin/credits 全部可加载 |
+| Phase 6 — Final side-effect | ✅ PASS (live) | 0 MarketplaceOrder, 0 LicenseGrant, 0 CreditLedger; payment routes 405/404 |
+
+**First launch path VALIDATED / CLOSED:**
+会员订阅 ✅ · BYOK-first ✅ · Canvas local draft + manual cloud save ✅ · Marketplace inquiry/contact mode ✅ · No platform credit payment ✅ · No automatic refund ✅ · No wallet/ledger side effects ✅ · Admin gates ✅ · No NFT/on-chain ✅
