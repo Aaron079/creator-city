@@ -10,7 +10,7 @@ Production validated: 2026-06-08 (Color Suite 最终收口 CLOSED / validated ·
 
 | Task | Status | Commit |
 |---|---|---|
-| P2-FIRST-USERS First Users Trial Materials | ✅ IMPLEMENTED | `(pending commit)` |
+| P2-FIRST-USERS First Users Trial Materials | ✅ IMPLEMENTED | `14a03ff` |
 | P2-LAUNCH-READINESS Navigation + Copy Polish | ✅ IMPLEMENTED | `bf9d210` |
 | P2-ADMIN Admin Operations Hardening | ✅ IMPLEMENTED | `633954f` |
 | P1-4E Unified Launch QA | ✅ VALIDATED / CLOSED | QA-only |
