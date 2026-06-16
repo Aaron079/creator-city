@@ -143,7 +143,7 @@ async function createImageGenerationJob(args: {
       providerId: args.providerId,
       nodeType: 'image',
       status: 'PROCESSING' as const,
-      prompt: args.prompt.slice(0, 2000),
+      prompt: args.prompt,
       ...(skip.has('projectId') ? {} : { projectId: args.body.projectId ?? null }),
       ...(skip.has('provider') ? {} : { provider: args.providerId }),
       ...(skip.has('nodeId') ? {} : { nodeId: args.body.nodeId ?? null }),

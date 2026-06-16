@@ -674,7 +674,7 @@ export async function POST(request: NextRequest) {
         nodeType: 'video',
         kind: 'video',
         status: 'QUEUED',
-        prompt: prompt.slice(0, 2000),
+        prompt: prompt,
         input: {
           prompt,
           imageUrl: imageUrl ?? null,
