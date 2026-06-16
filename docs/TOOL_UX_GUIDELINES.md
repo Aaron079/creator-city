@@ -1,8 +1,8 @@
 # Creator City — Tool UX Interaction Guidelines
 
-**Status:** DRAFT v1  
+**Status:** DRAFT v2  
 **Date:** 2026-06-16  
-**Scope:** Canvas director tools, generation dialogs, Bible panels, ShotList, Camera Lexicon
+**Scope:** Canvas director tools, generation dialogs, Bible panels, ShotList, Camera Lexicon, Cinematic Wheel Controls
 
 ---
 
@@ -10,6 +10,9 @@
 
 > **导演不填表单，导演做决策。**  
 > Every tool interaction should feel like choosing, not typing. Replace dropdowns and text inputs wherever a bounded option set exists. Show the options visually so the user understands them without reading documentation.
+
+> **具象化 > 抽象化。**  
+> Director tools must feel like professional equipment, not parameter forms. Prefer concrete cinematic wheel controls over generic dropdowns, sliders, or tag lists. Show a visual model (SVG diagram, silhouette, depth chart) alongside every selector so the user understands the effect without documentation.
 
 ---
 
@@ -121,12 +124,64 @@ This ensures:
 
 ---
 
+---
+
+## 6. Concrete Cinematic Wheel Controls (NEW — P2-TOOL-UX-4A standard)
+
+**When to use:** Director tools that map directly to real-world filmmaking equipment. Any control where the real-world counterpart is a physical dial, drum, or selector wheel on a camera rig.
+
+**Standard:** This is the top-tier interaction pattern — all future director tools should aim for this format.
+
+**Component:** `apps/web/src/components/create/CinematicCameraControlPanel.tsx`
+
+**Structure:**
+```
+┌─────────────────────────────────────┐
+│ [slot title EN] [slot title ZH]     │  ← header bar
+│                                     │
+│    [SVG visual model / diagram]     │  ← 52px high, parametric
+│                                     │
+│           ▲                         │
+│    prev option (dim, clickable)     │  ← drum wheel
+│  ╔══════════════════════╗           │
+│  ║  Current Option  ║  sublabel    ║  ← selected (violet highlight)
+│  ╚══════════════════════╝           │
+│    next option (dim, clickable)     │
+│           ▼                         │
+│                                     │
+│  director note (1 line, dim)        │  ← cinematic context
+└─────────────────────────────────────┘
+```
+
+**Visual model rules:**
+- Every slot MUST have an SVG/CSS visual that changes with the selection
+- SVG uses `currentColor` (theme-inherits violet-300/50)
+- Lens slot: FOV triangle angle changes per focal length (18mm wide → 135mm narrow)
+- Aperture slot: iris circle hole size changes per f-stop (f/1.4 large → f/8 small)
+- Focus slot: 3-plane depth diagram with highlighted active plane
+- Camera body slot: universal camera silhouette (type indicated by label)
+
+**Director note rule:** Every option includes a 1-line cinematic interpretation in Chinese, written as a director's instinct, not a spec sheet.
+
+**Integration:** Settings persist to `localStorage` keyed by `creator-city:camera-settings:<projectId>`. Applied as `[Creator City Camera Direction]` section appended after Bible context, before prompt reaches the provider. No generate route or provider adapter changes.
+
+**Active indicator:** When ≥1 setting is active, a `🎥 摄影机设定` chip appears in the generation dialog node panel (clickable, re-opens the control panel).
+
+---
+
 ## Component Placement
 
 ```
 apps/web/src/components/toolkit/
 ├── WheelSelector.tsx       ✅ implemented
 └── VisualTagPicker.tsx     ✅ implemented
+
+apps/web/src/components/create/
+└── CinematicCameraControlPanel.tsx  ✅ implemented (P2-TOOL-UX-4A)
+
+apps/web/src/lib/canvas/
+├── biblePromptContext.ts   ✅ implemented
+└── cameraPromptContext.ts  ✅ implemented (P2-TOOL-UX-4A)
 ```
 
 **Rules:**

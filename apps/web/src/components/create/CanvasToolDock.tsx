@@ -24,7 +24,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
-  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible') => void
+  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'camera-control') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
 }
 
@@ -188,6 +188,15 @@ export function CanvasToolDock({
                   <div className="px-3 pb-1 pt-0.5">
                     <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">导演工具</p>
                   </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('camera-control') }}
+                  >
+                    <span className="text-[13px]">🎥</span>
+                    <span>摄影机控制</span>
+                  </button>
+                  <div className="mx-3 my-1 border-t border-white/[0.06]" />
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
