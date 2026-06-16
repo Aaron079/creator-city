@@ -9064,22 +9064,33 @@ export function VisualCanvasWorkspace({
             </div>
           )}
           {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
-            <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-2">生成费用来源</p>
-              <div className="flex gap-2">
+            <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30">API 费用来源</p>
+              {/* Billing mode icon cards */}
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setBillingMode('user_provider_account')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.1] text-violet-200' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
+                  className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
                 >
-                  我的 API 账户
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm leading-none">🔑</span>
+                    <span className={`text-[8px] font-bold rounded-full px-1.5 py-0.5 ${billingMode === 'user_provider_account' ? 'bg-violet-500/25 text-violet-300' : 'bg-white/[0.05] text-white/25'}`}>推荐</span>
+                  </div>
+                  <span className="text-[11px] font-semibold mt-1 leading-tight">我的 API 账户</span>
+                  <span className="text-[9px] leading-tight opacity-55">自有 Key · 费用直扣</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setBillingMode('platform_credits')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.09] text-white' : 'border-white/[0.07] bg-transparent text-white/45 hover:text-white/70'}`}
+                  className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.07] text-white' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
                 >
-                  平台额度
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm leading-none">🏛</span>
+                    <span className="text-[8px] font-bold rounded-full px-1.5 py-0.5 bg-white/[0.05] text-white/20">内部</span>
+                  </div>
+                  <span className="text-[11px] font-semibold mt-1 leading-tight">平台额度</span>
+                  <span className="text-[9px] leading-tight opacity-55">平台积分（内部）</span>
                 </button>
               </div>
               {editingNode.kind === 'video' ? (
@@ -9098,13 +9109,13 @@ export function VisualCanvasWorkspace({
                     <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
                   )}
                   {billingMode === 'user_provider_account' && (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       {editingNode.kind === 'image' ? (
-                        <p className="text-[10px] text-violet-300/50 leading-relaxed">
-                          使用你自己的火山方舟 API Key + Endpoint ID 生成 Seedream 图片，费用直接计入你的 Volcengine 账户，Creator City 不代扣。当前仅支持 Seedream 图片，Video 暂不支持。
+                        <p className="text-[9px] text-violet-300/45 leading-relaxed">
+                          Seedream 图片 · 费用计入 Volcengine 账户 · Creator City 不代扣
                         </p>
                       ) : (
-                        <p className="text-[10px] text-violet-300/50 leading-relaxed">使用你自己的 Provider API Key，Provider 费用直接计入你的服务商账户，Creator City 不代扣。当前仅支持文本生成。</p>
+                        <p className="text-[9px] text-violet-300/45 leading-relaxed">Provider 费用直接计入你的服务商账户，Creator City 不代扣。</p>
                       )}
                       {userAccountsLoading ? (
                         <p className="text-[11px] text-white/30">加载账户中…</p>
@@ -9126,19 +9137,32 @@ export function VisualCanvasWorkspace({
                         const missingEndpointId = editingNode.kind === 'image' && Boolean(selectedUserAccountId) && !selectedAcc?.fieldMeta?.endpointId
                         return (
                           <>
-                            <select
-                              value={selectedUserAccountId}
-                              onChange={(e) => setSelectedUserAccountId(e.target.value)}
-                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/80 outline-none focus:border-violet-500/40"
-                            >
-                              <option value="">— 选择账户 —</option>
-                              {matchingAccounts.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.accountLabel} ···· {a.keyLast4}
-                                  {a.fieldMeta?.endpointId ? ` · EP:${a.fieldMeta.endpointId.last4}` : ''}
-                                </option>
-                              ))}
-                            </select>
+                            {/* Visual account card list */}
+                            <div className="space-y-1">
+                              {matchingAccounts.map((a) => {
+                                const isSelected = selectedUserAccountId === a.id
+                                const hasEndpoint = Boolean(a.fieldMeta?.endpointId)
+                                return (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    onClick={() => setSelectedUserAccountId(isSelected ? '' : a.id)}
+                                    className={`w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between gap-2 ${isSelected ? 'border-violet-500/35 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/60 hover:border-white/[0.13] hover:text-white/80'}`}
+                                  >
+                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                      <span className="text-[11px] font-medium truncate">{a.accountLabel}</span>
+                                      <span className={`text-[9px] ${isSelected ? 'text-violet-300/50' : 'text-white/30'}`}>
+                                        ···· {a.keyLast4}
+                                        {hasEndpoint ? ` · EP: ···· ${a.fieldMeta?.endpointId?.last4 ?? '????'}` : ' · 缺少 Endpoint ID'}
+                                      </span>
+                                    </div>
+                                    <div className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[8px] transition ${isSelected ? 'border-violet-500/50 bg-violet-500/20 text-violet-300' : 'border-white/[0.12] text-transparent'}`}>
+                                      {isSelected ? '✓' : ''}
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
                             {missingEndpointId && (
                               <p className="text-[11px] text-amber-400/70">
                                 ⚠ 缺少 Endpoint ID，请到
