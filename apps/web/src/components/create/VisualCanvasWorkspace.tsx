@@ -8983,13 +8983,13 @@ export function VisualCanvasWorkspace({
               isActiveGenerationStatus(editingNode.status) ||
               ((editingNode.kind === 'text' || editingNode.kind === 'image') && billingMode === 'user_provider_account' && !selectedUserAccountId) ||
               (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId) ||
-              (editingNode.kind === 'video' && billingMode === 'user_provider_account')
+              editingNode.kind === 'video'
             }
             generateLabel={
               isActiveGenerationStatus(editingNode.status)
                 ? '生成中…'
-                : editingNode.kind === 'video' && videoGenerateDisabled
-                  ? '未配置'
+                : editingNode.kind === 'video'
+                  ? '视频生成内测中'
                 : editingNode.kind === 'image' && !defaultImageProviderId
                   ? '请先配置图片 Provider'
                 : editingNode.kind === 'image' && imageGenerateDisabled
@@ -9007,7 +9007,7 @@ export function VisualCanvasWorkspace({
                           : '模拟生成'
             }
             estimatedCredits={
-              editingNode.kind === 'video' && billingMode === 'user_provider_account'
+              editingNode.kind === 'video'
                 ? undefined
                 : estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))
             }

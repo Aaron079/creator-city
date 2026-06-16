@@ -500,7 +500,22 @@ export async function POST(request: NextRequest) {
   if (!ENABLE_SEEDANCE_VIDEO_BYOK && requestedBillingMode === 'user_provider_account') {
     return videoErrorResponse({
       errorCode: 'VIDEO_BYOK_NOT_ENABLED',
-      errorMessage: '视频我的 API 尚未开放，请先使用平台额度。',
+      errorMessage: '视频 BYOK 尚未开放。请前往 API 账户中心配置 Seedance API Key，开放后即可使用。',
+      requestId: routeRequestId,
+      mode: 'unavailable',
+      status: 'failed',
+      statusCode: 403,
+      submittedInput: safeVideoSubmittedInput(body),
+    })
+  }
+  // Platform video guard — rejects platform_credits (and billingMode-absent) requests until
+  // ENABLE_PLATFORM_VIDEO_GENERATION=true. Prevents the unstable Seedance async path from
+  // being triggered via manual API calls or any UI path that bypasses the client-side gate.
+  const ENABLE_PLATFORM_VIDEO_GENERATION = process.env.ENABLE_PLATFORM_VIDEO_GENERATION === 'true'
+  if (!ENABLE_PLATFORM_VIDEO_GENERATION && requestedBillingMode !== 'user_provider_account') {
+    return videoErrorResponse({
+      errorCode: 'VIDEO_GENERATION_NOT_READY',
+      errorMessage: '平台额度视频生成当前未对外开放。如需视频生成，请配置 Seedance BYOK（API Key + Endpoint ID），或联系管理员开启平台视频生成权限。',
       requestId: routeRequestId,
       mode: 'unavailable',
       status: 'failed',

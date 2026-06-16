@@ -1440,6 +1440,7 @@ export function CanvasNodeCard({
   const [imageLoadFailed, setImageLoadFailed] = useState(false)
   const [imageNaturalRatio, setImageNaturalRatio] = useState<number | null>(null)
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [videoPreviewActive, setVideoPreviewActive] = useState(false)
   const [charRefDragOver, setCharRefDragOver] = useState(false)
   const [copiedDiagnostic, setCopiedDiagnostic] = useState<'node' | 'urls' | null>(null)
   const [imageRenderFailures, setImageRenderFailures] = useState<RenderFailure[]>([])
@@ -2569,18 +2570,21 @@ export function CanvasNodeCard({
     if (node.kind !== 'video') {
       setSelectedVideoSource(null)
       setVideoRenderFailures([])
+      setVideoPreviewActive(false)
       return
     }
     if (!videoCandidateUrls.length) {
       setSelectedVideoSource(null)
       setVideoLoadFailed(false)
       setVideoRenderFailures([])
+      setVideoPreviewActive(false)
       return
     }
 
     setVideoLoadFailed(false)
     setVideoRenderFailures([])
     setSelectedVideoSource(videoCandidateUrls[0] ?? null)
+    setVideoPreviewActive(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoCandidateUrlsKey, node.id, node.kind])
 
@@ -3300,6 +3304,10 @@ export function CanvasNodeCard({
                   onDoubleClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
+                    if (!videoPreviewActive) {
+                      setVideoPreviewActive(true)
+                      return
+                    }
                     if (!videoMedia.loadFailed && videoProxiedSrc) {
                       setLightbox({ type: 'video', url: videoProxiedSrc, title: node.title })
                     }
@@ -3307,6 +3315,32 @@ export function CanvasNodeCard({
                 >
                   {videoMedia.loadFailed ? (
                     renderMediaFailurePanel('video')
+                  ) : !videoPreviewActive ? (
+                    /* Click-to-load overlay: prevents video element from auto-mounting
+                       with src, which triggers OSS fetch for every video node on page load
+                       causing ERR_TIMED_OUT storms when OSS is slow or cross-region. */
+                    <button
+                      type="button"
+                      data-no-node-drag="true"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setVideoPreviewActive(true) }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                      aria-label="加载视频预览"
+                    >
+                      <span style={{ fontSize: '22px', color: 'rgba(255,255,255,0.40)' }}>▶</span>
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.28)', letterSpacing: '0.02em' }}>点击加载预览</span>
+                    </button>
                   ) : (
                     <>
                       <video
