@@ -2792,24 +2792,38 @@ export function CanvasNodeCard({
     const isSimplePreviewExpiry = node.status === 'done' && Boolean(nodeAssetId) && !persistencePending
     if (isSimplePreviewExpiry) {
       const promptTruncated = node.prompt?.trim().slice(0, 60) ?? ''
+      const rawVideoUrl = mediaKind === 'video' ? (videoPreviewUrl || node.resultVideoUrl?.trim()) : null
       return (
         <span className={mediaKind === 'image' ? 'canvas-node-image-error' : 'canvas-node-video-error'}>
           <span className="block text-left text-[11px] font-semibold uppercase tracking-normal text-white/55">
-            预览暂不可用
+            {mediaKind === 'video' ? '视频预览暂不可用' : '预览暂不可用'}
           </span>
           <span className="mt-1 block text-left text-xs leading-snug text-white/45">
-            资产记录仍保留
+            {mediaKind === 'video' ? '预览加载超时，生成结果已保存' : '资产记录仍保留'}
           </span>
           {promptTruncated ? (
             <span className="mt-1 block max-w-full truncate text-left text-[10px] text-white/30">
               {promptTruncated}{(node.prompt?.trim().length ?? 0) > 60 ? '…' : ''}
             </span>
           ) : null}
+          {rawVideoUrl ? (
+            <a
+              href={rawVideoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1.5 block text-left text-[11px] text-cyan-200/70 underline underline-offset-2 hover:text-cyan-100"
+              data-no-node-drag="true"
+              onPointerDown={(e) => { e.stopPropagation() }}
+              onClick={(e) => { e.stopPropagation() }}
+            >
+              → 在新标签页打开视频
+            </a>
+          ) : null}
           <a
             href="/assets"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1.5 block text-left text-[11px] text-cyan-200/70 underline underline-offset-2 hover:text-cyan-100"
+            className="mt-1.5 block text-left text-[11px] text-cyan-200/60 underline underline-offset-2 hover:text-cyan-100"
             data-no-node-drag="true"
             onPointerDown={(e) => { e.stopPropagation() }}
             onClick={(e) => { e.stopPropagation() }}

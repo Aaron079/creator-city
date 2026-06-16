@@ -223,13 +223,28 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  // For mp4 video URLs: return 307 redirect to the upstream URL instead of proxying the body.
+  // Root cause of ERR_TIMED_OUT: the AbortController timer is cleared after fetch() returns
+  // response headers, leaving body streaming unprotected. Large mp4s on cross-region
+  // OSS (cn-hangzhou → Vercel global) stall the Vercel function until its own timeout fires,
+  // producing ERR_TIMED_OUT on the browser side with no response headers at all.
+  // OSS signed URLs are self-authenticating; the 307 redirect is safe — auth was already
+  // verified above. The browser fetches video data directly from OSS, bypassing the stall.
+  const rawUrlLower = rawUrl.toLowerCase()
+  const isMp4Url = rawUrlLower.includes('.mp4')
+  if (isMp4Url) {
+    console.log('[media-proxy] 307-redirect mp4', { receivedUrl: rawUrl, hostname: target.hostname })
+    const redirectHeaders = new Headers()
+    redirectHeaders.set('Cache-Control', 'no-store')
+    redirectHeaders.set('x-media-proxy-redirect', 'mp4-direct')
+    return NextResponse.redirect(rawUrl, { status: 307, headers: redirectHeaders })
+  }
+
   const rangeHeader = request.headers.get('range')
-  // Video streams send 10-15 parallel Range requests across a high-latency cross-region link
-  // (Vercel global → OSS cn-hangzhou). Give them 30 s; keep images at 15 s.
+  // Non-mp4 video requests still go through the proxy with a 30s timeout.
   const isVideoRequest =
     Boolean(rangeHeader) ||
-    rawUrl.toLowerCase().includes('.mp4') ||
-    rawUrl.toLowerCase().includes('video')
+    rawUrlLower.includes('video')
   const timeoutMs = isVideoRequest ? 30_000 : 15_000
   const upstreamHeaders: Record<string, string> = {
     Accept: 'image/*,video/*,audio/*,*/*;q=0.5',
