@@ -96,7 +96,9 @@ import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
 import { appendCameraContextToPrompt, buildCameraPromptContext, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
+import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -235,6 +237,10 @@ function getStyleBibleKey(projectId: string) {
 
 function getCameraSettingsKey(projectId: string) {
   return `creator-city:camera-settings:${projectId}`
+}
+
+function getSceneLightingKey(projectId: string) {
+  return `creator-city:scene-lighting:${projectId}`
 }
 
 function getEnabledSkillsKey(projectId: string) {
@@ -2392,6 +2398,8 @@ export function VisualCanvasWorkspace({
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
   const [isCameraControlOpen, setIsCameraControlOpen] = useState(false)
   const [cameraSettings, setCameraSettings] = useState<CameraSettings>(DEFAULT_CAMERA_SETTINGS)
+  const [isSceneLightingOpen, setIsSceneLightingOpen] = useState(false)
+  const [sceneLightingSettings, setSceneLightingSettings] = useState<SceneLightingSettings>(DEFAULT_SCENE_LIGHTING)
   const [pendingAutoGenerateIds, setPendingAutoGenerateIds] = useState<string[]>([])
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
@@ -2574,6 +2582,12 @@ export function VisualCanvasWorkspace({
       setCameraSettings(rawCamera ? (JSON.parse(rawCamera) as CameraSettings) : DEFAULT_CAMERA_SETTINGS)
     } catch {
       setCameraSettings(DEFAULT_CAMERA_SETTINGS)
+    }
+    try {
+      const rawLighting = window.localStorage.getItem(getSceneLightingKey(projectId))
+      setSceneLightingSettings(rawLighting ? (JSON.parse(rawLighting) as SceneLightingSettings) : DEFAULT_SCENE_LIGHTING)
+    } catch {
+      setSceneLightingSettings(DEFAULT_SCENE_LIGHTING)
     }
     try {
       const rawSkills = window.localStorage.getItem(getEnabledSkillsKey(projectId))
@@ -4069,6 +4083,12 @@ export function VisualCanvasWorkspace({
     try { window.localStorage.setItem(getCameraSettingsKey(projectId), JSON.stringify(next)) } catch { /* localStorage unavailable */ }
   }, [projectId])
 
+  const updateSceneLightingSettings = useCallback((next: SceneLightingSettings) => {
+    setSceneLightingSettings(next)
+    if (!projectId) return
+    try { window.localStorage.setItem(getSceneLightingKey(projectId), JSON.stringify(next)) } catch { /* localStorage unavailable */ }
+  }, [projectId])
+
   const persistSceneBibleSettings = useCallback((nextBible: SceneBible) => {
     if (!projectId) return
     const savedBible = saveSceneBible(projectId, nextBible)
@@ -4400,7 +4420,8 @@ export function VisualCanvasWorkspace({
     const rawPrompt = node.prompt?.trim() ?? ''
     const bibleCtx = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
     const cameraCtx = buildCameraPromptContext(cameraSettings)
-    const prompt = appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt, cameraCtx)
+    const lightingCtx = buildSceneLightingPromptContext(sceneLightingSettings)
+    const prompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt, cameraCtx), lightingCtx)
     const fallbackProviderId = providerForRegenerationNode(node)
     const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
@@ -4742,7 +4763,7 @@ export function VisualCanvasWorkspace({
         clearRegenerationLoading()
       }
     })()
-  }, [beginNodeGeneration, cameraSettings, characterBible, commitNodes, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, projectId, sceneBible, scheduleCanvasSave, showCanvasFeedback, styleBible, workflowId])
+  }, [beginNodeGeneration, cameraSettings, characterBible, commitNodes, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, projectId, sceneBible, sceneLightingSettings, scheduleCanvasSave, showCanvasFeedback, styleBible, workflowId])
 
   useEffect(() => {
     if (pendingAutoGenerateIds.length === 0) return
@@ -6226,7 +6247,8 @@ export function VisualCanvasWorkspace({
     const rawPrompt = trimmedPrompt || upstreamTextPrompt
     const bibleContext = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
     const cameraContext = buildCameraPromptContext(cameraSettings)
-    const generationPrompt = appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleContext), cameraContext)
+    const lightingContext = buildSceneLightingPromptContext(sceneLightingSettings)
+    const generationPrompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleContext), cameraContext), lightingContext)
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
         const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl
@@ -6802,7 +6824,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, billingMode, buildResultLabel, cameraSettings, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, sceneBible, selectedUserAccountId, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, billingMode, buildResultLabel, cameraSettings, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, sceneBible, sceneLightingSettings, selectedUserAccountId, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -7922,6 +7944,7 @@ export function VisualCanvasWorkspace({
             if (tool === 'character-bible') setIsCharacterBibleOpen(true)
             if (tool === 'scene-bible') setIsSceneBibleOpen(true)
             if (tool === 'camera-control') setIsCameraControlOpen(true)
+            if (tool === 'scene-lighting') setIsSceneLightingOpen(true)
           }}
           onOpenPromptTool={(tool) => {
             setIsPromptBoosterOpen(tool === 'prompt-booster')
@@ -8170,6 +8193,15 @@ export function VisualCanvasWorkspace({
           value={cameraSettings}
           onChange={updateCameraSettings}
           onClose={() => setIsCameraControlOpen(false)}
+        />
+      ) : null}
+
+      {saveStatus !== 'opening' ? (
+        <SceneLightingControlPanel
+          open={isSceneLightingOpen}
+          value={sceneLightingSettings}
+          onChange={updateSceneLightingSettings}
+          onClose={() => setIsSceneLightingOpen(false)}
         />
       ) : null}
 
@@ -8994,7 +9026,7 @@ export function VisualCanvasWorkspace({
               setIsBatchRewriterOpen(false)
             } : undefined}
           />
-          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (hasBibleContent({ characterBible, sceneBible, styleBible }) || hasCameraContext(cameraSettings)) && (
+          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (hasBibleContent({ characterBible, sceneBible, styleBible }) || hasCameraContext(cameraSettings) || hasSceneLightingContext(sceneLightingSettings)) && (
             <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
               {characterBible.characters.filter((c) => c.name?.trim()).length > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
@@ -9018,6 +9050,15 @@ export function VisualCanvasWorkspace({
                   className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5 hover:bg-violet-500/[0.14] hover:text-violet-200 transition"
                 >
                   🎥 摄影机设定
+                </button>
+              )}
+              {hasSceneLightingContext(sceneLightingSettings) && (
+                <button
+                  type="button"
+                  onClick={() => setIsSceneLightingOpen(true)}
+                  className="inline-flex items-center gap-1 text-[10px] text-amber-300/70 bg-amber-500/[0.07] border border-amber-500/20 rounded-full px-2.5 py-0.5 hover:bg-amber-500/[0.14] hover:text-amber-200 transition"
+                >
+                  💡 场景光线 ×{activeSceneLightingCount(sceneLightingSettings)}
                 </button>
               )}
             </div>

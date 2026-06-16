@@ -24,7 +24,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
-  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'camera-control') => void
+  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'camera-control' | 'scene-lighting') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
 }
 
@@ -195,6 +195,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🎥</span>
                     <span>摄影机控制</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-amber-300/75 transition hover:bg-amber-500/[0.06] hover:text-amber-200"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('scene-lighting') }}
+                  >
+                    <span className="text-[13px]">💡</span>
+                    <span>场景光线</span>
                   </button>
                   <div className="mx-3 my-1 border-t border-white/[0.06]" />
                   <button

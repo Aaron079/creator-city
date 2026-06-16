@@ -177,11 +177,13 @@ apps/web/src/components/toolkit/
 └── VisualTagPicker.tsx     ✅ implemented
 
 apps/web/src/components/create/
-└── CinematicCameraControlPanel.tsx  ✅ implemented (P2-TOOL-UX-4A)
+├── CinematicCameraControlPanel.tsx  ✅ implemented (P2-TOOL-UX-4A)
+└── SceneLightingControlPanel.tsx    ✅ implemented (P2-TOOL-UX-4B)
 
 apps/web/src/lib/canvas/
-├── biblePromptContext.ts   ✅ implemented
-└── cameraPromptContext.ts  ✅ implemented (P2-TOOL-UX-4A)
+├── biblePromptContext.ts          ✅ implemented
+├── cameraPromptContext.ts         ✅ implemented (P2-TOOL-UX-4A)
+└── sceneLightingPromptContext.ts  ✅ implemented (P2-TOOL-UX-4B)
 ```
 
 **Rules:**
