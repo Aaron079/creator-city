@@ -544,6 +544,9 @@ const TERMINAL_RECOVERY_REASONS = new Set([
   'proxy_error',
   'generation_failed',
   'content_policy_rejected',
+  'generation_cancelled',
+  'generation_polling_timeout',
+  'video_not_enabled',
 ])
 const PROMPT_REBUILD_DETAIL = '历史 Asset 记录不存在，需要用原 Prompt 重建。'
 const ASSET_RECORD_MISSING_MESSAGE = '历史 Asset 记录不存在，需要用原 Prompt 重新生成并重建 Asset。'
@@ -563,6 +566,27 @@ const FRIENDLY_FAILURE_TITLES: Record<string, string> = {
   proxy_error: '代理读取失败',
   generated_but_persistence_pending: '素材待上传',
   proxy_load_failed: '媒体加载暂时失败',
+  // Generation lifecycle failures
+  generation_cancelled: '已停止生成',
+  generation_stopped_on_reload: '页面刷新已停止',
+  generation_cancelled_by_user: '已手动停止',
+  generation_polling_timeout: '生成超时',
+  video_not_enabled: '视频内测中',
+  VIDEO_GENERATION_NOT_READY: '视频内测中',
+  // OSS / persistence failures
+  oss_upload_error: '媒体上传失败',
+  oss_upload_timeout: '媒体上传超时',
+  oss_auth_error: '存储鉴权失败',
+  oss_permission_error: '存储权限不足',
+  oss_config_error: '存储配置错误',
+  asset_persistence_error: '资产保存失败',
+  canvas_save_error: '画布写回失败',
+  provider_no_download_url: 'Provider 未返回 URL',
+  provider_media_download_failed: '媒体下载失败',
+  // Network / client failures
+  client_fetch_failed: '网络请求失败',
+  provider_timeout: 'Provider 请求超时',
+  generation_post_timeout: '生成提交超时',
 }
 
 // Codes that should show the asset library recovery link.
@@ -687,6 +711,9 @@ function mediaRecoveryReason(metadata: Record<string, unknown>) {
   if (raw === 'provider_retrieve_not_available' || raw === 'provider_retrieve_not_implemented' || raw === 'unrecoverable_provider_retrieve_not_implemented') return 'no_recovery_source'
   if (raw === 'unrecoverable_provider_expired' || raw === 'unrecoverable_expired_signed_url_without_storage_key') return 'old_url_expired'
   if (raw === 'unrecoverable_no_record' || raw === 'unrecoverable_blob_url' || raw === 'unrecoverable_data_url_without_file') return 'no_recovery_source'
+  // Explicit user cancel or page-reload stop: treat as a distinct "generation_cancelled" reason
+  // so the failure panel shows "已停止生成" instead of a generic "素材未找回" message.
+  if (raw === 'generation_stopped_on_reload' || raw === 'generation_cancelled_by_user') return 'generation_cancelled'
   return raw
 }
 
@@ -1009,6 +1036,9 @@ function normalizeGenerationFailureCode(error: Record<string, unknown>) {
   if (code === 'MEDIA_UPLOAD_FAILED' || code === 'oss_upload_error') return 'oss_upload_error'
   if (code === 'MEDIA_ASSET_CREATE_FAILED' || code === 'MEDIA_PERSISTENCE_FAILED' || code === 'MEDIA_PERSIST_FAILED' || code === 'asset_persistence_error') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
+  if (code === 'generation_stopped_on_reload' || code === 'generation_cancelled_by_user') return 'generation_cancelled'
+  if (code === 'generation_polling_timeout') return 'generation_polling_timeout'
+  if (code === 'VIDEO_GENERATION_NOT_READY' || code === 'video_not_enabled') return 'video_not_enabled'
   return code ? 'generation_failed' : ''
 }
 
@@ -1053,12 +1083,25 @@ function generationFailureMessage(error: Record<string, unknown>) {
   if (normalized === 'oss_upload_error') return '媒体上传到对象存储失败，请稍后重试。'
   if (normalized === 'asset_persistence_error') return '媒体持久化或 Asset 写入失败，请稍后重试。'
   if (normalized === 'canvas_save_error') return 'Canvas 保存失败，请稍后重试。'
+  if (normalized === 'generation_cancelled') {
+    return code === 'generation_stopped_on_reload'
+      ? '页面已刷新，生成任务已自动停止，未消耗额度。重新生成请点击生成按钮。'
+      : '已手动停止生成。重新生成请点击生成按钮。'
+  }
+  if (normalized === 'generation_polling_timeout') return '生成轮询超时（已达上限）。任务可能仍在后台运行，请前往资产库（/assets）检查是否有生成结果。'
+  if (normalized === 'video_not_enabled') return '视频生成当前内测中，请使用图片生成，或联系管理员开启视频权限。'
   if (normalized === 'generation_failed') return '生成失败，请稍后重试。'
   return ''
 }
 
 function mediaFailureMessage(metadata: Record<string, unknown>, hasAssetId: boolean) {
   const reason = mediaRecoveryReason(metadata)
+  if (reason === 'generation_cancelled') {
+    const wasReload = stringValue(metadata.errorCode) === 'generation_stopped_on_reload'
+    return wasReload
+      ? '页面已刷新，生成任务已自动停止。重新生成请点击生成按钮。'
+      : '已手动停止生成。重新生成请点击生成按钮。'
+  }
   if (reason === 'unrecoverable_blob_url') return '该资产当时只保存为浏览器临时 blob，刷新后无法恢复。'
   if (reason === 'unrecoverable_data_url_without_file') return '该资产只保存了不可解析的 data URL，无法恢复成文件。'
   if (reason === 'unrecoverable_expired_signed_url_without_storage_key') return '该资产只保存了过期临时链接，没有保存永久 storageKey，无法恢复。'
@@ -1178,6 +1221,15 @@ function failureDiagnosis(args: {
       provider_quota_or_billing_error: 'Provider 额度不足',
       auth_required: '登录已失效',
       generation_auth_unavailable: '数据库暂时繁忙',
+      generation_cancelled: '已停止生成',
+      generation_polling_timeout: '生成超时',
+      video_not_enabled: '视频内测中',
+      oss_upload_error: '媒体上传失败',
+      oss_upload_timeout: '媒体上传超时',
+      oss_auth_error: '存储鉴权失败',
+      asset_persistence_error: '资产保存失败',
+      canvas_save_error: '画布写回失败',
+      provider_no_download_url: 'Provider 未返回 URL',
     }
     return {
       code,
@@ -1197,6 +1249,21 @@ function failureDiagnosis(args: {
   }
 
   const reason = mediaRecoveryReason(metadata)
+
+  // Early return: explicitly stopped/cancelled generation — never misclassify as "missing input".
+  if (reason === 'generation_cancelled') {
+    const wasReload = stringValue(metadata.errorCode) === 'generation_stopped_on_reload'
+    return {
+      code: 'generation_cancelled',
+      title: wasReload ? '页面刷新已停止' : '已手动停止',
+      detail: wasReload
+        ? '页面已刷新，生成任务已自动停止，未消耗额度。'
+        : '已手动停止生成。',
+      nextAction: node.prompt?.trim() ? '点击生成按钮重新生成。' : '输入 Prompt 后点击生成按钮。',
+      canRecover: true,
+    }
+  }
+
   const hasStorageKey = Boolean(stringValue(metadata.storageKey) || stringValue(nestedRecord(metadata.mediaPersistence).storageKey))
   const hasPrompt = Boolean(node.prompt?.trim())
   const missingGenerationFields = missingGenerationFieldsFor(node, metadata, args.mediaKind)

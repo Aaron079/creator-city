@@ -732,6 +732,10 @@ function normalizeGenerateErrorMessage(result: Pick<GenerateApiResult, 'errorCod
   ) {
     return 'Kimi 请求超时或被中断，请重试。'
   }
+  if (result.errorCode === 'VIDEO_GENERATION_NOT_READY' || result.errorCode === 'video_not_enabled') return '视频生成当前内测中，请使用图片生成。'
+  if (result.errorCode === 'generation_stopped_on_reload') return '页面已刷新，生成任务已自动停止。重新生成请点击生成按钮。'
+  if (result.errorCode === 'generation_cancelled_by_user') return '已手动停止生成。'
+  if (result.errorCode === 'generation_polling_timeout') return '生成轮询超时，任务可能仍在后台运行，请前往资产库（/assets）检查。'
   return message
 }
 
@@ -765,6 +769,10 @@ function normalizeVisibleGenerateErrorCode(result: Pick<GenerateApiResult, 'erro
   if (errorCode === 'MEDIA_UPLOAD_FAILED' || errorCode === 'oss_upload_error') return 'oss_upload_error'
   if (errorCode === 'MEDIA_ASSET_CREATE_FAILED' || errorCode === 'MEDIA_PERSISTENCE_FAILED' || errorCode === 'MEDIA_PERSIST_FAILED' || errorCode === 'asset_persistence_error') return 'asset_persistence_error'
   if (/canvas|save/.test(haystack)) return 'canvas_save_error'
+  if (errorCode === 'VIDEO_GENERATION_NOT_READY' || errorCode === 'video_not_enabled') return 'video_not_enabled'
+  if (errorCode === 'generation_stopped_on_reload') return 'generation_stopped_on_reload'
+  if (errorCode === 'generation_cancelled_by_user') return 'generation_cancelled_by_user'
+  if (errorCode === 'generation_polling_timeout') return 'generation_polling_timeout'
   return errorCode ? 'generation_failed' : ''
 }
 
