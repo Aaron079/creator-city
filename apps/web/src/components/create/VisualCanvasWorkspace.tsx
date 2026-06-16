@@ -418,6 +418,9 @@ const STORYBOARD_TOOLS_ENABLED = false
 const WORKSPACE_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const MIN_CANVAS_ZOOM = 0.35
 const MAX_CANVAS_ZOOM = 1.8
+// Hard ceiling on video generation polling (36 × 5s = 180s).
+// Prevents unbounded loops when the provider stalls without returning error/success.
+const MAX_VIDEO_GENERATION_POLLS = 36
 const CANVAS_ZOOM_STEP = 0.1
 const CONNECTOR_CENTER_OFFSET = 23
 const CONNECTION_DRAFT_HANDLE_OFFSET = 36
@@ -4686,8 +4689,8 @@ export function VisualCanvasWorkspace({
               providerId: selectedProviderId,
               mode: 'real',
               status: 'failed',
-              errorCode: 'generation_failed',
-              message: '视频任务在等待窗口内仍未完成，请稍后查询任务状态。',
+              errorCode: 'generation_polling_timeout',
+              message: '视频生成轮询超时（已查询 12 次），任务可能仍在后台运行，请前往资产库（/assets）检查生成结果。',
             }, selectedProviderId)
             return
           }
@@ -6530,9 +6533,7 @@ export function VisualCanvasWorkspace({
         showCanvasFeedback('视频任务已提交，正在生成中')
         let videoPolls = 0
         const videoStartMs = Date.now()
-        // No hard poll ceiling — stop only when provider returns success/failure,
-        // user cancels (AbortSignal), or the page unloads.
-        while (!generationController?.signal.aborted) {
+        while (videoPolls < MAX_VIDEO_GENERATION_POLLS && !generationController?.signal.aborted) {
           await delay(5000, generationController?.signal)
           const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId, generationController?.signal)
           videoPolls += 1
@@ -6588,8 +6589,23 @@ export function VisualCanvasWorkspace({
           showCanvasFeedback('视频生成完成')
           return
         }
-        // Loop exited because abort signal fired between poll intervals.
-        // The outer .catch() handler on callGenerationApi already suppresses AbortErrors silently.
+        // Loop exited: either cap reached or abort signal fired.
+        if (videoPolls >= MAX_VIDEO_GENERATION_POLLS && !generationController?.signal.aborted) {
+          const timeoutMsg = `视频生成轮询超时（已查询 ${MAX_VIDEO_GENERATION_POLLS} 次），任务可能仍在后台运行，请前往资产库（/assets）检查生成结果。`
+          handleNodePatch(nodeSnapshot.id, {
+            status: 'failed',
+            errorMessage: timeoutMsg,
+            resultPreview: '生成超时',
+            outputLabel: '生成超时',
+            metadataJson: videoErrorMetadata(generationNodeSnapshot, {
+              ...result,
+              errorCode: 'generation_polling_timeout',
+              message: timeoutMsg,
+            }, generationProviderId),
+          })
+          setDialogError(timeoutMsg)
+          showCanvasFeedback(timeoutMsg)
+        }
         return
       }
 
