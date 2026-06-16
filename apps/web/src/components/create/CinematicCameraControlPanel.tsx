@@ -2,84 +2,264 @@
 
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { DEFAULT_CAMERA_SETTINGS, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { CAMERA_DATABASE, getCameraVisualProfile, type CameraVisualProfile } from '@/lib/canvas/cameraModelDatabase'
 
-// ─── Visual SVG models ────────────────────────────────────────────────────────
+// ─── Camera body SVG visuals by profile ─────────────────────────────────────
 
-function CameraBodyIcon({ selected }: { selected: string }) {
-  // Cinema camera silhouette — body changes color only; shape is universal
-  const hasSelection = Boolean(selected)
+function CinemaBoxSvg() {
   return (
-    <svg viewBox="0 0 80 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
-      {/* Body */}
-      <rect x="5" y="14" width="54" height="34" rx="4" stroke="currentColor" strokeWidth="1.5" />
-      {/* Lens mount ring */}
-      <circle cx="30" cy="31" r="13" stroke="currentColor" strokeWidth="1.5" />
-      {/* Inner glass */}
-      <circle cx="30" cy="31" r="6" stroke="currentColor" strokeWidth="1" opacity={hasSelection ? 0.7 : 0.3} />
-      <circle cx="30" cy="31" r="2" fill="currentColor" opacity={hasSelection ? 0.5 : 0.2} />
-      {/* Viewfinder bump */}
-      <rect x="40" y="6" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.2" />
-      {/* Grip / handle */}
-      <rect x="54" y="16" width="8" height="18" rx="3" stroke="currentColor" strokeWidth="1.2" />
-      {/* Record indicator */}
-      <circle cx="61" cy="12" r="2.5" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity={hasSelection ? 0.5 : 0.15} />
-      {/* Top rail */}
-      <line x1="5" y1="18" x2="59" y2="18" stroke="currentColor" strokeWidth="0.6" opacity="0.3" />
+    <svg viewBox="0 0 96 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Main box body */}
+      <rect x="4" y="16" width="58" height="34" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      {/* Top handle / rail system */}
+      <rect x="8" y="8" width="50" height="9" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <line x1="16" y1="8" x2="16" y2="16" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <line x1="48" y1="8" x2="48" y2="16" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      {/* Lens port (large ring) */}
+      <circle cx="28" cy="33" r="14" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="28" cy="33" r="8" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      <circle cx="28" cy="33" r="3" fill="currentColor" opacity="0.4" />
+      {/* External viewfinder bracket */}
+      <rect x="62" y="12" width="24" height="16" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <line x1="62" y1="20" x2="66" y2="20" stroke="currentColor" strokeWidth="0.8" />
+      {/* Recording button */}
+      <circle cx="75" cy="34" r="3" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity="0.3" />
+      {/* Body detail lines */}
+      <line x1="4" y1="22" x2="62" y2="22" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
     </svg>
   )
 }
 
-// Pre-computed FOV half-spreads in SVG units (viewBox height=56, center y=28, lens at x=12, frame at x=70)
+function CinemaCompactSvg() {
+  return (
+    <svg viewBox="0 0 80 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Compact body */}
+      <rect x="5" y="14" width="54" height="34" rx="4" stroke="currentColor" strokeWidth="1.5" />
+      {/* Integrated top handle */}
+      <rect x="9" y="7" width="30" height="8" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      <line x1="14" y1="14" x2="14" y2="7" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      {/* Lens mount */}
+      <circle cx="30" cy="31" r="13" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="30" cy="31" r="6" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      <circle cx="30" cy="31" r="2" fill="currentColor" opacity="0.4" />
+      {/* Viewfinder bump */}
+      <rect x="40" y="7" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      {/* Side grip */}
+      <rect x="55" y="16" width="8" height="18" rx="3" stroke="currentColor" strokeWidth="1.2" />
+      {/* Record indicator */}
+      <circle cx="61" cy="12" r="2" fill="currentColor" fillOpacity="0.4" stroke="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}
+
+function MirrorlessSvg() {
+  return (
+    <svg viewBox="0 0 72 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Main body */}
+      <rect x="6" y="16" width="48" height="32" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      {/* EVF hump (left side) */}
+      <rect x="8" y="9" width="14" height="8" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      {/* Hot shoe */}
+      <rect x="28" y="13" width="10" height="3" rx="1" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
+      {/* Lens mount (centered) */}
+      <circle cx="30" cy="32" r="12" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="30" cy="32" r="6" stroke="currentColor" strokeWidth="0.9" opacity="0.6" />
+      <circle cx="30" cy="32" r="2" fill="currentColor" opacity="0.35" />
+      {/* Right grip */}
+      <rect x="52" y="17" width="7" height="20" rx="3" stroke="currentColor" strokeWidth="1.2" />
+      {/* Shutter button */}
+      <circle cx="55" cy="15" r="2" fill="currentColor" fillOpacity="0.35" stroke="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}
+
+function PhoneSvg() {
+  return (
+    <svg viewBox="0 0 48 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Phone body */}
+      <rect x="4" y="2" width="40" height="76" rx="6" stroke="currentColor" strokeWidth="1.5" />
+      {/* Dynamic island / notch */}
+      <rect x="16" y="6" width="16" height="5" rx="2.5" fill="currentColor" opacity="0.4" />
+      {/* Camera island (large square) */}
+      <rect x="8" y="18" width="22" height="22" rx="5" stroke="currentColor" strokeWidth="1.3" fill="currentColor" fillOpacity="0.05" />
+      {/* Triple camera circles */}
+      <circle cx="17" cy="25" r="5" stroke="currentColor" strokeWidth="1" />
+      <circle cx="17" cy="25" r="2" fill="currentColor" opacity="0.35" />
+      <circle cx="25" cy="25" r="4" stroke="currentColor" strokeWidth="1" />
+      <circle cx="17" cy="33" r="4" stroke="currentColor" strokeWidth="1" />
+      {/* LiDAR dot */}
+      <circle cx="25" cy="33" r="2" stroke="currentColor" strokeWidth="0.8" fill="currentColor" fillOpacity="0.2" />
+      {/* Home indicator */}
+      <rect x="17" y="72" width="14" height="2.5" rx="1.25" fill="currentColor" opacity="0.3" />
+    </svg>
+  )
+}
+
+function ActionCamSvg() {
+  return (
+    <svg viewBox="0 0 60 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Cube body */}
+      <rect x="8" y="10" width="38" height="36" rx="6" stroke="currentColor" strokeWidth="1.5" />
+      {/* Wide-angle front lens */}
+      <circle cx="27" cy="28" r="14" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="27" cy="28" r="9" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      <circle cx="27" cy="28" r="4" fill="currentColor" opacity="0.3" />
+      {/* Top button */}
+      <rect x="14" y="6" width="14" height="5" rx="2" stroke="currentColor" strokeWidth="1" />
+      {/* Side button */}
+      <rect x="44" y="20" width="4" height="8" rx="2" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+      {/* LED indicator */}
+      <circle cx="46" cy="14" r="2" fill="currentColor" fillOpacity="0.4" stroke="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}
+
+function DroneSvg() {
+  return (
+    <svg viewBox="0 0 96 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Center gimbal housing */}
+      <rect x="34" y="20" width="28" height="22" rx="5" stroke="currentColor" strokeWidth="1.5" />
+      {/* Gimbal suspension arc */}
+      <path d="M38 20 Q48 10 58 20" stroke="currentColor" strokeWidth="1.3" fill="none" />
+      {/* Camera pod */}
+      <rect x="40" y="30" width="16" height="10" rx="3" stroke="currentColor" strokeWidth="1.2" fill="currentColor" fillOpacity="0.06" />
+      {/* Lens */}
+      <circle cx="48" cy="35" r="4" stroke="currentColor" strokeWidth="1" />
+      <circle cx="48" cy="35" r="1.5" fill="currentColor" opacity="0.4" />
+      {/* Left arm */}
+      <line x1="34" y1="24" x2="14" y2="18" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="12" cy="17" r="5" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+      {/* Right arm */}
+      <line x1="62" y1="24" x2="82" y2="18" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="84" cy="17" r="5" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+      {/* Landing struts */}
+      <line x1="40" y1="42" x2="36" y2="50" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <line x1="56" y1="42" x2="60" y2="50" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <line x1="33" y1="50" x2="39" y2="50" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <line x1="57" y1="50" x2="63" y2="50" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+    </svg>
+  )
+}
+
+function BroadcastSvg() {
+  return (
+    <svg viewBox="0 0 100 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Long body */}
+      <rect x="4" y="18" width="60" height="28" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      {/* Top handle */}
+      <rect x="8" y="10" width="40" height="9" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      {/* Long lens barrel */}
+      <rect x="64" y="22" width="28" height="20" rx="4" stroke="currentColor" strokeWidth="1.4" />
+      {/* Zoom rings */}
+      <line x1="72" y1="22" x2="72" y2="42" stroke="currentColor" strokeWidth="0.7" opacity="0.4" />
+      <line x1="80" y1="22" x2="80" y2="42" stroke="currentColor" strokeWidth="0.7" opacity="0.4" />
+      {/* Lens end */}
+      <circle cx="92" cy="32" r="7" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="92" cy="32" r="3" fill="currentColor" opacity="0.35" />
+      {/* Viewfinder tube (side) */}
+      <rect x="42" y="9" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      <line x1="56" y1="10" x2="56" y2="18" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      {/* Shoulder pad indent */}
+      <path d="M6 46 Q20 54 34 46" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+    </svg>
+  )
+}
+
+function CamcorderSvg() {
+  return (
+    <svg viewBox="0 0 88 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Body */}
+      <rect x="4" y="14" width="50" height="32" rx="4" stroke="currentColor" strokeWidth="1.5" />
+      {/* Integral zoom lens */}
+      <rect x="54" y="20" width="24" height="18" rx="3" stroke="currentColor" strokeWidth="1.4" />
+      <line x1="62" y1="20" x2="62" y2="38" stroke="currentColor" strokeWidth="0.7" opacity="0.4" />
+      {/* Lens cap ring */}
+      <circle cx="78" cy="29" r="6" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="78" cy="29" r="2.5" fill="currentColor" opacity="0.3" />
+      {/* Flip screen arm */}
+      <rect x="4" y="26" width="4" height="12" rx="1" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      {/* Handgrip strap bar */}
+      <rect x="32" y="43" width="20" height="4" rx="2" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      {/* Top mic mount */}
+      <rect x="14" y="8" width="20" height="6" rx="2" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+      {/* Record button */}
+      <circle cx="50" cy="12" r="2.5" fill="currentColor" fillOpacity="0.4" stroke="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}
+
+function ThreeSixtySvg() {
+  return (
+    <svg viewBox="0 0 48 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
+      {/* Slim vertical body */}
+      <rect x="14" y="12" width="20" height="56" rx="4" stroke="currentColor" strokeWidth="1.5" />
+      {/* Front fish-eye lens */}
+      <circle cx="24" cy="26" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="24" cy="26" r="5.5" stroke="currentColor" strokeWidth="0.9" opacity="0.6" />
+      <circle cx="24" cy="26" r="2" fill="currentColor" opacity="0.35" />
+      {/* Back fish-eye lens (smaller, visible at bottom) */}
+      <circle cx="24" cy="54" r="8" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="24" cy="54" r="4.5" stroke="currentColor" strokeWidth="0.9" opacity="0.6" />
+      <circle cx="24" cy="54" r="2" fill="currentColor" opacity="0.35" />
+      {/* 360° arc indicator */}
+      <path d="M10 40 A14 14 0 0 1 38 40" stroke="currentColor" strokeWidth="0.7" strokeDasharray="2 2" opacity="0.35" />
+      {/* Power / mode button */}
+      <rect x="16" y="6" width="16" height="5" rx="2.5" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+    </svg>
+  )
+}
+
+function CameraBodyByProfile({ profile }: { profile: CameraVisualProfile }) {
+  switch (profile) {
+    case 'cinema-box': return <CinemaBoxSvg />
+    case 'cinema-compact': return <CinemaCompactSvg />
+    case 'mirrorless': return <MirrorlessSvg />
+    case 'phone': return <PhoneSvg />
+    case 'action-cam': return <ActionCamSvg />
+    case 'drone': return <DroneSvg />
+    case 'broadcast': return <BroadcastSvg />
+    case 'camcorder': return <CamcorderSvg />
+    case 'three-sixty': return <ThreeSixtySvg />
+    default: return <CinemaCompactSvg />
+  }
+}
+
+function CameraBodyIcon({ selected }: { selected: string }) {
+  const profile = getCameraVisualProfile(selected)
+  return <CameraBodyByProfile profile={profile} />
+}
+
+// ─── Lens / Aperture / Focus icons (unchanged) ───────────────────────────────
+
 const LENS_SPREAD: Record<string, number> = {
-  '18mm': 25,
-  '24mm': 21,
-  '35mm': 16,
-  '50mm': 12,
-  '85mm': 7,
-  '135mm': 4,
+  '18mm': 25, '24mm': 21, '35mm': 16, '50mm': 12, '85mm': 7, '135mm': 4,
 }
 
 function LensIcon({ selected }: { selected: string }) {
   const spread = LENS_SPREAD[selected] ?? 14
-  const cy = 28
-  const lensX = 12
-  const frameX = 70
-  const topY = cy - spread
-  const botY = cy + spread
+  const cy = 28; const lensX = 12; const frameX = 70
+  const topY = cy - spread; const botY = cy + spread
   return (
     <svg viewBox="0 0 80 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
-      {/* FOV lines */}
       <line x1={lensX} y1={cy} x2={frameX} y2={topY} stroke="currentColor" strokeWidth="1.5" />
       <line x1={lensX} y1={cy} x2={frameX} y2={botY} stroke="currentColor" strokeWidth="1.5" />
-      {/* Frame edge */}
       <line x1={frameX} y1={topY} x2={frameX} y2={botY} stroke="currentColor" strokeWidth="1.8" />
-      {/* Frame corners */}
       <line x1={frameX} y1={topY} x2={frameX - 5} y2={topY} stroke="currentColor" strokeWidth="1.2" />
       <line x1={frameX} y1={botY} x2={frameX - 5} y2={botY} stroke="currentColor" strokeWidth="1.2" />
-      {/* Lens barrel */}
       <circle cx={lensX} cy={cy} r="6" stroke="currentColor" strokeWidth="1.5" />
       <circle cx={lensX} cy={cy} r="2.5" fill="currentColor" opacity="0.5" />
-      {/* Center axis */}
       <line x1={lensX + 7} y1={cy} x2={frameX - 1} y2={cy} stroke="currentColor" strokeWidth="0.5" strokeDasharray="3 2" opacity="0.3" />
     </svg>
   )
 }
 
-// Pre-computed aperture hole radii (in SVG units, outer ring r=22)
 const APERTURE_HOLE: Record<string, number> = {
-  'f/1.4': 17,
-  'f/2.0': 14,
-  'f/2.8': 10,
-  'f/5.6': 7,
-  'f/8': 4,
+  'f/1.4': 17, 'f/2.0': 14, 'f/2.8': 10, 'f/5.6': 7, 'f/8': 4,
 }
 
 function ApertureIcon({ selected }: { selected: string }) {
   const holeR = APERTURE_HOLE[selected] ?? 10
-  const cx = 30
-  const cy = 28
-  const outerR = 22
-  // Blade points (6-blade iris): inscribed hexagon at a slightly larger radius than hole
+  const cx = 30; const cy = 28; const outerR = 22
   const bladeR = Math.max(holeR + 2, outerR - 2)
   const hexPoints = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i - Math.PI / 6
@@ -87,19 +267,13 @@ function ApertureIcon({ selected }: { selected: string }) {
   }).join(' ')
   return (
     <svg viewBox="0 0 60 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
-      {/* Outer ring */}
       <circle cx={cx} cy={cy} r={outerR} stroke="currentColor" strokeWidth="1.5" />
-      {/* Blade fill (hexagonal iris) */}
       <polygon points={hexPoints} stroke="currentColor" strokeWidth="0.8" fill="currentColor" fillOpacity="0.08" opacity="0.6" />
-      {/* Aperture opening */}
       <circle cx={cx} cy={cy} r={holeR} stroke="currentColor" strokeWidth="1.8" fill="currentColor" fillOpacity="0.12" />
-      {/* Blade dividers at 60° */}
       {Array.from({ length: 6 }, (_, i) => {
         const angle = (Math.PI / 3) * i
-        const x2 = cx + outerR * Math.cos(angle)
-        const y2 = cy + outerR * Math.sin(angle)
-        const x1 = cx + holeR * Math.cos(angle)
-        const y1 = cy + holeR * Math.sin(angle)
+        const x2 = cx + outerR * Math.cos(angle); const y2 = cy + outerR * Math.sin(angle)
+        const x1 = cx + holeR * Math.cos(angle); const y1 = cy + holeR * Math.sin(angle)
         return <line key={i} x1={x1.toFixed(1)} y1={y1.toFixed(1)} x2={x2.toFixed(1)} y2={y2.toFixed(1)} stroke="currentColor" strokeWidth="0.7" opacity="0.4" />
       })}
     </svg>
@@ -108,12 +282,8 @@ function ApertureIcon({ selected }: { selected: string }) {
 
 type FocusLayer = 'front' | 'mid' | 'mid-tight' | 'back' | 'rack' | 'soft'
 const FOCUS_LAYER: Record<string, FocusLayer> = {
-  'Face Focus': 'mid',
-  'Eye Focus': 'mid-tight',
-  'Foreground Focus': 'front',
-  'Background Focus': 'back',
-  'Rack Focus': 'rack',
-  'Soft Focus': 'soft',
+  'Face Focus': 'mid', 'Eye Focus': 'mid-tight', 'Foreground Focus': 'front',
+  'Background Focus': 'back', 'Rack Focus': 'rack', 'Soft Focus': 'soft',
 }
 
 function FocusIcon({ selected }: { selected: string }) {
@@ -138,23 +308,18 @@ function FocusIcon({ selected }: { selected: string }) {
 
   return (
     <svg viewBox="0 0 80 56" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-h-[52px]">
-      {/* Ground line */}
       <line x1="4" y1="44" x2="76" y2="44" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-      {/* Perspective lines */}
       <line x1="40" y1="44" x2="10" y2="18" stroke="currentColor" strokeWidth="0.5" opacity="0.1" />
       <line x1="40" y1="44" x2="70" y2="18" stroke="currentColor" strokeWidth="0.5" opacity="0.1" />
-      {/* Three depth planes */}
       {plane(6, 14, 30, frontActive)}
       {plane(31, 18, 38, midActive)}
       {plane(60, 14, 24, backActive)}
-      {/* Rack focus arrow */}
       {mode === 'rack' && (
         <>
           <line x1="20" y1="28" x2="60" y2="28" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.5" />
           <polygon points="58,25 62,28 58,31" fill="currentColor" opacity="0.8" />
         </>
       )}
-      {/* Focus reticle on active plane */}
       {(mode === 'mid' || mode === 'mid-tight') && (
         <>
           <line x1="34" y1="20" x2="37" y2="20" stroke="currentColor" strokeWidth="1.2" />
@@ -188,19 +353,20 @@ interface SlotDef {
   renderVisual: (value: string) => React.ReactNode
 }
 
+const CAMERA_BODY_OPTIONS: WheelOption[] = CAMERA_DATABASE.map((m) => ({
+  value: m.id,
+  label: `${m.brand} ${m.model}`,
+  sublabel: m.category,
+  note: m.directorNote,
+}))
+
 const CAMERA_SLOTS: SlotDef[] = [
   {
     key: 'cameraBody',
     title: '摄影机型号',
     titleEn: 'Camera Body',
     renderVisual: (v) => <CameraBodyIcon selected={v} />,
-    options: [
-      { value: 'ARRI Alexa 35', label: 'ARRI Alexa 35', sublabel: '电影旗舰', note: '高宽容度 · 电影级质感 · 工业标准机型' },
-      { value: 'RED V-Raptor', label: 'RED V-Raptor', sublabel: '商业大片', note: '超高分辨率 · 商业广告 · 4K+ 画面' },
-      { value: 'Sony Venice 2', label: 'Sony Venice 2', sublabel: '肤色自然', note: '变形宽银幕 · 肤色精准 · 叙事电影常用' },
-      { value: 'Blackmagic URSA', label: 'Blackmagic URSA', sublabel: '独立电影', note: '柔和质感 · 独立制片 · 有机色彩科学' },
-      { value: 'iPhone Cinematic', label: 'iPhone Cinematic', sublabel: '手持纪录', note: '手持自然 · 浅景深模式 · 纪录片感' },
-    ],
+    options: CAMERA_BODY_OPTIONS,
   },
   {
     key: 'lens',
@@ -256,7 +422,8 @@ function CinematicWheelSlot({
   value: string
   onChange: (v: string) => void
 }) {
-  const idx = Math.max(0, slotDef.options.findIndex((o) => o.value === value))
+  const rawIdx = slotDef.options.findIndex((o) => o.value === value)
+  const idx = rawIdx >= 0 ? rawIdx : 0
   const curr = slotDef.options[idx]
   const prev = idx > 0 ? slotDef.options[idx - 1] : null
   const next = idx < slotDef.options.length - 1 ? slotDef.options[idx + 1] : null
@@ -269,14 +436,13 @@ function CinematicWheelSlot({
         <span className="text-[11px] font-semibold text-white/60">{slotDef.title}</span>
       </div>
 
-      {/* Visual model area */}
+      {/* Visual model */}
       <div className="flex items-center justify-center px-6 pt-4 pb-2 text-violet-300/50 min-h-[68px]">
         {slotDef.renderVisual(value)}
       </div>
 
       {/* Drum wheel */}
       <div className="flex flex-col items-center px-4 pb-3 pt-1 gap-0.5">
-        {/* Up arrow */}
         <button
           type="button"
           onClick={() => prev && onChange(prev.value)}
@@ -287,7 +453,6 @@ function CinematicWheelSlot({
           <ChevronUp size={14} strokeWidth={2.5} />
         </button>
 
-        {/* Prev option (dimmed) */}
         <div className="h-5 flex items-center">
           {prev ? (
             <button
@@ -300,15 +465,13 @@ function CinematicWheelSlot({
           ) : null}
         </div>
 
-        {/* Current option (highlighted) */}
         <div className="w-full rounded-xl border border-violet-400/20 bg-violet-500/[0.09] px-3 py-2 text-center">
-          <div className="text-[13px] font-bold text-white leading-tight">{curr?.label ?? '—'}</div>
+          <div className="text-[12px] font-bold text-white leading-tight truncate">{curr?.label ?? '—'}</div>
           {curr?.sublabel ? (
-            <div className="text-[9px] text-violet-300/55 mt-0.5">{curr.sublabel}</div>
+            <div className="text-[9px] text-violet-300/55 mt-0.5 truncate">{curr.sublabel}</div>
           ) : null}
         </div>
 
-        {/* Next option (dimmed) */}
         <div className="h-5 flex items-center">
           {next ? (
             <button
@@ -321,7 +484,6 @@ function CinematicWheelSlot({
           ) : null}
         </div>
 
-        {/* Down arrow */}
         <button
           type="button"
           onClick={() => next && onChange(next.value)}
@@ -343,7 +505,7 @@ function CinematicWheelSlot({
   )
 }
 
-// ─── Active setting count helper ──────────────────────────────────────────────
+// ─── Active count ──────────────────────────────────────────────────────────────
 
 function activeCount(settings: CameraSettings): number {
   return [settings.cameraBody, settings.lens, settings.aperture, settings.focus].filter(Boolean).length
@@ -405,8 +567,8 @@ export function CinematicCameraControlPanel({
           <div>
             <p className="text-[9px] uppercase tracking-[0.2em] text-violet-300/40">Camera Control</p>
             <h2 className="mt-0.5 text-lg font-semibold text-white">摄影机控制</h2>
-            <p className="mt-1.5 max-w-[400px] text-[11px] leading-relaxed text-white/40">
-              用导演语言设置当前镜头的摄影机、焦距、光圈和焦点。选择结果自动注入生成提示词，保持镜头语言一致。
+            <p className="mt-1 text-[11px] leading-relaxed text-white/40">
+              主流摄影机型号库 · 第一版（可持续扩展）· 选择结果注入生成提示词
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -447,11 +609,10 @@ export function CinematicCameraControlPanel({
             ))}
           </div>
 
-          {/* Footer note */}
           <div className="mt-4 rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.04] px-4 py-3">
             <p className="text-[10px] leading-relaxed text-violet-200/40">
               <strong className="text-violet-200/60">提示：</strong>
-              摄影机设定以「导演注释」形式附加在生成提示词末尾，不影响原有 prompt 内容，也不修改 Bible 或其他节点。
+              摄影机设定以「导演注释」形式附加在生成提示词末尾。当前机型库包含 {CAMERA_DATABASE.length} 款主流摄影机，涵盖电影、广播、无人机、手机等类别。
               {count === 0 ? '请在上方四个滚轮中至少选择一项以激活摄影机控制。' : `当前已激活 ${count} 项，生成时将自动应用。`}
             </p>
           </div>

@@ -159,13 +159,23 @@ This ensures:
 - Lens slot: FOV triangle angle changes per focal length (18mm wide → 135mm narrow)
 - Aperture slot: iris circle hole size changes per f-stop (f/1.4 large → f/8 small)
 - Focus slot: 3-plane depth diagram with highlighted active plane
-- Camera body slot: universal camera silhouette (type indicated by label)
+- **Camera body slot: SVG silhouette changes per `visualProfile`** (P2-TOOL-UX-4A-FIX)
+
+**Camera model database rules (P2-TOOL-UX-4A-FIX standard):**
+- Source: `apps/web/src/lib/canvas/cameraModelDatabase.ts`
+- Each model has: `id`, `brand`, `model`, `category`, `visualProfile`, `promptDescription`, `directorNote`
+- `visualProfile` values: `cinema-box` / `cinema-compact` / `mirrorless` / `phone` / `action-cam` / `drone` / `broadcast` / `camcorder` / `three-sixty`
+- Each profile has a distinct SVG silhouette (no two profiles share the same shape)
+- **Do NOT use real brand logos or copyrighted product images** — use abstract SVG line art only
+- **Do NOT claim to cover all cameras** — comment says "main-stream models, first edition, expandable"
+- Add new models by appending to `CAMERA_DATABASE` array — no other files need changing
+- `promptDescription` must describe the *look/feel* of the camera, not a spec sheet
 
 **Director note rule:** Every option includes a 1-line cinematic interpretation in Chinese, written as a director's instinct, not a spec sheet.
 
 **Integration:** Settings persist to `localStorage` keyed by `creator-city:camera-settings:<projectId>`. Applied as `[Creator City Camera Direction]` section appended after Bible context, before prompt reaches the provider. No generate route or provider adapter changes.
 
-**Active indicator:** When ≥1 setting is active, a `🎥 摄影机设定` chip appears in the generation dialog node panel (clickable, re-opens the control panel).
+**Active indicator (P2-TOOL-UX-4A-FIX):** `🎥 摄影机：[Model Name]` chip is always visible for image/video nodes in the generation dialog — active state shows model name, inactive state shows "摄影机控制". Both are clickable to open the panel.
 
 ---
 
@@ -183,6 +193,7 @@ apps/web/src/components/create/
 apps/web/src/lib/canvas/
 ├── biblePromptContext.ts          ✅ implemented
 ├── cameraPromptContext.ts         ✅ implemented (P2-TOOL-UX-4A)
+├── cameraModelDatabase.ts         ✅ implemented (P2-TOOL-UX-4A-FIX) — 29 models, 9 profiles
 └── sceneLightingPromptContext.ts  ✅ implemented (P2-TOOL-UX-4B)
 ```
 

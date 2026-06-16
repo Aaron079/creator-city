@@ -1,3 +1,5 @@
+import { getCameraPromptDescription } from './cameraModelDatabase'
+
 export interface CameraSettings {
   cameraBody: string
   lens: string
@@ -16,14 +18,7 @@ export function hasCameraContext(settings: CameraSettings): boolean {
   return Boolean(settings.cameraBody || settings.lens || settings.aperture || settings.focus)
 }
 
-const CAMERA_BODY_PROMPT: Record<string, string> = {
-  'ARRI Alexa 35': 'ARRI Alexa 35 cinema camera, high dynamic range, film-grade cinematic image quality',
-  'RED V-Raptor': 'RED V-Raptor, ultra-high resolution digital cinema, commercial epic visual quality',
-  'Sony Venice 2': 'Sony Venice 2, natural skin tones, anamorphic lens compatibility, film industry standard',
-  'Blackmagic URSA': 'Blackmagic URSA, indie film texture, natural soft rendering, organic color science',
-  'iPhone Cinematic': 'iPhone Cinematic mode, handheld naturalistic, shallow depth of field, documentary feel',
-}
-
+// Lens, aperture, focus prompt dictionaries (unchanged — no new dependency)
 const LENS_PROMPT: Record<string, string> = {
   '18mm': '18mm ultra-wide lens, expansive environment, strong spatial perspective, immersive wide-angle',
   '24mm': '24mm wide angle, classic cinema establishing shot, slight environment emphasis',
@@ -54,7 +49,10 @@ export function buildCameraPromptContext(settings: CameraSettings): string {
   if (!hasCameraContext(settings)) return ''
 
   const lines: string[] = []
-  if (settings.cameraBody) lines.push(`Camera: ${CAMERA_BODY_PROMPT[settings.cameraBody] ?? settings.cameraBody}`)
+  if (settings.cameraBody) {
+    // getCameraPromptDescription handles both new ids and legacy display-name values
+    lines.push(`Camera Body: ${getCameraPromptDescription(settings.cameraBody)}`)
+  }
   if (settings.lens) lines.push(`Lens: ${LENS_PROMPT[settings.lens] ?? settings.lens}`)
   if (settings.aperture) lines.push(`Aperture: ${APERTURE_PROMPT[settings.aperture] ?? settings.aperture}`)
   if (settings.focus) lines.push(`Focus: ${FOCUS_PROMPT[settings.focus] ?? settings.focus}`)

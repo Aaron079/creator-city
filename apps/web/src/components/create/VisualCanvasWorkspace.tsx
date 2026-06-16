@@ -96,6 +96,7 @@ import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
 import { appendCameraContextToPrompt, buildCameraPromptContext, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
 import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
@@ -9026,8 +9027,13 @@ export function VisualCanvasWorkspace({
               setIsBatchRewriterOpen(false)
             } : undefined}
           />
-          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (hasBibleContent({ characterBible, sceneBible, styleBible }) || hasCameraContext(cameraSettings) || hasSceneLightingContext(sceneLightingSettings)) && (
+          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
+            hasBibleContent({ characterBible, sceneBible, styleBible }) ||
+            editingNode.kind === 'image' ||
+            editingNode.kind === 'video'
+          ) && (
             <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
+              {/* Bible context chips — only when content is present */}
               {characterBible.characters.filter((c) => c.name?.trim()).length > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
                   ✦ 角色设定 ×{characterBible.characters.filter((c) => c.name?.trim()).length}
@@ -9043,22 +9049,24 @@ export function VisualCanvasWorkspace({
                   ✦ 风格设定
                 </span>
               )}
-              {hasCameraContext(cameraSettings) && (
+              {/* Camera control — always visible for image/video nodes */}
+              {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
                   onClick={() => setIsCameraControlOpen(true)}
-                  className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5 hover:bg-violet-500/[0.14] hover:text-violet-200 transition"
+                  className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasCameraContext(cameraSettings) ? 'text-violet-300/70 bg-violet-500/[0.07] border-violet-500/20 hover:bg-violet-500/[0.14] hover:text-violet-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
-                  🎥 摄影机设定
+                  🎥 {hasCameraContext(cameraSettings) ? `摄影机：${getCameraModelLabel(cameraSettings.cameraBody)}` : '摄影机控制'}
                 </button>
               )}
-              {hasSceneLightingContext(sceneLightingSettings) && (
+              {/* Scene lighting — always visible for image/video nodes */}
+              {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
                   onClick={() => setIsSceneLightingOpen(true)}
-                  className="inline-flex items-center gap-1 text-[10px] text-amber-300/70 bg-amber-500/[0.07] border border-amber-500/20 rounded-full px-2.5 py-0.5 hover:bg-amber-500/[0.14] hover:text-amber-200 transition"
+                  className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasSceneLightingContext(sceneLightingSettings) ? 'text-amber-300/70 bg-amber-500/[0.07] border-amber-500/20 hover:bg-amber-500/[0.14] hover:text-amber-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
-                  💡 场景光线 ×{activeSceneLightingCount(sceneLightingSettings)}
+                  💡 {hasSceneLightingContext(sceneLightingSettings) ? `场景光线 ×${activeSceneLightingCount(sceneLightingSettings)}` : '场景光线'}
                 </button>
               )}
             </div>
