@@ -7586,7 +7586,8 @@ export function VisualCanvasWorkspace({
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
     const node = activeNode
-    if (!node || (node.kind !== 'image' && node.kind !== 'video') || !nodeHasMediaResult(node)) return undefined
+    if (!node) return undefined
+    if (node.kind !== 'text' && !nodeHasMediaResult(node)) return undefined
     if (typeof window === 'undefined') return undefined
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return undefined
@@ -7960,14 +7961,10 @@ export function VisualCanvasWorkspace({
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
             setIsContinuityCheckerOpen(tool === 'continuity-checker')
-            if (tool === 'camera-lexicon') setIsLexiconOpen(true)
             if (tool === 'character-bible') setIsCharacterBibleOpen(true)
             if (tool === 'scene-bible') setIsSceneBibleOpen(true)
-            if (tool === 'camera-control') setIsCameraControlOpen(true)
-            if (tool === 'scene-lighting') setIsSceneLightingOpen(true)
           }}
           onOpenPromptTool={(tool) => {
-            setIsPromptBoosterOpen(tool === 'prompt-booster')
             setIsBatchRewriterOpen(tool === 'batch-rewriter')
             if (tool === 'look-package') {
               setLookPanelDefaultNodeId(undefined)
@@ -8721,7 +8718,7 @@ export function VisualCanvasWorkspace({
       })()}
 
       {/* Asset Agent Toolbar — position:fixed to escape canvas-viewport overflow:hidden */}
-      {activeNode && (activeNode.kind === 'image' || activeNode.kind === 'video') && nodeHasMediaResult(activeNode) && toolbarFixedStyle ? (
+      {activeNode && toolbarFixedStyle ? (
         <div
           style={toolbarFixedStyle}
           data-no-node-drag="true"
@@ -8731,9 +8728,9 @@ export function VisualCanvasWorkspace({
         >
           <AssetAgentToolbar
             nodeKind={activeNode.kind}
-            mediaUrl={getProxiedMediaUrl(
+            mediaUrl={activeNode.kind !== 'text' ? getProxiedMediaUrl(
               activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
-            )}
+            ) : ''}
             nodeTitle={activeNode.title}
             nodeId={activeNode.id}
             assetId={activeNode.assetId}
@@ -8745,6 +8742,15 @@ export function VisualCanvasWorkspace({
             onOpenVariantPlanner={() => setIsVariantPlannerOpen(true)}
             onOpenABCompare={() => setIsABCompareOpen(true)}
             onOpenKeyframeExtractor={() => setIsKeyframeExtractorOpen(true)}
+            onOpenCameraControl={() => setIsCameraControlOpen(true)}
+            onOpenSceneLighting={() => setIsSceneLightingOpen(true)}
+            onOpenCameraLexicon={() => {
+              setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
+              setIsLexiconOpen(true)
+            }}
+            onOpenPromptBooster={() => {
+              setIsPromptBoosterOpen(true)
+            }}
           />
         </div>
       ) : null}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type CSSProperties } from 'react'
+import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 
 export type ReframeMode = 'original' | 'wide' | 'medium' | 'close' | 'extreme-close'
 
@@ -25,7 +26,7 @@ export function getReframeStyle(mode: ReframeMode): CSSProperties {
 }
 
 export interface AssetAgentToolbarProps {
-  nodeKind: 'image' | 'video'
+  nodeKind: VisualCanvasNodeKind
   mediaUrl: string
   nodeTitle: string
   nodeId?: string
@@ -38,6 +39,10 @@ export interface AssetAgentToolbarProps {
   onOpenVariantPlanner?: () => void
   onOpenABCompare?: () => void
   onOpenKeyframeExtractor?: () => void
+  onOpenCameraControl?: () => void
+  onOpenSceneLighting?: () => void
+  onOpenCameraLexicon?: () => void
+  onOpenPromptBooster?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -59,10 +64,15 @@ export function AssetAgentToolbar({
   onOpenVariantPlanner,
   onOpenABCompare,
   onOpenKeyframeExtractor,
+  onOpenCameraControl,
+  onOpenSceneLighting,
+  onOpenCameraLexicon,
+  onOpenPromptBooster,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
   const [clipMenuOpen, setClipMenuOpen] = useState(false)
   const [assetMenuOpen, setAssetMenuOpen] = useState(false)
+  const [directorMenuOpen, setDirectorMenuOpen] = useState(false)
 
   function handleDownload(e: React.MouseEvent) {
     stopEvent(e)
@@ -84,7 +94,83 @@ export function AssetAgentToolbar({
       onMouseDown={stopEvent}
       onClick={stopEvent}
     >
-      {/* Reframe — enabled */}
+      {/* Node indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px 0 4px', borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 2 }}>
+        <span style={{ fontSize: 12, opacity: 0.35 }}>
+          {nodeKind === 'image' ? '🖼' : nodeKind === 'video' ? '🎬' : '📝'}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {nodeTitle || (nodeKind === 'image' ? '图片' : nodeKind === 'video' ? '视频' : '文本')}
+        </span>
+      </div>
+
+      {/* Director — camera control + lexicon (image/video only) */}
+      {nodeKind === 'image' || nodeKind === 'video' ? (
+        <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            data-no-node-drag="true"
+            className={`asset-agent-btn${directorMenuOpen ? ' is-active' : ''}`}
+            onClick={(e) => { stopEvent(e); setDirectorMenuOpen((v) => !v); setReframeOpen(false); setClipMenuOpen(false); setAssetMenuOpen(false) }}
+            title="导演工具"
+          >
+            <span className="asset-agent-btn-icon">🎥</span>
+            <span className="asset-agent-btn-label">导演</span>
+          </button>
+          {directorMenuOpen ? (
+            <div className="asset-agent-reframe-popover" data-no-node-drag="true">
+              <div className="asset-agent-reframe-title">导演工具</div>
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className="asset-agent-reframe-chip"
+                onClick={(e) => { stopEvent(e); onOpenCameraControl?.(); setDirectorMenuOpen(false) }}
+              >
+                🎥 摄影机控制
+              </button>
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className="asset-agent-reframe-chip"
+                onClick={(e) => { stopEvent(e); onOpenCameraLexicon?.(); setDirectorMenuOpen(false) }}
+              >
+                📷 镜头词典
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Scene lighting (image/video only) */}
+      {nodeKind === 'image' || nodeKind === 'video' ? (
+        <button
+          type="button"
+          data-no-node-drag="true"
+          className="asset-agent-btn"
+          onClick={(e) => { stopEvent(e); onOpenSceneLighting?.() }}
+          title="场景光线"
+        >
+          <span className="asset-agent-btn-icon">💡</span>
+          <span className="asset-agent-btn-label">光线</span>
+        </button>
+      ) : null}
+
+      {/* Prompt booster (all node kinds) */}
+      <button
+        type="button"
+        data-no-node-drag="true"
+        className="asset-agent-btn"
+        onClick={(e) => { stopEvent(e); onOpenPromptBooster?.() }}
+        title="提示词增强器"
+      >
+        <span className="asset-agent-btn-icon">✨</span>
+        <span className="asset-agent-btn-label">提示词</span>
+      </button>
+
+      {/* Media tools — image/video only */}
+      {nodeKind === 'image' || nodeKind === 'video' ? (
+      <>
+      <div className="asset-agent-toolbar-divider" />
       <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
         <button
           type="button"
@@ -279,6 +365,7 @@ export function AssetAgentToolbar({
           </div>
         ) : null}
       </div>
+      </>) : null}
     </div>
   )
 }

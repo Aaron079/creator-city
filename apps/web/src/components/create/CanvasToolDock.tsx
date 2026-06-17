@@ -22,8 +22,8 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'camera-control' | 'scene-lighting') => void
-  onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
+  onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible') => void
+  onOpenPromptTool: (tool: 'batch-rewriter' | 'look-package') => void
 }
 
 const NODE_OPTIONS: Array<{
@@ -125,31 +125,6 @@ export function CanvasToolDock({
                   </div>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('camera-control') }}
-                  >
-                    <span className="text-[13px]">🎥</span>
-                    <span>摄影机控制</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-amber-300/75 transition hover:bg-amber-500/[0.06] hover:text-amber-200"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('scene-lighting') }}
-                  >
-                    <span className="text-[13px]">💡</span>
-                    <span>场景光线</span>
-                  </button>
-                  <div className="mx-3 my-1 border-t border-white/[0.06]" />
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('camera-lexicon') }}
-                  >
-                    <span className="text-[13px]">📷</span>
-                    <span>镜头词典</span>
-                  </button>
-                  <button
-                    type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
                     onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('shot-list-builder') }}
                   >
@@ -216,14 +191,6 @@ export function CanvasToolDock({
                   <div className="px-3 pb-1 pt-0.5">
                     <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">提示词工具</p>
                   </div>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsPromptMenuOpen(false); onOpenPromptTool('prompt-booster') }}
-                  >
-                    <span className="text-[13px]">✨</span>
-                    <span>提示词增强器</span>
-                  </button>
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
