@@ -27,6 +27,7 @@ export function getReframeStyle(mode: ReframeMode): CSSProperties {
 
 export interface AssetAgentToolbarProps {
   nodeKind: VisualCanvasNodeKind
+  hasMediaResult?: boolean
   mediaUrl: string
   nodeTitle: string
   nodeId?: string
@@ -52,6 +53,7 @@ function stopEvent(e: React.MouseEvent | React.PointerEvent) {
 
 export function AssetAgentToolbar({
   nodeKind,
+  hasMediaResult = false,
   mediaUrl,
   nodeTitle,
   nodeId,
@@ -167,8 +169,8 @@ export function AssetAgentToolbar({
         <span className="asset-agent-btn-label">提示词</span>
       </button>
 
-      {/* Media tools — image/video only */}
-      {nodeKind === 'image' || nodeKind === 'video' ? (
+      {/* Media tools — image/video with a result only */}
+      {(nodeKind === 'image' || nodeKind === 'video') && hasMediaResult ? (
       <>
       <div className="asset-agent-toolbar-divider" />
       <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>

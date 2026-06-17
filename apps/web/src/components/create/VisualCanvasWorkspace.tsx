@@ -98,6 +98,7 @@ import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } 
 import { appendCameraContextToPrompt, buildCameraPromptContext, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
 import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
 import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
+import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettingsForNode, saveSceneLightingForNode } from '@/lib/canvas/nodeDirectorContextStorage'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 
@@ -2522,6 +2523,8 @@ export function VisualCanvasWorkspace({
   const latestCommentsRef = useRef<CanvasComment[]>([])
   const mediaReviewZRef = useRef(1)
   const assetResolveRunKeyRef = useRef('')
+  // Tracks which node's camera/lighting settings the panel is editing (avoids ambiguous activeNode vs editingNode).
+  const directorTargetNodeIdRef = useRef<string | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
@@ -4091,14 +4094,16 @@ export function VisualCanvasWorkspace({
 
   const updateCameraSettings = useCallback((next: CameraSettings) => {
     setCameraSettings(next)
-    if (!projectId) return
-    try { window.localStorage.setItem(getCameraSettingsKey(projectId), JSON.stringify(next)) } catch { /* localStorage unavailable */ }
+    const targetId = directorTargetNodeIdRef.current
+    if (!projectId || !targetId) return
+    saveCameraSettingsForNode(projectId, targetId, next)
   }, [projectId])
 
   const updateSceneLightingSettings = useCallback((next: SceneLightingSettings) => {
     setSceneLightingSettings(next)
-    if (!projectId) return
-    try { window.localStorage.setItem(getSceneLightingKey(projectId), JSON.stringify(next)) } catch { /* localStorage unavailable */ }
+    const targetId = directorTargetNodeIdRef.current
+    if (!projectId || !targetId) return
+    saveSceneLightingForNode(projectId, targetId, next)
   }, [projectId])
 
   const persistSceneBibleSettings = useCallback((nextBible: SceneBible) => {
@@ -4288,10 +4293,22 @@ export function VisualCanvasWorkspace({
     if (activeNode.ratio) {
       setPromptRatio(activeNode.ratio)
     }
+    // Load per-node camera/lighting so chips + panel show this node's settings
+    if (projectId) {
+      setCameraSettings(loadCameraSettingsForNode(projectId, activeNode.id))
+      setSceneLightingSettings(loadSceneLightingForNode(projectId, activeNode.id))
+      directorTargetNodeIdRef.current = activeNode.id
+    }
   }, [activeNode])
 
   useEffect(() => {
     setDialogError(null)
+    // Load per-node camera/lighting so generation dialog chips show the editing node's settings
+    if (editingNodeId && projectId) {
+      setCameraSettings(loadCameraSettingsForNode(projectId, editingNodeId))
+      setSceneLightingSettings(loadSceneLightingForNode(projectId, editingNodeId))
+      directorTargetNodeIdRef.current = editingNodeId
+    }
   }, [editingNodeId])
 
   useEffect(() => {
@@ -4431,8 +4448,11 @@ export function VisualCanvasWorkspace({
     }
     const rawPrompt = node.prompt?.trim() ?? ''
     const bibleCtx = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
-    const cameraCtx = buildCameraPromptContext(cameraSettings)
-    const lightingCtx = buildSceneLightingPromptContext(sceneLightingSettings)
+    // Read per-node camera/lighting — avoids cross-node contamination from global state
+    const nodeCameraCtx = projectId ? loadCameraSettingsForNode(projectId, node.id) : cameraSettings
+    const nodeLightingCtx = projectId ? loadSceneLightingForNode(projectId, node.id) : sceneLightingSettings
+    const cameraCtx = buildCameraPromptContext(nodeCameraCtx)
+    const lightingCtx = buildSceneLightingPromptContext(nodeLightingCtx)
     const prompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt, cameraCtx), lightingCtx)
     const fallbackProviderId = providerForRegenerationNode(node)
     const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
@@ -6258,8 +6278,11 @@ export function VisualCanvasWorkspace({
       : ''
     const rawPrompt = trimmedPrompt || upstreamTextPrompt
     const bibleContext = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
-    const cameraContext = buildCameraPromptContext(cameraSettings)
-    const lightingContext = buildSceneLightingPromptContext(sceneLightingSettings)
+    // Read per-node camera/lighting — avoids cross-node contamination from global state
+    const nodeCamera = projectId ? loadCameraSettingsForNode(projectId, nodeSnapshot.id) : cameraSettings
+    const nodeLighting = projectId ? loadSceneLightingForNode(projectId, nodeSnapshot.id) : sceneLightingSettings
+    const cameraContext = buildCameraPromptContext(nodeCamera)
+    const lightingContext = buildSceneLightingPromptContext(nodeLighting)
     const generationPrompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleContext), cameraContext), lightingContext)
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
@@ -7587,7 +7610,9 @@ export function VisualCanvasWorkspace({
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
     const node = activeNode
     if (!node) return undefined
-    if (node.kind !== 'text' && !nodeHasMediaResult(node)) return undefined
+    // Show toolbar for text (always), image (always), video (always).
+    // Configuration tools (camera/lighting/prompt) are useful before any result exists.
+    if (node.kind !== 'text' && node.kind !== 'image' && node.kind !== 'video') return undefined
     if (typeof window === 'undefined') return undefined
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return undefined
@@ -8728,6 +8753,7 @@ export function VisualCanvasWorkspace({
         >
           <AssetAgentToolbar
             nodeKind={activeNode.kind}
+            hasMediaResult={nodeHasMediaResult(activeNode)}
             mediaUrl={activeNode.kind !== 'text' ? getProxiedMediaUrl(
               activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
             ) : ''}
@@ -8742,8 +8768,8 @@ export function VisualCanvasWorkspace({
             onOpenVariantPlanner={() => setIsVariantPlannerOpen(true)}
             onOpenABCompare={() => setIsABCompareOpen(true)}
             onOpenKeyframeExtractor={() => setIsKeyframeExtractorOpen(true)}
-            onOpenCameraControl={() => setIsCameraControlOpen(true)}
-            onOpenSceneLighting={() => setIsSceneLightingOpen(true)}
+            onOpenCameraControl={() => { directorTargetNodeIdRef.current = activeNode.id; setIsCameraControlOpen(true) }}
+            onOpenSceneLighting={() => { directorTargetNodeIdRef.current = activeNode.id; setIsSceneLightingOpen(true) }}
             onOpenCameraLexicon={() => {
               setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
               setIsLexiconOpen(true)
@@ -9083,7 +9109,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => setIsCameraControlOpen(true)}
+                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; setIsCameraControlOpen(true) }}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasCameraContext(cameraSettings) ? 'text-violet-300/70 bg-violet-500/[0.07] border-violet-500/20 hover:bg-violet-500/[0.14] hover:text-violet-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   🎥 {hasCameraContext(cameraSettings) ? `摄影机：${getCameraModelLabel(cameraSettings.cameraBody)}` : '摄影机控制'}
@@ -9093,7 +9119,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => setIsSceneLightingOpen(true)}
+                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; setIsSceneLightingOpen(true) }}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasSceneLightingContext(sceneLightingSettings) ? 'text-amber-300/70 bg-amber-500/[0.07] border-amber-500/20 hover:bg-amber-500/[0.14] hover:text-amber-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   💡 {hasSceneLightingContext(sceneLightingSettings) ? `场景光线 ×${activeSceneLightingCount(sceneLightingSettings)}` : '场景光线'}
