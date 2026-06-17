@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Clapperboard,
   ImageIcon,
-  Layers,
   PencilLine,
   Plus,
   Square,
@@ -23,7 +22,6 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenAssetTool: (tool: 'variant-planner' | 'ab-compare' | 'keyframe-extractor') => void
   onOpenDirectorTool: (tool: 'camera-lexicon' | 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'camera-control' | 'scene-lighting') => void
   onOpenPromptTool: (tool: 'prompt-booster' | 'batch-rewriter' | 'look-package') => void
 }
@@ -48,12 +46,10 @@ export function CanvasToolDock({
   onToggleAddMenu,
   hasActiveGenerations,
   onStopAllGenerations,
-  onOpenAssetTool,
   onOpenDirectorTool,
   onOpenPromptTool,
 }: CanvasToolDockProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
-  const [isAssetMenuOpen, setIsAssetMenuOpen] = useState(false)
   const [isDirectorMenuOpen, setIsDirectorMenuOpen] = useState(false)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
 
@@ -97,73 +93,12 @@ export function CanvasToolDock({
             </button>
           ) : null}
 
-          {/* Asset tools group */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setIsAssetMenuOpen((v) => !v)
-                setIsDirectorMenuOpen(false)
-                setIsPromptMenuOpen(false)
-                setIsUserMenuOpen(false)
-              }}
-              className={`canvas-toolbar-button ${isAssetMenuOpen ? 'is-active' : ''}`}
-              title="资产工具"
-              aria-label="资产工具"
-              data-no-node-drag="true"
-            >
-              <Layers size={22} strokeWidth={2.2} />
-              <span className="canvas-hover-tooltip" aria-hidden="true">资产工具</span>
-            </button>
-            <AnimatePresence>
-              {isAssetMenuOpen ? (
-                <motion.div
-                  initial={{ opacity: 0, x: -8, scale: 0.98 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: -8, scale: 0.98 }}
-                  transition={{ duration: 0.16 }}
-                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[164px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
-                  data-no-node-drag="true"
-                >
-                  <div className="px-3 pb-1 pt-0.5">
-                    <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">资产工具</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('variant-planner') }}
-                  >
-                    <span className="text-[13px]">⬡</span>
-                    <span>资产变体规划器</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('ab-compare') }}
-                  >
-                    <span className="text-[13px]">⚖</span>
-                    <span>版本对比</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsAssetMenuOpen(false); onOpenAssetTool('keyframe-extractor') }}
-                  >
-                    <span className="text-[13px]">🎞</span>
-                    <span>关键帧提取</span>
-                  </button>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </div>
-
           {/* Director tools group */}
           <div className="relative">
             <button
               type="button"
               onClick={() => {
                 setIsDirectorMenuOpen((v) => !v)
-                setIsAssetMenuOpen(false)
                 setIsPromptMenuOpen(false)
                 setIsUserMenuOpen(false)
               }}
@@ -258,7 +193,6 @@ export function CanvasToolDock({
               onClick={() => {
                 setIsPromptMenuOpen((v) => !v)
                 setIsDirectorMenuOpen(false)
-                setIsAssetMenuOpen(false)
                 setIsUserMenuOpen(false)
               }}
               className={`canvas-toolbar-button ${isPromptMenuOpen ? 'is-active' : ''}`}

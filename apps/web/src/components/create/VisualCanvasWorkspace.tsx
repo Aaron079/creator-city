@@ -7957,11 +7957,6 @@ export function VisualCanvasWorkspace({
           onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
           hasActiveGenerations={hasActiveGenerations}
           onStopAllGenerations={handleStopAllGenerations}
-          onOpenAssetTool={(tool) => {
-            setIsVariantPlannerOpen(tool === 'variant-planner')
-            setIsABCompareOpen(tool === 'ab-compare')
-            setIsKeyframeExtractorOpen(tool === 'keyframe-extractor')
-          }}
           onOpenDirectorTool={(tool) => {
             setIsShotListBuilderOpen(tool === 'shot-list-builder')
             setIsContinuityCheckerOpen(tool === 'continuity-checker')
@@ -8740,11 +8735,16 @@ export function VisualCanvasWorkspace({
               activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
             )}
             nodeTitle={activeNode.title}
+            nodeId={activeNode.id}
+            assetId={activeNode.assetId}
             reframeMode={reframeMode}
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
             onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
             onOpenLookPackage={() => setIsLookPackageOpen(true)}
+            onOpenVariantPlanner={() => setIsVariantPlannerOpen(true)}
+            onOpenABCompare={() => setIsABCompareOpen(true)}
+            onOpenKeyframeExtractor={() => setIsKeyframeExtractorOpen(true)}
           />
         </div>
       ) : null}

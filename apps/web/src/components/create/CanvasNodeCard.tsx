@@ -2604,13 +2604,8 @@ export function CanvasNodeCard({
 
   const selectNextVideoCandidate = () => {
     appendRenderFailure('video', videoSource, 'video onError')
-    const currentIndex = videoCandidateUrls.findIndex((candidate) => candidate.url === videoPreviewUrl)
-    const next = videoCandidateUrls[currentIndex + 1]
-    if (next) {
-      setSelectedVideoSource(next)
-      setVideoLoadFailed(false)
-      return
-    }
+    // No cascade through fallback URLs — fail immediately.
+    // Cycling through expired signed URLs causes repeated OSS request storms (ERR_TIMED_OUT × N).
     setVideoLoadFailed(true)
   }
 

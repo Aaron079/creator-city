@@ -28,11 +28,16 @@ export interface AssetAgentToolbarProps {
   nodeKind: 'image' | 'video'
   mediaUrl: string
   nodeTitle: string
+  nodeId?: string
+  assetId?: string
   onFullscreen: () => void
   reframeMode: ReframeMode
   onReframeChange: (mode: ReframeMode) => void
   onOpenColorGrade?: () => void
   onOpenLookPackage?: () => void
+  onOpenVariantPlanner?: () => void
+  onOpenABCompare?: () => void
+  onOpenKeyframeExtractor?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -44,11 +49,16 @@ export function AssetAgentToolbar({
   nodeKind,
   mediaUrl,
   nodeTitle,
+  nodeId,
+  assetId,
   onFullscreen,
   reframeMode,
   onReframeChange,
   onOpenColorGrade,
   onOpenLookPackage,
+  onOpenVariantPlanner,
+  onOpenABCompare,
+  onOpenKeyframeExtractor,
 }: AssetAgentToolbarProps) {
   const [reframeOpen, setReframeOpen] = useState(false)
   const [clipMenuOpen, setClipMenuOpen] = useState(false)
@@ -198,25 +208,74 @@ export function AssetAgentToolbar({
         ) : null}
       </div>
 
-      {/* Asset — character reference and future tools */}
+      {/* Asset — library link + variant/compare/keyframe tools */}
       <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
         <button
           type="button"
           data-no-node-drag="true"
           className={`asset-agent-btn${assetMenuOpen ? ' is-active' : ''}`}
           onClick={(e) => { stopEvent(e); setAssetMenuOpen((v) => !v); setReframeOpen(false); setClipMenuOpen(false) }}
-          title="资产工具 — 人物参考、入库等"
+          title="资产工具 — 入库、变体规划等"
         >
           <span className="asset-agent-btn-icon">⊕</span>
           <span className="asset-agent-btn-label">资产</span>
         </button>
         {assetMenuOpen ? (
           <div className="asset-agent-reframe-popover" data-no-node-drag="true">
-            <div className="asset-agent-reframe-title">资产工具</div>
-            <div style={{ padding: '4px 10px 2px', fontSize: 10, color: 'rgba(255,255,255,0.22)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span>⊕ 入库 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
-              <span>⊞ 版本管理 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
-            </div>
+            <div className="asset-agent-reframe-title">资产操作</div>
+            {assetId ? (
+              <a
+                href={`/assets?highlight=${assetId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="asset-agent-reframe-chip"
+                style={{ display: 'block', textDecoration: 'none' }}
+                onClick={(e) => { e.stopPropagation(); setAssetMenuOpen(false) }}
+              >
+                ↗ 打开资产详情
+              </a>
+            ) : (
+              <a
+                href={nodeId ? `/assets?nodeId=${nodeId}` : '/assets'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="asset-agent-reframe-chip"
+                style={{ display: 'block', textDecoration: 'none' }}
+                onClick={(e) => { e.stopPropagation(); setAssetMenuOpen(false) }}
+              >
+                ↗ 前往资产库
+              </a>
+            )}
+            {onOpenVariantPlanner ? (
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className="asset-agent-reframe-chip"
+                onClick={(e) => { stopEvent(e); onOpenVariantPlanner(); setAssetMenuOpen(false) }}
+              >
+                ⬡ 资产变体规划
+              </button>
+            ) : null}
+            {onOpenABCompare ? (
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className="asset-agent-reframe-chip"
+                onClick={(e) => { stopEvent(e); onOpenABCompare(); setAssetMenuOpen(false) }}
+              >
+                ⚖ 版本对比
+              </button>
+            ) : null}
+            {nodeKind === 'video' && onOpenKeyframeExtractor ? (
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className="asset-agent-reframe-chip"
+                onClick={(e) => { stopEvent(e); onOpenKeyframeExtractor(); setAssetMenuOpen(false) }}
+              >
+                🎞 关键帧提取
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
