@@ -117,7 +117,7 @@ export function CanvasToolDock({
                   animate={{ opacity: 1, x: 0, scale: 1 }}
                   exit={{ opacity: 0, x: -8, scale: 0.98 }}
                   transition={{ duration: 0.16 }}
-                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
+                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#111319] py-1.5 shadow-2xl"
                   data-no-node-drag="true"
                 >
                   <div className="px-3 pb-1 pt-0.5">
@@ -185,7 +185,7 @@ export function CanvasToolDock({
                   animate={{ opacity: 1, x: 0, scale: 1 }}
                   exit={{ opacity: 0, x: -8, scale: 0.98 }}
                   transition={{ duration: 0.16 }}
-                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/96 py-1.5 shadow-2xl backdrop-blur-xl"
+                  className="absolute left-[calc(100%+8px)] top-0 z-[1201] w-[172px] overflow-hidden rounded-xl border border-white/10 bg-[#111319] py-1.5 shadow-2xl"
                   data-no-node-drag="true"
                 >
                   <div className="px-3 pb-1 pt-0.5">

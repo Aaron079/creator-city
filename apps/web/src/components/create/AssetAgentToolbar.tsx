@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState, useRef, useEffect, useCallback, type CSSProperties } from 'react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 
 export type ReframeMode = 'original' | 'wide' | 'medium' | 'close' | 'extreme-close'
@@ -51,6 +51,8 @@ function stopEvent(e: React.MouseEvent | React.PointerEvent) {
   e.preventDefault()
 }
 
+type OpenMenu = 'download' | 'assets' | 'tools' | null
+
 export function AssetAgentToolbar({
   nodeKind,
   hasMediaResult = false,
@@ -71,10 +73,44 @@ export function AssetAgentToolbar({
   onOpenCameraLexicon,
   onOpenPromptBooster,
 }: AssetAgentToolbarProps) {
-  const [reframeOpen, setReframeOpen] = useState(false)
-  const [clipMenuOpen, setClipMenuOpen] = useState(false)
-  const [assetMenuOpen, setAssetMenuOpen] = useState(false)
-  const [directorMenuOpen, setDirectorMenuOpen] = useState(false)
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+
+  const closeAll = useCallback(() => setOpenMenu(null), [])
+
+  function toggle(menu: NonNullable<OpenMenu>) {
+    setOpenMenu((prev) => (prev === menu ? null : menu))
+  }
+
+  // Close menus when selected node changes
+  useEffect(() => { setOpenMenu(null) }, [nodeId])
+
+  // Close on outside click (bubble phase — stopPropagation inside toolbar blocks it naturally)
+  useEffect(() => {
+    if (!openMenu) return
+    let removeHandler: (() => void) | undefined
+    const id = setTimeout(() => {
+      const handler = (e: PointerEvent) => {
+        if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+          setOpenMenu(null)
+        }
+      }
+      document.addEventListener('pointerdown', handler)
+      removeHandler = () => document.removeEventListener('pointerdown', handler)
+    }, 0)
+    return () => {
+      clearTimeout(id)
+      removeHandler?.()
+    }
+  }, [openMenu])
+
+  // Close on Escape
+  useEffect(() => {
+    if (!openMenu) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [openMenu])
 
   function handleDownload(e: React.MouseEvent) {
     stopEvent(e)
@@ -86,288 +122,289 @@ export function AssetAgentToolbar({
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+    closeAll()
   }
+
+  const isVisual = nodeKind === 'image' || nodeKind === 'video'
+  const kindIcon = nodeKind === 'image' ? '🖼' : nodeKind === 'video' ? '🎬' : '📝'
+  const kindLabel = nodeKind === 'image' ? 'Image' : nodeKind === 'video' ? 'Video' : 'Text'
 
   return (
     <div
+      ref={toolbarRef}
       className="asset-agent-toolbar"
       data-no-node-drag="true"
       onPointerDown={stopEvent}
       onMouseDown={stopEvent}
       onClick={stopEvent}
     >
-      {/* Node indicator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px 0 4px', borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 2 }}>
-        <span style={{ fontSize: 12, opacity: 0.35 }}>
-          {nodeKind === 'image' ? '🖼' : nodeKind === 'video' ? '🎬' : '📝'}
-        </span>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {nodeTitle || (nodeKind === 'image' ? '图片' : nodeKind === 'video' ? '视频' : '文本')}
+      {/* Node indicator — status label only, not interactive */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '0 10px 0 4px',
+        borderRight: '1px solid rgba(255,255,255,0.08)',
+        marginRight: 4,
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 13, opacity: 0.5, lineHeight: 1 }}>{kindIcon}</span>
+        <span style={{
+          fontSize: 11, color: 'rgba(255,255,255,0.48)',
+          maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {kindLabel}{nodeTitle ? ` · ${nodeTitle}` : ''}
         </span>
       </div>
 
-      {/* Director — camera control + lexicon (image/video only) */}
-      {nodeKind === 'image' || nodeKind === 'video' ? (
+      {/* ── Download — image/video only ── */}
+      {isVisual ? (
         <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
           <button
             type="button"
             data-no-node-drag="true"
-            className={`asset-agent-btn${directorMenuOpen ? ' is-active' : ''}`}
-            onClick={(e) => { stopEvent(e); setDirectorMenuOpen((v) => !v); setReframeOpen(false); setClipMenuOpen(false); setAssetMenuOpen(false) }}
-            title="导演工具"
+            className={`asset-agent-btn${openMenu === 'download' ? ' is-active' : ''}${!hasMediaResult ? ' is-coming-soon' : ''}`}
+            disabled={!hasMediaResult}
+            onClick={(e) => { stopEvent(e); if (hasMediaResult) toggle('download') }}
+            title={hasMediaResult ? '下载' : '暂无可下载内容'}
           >
-            <span className="asset-agent-btn-icon">🎥</span>
-            <span className="asset-agent-btn-label">导演</span>
+            <span className="asset-agent-btn-icon">↓</span>
+            <span className="asset-agent-btn-label">下载</span>
           </button>
-          {directorMenuOpen ? (
-            <div className="asset-agent-reframe-popover" data-no-node-drag="true">
-              <div className="asset-agent-reframe-title">导演工具</div>
+          {openMenu === 'download' ? (
+            <div className="ntb-menu" data-no-node-drag="true">
+              <div className="ntb-menu-section-title">下载</div>
               <button
                 type="button"
                 data-no-node-drag="true"
-                className="asset-agent-reframe-chip"
-                onClick={(e) => { stopEvent(e); onOpenCameraControl?.(); setDirectorMenuOpen(false) }}
+                className="ntb-menu-item"
+                onClick={handleDownload}
               >
-                🎥 摄影机控制
-              </button>
-              <button
-                type="button"
-                data-no-node-drag="true"
-                className="asset-agent-reframe-chip"
-                onClick={(e) => { stopEvent(e); onOpenCameraLexicon?.(); setDirectorMenuOpen(false) }}
-              >
-                📷 镜头词典
+                <span className="ntb-menu-item-icon">↓</span>
+                {nodeKind === 'image' ? '下载图片' : '下载视频'}
               </button>
             </div>
           ) : null}
         </div>
       ) : null}
 
-      {/* Scene lighting (image/video only) */}
-      {nodeKind === 'image' || nodeKind === 'video' ? (
-        <button
-          type="button"
-          data-no-node-drag="true"
-          className="asset-agent-btn"
-          onClick={(e) => { stopEvent(e); onOpenSceneLighting?.() }}
-          title="场景光线"
-        >
-          <span className="asset-agent-btn-icon">💡</span>
-          <span className="asset-agent-btn-label">光线</span>
-        </button>
-      ) : null}
-
-      {/* Prompt booster (all node kinds) */}
-      <button
-        type="button"
-        data-no-node-drag="true"
-        className="asset-agent-btn"
-        onClick={(e) => { stopEvent(e); onOpenPromptBooster?.() }}
-        title="提示词增强器"
-      >
-        <span className="asset-agent-btn-icon">✨</span>
-        <span className="asset-agent-btn-label">提示词</span>
-      </button>
-
-      {/* Media tools — image/video with a result only */}
-      {(nodeKind === 'image' || nodeKind === 'video') && hasMediaResult ? (
-      <>
-      <div className="asset-agent-toolbar-divider" />
-      <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
-        <button
-          type="button"
-          className={`asset-agent-btn${reframeMode !== 'original' ? ' is-active' : ''}`}
-          data-no-node-drag="true"
-          onClick={(e) => { stopEvent(e); setReframeOpen((v) => !v) }}
-          title="重构图预览（CSS 缩放，不消耗 API）"
-        >
-          <span className="asset-agent-btn-icon">⊞</span>
-          <span className="asset-agent-btn-label">重构图</span>
-        </button>
-        {reframeOpen ? (
-          <div className="asset-agent-reframe-popover" data-no-node-drag="true">
-            <div className="asset-agent-reframe-title">景别预览</div>
-            {REFRAME_MODES.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                data-no-node-drag="true"
-                className={`asset-agent-reframe-chip${reframeMode === m.value ? ' is-selected' : ''}`}
-                onClick={(e) => { stopEvent(e); onReframeChange(m.value); setReframeOpen(false) }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Screenshot — coming soon (requires in-player video ref) */}
-      {nodeKind === 'video' ? (
-        <button
-          type="button"
-          data-no-node-drag="true"
-          className="asset-agent-btn is-coming-soon"
-          disabled
-          title="截图 Agent — 即将上线"
-        >
-          <span className="asset-agent-btn-icon">◉</span>
-          <span className="asset-agent-btn-label">截图</span>
-          <span className="asset-agent-soon-badge">soon</span>
-        </button>
-      ) : null}
-
-      {/* Download — enabled */}
-      <button
-        type="button"
-        data-no-node-drag="true"
-        className="asset-agent-btn"
-        onClick={handleDownload}
-        title="下载素材"
-      >
-        <span className="asset-agent-btn-icon">↓</span>
-        <span className="asset-agent-btn-label">下载</span>
-      </button>
-
-      {/* Fullscreen — enabled */}
-      <button
-        type="button"
-        data-no-node-drag="true"
-        className="asset-agent-btn"
-        onClick={(e) => { stopEvent(e); onFullscreen() }}
-        title="全屏预览"
-      >
-        <span className="asset-agent-btn-icon">⤢</span>
-        <span className="asset-agent-btn-label">全屏</span>
-      </button>
-
-      <div className="asset-agent-toolbar-divider" />
-
-      {/* Enhance — coming soon */}
-      <button
-        type="button"
-        data-no-node-drag="true"
-        className="asset-agent-btn is-coming-soon"
-        disabled
-        title="增强 Agent — 即将上线"
-      >
-        <span className="asset-agent-btn-icon">✦</span>
-        <span className="asset-agent-btn-label">增强</span>
-        <span className="asset-agent-soon-badge">soon</span>
-      </button>
-
-      {/* Clip — post-production suite (Color Grade Palette available; others coming soon) */}
-      <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
-        <button
-          type="button"
-          data-no-node-drag="true"
-          className={`asset-agent-btn${clipMenuOpen ? ' is-active' : ''}`}
-          onClick={(e) => { stopEvent(e); setClipMenuOpen((v) => !v); setReframeOpen(false) }}
-          title="剪辑套件 — 后期处理工具"
-        >
-          <span className="asset-agent-btn-icon">✂</span>
-          <span className="asset-agent-btn-label">剪辑</span>
-        </button>
-        {clipMenuOpen ? (
-          <div className="asset-agent-reframe-popover" data-no-node-drag="true">
-            <div className="asset-agent-reframe-title">后期套件</div>
-            <button
-              type="button"
-              data-no-node-drag="true"
-              className="asset-agent-reframe-chip"
-              onClick={(e) => { stopEvent(e); onOpenColorGrade?.(); setClipMenuOpen(false) }}
-            >
-              🎛 调色盘
-            </button>
-            <button
-              type="button"
-              data-no-node-drag="true"
-              className="asset-agent-reframe-chip"
-              onClick={(e) => { stopEvent(e); onOpenLookPackage?.(); setClipMenuOpen(false) }}
-            >
-              🎨 视觉风格包
-            </button>
-            <div style={{ padding: '4px 10px 2px', fontSize: 10, color: 'rgba(255,255,255,0.22)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span>✂ 剪辑建议 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
-              <span>◧ 转场 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
-              <span>♪ 音频 <span style={{ fontSize: 8, opacity: 0.6 }}>soon</span></span>
+      {/* ── Assets — image/video only ── */}
+      {isVisual ? (
+        <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            data-no-node-drag="true"
+            className={`asset-agent-btn${openMenu === 'assets' ? ' is-active' : ''}`}
+            onClick={(e) => { stopEvent(e); toggle('assets') }}
+            title="资产"
+          >
+            <span className="asset-agent-btn-icon">⊕</span>
+            <span className="asset-agent-btn-label">资产</span>
+          </button>
+          {openMenu === 'assets' ? (
+            <div className="ntb-menu" data-no-node-drag="true">
+              <div className="ntb-menu-section-title">资产操作</div>
+              {assetId ? (
+                <a
+                  href={`/assets?highlight=${assetId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ntb-menu-item"
+                  onClick={(e) => { e.stopPropagation(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">↗</span>
+                  打开资产详情
+                </a>
+              ) : (
+                <a
+                  href={nodeId ? `/assets?nodeId=${nodeId}` : '/assets'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ntb-menu-item"
+                  onClick={(e) => { e.stopPropagation(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">↗</span>
+                  前往资产库
+                </a>
+              )}
+              {onOpenVariantPlanner ? (
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenVariantPlanner(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">⬡</span>
+                  资产变体规划
+                </button>
+              ) : null}
+              {onOpenABCompare ? (
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenABCompare(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">⚖</span>
+                  版本对比
+                </button>
+              ) : null}
+              {nodeKind === 'video' && onOpenKeyframeExtractor ? (
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenKeyframeExtractor(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">🎞</span>
+                  关键帧提取
+                </button>
+              ) : null}
             </div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      ) : null}
 
-      {/* Asset — library link + variant/compare/keyframe tools */}
+      {/* ── Tools — all node kinds ── */}
       <div className="asset-agent-toolbar-group" style={{ position: 'relative' }}>
         <button
           type="button"
           data-no-node-drag="true"
-          className={`asset-agent-btn${assetMenuOpen ? ' is-active' : ''}`}
-          onClick={(e) => { stopEvent(e); setAssetMenuOpen((v) => !v); setReframeOpen(false); setClipMenuOpen(false) }}
-          title="资产工具 — 入库、变体规划等"
+          className={`asset-agent-btn${openMenu === 'tools' ? ' is-active' : ''}`}
+          onClick={(e) => { stopEvent(e); toggle('tools') }}
+          title="工具"
         >
-          <span className="asset-agent-btn-icon">⊕</span>
-          <span className="asset-agent-btn-label">资产</span>
+          <span className="asset-agent-btn-icon">⚙</span>
+          <span className="asset-agent-btn-label">工具</span>
         </button>
-        {assetMenuOpen ? (
-          <div className="asset-agent-reframe-popover" data-no-node-drag="true">
-            <div className="asset-agent-reframe-title">资产操作</div>
-            {assetId ? (
-              <a
-                href={`/assets?highlight=${assetId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="asset-agent-reframe-chip"
-                style={{ display: 'block', textDecoration: 'none' }}
-                onClick={(e) => { e.stopPropagation(); setAssetMenuOpen(false) }}
-              >
-                ↗ 打开资产详情
-              </a>
-            ) : (
-              <a
-                href={nodeId ? `/assets?nodeId=${nodeId}` : '/assets'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="asset-agent-reframe-chip"
-                style={{ display: 'block', textDecoration: 'none' }}
-                onClick={(e) => { e.stopPropagation(); setAssetMenuOpen(false) }}
-              >
-                ↗ 前往资产库
-              </a>
-            )}
-            {onOpenVariantPlanner ? (
-              <button
-                type="button"
-                data-no-node-drag="true"
-                className="asset-agent-reframe-chip"
-                onClick={(e) => { stopEvent(e); onOpenVariantPlanner(); setAssetMenuOpen(false) }}
-              >
-                ⬡ 资产变体规划
-              </button>
+        {openMenu === 'tools' ? (
+          <div className="ntb-menu ntb-menu-wide" data-no-node-drag="true">
+
+            {/* Director + Lighting — image/video only */}
+            {isVisual ? (
+              <>
+                <div className="ntb-menu-section-title">🎥 导演</div>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenCameraControl?.(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">🎥</span>
+                  摄影机控制
+                </button>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenCameraLexicon?.(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">📷</span>
+                  镜头词典
+                </button>
+                <div className="ntb-menu-divider" />
+                <div className="ntb-menu-section-title">💡 光线</div>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenSceneLighting?.(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">💡</span>
+                  场景光线
+                </button>
+                <div className="ntb-menu-divider" />
+              </>
             ) : null}
-            {onOpenABCompare ? (
-              <button
-                type="button"
-                data-no-node-drag="true"
-                className="asset-agent-reframe-chip"
-                onClick={(e) => { stopEvent(e); onOpenABCompare(); setAssetMenuOpen(false) }}
-              >
-                ⚖ 版本对比
-              </button>
-            ) : null}
-            {nodeKind === 'video' && onOpenKeyframeExtractor ? (
-              <button
-                type="button"
-                data-no-node-drag="true"
-                className="asset-agent-reframe-chip"
-                onClick={(e) => { stopEvent(e); onOpenKeyframeExtractor(); setAssetMenuOpen(false) }}
-              >
-                🎞 关键帧提取
-              </button>
+
+            {/* Prompt — all node kinds */}
+            <div className="ntb-menu-section-title">✨ 提示词</div>
+            <button
+              type="button" data-no-node-drag="true"
+              className="ntb-menu-item"
+              onClick={(e) => { stopEvent(e); onOpenPromptBooster?.(); closeAll() }}
+            >
+              <span className="ntb-menu-item-icon">✨</span>
+              提示词增强
+            </button>
+
+            {/* Visual tools — image/video + hasMediaResult */}
+            {isVisual && hasMediaResult ? (
+              <>
+                <div className="ntb-menu-divider" />
+                <div className="ntb-menu-section-title">🖼 画面</div>
+                {/* Reframe mode chips — inline, no API cost */}
+                <div style={{ padding: '2px 10px 8px' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>重构图</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {REFRAME_MODES.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        data-no-node-drag="true"
+                        style={{
+                          padding: '3px 9px',
+                          borderRadius: 6,
+                          border: `1px solid ${reframeMode === m.value ? 'rgba(0,210,255,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                          background: reframeMode === m.value ? 'rgba(0,210,255,0.12)' : 'rgba(255,255,255,0.03)',
+                          color: reframeMode === m.value ? 'rgba(0,210,255,0.9)' : 'rgba(255,255,255,0.58)',
+                          fontSize: 11,
+                          cursor: 'pointer',
+                          transition: 'all 0.12s',
+                          fontWeight: reframeMode === m.value ? 600 : 400,
+                        }}
+                        onClick={(e) => { stopEvent(e); onReframeChange(m.value) }}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onFullscreen(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">⤢</span>
+                  全屏预览
+                </button>
+                {nodeKind === 'video' ? (
+                  <button
+                    type="button" data-no-node-drag="true"
+                    className="ntb-menu-item ntb-menu-item-soon"
+                    disabled
+                  >
+                    <span className="ntb-menu-item-icon">◉</span>
+                    截图
+                    <span className="asset-agent-soon-badge" style={{ marginLeft: 'auto' }}>soon</span>
+                  </button>
+                ) : null}
+
+                {/* Post-production */}
+                <div className="ntb-menu-divider" />
+                <div className="ntb-menu-section-title">✂ 后期</div>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item ntb-menu-item-soon"
+                  disabled
+                >
+                  <span className="ntb-menu-item-icon">✦</span>
+                  增强
+                  <span className="asset-agent-soon-badge" style={{ marginLeft: 'auto' }}>soon</span>
+                </button>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenColorGrade?.(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">🎛</span>
+                  调色盘
+                </button>
+                <button
+                  type="button" data-no-node-drag="true"
+                  className="ntb-menu-item"
+                  onClick={(e) => { stopEvent(e); onOpenLookPackage?.(); closeAll() }}
+                >
+                  <span className="ntb-menu-item-icon">🎨</span>
+                  视觉风格包
+                </button>
+              </>
             ) : null}
           </div>
         ) : null}
       </div>
-      </>) : null}
     </div>
   )
 }

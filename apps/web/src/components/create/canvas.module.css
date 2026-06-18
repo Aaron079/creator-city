@@ -4463,10 +4463,9 @@
   gap: 4px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(16, 16, 18, 0.94);
+  background: #111319;
   padding: 8px;
-  backdrop-filter: blur(22px);
-  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.6);
 }
 
 .scope :global(.canvas-user-menu-item) {
@@ -8049,25 +8048,103 @@
   border-radius: 1px;
 }
 
-/* Reframe popover — opens downward toward the card */
+/* Reframe popover — opens downward toward the card (legacy — kept for any stragglers) */
 .scope :global(.asset-agent-reframe-popover) {
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 200;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px;
   border-radius: 14px;
-  background: rgba(14, 14, 18, 0.94);
+  background: #111319;
   border: 1px solid rgba(255, 255, 255, 0.11);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.64), inset 0 1px 0 rgba(255,255,255,0.06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255,255,255,0.06);
   min-width: 96px;
   animation: asset-toolbar-fadein 0.13s ease forwards;
+}
+
+/* ── Node Toolbar Menu (ntb-menu) — solid surface, no bleed-through ── */
+.scope :global(.ntb-menu) {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #111319;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.85),
+    0 4px 16px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  min-width: 168px;
+  animation: asset-toolbar-fadein 0.13s ease forwards;
+}
+
+.scope :global(.ntb-menu-wide) {
+  min-width: 210px;
+}
+
+.scope :global(.ntb-menu-section-title) {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.28);
+  padding: 6px 10px 3px;
+}
+
+.scope :global(.ntb-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.scope :global(.ntb-menu-item:hover:not(:disabled)) {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.scope :global(.ntb-menu-item-soon) {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+.scope :global(.ntb-menu-item-icon) {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.scope :global(.ntb-menu-divider) {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 4px 4px;
 }
 
 .scope :global(.asset-agent-reframe-title) {
