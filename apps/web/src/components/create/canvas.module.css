@@ -138,10 +138,6 @@
 }
 
 .scope :global(.canvas-topbar) {
-  position: absolute;
-  inset-inline: 20px;
-  top: 20px;
-  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1841,8 +1837,8 @@
 
 /* TapNow-style full-screen create canvas overrides. */
 .scope :global(.canvas-root) {
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   width: 100%;
   border: 0;
   border-radius: 0;
@@ -1860,10 +1856,6 @@
 }
 
 .scope :global(.canvas-topbar) {
-  position: fixed;
-  inset-inline: 18px;
-  top: 14px;
-  z-index: 62;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3184,7 +3176,6 @@
 }
 
 /* Reference composer layout: compact video nodes with a medium composer panel. */
-.scope :global(.canvas-root.is-started .canvas-topbar),
 .scope :global(.canvas-root.is-started .canvas-toolbar-shell),
 .scope :global(.canvas-root.is-started .canvas-zoom-controls) {
   opacity: 1;

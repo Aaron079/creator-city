@@ -34,6 +34,7 @@ import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
+import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
@@ -7690,13 +7691,8 @@ export function VisualCanvasWorkspace({
     [nodes],
   )
 
-  return (
-    <CanvasWorkspaceShell>
-    <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
-    <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
-      <div className="canvas-background-glow" />
-      <div className="canvas-grid" />
-
+  const topCommandBar = (
+    <CanvasTopCommandBar>
       <div className="canvas-topbar create-glass-panel">
         <div className="canvas-topbar-brand">
           <div
@@ -7917,6 +7913,15 @@ export function VisualCanvasWorkspace({
           </div>
         </div>
       </div>
+    </CanvasTopCommandBar>
+  )
+
+  return (
+    <CanvasWorkspaceShell topCommand={topCommandBar}>
+    <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
+    <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
+      <div className="canvas-background-glow" />
+      <div className="canvas-grid" />
 
       <NewProjectDialog
         open={newProjectOpen}
