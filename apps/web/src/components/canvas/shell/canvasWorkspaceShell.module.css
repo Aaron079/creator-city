@@ -55,7 +55,9 @@
   flex-shrink: 0;
   width: 100%;
   position: relative;
-  z-index: var(--canvas-z-topbar);
+  /* No z-index — DOM order (before mainRegion) is sufficient for layout stacking.
+     Assigning z-index here creates a root stacking context at 1500, which places
+     the topbar above fixed-position panels (Camera z=92, Bible z=1200, dialog z=80). */
   /* No height/padding — let content define it */
 }
 
