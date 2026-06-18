@@ -54,7 +54,8 @@ export function CanvasToolDock({
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
 
   return (
-    <div className="absolute left-6 top-1/2 z-[1100] -translate-y-1/2">
+    <div className="relative flex h-full w-full flex-col justify-center">
+      <div className="relative">
       <div className="canvas-toolbar-shell">
         <div className="flex flex-col gap-2">
           {/* Add node */}
@@ -291,6 +292,7 @@ export function CanvasToolDock({
           </motion.div>
         ) : null}
       </AnimatePresence>
+      </div>
     </div>
   )
 }

@@ -76,9 +76,15 @@
 
 .leftRail {
   flex-shrink: 0;
+  width: 88px;
+  min-width: 88px;
+  height: 100%;
   position: relative;
   z-index: var(--canvas-z-rail);
-  /* Width defined by content (CanvasToolDock is self-sizing) */
+  background: #0d0f14;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* overflow: visible so submenus can extend rightward into the stage */
+  overflow: visible;
 }
 
 /* ── Canvas Stage ───────────────────────────────────────── */
@@ -132,7 +138,7 @@
 
 /* ── Responsive breakpoints ─────────────────────────────── */
 
-/* Small screens < 1024px: hide inspector; dock collapses */
+/* Small screens < 1024px: hide inspector; narrow rail; dock collapses */
 @media (max-width: 1023px) {
   .rightInspector {
     display: none;
@@ -140,18 +146,30 @@
   .bottomDock {
     display: none;
   }
+  .leftRail {
+    width: 56px;
+    min-width: 56px;
+  }
 }
 
-/* Laptop 1024–1439px: narrower inspector */
+/* Laptop 1024–1439px: narrower inspector and rail */
 @media (min-width: 1024px) and (max-width: 1439px) {
   .rightInspector {
     width: 300px;
   }
+  .leftRail {
+    width: 72px;
+    min-width: 72px;
+  }
 }
 
-/* Desktop ≥ 1440px: full inspector width */
+/* Desktop ≥ 1440px: full inspector and rail width */
 @media (min-width: 1440px) {
   .rightInspector {
     width: 340px;
+  }
+  .leftRail {
+    width: 88px;
+    min-width: 88px;
   }
 }

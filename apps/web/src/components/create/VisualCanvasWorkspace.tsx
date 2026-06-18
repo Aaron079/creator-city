@@ -7916,8 +7916,35 @@ export function VisualCanvasWorkspace({
     </CanvasTopCommandBar>
   )
 
+  const leftToolRail = (
+    <CanvasToolDock
+      onAddNode={handleAddNode}
+      activeTool={activeTool}
+      onToolSelect={setActiveTool}
+      isAddMenuOpen={isAddMenuOpen}
+      onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
+      hasActiveGenerations={hasActiveGenerations}
+      onStopAllGenerations={handleStopAllGenerations}
+      onOpenDirectorTool={(tool) => {
+        setIsShotListBuilderOpen(tool === 'shot-list-builder')
+        setIsContinuityCheckerOpen(tool === 'continuity-checker')
+        if (tool === 'character-bible') setIsCharacterBibleOpen(true)
+        if (tool === 'scene-bible') setIsSceneBibleOpen(true)
+      }}
+      onOpenPromptTool={(tool) => {
+        setIsBatchRewriterOpen(tool === 'batch-rewriter')
+        if (tool === 'look-package') {
+          setLookPanelDefaultNodeId(undefined)
+          setIsLookPackageOpen(true)
+        } else {
+          setIsLookPackageOpen(false)
+        }
+      }}
+    />
+  )
+
   return (
-    <CanvasWorkspaceShell topCommand={topCommandBar}>
+    <CanvasWorkspaceShell topCommand={topCommandBar} leftRail={leftToolRail} showLeftRail>
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
@@ -7980,32 +8007,7 @@ export function VisualCanvasWorkspace({
         </div>
       ) : null}
 
-      {saveStatus !== 'opening' ? (
-        <CanvasToolDock
-          onAddNode={handleAddNode}
-          activeTool={activeTool}
-          onToolSelect={setActiveTool}
-          isAddMenuOpen={isAddMenuOpen}
-          onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
-          hasActiveGenerations={hasActiveGenerations}
-          onStopAllGenerations={handleStopAllGenerations}
-          onOpenDirectorTool={(tool) => {
-            setIsShotListBuilderOpen(tool === 'shot-list-builder')
-            setIsContinuityCheckerOpen(tool === 'continuity-checker')
-            if (tool === 'character-bible') setIsCharacterBibleOpen(true)
-            if (tool === 'scene-bible') setIsSceneBibleOpen(true)
-          }}
-          onOpenPromptTool={(tool) => {
-            setIsBatchRewriterOpen(tool === 'batch-rewriter')
-            if (tool === 'look-package') {
-              setLookPanelDefaultNodeId(undefined)
-              setIsLookPackageOpen(true)
-            } else {
-              setIsLookPackageOpen(false)
-            }
-          }}
-        />
-      ) : null}
+      {/* CanvasToolDock moved to Shell leftRail slot */}
 
       {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
