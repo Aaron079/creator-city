@@ -88,7 +88,9 @@
   min-height: 0;
   position: relative;
   overflow: hidden;
-  z-index: var(--canvas-z-stage);
+  /* z-index intentionally omitted: position:relative + z-index:0 would create an
+     unnecessary stacking context, trapping future fixed descendants. Add z-index
+     here only when Phase 2+ slots need explicit z-ordering against the stage. */
 }
 
 /* ── Right Inspector ─────────────────────────────────────── */
