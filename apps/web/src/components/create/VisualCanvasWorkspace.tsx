@@ -7917,30 +7917,32 @@ export function VisualCanvasWorkspace({
   )
 
   const leftToolRail = (
-    <CanvasToolDock
-      onAddNode={handleAddNode}
-      activeTool={activeTool}
-      onToolSelect={setActiveTool}
-      isAddMenuOpen={isAddMenuOpen}
-      onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
-      hasActiveGenerations={hasActiveGenerations}
-      onStopAllGenerations={handleStopAllGenerations}
-      onOpenDirectorTool={(tool) => {
-        setIsShotListBuilderOpen(tool === 'shot-list-builder')
-        setIsContinuityCheckerOpen(tool === 'continuity-checker')
-        if (tool === 'character-bible') setIsCharacterBibleOpen(true)
-        if (tool === 'scene-bible') setIsSceneBibleOpen(true)
-      }}
-      onOpenPromptTool={(tool) => {
-        setIsBatchRewriterOpen(tool === 'batch-rewriter')
-        if (tool === 'look-package') {
-          setLookPanelDefaultNodeId(undefined)
-          setIsLookPackageOpen(true)
-        } else {
-          setIsLookPackageOpen(false)
-        }
-      }}
-    />
+    <div className={`${canvasStyles.scope} h-full`}>
+      <CanvasToolDock
+        onAddNode={handleAddNode}
+        activeTool={activeTool}
+        onToolSelect={setActiveTool}
+        isAddMenuOpen={isAddMenuOpen}
+        onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
+        hasActiveGenerations={hasActiveGenerations}
+        onStopAllGenerations={handleStopAllGenerations}
+        onOpenDirectorTool={(tool) => {
+          setIsShotListBuilderOpen(tool === 'shot-list-builder')
+          setIsContinuityCheckerOpen(tool === 'continuity-checker')
+          if (tool === 'character-bible') setIsCharacterBibleOpen(true)
+          if (tool === 'scene-bible') setIsSceneBibleOpen(true)
+        }}
+        onOpenPromptTool={(tool) => {
+          setIsBatchRewriterOpen(tool === 'batch-rewriter')
+          if (tool === 'look-package') {
+            setLookPanelDefaultNodeId(undefined)
+            setIsLookPackageOpen(true)
+          } else {
+            setIsLookPackageOpen(false)
+          }
+        }}
+      />
+    </div>
   )
 
   return (
