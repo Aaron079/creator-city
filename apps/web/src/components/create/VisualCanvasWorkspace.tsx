@@ -18,7 +18,6 @@ import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
 import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
-import { CanvasSmartToolbar } from '@/components/create/CanvasSmartToolbar'
 import { CameraLexiconPanel } from '@/components/create/CameraLexiconPanel'
 import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
 import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
@@ -8370,23 +8369,6 @@ export function VisualCanvasWorkspace({
       ) : null}
 
 
-      {saveStatus !== 'opening' ? (
-        <CanvasSmartToolbar
-          editingNode={editingNode}
-          selectedNode={activeNode}
-          canvasPrompt={canvasPrompt}
-          billingMode={billingMode}
-          selectedUserAccountId={selectedUserAccountId}
-          userProviderAccounts={userProviderAccounts}
-          providerStatus={
-            editingNode?.kind === 'image' ? selectedImageProviderStatus ?? undefined
-            : editingNode?.kind === 'video' ? selectedVideoProviderStatus ?? undefined
-            : undefined
-          }
-          projectId={projectId}
-          onPromptChange={handlePromptChange}
-        />
-      ) : null}
 
       <AnimatePresence mode="wait">
         {activePanel === 'assets' ? (
@@ -9075,13 +9057,6 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => setEditingNodeId(null)}
             panelPortalTarget={panelPortalTarget}
-            nodeKind={editingNode.kind}
-            onOpenLook={(editingNode.kind === 'image' || editingNode.kind === 'video') ? () => {
-              setLookPanelDefaultNodeId(editingNode.id)
-              setIsLookPackageOpen(true)
-              setIsPromptBoosterOpen(false)
-              setIsBatchRewriterOpen(false)
-            } : undefined}
           />
           {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
             hasBibleContent({ characterBible, sceneBible, styleBible }) ||

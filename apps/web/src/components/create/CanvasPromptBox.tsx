@@ -59,8 +59,6 @@ interface CanvasPromptBoxProps {
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
   panelPortalTarget?: Element | null
-  nodeKind?: string
-  onOpenLook?: () => void
 }
 
 const MODEL_DURATIONS = ['1~3 min', '1.5 min', '2 min', '30~90s', '2 min', '5~10 min', '2~5 min', '1 min']
@@ -119,8 +117,6 @@ export function CanvasPromptBox({
   inputRef,
   onClose,
   panelPortalTarget,
-  nodeKind,
-  onOpenLook,
 }: CanvasPromptBoxProps) {
   const [openFooterId, setOpenFooterId] = useState<string | null>(null)
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties | undefined>(undefined)
@@ -612,36 +608,6 @@ export function CanvasPromptBox({
               </button>
             </Fragment>
           ))}
-          {(nodeKind === 'image' || nodeKind === 'video') && onOpenLook ? (
-            <>
-              <span className="canvas-node-dialog-separator" aria-hidden="true" />
-              <button
-                type="button"
-                className={`canvas-node-dialog-tool canvas-look-tool ${activeToolId === 'look' ? 'is-showing-label' : ''}`}
-                aria-label="视觉风格"
-                title="视觉风格"
-                onClick={onOpenLook}
-                onMouseEnter={() => showToolLabel('look')}
-                onMouseLeave={() => hideToolLabel('look')}
-                onFocus={() => showToolLabel('look')}
-                onBlur={() => hideToolLabel('look')}
-              >
-                <span
-                  className="canvas-node-dialog-tool-icon canvas-look-dot"
-                  aria-hidden="true"
-                  style={{
-                    background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
-                    borderRadius: '50%',
-                    width: 10,
-                    height: 10,
-                    display: 'inline-block',
-                    flexShrink: 0,
-                  }}
-                />
-                <span className="canvas-node-tool-label" aria-hidden="true">视觉风格</span>
-              </button>
-            </>
-          ) : null}
         </div>
         {onClose ? (
           <button
