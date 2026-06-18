@@ -1,0 +1,153 @@
+/*
+ * Canvas Workspace Shell — structural layout CSS.
+ *
+ * Phase 1: transparent wrapper. No visual changes to existing canvas.
+ * Phase 2+: top command bar, left rail, right inspector, bottom dock progressively fill.
+ *
+ * Z-index variable map (defined here as CSS custom properties):
+ *
+ *   --canvas-z-stage:      0        Canvas nodes, edges, flow surface
+ *   --canvas-z-node:       100      Node cards, node overlays
+ *   --canvas-z-toolbar:    1000     Selected-node toolbar, tool menus (ntb-menu)
+ *   --canvas-z-rail:       1200     Left tool rail
+ *   --canvas-z-topbar:     1500     Top command bar
+ *   --canvas-z-inspector:  2200     Right inspector panel
+ *   --canvas-z-dock:       2300     Bottom generation dock
+ *   --canvas-z-modal:      3000     Camera / Lighting / Bible / ShotList overlays
+ *   --canvas-z-toast:      4000     Global toasts, dialogs, notifications
+ *
+ * Existing canvas z-index values (from canvas.module.css — do not change these):
+ *   canvas-topbar:         z-index 20   (absolute inside canvas-root)
+ *   canvas-toolbar-shell:  z-index 40   (position:fixed)
+ *   context menus:         z-index ~1082
+ *   tool panels:           z-index 1199-1200
+ *   AssetAgentToolbar ntb-menu: z-index 2000
+ *   panel portals:         z-index 89
+ */
+
+/* ── Shell container ────────────────────────────────────── */
+
+.shell {
+  /* Fill parent — no new visual surface */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+
+  /* Z-index variable definitions — available to all descendants */
+  --canvas-z-stage: 0;
+  --canvas-z-node: 100;
+  --canvas-z-toolbar: 1000;
+  --canvas-z-rail: 1200;
+  --canvas-z-topbar: 1500;
+  --canvas-z-inspector: 2200;
+  --canvas-z-dock: 2300;
+  --canvas-z-modal: 3000;
+  --canvas-z-toast: 4000;
+}
+
+/* ── Top Command Bar ────────────────────────────────────── */
+
+.topCommand {
+  /* Collapsed by default (no content in Phase 1) */
+  flex-shrink: 0;
+  width: 100%;
+  position: relative;
+  z-index: var(--canvas-z-topbar);
+  /* No height/padding — let content define it */
+}
+
+/* ── Main Region (Left Rail + Stage + Right Inspector) ──── */
+
+.mainRegion {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Left Tool Rail ─────────────────────────────────────── */
+
+.leftRail {
+  flex-shrink: 0;
+  position: relative;
+  z-index: var(--canvas-z-rail);
+  /* Width defined by content (CanvasToolDock is self-sizing) */
+}
+
+/* ── Canvas Stage ───────────────────────────────────────── */
+
+.stage {
+  /* Fills remaining space after rails */
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  z-index: var(--canvas-z-stage);
+}
+
+/* ── Right Inspector ─────────────────────────────────────── */
+
+.rightInspector {
+  flex-shrink: 0;
+  width: 340px;
+  position: relative;
+  z-index: var(--canvas-z-inspector);
+  background: #09090f;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Bottom Generation Dock ──────────────────────────────── */
+
+.bottomDock {
+  flex-shrink: 0;
+  width: 100%;
+  position: relative;
+  z-index: var(--canvas-z-dock);
+  background: #08080e;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  /* Height defined by content */
+}
+
+/* ── Modal Layer ─────────────────────────────────────────── */
+
+.modalLayer {
+  /* Overlay spanning full shell — forward-only, used in P0-LAYOUT-6 */
+  position: absolute;
+  inset: 0;
+  z-index: var(--canvas-z-modal);
+  pointer-events: none; /* Let events fall through until content is mounted */
+}
+
+/* ── Responsive breakpoints ─────────────────────────────── */
+
+/* Small screens < 1024px: hide inspector; dock collapses */
+@media (max-width: 1023px) {
+  .rightInspector {
+    display: none;
+  }
+  .bottomDock {
+    display: none;
+  }
+}
+
+/* Laptop 1024–1439px: narrower inspector */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .rightInspector {
+    width: 300px;
+  }
+}
+
+/* Desktop ≥ 1440px: full inspector width */
+@media (min-width: 1440px) {
+  .rightInspector {
+    width: 340px;
+  }
+}

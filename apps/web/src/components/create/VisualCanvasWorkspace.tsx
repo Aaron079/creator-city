@@ -33,6 +33,7 @@ import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewrite
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
+import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
@@ -7690,6 +7691,7 @@ export function VisualCanvasWorkspace({
   )
 
   return (
+    <CanvasWorkspaceShell>
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
@@ -9596,5 +9598,6 @@ export function VisualCanvasWorkspace({
       />
     </div>
     </div>
+    </CanvasWorkspaceShell>
   )
 }
