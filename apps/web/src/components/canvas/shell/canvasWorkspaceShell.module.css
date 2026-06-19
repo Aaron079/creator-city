@@ -76,13 +76,14 @@
 
 .leftRail {
   flex-shrink: 0;
-  width: 88px;
-  min-width: 88px;
+  width: 80px;
+  min-width: 80px;
   height: 100%;
   position: relative;
   z-index: var(--canvas-z-rail);
-  background: #0d0f14;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  /* Transparent — dock is a floating capsule; canvas background shows through */
+  background: transparent;
+  border-right: none;
   /* overflow: visible so submenus can extend rightward into the stage */
   overflow: visible;
 }
@@ -147,8 +148,8 @@
     display: none;
   }
   .leftRail {
-    width: 56px;
-    min-width: 56px;
+    width: 68px;
+    min-width: 68px;
   }
 }
 
@@ -158,8 +159,8 @@
     width: 300px;
   }
   .leftRail {
-    width: 72px;
-    min-width: 72px;
+    width: 76px;
+    min-width: 76px;
   }
 }
 
@@ -169,7 +170,7 @@
     width: 340px;
   }
   .leftRail {
-    width: 88px;
-    min-width: 88px;
+    width: 80px;
+    min-width: 80px;
   }
 }

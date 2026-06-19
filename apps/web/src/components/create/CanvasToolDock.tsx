@@ -54,7 +54,7 @@ export function CanvasToolDock({
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
 
   return (
-    <div className="relative flex h-full w-full flex-col justify-center">
+    <div className="relative flex h-full w-full flex-col items-center justify-center">
       <div className="relative">
       <div className="canvas-toolbar-shell">
         <div className="flex flex-col gap-2">

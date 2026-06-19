@@ -22,12 +22,20 @@ interface LookNode {
   title?: string | null
   prompt?: string | null
   resultText?: string | null
+  resultImageUrl?: string | null
   status?: string | null
+}
+
+interface DerivedNodeRequest {
+  sourceNodeId: string
+  prompt: string
+  lookName: string
 }
 
 interface LookPackagePanelProps {
   nodes: LookNode[]
   onApplyLook: (updates: Array<{ nodeId: string; prompt: string }>) => void
+  onCreateDerivedNode?: (req: DerivedNodeRequest) => void
   onClose: () => void
   defaultSelectedNodeId?: string
 }
@@ -101,7 +109,7 @@ function LookCard({
   )
 }
 
-export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedNodeId }: LookPackagePanelProps) {
+export function LookPackagePanel({ nodes, onApplyLook, onCreateDerivedNode, onClose, defaultSelectedNodeId }: LookPackagePanelProps) {
   const [categoryFilter, setCategoryFilter] = useState<LookCategory | 'all'>('all')
   const [selectedLookId, setSelectedLookId] = useState<string | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<SelectedLookCategories>(DEFAULT_SELECTED_CATEGORIES)
@@ -150,6 +158,19 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
       onApplyLook(updates)
     }
     setApplied(true)
+  }
+
+  function handleCreateDerived() {
+    if (!selectedLook || !primaryNode || !onCreateDerivedNode || !hasAnyCategory) return
+    const result = previewLookApply(nodes, new Set([primaryNode.id]), selectedLook, selectedCategories)
+    const target = result.find((t) => t.nodeId === primaryNode.id)
+    if (target) {
+      onCreateDerivedNode({
+        sourceNodeId: primaryNode.id,
+        prompt: target.previewPrompt,
+        lookName: selectedLook.nameZh,
+      })
+    }
   }
 
   function handleReset() {
@@ -207,28 +228,48 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
 
         {/* Body — scrollable */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Single-node target banner */}
+          {/* Source node preview */}
           {primaryNode ? (
-            <div className="shrink-0 border-b border-white/6 px-4 py-2.5 space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  style={{
-                    background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
-                    borderRadius: '50%',
-                    width: 7,
-                    height: 7,
-                    display: 'inline-block',
-                    flexShrink: 0,
-                  }}
-                />
-                <p className="text-[10px] text-white/60 truncate">
-                  正在为节点应用视觉风格：<span className="text-white/80 font-medium">{primaryNode.title ?? primaryNode.id}</span>
-                </p>
+            <div className="shrink-0 border-b border-white/6">
+              {/* Media preview — only when resultImageUrl is available */}
+              {primaryNode.resultImageUrl ? (
+                <div className="relative mx-4 mt-3 mb-2 overflow-hidden rounded-xl border border-white/8 bg-white/3" style={{ aspectRatio: '16/9' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={primaryNode.resultImageUrl}
+                    alt={primaryNode.title ?? '来源图片'}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              ) : null}
+              <div className="px-4 py-2.5 space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b, #ec4899, #06b6d4)',
+                      borderRadius: '50%',
+                      width: 7,
+                      height: 7,
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <p className="text-[10px] text-white/60 truncate">
+                    来源节点：<span className="text-white/80 font-medium">{primaryNode.title ?? primaryNode.id}</span>
+                  </p>
+                </div>
+                {onCreateDerivedNode ? (
+                  <p className="pl-[15px] text-[9px] text-white/35 leading-relaxed">
+                    选择风格 → 点击「创建风格版本」→ 新节点在原节点右侧，原节点保持不变
+                  </p>
+                ) : (
+                  <p className="pl-[15px] text-[9px] text-white/35 leading-relaxed">
+                    视觉风格包 → 修改 Prompt 风格词 · 调色盘 → 调整色彩参数。两者互补，可叠加使用。
+                  </p>
+                )}
               </div>
-              <p className="pl-[15px] text-[9px] text-white/35 leading-relaxed">
-                视觉风格包 → 修改 Prompt 风格词 · 调色盘 → 调整色彩参数。两者互补，可叠加使用。
-              </p>
             </div>
           ) : (
             <div className="shrink-0 border-b border-white/6 px-4 py-2.5">
@@ -428,6 +469,29 @@ export function LookPackagePanel({ nodes, onApplyLook, onClose, defaultSelectedN
                     确认应用
                   </button>
                 </>
+              ) : onCreateDerivedNode ? (
+                /* Derived-node mode: primary action creates a new downstream node */
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={handleCreateDerived}
+                    disabled={!canPreview}
+                    className={`w-full rounded-xl py-2.5 text-[11px] font-semibold transition ${
+                      canPreview
+                        ? 'bg-indigo-500 text-white hover:bg-indigo-400'
+                        : 'bg-white/4 text-white/25 cursor-not-allowed'
+                    }`}
+                  >
+                    {!primaryNode
+                      ? '请从节点顶部剪辑菜单打开'
+                      : !selectedLook
+                        ? '请先选择风格包'
+                        : !hasAnyCategory
+                          ? '请至少选择一个维度'
+                          : '创建风格版本'}
+                  </button>
+                  <p className="text-center text-[9px] text-white/25">原节点保持不变 · 新节点在右侧</p>
+                </div>
               ) : (
                 <button
                   type="button"

@@ -423,6 +423,10 @@ const MAX_CANVAS_ZOOM = 1.8
 // Hard ceiling on video generation polling (36 × 5s = 180s).
 // Prevents unbounded loops when the provider stalls without returning error/success.
 const MAX_VIDEO_GENERATION_POLLS = 36
+// Context chips (Bible/Camera/Lighting) in the generation dialog are hidden while
+// these tools transition to a derived-node workflow. The underlying engines and
+// storage are retained so no existing node data is lost.
+const SHOW_GENERATION_CONTEXT_CHIPS = false
 const CANVAS_ZOOM_STEP = 0.1
 const CONNECTOR_CENTER_OFFSET = 23
 const CONNECTION_DRAFT_HANDLE_OFFSET = 36
@@ -8311,16 +8315,29 @@ export function VisualCanvasWorkspace({
             onPointerDown={() => setIsLookPackageOpen(false)}
           />
           <LookPackagePanel
-            nodes={nodes}
+            nodes={nodes.map((n) => ({ ...n, resultImageUrl: n.resultImageUrl ?? null }))}
             onApplyLook={(updates) => {
               for (const { nodeId, prompt } of updates) {
                 handleNodePatch(nodeId, { prompt })
-                // Sync canvasPrompt immediately so the dialog textarea and generation
-                // use the new prompt without waiting for the activeNode useEffect.
                 if (nodeId === editingNodeId || nodeId === activeNodeId) {
                   setCanvasPrompt(prompt)
                 }
               }
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
+            onCreateDerivedNode={({ sourceNodeId, prompt, lookName }) => {
+              const sourceNode = nodes.find((n) => n.id === sourceNodeId)
+              const sourceTitle = sourceNode?.title?.trim()
+              const title = sourceTitle ? `${sourceTitle} · ${lookName}` : `视觉风格版本 · ${lookName}`
+              const node = createNode('image', {
+                title,
+                prompt,
+                parentNodeId: sourceNodeId,
+                status: 'idle',
+              })
+              setIsLookPackageOpen(false)
+              setEditingNodeId(node.id)
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
@@ -9069,7 +9086,7 @@ export function VisualCanvasWorkspace({
             onClose={() => setEditingNodeId(null)}
             panelPortalTarget={panelPortalTarget}
           />
-          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
+          {SHOW_GENERATION_CONTEXT_CHIPS && (editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
             hasBibleContent({ characterBible, sceneBible, styleBible }) ||
             editingNode.kind === 'image' ||
             editingNode.kind === 'video'
