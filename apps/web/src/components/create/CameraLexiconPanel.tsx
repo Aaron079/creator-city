@@ -9,7 +9,7 @@ interface CameraLexiconPanelProps {
   nodeKind: 'image' | 'video'
   canInsert: boolean
   onInsert: (fragment: string) => void
-  onCreateDerived?: (fragment: string) => void
+  onCreateDerived?: (fragment: string, selectedLabels: string[]) => void
   onClose: () => void
   workflowTargetNodeTitle?: string
 }
@@ -208,7 +208,7 @@ export function CameraLexiconPanel({
         {onCreateDerived ? (
           <button
             type="button"
-            onClick={() => { if (fragment) { onCreateDerived(fragment); onClose() } }}
+            onClick={() => { if (fragment) { onCreateDerived(fragment, selectedTerms.map(t => t.zhLabel)); onClose() } }}
             disabled={!fragment}
             className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.1] py-1.5 text-[12px] font-medium text-violet-300 transition hover:bg-violet-500/[0.18] disabled:cursor-not-allowed disabled:opacity-30"
           >

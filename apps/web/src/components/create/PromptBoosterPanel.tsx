@@ -20,7 +20,7 @@ interface PromptBoosterPanelProps {
   nodes: PromptBoostNode[]
   initialNodeId?: string
   onAppendPrompt: (nodeId: string, appendText: string) => void
-  onCreateDerived?: (nodeId: string, appendText: string) => void
+  onCreateDerived?: (nodeId: string, appendText: string, suggestionTitle?: string) => void
   onClose: () => void
 }
 
@@ -138,7 +138,7 @@ export function PromptBoosterPanel({
         return
       }
       if (onCreateDerived) {
-        onCreateDerived(selectedNodeId, sugg.appendText)
+        onCreateDerived(selectedNodeId, sugg.appendText, sugg.title)
       } else {
         onAppendPrompt(selectedNodeId, sugg.appendText)
       }

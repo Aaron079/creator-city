@@ -808,6 +808,14 @@ function metadataRecord(metadataJson: unknown) {
     : {}
 }
 
+function buildCameraSummaryText(settings: CameraSettings): string {
+  return [settings.cameraBody, settings.lens, settings.aperture, settings.focus].filter(Boolean).join(' · ')
+}
+
+function buildLightingSummaryText(settings: SceneLightingSettings): string {
+  return [settings.lightingSetup, settings.timeWeather, settings.atmosphere, settings.colorMood].filter(Boolean).join(' · ')
+}
+
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
@@ -4131,6 +4139,11 @@ export function VisualCanvasWorkspace({
     setStyleBible((current) => deriveStyleBibleTemplate(latestNodesRef.current, current))
     showCanvasFeedback('已根据当前节点生成风格圣经模板。')
   }, [showCanvasFeedback])
+
+  const nodeTitleById = useMemo(
+    () => new Map(nodes.map((n) => [n.id, n.title || n.kind])),
+    [nodes],
+  )
 
   const generationTasks = useMemo(() => collectGenerationTasks(nodes), [nodes])
   const runningGenerationTaskCount = useMemo(
@@ -8063,9 +8076,14 @@ export function VisualCanvasWorkspace({
                   nodeKind={lexTarget.kind as 'image' | 'video'}
                   canInsert={editingNode !== null || workflowContext !== null}
                   onInsert={handleLexiconInsert}
-                  onCreateDerived={(fragment) => {
+                  onCreateDerived={(fragment, selectedLabels) => {
                     const sourcePrompt = (lexTarget.prompt ?? '').trim()
                     const derivedPrompt = sourcePrompt ? `${sourcePrompt}\n${fragment}` : fragment
+                    const topLabels = selectedLabels.slice(0, 3)
+                    const extra = selectedLabels.length - topLabels.length
+                    const toolSummaryText = topLabels.length
+                      ? topLabels.join(' · ') + (extra > 0 ? ` +${extra}` : '')
+                      : undefined
                     const node = createNode(
                       lexTarget.kind === 'video' ? 'video' : 'image',
                       {
@@ -8076,6 +8094,8 @@ export function VisualCanvasWorkspace({
                         metadataJson: {
                           derivedFromTool: 'camera-lexicon',
                           derivedFromToolLabel: '镜头词典',
+                          ...(toolSummaryText ? { toolSummaryText } : {}),
+                          sourceNodeTitle: lexTarget.title || lexTarget.kind,
                           generationDraft: {
                             status: 'draft',
                             sourceNodeId: lexTarget.id,
@@ -8322,6 +8342,7 @@ export function VisualCanvasWorkspace({
             if (!sourceNode) return
             const cameraCtx = buildCameraPromptContext(settings)
             const derivedPrompt = appendCameraContextToPrompt(sourceNode.prompt ?? '', cameraCtx)
+            const toolSummaryText = buildCameraSummaryText(settings) || undefined
             const node = createNode(
               sourceNode.kind === 'video' ? 'video' : 'image',
               {
@@ -8332,6 +8353,8 @@ export function VisualCanvasWorkspace({
                 metadataJson: {
                   derivedFromTool: 'camera-control',
                   derivedFromToolLabel: '摄影机控制',
+                  ...(toolSummaryText ? { toolSummaryText } : {}),
+                  sourceNodeTitle: sourceNode.title || sourceNode.kind,
                   generationDraft: {
                     status: 'draft',
                     sourceNodeId: sourceNode.id,
@@ -8370,6 +8393,7 @@ export function VisualCanvasWorkspace({
             if (!sourceNode) return
             const lightingCtx = buildSceneLightingPromptContext(settings)
             const derivedPrompt = appendSceneLightingContextToPrompt(sourceNode.prompt ?? '', lightingCtx)
+            const toolSummaryText = buildLightingSummaryText(settings) || undefined
             const node = createNode(
               sourceNode.kind === 'video' ? 'video' : 'image',
               {
@@ -8380,6 +8404,8 @@ export function VisualCanvasWorkspace({
                 metadataJson: {
                   derivedFromTool: 'scene-lighting',
                   derivedFromToolLabel: '场景光线',
+                  ...(toolSummaryText ? { toolSummaryText } : {}),
+                  sourceNodeTitle: sourceNode.title || sourceNode.kind,
                   generationDraft: {
                     status: 'draft',
                     sourceNodeId: sourceNode.id,
@@ -8426,13 +8452,14 @@ export function VisualCanvasWorkspace({
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onCreateDerived={(nodeId, appendText) => {
+            onCreateDerived={(nodeId, appendText, suggestionTitle) => {
               const sourceNode = nodes.find((n) => n.id === nodeId)
               if (!sourceNode) return
               const current = (sourceNode.prompt ?? '').trim()
               const separator = current ? '\n[Prompt Booster]\n' : ''
               const derivedPrompt = current + separator + appendText
               const targetKind = sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image')
+              const toolSummaryText = suggestionTitle || undefined
               const node = createNode(
                 targetKind,
                 {
@@ -8443,6 +8470,8 @@ export function VisualCanvasWorkspace({
                   metadataJson: {
                     derivedFromTool: 'prompt-booster',
                     derivedFromToolLabel: '提示词增强',
+                    ...(toolSummaryText ? { toolSummaryText } : {}),
+                    sourceNodeTitle: sourceNode.title || sourceNode.kind,
                     generationDraft: {
                       status: 'draft',
                       sourceNodeId: sourceNode.id,
@@ -8522,6 +8551,8 @@ export function VisualCanvasWorkspace({
                 metadataJson: {
                   derivedFromTool: 'look-package',
                   derivedFromToolLabel: '视觉风格',
+                  toolSummaryText: lookName,
+                  sourceNodeTitle: sourceTitle || sourceNode?.kind || 'image',
                   generationDraft: {
                     status: 'draft',
                     sourceNodeId,
@@ -8883,6 +8914,19 @@ export function VisualCanvasWorkspace({
                     const videoNode = createNode('video', { parentNodeId: node.id })
                     setEditingNodeId(videoNode.id)
                   } : undefined}
+                  sourceNodeTitle={(() => {
+                    const meta = metadataRecord(node.metadataJson)
+                    const draft = metadataRecord(meta.generationDraft)
+                    const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
+                    if (!sid) return undefined
+                    return nodeTitleById.get(sid) ?? undefined
+                  })()}
+                  sourceNodeMissing={(() => {
+                    const meta = metadataRecord(node.metadataJson)
+                    const draft = metadataRecord(meta.generationDraft)
+                    const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
+                    return Boolean(sid && !nodeTitleById.has(sid))
+                  })()}
                 />
               </CanvasNodeErrorBoundary>
             </div>

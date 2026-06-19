@@ -83,6 +83,8 @@ interface CanvasNodeCardProps {
   workflowIncomingContext?: { sourceNode: VisualCanvasNode; isPortraitLikely: boolean }
   onWorkflowContinue?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onCreateDerivedVideo?: () => void
+  sourceNodeTitle?: string
+  sourceNodeMissing?: boolean
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1467,6 +1469,8 @@ export function CanvasNodeCard({
   workflowIncomingContext,
   onWorkflowContinue,
   onCreateDerivedVideo,
+  sourceNodeTitle,
+  sourceNodeMissing = false,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
 
@@ -3295,13 +3299,27 @@ export function CanvasNodeCard({
           if (!toolLabel) return null
           const draft = metadataRecord(meta.generationDraft)
           const isDraft = draft.status === 'draft'
+          const toolSummary = typeof meta.toolSummaryText === 'string' && meta.toolSummaryText.trim() ? meta.toolSummaryText.trim() : undefined
           const visual = getDerivedToolVisual(toolId)
+          const hasSource = Boolean(sourceNodeTitle || sourceNodeMissing)
           return (
-            <div className={`flex items-center gap-1.5 border-b px-2.5 py-1.5 ${visual.bgClass} ${visual.borderClass}`}>
-              <span className="text-[10px] leading-none">{visual.icon}</span>
-              <span className={`text-[9px] font-semibold leading-none ${visual.accentClass}`}>{toolLabel}</span>
-              {isDraft ? (
-                <span className="ml-auto text-[8px] font-medium leading-none text-yellow-400/70">待确认生成</span>
+            <div className={`border-b px-2.5 py-1.5 ${visual.bgClass} ${visual.borderClass}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] leading-none">{visual.icon}</span>
+                <span className={`text-[9px] font-semibold leading-none ${visual.accentClass}`}>{toolLabel}</span>
+                {isDraft ? (
+                  <span className="ml-auto text-[8px] font-medium leading-none text-yellow-400/70">待确认生成</span>
+                ) : null}
+              </div>
+              {toolSummary ? (
+                <p className="mt-1 truncate text-[8.5px] leading-tight text-white/40" title={toolSummary}>
+                  {toolSummary}
+                </p>
+              ) : null}
+              {hasSource ? (
+                <p className="mt-0.5 text-[8px] leading-tight text-white/25">
+                  {sourceNodeMissing ? '来源节点已不存在' : `来源：${sourceNodeTitle}`}
+                </p>
               ) : null}
             </div>
           )
