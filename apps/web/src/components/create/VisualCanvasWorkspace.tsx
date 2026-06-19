@@ -8774,7 +8774,7 @@ export function VisualCanvasWorkspace({
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
             onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
-            onOpenLookPackage={() => setIsLookPackageOpen(true)}
+            onOpenLookPackage={() => { setLookPanelDefaultNodeId(activeNode.id); setIsLookPackageOpen(true) }}
             onOpenVariantPlanner={() => setIsVariantPlannerOpen(true)}
             onOpenABCompare={() => setIsABCompareOpen(true)}
             onOpenKeyframeExtractor={() => setIsKeyframeExtractorOpen(true)}
