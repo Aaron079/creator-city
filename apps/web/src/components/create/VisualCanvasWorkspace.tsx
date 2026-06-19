@@ -377,6 +377,7 @@ interface CanvasEdge {
   status: CanvasEdgeStatus
   type?: string
   metadataJson?: unknown
+  label?: string
 }
 
 type MediaReviewWindow = {
@@ -4345,6 +4346,7 @@ export function VisualCanvasWorkspace({
       resultImageUrl?: string
       resultVideoUrl?: string
       metadataJson?: Record<string, unknown>
+      edgeLabel?: string
     },
   ) => {
     const meta = NODE_META[kind]
@@ -4403,6 +4405,7 @@ export function VisualCanvasWorkspace({
           fromNodeId: parentNode.id,
           toNodeId: node.id,
           status: 'active',
+          label: options?.edgeLabel,
         },
       ])
     }
@@ -8032,6 +8035,26 @@ export function VisualCanvasWorkspace({
                   nodeKind={lexTarget.kind as 'image' | 'video'}
                   canInsert={editingNode !== null || workflowContext !== null}
                   onInsert={handleLexiconInsert}
+                  onCreateDerived={(fragment) => {
+                    const sourcePrompt = (lexTarget.prompt ?? '').trim()
+                    const derivedPrompt = sourcePrompt ? `${sourcePrompt}\n${fragment}` : fragment
+                    const node = createNode(
+                      lexTarget.kind === 'video' ? 'video' : 'image',
+                      {
+                        title: `${lexTarget.title} · 镜头`,
+                        prompt: derivedPrompt,
+                        parentNodeId: lexTarget.id,
+                        status: 'idle',
+                        metadataJson: { derivedFromTool: 'camera-lexicon', derivedFromToolLabel: '镜头词典' },
+                        edgeLabel: '镜头词典',
+                      },
+                    )
+                    setIsLexiconOpen(false)
+                    setWorkflowContext(null)
+                    setEditingNodeId(node.id)
+                    flushLocalSnapshot()
+                    scheduleCanvasSave(0)
+                  }}
                   onClose={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
                   workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
                 />
@@ -8249,6 +8272,27 @@ export function VisualCanvasWorkspace({
           value={cameraSettings}
           onChange={updateCameraSettings}
           onClose={() => setIsCameraControlOpen(false)}
+          onCreateDerived={(settings) => {
+            const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
+            const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
+            if (!sourceNode) return
+            const node = createNode(
+              sourceNode.kind === 'video' ? 'video' : 'image',
+              {
+                title: `${sourceNode.title} · 摄影机`,
+                prompt: sourceNode.prompt,
+                parentNodeId: sourceNode.id,
+                status: 'idle',
+                metadataJson: { derivedFromTool: 'camera-control', derivedFromToolLabel: '摄影机控制' },
+                edgeLabel: '摄影机',
+              },
+            )
+            if (projectId) saveCameraSettingsForNode(projectId, node.id, settings)
+            setIsCameraControlOpen(false)
+            setEditingNodeId(node.id)
+            flushLocalSnapshot()
+            scheduleCanvasSave(0)
+          }}
         />
       ) : null}
 
@@ -8258,6 +8302,27 @@ export function VisualCanvasWorkspace({
           value={sceneLightingSettings}
           onChange={updateSceneLightingSettings}
           onClose={() => setIsSceneLightingOpen(false)}
+          onCreateDerived={(settings) => {
+            const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
+            const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
+            if (!sourceNode) return
+            const node = createNode(
+              sourceNode.kind === 'video' ? 'video' : 'image',
+              {
+                title: `${sourceNode.title} · 光线`,
+                prompt: sourceNode.prompt,
+                parentNodeId: sourceNode.id,
+                status: 'idle',
+                metadataJson: { derivedFromTool: 'scene-lighting', derivedFromToolLabel: '场景光线' },
+                edgeLabel: '场景光线',
+              },
+            )
+            if (projectId) saveSceneLightingForNode(projectId, node.id, settings)
+            setIsSceneLightingOpen(false)
+            setEditingNodeId(node.id)
+            flushLocalSnapshot()
+            scheduleCanvasSave(0)
+          }}
         />
       ) : null}
 
@@ -8278,6 +8343,28 @@ export function VisualCanvasWorkspace({
               const separator = current ? '\n[Prompt Booster]\n' : ''
               const newPrompt = current + separator + appendText
               handleNodePatch(nodeId, { prompt: newPrompt })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+            }}
+            onCreateDerived={(nodeId, appendText) => {
+              const sourceNode = nodes.find((n) => n.id === nodeId)
+              if (!sourceNode) return
+              const current = (sourceNode.prompt ?? '').trim()
+              const separator = current ? '\n[Prompt Booster]\n' : ''
+              const derivedPrompt = current + separator + appendText
+              const node = createNode(
+                sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image'),
+                {
+                  title: `${sourceNode.title} · 增强`,
+                  prompt: derivedPrompt,
+                  parentNodeId: sourceNode.id,
+                  status: 'idle',
+                  metadataJson: { derivedFromTool: 'prompt-booster', derivedFromToolLabel: '提示词增强' },
+                  edgeLabel: '提示词增强',
+                },
+              )
+              setIsPromptBoosterOpen(false)
+              setEditingNodeId(node.id)
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
@@ -8591,6 +8678,7 @@ export function VisualCanvasWorkspace({
                     y2={toNode.y + toNode.height / 2}
                     active={edge.id === activeEdgeId || edge.status === 'active' || activeNodeId === fromNode.id || activeNodeId === toNode.id}
                     directorType={getEdgeDirectorConfig(edge.metadataJson)?.type}
+                    label={edge.label}
                     onOpenDirector={() => openEdgeDirector(edge.id)}
                   />
                 )

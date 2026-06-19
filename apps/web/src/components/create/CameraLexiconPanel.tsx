@@ -9,6 +9,7 @@ interface CameraLexiconPanelProps {
   nodeKind: 'image' | 'video'
   canInsert: boolean
   onInsert: (fragment: string) => void
+  onCreateDerived?: (fragment: string) => void
   onClose: () => void
   workflowTargetNodeTitle?: string
 }
@@ -51,6 +52,7 @@ export function CameraLexiconPanel({
   nodeKind,
   canInsert,
   onInsert,
+  onCreateDerived,
   onClose,
   workflowTargetNodeTitle,
 }: CameraLexiconPanelProps) {
@@ -203,14 +205,25 @@ export function CameraLexiconPanel({
 
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-white/[0.07] px-4 py-3">
-        <button
-          type="button"
-          onClick={handleInsert}
-          disabled={!fragment || !canActuallyInsert}
-          className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.1] py-1.5 text-[12px] font-medium text-violet-300 transition hover:bg-violet-500/[0.18] disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          {insertLabel}
-        </button>
+        {onCreateDerived ? (
+          <button
+            type="button"
+            onClick={() => { if (fragment) { onCreateDerived(fragment); onClose() } }}
+            disabled={!fragment}
+            className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.1] py-1.5 text-[12px] font-medium text-violet-300 transition hover:bg-violet-500/[0.18] disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            创建镜头版本
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleInsert}
+            disabled={!fragment || !canActuallyInsert}
+            className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.1] py-1.5 text-[12px] font-medium text-violet-300 transition hover:bg-violet-500/[0.18] disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            {insertLabel}
+          </button>
+        )}
         {selectedIds.length > 0 && (
           <button
             type="button"

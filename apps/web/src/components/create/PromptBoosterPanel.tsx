@@ -20,6 +20,7 @@ interface PromptBoosterPanelProps {
   nodes: PromptBoostNode[]
   initialNodeId?: string
   onAppendPrompt: (nodeId: string, appendText: string) => void
+  onCreateDerived?: (nodeId: string, appendText: string) => void
   onClose: () => void
 }
 
@@ -75,6 +76,7 @@ export function PromptBoosterPanel({
   nodes,
   initialNodeId,
   onAppendPrompt,
+  onCreateDerived,
   onClose,
 }: PromptBoosterPanelProps) {
   const supportedNodes = useMemo(() => nodes.filter(isBoostableNode), [nodes])
@@ -135,9 +137,13 @@ export function PromptBoosterPanel({
         setTimeout(() => setAlreadyExistsId(null), 2500)
         return
       }
-      onAppendPrompt(selectedNodeId, sugg.appendText)
+      if (onCreateDerived) {
+        onCreateDerived(selectedNodeId, sugg.appendText)
+      } else {
+        onAppendPrompt(selectedNodeId, sugg.appendText)
+      }
     },
-    [selectedNodeId, nodes, onAppendPrompt],
+    [selectedNodeId, nodes, onAppendPrompt, onCreateDerived],
   )
 
   const handleDismiss = useCallback((id: string) => {
@@ -311,6 +317,7 @@ export function PromptBoosterPanel({
                             suggestion={sugg}
                             isCopied={copiedId === sugg.id}
                             alreadyExists={alreadyExistsId === sugg.id}
+                            isDerivedMode={Boolean(onCreateDerived)}
                             onCopy={handleCopySuggestion}
                             onAppend={handleAppend}
                             onDismiss={handleDismiss}
@@ -359,6 +366,7 @@ interface SuggestionCardProps {
   suggestion: PromptBoostSuggestion
   isCopied: boolean
   alreadyExists: boolean
+  isDerivedMode?: boolean
   onCopy: (sugg: PromptBoostSuggestion) => void
   onAppend: (sugg: PromptBoostSuggestion) => void
   onDismiss: (id: string) => void
@@ -368,6 +376,7 @@ function SuggestionCard({
   suggestion: sugg,
   isCopied,
   alreadyExists,
+  isDerivedMode = false,
   onCopy,
   onAppend,
   onDismiss,
@@ -406,10 +415,12 @@ function SuggestionCard({
           className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
             alreadyExists
               ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-              : 'border-white/10 text-white/55 hover:border-white/20 hover:bg-white/5 hover:text-white/80'
+              : isDerivedMode
+                ? 'border-violet-500/30 bg-violet-500/[0.08] text-violet-300 hover:bg-violet-500/[0.15]'
+                : 'border-white/10 text-white/55 hover:border-white/20 hover:bg-white/5 hover:text-white/80'
           }`}
         >
-          {alreadyExists ? '已存在类似片段' : '追加到 Prompt'}
+          {alreadyExists ? '已存在类似片段' : isDerivedMode ? '创建增强版本' : '追加到 Prompt'}
         </button>
       </div>
     </div>

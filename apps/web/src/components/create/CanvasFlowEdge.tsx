@@ -11,6 +11,7 @@ interface CanvasFlowEdgeProps {
   y2: number
   active?: boolean
   directorType?: EdgeDirectorType
+  label?: string
   onOpenDirector?: () => void
 }
 
@@ -22,6 +23,7 @@ export function CanvasFlowEdge({
   y2,
   active = false,
   directorType = 'default',
+  label,
   onOpenDirector,
 }: CanvasFlowEdgeProps) {
   const [hovered, setHovered] = useState(false)
@@ -90,6 +92,21 @@ export function CanvasFlowEdge({
       {active ? (
         <path d={path} className="canvas-flow-path is-active" markerEnd={`url(#${markerId})`} />
       ) : null}
+
+      {/* Derived tool label — midpoint of bezier */}
+      {label ? (() => {
+        const lx = (x1 + x2) / 2
+        const ly = (y1 + y2) / 2
+        const lw = Math.max(44, label.length * 11 + 12)
+        return (
+          <g>
+            <rect x={lx - lw / 2} y={ly - 9} width={lw} height={18} rx={9} fill="rgba(13,15,20,0.9)" stroke="rgba(255,255,255,0.1)" strokeWidth={0.7} />
+            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.45)" fontFamily="system-ui,-apple-system,sans-serif" fontWeight="500">
+              {label}
+            </text>
+          </g>
+        )
+      })() : null}
     </svg>
   )
 }

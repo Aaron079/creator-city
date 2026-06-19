@@ -518,6 +518,7 @@ interface CinematicCameraControlPanelProps {
   value: CameraSettings
   onChange: (value: CameraSettings) => void
   onClose: () => void
+  onCreateDerived?: (settings: CameraSettings) => void
 }
 
 export function CinematicCameraControlPanel({
@@ -525,6 +526,7 @@ export function CinematicCameraControlPanel({
   value,
   onChange,
   onClose,
+  onCreateDerived,
 }: CinematicCameraControlPanelProps) {
   if (!open) return null
 
@@ -584,6 +586,15 @@ export function CinematicCameraControlPanel({
                 className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/70"
               >
                 清除设定
+              </button>
+            ) : null}
+            {onCreateDerived ? (
+              <button
+                type="button"
+                onClick={() => onCreateDerived(value)}
+                className="rounded-md border border-violet-500/30 bg-violet-500/[0.1] px-3 py-1.5 text-[11px] font-semibold text-violet-300 transition hover:bg-violet-500/[0.18]"
+              >
+                创建摄影版本
               </button>
             ) : null}
             <button

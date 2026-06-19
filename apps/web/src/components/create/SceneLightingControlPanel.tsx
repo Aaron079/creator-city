@@ -540,6 +540,7 @@ interface SceneLightingControlPanelProps {
   value: SceneLightingSettings
   onChange: (value: SceneLightingSettings) => void
   onClose: () => void
+  onCreateDerived?: (settings: SceneLightingSettings) => void
 }
 
 export function SceneLightingControlPanel({
@@ -547,6 +548,7 @@ export function SceneLightingControlPanel({
   value,
   onChange,
   onClose,
+  onCreateDerived,
 }: SceneLightingControlPanelProps) {
   if (!open) return null
 
@@ -606,6 +608,15 @@ export function SceneLightingControlPanel({
                 className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/70"
               >
                 清除设定
+              </button>
+            ) : null}
+            {onCreateDerived ? (
+              <button
+                type="button"
+                onClick={() => onCreateDerived(value)}
+                className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-1.5 text-[11px] font-semibold text-amber-300 transition hover:bg-amber-500/[0.15]"
+              >
+                创建光线版本
               </button>
             ) : null}
             <button
