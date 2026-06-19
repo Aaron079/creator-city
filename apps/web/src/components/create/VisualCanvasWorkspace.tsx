@@ -35,6 +35,7 @@ import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePan
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
+import { CanvasRightInspector, type InspectorEdgeRef } from '@/components/canvas/inspector/CanvasRightInspector'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
@@ -2410,6 +2411,7 @@ export function VisualCanvasWorkspace({
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string>('add')
@@ -4145,6 +4147,35 @@ export function VisualCanvasWorkspace({
     [nodes],
   )
 
+  const inspectorSourceNode = useMemo(() => {
+    if (!activeNode) return undefined
+    const meta = metadataRecord(activeNode.metadataJson)
+    const draft = metadataRecord(meta.generationDraft)
+    const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
+    if (!sid) return undefined
+    return nodes.find((n) => n.id === sid) ?? undefined
+  }, [activeNode, nodes])
+
+  const inspectorIncomingEdges = useMemo<InspectorEdgeRef[]>(() => {
+    if (!activeNodeId) return []
+    return edges.filter((e) => e.toNodeId === activeNodeId).map((e) => ({
+      id: e.id,
+      fromNodeId: e.fromNodeId,
+      toNodeId: e.toNodeId,
+      label: e.label,
+    }))
+  }, [activeNodeId, edges])
+
+  const inspectorOutgoingEdges = useMemo<InspectorEdgeRef[]>(() => {
+    if (!activeNodeId) return []
+    return edges.filter((e) => e.fromNodeId === activeNodeId).map((e) => ({
+      id: e.id,
+      fromNodeId: e.fromNodeId,
+      toNodeId: e.toNodeId,
+      label: e.label,
+    }))
+  }, [activeNodeId, edges])
+
   const generationTasks = useMemo(() => collectGenerationTasks(nodes), [nodes])
   const runningGenerationTaskCount = useMemo(
     () => generationTasks.filter((task) => task.status === 'running').length,
@@ -4302,6 +4333,11 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     setReframeMode('original')
+  }, [activeNodeId])
+
+  useEffect(() => {
+    if (!activeNodeId) setIsRightInspectorOpen(false)
+    else setIsRightInspectorOpen(true)
   }, [activeNodeId])
 
   useEffect(() => {
@@ -7639,7 +7675,7 @@ export function VisualCanvasWorkspace({
       transformOrigin: 'top left',
       width: dialogWidth,
     }
-  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode])
+  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode, isRightInspectorOpen])
 
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
@@ -7662,7 +7698,7 @@ export function VisualCanvasWorkspace({
       zIndex: 90,
       pointerEvents: 'auto',
     }
-  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom])
+  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom, isRightInspectorOpen])
 
   // Resolve upstream image for video node editing dialog
   const videoModeInfo = useMemo(() => {
@@ -7994,7 +8030,25 @@ export function VisualCanvasWorkspace({
   )
 
   return (
-    <CanvasWorkspaceShell topCommand={topCommandBar} leftRail={leftToolRail} showLeftRail>
+    <CanvasWorkspaceShell
+      topCommand={topCommandBar}
+      leftRail={leftToolRail}
+      showLeftRail
+      rightInspector={activeNode && isRightInspectorOpen ? (
+        <CanvasRightInspector
+          node={activeNode}
+          sourceNode={inspectorSourceNode}
+          incomingEdges={inspectorIncomingEdges}
+          outgoingEdges={inspectorOutgoingEdges}
+          nodeTitleById={nodeTitleById}
+          onClose={() => setIsRightInspectorOpen(false)}
+          onOpenGenerationDialog={() => setEditingNodeId(activeNode.id)}
+          onSelectNode={(id) => setActiveNodeId(id)}
+          projectId={projectId ?? undefined}
+        />
+      ) : undefined}
+      showRightInspector={Boolean(activeNode && isRightInspectorOpen)}
+    >
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
