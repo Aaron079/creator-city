@@ -3287,6 +3287,16 @@ export function CanvasNodeCard({
             ) : null}
           </div>
         ) : null}
+        {(() => {
+          const toolLabel = metadataRecord(node.metadataJson).derivedFromToolLabel
+          if (!toolLabel || typeof toolLabel !== 'string') return null
+          return (
+            <div className="flex items-center gap-1 border-b border-white/[0.04] px-2.5 py-1">
+              <span className="text-[9px] font-semibold text-violet-400/55">↳</span>
+              <span className="text-[9px] font-medium text-violet-300/45">{toolLabel}</span>
+            </div>
+          )
+        })()}
         <div className="canvas-node-body">
           {node.kind === 'text' ? (
             <button

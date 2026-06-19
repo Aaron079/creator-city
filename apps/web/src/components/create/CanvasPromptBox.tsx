@@ -26,6 +26,7 @@ export type VideoModeInfo =
   | { mode: 'image-to-video'; thumbnailUrl?: string; sourceNodeTitle?: string }
   | { mode: 'text-to-video' }
   | { mode: 'image-missing'; sourceNodeTitle?: string }
+  | { mode: 'video-to-video'; sourceNodeTitle?: string; thumbnailUrl?: string }
 
 interface CanvasPromptBoxProps {
   prompt: string
@@ -649,6 +650,20 @@ export function CanvasPromptBox({
               <div className="canvas-video-mode-text">
                 <span className="canvas-video-mode-label">参考图缺失</span>
                 <span className="canvas-video-mode-desc">上游图片尚无可用 URL，请先生成图片</span>
+              </div>
+            </>
+          ) : videoModeInfo.mode === 'video-to-video' ? (
+            <>
+              {videoModeInfo.thumbnailUrl ? (
+                <img
+                  src={videoModeInfo.thumbnailUrl}
+                  alt="来源视频"
+                  className="canvas-video-mode-thumb"
+                />
+              ) : <span className="canvas-video-mode-icon">🎬</span>}
+              <div className="canvas-video-mode-text">
+                <span className="canvas-video-mode-label">来源视频：{videoModeInfo.sourceNodeTitle ?? 'Video'}</span>
+                <span className="canvas-video-mode-desc">视频到视频生成暂未开放，将以文生视频模式运行</span>
               </div>
             </>
           ) : (

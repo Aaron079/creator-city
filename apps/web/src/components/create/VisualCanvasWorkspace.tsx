@@ -7640,6 +7640,20 @@ export function VisualCanvasWorkspace({
   // Resolve upstream image for video node editing dialog
   const videoModeInfo = useMemo(() => {
     if (!editingNode || editingNode.kind !== 'video') return undefined
+
+    // Check for video→video derived node: upstream is a video node (not image)
+    const upstreamEdges = edges.filter((e) => e.toNodeId === editingNode.id)
+    const upstreamVideoNode = upstreamEdges
+      .map((e) => nodes.find((n) => n.id === e.fromNodeId))
+      .find((n) => n?.kind === 'video')
+    if (upstreamVideoNode) {
+      return {
+        mode: 'video-to-video' as const,
+        sourceNodeTitle: upstreamVideoNode.title,
+        thumbnailUrl: upstreamVideoNode.preview?.poster ? getProxiedMediaUrl(upstreamVideoNode.preview.poster) : undefined,
+      }
+    }
+
     const resolved = resolveImageInputForVideoNode({
       videoNode: editingNode,
       allNodes: nodes,
@@ -8045,7 +8059,21 @@ export function VisualCanvasWorkspace({
                         prompt: derivedPrompt,
                         parentNodeId: lexTarget.id,
                         status: 'idle',
-                        metadataJson: { derivedFromTool: 'camera-lexicon', derivedFromToolLabel: '镜头词典' },
+                        metadataJson: {
+                          derivedFromTool: 'camera-lexicon',
+                          derivedFromToolLabel: '镜头词典',
+                          generationDraft: {
+                            status: 'draft',
+                            sourceNodeId: lexTarget.id,
+                            sourceKind: lexTarget.kind,
+                            targetKind: lexTarget.kind === 'video' ? 'video' : 'image',
+                            basePrompt: sourcePrompt,
+                            derivedPrompt,
+                            sourceImageUrl: lexTarget.resultImageUrl ?? null,
+                            sourceVideoUrl: lexTarget.resultVideoUrl ?? null,
+                            createdAt: new Date().toISOString(),
+                          },
+                        },
                         edgeLabel: '镜头词典',
                       },
                     )
@@ -8276,15 +8304,31 @@ export function VisualCanvasWorkspace({
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
             if (!sourceNode) return
+            const cameraCtx = buildCameraPromptContext(settings)
+            const derivedPrompt = appendCameraContextToPrompt(sourceNode.prompt ?? '', cameraCtx)
             const node = createNode(
               sourceNode.kind === 'video' ? 'video' : 'image',
               {
                 title: `${sourceNode.title} · 摄影机`,
-                prompt: sourceNode.prompt,
+                prompt: derivedPrompt,
                 parentNodeId: sourceNode.id,
                 status: 'idle',
-                metadataJson: { derivedFromTool: 'camera-control', derivedFromToolLabel: '摄影机控制' },
-                edgeLabel: '摄影机',
+                metadataJson: {
+                  derivedFromTool: 'camera-control',
+                  derivedFromToolLabel: '摄影机控制',
+                  generationDraft: {
+                    status: 'draft',
+                    sourceNodeId: sourceNode.id,
+                    sourceKind: sourceNode.kind,
+                    targetKind: sourceNode.kind === 'video' ? 'video' : 'image',
+                    basePrompt: sourceNode.prompt ?? '',
+                    derivedPrompt,
+                    sourceImageUrl: sourceNode.resultImageUrl ?? null,
+                    sourceVideoUrl: sourceNode.resultVideoUrl ?? null,
+                    createdAt: new Date().toISOString(),
+                  },
+                },
+                edgeLabel: '摄影机控制',
               },
             )
             if (projectId) saveCameraSettingsForNode(projectId, node.id, settings)
@@ -8306,14 +8350,30 @@ export function VisualCanvasWorkspace({
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
             if (!sourceNode) return
+            const lightingCtx = buildSceneLightingPromptContext(settings)
+            const derivedPrompt = appendSceneLightingContextToPrompt(sourceNode.prompt ?? '', lightingCtx)
             const node = createNode(
               sourceNode.kind === 'video' ? 'video' : 'image',
               {
                 title: `${sourceNode.title} · 光线`,
-                prompt: sourceNode.prompt,
+                prompt: derivedPrompt,
                 parentNodeId: sourceNode.id,
                 status: 'idle',
-                metadataJson: { derivedFromTool: 'scene-lighting', derivedFromToolLabel: '场景光线' },
+                metadataJson: {
+                  derivedFromTool: 'scene-lighting',
+                  derivedFromToolLabel: '场景光线',
+                  generationDraft: {
+                    status: 'draft',
+                    sourceNodeId: sourceNode.id,
+                    sourceKind: sourceNode.kind,
+                    targetKind: sourceNode.kind === 'video' ? 'video' : 'image',
+                    basePrompt: sourceNode.prompt ?? '',
+                    derivedPrompt,
+                    sourceImageUrl: sourceNode.resultImageUrl ?? null,
+                    sourceVideoUrl: sourceNode.resultVideoUrl ?? null,
+                    createdAt: new Date().toISOString(),
+                  },
+                },
                 edgeLabel: '场景光线',
               },
             )
@@ -8352,14 +8412,29 @@ export function VisualCanvasWorkspace({
               const current = (sourceNode.prompt ?? '').trim()
               const separator = current ? '\n[Prompt Booster]\n' : ''
               const derivedPrompt = current + separator + appendText
+              const targetKind = sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image')
               const node = createNode(
-                sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image'),
+                targetKind,
                 {
                   title: `${sourceNode.title} · 增强`,
                   prompt: derivedPrompt,
                   parentNodeId: sourceNode.id,
                   status: 'idle',
-                  metadataJson: { derivedFromTool: 'prompt-booster', derivedFromToolLabel: '提示词增强' },
+                  metadataJson: {
+                    derivedFromTool: 'prompt-booster',
+                    derivedFromToolLabel: '提示词增强',
+                    generationDraft: {
+                      status: 'draft',
+                      sourceNodeId: sourceNode.id,
+                      sourceKind: sourceNode.kind,
+                      targetKind,
+                      basePrompt: current,
+                      derivedPrompt,
+                      sourceImageUrl: sourceNode.resultImageUrl ?? null,
+                      sourceVideoUrl: sourceNode.resultVideoUrl ?? null,
+                      createdAt: new Date().toISOString(),
+                    },
+                  },
                   edgeLabel: '提示词增强',
                 },
               )
