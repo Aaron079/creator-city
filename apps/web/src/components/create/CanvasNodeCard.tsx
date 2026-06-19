@@ -10,6 +10,7 @@ import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 import { getReframeStyle, type ReframeMode } from '@/components/create/AssetAgentToolbar'
+import { getDerivedToolVisual } from '@/lib/canvas/derivedToolVisualConfig'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -3288,12 +3289,20 @@ export function CanvasNodeCard({
           </div>
         ) : null}
         {(() => {
-          const toolLabel = metadataRecord(node.metadataJson).derivedFromToolLabel
-          if (!toolLabel || typeof toolLabel !== 'string') return null
+          const meta = metadataRecord(node.metadataJson)
+          const toolId = typeof meta.derivedFromTool === 'string' ? meta.derivedFromTool : undefined
+          const toolLabel = typeof meta.derivedFromToolLabel === 'string' ? meta.derivedFromToolLabel : undefined
+          if (!toolLabel) return null
+          const draft = metadataRecord(meta.generationDraft)
+          const isDraft = draft.status === 'draft'
+          const visual = getDerivedToolVisual(toolId)
           return (
-            <div className="flex items-center gap-1 border-b border-white/[0.04] px-2.5 py-1">
-              <span className="text-[9px] font-semibold text-violet-400/55">↳</span>
-              <span className="text-[9px] font-medium text-violet-300/45">{toolLabel}</span>
+            <div className={`flex items-center gap-1.5 border-b px-2.5 py-1.5 ${visual.bgClass} ${visual.borderClass}`}>
+              <span className="text-[10px] leading-none">{visual.icon}</span>
+              <span className={`text-[9px] font-semibold leading-none ${visual.accentClass}`}>{toolLabel}</span>
+              {isDraft ? (
+                <span className="ml-auto text-[8px] font-medium leading-none text-yellow-400/70">待确认生成</span>
+              ) : null}
             </div>
           )
         })()}

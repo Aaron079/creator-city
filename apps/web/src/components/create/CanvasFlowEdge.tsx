@@ -12,6 +12,7 @@ interface CanvasFlowEdgeProps {
   active?: boolean
   directorType?: EdgeDirectorType
   label?: string
+  toolIcon?: string
   onOpenDirector?: () => void
 }
 
@@ -24,6 +25,7 @@ export function CanvasFlowEdge({
   active = false,
   directorType = 'default',
   label,
+  toolIcon,
   onOpenDirector,
 }: CanvasFlowEdgeProps) {
   const [hovered, setHovered] = useState(false)
@@ -93,16 +95,17 @@ export function CanvasFlowEdge({
         <path d={path} className="canvas-flow-path is-active" markerEnd={`url(#${markerId})`} />
       ) : null}
 
-      {/* Derived tool label — midpoint of bezier */}
+      {/* Derived tool label — midpoint of bezier, pointer-events:none so it never blocks edge clicks */}
       {label ? (() => {
         const lx = (x1 + x2) / 2
         const ly = (y1 + y2) / 2
-        const lw = Math.max(44, label.length * 11 + 12)
+        const displayText = toolIcon ? `${toolIcon} ${label}` : label
+        const lw = Math.max(52, displayText.length * 7.5 + 16)
         return (
-          <g>
-            <rect x={lx - lw / 2} y={ly - 9} width={lw} height={18} rx={9} fill="rgba(13,15,20,0.9)" stroke="rgba(255,255,255,0.1)" strokeWidth={0.7} />
-            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.45)" fontFamily="system-ui,-apple-system,sans-serif" fontWeight="500">
-              {label}
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={lx - lw / 2} y={ly - 10} width={lw} height={20} rx={10} fill="rgba(10,12,18,0.92)" stroke="rgba(167,139,250,0.28)" strokeWidth={0.8} />
+            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={9.5} fill="rgba(221,214,254,0.80)" fontFamily="system-ui,-apple-system,sans-serif" fontWeight="600" letterSpacing="0.01em">
+              {displayText}
             </text>
           </g>
         )

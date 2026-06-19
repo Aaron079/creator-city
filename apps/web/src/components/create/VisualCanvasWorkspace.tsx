@@ -8796,6 +8796,10 @@ export function VisualCanvasWorkspace({
                     : undefined
                 })()
 
+                const edgeMeta = metadataRecord(edge.metadataJson)
+                const edgeChannel = metadataRecord(edgeMeta.derivedToolChannel)
+                const renderedToolIcon = typeof edgeChannel.icon === 'string' ? edgeChannel.icon : undefined
+
                 return (
                   <CanvasFlowEdge
                     key={edge.id}
@@ -8807,6 +8811,7 @@ export function VisualCanvasWorkspace({
                     active={edge.id === activeEdgeId || edge.status === 'active' || activeNodeId === fromNode.id || activeNodeId === toNode.id}
                     directorType={getEdgeDirectorConfig(edge.metadataJson)?.type}
                     label={renderedEdgeLabel}
+                    toolIcon={renderedToolIcon}
                     onOpenDirector={() => openEdgeDirector(edge.id)}
                   />
                 )
