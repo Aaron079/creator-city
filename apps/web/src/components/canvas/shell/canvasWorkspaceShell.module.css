@@ -123,7 +123,7 @@
   flex-shrink: 0;
   width: 100%;
   position: relative;
-  z-index: var(--canvas-z-dock);
+  /* No z-index — real flex layout element; position:fixed panels paint above naturally. */
   background: #08080e;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   /* Height defined by content */

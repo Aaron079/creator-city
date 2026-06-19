@@ -36,6 +36,7 @@ import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
 import { CanvasRightInspector, type InspectorEdgeRef } from '@/components/canvas/inspector/CanvasRightInspector'
+import { CanvasBottomDock } from '@/components/canvas/dock/CanvasBottomDock'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
@@ -2412,6 +2413,7 @@ export function VisualCanvasWorkspace({
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false)
+  const [isBottomDockExpanded, setIsBottomDockExpanded] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string>('add')
@@ -4181,6 +4183,40 @@ export function VisualCanvasWorkspace({
     () => generationTasks.filter((task) => task.status === 'running').length,
     [generationTasks],
   )
+
+  const dockTaskNodes = useMemo(() => {
+    const STATUS_ORDER: Record<string, number> = {
+      generating: 0, running: 0, queued: 1, pending: 1, draft: 2,
+      error: 3, failed: 3, done: 4,
+    }
+    return nodes
+      .filter((n) => {
+        const meta = metadataRecord(n.metadataJson)
+        const draft = metadataRecord(meta.generationDraft)
+        const hasDraftStatus = Boolean(draft.status)
+        return (
+          n.status === 'queued' || n.status === 'pending' ||
+          n.status === 'running' || n.status === 'generating' || n.status === 'processing' ||
+          n.status === 'error' || n.status === 'failed' ||
+          (n.status === 'done' && Boolean(n.resultImageUrl || n.resultVideoUrl || n.resultText)) ||
+          Boolean(meta.derivedFromTool) ||
+          hasDraftStatus
+        )
+      })
+      .sort((a, b) => {
+        const metaA = metadataRecord(a.metadataJson)
+        const draftA = metadataRecord(metaA.generationDraft)
+        const metaB = metadataRecord(b.metadataJson)
+        const draftB = metadataRecord(metaB.generationDraft)
+        const sA = a.status === 'idle' && draftA.status === 'draft' ? 'draft' : a.status
+        const sB = b.status === 'idle' && draftB.status === 'draft' ? 'draft' : b.status
+        const oa = STATUS_ORDER[sA] ?? 5
+        const ob = STATUS_ORDER[sB] ?? 5
+        if (oa !== ob) return oa - ob
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0)
+      })
+      .slice(0, 12)
+  }, [nodes])
 
   const editingNode = useMemo(
     () => nodes.find((node) => node.id === editingNodeId) ?? null,
@@ -7677,7 +7713,7 @@ export function VisualCanvasWorkspace({
       transformOrigin: 'top left',
       width: dialogWidth,
     }
-  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode, isRightInspectorOpen])
+  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode, isRightInspectorOpen, isBottomDockExpanded])
 
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
@@ -7700,7 +7736,7 @@ export function VisualCanvasWorkspace({
       zIndex: 90,
       pointerEvents: 'auto',
     }
-  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom, isRightInspectorOpen])
+  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom, isRightInspectorOpen, isBottomDockExpanded])
 
   // Resolve upstream image for video node editing dialog
   const videoModeInfo = useMemo(() => {
@@ -8051,6 +8087,21 @@ export function VisualCanvasWorkspace({
         />
       ) : undefined}
       showRightInspector={Boolean(activeNode && isRightInspectorOpen)}
+      bottomDock={
+        <CanvasBottomDock
+          expanded={isBottomDockExpanded}
+          onToggle={() => setIsBottomDockExpanded((v) => !v)}
+          activeNode={activeNode}
+          sourceNode={inspectorSourceNode}
+          taskNodes={dockTaskNodes}
+          onSelectNode={(nodeId) => {
+            setActiveNodeId(nodeId)
+            setIsRightInspectorOpen(true)
+          }}
+          onOpenGenerationDialog={(nodeId) => setEditingNodeId(nodeId)}
+        />
+      }
+      showBottomDock
     >
     <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
