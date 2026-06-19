@@ -4186,7 +4186,7 @@ export function VisualCanvasWorkspace({
 
   const dockTaskNodes = useMemo(() => {
     const STATUS_ORDER: Record<string, number> = {
-      generating: 0, running: 0, queued: 1, pending: 1, draft: 2,
+      generating: 0, running: 0, processing: 0, queued: 1, pending: 1, draft: 2,
       error: 3, failed: 3, done: 4,
     }
     return nodes

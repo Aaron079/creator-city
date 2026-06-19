@@ -82,7 +82,7 @@ export function CanvasBottomDock({
 
   const runningCount = useMemo(
     () => taskNodes.filter(
-      (n) => n.status === 'running' || n.status === 'generating' ||
+      (n) => n.status === 'running' || n.status === 'generating' || n.status === 'processing' ||
              n.status === 'queued' || n.status === 'pending'
     ).length,
     [taskNodes],
