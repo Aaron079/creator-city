@@ -108,7 +108,9 @@
   flex-shrink: 0;
   width: 340px;
   position: relative;
-  z-index: var(--canvas-z-inspector);
+  /* No z-index: inspector is a real flex sibling, not a floating overlay.
+     position:fixed panels (dialog z=80, Camera/Lighting z=92, Bible/ShotList z=1199-1200)
+     all paint above this element naturally in the root stacking context. */
   background: #09090f;
   border-left: 1px solid rgba(255, 255, 255, 0.06);
   overflow-y: auto;

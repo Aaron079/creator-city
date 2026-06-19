@@ -5240,6 +5240,7 @@ export function VisualCanvasWorkspace({
       latestY: node.y,
     }
     setActiveNodeId(nodeId)
+    setIsRightInspectorOpen(true)
     setActiveEdgeId(null)
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
       closeActivePreview({ closeReviewWindows: false })
@@ -5340,6 +5341,7 @@ export function VisualCanvasWorkspace({
       closeActivePreview({ closeReviewWindows: false })
     }
     setActiveNodeId(node.id)
+    setIsRightInspectorOpen(true)
     setActiveEdgeId(null)
     setEditingNodeId(null)
     setContextMenu(null)
@@ -8036,6 +8038,7 @@ export function VisualCanvasWorkspace({
       showLeftRail
       rightInspector={activeNode && isRightInspectorOpen ? (
         <CanvasRightInspector
+          key={activeNode.id}
           node={activeNode}
           sourceNode={inspectorSourceNode}
           incomingEdges={inspectorIncomingEdges}
