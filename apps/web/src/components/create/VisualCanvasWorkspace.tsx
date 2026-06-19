@@ -4347,6 +4347,8 @@ export function VisualCanvasWorkspace({
       resultVideoUrl?: string
       metadataJson?: Record<string, unknown>
       edgeLabel?: string
+      edgeToolId?: string
+      edgeToolIcon?: string
     },
   ) => {
     const meta = NODE_META[kind]
@@ -4398,6 +4400,17 @@ export function VisualCanvasWorkspace({
     commitNodes((current) => [...current, node])
     if (parentNode) {
       const edgeId = `${parentNode.id}-${node.id}`
+      const edgeMetaJson: Record<string, unknown> | undefined = options?.edgeLabel
+        ? {
+            derivedToolChannel: {
+              toolId: options.edgeToolId ?? options.edgeLabel,
+              label: options.edgeLabel,
+              ...(options.edgeToolIcon ? { icon: options.edgeToolIcon } : {}),
+              sourceNodeId: parentNode.id,
+              createdAt: new Date().toISOString(),
+            },
+          }
+        : undefined
       commitEdges((current) => [
         ...current.filter((edge) => edge.id !== edgeId),
         {
@@ -4406,6 +4419,7 @@ export function VisualCanvasWorkspace({
           toNodeId: node.id,
           status: 'active',
           label: options?.edgeLabel,
+          ...(edgeMetaJson ? { metadataJson: edgeMetaJson } : {}),
         },
       ])
     }
@@ -8075,6 +8089,8 @@ export function VisualCanvasWorkspace({
                           },
                         },
                         edgeLabel: '镜头词典',
+                        edgeToolId: 'camera-lexicon',
+                        edgeToolIcon: '🎬',
                       },
                     )
                     setIsLexiconOpen(false)
@@ -8329,6 +8345,8 @@ export function VisualCanvasWorkspace({
                   },
                 },
                 edgeLabel: '摄影机控制',
+                edgeToolId: 'camera-control',
+                edgeToolIcon: '🎥',
               },
             )
             if (projectId) saveCameraSettingsForNode(projectId, node.id, settings)
@@ -8375,6 +8393,8 @@ export function VisualCanvasWorkspace({
                   },
                 },
                 edgeLabel: '场景光线',
+                edgeToolId: 'scene-lighting',
+                edgeToolIcon: '💡',
               },
             )
             if (projectId) saveSceneLightingForNode(projectId, node.id, settings)
@@ -8436,6 +8456,8 @@ export function VisualCanvasWorkspace({
                     },
                   },
                   edgeLabel: '提示词增强',
+                  edgeToolId: 'prompt-booster',
+                  edgeToolIcon: '✨',
                 },
               )
               setIsPromptBoosterOpen(false)
@@ -8497,6 +8519,24 @@ export function VisualCanvasWorkspace({
                 prompt,
                 parentNodeId: sourceNodeId,
                 status: 'idle',
+                metadataJson: {
+                  derivedFromTool: 'look-package',
+                  derivedFromToolLabel: '视觉风格',
+                  generationDraft: {
+                    status: 'draft',
+                    sourceNodeId,
+                    sourceKind: sourceNode?.kind ?? 'image',
+                    targetKind: 'image',
+                    basePrompt: sourceNode?.prompt ?? '',
+                    derivedPrompt: prompt,
+                    sourceImageUrl: sourceNode?.resultImageUrl ?? null,
+                    sourceVideoUrl: sourceNode?.resultVideoUrl ?? null,
+                    createdAt: new Date().toISOString(),
+                  },
+                },
+                edgeLabel: '视觉风格',
+                edgeToolId: 'look-package',
+                edgeToolIcon: '🎨',
               })
               setIsLookPackageOpen(false)
               setEditingNodeId(node.id)
@@ -8743,6 +8783,19 @@ export function VisualCanvasWorkspace({
                 const toNode = nodes.find((node) => node.id === edge.toNodeId)
                 if (!fromNode || !toNode) return null
 
+                // UI-only fallback for edges whose labels were lost before the cloud-persistence
+                // fix: if the target node has derivedFromToolLabel and its generationDraft.sourceNodeId
+                // matches this edge's fromNodeId, recover the label for display without writing to DB.
+                const renderedEdgeLabel = edge.label ?? (() => {
+                  const toMeta = metadataRecord(toNode.metadataJson)
+                  const toolLabel = typeof toMeta.derivedFromToolLabel === 'string' ? toMeta.derivedFromToolLabel : undefined
+                  if (!toolLabel) return undefined
+                  const draft = metadataRecord(toMeta.generationDraft)
+                  return typeof draft.sourceNodeId === 'string' && draft.sourceNodeId === edge.fromNodeId
+                    ? toolLabel
+                    : undefined
+                })()
+
                 return (
                   <CanvasFlowEdge
                     key={edge.id}
@@ -8753,7 +8806,7 @@ export function VisualCanvasWorkspace({
                     y2={toNode.y + toNode.height / 2}
                     active={edge.id === activeEdgeId || edge.status === 'active' || activeNodeId === fromNode.id || activeNodeId === toNode.id}
                     directorType={getEdgeDirectorConfig(edge.metadataJson)?.type}
-                    label={edge.label}
+                    label={renderedEdgeLabel}
                     onOpenDirector={() => openEdgeDirector(edge.id)}
                   />
                 )

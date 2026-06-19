@@ -103,10 +103,18 @@ export function mapCanvasNode(row: DbCanvasNode) {
   }
 }
 
+function getDerivedToolChannelLabel(metadata: Record<string, unknown>): string | undefined {
+  const channel = metadata.derivedToolChannel
+  if (!channel || typeof channel !== 'object' || Array.isArray(channel)) return undefined
+  const label = (channel as Record<string, unknown>).label
+  return typeof label === 'string' && label.trim() ? label.trim() : undefined
+}
+
 export function mapCanvasEdge(row: DbCanvasEdge) {
   const metadata = typeof row.metadataJson === 'object' && row.metadataJson
     ? row.metadataJson as Record<string, unknown>
     : {}
+  const restoredLabel = getDerivedToolChannelLabel(metadata)
   return {
     id: row.edgeId,
     fromNodeId: row.sourceNodeId,
@@ -116,6 +124,7 @@ export function mapCanvasEdge(row: DbCanvasEdge) {
     status: 'status' in metadata
       ? String(metadata.status)
       : 'active',
+    ...(restoredLabel !== undefined ? { label: restoredLabel } : {}),
   }
 }
 
