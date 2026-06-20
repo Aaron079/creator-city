@@ -349,6 +349,7 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
     deletedNodeIds?: string[]
     deletedEdgeIds?: string[]
     clearCanvas?: boolean
+    workflowMetadata?: Record<string, unknown>
   }
   try {
     body = await request.json() as typeof body
@@ -411,6 +412,14 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
         where: { id: workflow.id },
         data: {
           ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
+          ...(body.workflowMetadata !== undefined ? {
+            metadataJson: sanitizeJson({
+              ...(workflow.metadataJson && typeof workflow.metadataJson === 'object' && !Array.isArray(workflow.metadataJson)
+                ? workflow.metadataJson as Record<string, unknown>
+                : {}),
+              ...body.workflowMetadata,
+            }),
+          } : {}),
           updatedAt: now,
         },
       })

@@ -26,6 +26,11 @@ import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
 import { ShotSequencerPanel } from '@/components/create/ShotSequencerPanel'
+import {
+  parseShotSequenceFromWorkflowMetadata,
+  normalizeShotSequenceItems,
+} from '@/lib/canvas/shot-sequence'
+import type { ShotSequenceState, ShotSequenceItem } from '@/lib/canvas/shot-sequence'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -2419,6 +2424,7 @@ export function VisualCanvasWorkspace({
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isShotSequencerOpen, setIsShotSequencerOpen] = useState(false)
+  const [cloudShotSequence, setCloudShotSequence] = useState<ShotSequenceState | null>(null)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
@@ -3311,6 +3317,42 @@ export function VisualCanvasWorkspace({
     void saveCanvas()
   }, [saveCanvas])
 
+  const handleSaveSequenceToCloud = useCallback(async (items: ShotSequenceItem[]): Promise<'success' | 'failed'> => {
+    if (!projectId || !workflowId) return 'failed'
+    const normalized = normalizeShotSequenceItems(items)
+    const state: ShotSequenceState = {
+      version: 1,
+      projectId,
+      items: normalized,
+      updatedAt: new Date().toISOString(),
+    }
+    const snapshot = getCanvasSnapshot()
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          workflowId,
+          viewport: snapshot.viewport,
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          deletedNodeIds: [],
+          deletedEdgeIds: [],
+          workflowMetadata: { shotSequence: state },
+        }),
+      })
+      if (!response.ok) return 'failed'
+      const data = await response.json().catch(() => ({})) as { success?: boolean; skipped?: boolean }
+      if (data.success === false) return 'failed'
+      setCloudShotSequence(state)
+      return 'success'
+    } catch {
+      return 'failed'
+    }
+  }, [projectId, workflowId, getCanvasSnapshot])
+
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
     type: 'text' | 'image' | 'video' | 'audio'
@@ -3456,6 +3498,7 @@ export function VisualCanvasWorkspace({
           persistWorkflowSceneBibleFallback(ensureData.project.id, ensureData.workflow.metadataJson)
           setCharacterBible(loadCharacterBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setSceneBible(loadSceneBible(ensureData.project.id, ensureData.workflow.metadataJson))
+          setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(ensureData.workflow.metadataJson))
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
@@ -3542,6 +3585,7 @@ export function VisualCanvasWorkspace({
         persistWorkflowSceneBibleFallback(resolvedProjectId, data.workflow?.metadataJson)
         setCharacterBible(loadCharacterBible(resolvedProjectId, data.workflow?.metadataJson))
         setSceneBible(loadSceneBible(resolvedProjectId, data.workflow?.metadataJson))
+        setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(data.workflow?.metadataJson))
 
         // Persist so next visit to /create (without ?projectId) reopens this project
         try {
@@ -8442,6 +8486,8 @@ export function VisualCanvasWorkspace({
         <ShotSequencerPanel
           projectId={projectId}
           nodes={nodes}
+          initialCloudSequence={cloudShotSequence}
+          onSaveToCloud={handleSaveSequenceToCloud}
           onSelectNode={(nodeId) => {
             setActiveNodeId(nodeId)
             setIsRightInspectorOpen(true)

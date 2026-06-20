@@ -4,10 +4,14 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
 import {
   getShotSequence,
-  saveShotSequence,
+  getShotSequenceDraft,
+  saveShotSequenceDraft,
+  clearShotSequenceDraft,
+  clearLegacyShotSequence,
+  normalizeShotSequenceItems,
   formatSequenceDuration,
 } from '@/lib/canvas/shot-sequence'
-import type { ShotSequenceItem } from '@/lib/canvas/shot-sequence'
+import type { ShotSequenceItem, ShotSequenceState } from '@/lib/canvas/shot-sequence'
 
 interface CanvasNode {
   id: string
@@ -21,7 +25,18 @@ interface ShotSequencerPanelProps {
   nodes: CanvasNode[]
   onClose: () => void
   onSelectNode?: (nodeId: string) => void
+  initialCloudSequence?: ShotSequenceState | null
+  onSaveToCloud: (items: ShotSequenceItem[]) => Promise<'success' | 'failed'>
 }
+
+type SyncStatus =
+  | 'idle'
+  | 'cloud-saved'
+  | 'local-draft'
+  | 'cloud-save-failed'
+  | 'saving'
+  | 'migration-available'
+  | 'conflict'
 
 function parseDuration(node: CanvasNode): number | undefined {
   if (node.durationSec != null && node.durationSec > 0) return node.durationSec
@@ -52,23 +67,88 @@ export function ShotSequencerPanel({
   nodes,
   onClose,
   onSelectNode,
+  initialCloudSequence,
+  onSaveToCloud,
 }: ShotSequencerPanelProps) {
   const [items, setItems] = useState<ShotSequenceItem[]>([])
   const [view, setView] = useState<'sequence' | 'picker'>('sequence')
   const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [legacyItems, setLegacyItems] = useState<ShotSequenceItem[] | null>(null)
+  const [conflictCloudItems, setConflictCloudItems] = useState<ShotSequenceItem[] | null>(null)
   const dragIndexRef = useRef<number | null>(null)
 
-  // Load from localStorage on mount
+  // Determine initial state: draft > cloud > legacy migration > empty
   useEffect(() => {
-    const state = getShotSequence(projectId)
-    setItems(state.items)
-  }, [projectId])
+    const draft = getShotSequenceDraft(projectId)
+    const cloud = initialCloudSequence ?? null
+    const legacy = getShotSequence(projectId) // reads old creator-city:shot-sequence:{pid} key
 
-  const handleSave = useCallback(() => {
-    saveShotSequence(projectId, items)
-    setDirty(false)
+    const hasCloud = cloud != null && cloud.items.length > 0
+    const hasDraft = draft != null && draft.items.length > 0
+    const hasLegacy = legacy.items.length > 0
+
+    if (hasDraft && hasCloud) {
+      const draftIds = draft.items.map((i) => i.nodeId).join(',')
+      const cloudIds = cloud.items.map((i) => i.nodeId).join(',')
+      if (draftIds !== cloudIds) {
+        setItems(draft.items)
+        setConflictCloudItems(cloud.items)
+        setSyncStatus('conflict')
+      } else {
+        // Same content — draft already matches cloud, clean it up
+        setItems(draft.items)
+        clearShotSequenceDraft(projectId)
+        setSyncStatus('cloud-saved')
+      }
+    } else if (hasDraft) {
+      setItems(draft.items)
+      setSyncStatus('local-draft')
+    } else if (hasCloud) {
+      setItems(cloud.items)
+      setSyncStatus('cloud-saved')
+    } else if (hasLegacy) {
+      // Cloud is empty but user has old local-only data — offer migration
+      setLegacyItems(legacy.items)
+      setSyncStatus('migration-available')
+      setItems([])
+    }
+    // else: empty state, syncStatus stays 'idle'
+  }, [projectId, initialCloudSequence])
+
+  // Auto-save draft whenever items change while dirty
+  useEffect(() => {
+    if (dirty && items.length > 0) {
+      saveShotSequenceDraft(projectId, items)
+    }
+  }, [items, dirty, projectId])
+
+  const handleSave = useCallback(async () => {
+    if (saving) return
+    setSaving(true)
+    setSyncStatus('saving')
+    const result = await onSaveToCloud(items)
+    setSaving(false)
+    if (result === 'success') {
+      clearShotSequenceDraft(projectId)
+      clearLegacyShotSequence(projectId)
+      setDirty(false)
+      setLegacyItems(null)
+      setConflictCloudItems(null)
+      setSyncStatus('cloud-saved')
+      onClose()
+    } else {
+      saveShotSequenceDraft(projectId, items)
+      setSyncStatus('cloud-save-failed')
+    }
+  }, [items, onSaveToCloud, projectId, onClose, saving])
+
+  const handleCancel = useCallback(() => {
+    if (dirty && !window.confirm('放弃未保存更改？')) return
+    clearShotSequenceDraft(projectId)
     onClose()
-  }, [projectId, items, onClose])
+  }, [dirty, projectId, onClose])
 
   const handleSyncFromShotList = useCallback(() => {
     const shotNodes = nodes.filter(isShotNode)
@@ -80,6 +160,7 @@ export function ShotSequencerPanel({
     }))
     setItems(synced)
     setDirty(true)
+    setSyncStatus('local-draft')
     setView('sequence')
   }, [nodes])
 
@@ -98,12 +179,14 @@ export function ShotSequencerPanel({
       ]
     })
     setDirty(true)
-  }, [nodes])
+    if (syncStatus === 'cloud-saved') setSyncStatus('local-draft')
+  }, [nodes, syncStatus])
 
   const handleRemove = useCallback((nodeId: string) => {
     setItems((prev) => prev.filter((item) => item.nodeId !== nodeId).map((item, i) => ({ ...item, order: i + 1 })))
     setDirty(true)
-  }, [])
+    if (syncStatus === 'cloud-saved') setSyncStatus('local-draft')
+  }, [syncStatus])
 
   const handleDragStart = useCallback((index: number) => {
     dragIndexRef.current = index
@@ -122,10 +205,54 @@ export function ShotSequencerPanel({
       return next.map((item, i) => ({ ...item, order: i + 1 }))
     })
     setDirty(true)
-  }, [])
+    if (syncStatus === 'cloud-saved') setSyncStatus('local-draft')
+  }, [syncStatus])
 
   const handleDragEnd = useCallback(() => {
     dragIndexRef.current = null
+  }, [])
+
+  // Migration: load legacy local items and save to cloud
+  const handleMigrateFromLegacy = useCallback(async () => {
+    if (!legacyItems) return
+    const normalized = normalizeShotSequenceItems(legacyItems)
+    setItems(normalized)
+    setDirty(false)
+    setSaving(true)
+    setSyncStatus('saving')
+    const result = await onSaveToCloud(normalized)
+    setSaving(false)
+    if (result === 'success') {
+      clearShotSequenceDraft(projectId)
+      clearLegacyShotSequence(projectId)
+      setLegacyItems(null)
+      setSyncStatus('cloud-saved')
+      onClose()
+    } else {
+      saveShotSequenceDraft(projectId, normalized)
+      setSyncStatus('cloud-save-failed')
+    }
+  }, [legacyItems, onSaveToCloud, projectId, onClose])
+
+  const handleIgnoreLegacy = useCallback(() => {
+    clearLegacyShotSequence(projectId)
+    setLegacyItems(null)
+    setSyncStatus('idle')
+  }, [projectId])
+
+  // Conflict resolution
+  const handleUseCloudVersion = useCallback(() => {
+    if (!conflictCloudItems) return
+    setItems(conflictCloudItems)
+    clearShotSequenceDraft(projectId)
+    setConflictCloudItems(null)
+    setSyncStatus('cloud-saved')
+    setDirty(false)
+  }, [conflictCloudItems, projectId])
+
+  const handleUseDraftVersion = useCallback(() => {
+    setConflictCloudItems(null)
+    setSyncStatus('local-draft')
   }, [])
 
   const totalSec = items.reduce((acc, item) => {
@@ -141,7 +268,10 @@ export function ShotSequencerPanel({
     : undefined
 
   const addedNodeIds = new Set(items.map((i) => i.nodeId))
-  const pickableNodes = nodes.filter((n) => n.kind !== 'text' || true)
+  const pickableNodes = nodes.filter(() => true)
+
+  const primaryLabel = saving ? '保存中…' : '保存顺序'
+  const primaryDisabled = saving || (items.length === 0 && !dirty && syncStatus !== 'cloud-save-failed')
 
   return (
     <DirectorToolPanelFrame
@@ -151,28 +281,39 @@ export function ShotSequencerPanel({
       accentColor="indigo"
       count={aliveItems.length}
       summary={summary}
-      primaryLabel="保存顺序"
-      primaryDisabled={!dirty && items.length === 0}
-      onPrimary={handleSave}
+      primaryLabel={primaryLabel}
+      primaryDisabled={primaryDisabled}
+      onPrimary={() => { void handleSave() }}
       secondaryLabel={view === 'sequence' ? '从画布添加' : '返回序列'}
       onSecondary={() => setView(view === 'sequence' ? 'picker' : 'sequence')}
       clearLabel="从分镜表同步"
       onClear={handleSyncFromShotList}
-      onClose={onClose}
+      onClose={handleCancel}
       bodyClassName="min-h-0 flex-1 overflow-y-auto"
     >
       {view === 'sequence' ? (
-        <SequenceView
-          items={items}
-          nodes={nodes}
-          onRemove={handleRemove}
-          onSelectNode={onSelectNode}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          formatDuration={formatSequenceDuration}
-          parseDuration={parseDuration}
-        />
+        <>
+          <SyncStatusBanner
+            status={syncStatus}
+            legacyCount={legacyItems?.length ?? 0}
+            conflictCloudCount={conflictCloudItems?.length ?? 0}
+            onMigrate={() => { void handleMigrateFromLegacy() }}
+            onIgnoreLegacy={handleIgnoreLegacy}
+            onUseDraft={handleUseDraftVersion}
+            onUseCloud={handleUseCloudVersion}
+          />
+          <SequenceView
+            items={items}
+            nodes={nodes}
+            onRemove={handleRemove}
+            onSelectNode={onSelectNode}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            formatDuration={formatSequenceDuration}
+            parseDuration={parseDuration}
+          />
+        </>
       ) : (
         <PickerView
           nodes={pickableNodes}
@@ -183,6 +324,93 @@ export function ShotSequencerPanel({
       )}
     </DirectorToolPanelFrame>
   )
+}
+
+// ── Sync Status Banner ─────────────────────────────────────────────────────
+
+interface SyncStatusBannerProps {
+  status: SyncStatus
+  legacyCount: number
+  conflictCloudCount: number
+  onMigrate: () => void
+  onIgnoreLegacy: () => void
+  onUseDraft: () => void
+  onUseCloud: () => void
+}
+
+function SyncStatusBanner({
+  status,
+  legacyCount,
+  conflictCloudCount,
+  onMigrate,
+  onIgnoreLegacy,
+  onUseDraft,
+  onUseCloud,
+}: SyncStatusBannerProps) {
+  if (status === 'cloud-save-failed') {
+    return (
+      <div className="mx-4 mt-4 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[11px] text-red-300/70">
+        <span>⚠</span>
+        <span>云端保存失败，草稿已保留在本机，点击&ldquo;保存顺序&rdquo;重试</span>
+      </div>
+    )
+  }
+  if (status === 'migration-available' && legacyCount > 0) {
+    return (
+      <div className="mx-4 mt-4 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-3">
+        <p className="text-[11px] text-amber-200/70">发现本机保存的镜头顺序（{legacyCount} 个镜头），是否同步到项目？</p>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={onMigrate}
+            className="rounded-md border border-amber-500/30 bg-amber-500/[0.1] px-2.5 py-1 text-[10px] font-semibold text-amber-300/80 hover:bg-amber-500/[0.18] transition"
+          >
+            同步到项目
+          </button>
+          <button
+            type="button"
+            onClick={onIgnoreLegacy}
+            className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/40 hover:text-white/60 transition"
+          >
+            忽略
+          </button>
+        </div>
+      </div>
+    )
+  }
+  if (status === 'conflict' && conflictCloudCount > 0) {
+    return (
+      <div className="mx-4 mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/[0.05] px-3 py-3">
+        <p className="text-[11px] text-yellow-200/70">本机草稿与云端顺序不一致</p>
+        <p className="mt-0.5 text-[10px] text-white/35">云端：{conflictCloudCount} 个镜头</p>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={onUseDraft}
+            className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/60 hover:text-white/80 transition"
+          >
+            继续使用草稿
+          </button>
+          <button
+            type="button"
+            onClick={onUseCloud}
+            className="rounded-md border border-indigo-500/20 bg-indigo-500/[0.08] px-2.5 py-1 text-[10px] text-indigo-300/70 hover:bg-indigo-500/[0.15] transition"
+          >
+            重载云端
+          </button>
+        </div>
+      </div>
+    )
+  }
+  if (status === 'local-draft') {
+    return (
+      <div className="mx-4 mt-4 flex items-center gap-2 rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-1.5 text-[10px] text-amber-200/50">
+        <span aria-hidden="true">●</span>
+        <span>有未保存更改（仅保存在本机）</span>
+      </div>
+    )
+  }
+  return null
 }
 
 // ── Sequence View ──────────────────────────────────────────────────────────
