@@ -1,7 +1,8 @@
 'use client'
 
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { DEFAULT_SCENE_LIGHTING, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
+import { DEFAULT_SCENE_LIGHTING, buildLightingSummaryText, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
+import { DirectorToolPanelFrame, type DirectorSourceNode } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 // ─── Visual SVG models ────────────────────────────────────────────────────────
 
@@ -541,6 +542,7 @@ interface SceneLightingControlPanelProps {
   onChange: (value: SceneLightingSettings) => void
   onClose: () => void
   onCreateDerived?: (settings: SceneLightingSettings) => void
+  sourceNode?: DirectorSourceNode | null
 }
 
 export function SceneLightingControlPanel({
@@ -549,15 +551,14 @@ export function SceneLightingControlPanel({
   onChange,
   onClose,
   onCreateDerived,
+  sourceNode,
 }: SceneLightingControlPanelProps) {
   if (!open) return null
 
-  const patch = (key: keyof SceneLightingSettings, v: string) => {
-    onChange({ ...value, [key]: v })
-  }
-
+  const patch = (key: keyof SceneLightingSettings, v: string) => onChange({ ...value, [key]: v })
   const clearAll = () => onChange({ ...DEFAULT_SCENE_LIGHTING })
   const count = activeCount(value)
+  const summary = buildLightingSummaryText(value)
 
   return (
     <div
@@ -565,93 +566,45 @@ export function SceneLightingControlPanel({
       role="presentation"
       data-no-node-drag="true"
       data-scene-lighting-control="true"
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        onClose()
-      }}
+      onPointerDown={(event) => { event.stopPropagation(); onClose() }}
       onClick={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       onWheelCapture={(event) => event.stopPropagation()}
     >
-      <aside
-        className="m-4 flex max-h-[92vh] w-[min(840px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#0d0f12]/96 text-white shadow-2xl backdrop-blur-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="场景光线控制 / Lighting & Atmosphere"
-        data-no-node-drag="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-        onWheelCapture={(event) => event.stopPropagation()}
+      <DirectorToolPanelFrame
+        title="场景光线控制"
+        titleEn="Lighting & Atmosphere"
+        icon="💡"
+        accentColor="amber"
+        count={count}
+        summary={summary || undefined}
+        sourceNode={sourceNode}
+        primaryLabel="创建光线版本"
+        primaryDisabled={!onCreateDerived}
+        onPrimary={() => onCreateDerived?.(value)}
+        onClear={count > 0 ? clearAll : undefined}
+        onClose={onClose}
+        ariaLabel="场景光线控制 / Lighting & Atmosphere"
       >
-        {/* Header */}
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
-          <div>
-            <p className="text-[9px] uppercase tracking-[0.2em] text-amber-300/40">Lighting & Atmosphere</p>
-            <h2 className="mt-0.5 text-lg font-semibold text-white">场景光线控制</h2>
-            <p className="mt-1.5 max-w-[400px] text-[11px] leading-relaxed text-white/40">
-              用导演语言设置当前场景的光线、时间天气、氛围和色彩基调。选择结果自动注入生成提示词，保持场景一致性。
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {count > 0 ? (
-              <span className="inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/[0.08] px-2.5 py-0.5 text-[10px] font-semibold text-amber-300/70">
-                💡 {count} 项已设定
-              </span>
-            ) : null}
-            {count > 0 ? (
-              <button
-                type="button"
-                onClick={clearAll}
-                className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/70"
-              >
-                清除设定
-              </button>
-            ) : null}
-            {onCreateDerived ? (
-              <button
-                type="button"
-                onClick={() => onCreateDerived(value)}
-                className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-1.5 text-[11px] font-semibold text-amber-300 transition hover:bg-amber-500/[0.15]"
-              >
-                创建光线版本
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/70 transition hover:bg-white/10"
-            >
-              关闭
-            </button>
-          </div>
-        </header>
-
-        {/* 4-slot grid */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {LIGHTING_SLOTS.map((slotDef) => (
-              <LightingWheelSlot
-                key={slotDef.key}
-                slotDef={slotDef}
-                value={value[slotDef.key]}
-                onChange={(v) => patch(slotDef.key, v)}
-              />
-            ))}
-          </div>
-
-          {/* Footer note */}
-          <div className="mt-4 rounded-xl border border-amber-500/[0.12] bg-amber-500/[0.04] px-4 py-3">
-            <p className="text-[10px] leading-relaxed text-amber-200/40">
-              <strong className="text-amber-200/60">提示：</strong>
-              场景光线设定以「导演注释」形式附加在生成提示词末尾，紧随摄影机控制之后。不影响角色/场景圣经、不修改原有 prompt。
-              {count === 0 ? '请在上方四个滚轮中至少选择一项以激活场景光线控制。' : `当前已激活 ${count} 项，生成时将自动应用。`}
-            </p>
-          </div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {LIGHTING_SLOTS.map((slotDef) => (
+            <LightingWheelSlot
+              key={slotDef.key}
+              slotDef={slotDef}
+              value={value[slotDef.key]}
+              onChange={(v) => patch(slotDef.key, v)}
+            />
+          ))}
         </div>
-      </aside>
+
+        <div className="mt-4 rounded-xl border border-amber-500/[0.12] bg-amber-500/[0.04] px-4 py-3">
+          <p className="text-[10px] leading-relaxed text-amber-200/40">
+            <strong className="text-amber-200/60">提示：</strong>
+            场景光线设定以「导演注释」形式附加在生成提示词末尾，紧随摄影机控制之后。不影响角色/场景圣经、不修改原有 prompt。
+            {count === 0 ? '请在上方四个滚轮中至少选择一项以激活场景光线控制。' : `当前已激活 ${count} 项，生成时将自动应用。`}
+          </p>
+        </div>
+      </DirectorToolPanelFrame>
     </div>
   )
 }

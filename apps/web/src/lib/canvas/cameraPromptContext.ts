@@ -68,3 +68,7 @@ export function appendCameraContextToPrompt(prompt: string, cameraCtx: string): 
   if (!cameraCtx.trim()) return prompt
   return prompt + cameraCtx
 }
+
+export function buildCameraSummaryText(settings: CameraSettings): string {
+  return [settings.cameraBody, settings.lens, settings.aperture, settings.focus].filter(Boolean).join(' · ')
+}

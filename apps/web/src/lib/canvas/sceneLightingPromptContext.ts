@@ -78,3 +78,7 @@ export function appendSceneLightingContextToPrompt(prompt: string, lightingCtx: 
   if (!lightingCtx.trim()) return prompt
   return prompt + lightingCtx
 }
+
+export function buildLightingSummaryText(settings: SceneLightingSettings): string {
+  return [settings.lightingSetup, settings.timeWeather, settings.atmosphere, settings.colorMood].filter(Boolean).join(' · ')
+}

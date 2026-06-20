@@ -1,8 +1,9 @@
 'use client'
 
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { DEFAULT_CAMERA_SETTINGS, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { DEFAULT_CAMERA_SETTINGS, buildCameraSummaryText, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
 import { CAMERA_DATABASE, getCameraVisualProfile, type CameraVisualProfile } from '@/lib/canvas/cameraModelDatabase'
+import { DirectorToolPanelFrame, type DirectorSourceNode } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 // ─── Camera body SVG visuals by profile ─────────────────────────────────────
 
@@ -519,6 +520,7 @@ interface CinematicCameraControlPanelProps {
   onChange: (value: CameraSettings) => void
   onClose: () => void
   onCreateDerived?: (settings: CameraSettings) => void
+  sourceNode?: DirectorSourceNode | null
 }
 
 export function CinematicCameraControlPanel({
@@ -527,15 +529,14 @@ export function CinematicCameraControlPanel({
   onChange,
   onClose,
   onCreateDerived,
+  sourceNode,
 }: CinematicCameraControlPanelProps) {
   if (!open) return null
 
-  const patch = (key: keyof CameraSettings, v: string) => {
-    onChange({ ...value, [key]: v })
-  }
-
+  const patch = (key: keyof CameraSettings, v: string) => onChange({ ...value, [key]: v })
   const clearAll = () => onChange({ ...DEFAULT_CAMERA_SETTINGS })
   const count = activeCount(value)
+  const summary = buildCameraSummaryText(value)
 
   return (
     <div
@@ -543,92 +544,45 @@ export function CinematicCameraControlPanel({
       role="presentation"
       data-no-node-drag="true"
       data-camera-control="true"
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        onClose()
-      }}
+      onPointerDown={(event) => { event.stopPropagation(); onClose() }}
       onClick={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       onWheelCapture={(event) => event.stopPropagation()}
     >
-      <aside
-        className="m-4 flex max-h-[92vh] w-[min(840px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#0d0f12]/96 text-white shadow-2xl backdrop-blur-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="摄影机控制 / Camera Control"
-        data-no-node-drag="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-        onWheelCapture={(event) => event.stopPropagation()}
+      <DirectorToolPanelFrame
+        title="摄影机控制"
+        titleEn="Camera Control"
+        icon="🎥"
+        accentColor="violet"
+        count={count}
+        summary={summary || undefined}
+        sourceNode={sourceNode}
+        primaryLabel="创建摄影版本"
+        primaryDisabled={!onCreateDerived}
+        onPrimary={() => onCreateDerived?.(value)}
+        onClear={count > 0 ? clearAll : undefined}
+        onClose={onClose}
+        ariaLabel="摄影机控制 / Camera Control"
       >
-        {/* Header */}
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
-          <div>
-            <p className="text-[9px] uppercase tracking-[0.2em] text-violet-300/40">Camera Control</p>
-            <h2 className="mt-0.5 text-lg font-semibold text-white">摄影机控制</h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-white/40">
-              主流摄影机型号库 · 第一版（可持续扩展）· 选择结果注入生成提示词
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {count > 0 ? (
-              <span className="inline-flex items-center rounded-full border border-violet-500/25 bg-violet-500/[0.08] px-2.5 py-0.5 text-[10px] font-semibold text-violet-300/70">
-                🎥 {count} 项已设定
-              </span>
-            ) : null}
-            {count > 0 ? (
-              <button
-                type="button"
-                onClick={clearAll}
-                className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/70"
-              >
-                清除设定
-              </button>
-            ) : null}
-            {onCreateDerived ? (
-              <button
-                type="button"
-                onClick={() => onCreateDerived(value)}
-                className="rounded-md border border-violet-500/30 bg-violet-500/[0.1] px-3 py-1.5 text-[11px] font-semibold text-violet-300 transition hover:bg-violet-500/[0.18]"
-              >
-                创建摄影版本
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/70 transition hover:bg-white/10"
-            >
-              关闭
-            </button>
-          </div>
-        </header>
-
-        {/* 4-slot grid */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {CAMERA_SLOTS.map((slotDef) => (
-              <CinematicWheelSlot
-                key={slotDef.key}
-                slotDef={slotDef}
-                value={value[slotDef.key]}
-                onChange={(v) => patch(slotDef.key, v)}
-              />
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.04] px-4 py-3">
-            <p className="text-[10px] leading-relaxed text-violet-200/40">
-              <strong className="text-violet-200/60">提示：</strong>
-              摄影机设定以「导演注释」形式附加在生成提示词末尾。当前机型库包含 {CAMERA_DATABASE.length} 款主流摄影机，涵盖电影、广播、无人机、手机等类别。
-              {count === 0 ? '请在上方四个滚轮中至少选择一项以激活摄影机控制。' : `当前已激活 ${count} 项，生成时将自动应用。`}
-            </p>
-          </div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {CAMERA_SLOTS.map((slotDef) => (
+            <CinematicWheelSlot
+              key={slotDef.key}
+              slotDef={slotDef}
+              value={value[slotDef.key]}
+              onChange={(v) => patch(slotDef.key, v)}
+            />
+          ))}
         </div>
-      </aside>
+
+        <div className="mt-4 rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.04] px-4 py-3">
+          <p className="text-[10px] leading-relaxed text-violet-200/40">
+            <strong className="text-violet-200/60">提示：</strong>
+            摄影机设定以「导演注释」形式附加在生成提示词末尾。当前机型库包含 {CAMERA_DATABASE.length} 款主流摄影机，涵盖电影、广播、无人机、手机等类别。
+            {count === 0 ? '请在上方四个滚轮中至少选择一项以激活摄影机控制。' : `当前已激活 ${count} 项，生成时将自动应用。`}
+          </p>
+        </div>
+      </DirectorToolPanelFrame>
     </div>
   )
 }

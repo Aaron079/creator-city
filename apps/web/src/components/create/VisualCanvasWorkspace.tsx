@@ -99,9 +99,9 @@ import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAg
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
-import { appendCameraContextToPrompt, buildCameraPromptContext, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { appendCameraContextToPrompt, buildCameraPromptContext, buildCameraSummaryText, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
 import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
-import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
+import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettingsForNode, saveSceneLightingForNode } from '@/lib/canvas/nodeDirectorContextStorage'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
@@ -809,14 +809,6 @@ function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
     : {}
-}
-
-function buildCameraSummaryText(settings: CameraSettings): string {
-  return [settings.cameraBody, settings.lens, settings.aperture, settings.focus].filter(Boolean).join(' · ')
-}
-
-function buildLightingSummaryText(settings: SceneLightingSettings): string {
-  return [settings.lightingSetup, settings.timeWeather, settings.atmosphere, settings.colorMood].filter(Boolean).join(' · ')
 }
 
 function stringValue(value: unknown) {
@@ -8519,6 +8511,11 @@ export function VisualCanvasWorkspace({
           value={cameraSettings}
           onChange={updateCameraSettings}
           onClose={() => closeCanvasPanel()}
+          sourceNode={isCameraControlOpen ? (() => {
+            const sn = nodes.find((n) => n.id === (directorTargetNodeIdRef.current ?? editingNodeId))
+            if (!sn) return null
+            return { title: sn.title ?? '', kind: (sn.kind === 'image' || sn.kind === 'video' ? sn.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: sn.resultImageUrl, resultVideoUrl: sn.resultVideoUrl }
+          })() : null}
           onCreateDerived={(settings) => {
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
@@ -8569,6 +8566,11 @@ export function VisualCanvasWorkspace({
           value={sceneLightingSettings}
           onChange={updateSceneLightingSettings}
           onClose={() => closeCanvasPanel()}
+          sourceNode={isSceneLightingOpen ? (() => {
+            const sn = nodes.find((n) => n.id === (directorTargetNodeIdRef.current ?? editingNodeId))
+            if (!sn) return null
+            return { title: sn.title ?? '', kind: (sn.kind === 'image' || sn.kind === 'video' ? sn.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: sn.resultImageUrl, resultVideoUrl: sn.resultVideoUrl }
+          })() : null}
           onCreateDerived={(settings) => {
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
