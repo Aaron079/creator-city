@@ -9,7 +9,7 @@
  *   --canvas-z-stage:      0        Canvas nodes, edges, flow surface
  *   --canvas-z-node:       100      Node cards, node overlays
  *   --canvas-z-toolbar:    1000     Selected-node toolbar, tool menus (ntb-menu)
- *   --canvas-z-rail:       1200     Left tool rail
+ *   --canvas-z-rail:       1100     Left tool rail (below modal backdrops z=1199)
  *   --canvas-z-topbar:     1500     Top command bar
  *   --canvas-z-inspector:  2200     Right inspector panel
  *   --canvas-z-dock:       2300     Bottom generation dock
@@ -40,7 +40,7 @@
   --canvas-z-stage: 0;
   --canvas-z-node: 100;
   --canvas-z-toolbar: 1000;
-  --canvas-z-rail: 1200;
+  --canvas-z-rail: 1100;
   --canvas-z-topbar: 1500;
   --canvas-z-inspector: 2200;
   --canvas-z-dock: 2300;
