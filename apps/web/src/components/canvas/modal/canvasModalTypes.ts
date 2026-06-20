@@ -31,6 +31,7 @@ export type CanvasModalId =
   | 'keyframe-extractor'
   | 'continuity-checker'
   | 'batch-rewriter'
+  | 'shot-sequencer'
 
 export type ModalCloseReason =
   | 'close-button'

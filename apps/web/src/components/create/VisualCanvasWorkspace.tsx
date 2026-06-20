@@ -25,6 +25,7 @@ import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
+import { ShotSequencerPanel } from '@/components/create/ShotSequencerPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -2417,6 +2418,7 @@ export function VisualCanvasWorkspace({
   const [isABCompareOpen, setIsABCompareOpen] = useState(false)
   const [isKeyframeExtractorOpen, setIsKeyframeExtractorOpen] = useState(false)
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
+  const [isShotSequencerOpen, setIsShotSequencerOpen] = useState(false)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
@@ -2738,6 +2740,7 @@ export function VisualCanvasWorkspace({
     setIsABCompareOpen(false)
     setIsKeyframeExtractorOpen(false)
     setIsShotListBuilderOpen(false)
+    setIsShotSequencerOpen(false)
     setIsContinuityCheckerOpen(false)
     setIsCharacterBibleOpen(false)
     setIsSceneBibleOpen(false)
@@ -2766,6 +2769,7 @@ export function VisualCanvasWorkspace({
       case 'ab-compare':         setIsABCompareOpen(true); break
       case 'keyframe-extractor': setIsKeyframeExtractorOpen(true); break
       case 'shot-list-builder':  setIsShotListBuilderOpen(true); break
+      case 'shot-sequencer':     setIsShotSequencerOpen(true); break
       case 'continuity-checker': setIsContinuityCheckerOpen(true); break
       case 'character-bible':    setIsCharacterBibleOpen(true); break
       case 'scene-bible':        setIsSceneBibleOpen(true); break
@@ -8123,6 +8127,7 @@ export function VisualCanvasWorkspace({
           else if (tool === 'continuity-checker') openCanvasPanel('continuity-checker')
           else if (tool === 'character-bible') openCanvasPanel('character-bible')
           else if (tool === 'scene-bible') openCanvasPanel('scene-bible')
+          else if (tool === 'shot-sequencer') openCanvasPanel('shot-sequencer')
         }}
         onOpenPromptTool={(tool) => {
           if (tool === 'batch-rewriter') openCanvasPanel('batch-rewriter')
@@ -8429,6 +8434,18 @@ export function VisualCanvasWorkspace({
             return created.id
           }}
           onAutoGenerateNodes={(nodeIds) => setPendingAutoGenerateIds(nodeIds)}
+          onClose={() => closeCanvasPanel()}
+        />
+      ) : null}
+
+      {isShotSequencerOpen && saveStatus !== 'opening' && projectId ? (
+        <ShotSequencerPanel
+          projectId={projectId}
+          nodes={nodes}
+          onSelectNode={(nodeId) => {
+            setActiveNodeId(nodeId)
+            setIsRightInspectorOpen(true)
+          }}
           onClose={() => closeCanvasPanel()}
         />
       ) : null}

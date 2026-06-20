@@ -22,7 +22,7 @@ interface CanvasToolDockProps {
   onToggleAddMenu: () => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible') => void
+  onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'shot-sequencer') => void
   onOpenPromptTool: (tool: 'batch-rewriter' | 'look-package') => void
 }
 
@@ -156,6 +156,15 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🏞</span>
                     <span>场景圣经</span>
+                  </button>
+                  <div className="mx-3 my-1 border-t border-white/[0.06]" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-indigo-300/80 transition hover:bg-indigo-500/[0.06] hover:text-indigo-200"
+                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('shot-sequencer') }}
+                  >
+                    <span className="text-[13px]">🎞</span>
+                    <span>镜头编排器</span>
                   </button>
                 </motion.div>
               ) : null}
