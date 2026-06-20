@@ -2737,7 +2737,9 @@ export function VisualCanvasWorkspace({
   // All useState setters from useState are stable — empty deps is safe here.
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const closeCanvasPanel = useCallback(() => {
+  // Shared reset — used by closeCanvasPanel, openCanvasPanel, and project lifecycle
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const resetCanvasModalStates = useCallback(() => {
     setIsLexiconOpen(false)
     setIsVariantPlannerOpen(false)
     setIsCharacterLockOpen(false)
@@ -2757,25 +2759,13 @@ export function VisualCanvasWorkspace({
     setActiveCanvasModal(null)
   }, [])
 
+  const closeCanvasPanel = useCallback(() => {
+    resetCanvasModalStates()
+  }, [resetCanvasModalStates])
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {
-    // Close everything before opening the new panel (mutual exclusion)
-    setIsLexiconOpen(false)
-    setIsVariantPlannerOpen(false)
-    setIsCharacterLockOpen(false)
-    setIsABCompareOpen(false)
-    setIsKeyframeExtractorOpen(false)
-    setIsShotListBuilderOpen(false)
-    setIsContinuityCheckerOpen(false)
-    setIsCharacterBibleOpen(false)
-    setIsSceneBibleOpen(false)
-    setIsCameraControlOpen(false)
-    setIsSceneLightingOpen(false)
-    setIsPromptBoosterOpen(false)
-    setIsBatchRewriterOpen(false)
-    setIsLookPackageOpen(false)
-    setIsColorGradePaletteOpen(false)
-    setEditingNodeId(null)
+    resetCanvasModalStates()
     setActiveCanvasModal(id)
     switch (id) {
       case 'camera-lexicon':     setIsLexiconOpen(true); break
@@ -2797,7 +2787,12 @@ export function VisualCanvasWorkspace({
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
         break
     }
-  }, [])
+  }, [resetCanvasModalStates])
+
+  const openGenerationDialog = useCallback(
+    (nodeId: string) => { openCanvasPanel('generation', { nodeId }) },
+    [openCanvasPanel],
+  )
   // ── End Canvas Modal Manager ─────────────────────────────────────────────
 
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
@@ -3420,6 +3415,7 @@ export function VisualCanvasWorkspace({
       const abortController = new AbortController()
       initAbortRef.current = abortController
 
+      resetCanvasModalStates()
       setSaveStatus('opening')
       setSaveMessage('')
       setDraftRestorePrompt(null)
@@ -3992,7 +3988,7 @@ export function VisualCanvasWorkspace({
     }
     commitNodes((current) => [...current, nextNode])
     setActiveNodeId(nodeId)
-    setEditingNodeId(nodeId)
+    openGenerationDialog(nodeId)
     setCanvasPrompt(node.prompt)
     setPromptModel(providerId)
     setPreferredKind(node.kind)
@@ -4000,7 +3996,7 @@ export function VisualCanvasWorkspace({
     flushLocalSnapshot()
     scheduleCanvasSave(0)
     showCanvasFeedback('已创建稳定副本节点，未自动生成。')
-  }, [closeActivePreview, commitNodes, flushLocalSnapshot, nodes, promptStage, scheduleCanvasSave, showCanvasFeedback])
+  }, [closeActivePreview, commitNodes, flushLocalSnapshot, nodes, openGenerationDialog, promptStage, scheduleCanvasSave, showCanvasFeedback])
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -4010,9 +4006,11 @@ export function VisualCanvasWorkspace({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (event.isComposing) return
         // If a managed modal/panel is open, close only that one and stop.
         if (activeCanvasModal) {
           event.preventDefault()
+          event.stopPropagation()
           closeCanvasPanel()
           return
         }
@@ -4082,7 +4080,7 @@ export function VisualCanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, mediaReviewWindows.length, resetCanvasView, setZoomAroundPoint])
+  }, [activeCanvasModal, activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCanvasPanel, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, mediaReviewWindows.length, resetCanvasView, setZoomAroundPoint])
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
@@ -5435,7 +5433,7 @@ export function VisualCanvasWorkspace({
     }
     setActiveNodeId(node.id)
     setActiveEdgeId(null)
-    setEditingNodeId(node.id)
+    openGenerationDialog(node.id)
     setCanvasPrompt(node.prompt)
     syncPromptPreset(node.kind)
     setPromptModel(normalizeProviderId(node.providerId || node.model))
@@ -5446,7 +5444,7 @@ export function VisualCanvasWorkspace({
       promptInputRef.current?.focus()
       promptInputRef.current?.select()
     }, 0)
-  }, [activePreviewNodeId, closeActivePreview, syncPromptPreset])
+  }, [activePreviewNodeId, closeActivePreview, openGenerationDialog, syncPromptPreset])
 
   const selectNodeForMove = useCallback((node: VisualCanvasNode) => {
     if (activePreviewNodeId && activePreviewNodeId !== node.id) {
@@ -7639,9 +7637,9 @@ export function VisualCanvasWorkspace({
       ratio: NODE_META[kind].ratio,
       position,
     })
-    setEditingNodeId(node.id)
+    openCanvasPanel('generation', { nodeId: node.id })
     setNodeCreateMenu(null)
-  }, [createNode, imageProviderStatusMap, nodeCreateMenu, syncPromptPreset, videoProviderStatusMap])
+  }, [createNode, imageProviderStatusMap, nodeCreateMenu, openCanvasPanel, syncPromptPreset, videoProviderStatusMap])
 
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const element = event.target as HTMLElement | null
@@ -8155,7 +8153,7 @@ export function VisualCanvasWorkspace({
           outgoingEdges={inspectorOutgoingEdges}
           nodeTitleById={nodeTitleById}
           onClose={() => setIsRightInspectorOpen(false)}
-          onOpenGenerationDialog={() => setEditingNodeId(activeNode.id)}
+          onOpenGenerationDialog={() => openGenerationDialog(activeNode.id)}
           onSelectNode={(id) => setActiveNodeId(id)}
           projectId={projectId ?? undefined}
         />
@@ -8172,7 +8170,7 @@ export function VisualCanvasWorkspace({
             setActiveNodeId(nodeId)
             setIsRightInspectorOpen(true)
           }}
-          onOpenGenerationDialog={(nodeId) => setEditingNodeId(nodeId)}
+          onOpenGenerationDialog={(nodeId) => openGenerationDialog(nodeId)}
         />
       }
       showBottomDock
@@ -9089,7 +9087,7 @@ export function VisualCanvasWorkspace({
                     : undefined}
                   onCreateDerivedVideo={node.kind === 'image' && node.status === 'done' && node.resultImageUrl ? () => {
                     const videoNode = createNode('video', { parentNodeId: node.id })
-                    setEditingNodeId(videoNode.id)
+                    openCanvasPanel('generation', { nodeId: videoNode.id })
                   } : undefined}
                   sourceNodeTitle={(() => {
                     const meta = metadataRecord(node.metadataJson)
