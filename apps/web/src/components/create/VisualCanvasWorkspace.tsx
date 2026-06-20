@@ -441,7 +441,7 @@ const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
 const NODE_DIALOG_GAP = 16
-const NODE_DIALOG_HEIGHT = 210
+const NODE_DIALOG_HEIGHT = 500
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
 const REVIEW_WINDOW_MIN_WIDTH = 320
@@ -3707,11 +3707,12 @@ export function VisualCanvasWorkspace({
     )
     if (pendingNodes.length === 0) return
     reloadRecoveryDoneRef.current = true
+    const abortCtrl = new AbortController()
     void (async () => {
       try {
         const resp = await fetch(
           `/api/assets/recover-canvas-nodes?projectId=${encodeURIComponent(projectId)}`,
-          { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } }
+          { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' }, signal: abortCtrl.signal }
         )
         if (!resp.ok) return // network/auth error → leave all nodes in current active status
         const data = await resp.json() as { items?: Array<{ nodeId: string; kind: string; url: string; assetId: string }> }
@@ -3744,10 +3745,13 @@ export function VisualCanvasWorkspace({
           })
         )
         scheduleCanvasSave(0)
-      } catch {
-        // Network error → keep all pending nodes in their current active status, no action.
+      } catch (err) {
+        // Navigation abort (page unload / project switch) — suppress, not an error.
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        // Other network errors → keep all pending nodes in their current active status.
       }
     })()
+    return () => { abortCtrl.abort() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, workflowId])
 
@@ -9571,33 +9575,33 @@ export function VisualCanvasWorkspace({
             </div>
           )}
           {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
-            <div className="border-t border-white/[0.06] px-4 pb-3 pt-3 space-y-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30">API 费用来源</p>
+            <div className="border-t border-white/[0.06] px-3 pb-2 pt-2 space-y-1.5">
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-white/25">API 费用来源</p>
               {/* Billing mode icon cards */}
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-1">
                 <button
                   type="button"
                   onClick={() => setBillingMode('user_provider_account')}
-                  className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
+                  className={`flex flex-col gap-0 rounded-lg border p-1.5 text-left transition ${billingMode === 'user_provider_account' ? 'border-violet-500/40 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm leading-none">🔑</span>
-                    <span className={`text-[8px] font-bold rounded-full px-1.5 py-0.5 ${billingMode === 'user_provider_account' ? 'bg-violet-500/25 text-violet-300' : 'bg-white/[0.05] text-white/25'}`}>推荐</span>
+                    <span className="text-xs leading-none">🔑</span>
+                    <span className={`text-[7px] font-bold rounded-full px-1 py-0.5 ${billingMode === 'user_provider_account' ? 'bg-violet-500/25 text-violet-300' : 'bg-white/[0.05] text-white/25'}`}>推荐</span>
                   </div>
-                  <span className="text-[11px] font-semibold mt-1 leading-tight">我的 API 账户</span>
-                  <span className="text-[9px] leading-tight opacity-55">自有 Key · 费用直扣</span>
+                  <span className="text-[10px] font-semibold mt-0.5 leading-tight">我的 API 账户</span>
+                  <span className="text-[8px] leading-tight opacity-55">自有 Key · 费用直扣</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setBillingMode('platform_credits')}
-                  className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.07] text-white' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
+                  className={`flex flex-col gap-0 rounded-lg border p-1.5 text-left transition ${billingMode === 'platform_credits' ? 'border-white/20 bg-white/[0.07] text-white' : 'border-white/[0.07] bg-white/[0.02] text-white/45 hover:border-white/[0.13] hover:text-white/65'}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm leading-none">🏛</span>
-                    <span className="text-[8px] font-bold rounded-full px-1.5 py-0.5 bg-white/[0.05] text-white/20">内部</span>
+                    <span className="text-xs leading-none">🏛</span>
+                    <span className="text-[7px] font-bold rounded-full px-1 py-0.5 bg-white/[0.05] text-white/20">内部</span>
                   </div>
-                  <span className="text-[11px] font-semibold mt-1 leading-tight">平台额度</span>
-                  <span className="text-[9px] leading-tight opacity-55">平台积分（内部）</span>
+                  <span className="text-[10px] font-semibold mt-0.5 leading-tight">平台额度</span>
+                  <span className="text-[8px] leading-tight opacity-55">平台积分（内部）</span>
                 </button>
               </div>
               {editingNode.kind === 'video' ? (

@@ -8250,3 +8250,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* P0-GENERATION-DIALOG-PROMPT-SPACE: Prompt-first layout — override all earlier min-height rules */
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+  min-height: 200px;
+}
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  min-height: 200px;
+}
+
+@media (max-width: 900px) {
+  .scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+    min-height: 140px;
+  }
+  .scope :global(.canvas-node-dialog .canvas-prompt-input) {
+    min-height: 140px;
+  }
+}
+
+@media (max-width: 760px) {
+  .scope :global(.canvas-node-dialog .canvas-prompt-input-wrap) {
+    min-height: 110px;
+  }
+  .scope :global(.canvas-node-dialog .canvas-prompt-input) {
+    min-height: 110px;
+  }
+}
+
+/* Compact video-mode-bar: free up ~12px for prompt */
+.scope :global(.canvas-video-mode-bar) {
+  padding: 5px 10px;
+  margin-bottom: 4px;
+}
+.scope :global(.canvas-video-mode-thumb) {
+  width: 26px;
+  height: 26px;
+}

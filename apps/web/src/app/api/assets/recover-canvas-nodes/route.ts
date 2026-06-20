@@ -53,21 +53,24 @@ export async function GET(request: NextRequest) {
 
     if (assets.length === 0) return jsonOk({ recovered: 0, skipped: 0, items: [] })
 
+    // Batch-fetch all candidate CanvasNodes in one query instead of N serial findUnique calls.
+    const assetItems = assets.filter((a) => a.nodeId && a.workflowId && a.url)
+    const candidateNodes = await db.canvasNode.findMany({
+      where: {
+        OR: assetItems.map((a) => ({ workflowId: a.workflowId!, nodeId: a.nodeId! })),
+      },
+      select: { id: true, workflowId: true, nodeId: true, resultImageUrl: true, resultVideoUrl: true },
+    })
+    const nodeByKey = new Map(candidateNodes.map((n) => [`${n.workflowId}:${n.nodeId}`, n]))
+
     const recovered: RecoveredItem[] = []
-    let skipped = 0
+    let skipped = assets.length - assetItems.length
 
-    for (const asset of assets) {
-      if (!asset.nodeId || !asset.workflowId || !asset.url) { skipped++; continue }
-
+    for (const asset of assetItems) {
       const kind = asset.type === 'VIDEO' ? 'video' : 'image'
-
-      const node = await db.canvasNode.findUnique({
-        where: { workflowId_nodeId: { workflowId: asset.workflowId, nodeId: asset.nodeId } },
-        select: { id: true, resultImageUrl: true, resultVideoUrl: true },
-      })
+      const node = nodeByKey.get(`${asset.workflowId}:${asset.nodeId}`)
 
       if (!node) { skipped++; continue }
-
       if (kind === 'image' && node.resultImageUrl) { skipped++; continue }
       if (kind === 'video' && node.resultVideoUrl) { skipped++; continue }
 
@@ -79,7 +82,7 @@ export async function GET(request: NextRequest) {
           : { resultVideoUrl: asset.url, status: 'done' },
       })
 
-      recovered.push({ nodeId: asset.nodeId, kind, url: asset.url, assetId: asset.id })
+      recovered.push({ nodeId: asset.nodeId!, kind, url: asset.url!, assetId: asset.id })
     }
 
     return jsonOk({ recovered: recovered.length, skipped, items: recovered })
