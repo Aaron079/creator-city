@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { X, RefreshCw, Copy, Plus, Check, RotateCcw, Trash2 } from 'lucide-react'
+import { RefreshCw, Check, RotateCcw, Trash2 } from 'lucide-react'
 import {
   parseShotList,
   buildShotListReport,
@@ -12,6 +12,7 @@ import type { ShotDraft, ShotSize, ShotKind, ShotListOptions } from '@/lib/canva
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { VisualTagPicker } from '@/components/toolkit/VisualTagPicker'
 import type { VisualTagOption } from '@/components/toolkit/VisualTagPicker'
+import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 interface SourceNode {
   id: string
@@ -172,25 +173,6 @@ export function ShotListBuilderPanel({
     })
   }
 
-  const handleCreate = () => {
-    const toCreate = shots.filter((s) => s.selected)
-    if (toCreate.length === 0) return
-    toCreate.forEach((shot, index) => {
-      const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
-      const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
-      const title = `镜头 · ${sizeLabel} · ${kindLabel}`
-      const prompt = `${shot.description}\n\n[${shot.cinematicNote}]`
-      onCreateNode(shot.kind as VisualCanvasNodeKind, {
-        title,
-        prompt,
-        parentNodeId: selectedNodeId || undefined,
-        index,
-        total: toCreate.length,
-      })
-    })
-    setCreatedCount(toCreate.length)
-  }
-
   const handleCreateAndGenerate = () => {
     const toCreate = shots.filter((s) => s.selected)
     if (toCreate.length === 0) return
@@ -215,29 +197,39 @@ export function ShotListBuilderPanel({
 
   const selectedCount = shots.filter((s) => s.selected).length
 
+  const totalDurationSec = shots.reduce((sum, s) => sum + (s.kind === 'video' ? (s.duration || 0) : 0), 0)
+  const durationStr = totalDurationSec > 0
+    ? `总时长 ${String(Math.floor(totalDurationSec / 60)).padStart(2, '0')}:${String(totalDurationSec % 60).padStart(2, '0')}`
+    : null
+  const shotSummary = shots.length > 0
+    ? [shots.length + ' 个镜头', durationStr].filter(Boolean).join(' · ')
+    : undefined
+
   return (
     <div
-      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[500px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/96 shadow-2xl backdrop-blur-xl"
+      className="fixed inset-0 z-[1199] flex items-center justify-center bg-black/25"
       data-no-node-drag="true"
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => { e.stopPropagation(); onClose() }}
+      onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onWheelCapture={(e) => e.stopPropagation()}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-white/8 px-5 py-3.5">
-        <span className="text-[13px]">🎬</span>
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-widest text-white/40">
-          分镜清单生成器
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md p-1 text-white/30 transition hover:bg-white/6 hover:text-white/70"
-          aria-label="关闭"
-        >
-          <X size={16} strokeWidth={2.2} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <DirectorToolPanelFrame
+        icon="🎞"
+        title="分镜表"
+        titleEn="SHOT LIST"
+        accentColor="violet"
+        count={shots.length}
+        summary={shotSummary}
+        primaryLabel={selectedCount > 0 ? `生成全部镜头 (${selectedCount})` : '请选择镜头'}
+        primaryDisabled={selectedCount === 0}
+        onPrimary={handleCreateAndGenerate}
+        onClear={shots.length > 0 ? handleCopy : undefined}
+        clearLabel={copyDone ? '已复制' : '复制分镜清单'}
+        onClose={onClose}
+        ariaLabel="分镜表 / Shot List"
+      >
+      <div className="space-y-4">
 
         {/* ── A. 来源节点选择 ── */}
         <div className="mb-3">
@@ -535,52 +527,13 @@ export function ShotListBuilderPanel({
               : '请先在上方输入或粘贴文本，再点击「按要求重新拆分」。'}
           </p>
         )}
+        {createdCount !== null ? (
+          <p className="mt-3 text-center text-[11px] text-emerald-400/80">
+            已创建 {createdCount} 个草案节点
+          </p>
+        ) : null}
       </div>
-
-      {/* Footer */}
-      {shots.length > 0 ? (
-        <div className="border-t border-white/8 px-5 py-3.5">
-          {createdCount !== null ? (
-            <p className="mb-2.5 text-center text-[11px] text-emerald-400/80">
-              已创建 {createdCount} 个草案节点
-            </p>
-          ) : null}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-[12px] text-white/60 transition hover:bg-white/8 hover:text-white/90"
-            >
-              {copyDone ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2.2} />}
-              <span>{copyDone ? '已复制' : '复制分镜清单'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={selectedCount === 0}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] text-white/60 transition hover:bg-white/8 hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              <Plus size={13} strokeWidth={2.5} />
-              <span>
-                {selectedCount > 0 ? `创建节点` : '请选择'}
-              </span>
-            </button>
-            {onAutoGenerateNodes && (
-              <button
-                type="button"
-                onClick={handleCreateAndGenerate}
-                disabled={selectedCount === 0}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600/80 px-4 py-2 text-[12px] font-semibold text-white/90 transition hover:bg-violet-500/90 disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                <span>✦</span>
-                <span>
-                  {selectedCount > 0 ? `生成全部镜头 (${selectedCount})` : '请选择镜头'}
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-      ) : null}
+      </DirectorToolPanelFrame>
     </div>
   )
 }

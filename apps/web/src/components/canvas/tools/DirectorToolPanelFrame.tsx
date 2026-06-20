@@ -24,9 +24,11 @@ type DirectorToolPanelFrameProps = {
   busy?: boolean
   onPrimary(): void
   onClear?(): void
+  clearLabel?: string
   onClose(): void
   children: ReactNode
   ariaLabel?: string
+  bodyClassName?: string
 }
 
 const ACCENT = {
@@ -63,9 +65,11 @@ export function DirectorToolPanelFrame({
   busy = false,
   onPrimary,
   onClear,
+  clearLabel,
   onClose,
   children,
   ariaLabel,
+  bodyClassName,
 }: DirectorToolPanelFrameProps) {
   const accent = ACCENT[accentColor]
 
@@ -145,7 +149,7 @@ export function DirectorToolPanelFrame({
       ) : null}
 
       {/* ── Scrollable Body ───────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className={bodyClassName ?? 'min-h-0 flex-1 overflow-y-auto p-5'}>
         {children}
       </div>
 
@@ -158,7 +162,7 @@ export function DirectorToolPanelFrame({
               onClick={onClear}
               className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/70"
             >
-              清除设定
+              {clearLabel ?? '清除设定'}
             </button>
           ) : null}
         </div>

@@ -8,6 +8,7 @@ import {
   type SceneBible,
   type SceneProfile,
 } from '@/lib/scenes'
+import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 interface SceneBiblePanelProps {
   open: boolean
@@ -183,36 +184,12 @@ export function SceneBiblePanel({
 
   if (!open) return null
 
-  const panel = (
-    <div className={`${embedded ? 'h-full min-h-[520px]' : 'max-h-[84vh]'} flex w-full flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#101214]/96 text-white shadow-2xl backdrop-blur-xl`}>
-      <header className="border-b border-white/10 px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Scene Bible</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">场景库 / Scene Bible</h2>
-            <p className="mt-2 text-sm text-white/52">当前 {draftBible.scenes.length} 个场景</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={addScene}>
-              新建场景
-            </button>
-            <button
-              type="button"
-              className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
-              onClick={() => onSave(draftBible)}
-            >
-              保存场景库
-            </button>
-            {!embedded ? (
-              <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={onClose}>
-                关闭
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </header>
+  const sceneSummary = draftBible.scenes.length > 0
+    ? `${draftBible.scenes.length} 个场景${selectedScene ? ` · 当前：${selectedScene.name}` : ''}`
+    : undefined
 
-      <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
+  const sceneListBody = (
+    <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
         <div className="min-h-0 overflow-y-auto border-r border-white/10 p-4 max-md:max-h-44 max-md:border-b max-md:border-r-0">
           {draftBible.scenes.length ? (
             <div className="space-y-2">
@@ -319,40 +296,63 @@ export function SceneBiblePanel({
           )}
         </div>
       </div>
-    </div>
   )
 
-  if (embedded) return panel
+  if (embedded) {
+    return (
+      <div className="h-full min-h-[520px] flex w-full flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#101214]/96 text-white shadow-2xl backdrop-blur-xl">
+        <header className="border-b border-white/10 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Scene Bible</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">场景库 / Scene Bible</h2>
+              <p className="mt-2 text-sm text-white/52">当前 {draftBible.scenes.length} 个场景</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={addScene}>
+                新建场景
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
+                onClick={() => onSave(draftBible)}
+              >
+                保存场景库
+              </button>
+            </div>
+          </div>
+        </header>
+        {sceneListBody}
+      </div>
+    )
+  }
 
   return (
     <div
-      className="fixed inset-0 z-[92] flex justify-end bg-black/20 p-4"
-      role="presentation"
+      className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
       data-no-node-drag="true"
-      data-scene-bible="true"
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        onClose?.()
-      }}
+      onPointerDown={(event) => { event.stopPropagation(); onClose?.() }}
       onClick={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       onWheelCapture={(event) => event.stopPropagation()}
     >
-      <aside
-        className="w-[min(760px,calc(100vw-32px))]"
-        role="dialog"
-        aria-modal="true"
-        aria-label="场景库 / Scene Bible"
-        data-no-node-drag="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-        onWheelCapture={(event) => event.stopPropagation()}
+      <DirectorToolPanelFrame
+        icon="🎬"
+        title="场景圣经"
+        titleEn="SCENE BIBLE"
+        accentColor="amber"
+        count={draftBible.scenes.length}
+        summary={sceneSummary}
+        primaryLabel="保存场景库"
+        onPrimary={() => onSave(draftBible)}
+        clearLabel="新建场景"
+        onClear={addScene}
+        onClose={() => onClose?.()}
+        ariaLabel="场景库 / Scene Bible"
+        bodyClassName="min-h-0 flex-1 overflow-hidden"
       >
-        {panel}
-      </aside>
+        {sceneListBody}
+      </DirectorToolPanelFrame>
     </div>
   )
 }

@@ -8,9 +8,9 @@ import {
   type CharacterBible,
   type CharacterProfile,
 } from '@/lib/characters'
+import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 interface CharacterBiblePanelProps {
-  open: boolean
   bible: CharacterBible
   onClose: () => void
   onSave: (bible: CharacterBible) => void
@@ -112,7 +112,6 @@ function parseKeywords(value: string) {
 }
 
 export function CharacterBiblePanel({
-  open,
   bible,
   onClose,
   onSave,
@@ -122,7 +121,6 @@ export function CharacterBiblePanel({
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
-    if (!open) return
     setDraftBible(bible)
     setSelectedId((current) => (
       bible.characters.some((character) => character.id === current)
@@ -130,7 +128,7 @@ export function CharacterBiblePanel({
         : bible.characters[0]?.id || ''
     ))
     setCopyState('idle')
-  }, [bible, open])
+  }, [bible])
 
   const selectedCharacter = useMemo(
     () => draftBible.characters.find((character) => character.id === selectedId) ?? draftBible.characters[0] ?? null,
@@ -170,61 +168,36 @@ export function CharacterBiblePanel({
     }
   }
 
-  if (!open) return null
+  const summary = draftBible.characters.length > 0
+    ? `${draftBible.characters.length} 个角色${selectedCharacter ? ` · 当前：${selectedCharacter.name}` : ''}`
+    : undefined
 
   return (
     <div
-      className="fixed inset-0 z-[92] flex justify-end bg-black/20"
-      role="presentation"
+      className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
       data-no-node-drag="true"
-      data-character-bible="true"
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        onClose()
-      }}
-      onClick={(event) => event.stopPropagation()}
-      onWheel={(event) => event.stopPropagation()}
-      onWheelCapture={(event) => event.stopPropagation()}
+      onPointerDown={(e) => { e.stopPropagation(); onClose() }}
+      onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onWheelCapture={(e) => e.stopPropagation()}
     >
-      <aside
-        className="m-4 flex max-h-[84vh] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#101214]/96 text-white shadow-2xl backdrop-blur-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="角色库 / Character Bible"
-        data-no-node-drag="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-        onWheelCapture={(event) => event.stopPropagation()}
+      <DirectorToolPanelFrame
+        icon="👤"
+        title="角色圣经"
+        titleEn="CHARACTER BIBLE"
+        accentColor="indigo"
+        count={draftBible.characters.length}
+        summary={summary}
+        primaryLabel="保存角色库"
+        onPrimary={() => onSave(draftBible)}
+        clearLabel="新建角色"
+        onClear={addCharacter}
+        onClose={onClose}
+        ariaLabel="角色库 / Character Bible"
+        bodyClassName="min-h-0 flex-1 overflow-hidden"
       >
-        <header className="border-b border-white/10 px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/48">Character Bible</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">角色库 / Character Bible</h2>
-              <p className="mt-2 text-sm text-white/52">当前 {draftBible.characters.length} 个角色</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={addCharacter}>
-                新建角色
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-cyan-100 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-white"
-                onClick={() => onSave(draftBible)}
-              >
-                保存角色库
-              </button>
-              <button type="button" className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10" onClick={onClose}>
-                关闭
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
+        <div className="grid h-full min-h-0 grid-cols-[220px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
+          {/* ── Left: character list ── */}
           <div className="min-h-0 overflow-y-auto border-r border-white/10 p-4 max-md:max-h-44 max-md:border-b max-md:border-r-0">
             {draftBible.characters.length ? (
               <div className="space-y-2">
@@ -232,7 +205,7 @@ export function CharacterBiblePanel({
                   <button
                     key={character.id}
                     type="button"
-                    className={`w-full rounded-md border px-3 py-2 text-left transition ${character.id === selectedCharacter?.id ? 'border-cyan-200/35 bg-cyan-200/12' : 'border-white/10 bg-white/[0.035] hover:bg-white/[0.07]'}`}
+                    className={`w-full rounded-md border px-3 py-2 text-left transition ${character.id === selectedCharacter?.id ? 'border-indigo-200/35 bg-indigo-200/12' : 'border-white/10 bg-white/[0.035] hover:bg-white/[0.07]'}`}
                     onClick={() => setSelectedId(character.id)}
                   >
                     <span className="block truncate text-sm font-semibold text-white/86">{character.name}</span>
@@ -242,11 +215,12 @@ export function CharacterBiblePanel({
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-white/14 p-4 text-sm text-white/48">
-                还没有角色。点击“新建角色”创建第一位角色。
+                还没有角色。点击&ldquo;新建角色&rdquo;创建第一位角色。
               </div>
             )}
           </div>
 
+          {/* ── Right: edit form ── */}
           <div className="min-h-0 overflow-y-auto p-5">
             {selectedCharacter ? (
               <div className="space-y-4">
@@ -276,7 +250,7 @@ export function CharacterBiblePanel({
                               key={tag.label}
                               type="button"
                               onClick={() => patchSelected({ [field.key]: appendToField(String(selectedCharacter[field.key] ?? ''), tag.label) })}
-                              className="inline-flex items-center rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[9px] text-white/40 transition hover:border-cyan-400/30 hover:bg-cyan-500/[0.07] hover:text-cyan-200/80"
+                              className="inline-flex items-center rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[9px] text-white/40 transition hover:border-indigo-400/30 hover:bg-indigo-500/[0.07] hover:text-indigo-200/80"
                             >
                               {tag.label}
                             </button>
@@ -289,14 +263,14 @@ export function CharacterBiblePanel({
                           onChange={(event) => patchSelected({ [field.key]: event.target.value })}
                           placeholder={field.placeholder}
                           rows={3}
-                          className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                          className="min-h-[74px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-indigo-200/36"
                         />
                       ) : (
                         <input
                           value={String(selectedCharacter[field.key] ?? '')}
                           onChange={(event) => patchSelected({ [field.key]: event.target.value })}
                           placeholder={field.placeholder}
-                          className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                          className="h-9 rounded-md border border-white/10 bg-black/22 px-3 text-sm text-white/82 outline-none placeholder:text-white/28 focus:border-indigo-200/36"
                         />
                       )}
                     </div>
@@ -309,7 +283,7 @@ export function CharacterBiblePanel({
                       onChange={(event) => patchSelected({ referenceKeywords: parseKeywords(event.target.value) })}
                       placeholder="cyberpunk courier, black trench coat, metal message tube"
                       rows={2}
-                      className="min-h-[58px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-cyan-200/36"
+                      className="min-h-[58px] resize-y rounded-md border border-white/10 bg-black/22 px-3 py-2 text-sm leading-6 text-white/82 outline-none placeholder:text-white/28 focus:border-indigo-200/36"
                     />
                   </label>
                 </div>
@@ -321,7 +295,7 @@ export function CharacterBiblePanel({
             )}
           </div>
         </div>
-      </aside>
+      </DirectorToolPanelFrame>
     </div>
   )
 }
