@@ -8237,91 +8237,69 @@ export function VisualCanvasWorkspace({
 
       {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
-        <>
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => { closeCanvasPanel(); setWorkflowContext(null) }}
-          />
-          {(() => {
-            const lexTarget = editingNode ?? activeNode
-            const lexApplicable = lexTarget?.kind === 'image' || lexTarget?.kind === 'video'
-            if (lexApplicable && lexTarget) {
-              return (
-                <CameraLexiconPanel
-                  nodeKind={lexTarget.kind as 'image' | 'video'}
-                  canInsert={editingNode !== null || workflowContext !== null}
-                  onInsert={handleLexiconInsert}
-                  onCreateDerived={(fragment, selectedLabels) => {
-                    const sourcePrompt = (lexTarget.prompt ?? '').trim()
-                    const derivedPrompt = sourcePrompt ? `${sourcePrompt}\n${fragment}` : fragment
-                    const topLabels = selectedLabels.slice(0, 3)
-                    const extra = selectedLabels.length - topLabels.length
-                    const toolSummaryText = topLabels.length
-                      ? topLabels.join(' · ') + (extra > 0 ? ` +${extra}` : '')
-                      : undefined
-                    const node = createNode(
-                      lexTarget.kind === 'video' ? 'video' : 'image',
-                      {
-                        title: `${lexTarget.title} · 镜头`,
-                        prompt: derivedPrompt,
-                        parentNodeId: lexTarget.id,
-                        status: 'idle',
-                        metadataJson: {
-                          derivedFromTool: 'camera-lexicon',
-                          derivedFromToolLabel: '镜头词典',
-                          ...(toolSummaryText ? { toolSummaryText } : {}),
-                          sourceNodeTitle: lexTarget.title || lexTarget.kind,
-                          generationDraft: {
-                            status: 'draft',
-                            sourceNodeId: lexTarget.id,
-                            sourceKind: lexTarget.kind,
-                            targetKind: lexTarget.kind === 'video' ? 'video' : 'image',
-                            basePrompt: sourcePrompt,
-                            derivedPrompt,
-                            sourceImageUrl: lexTarget.resultImageUrl ?? null,
-                            sourceVideoUrl: lexTarget.resultVideoUrl ?? null,
-                            createdAt: new Date().toISOString(),
-                          },
-                        },
-                        edgeLabel: '镜头词典',
-                        edgeToolId: 'camera-lexicon',
-                        edgeToolIcon: '🎬',
+        (() => {
+          const lexTarget = editingNode ?? activeNode
+          const lexApplicable = lexTarget?.kind === 'image' || lexTarget?.kind === 'video'
+          if (!lexApplicable || !lexTarget) return null
+          const lexSourceNode = {
+            title: lexTarget.title ?? '',
+            kind: (lexTarget.kind === 'image' || lexTarget.kind === 'video' ? lexTarget.kind : 'text') as 'image' | 'video' | 'text',
+            resultImageUrl: lexTarget.resultImageUrl,
+            resultVideoUrl: lexTarget.resultVideoUrl,
+          }
+          return (
+            <CameraLexiconPanel
+              nodeKind={lexTarget.kind as 'image' | 'video'}
+              canInsert={editingNode !== null || workflowContext !== null}
+              onInsert={handleLexiconInsert}
+              sourceNode={lexSourceNode}
+              onCreateDerived={(fragment, selectedLabels) => {
+                const sourcePrompt = (lexTarget.prompt ?? '').trim()
+                const derivedPrompt = sourcePrompt ? `${sourcePrompt}\n${fragment}` : fragment
+                const topLabels = selectedLabels.slice(0, 3)
+                const extra = selectedLabels.length - topLabels.length
+                const toolSummaryText = topLabels.length
+                  ? topLabels.join(' · ') + (extra > 0 ? ` +${extra}` : '')
+                  : undefined
+                const node = createNode(
+                  lexTarget.kind === 'video' ? 'video' : 'image',
+                  {
+                    title: `${lexTarget.title} · 镜头`,
+                    prompt: derivedPrompt,
+                    parentNodeId: lexTarget.id,
+                    status: 'idle',
+                    metadataJson: {
+                      derivedFromTool: 'camera-lexicon',
+                      derivedFromToolLabel: '镜头词典',
+                      ...(toolSummaryText ? { toolSummaryText } : {}),
+                      sourceNodeTitle: lexTarget.title || lexTarget.kind,
+                      generationDraft: {
+                        status: 'draft',
+                        sourceNodeId: lexTarget.id,
+                        sourceKind: lexTarget.kind,
+                        targetKind: lexTarget.kind === 'video' ? 'video' : 'image',
+                        basePrompt: sourcePrompt,
+                        derivedPrompt,
+                        sourceImageUrl: lexTarget.resultImageUrl ?? null,
+                        sourceVideoUrl: lexTarget.resultVideoUrl ?? null,
+                        createdAt: new Date().toISOString(),
                       },
-                    )
-                    setWorkflowContext(null)
-                    openCanvasPanel('generation', { nodeId: node.id })
-                    flushLocalSnapshot()
-                    scheduleCanvasSave(0)
-                  }}
-                  onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
-                  workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
-                />
-              )
-            }
-            return (
-              <div
-                className="fixed left-[80px] top-1/2 z-[1200] w-[280px] -translate-y-1/2 rounded-2xl border border-white/10 bg-[#0f1117]/96 px-5 py-6 shadow-2xl backdrop-blur-xl"
-                data-no-node-drag="true"
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-white/30">
-                  镜头词典
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-white/55">
-                  请先点击一个图片或视频节点，工具将显示可插入的专业镜头词汇。
-                </p>
-                <button
-                  type="button"
-                  onClick={() => { closeCanvasPanel(); setWorkflowContext(null) }}
-                  className="mt-4 text-[11px] text-white/30 hover:text-white/55"
-                >
-                  关闭
-                </button>
-              </div>
-            )
-          })()}
-        </>
+                    },
+                    edgeLabel: '镜头词典',
+                    edgeToolId: 'camera-lexicon',
+                    edgeToolIcon: '🎬',
+                  },
+                )
+                setWorkflowContext(null)
+                openCanvasPanel('generation', { nodeId: node.id })
+                flushLocalSnapshot()
+                scheduleCanvasSave(0)
+              }}
+              onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
+              workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
+            />
+          )
+        })()
       ) : null}
 
       {/* Asset Variant Planner panel — triggered from left dock or workflow context menu */}
@@ -8616,69 +8594,72 @@ export function VisualCanvasWorkspace({
       ) : null}
 
       {isPromptBoosterOpen && saveStatus !== 'opening' ? (
-        <>
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => closeCanvasPanel()}
-          />
-          <PromptBoosterPanel
-            nodes={nodes}
-            initialNodeId={activeNodeId ?? undefined}
-            onAppendPrompt={(nodeId, appendText) => {
-              const target = nodes.find((n) => n.id === nodeId)
-              if (!target) return
-              const current = (target.prompt ?? '').trim()
-              const separator = current ? '\n[Prompt Booster]\n' : ''
-              const newPrompt = current + separator + appendText
-              handleNodePatch(nodeId, { prompt: newPrompt })
-              flushLocalSnapshot()
-              scheduleCanvasSave(0)
-            }}
-            onCreateDerived={(nodeId, appendText, suggestionTitle) => {
-              const sourceNode = nodes.find((n) => n.id === nodeId)
-              if (!sourceNode) return
-              const current = (sourceNode.prompt ?? '').trim()
-              const separator = current ? '\n[Prompt Booster]\n' : ''
-              const derivedPrompt = current + separator + appendText
-              const targetKind = sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image')
-              const toolSummaryText = suggestionTitle || undefined
-              const node = createNode(
-                targetKind,
-                {
-                  title: `${sourceNode.title} · 增强`,
-                  prompt: derivedPrompt,
-                  parentNodeId: sourceNode.id,
-                  status: 'idle',
-                  metadataJson: {
-                    derivedFromTool: 'prompt-booster',
-                    derivedFromToolLabel: '提示词增强',
-                    ...(toolSummaryText ? { toolSummaryText } : {}),
-                    sourceNodeTitle: sourceNode.title || sourceNode.kind,
-                    generationDraft: {
-                      status: 'draft',
-                      sourceNodeId: sourceNode.id,
-                      sourceKind: sourceNode.kind,
-                      targetKind,
-                      basePrompt: current,
-                      derivedPrompt,
-                      sourceImageUrl: sourceNode.resultImageUrl ?? null,
-                      sourceVideoUrl: sourceNode.resultVideoUrl ?? null,
-                      createdAt: new Date().toISOString(),
+        (() => {
+          const boostTargetId = directorTargetNodeIdRef.current ?? activeNodeId
+          const boostSrc = boostTargetId ? nodes.find((n) => n.id === boostTargetId) : null
+          const boostSourceNode = boostSrc
+            ? { title: boostSrc.title ?? '', kind: (boostSrc.kind === 'image' || boostSrc.kind === 'video' ? boostSrc.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: boostSrc.resultImageUrl, resultVideoUrl: boostSrc.resultVideoUrl }
+            : null
+          return (
+            <PromptBoosterPanel
+              nodes={nodes}
+              initialNodeId={boostTargetId ?? undefined}
+              sourceNode={boostSourceNode}
+              onAppendPrompt={(nodeId, appendText) => {
+                const target = nodes.find((n) => n.id === nodeId)
+                if (!target) return
+                const current = (target.prompt ?? '').trim()
+                const separator = current ? '\n[Prompt Booster]\n' : ''
+                const newPrompt = current + separator + appendText
+                handleNodePatch(nodeId, { prompt: newPrompt })
+                flushLocalSnapshot()
+                scheduleCanvasSave(0)
+              }}
+              onCreateDerived={(nodeId, appendText, suggestionTitle) => {
+                const sourceNode = nodes.find((n) => n.id === nodeId)
+                if (!sourceNode) return
+                const current = (sourceNode.prompt ?? '').trim()
+                const separator = current ? '\n[Prompt Booster]\n' : ''
+                const derivedPrompt = current + separator + appendText
+                const targetKind = sourceNode.kind === 'video' ? 'video' : (sourceNode.kind === 'text' ? 'text' : 'image')
+                const toolSummaryText = suggestionTitle || undefined
+                const node = createNode(
+                  targetKind,
+                  {
+                    title: `${sourceNode.title} · 增强`,
+                    prompt: derivedPrompt,
+                    parentNodeId: sourceNode.id,
+                    status: 'idle',
+                    metadataJson: {
+                      derivedFromTool: 'prompt-booster',
+                      derivedFromToolLabel: '提示词增强',
+                      ...(toolSummaryText ? { toolSummaryText } : {}),
+                      sourceNodeTitle: sourceNode.title || sourceNode.kind,
+                      generationDraft: {
+                        status: 'draft',
+                        sourceNodeId: sourceNode.id,
+                        sourceKind: sourceNode.kind,
+                        targetKind,
+                        basePrompt: current,
+                        derivedPrompt,
+                        sourceImageUrl: sourceNode.resultImageUrl ?? null,
+                        sourceVideoUrl: sourceNode.resultVideoUrl ?? null,
+                        createdAt: new Date().toISOString(),
+                      },
                     },
+                    edgeLabel: '提示词增强',
+                    edgeToolId: 'prompt-booster',
+                    edgeToolIcon: '✨',
                   },
-                  edgeLabel: '提示词增强',
-                  edgeToolId: 'prompt-booster',
-                  edgeToolIcon: '✨',
-                },
-              )
-              openCanvasPanel('generation', { nodeId: node.id })
-              flushLocalSnapshot()
-              scheduleCanvasSave(0)
-            }}
-            onClose={() => closeCanvasPanel()}
-          />
-        </>
+                )
+                openCanvasPanel('generation', { nodeId: node.id })
+                flushLocalSnapshot()
+                scheduleCanvasSave(0)
+              }}
+              onClose={() => closeCanvasPanel()}
+            />
+          )
+        })()
       ) : null}
 
       {isBatchRewriterOpen && saveStatus !== 'opening' ? (
@@ -8703,62 +8684,65 @@ export function VisualCanvasWorkspace({
       ) : null}
 
       {isLookPackageOpen && saveStatus !== 'opening' ? (
-        <>
-          <div
-            className="fixed inset-0 z-[1199]"
-            aria-hidden="true"
-            onPointerDown={() => closeCanvasPanel()}
-          />
-          <LookPackagePanel
-            nodes={nodes.map((n) => ({ ...n, resultImageUrl: n.resultImageUrl ?? null }))}
-            onApplyLook={(updates) => {
-              for (const { nodeId, prompt } of updates) {
-                handleNodePatch(nodeId, { prompt })
-                if (nodeId === editingNodeId || nodeId === activeNodeId) {
-                  setCanvasPrompt(prompt)
+        (() => {
+          const lookTargetId = lookPanelDefaultNodeId ?? directorTargetNodeIdRef.current ?? activeNodeId
+          const lookSrc = lookTargetId ? nodes.find((n) => n.id === lookTargetId) : null
+          const lookSourceNode = lookSrc
+            ? { title: lookSrc.title ?? '', kind: (lookSrc.kind === 'image' || lookSrc.kind === 'video' ? lookSrc.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: lookSrc.resultImageUrl, resultVideoUrl: lookSrc.resultVideoUrl }
+            : null
+          return (
+            <LookPackagePanel
+              nodes={nodes.map((n) => ({ ...n, resultImageUrl: n.resultImageUrl ?? null }))}
+              sourceNode={lookSourceNode}
+              onApplyLook={(updates) => {
+                for (const { nodeId, prompt } of updates) {
+                  handleNodePatch(nodeId, { prompt })
+                  if (nodeId === editingNodeId || nodeId === activeNodeId) {
+                    setCanvasPrompt(prompt)
+                  }
                 }
-              }
-              flushLocalSnapshot()
-              scheduleCanvasSave(0)
-            }}
-            onCreateDerivedNode={({ sourceNodeId, prompt, lookName }) => {
-              const sourceNode = nodes.find((n) => n.id === sourceNodeId)
-              const sourceTitle = sourceNode?.title?.trim()
-              const title = sourceTitle ? `${sourceTitle} · ${lookName}` : `视觉风格版本 · ${lookName}`
-              const node = createNode('image', {
-                title,
-                prompt,
-                parentNodeId: sourceNodeId,
-                status: 'idle',
-                metadataJson: {
-                  derivedFromTool: 'look-package',
-                  derivedFromToolLabel: '视觉风格',
-                  toolSummaryText: lookName,
-                  sourceNodeTitle: sourceTitle || sourceNode?.kind || 'image',
-                  generationDraft: {
-                    status: 'draft',
-                    sourceNodeId,
-                    sourceKind: sourceNode?.kind ?? 'image',
-                    targetKind: 'image',
-                    basePrompt: sourceNode?.prompt ?? '',
-                    derivedPrompt: prompt,
-                    sourceImageUrl: sourceNode?.resultImageUrl ?? null,
-                    sourceVideoUrl: sourceNode?.resultVideoUrl ?? null,
-                    createdAt: new Date().toISOString(),
+                flushLocalSnapshot()
+                scheduleCanvasSave(0)
+              }}
+              onCreateDerivedNode={({ sourceNodeId, prompt, lookName }) => {
+                const sourceNode = nodes.find((n) => n.id === sourceNodeId)
+                const sourceTitle = sourceNode?.title?.trim()
+                const title = sourceTitle ? `${sourceTitle} · ${lookName}` : `视觉风格版本 · ${lookName}`
+                const node = createNode('image', {
+                  title,
+                  prompt,
+                  parentNodeId: sourceNodeId,
+                  status: 'idle',
+                  metadataJson: {
+                    derivedFromTool: 'look-package',
+                    derivedFromToolLabel: '视觉风格',
+                    toolSummaryText: lookName,
+                    sourceNodeTitle: sourceTitle || sourceNode?.kind || 'image',
+                    generationDraft: {
+                      status: 'draft',
+                      sourceNodeId,
+                      sourceKind: sourceNode?.kind ?? 'image',
+                      targetKind: 'image',
+                      basePrompt: sourceNode?.prompt ?? '',
+                      derivedPrompt: prompt,
+                      sourceImageUrl: sourceNode?.resultImageUrl ?? null,
+                      sourceVideoUrl: sourceNode?.resultVideoUrl ?? null,
+                      createdAt: new Date().toISOString(),
+                    },
                   },
-                },
-                edgeLabel: '视觉风格',
-                edgeToolId: 'look-package',
-                edgeToolIcon: '🎨',
-              })
-              openCanvasPanel('generation', { nodeId: node.id })
-              flushLocalSnapshot()
-              scheduleCanvasSave(0)
-            }}
-            onClose={() => closeCanvasPanel()}
-            defaultSelectedNodeId={lookPanelDefaultNodeId}
-          />
-        </>
+                  edgeLabel: '视觉风格',
+                  edgeToolId: 'look-package',
+                  edgeToolIcon: '🎨',
+                })
+                openCanvasPanel('generation', { nodeId: node.id })
+                flushLocalSnapshot()
+                scheduleCanvasSave(0)
+              }}
+              onClose={() => closeCanvasPanel()}
+              defaultSelectedNodeId={lookTargetId ?? undefined}
+            />
+          )
+        })()
       ) : null}
 
       {/* Color Grade Palette — Tool 12, Editing group */}
@@ -9220,7 +9204,7 @@ export function VisualCanvasWorkspace({
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
             onOpenColorGrade={() => openCanvasPanel('color-grade')}
-            onOpenLookPackage={() => { setLookPanelDefaultNodeId(activeNode.id); openCanvasPanel('look-package') }}
+            onOpenLookPackage={() => { directorTargetNodeIdRef.current = activeNode.id; setLookPanelDefaultNodeId(activeNode.id); openCanvasPanel('look-package') }}
             onOpenVariantPlanner={() => openCanvasPanel('variant-planner')}
             onOpenABCompare={() => openCanvasPanel('ab-compare')}
             onOpenKeyframeExtractor={() => openCanvasPanel('keyframe-extractor')}
@@ -9231,6 +9215,7 @@ export function VisualCanvasWorkspace({
               openCanvasPanel('camera-lexicon')
             }}
             onOpenPromptBooster={() => {
+              directorTargetNodeIdRef.current = activeNode.id
               openCanvasPanel('prompt-booster')
             }}
           />

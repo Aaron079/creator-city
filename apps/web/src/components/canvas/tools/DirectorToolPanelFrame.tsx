@@ -9,7 +9,7 @@ export type DirectorSourceNode = {
   resultVideoUrl?: string | null
 }
 
-type AccentColor = 'violet' | 'amber'
+type AccentColor = 'violet' | 'amber' | 'indigo'
 
 type DirectorToolPanelFrameProps = {
   title: string
@@ -41,6 +41,12 @@ const ACCENT = {
     titleEn: 'text-amber-300/40',
     primary: 'border-amber-500/30 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.15] disabled:opacity-40',
     summary: 'border-amber-500/[0.12] bg-amber-500/[0.04] text-amber-200/50',
+  },
+  indigo: {
+    badge: 'border-indigo-500/25 bg-indigo-500/[0.08] text-indigo-300/70',
+    titleEn: 'text-indigo-300/40',
+    primary: 'border-indigo-500/30 bg-indigo-500/[0.1] text-indigo-300 hover:bg-indigo-500/[0.18] disabled:opacity-40',
+    summary: 'border-indigo-500/[0.12] bg-indigo-500/[0.04] text-indigo-200/50',
   },
 } satisfies Record<AccentColor, Record<string, string>>
 

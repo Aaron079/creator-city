@@ -15,6 +15,7 @@ import {
   isBoostableNode,
   textAlreadyContains,
 } from '@/lib/canvas/prompt-booster'
+import { DirectorToolPanelFrame, type DirectorSourceNode } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 interface PromptBoosterPanelProps {
   nodes: PromptBoostNode[]
@@ -22,6 +23,7 @@ interface PromptBoosterPanelProps {
   onAppendPrompt: (nodeId: string, appendText: string) => void
   onCreateDerived?: (nodeId: string, appendText: string, suggestionTitle?: string) => void
   onClose: () => void
+  sourceNode?: DirectorSourceNode | null
 }
 
 const CHECK_STATUS_BADGE: Record<PromptBoostCheckStatus, { label: string; cls: string }> = {
@@ -78,6 +80,7 @@ export function PromptBoosterPanel({
   onAppendPrompt,
   onCreateDerived,
   onClose,
+  sourceNode,
 }: PromptBoosterPanelProps) {
   const supportedNodes = useMemo(() => nodes.filter(isBoostableNode), [nodes])
 
@@ -91,21 +94,20 @@ export function PromptBoosterPanel({
     [nodes, selectedNodeId],
   )
 
-  const [report, setReport] = useState<PromptBoostReport | null>(() =>
-    runAnalysis(selectedNode),
-  )
+  const [report, setReport] = useState<PromptBoostReport | null>(() => runAnalysis(selectedNode))
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [alreadyExistsId, setAlreadyExistsId] = useState<string | null>(null)
   const [copiedReport, setCopiedReport] = useState(false)
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null)
 
-  // Re-run analysis when selected node changes
   useEffect(() => {
     const node = nodes.find((n) => n.id === selectedNodeId) ?? null
     setReport(runAnalysis(node))
     setDismissed(new Set())
     setAlreadyExistsId(null)
     setCopiedId(null)
+    setSelectedSuggestionId(null)
   }, [selectedNodeId, nodes])
 
   const handleReanalyze = useCallback(() => {
@@ -114,6 +116,7 @@ export function PromptBoosterPanel({
     setDismissed(new Set())
     setAlreadyExistsId(null)
     setCopiedId(null)
+    setSelectedSuggestionId(null)
   }, [selectedNodeId, nodes])
 
   const handleCopySuggestion = useCallback(async (sugg: PromptBoostSuggestion) => {
@@ -126,7 +129,7 @@ export function PromptBoosterPanel({
     }
   }, [])
 
-  const handleAppend = useCallback(
+  const handleDirectAppend = useCallback(
     (sugg: PromptBoostSuggestion) => {
       if (!selectedNodeId) return
       const node = nodes.find((n) => n.id === selectedNodeId)
@@ -137,18 +140,30 @@ export function PromptBoosterPanel({
         setTimeout(() => setAlreadyExistsId(null), 2500)
         return
       }
-      if (onCreateDerived) {
-        onCreateDerived(selectedNodeId, sugg.appendText, sugg.title)
-      } else {
-        onAppendPrompt(selectedNodeId, sugg.appendText)
-      }
+      onAppendPrompt(selectedNodeId, sugg.appendText)
     },
-    [selectedNodeId, nodes, onAppendPrompt, onCreateDerived],
+    [selectedNodeId, nodes, onAppendPrompt],
   )
+
+  const handleCreateDerived = useCallback(() => {
+    if (!selectedNodeId || !selectedSuggestionId || !onCreateDerived) return
+    const sugg = report?.suggestions.find((s) => s.id === selectedSuggestionId)
+    if (!sugg) return
+    const node = nodes.find((n) => n.id === selectedNodeId)
+    if (!node) return
+    const currentPrompt = getBoostPromptText(node)
+    if (textAlreadyContains(currentPrompt, sugg.appendText)) {
+      setAlreadyExistsId(sugg.id)
+      setTimeout(() => setAlreadyExistsId(null), 2500)
+      return
+    }
+    onCreateDerived(selectedNodeId, sugg.appendText, sugg.title)
+  }, [selectedNodeId, selectedSuggestionId, report, nodes, onCreateDerived])
 
   const handleDismiss = useCallback((id: string) => {
     setDismissed((prev) => new Set([...prev, id]))
-  }, [])
+    if (selectedSuggestionId === id) setSelectedSuggestionId(null)
+  }, [selectedSuggestionId])
 
   const handleCopyReport = useCallback(async () => {
     if (!report || !selectedNode) return
@@ -165,64 +180,53 @@ export function PromptBoosterPanel({
 
   const visibleSuggestions = report?.suggestions.filter((s) => !dismissed.has(s.id)) ?? []
   const promptPreview = selectedNode ? getBoostPromptText(selectedNode) : ''
+  const selectedSuggestion = selectedSuggestionId
+    ? report?.suggestions.find((s) => s.id === selectedSuggestionId) ?? null
+    : null
+  const summaryText = selectedSuggestion?.title ?? ''
 
   return (
     <div
-      className="fixed left-[80px] top-1/2 z-[1200] -translate-y-1/2 flex flex-col"
-      style={{ width: 500, maxHeight: 'calc(100vh - 80px)' }}
+      className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
+      role="presentation"
       data-no-node-drag="true"
+      onPointerDown={(e) => { e.stopPropagation(); onClose() }}
+      onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onWheelCapture={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/97 shadow-2xl backdrop-blur-xl">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-white/10 px-5 py-3.5">
-          <div className="min-w-0 flex-1 pr-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[15px]">✨</span>
-              <span className="text-[13px] font-semibold text-white/90">提示词增强器</span>
-            </div>
-            <p className="mt-0.5 text-[10px] leading-snug text-white/30">
-              检查当前节点 Prompt 是否完整并给出可选增强片段。不自动改写，不自动生成，不消耗 credits。
-            </p>
+      <DirectorToolPanelFrame
+        title="提示词增强"
+        titleEn="Prompt Booster"
+        icon="✨"
+        accentColor="violet"
+        count={selectedSuggestion ? 1 : 0}
+        summary={summaryText || undefined}
+        sourceNode={sourceNode}
+        primaryLabel="创建增强版本"
+        primaryDisabled={!selectedSuggestionId || !onCreateDerived}
+        onPrimary={handleCreateDerived}
+        onClear={selectedSuggestionId ? () => setSelectedSuggestionId(null) : undefined}
+        onClose={onClose}
+        ariaLabel="提示词增强 / Prompt Booster"
+      >
+        {supportedNodes.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-[13px] text-white/45">请选择一个包含 Prompt 或文本内容的节点。</p>
+            <p className="mt-1 text-[11px] text-white/25">文本、图片、视频节点均可检查。</p>
           </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={handleReanalyze}
-              className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/5 hover:text-white/80"
-            >
-              重新分析
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-6 w-6 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/5 hover:text-white/70"
-              aria-label="关闭"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
-          {/* Node selector */}
-          {supportedNodes.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-[13px] text-white/45">请选择一个包含 Prompt 或文本内容的节点。</p>
-              <p className="mt-1 text-[11px] text-white/25">
-                文本、图片、视频节点均可检查。
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Node picker */}
-              <div className="border-b border-white/10 px-5 py-3">
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                  选择节点
-                </label>
+        ) : (
+          <>
+            {/* Node picker */}
+            <div className="mb-4">
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                分析节点
+              </label>
+              <div className="flex items-center gap-2">
                 <select
                   value={selectedNodeId ?? ''}
                   onChange={(e) => setSelectedNodeId(e.target.value || null)}
-                  className="w-full rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-1.5 text-[12px] text-slate-100 outline-none focus:border-white/25"
+                  className="flex-1 rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-1.5 text-[12px] text-slate-100 outline-none focus:border-white/25"
                 >
                   {supportedNodes.map((n) => (
                     <option key={n.id} value={n.id}>
@@ -231,133 +235,137 @@ export function PromptBoosterPanel({
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={handleReanalyze}
+                  className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/5 hover:text-white/80"
+                >
+                  重新分析
+                </button>
               </div>
+            </div>
 
-              {/* Node summary */}
-              {selectedNode && (
-                <div className="border-b border-white/10 px-5 py-3">
-                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/50">
-                      {KIND_LABEL[selectedNode.kind] ?? selectedNode.kind}
+            {/* Node summary */}
+            {selectedNode && (
+              <div className="mb-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/50">
+                    {KIND_LABEL[selectedNode.kind] ?? selectedNode.kind}
+                  </span>
+                  {(selectedNode.providerId ?? selectedNode.model) ? (
+                    <span className="text-[10px] text-white/30">
+                      {[selectedNode.providerId, selectedNode.model].filter(Boolean).join(' / ')}
                     </span>
-                    {(selectedNode.providerId ?? selectedNode.model) ? (
-                      <span className="text-[10px] text-white/30">
-                        {[selectedNode.providerId, selectedNode.model].filter(Boolean).join(' / ')}
-                      </span>
-                    ) : null}
-                    {selectedNode.status ? (
-                      <span className="text-[10px] text-white/30">{selectedNode.status}</span>
-                    ) : null}
-                  </div>
-                  {promptPreview ? (
-                    <p className="text-[11px] leading-relaxed text-white/55 line-clamp-3">
-                      {promptPreview.slice(0, 160)}{promptPreview.length > 160 ? '…' : ''}
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-white/30">（无 Prompt 内容）</p>
-                  )}
+                  ) : null}
                 </div>
-              )}
+                {promptPreview ? (
+                  <p className="text-[11px] leading-relaxed text-white/55 line-clamp-2">
+                    {promptPreview.slice(0, 160)}{promptPreview.length > 160 ? '…' : ''}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-white/30">（无 Prompt 内容）</p>
+                )}
+              </div>
+            )}
 
-              {/* Score card */}
-              {report ? (
-                <>
-                  <div className="flex items-center gap-4 px-5 py-4">
-                    <div
-                      className={`flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full border-2 ${scoreRingClass(report.score)}`}
-                    >
-                      <span className={`text-2xl font-bold tabular-nums ${scoreTextColor(report.score)}`}>
-                        {report.score}
+            {/* Score card */}
+            {report ? (
+              <>
+                <div className="mb-4 flex items-center gap-4 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-4">
+                  <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full border-2 ${scoreRingClass(report.score)}`}>
+                    <span className={`text-xl font-bold tabular-nums ${scoreTextColor(report.score)}`}>
+                      {report.score}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-white/60">Prompt 完整度</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${scoreBadge(report.score).cls}`}>
+                        {scoreBadge(report.score).text}
                       </span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-white/60">Prompt 完整度</span>
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${scoreBadge(report.score).cls}`}>
-                          {scoreBadge(report.score).text}
-                        </span>
-                      </div>
-                      <p className="text-[12px] text-white/75">{report.summary}</p>
-                    </div>
+                    <p className="text-[12px] text-white/75">{report.summary}</p>
                   </div>
+                </div>
 
-                  {/* Check list */}
-                  <div className="border-t border-white/10 px-5 pb-3 pt-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                      检查清单 ({report.checks.length})
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {report.checks.map((check) => {
-                        const badge = CHECK_STATUS_BADGE[check.status]
-                        return (
-                          <div key={check.id} className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                            <span className={`mt-0.5 flex-shrink-0 rounded border px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider ${badge.cls}`}>
-                              {badge.label}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[11px] font-medium text-white/80">{check.label}</p>
-                              <p className="text-[10px] text-white/45">{check.description}</p>
-                            </div>
+                {/* Check list */}
+                <div className="mb-4">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                    检查清单 ({report.checks.length})
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {report.checks.map((check) => {
+                      const badge = CHECK_STATUS_BADGE[check.status]
+                      return (
+                        <div key={check.id} className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                          <span className={`mt-0.5 flex-shrink-0 rounded border px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-medium text-white/80">{check.label}</p>
+                            <p className="text-[10px] text-white/45">{check.description}</p>
                           </div>
-                        )
-                      })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Suggestions */}
+                {visibleSuggestions.length > 0 ? (
+                  <div>
+                    <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                      增强建议 ({visibleSuggestions.length}) — 选择一条后点击「创建增强版本」
+                    </p>
+                    <div className="flex flex-col gap-3">
+                      {visibleSuggestions.map((sugg) => (
+                        <SuggestionCard
+                          key={sugg.id}
+                          suggestion={sugg}
+                          isCopied={copiedId === sugg.id}
+                          alreadyExists={alreadyExistsId === sugg.id}
+                          isSelected={selectedSuggestionId === sugg.id}
+                          hasDerivedMode={Boolean(onCreateDerived)}
+                          onCopy={handleCopySuggestion}
+                          onDirectAppend={handleDirectAppend}
+                          onSelect={(id) => setSelectedSuggestionId((prev) => prev === id ? null : id)}
+                          onDismiss={handleDismiss}
+                        />
+                      ))}
                     </div>
                   </div>
+                ) : report.suggestions.length === 0 ? (
+                  <div className="py-4 text-center">
+                    <p className="text-[12px] text-green-400">Prompt 结构良好，暂无增强建议。</p>
+                  </div>
+                ) : (
+                  <div className="py-4 text-center">
+                    <p className="text-[11px] text-white/30">所有建议已被忽略。点击「重新分析」重置。</p>
+                  </div>
+                )}
 
-                  {/* Suggestions */}
-                  {visibleSuggestions.length > 0 ? (
-                    <div className="border-t border-white/10 px-5 pb-4 pt-3">
-                      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                        增强建议 ({visibleSuggestions.length})
-                      </p>
-                      <div className="flex flex-col gap-3">
-                        {visibleSuggestions.map((sugg) => (
-                          <SuggestionCard
-                            key={sugg.id}
-                            suggestion={sugg}
-                            isCopied={copiedId === sugg.id}
-                            alreadyExists={alreadyExistsId === sugg.id}
-                            isDerivedMode={Boolean(onCreateDerived)}
-                            onCopy={handleCopySuggestion}
-                            onAppend={handleAppend}
-                            onDismiss={handleDismiss}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : report.suggestions.length === 0 ? (
-                    <div className="border-t border-white/10 px-5 pb-4 pt-4 text-center">
-                      <p className="text-[12px] text-green-400">Prompt 结构良好，暂无增强建议。</p>
-                    </div>
-                  ) : (
-                    <div className="border-t border-white/10 px-5 pb-4 pt-4 text-center">
-                      <p className="text-[11px] text-white/30">所有建议已被忽略。点击「重新分析」重置。</p>
-                    </div>
-                  )}
-                </>
-              ) : selectedNode && !promptPreview ? (
-                <div className="px-5 py-8 text-center">
-                  <p className="text-[12px] text-white/45">该节点暂无 Prompt 内容，无法分析。</p>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-white/10 px-5 py-3">
-          <p className="text-[10px] text-white/25">只读分析 · 不自动生成 · 不消耗 credits</p>
-          {report && selectedNode ? (
-            <button
-              type="button"
-              onClick={handleCopyReport}
-              className="rounded-lg border border-white/10 px-3 py-1 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/5 hover:text-white/80"
-            >
-              {copiedReport ? '已复制' : '复制检查报告'}
-            </button>
-          ) : null}
-        </div>
-      </div>
+                {/* Copy report */}
+                {selectedNode ? (
+                  <div className="mt-4 border-t border-white/[0.07] pt-3">
+                    <button
+                      type="button"
+                      onClick={handleCopyReport}
+                      className="text-[10px] text-white/30 transition hover:text-white/55"
+                    >
+                      {copiedReport ? '✓ 已复制检查报告' : '复制检查报告'}
+                    </button>
+                    <p className="mt-1 text-[10px] text-white/20">只读分析 · 不自动生成 · 不消耗 credits</p>
+                  </div>
+                ) : null}
+              </>
+            ) : selectedNode && !promptPreview ? (
+              <div className="py-8 text-center">
+                <p className="text-[12px] text-white/45">该节点暂无 Prompt 内容，无法分析。</p>
+              </div>
+            ) : null}
+          </>
+        )}
+      </DirectorToolPanelFrame>
     </div>
   )
 }
@@ -366,9 +374,11 @@ interface SuggestionCardProps {
   suggestion: PromptBoostSuggestion
   isCopied: boolean
   alreadyExists: boolean
-  isDerivedMode?: boolean
+  isSelected: boolean
+  hasDerivedMode: boolean
   onCopy: (sugg: PromptBoostSuggestion) => void
-  onAppend: (sugg: PromptBoostSuggestion) => void
+  onDirectAppend: (sugg: PromptBoostSuggestion) => void
+  onSelect: (id: string) => void
   onDismiss: (id: string) => void
 }
 
@@ -376,14 +386,20 @@ function SuggestionCard({
   suggestion: sugg,
   isCopied,
   alreadyExists,
-  isDerivedMode = false,
+  isSelected,
+  hasDerivedMode,
   onCopy,
-  onAppend,
+  onDirectAppend,
+  onSelect,
   onDismiss,
 }: SuggestionCardProps) {
   const sev = SEVERITY_LABEL[sugg.severity]
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+    <div className={`rounded-xl border p-3 transition ${
+      isSelected
+        ? 'border-violet-500/40 bg-violet-500/[0.06]'
+        : 'border-white/10 bg-white/5'
+    }`}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-white/85">{sugg.title}</span>
@@ -409,19 +425,33 @@ function SuggestionCard({
         >
           {isCopied ? '已复制' : '复制片段'}
         </button>
-        <button
-          type="button"
-          onClick={() => onAppend(sugg)}
-          className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
-            alreadyExists
-              ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-              : isDerivedMode
-                ? 'border-violet-500/30 bg-violet-500/[0.08] text-violet-300 hover:bg-violet-500/[0.15]'
+        {hasDerivedMode ? (
+          <button
+            type="button"
+            onClick={() => onSelect(sugg.id)}
+            className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
+              alreadyExists
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : isSelected
+                  ? 'border-violet-500/50 bg-violet-500/[0.15] text-violet-200'
+                  : 'border-violet-500/30 bg-violet-500/[0.08] text-violet-300 hover:bg-violet-500/[0.15]'
+            }`}
+          >
+            {alreadyExists ? '已存在类似片段' : isSelected ? '✓ 已选择' : '选择此建议'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onDirectAppend(sugg)}
+            className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
+              alreadyExists
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
                 : 'border-white/10 text-white/55 hover:border-white/20 hover:bg-white/5 hover:text-white/80'
-          }`}
-        >
-          {alreadyExists ? '已存在类似片段' : isDerivedMode ? '创建增强版本' : '追加到 Prompt'}
-        </button>
+            }`}
+          >
+            {alreadyExists ? '已存在类似片段' : '追加到 Prompt'}
+          </button>
+        )}
       </div>
     </div>
   )

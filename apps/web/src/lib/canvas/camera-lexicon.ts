@@ -97,3 +97,10 @@ export function buildLexiconFragment(selectedIds: string[]): string {
     .filter((t): t is LexiconTerm => t !== undefined)
   return terms.map((t) => t.promptHint).join(', ')
 }
+
+export function buildCameraLexiconSummaryText(selectedLabels: string[]): string {
+  if (selectedLabels.length === 0) return ''
+  const top = selectedLabels.slice(0, 3)
+  const extra = selectedLabels.length - top.length
+  return top.join(' · ') + (extra > 0 ? ` +${extra}` : '')
+}
