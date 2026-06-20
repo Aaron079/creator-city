@@ -37,6 +37,7 @@ import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceS
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
 import { CanvasRightInspector, type InspectorEdgeRef } from '@/components/canvas/inspector/CanvasRightInspector'
 import { CanvasBottomDock } from '@/components/canvas/dock/CanvasBottomDock'
+import type { CanvasModalId } from '@/components/canvas/modal/canvasModalTypes'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
@@ -2436,6 +2437,7 @@ export function VisualCanvasWorkspace({
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
+  const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
@@ -2729,6 +2731,74 @@ export function VisualCanvasWorkspace({
       disposed = true
     }
   }, [])
+
+  // ── Canvas Modal Manager ─────────────────────────────────────────────────
+  // Single-modal coordinator: at most one panel open at a time.
+  // All useState setters from useState are stable — empty deps is safe here.
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const closeCanvasPanel = useCallback(() => {
+    setIsLexiconOpen(false)
+    setIsVariantPlannerOpen(false)
+    setIsCharacterLockOpen(false)
+    setIsABCompareOpen(false)
+    setIsKeyframeExtractorOpen(false)
+    setIsShotListBuilderOpen(false)
+    setIsContinuityCheckerOpen(false)
+    setIsCharacterBibleOpen(false)
+    setIsSceneBibleOpen(false)
+    setIsCameraControlOpen(false)
+    setIsSceneLightingOpen(false)
+    setIsPromptBoosterOpen(false)
+    setIsBatchRewriterOpen(false)
+    setIsLookPackageOpen(false)
+    setIsColorGradePaletteOpen(false)
+    setEditingNodeId(null)
+    setActiveCanvasModal(null)
+  }, [])
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {
+    // Close everything before opening the new panel (mutual exclusion)
+    setIsLexiconOpen(false)
+    setIsVariantPlannerOpen(false)
+    setIsCharacterLockOpen(false)
+    setIsABCompareOpen(false)
+    setIsKeyframeExtractorOpen(false)
+    setIsShotListBuilderOpen(false)
+    setIsContinuityCheckerOpen(false)
+    setIsCharacterBibleOpen(false)
+    setIsSceneBibleOpen(false)
+    setIsCameraControlOpen(false)
+    setIsSceneLightingOpen(false)
+    setIsPromptBoosterOpen(false)
+    setIsBatchRewriterOpen(false)
+    setIsLookPackageOpen(false)
+    setIsColorGradePaletteOpen(false)
+    setEditingNodeId(null)
+    setActiveCanvasModal(id)
+    switch (id) {
+      case 'camera-lexicon':     setIsLexiconOpen(true); break
+      case 'variant-planner':    setIsVariantPlannerOpen(true); break
+      case 'character-lock':     setIsCharacterLockOpen(true); break
+      case 'ab-compare':         setIsABCompareOpen(true); break
+      case 'keyframe-extractor': setIsKeyframeExtractorOpen(true); break
+      case 'shot-list-builder':  setIsShotListBuilderOpen(true); break
+      case 'continuity-checker': setIsContinuityCheckerOpen(true); break
+      case 'character-bible':    setIsCharacterBibleOpen(true); break
+      case 'scene-bible':        setIsSceneBibleOpen(true); break
+      case 'camera-control':     setIsCameraControlOpen(true); break
+      case 'scene-lighting':     setIsSceneLightingOpen(true); break
+      case 'prompt-booster':     setIsPromptBoosterOpen(true); break
+      case 'batch-rewriter':     setIsBatchRewriterOpen(true); break
+      case 'look-package':       setIsLookPackageOpen(true); break
+      case 'color-grade':        setIsColorGradePaletteOpen(true); break
+      case 'generation':
+        if (payload?.nodeId) setEditingNodeId(payload.nodeId)
+        break
+    }
+  }, [])
+  // ── End Canvas Modal Manager ─────────────────────────────────────────────
 
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
     const resolved = typeof next === 'function' ? next(latestNodesRef.current) : next
@@ -3940,6 +4010,12 @@ export function VisualCanvasWorkspace({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // If a managed modal/panel is open, close only that one and stop.
+        if (activeCanvasModal) {
+          event.preventDefault()
+          closeCanvasPanel()
+          return
+        }
         if (activePreviewNodeId || mediaReviewWindows.length > 0 || activeInspectorNodeId || activeCreativeAssetsNodeId) {
           event.preventDefault()
         }
@@ -3957,13 +4033,13 @@ export function VisualCanvasWorkspace({
         }
         setStoryboardPreviewOpen(false)
         setStoryboardDirectorOpen(false)
+        closeCanvasPanel()
         setContextMenu(null)
         setNodeAddMenu(null)
         setNodeCreateMenu(null)
         setConnectionDraft(null)
         connectionDragRef.current = null
         setIsAddMenuOpen(false)
-        setEditingNodeId(null)
         return
       }
 
@@ -5571,7 +5647,7 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(null)
   }, [createNode, imageProviderStatusMap, syncPromptPreset, videoProviderStatusMap])
 
-  const closeCanvasPanel = useCallback(() => {
+  const closeSidePanel = useCallback(() => {
     setActivePanel(null)
   }, [])
 
@@ -7069,10 +7145,10 @@ export function VisualCanvasWorkspace({
     focusPromptForNode(targetNode)
     // Store source→target so panels can display source info and route writes to target
     setWorkflowContext(sourceNode ? { sourceNodeId: sourceNode.id, targetNodeId: targetNode.id } : null)
-    setIsLexiconOpen(tool === 'camera-lexicon')
-    setIsVariantPlannerOpen(tool === 'variant-planner')
-    setIsCharacterLockOpen(tool === 'character-lock')
-  }, [focusPromptForNode])
+    if (tool === 'camera-lexicon') openCanvasPanel('camera-lexicon')
+    else if (tool === 'variant-planner') openCanvasPanel('variant-planner')
+    else if (tool === 'character-lock') openCanvasPanel('character-lock')
+  }, [focusPromptForNode, openCanvasPanel])
 
   const handleWorkflowContinue = useCallback((nodeId: string, event: React.MouseEvent) => {
     const x = event.clientX
@@ -7093,12 +7169,12 @@ export function VisualCanvasWorkspace({
       position: nodeAddMenu ? { x: nodeAddMenu.worldX, y: nodeAddMenu.worldY } : undefined,
     })
     setWorkflowContext({ sourceNodeId, targetNodeId: newNode.id })
-    setIsLexiconOpen(tool === 'camera-lexicon')
-    setIsVariantPlannerOpen(tool === 'variant-planner')
-    setIsCharacterLockOpen(tool === 'character-lock')
+    if (tool === 'camera-lexicon') openCanvasPanel('camera-lexicon')
+    else if (tool === 'variant-planner') openCanvasPanel('variant-planner')
+    else if (tool === 'character-lock') openCanvasPanel('character-lock')
     setNodeAddMenu(null)
     setConnectionDraft(null)
-  }, [createNode, nodeAddMenu])
+  }, [createNode, nodeAddMenu, openCanvasPanel])
   // ────────────────────────────────────────────────────────────────────────────
 
   const handleProviderChange = useCallback((value: string) => {
@@ -8049,18 +8125,16 @@ export function VisualCanvasWorkspace({
         hasActiveGenerations={hasActiveGenerations}
         onStopAllGenerations={handleStopAllGenerations}
         onOpenDirectorTool={(tool) => {
-          setIsShotListBuilderOpen(tool === 'shot-list-builder')
-          setIsContinuityCheckerOpen(tool === 'continuity-checker')
-          if (tool === 'character-bible') setIsCharacterBibleOpen(true)
-          if (tool === 'scene-bible') setIsSceneBibleOpen(true)
+          if (tool === 'shot-list-builder') openCanvasPanel('shot-list-builder')
+          else if (tool === 'continuity-checker') openCanvasPanel('continuity-checker')
+          else if (tool === 'character-bible') openCanvasPanel('character-bible')
+          else if (tool === 'scene-bible') openCanvasPanel('scene-bible')
         }}
         onOpenPromptTool={(tool) => {
-          setIsBatchRewriterOpen(tool === 'batch-rewriter')
-          if (tool === 'look-package') {
+          if (tool === 'batch-rewriter') openCanvasPanel('batch-rewriter')
+          else if (tool === 'look-package') {
             setLookPanelDefaultNodeId(undefined)
-            setIsLookPackageOpen(true)
-          } else {
-            setIsLookPackageOpen(false)
+            openCanvasPanel('look-package')
           }
         }}
       />
@@ -8173,7 +8247,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
+            onPointerDown={() => { closeCanvasPanel(); setWorkflowContext(null) }}
           />
           {(() => {
             const lexTarget = editingNode ?? activeNode
@@ -8221,13 +8295,12 @@ export function VisualCanvasWorkspace({
                         edgeToolIcon: '🎬',
                       },
                     )
-                    setIsLexiconOpen(false)
                     setWorkflowContext(null)
-                    setEditingNodeId(node.id)
+                    openCanvasPanel('generation', { nodeId: node.id })
                     flushLocalSnapshot()
                     scheduleCanvasSave(0)
                   }}
-                  onClose={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
+                  onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
                   workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
                 />
               )
@@ -8246,7 +8319,7 @@ export function VisualCanvasWorkspace({
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setIsLexiconOpen(false); setWorkflowContext(null) }}
+                  onClick={() => { closeCanvasPanel(); setWorkflowContext(null) }}
                   className="mt-4 text-[11px] text-white/30 hover:text-white/55"
                 >
                   关闭
@@ -8263,7 +8336,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => { setIsVariantPlannerOpen(false); setWorkflowContext(null) }}
+            onPointerDown={() => { closeCanvasPanel(); setWorkflowContext(null) }}
           />
           <AssetVariantPlannerPanel
             node={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode) : (editingNode ?? activeNode)}
@@ -8271,7 +8344,7 @@ export function VisualCanvasWorkspace({
             canInsert={editingNode !== null || workflowContext !== null}
             onInsert={handleVariantInsert}
             onCreateNode={handleVariantCreateNode}
-            onClose={() => { setIsVariantPlannerOpen(false); setWorkflowContext(null) }}
+            onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
             workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
           />
         </>
@@ -8283,7 +8356,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => { setIsCharacterLockOpen(false); setWorkflowContext(null) }}
+            onPointerDown={() => { closeCanvasPanel(); setWorkflowContext(null) }}
           />
           <CharacterLockPanel
             node={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode) : (editingNode ?? activeNode)}
@@ -8291,7 +8364,7 @@ export function VisualCanvasWorkspace({
             canInsert={editingNode !== null || workflowContext !== null}
             onInsert={handleCharacterLockInsert}
             onSaveBible={persistCharacterBibleSettings}
-            onClose={() => { setIsCharacterLockOpen(false); setWorkflowContext(null) }}
+            onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
             workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
           />
         </>
@@ -8303,7 +8376,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsABCompareOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <ABComparePanel
             nodes={nodes.filter(isComparableNode)}
@@ -8318,7 +8391,7 @@ export function VisualCanvasWorkspace({
                 })
               }
             }}
-            onClose={() => setIsABCompareOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8329,7 +8402,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsKeyframeExtractorOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <KeyframeExtractorPanel
             nodes={nodes}
@@ -8347,7 +8420,7 @@ export function VisualCanvasWorkspace({
                 })
               }
             }}
-            onClose={() => setIsKeyframeExtractorOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8357,7 +8430,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsShotListBuilderOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <ShotListBuilderPanel
             nodes={nodes}
@@ -8390,7 +8463,7 @@ export function VisualCanvasWorkspace({
               return created.id
             }}
             onAutoGenerateNodes={(nodeIds) => setPendingAutoGenerateIds(nodeIds)}
-            onClose={() => setIsShotListBuilderOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8400,7 +8473,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsContinuityCheckerOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <ContinuityCheckerPanel
             nodes={nodes}
@@ -8415,7 +8488,7 @@ export function VisualCanvasWorkspace({
                 })
               }
             }}
-            onClose={() => setIsContinuityCheckerOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8424,7 +8497,7 @@ export function VisualCanvasWorkspace({
         <CharacterBiblePanel
           open={isCharacterBibleOpen}
           bible={characterBible}
-          onClose={() => setIsCharacterBibleOpen(false)}
+          onClose={() => closeCanvasPanel()}
           onSave={persistCharacterBibleSettings}
         />
       ) : null}
@@ -8433,7 +8506,7 @@ export function VisualCanvasWorkspace({
         <SceneBiblePanel
           open={isSceneBibleOpen}
           bible={sceneBible}
-          onClose={() => setIsSceneBibleOpen(false)}
+          onClose={() => closeCanvasPanel()}
           onSave={persistSceneBibleSettings}
         />
       ) : null}
@@ -8443,7 +8516,7 @@ export function VisualCanvasWorkspace({
           open={isCameraControlOpen}
           value={cameraSettings}
           onChange={updateCameraSettings}
-          onClose={() => setIsCameraControlOpen(false)}
+          onClose={() => closeCanvasPanel()}
           onCreateDerived={(settings) => {
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
@@ -8481,8 +8554,7 @@ export function VisualCanvasWorkspace({
               },
             )
             if (projectId) saveCameraSettingsForNode(projectId, node.id, settings)
-            setIsCameraControlOpen(false)
-            setEditingNodeId(node.id)
+            openCanvasPanel('generation', { nodeId: node.id })
             flushLocalSnapshot()
             scheduleCanvasSave(0)
           }}
@@ -8494,7 +8566,7 @@ export function VisualCanvasWorkspace({
           open={isSceneLightingOpen}
           value={sceneLightingSettings}
           onChange={updateSceneLightingSettings}
-          onClose={() => setIsSceneLightingOpen(false)}
+          onClose={() => closeCanvasPanel()}
           onCreateDerived={(settings) => {
             const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
@@ -8532,8 +8604,7 @@ export function VisualCanvasWorkspace({
               },
             )
             if (projectId) saveSceneLightingForNode(projectId, node.id, settings)
-            setIsSceneLightingOpen(false)
-            setEditingNodeId(node.id)
+            openCanvasPanel('generation', { nodeId: node.id })
             flushLocalSnapshot()
             scheduleCanvasSave(0)
           }}
@@ -8545,7 +8616,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsPromptBoosterOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <PromptBoosterPanel
             nodes={nodes}
@@ -8597,12 +8668,11 @@ export function VisualCanvasWorkspace({
                   edgeToolIcon: '✨',
                 },
               )
-              setIsPromptBoosterOpen(false)
-              setEditingNodeId(node.id)
+              openCanvasPanel('generation', { nodeId: node.id })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onClose={() => setIsPromptBoosterOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8612,7 +8682,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsBatchRewriterOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <BatchPromptRewriterPanel
             nodes={nodes}
@@ -8623,7 +8693,7 @@ export function VisualCanvasWorkspace({
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onClose={() => setIsBatchRewriterOpen(false)}
+            onClose={() => closeCanvasPanel()}
           />
         </>
       ) : null}
@@ -8633,7 +8703,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsLookPackageOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <LookPackagePanel
             nodes={nodes.map((n) => ({ ...n, resultImageUrl: n.resultImageUrl ?? null }))}
@@ -8677,12 +8747,11 @@ export function VisualCanvasWorkspace({
                 edgeToolId: 'look-package',
                 edgeToolIcon: '🎨',
               })
-              setIsLookPackageOpen(false)
-              setEditingNodeId(node.id)
+              openCanvasPanel('generation', { nodeId: node.id })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onClose={() => setIsLookPackageOpen(false)}
+            onClose={() => closeCanvasPanel()}
             defaultSelectedNodeId={lookPanelDefaultNodeId}
           />
         </>
@@ -8694,7 +8763,7 @@ export function VisualCanvasWorkspace({
           <div
             className="fixed inset-0 z-[1199]"
             aria-hidden="true"
-            onPointerDown={() => setIsColorGradePaletteOpen(false)}
+            onPointerDown={() => closeCanvasPanel()}
           />
           <ColorGradePalettePanel
             nodes={nodes}
@@ -8731,7 +8800,7 @@ export function VisualCanvasWorkspace({
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onClose={() => setIsColorGradePaletteOpen(false)}
+            onClose={() => closeCanvasPanel()}
             defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
           />
         </>
@@ -8753,7 +8822,7 @@ export function VisualCanvasWorkspace({
           >
             <ProjectAssetsPanel
               projectId={projectId}
-              onClose={closeCanvasPanel}
+              onClose={closeSidePanel}
               onAddAssetToCanvas={handleAddProjectAssetToCanvas}
             />
           </motion.section>
@@ -8769,7 +8838,7 @@ export function VisualCanvasWorkspace({
             <CanvasTemplatePanel
               selectedTemplateId={selectedTemplateId}
               onSelectTemplate={handleSelectTemplate}
-              onClose={closeCanvasPanel}
+              onClose={closeSidePanel}
             />
           </motion.div>
         ) : activePanel === 'history' ? (
@@ -8785,7 +8854,7 @@ export function VisualCanvasWorkspace({
               items={canvasHistoryItems}
               selectedId={selectedHistoryId}
               onSelectItem={handleSelectHistoryItem}
-              onClose={closeCanvasPanel}
+              onClose={closeSidePanel}
             />
           </motion.div>
         ) : activePanel === 'image-editor' ? (
@@ -8801,7 +8870,7 @@ export function VisualCanvasWorkspace({
               nodeTitle={activeNode?.kind === 'image' ? activeNode.title : '图片编辑器'}
               appliedAction={appliedImageEdit}
               onApply={handleApplyImageEdit}
-              onClose={closeCanvasPanel}
+              onClose={closeSidePanel}
             />
           </motion.div>
         ) : activePanel === 'skills' ? (
@@ -8824,7 +8893,7 @@ export function VisualCanvasWorkspace({
                 persistStyleBibleSettings(styleBible, enabledSkillIds)
                 showCanvasFeedback('风格圣经与 Skills 已应用。')
               }}
-              onClose={closeCanvasPanel}
+              onClose={closeSidePanel}
             />
           </motion.div>
         ) : null}
@@ -9146,19 +9215,19 @@ export function VisualCanvasWorkspace({
             reframeMode={reframeMode}
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
-            onOpenColorGrade={() => setIsColorGradePaletteOpen(true)}
-            onOpenLookPackage={() => { setLookPanelDefaultNodeId(activeNode.id); setIsLookPackageOpen(true) }}
-            onOpenVariantPlanner={() => setIsVariantPlannerOpen(true)}
-            onOpenABCompare={() => setIsABCompareOpen(true)}
-            onOpenKeyframeExtractor={() => setIsKeyframeExtractorOpen(true)}
-            onOpenCameraControl={() => { directorTargetNodeIdRef.current = activeNode.id; setIsCameraControlOpen(true) }}
-            onOpenSceneLighting={() => { directorTargetNodeIdRef.current = activeNode.id; setIsSceneLightingOpen(true) }}
+            onOpenColorGrade={() => openCanvasPanel('color-grade')}
+            onOpenLookPackage={() => { setLookPanelDefaultNodeId(activeNode.id); openCanvasPanel('look-package') }}
+            onOpenVariantPlanner={() => openCanvasPanel('variant-planner')}
+            onOpenABCompare={() => openCanvasPanel('ab-compare')}
+            onOpenKeyframeExtractor={() => openCanvasPanel('keyframe-extractor')}
+            onOpenCameraControl={() => { directorTargetNodeIdRef.current = activeNode.id; openCanvasPanel('camera-control') }}
+            onOpenSceneLighting={() => { directorTargetNodeIdRef.current = activeNode.id; openCanvasPanel('scene-lighting') }}
             onOpenCameraLexicon={() => {
               setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
-              setIsLexiconOpen(true)
+              openCanvasPanel('camera-lexicon')
             }}
             onOpenPromptBooster={() => {
-              setIsPromptBoosterOpen(true)
+              openCanvasPanel('prompt-booster')
             }}
           />
         </div>
@@ -9456,7 +9525,7 @@ export function VisualCanvasWorkspace({
             inputRef={(element) => {
               promptInputRef.current = element
             }}
-            onClose={() => setEditingNodeId(null)}
+            onClose={() => closeCanvasPanel()}
             panelPortalTarget={panelPortalTarget}
           />
           {SHOW_GENERATION_CONTEXT_CHIPS && (editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
@@ -9485,7 +9554,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; setIsCameraControlOpen(true) }}
+                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; openCanvasPanel('camera-control') }}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasCameraContext(cameraSettings) ? 'text-violet-300/70 bg-violet-500/[0.07] border-violet-500/20 hover:bg-violet-500/[0.14] hover:text-violet-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   🎥 {hasCameraContext(cameraSettings) ? `摄影机：${getCameraModelLabel(cameraSettings.cameraBody)}` : '摄影机控制'}
@@ -9495,7 +9564,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; setIsSceneLightingOpen(true) }}
+                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; openCanvasPanel('scene-lighting') }}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasSceneLightingContext(sceneLightingSettings) ? 'text-amber-300/70 bg-amber-500/[0.07] border-amber-500/20 hover:bg-amber-500/[0.14] hover:text-amber-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   💡 {hasSceneLightingContext(sceneLightingSettings) ? `场景光线 ×${activeSceneLightingCount(sceneLightingSettings)}` : '场景光线'}
