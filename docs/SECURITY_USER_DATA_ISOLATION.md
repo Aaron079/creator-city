@@ -64,7 +64,7 @@ This covers the case where User A's session expired (or the browser was closed) 
 
 ### Canvas entry points — must NOT read `last-project-id`
 
-All canvas entry points navigate to `/create` (or `/create-v2`) **without a projectId**. The canvas calls `/api/projects/ensure` which always returns the current user's own project.
+All canvas entry points navigate to `/create` **without a projectId**. The canvas calls `/api/projects/ensure` which always returns the current user's own project.
 
 The following entry points were previously reading `last-project-id` from localStorage and are now fixed:
 
@@ -72,7 +72,6 @@ The following entry points were previously reading `last-project-id` from localS
 |-------------|------|-------------|
 | Home CTA button | `HomeLanding.tsx` | Always pushes `/create` |
 | Nav "AI 画布" | `TopNavigation.tsx` `handleCreateClick` | Always pushes `/create` |
-| Nav "Canvas V2" | `TopNavigation.tsx` `handleCanvasV2Click` | Always pushes `/create-v2` |
 | Canvas init no-projectId branch | `VisualCanvasWorkspace.tsx` | Removed `last-project-id` fallback |
 
 **Rule**: Never add `last-project-id` reads to navigation entry points. The `last-project-id` key is only written (by canvas on successful load) and cleared (on logout and userId change). It is intentionally never read at entry — `/api/projects/ensure` is the safe path.

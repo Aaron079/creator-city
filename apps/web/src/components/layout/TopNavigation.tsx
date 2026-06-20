@@ -188,17 +188,11 @@ export function TopNavigation() {
     router.push('/')
   }
 
-  // Canvas entry points navigate directly — do not read last-project-id.
-  // That key may belong to a previously logged-in user; /create and /create-v2
-  // call /api/projects/ensure which always returns the current user's own project.
+  // Canvas entry point navigates directly — do not read last-project-id.
+  // /api/projects/ensure always returns the current user's own project.
   const handleCreateClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     router.push('/create')
-  }, [router])
-
-  const handleCanvasV2Click = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    router.push('/create-v2')
   }, [router])
 
   return (
@@ -241,12 +235,11 @@ export function TopNavigation() {
                     >
                       {group.items.map((item) => {
                         const isCreate = item.href === '/create'
-                        const isV2 = item.href === '/create-v2'
                         return (
                           <a
                             key={item.href}
                             href={item.href}
-                            onClick={isCreate ? handleCreateClick : isV2 ? handleCanvasV2Click : undefined}
+                            onClick={isCreate ? handleCreateClick : undefined}
                             className="flex items-center gap-2 px-3.5 py-[7px] text-[12px] text-white/55 transition hover:bg-white/[0.08] hover:text-white/90"
                           >
                             {item.label}

@@ -264,7 +264,7 @@ The following pages are deployed and verified working. They must not be broken b
 | 社区 | `/community` | Stable |
 | 创作者市场 | `/marketplace` | Stable (added 2026-05-25) |
 | 创作画布 | `/create` | Stable — generation chain active |
-| Canvas V2 | `/create-v2` | Stable — generation chain active |
+| Legacy redirect | `/create-v2` | Redirects to /create — removed 2026-06-20 |
 | 账号 | `/account` | Stable |
 | 账号计费 | `/account/credits` | Stable |
 

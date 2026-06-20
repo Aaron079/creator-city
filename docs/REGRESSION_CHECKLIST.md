@@ -99,7 +99,7 @@ Open each page and confirm no 404, 500, or visible breakage:
 | Page | URL | Check |
 |------|-----|-------|
 | 创作画布 | `/create` | Opens, nodes visible |
-| Canvas V2 | `/create-v2` | Opens, nodes visible |
+| Legacy redirect | `/create-v2` | Immediately redirects to `/create` (no canvas renders) |
 | 工作台 | `/dashboard` | Opens, no error |
 | 工作空间 | `/projects` | Opens, no error |
 | 资产库 | `/assets` | Opens, no error |
@@ -115,7 +115,7 @@ Open each page and confirm no 404, 500, or visible breakage:
 
 ## 6. Browser: Canvas Stability (run after any change near canvas)
 
-Open `/create` or `/create-v2` with an existing project that has image and video nodes.
+Open `/create` with an existing project that has image and video nodes.
 
 ### 6a. Display checks
 - [ ] Existing image node shows image (not spinner, not error)
