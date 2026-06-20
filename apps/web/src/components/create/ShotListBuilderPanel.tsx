@@ -144,6 +144,8 @@ export function ShotListBuilderPanel({
   const [reparseError, setReparseError] = useState<string | null>(null)
   const [copyDone, setCopyDone] = useState(false)
   const [createdCount, setCreatedCount] = useState<number | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+  const [isConfirmingGenerate, setIsConfirmingGenerate] = useState(false)
 
   // ── Actions ───────────────────────────────────────────────
   const handleReparse = () => {
@@ -173,6 +175,29 @@ export function ShotListBuilderPanel({
     })
   }
 
+  // Safe create — no Provider call, no credits consumed
+  const handleCreate = () => {
+    const toCreate = shots.filter((s) => s.selected)
+    if (toCreate.length === 0 || isCreating) return
+    setIsCreating(true)
+    toCreate.forEach((shot, index) => {
+      const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
+      const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
+      const title = `镜头 · ${sizeLabel} · ${kindLabel}`
+      const prompt = `${shot.description}\n\n[${shot.cinematicNote}]`
+      onCreateNode(shot.kind as VisualCanvasNodeKind, {
+        title,
+        prompt,
+        parentNodeId: selectedNodeId || undefined,
+        index,
+        total: toCreate.length,
+      })
+    })
+    setCreatedCount(toCreate.length)
+    setIsCreating(false)
+  }
+
+  // Explicit generate — creates nodes AND triggers Provider. Requires user confirmation.
   const handleCreateAndGenerate = () => {
     const toCreate = shots.filter((s) => s.selected)
     if (toCreate.length === 0) return
@@ -193,6 +218,16 @@ export function ShotListBuilderPanel({
     })
     setCreatedCount(toCreate.length)
     if (createdIds.length > 0) onAutoGenerateNodes?.(createdIds)
+  }
+
+  const handleRequestGenerate = () => {
+    if (selectedCount === 0) return
+    setIsConfirmingGenerate(true)
+  }
+
+  const handleConfirmGenerate = () => {
+    setIsConfirmingGenerate(false)
+    handleCreateAndGenerate()
   }
 
   const selectedCount = shots.filter((s) => s.selected).length
@@ -221,9 +256,14 @@ export function ShotListBuilderPanel({
         accentColor="violet"
         count={shots.length}
         summary={shotSummary}
-        primaryLabel={selectedCount > 0 ? `生成全部镜头 (${selectedCount})` : '请选择镜头'}
-        primaryDisabled={selectedCount === 0}
-        onPrimary={handleCreateAndGenerate}
+        primaryLabel={selectedCount > 0 ? `创建分镜节点 (${selectedCount})` : '请选择镜头'}
+        primaryDisabled={selectedCount === 0 || isCreating}
+        onPrimary={handleCreate}
+        secondaryLabel={onAutoGenerateNodes
+          ? (selectedCount > 0 ? `生成所选镜头 (${selectedCount})` : '生成所选镜头')
+          : undefined}
+        secondaryDisabled={selectedCount === 0 || isConfirmingGenerate}
+        onSecondary={onAutoGenerateNodes ? handleRequestGenerate : undefined}
         onClear={shots.length > 0 ? handleCopy : undefined}
         clearLabel={copyDone ? '已复制' : '复制分镜清单'}
         onClose={onClose}
@@ -527,6 +567,30 @@ export function ShotListBuilderPanel({
               : '请先在上方输入或粘贴文本，再点击「按要求重新拆分」。'}
           </p>
         )}
+        {isConfirmingGenerate ? (
+          <div className="mt-4 rounded-lg border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3">
+            <p className="text-[12px] font-semibold text-violet-200/85">确认生成 {selectedCount} 个镜头</p>
+            <p className="mt-1 text-[11px] text-violet-200/50">
+              将调用当前 Provider，可能消耗 API 配额或平台积分。
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmGenerate}
+                className="rounded-md border border-violet-500/35 bg-violet-500/20 px-3 py-1.5 text-[11px] font-semibold text-violet-200/90 transition hover:bg-violet-500/30"
+              >
+                确认生成
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsConfirmingGenerate(false)}
+                className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/55 transition hover:bg-white/[0.08]"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
         {createdCount !== null ? (
           <p className="mt-3 text-center text-[11px] text-emerald-400/80">
             已创建 {createdCount} 个草案节点

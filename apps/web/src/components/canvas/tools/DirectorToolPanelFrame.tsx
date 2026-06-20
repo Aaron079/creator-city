@@ -23,6 +23,9 @@ type DirectorToolPanelFrameProps = {
   primaryDisabled?: boolean
   busy?: boolean
   onPrimary(): void
+  secondaryLabel?: string
+  secondaryDisabled?: boolean
+  onSecondary?(): void
   onClear?(): void
   clearLabel?: string
   onClose(): void
@@ -36,18 +39,21 @@ const ACCENT = {
     badge: 'border-violet-500/25 bg-violet-500/[0.08] text-violet-300/70',
     titleEn: 'text-violet-300/40',
     primary: 'border-violet-500/30 bg-violet-500/[0.1] text-violet-300 hover:bg-violet-500/[0.18] disabled:opacity-40',
+    secondary: 'border-violet-500/20 bg-violet-500/[0.06] text-violet-200/65 hover:bg-violet-500/[0.12] hover:text-violet-200/85 disabled:opacity-40',
     summary: 'border-violet-500/[0.12] bg-violet-500/[0.04] text-violet-200/50',
   },
   amber: {
     badge: 'border-amber-500/25 bg-amber-500/[0.08] text-amber-300/70',
     titleEn: 'text-amber-300/40',
     primary: 'border-amber-500/30 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.15] disabled:opacity-40',
+    secondary: 'border-amber-500/20 bg-amber-500/[0.05] text-amber-200/65 hover:bg-amber-500/[0.10] hover:text-amber-200/85 disabled:opacity-40',
     summary: 'border-amber-500/[0.12] bg-amber-500/[0.04] text-amber-200/50',
   },
   indigo: {
     badge: 'border-indigo-500/25 bg-indigo-500/[0.08] text-indigo-300/70',
     titleEn: 'text-indigo-300/40',
     primary: 'border-indigo-500/30 bg-indigo-500/[0.1] text-indigo-300 hover:bg-indigo-500/[0.18] disabled:opacity-40',
+    secondary: 'border-indigo-500/20 bg-indigo-500/[0.05] text-indigo-200/65 hover:bg-indigo-500/[0.10] hover:text-indigo-200/85 disabled:opacity-40',
     summary: 'border-indigo-500/[0.12] bg-indigo-500/[0.04] text-indigo-200/50',
   },
 } satisfies Record<AccentColor, Record<string, string>>
@@ -64,6 +70,9 @@ export function DirectorToolPanelFrame({
   primaryDisabled = false,
   busy = false,
   onPrimary,
+  secondaryLabel,
+  secondaryDisabled = false,
+  onSecondary,
   onClear,
   clearLabel,
   onClose,
@@ -182,6 +191,16 @@ export function DirectorToolPanelFrame({
           >
             {busy ? '创建中…' : primaryLabel}
           </button>
+          {onSecondary && secondaryLabel ? (
+            <button
+              type="button"
+              onClick={onSecondary}
+              disabled={secondaryDisabled}
+              className={`rounded-md border px-4 py-1.5 text-[11px] font-semibold transition disabled:cursor-not-allowed ${accent.secondary}`}
+            >
+              {secondaryLabel}
+            </button>
+          ) : null}
         </div>
       </footer>
     </aside>
