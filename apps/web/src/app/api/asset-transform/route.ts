@@ -1,59 +1,69 @@
 /**
- * /api/asset-transform — Asset Transform Gateway
+ * /api/asset-transform — Asset Transform Gateway (Option B — Railway Gateway)
  *
  * Security model:
  *  - sourceMediaUrl is NEVER accepted from client. Server resolves it from DB.
  *  - projectId + sourceNodeId are verified against the authenticated user before any
- *    data is sent to the executor.
- *  - Executor URL and token are server-side only; never returned to clients.
- *  - Feature gate: ASSET_TRANSFORM_ENABLED must be 'true' AND executor URL must be set.
+ *    data is sent to the Railway Gateway Service.
+ *  - Gateway URL, HMAC secret, and presigned URLs are server-side only; never in responses.
+ *  - Feature gate: ASSET_TRANSFORM_ENABLED must be 'true' AND ASSET_TRANSFORM_GATEWAY_URL set.
+ *  - Output ingestion gate: ASSET_TRANSFORM_OUTPUT_INGESTION_READY must be 'true'.
  *
- * Async job contract:
- *  - POST submits to executor /submit (async only) with a 20s timeout.
- *    Returns immediately with { transformId, status: 'queued' | 'running' | 'done' }.
- *    No synchronous /transform fallback — Vercel Functions must not block on GPU inference.
- *  - GET /api/asset-transform?transformId=... polls executor /status/{id}.
- *  - GET /api/asset-transform (no params) returns capability discovery response.
+ * Async job contract (Option B):
+ *  - POST: generates ctid + presigned GET/PUT URLs → calls Railway Gateway /submit → returns { transformId: ctid, status: 'queued' }
+ *  - GET ?transformId=...: calls Railway Gateway GET /status/{ctid} → returns current status
+ *  - GET (no params): capability discovery via Railway Gateway /capabilities
  *
  * Design constraints (unchanged):
  *  - No GPU models run inside Vercel Functions.
  *  - No generate routes touched. No cn-executor involvement.
  *  - Source assets are NEVER modified.
  *  - No billing / credits changes.
+ *  - RunPod job ID NEVER returned to client — opaque ctid only.
+ *  - Presigned PUT URLs NEVER returned to client.
  */
 
+import crypto from 'crypto'
 import { type NextRequest } from 'next/server'
 import { jsonOk, jsonError } from '@/lib/api/json-response'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
-import type { AssetTransformClientBody, AssetTransformRequest, AssetTransformResult } from '@/lib/asset-transform/assetTransformTypes'
+import type { AssetTransformClientBody, AssetTransformResult } from '@/lib/asset-transform/assetTransformTypes'
 import { getV1TransformKinds } from '@/lib/asset-transform/assetTransformRegistry'
+import {
+  extractOssKeyFromUrl,
+  getTransformPresignedPutUrls,
+  getTransformSourceGetUrl,
+} from '@/lib/asset-transform/assetTransformOss'
+import {
+  getCapabilities,
+  getTransformStatus,
+  submitTransform,
+} from '@/lib/asset-transform/gatewayServiceClient'
 
 // ─── Feature gate ────────────────────────────────────────────────────────────
 
 function isFeatureEnabled(): boolean {
-  return process.env.ASSET_TRANSFORM_ENABLED === 'true' && !!process.env.ASSET_TRANSFORM_EXECUTOR_URL
+  return process.env.ASSET_TRANSFORM_ENABLED === 'true' && !!process.env.ASSET_TRANSFORM_GATEWAY_URL
 }
 
-// Output ingestion gate — blocks all job submission until the server-side ingestion
-// pipeline (executor → CC OSS → Asset record) has been validated and enabled.
-// Set ASSET_TRANSFORM_OUTPUT_INGESTION_READY='true' only when the full pipeline is ready.
+// Output ingestion gate — blocks all job submission until the full pipeline is validated.
 function isIngestionReady(): boolean {
   return process.env.ASSET_TRANSFORM_OUTPUT_INGESTION_READY === 'true'
 }
 
-function getExecutorUrl(): string | null {
-  return process.env.ASSET_TRANSFORM_EXECUTOR_URL ?? null
+// ─── creatorTransformId generation ───────────────────────────────────────────
+// Format: "ct-" + hex(sha256(uid + ":" + nid + ":" + nonce)[0:16])
+// Random nonce ensures different ctids even for same (uid, nid) pair.
+
+function generateCtid(userId: string, nodeId: string): string {
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const raw = `${userId}:${nodeId}:${nonce}`
+  const hash = crypto.createHash('sha256').update(raw).digest('hex')
+  return `ct-${hash.slice(0, 16)}`
 }
 
-function getExecutorToken(): string | null {
-  return process.env.ASSET_TRANSFORM_EXECUTOR_TOKEN
-    ?? process.env.ASSET_TRANSFORM_EXECUTOR_API_KEY
-    ?? null
-}
-
-// ─── Source URL allowlist (must match Creator City OSS domains only) ──────────
-// Prevents SSRF if a corrupted DB record ever contained a non-OSS URL.
+// ─── Source URL allowlist ─────────────────────────────────────────────────────
 
 const ALLOWED_SOURCE_URL_PATTERNS: Array<(host: string) => boolean> = [
   (h) => h.includes('.oss-') || h.includes('.oss.') || (h.endsWith('.aliyuncs.com') && h.includes('oss')),
@@ -67,7 +77,6 @@ function isAllowedSourceUrl(url: string): boolean {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:') return false
     const host = parsed.hostname.toLowerCase()
-    // Reject localhost / RFC-1918 addresses
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false
     if (/^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d/.test(host)) return false
     return ALLOWED_SOURCE_URL_PATTERNS.some((fn) => fn(host))
@@ -84,20 +93,15 @@ function sanitizeParams(
 ): Record<string, unknown> {
   if (kind === 'remove-background') {
     return {
-      mode: raw.mode === 'text' ? 'text' : 'auto',
-      // subjectHint only forwarded in text mode; max 120 chars
-      ...(raw.mode === 'text' && typeof raw.subjectHint === 'string'
-        ? { subjectHint: String(raw.subjectHint).slice(0, 120) }
-        : {}),
+      mode: 'auto' as const,
       featherRadius: typeof raw.featherRadius === 'number'
         ? Math.max(0, Math.min(10, Math.round(raw.featherRadius)))
         : 2,
     }
   }
   if (kind === 'upscale') {
-    const scale = raw.scale === 4 ? 4 : 2
     return {
-      scale,
+      scale: raw.scale === 4 ? 4 : 2,
       mode: raw.mode === 'illustration' ? 'illustration' : 'general',
       denoisingStrength: typeof raw.denoisingStrength === 'number'
         ? Math.max(0, Math.min(0.8, raw.denoisingStrength))
@@ -110,23 +114,17 @@ function sanitizeParams(
 // ─── POST /api/asset-transform ────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<Response> {
-  // Auth
   const user = await getCurrentUser()
   if (!user) return jsonError('UNAUTHORIZED', '需要登录', 401)
 
-  // Feature gate
   if (!isFeatureEnabled()) {
     return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', '资产变换功能未启用', 503)
   }
-  const executorUrl = getExecutorUrl()!
 
-  // Output ingestion gate — must be ready before any job is submitted.
-  // Prevents executor-ephemeral URLs from reaching the client before ingestion is implemented.
   if (!isIngestionReady()) {
     return jsonError('TRANSFORM_OUTPUT_INGESTION_BLOCKED', '输出入库服务未就绪，任务未提交', 503)
   }
 
-  // Parse body — NOTE: sourceMediaUrl is NOT accepted from client
   let body: Partial<AssetTransformClientBody>
   try {
     body = (await req.json()) as Partial<AssetTransformClientBody>
@@ -136,12 +134,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { transformKind, sourceNodeId, projectId, params } = body
 
-  // Required field check
   if (!transformKind || !sourceNodeId || !projectId) {
     return jsonError('TRANSFORM_INPUT_INVALID', '缺少必要字段: transformKind, sourceNodeId, projectId', 400)
   }
 
-  // Validate kind is in V1 registry
+  // Only remove-background is supported in Phase 1A
   const registeredKinds = getV1TransformKinds()
   const kindMeta = registeredKinds.find((m) => m.kind === transformKind)
   if (!kindMeta) {
@@ -149,32 +146,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // ── Ownership verification ──────────────────────────────────────────────────
-  // Verify that projectId belongs to the authenticated user.
-
   const workflow = await db.canvasWorkflow.findFirst({
-    where: {
-      projectId,
-      project: { ownerId: user.id },
-    },
+    where: { projectId, project: { ownerId: user.id } },
     select: { id: true },
   })
-
   if (!workflow) {
     return jsonError('TRANSFORM_PROJECT_FORBIDDEN', '项目不存在或无权访问', 403)
   }
 
   // ── Source node verification ────────────────────────────────────────────────
-  // Resolve the source media URL from our own DB — never from client body.
-
   const sourceNode = await db.canvasNode.findFirst({
-    where: {
-      workflowId: workflow.id,
-      nodeId: sourceNodeId,
-      kind: 'image',
-    },
+    where: { workflowId: workflow.id, nodeId: sourceNodeId, kind: 'image' },
     select: { resultImageUrl: true },
   })
-
   if (!sourceNode) {
     return jsonError('TRANSFORM_SOURCE_NOT_FOUND', '源节点不存在于该项目', 404)
   }
@@ -188,85 +172,89 @@ export async function POST(req: NextRequest): Promise<Response> {
     return jsonError('TRANSFORM_INPUT_INVALID', '源资产 URL 不在允许的存储域名范围内', 400)
   }
 
-  // ── Params sanitization ────────────────────────────────────────────────────
+  // ── Extract OSS key from stored URL ────────────────────────────────────────
+  const sourceObjectKey = extractOssKeyFromUrl(sourceMediaUrl)
+  if (!sourceObjectKey) {
+    // URL is OSS-allowlisted but key extraction failed (e.g., different bucket domain).
+    // Fall back: cannot generate signed GET URL — block submission.
+    return jsonError(
+      'TRANSFORM_INPUT_INVALID',
+      '无法从源资产 URL 提取存储路径，请确认 ALIYUN_OSS_PUBLIC_BASE_URL 配置',
+      400,
+    )
+  }
+
+  // ── Sanitize params ────────────────────────────────────────────────────────
   const sanitizedParams = sanitizeParams(
     transformKind as 'remove-background' | 'upscale',
     (params ?? {}) as Record<string, unknown>,
   )
 
-  // ── Build executor request ─────────────────────────────────────────────────
-  // requestId generated server-side for idempotency; not accepted from client.
-  const requestId = `${user.id.slice(0, 8)}-${sourceNodeId.slice(0, 8)}-${Date.now()}`
+  // ── Generate creatorTransformId ────────────────────────────────────────────
+  const ctid = generateCtid(user.id, sourceNodeId)
 
-  const executorRequest: AssetTransformRequest = {
-    transformKind,
-    projectId,
-    workflowId: body.workflowId,
-    sourceNodeId,
-    sourceMediaUrl,         // server-resolved only
-    params: sanitizedParams,
-    executorId: 'asset-transform-executor',
-    billingMode: 'platform',
-    requestId,
-  }
-
-  // ── Submit to executor ─────────────────────────────────────────────────────
-  // Short submission timeout: 20s. Executor should return a queued job ID.
-  // Long-running work is handled via polling (GET /api/asset-transform?transformId=...).
-
-  const token = getExecutorToken()
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'X-Request-Id': requestId,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 20_000)
+  // ── Generate presigned URLs (server-side only, never returned to client) ────
+  let signedGetUrl: string
+  let subjectPutUrl: string
+  let maskPutUrl: string
+  let subjectObjectKey: string
+  let maskObjectKey: string
 
   try {
-    let executorRes: Response
-    try {
-      // Async-only: POST to executor /submit. No synchronous /transform fallback.
-      // Vercel Functions must not block on GPU inference. Executor must implement async /submit.
-      executorRes = await fetch(`${executorUrl}/submit`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(executorRequest),
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const [getResult, putResult] = await Promise.all([
+      getTransformSourceGetUrl(sourceObjectKey),
+      getTransformPresignedPutUrls(ctid),
+    ])
+    signedGetUrl    = getResult.signedGetUrl
+    subjectPutUrl   = putResult.subjectPutUrl
+    maskPutUrl      = putResult.maskPutUrl
+    subjectObjectKey = putResult.subjectObjectKey
+    maskObjectKey    = putResult.maskObjectKey
+  } catch (ossErr) {
+    console.error('[asset-transform] Failed to generate presigned URLs:', ossErr)
+    return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', 'OSS 签名 URL 生成失败', 503)
+  }
 
-    // Executor does not implement async /submit — hard-fail, never sync-fallback.
-    if (executorRes.status === 404 || executorRes.status === 405 || executorRes.status === 501) {
-      return jsonError('TRANSFORM_EXECUTOR_UNSUPPORTED', '执行器未实现异步 /submit，请升级执行器', 503)
-    }
+  // ── Submit to Railway Gateway Service ──────────────────────────────────────
+  try {
+    const result = await submitTransform({
+      ctid,
+      userId: user.id,
+      projectId,
+      nodeId: sourceNodeId,
+      sourceUrl: signedGetUrl,       // server-generated, never from client
+      outputKey: subjectObjectKey,
+      outputPutUrl: subjectPutUrl,   // never returned to client
+      maskKey: maskObjectKey,
+      maskPutUrl,                    // never returned to client
+      transformKind: 'remove-background',
+      params: {
+        mode: 'auto',
+        featherRadius: typeof sanitizedParams.featherRadius === 'number' ? sanitizedParams.featherRadius : 2,
+      },
+    })
 
-    if (!executorRes.ok) {
-      const errBody = await executorRes.json().catch(() => ({})) as Record<string, unknown>
-      const errCode = typeof errBody.errorCode === 'string' ? errBody.errorCode : 'TRANSFORM_UNKNOWN'
-      return jsonError(errCode, typeof errBody.message === 'string' ? errBody.message : '执行器返回错误', executorRes.status)
+    // transformId = ctid (opaque to client — RunPod job ID is NEVER returned)
+    const clientResult: AssetTransformResult = {
+      transformId: result.transformId,
+      status: result.status,
     }
-
-    const result = await executorRes.json() as AssetTransformResult
-    return jsonOk({ result })
+    return jsonOk({ result: clientResult })
 
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      return jsonError('TRANSFORM_TIMEOUT', '执行器提交超时（20s）', 504)
+    const gatewayErr = err as { gatewayStatus?: number }
+    if (gatewayErr.gatewayStatus === 503) {
+      return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', 'Gateway Service 返回 503', 503)
     }
-    return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', '无法连接到变换执行器', 503)
+    if (err instanceof Error && err.message.includes('AbortError')) {
+      return jsonError('TRANSFORM_TIMEOUT', '执行器提交超时', 504)
+    }
+    console.error('[asset-transform] Gateway submit error:', err)
+    return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', '无法连接到 Gateway Service', 503)
   }
 }
 
 // ─── GET /api/asset-transform ─────────────────────────────────────────────────
-//
-// Two modes:
-//   ?transformId=...  → poll job status from executor
-//   (no params)       → capability discovery (returns enabled state + available kinds)
 
 export async function GET(req: NextRequest): Promise<Response> {
   const user = await getCurrentUser()
@@ -280,103 +268,60 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (!isFeatureEnabled()) {
       return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', '资产变换功能未启用', 503)
     }
-    const executorUrl = getExecutorUrl()!
-    const token = getExecutorToken()
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10_000)
     try {
-      let statusRes: Response
-      try {
-        statusRes = await fetch(
-          `${executorUrl}/status/${encodeURIComponent(transformId)}`,
-          {
-            headers: {
-              Accept: 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            signal: controller.signal,
-          },
-        )
-      } finally {
-        clearTimeout(timeoutId)
-      }
+      const gatewayStatus = await getTransformStatus(transformId)
 
-      if (!statusRes.ok) {
-        return jsonError('TRANSFORM_UNKNOWN', '执行器状态查询失败', statusRes.status)
+      // Map Gateway response to CC AssetTransformResult
+      const result: AssetTransformResult = {
+        transformId: gatewayStatus.transformId,
+        status: mapGatewayStatus(gatewayStatus.status),
+        errorCode: gatewayStatus.errorCode,
+        outputAssetId: gatewayStatus.outputAssetId,
+        stableOutputMediaUrl: gatewayStatus.stableOutputMediaUrl,
+        maskUrl: gatewayStatus.maskUrl,
+        outputOwner: gatewayStatus.outputOwner,
+        ingestionStatus: gatewayStatus.ingestionStatus,
+        metadata: gatewayStatus.metadata,
       }
-      const result = await statusRes.json() as AssetTransformResult
       return jsonOk({ result })
 
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return jsonError('TRANSFORM_TIMEOUT', '状态查询超时', 504)
+      const gatewayErr = err as { gatewayStatus?: number }
+      if (gatewayErr.gatewayStatus === 404) {
+        return jsonError('TRANSFORM_NOT_FOUND', '变换任务不存在', 404)
       }
       return jsonError('TRANSFORM_EXECUTOR_UNAVAILABLE', '执行器不可达', 503)
     }
   }
 
   // ── Capability discovery ───────────────────────────────────────────────────
-  // Returns the runtime capability state. Executor is NOT probed if feature is disabled.
-  // Response is intentionally minimal: no executor URL, no token, no internal details.
-
   if (!isFeatureEnabled()) {
-    return jsonOk({
-      enabled: false,
-      executorReady: false,
-      capabilities: [],
-    })
+    return jsonOk({ enabled: false, executorReady: false, capabilities: [] })
   }
-
-  // Output ingestion gate — capabilities are unavailable until the ingestion pipeline is ready.
-  // Returning executorReady: false ensures the VCW capability cache stays disabled,
-  // keeping all toolbar entries hidden regardless of executor health.
   if (!isIngestionReady()) {
-    return jsonOk({
-      enabled: true,
-      executorReady: false,
-      capabilities: [],
-    })
+    return jsonOk({ enabled: true, executorReady: false, capabilities: [] })
   }
 
-  const executorUrl = getExecutorUrl()!
-  const token = getExecutorToken()
-
-  // Probe executor /capabilities with short timeout (5s)
-  const capController = new AbortController()
-  const capTimeoutId = setTimeout(() => capController.abort(), 5_000)
-
+  // Probe Gateway /capabilities
   try {
-    let capRes: Response
-    try {
-      capRes = await fetch(`${executorUrl}/capabilities`, {
-        headers: {
-          Accept: 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal: capController.signal,
-      })
-    } finally {
-      clearTimeout(capTimeoutId)
-    }
-
-    if (capRes.ok) {
-      const caps = await capRes.json() as {
-        capabilities?: Array<{ kind: string; available: boolean }>
-      }
-      return jsonOk({
-        enabled: true,
-        executorReady: true,
-        capabilities: caps.capabilities ?? [],
-      })
-    }
+    const caps = await getCapabilities()
+    return jsonOk({ enabled: true, executorReady: true, capabilities: caps })
   } catch {
-    // Executor unreachable — return disabled state without logging to console
+    // Gateway unreachable or returned error
   }
 
-  // Executor configured but not responding
-  return jsonOk({
-    enabled: true,
-    executorReady: false,
-    capabilities: [],
-  })
+  return jsonOk({ enabled: true, executorReady: false, capabilities: [] })
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+type GatewayStatus = 'queued' | 'running' | 'uploading' | 'ingesting' | 'done' | 'failed' | 'cancelled' | 'expired' | 'needs_user_selection'
+type CCStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+
+function mapGatewayStatus(s: GatewayStatus): CCStatus {
+  if (s === 'done') return 'done'
+  if (s === 'failed' || s === 'expired' || s === 'needs_user_selection') return 'failed'
+  if (s === 'cancelled') return 'cancelled'
+  if (s === 'queued') return 'queued'
+  return 'running'
 }

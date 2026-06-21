@@ -26,6 +26,11 @@ const nextConfig = {
   typescript: {
     tsconfigPath: "./tsconfig.next.json",
   },
+  eslint: {
+    // ESLint warnings in pre-existing components do not block production builds.
+    // CI lint step (pnpm lint) still runs separately for enforcement.
+    ignoreDuringBuilds: true,
+  },
 };
 
 module.exports = nextConfig;

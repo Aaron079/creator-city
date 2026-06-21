@@ -325,13 +325,37 @@ export async function getAliyunOssObject(key: string): Promise<ChinaStorageReadO
 
 export async function getAliyunOssSignedUploadUrl(input: SignedChinaObjectInput): Promise<ChinaStorageSignedUrlResult> {
   requireAliyunOss()
+  const expiresInSeconds = input.expiresInSeconds ?? 900
   const publicUrl = buildPublicUrl(input.key)
-  return {
-    provider: 'aliyun-oss',
-    bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
-    key: input.key,
-    ...(publicUrl ? { publicUrl, url: publicUrl } : {}),
-    raw: { mode: publicUrl ? 'public' : 'stub', expiresInSeconds: input.expiresInSeconds },
+  try {
+    // Generate a real HMAC-SHA1 presigned PUT URL using OSS AccessKey credentials.
+    // The signed URL allows a single PUT to the exact key for `expiresInSeconds` seconds.
+    // Content-Type is included in the signature so the worker must send a matching header.
+    const signingClient = getAliyunSigningClient()
+    const signedUrl = signingClient.signatureUrl(input.key, {
+      expires: expiresInSeconds,
+      method: 'PUT',
+      'Content-Type': input.contentType ?? 'image/png',
+    })
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key: input.key,
+      signedUrl,
+      publicUrl: publicUrl ?? signedUrl,
+      url: signedUrl,
+      raw: { mode: 'signed-put', expiresInSeconds },
+    }
+  } catch {
+    // Fallback: credentials not available in this environment (e.g. local dev without OSS env).
+    // Returns a stub so dependent code can handle gracefully.
+    return {
+      provider: 'aliyun-oss',
+      bucket: process.env.ALIYUN_OSS_BUCKET ?? '',
+      key: input.key,
+      ...(publicUrl ? { publicUrl, url: publicUrl } : {}),
+      raw: { mode: publicUrl ? 'public-fallback' : 'stub', expiresInSeconds },
+    }
   }
 }
 
