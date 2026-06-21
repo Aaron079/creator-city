@@ -76,10 +76,43 @@ export interface AssetTransformRequest {
 export interface AssetTransformResult {
   transformId: string
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+
+  // ── Platform ingestion fields — all four required for derived node creation ──
+  //
+  // A result with status='done' but missing ANY of these four fields must be treated
+  // as TRANSFORM_OUTPUT_INGESTION_BLOCKED. Never create a derived node without them.
+
+  /** Platform-assigned Asset ID — populated after successful ingestion into Creator City. */
   outputAssetId?: string
+  /**
+   * Stable, platform-owned media URL written to Creator City OSS.
+   * This is the ONLY URL that may be written to a canvas node's resultImageUrl.
+   * Only present after successful ingestion. Never use executor-ephemeral outputMediaUrl
+   * for persistent storage.
+   */
+  stableOutputMediaUrl?: string
+  /**
+   * Must equal 'creator-city' — confirms the output is owned by the platform,
+   * not an executor-ephemeral resource.
+   */
+  outputOwner?: 'creator-city'
+  /**
+   * Ingestion pipeline status. Must be 'validated' before a derived node may be created.
+   * 'pending' = ingestion in progress; 'failed' = ingestion failed.
+   */
+  ingestionStatus?: 'validated' | 'pending' | 'failed'
+
+  // ── Executor-ephemeral fields — display-only, never persist ──────────────────
+  /**
+   * @deprecated Executor-generated temporary URL. Use ONLY for in-panel preview display.
+   * NEVER write to canvas node resultImageUrl, never store in DB, never return to frontend
+   * as a final output. Use stableOutputMediaUrl for all persistent operations.
+   */
   outputMediaUrl?: string
-  /** Output mask URL (for remove-background / segment operations). */
+  /** Output mask URL (remove-background / segment) — ephemeral, display only. */
   maskUrl?: string
+
+  // ── Standard fields ──────────────────────────────────────────────────────────
   /** Executor-reported metadata: model used, output dimensions, timing. */
   metadata?: Record<string, unknown>
   errorCode?: string

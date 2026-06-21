@@ -9,6 +9,7 @@ export type AssetTransformErrorCode =
   // Capability / executor
   | 'TRANSFORM_UNSUPPORTED'           // This kind is not supported by any registered executor
   | 'TRANSFORM_EXECUTOR_UNAVAILABLE'  // Executor service is unreachable or not configured
+  | 'TRANSFORM_EXECUTOR_UNSUPPORTED'  // Executor does not implement async /submit — never falls back to sync
   // Auth / access
   | 'TRANSFORM_AUTH_FAILED'           // Auth token invalid for this executor
   | 'TRANSFORM_PROJECT_FORBIDDEN'     // Project does not belong to the authenticated user
@@ -43,6 +44,11 @@ export const TRANSFORM_ERROR_MESSAGES: Record<AssetTransformErrorCode, {
   TRANSFORM_EXECUTOR_UNAVAILABLE: {
     title: '执行器未配置',
     description: '此工具需要专用 GPU 执行器支持。当前服务未配置此能力，请联系运营团队开通。',
+    canRetry: false,
+  },
+  TRANSFORM_EXECUTOR_UNSUPPORTED: {
+    title: '执行器不支持异步模式',
+    description: '执行器未实现异步提交接口（/submit）。Vercel Function 不允许同步等待 GPU 推理，请将执行器升级至支持异步模式的版本。',
     canRetry: false,
   },
   TRANSFORM_AUTH_FAILED: {

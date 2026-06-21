@@ -133,13 +133,17 @@ export function RemoveBackgroundPanel({
   const handleDone = useCallback((r: AssetTransformResult) => {
     setResult(r)
     if (r.status === 'done') {
-      if (r.outputAssetId && r.outputMediaUrl) {
-        // Both a stable platform asset ID and a media URL are required.
-        // outputAssetId confirms the output was ingested into platform storage.
+      // All four platform ingestion fields must be present before a derived node can be created.
+      // A result with status='done' but missing any field is TRANSFORM_OUTPUT_INGESTION_BLOCKED —
+      // even if outputMediaUrl (executor-ephemeral) is present.
+      if (
+        r.ingestionStatus === 'validated' &&
+        r.outputAssetId &&
+        r.stableOutputMediaUrl &&
+        r.outputOwner === 'creator-city'
+      ) {
         setStatus('done')
       } else {
-        // Executor completed but no stable asset ID — ingestion not complete.
-        // Do not allow derived node creation with executor-ephemeral URL.
         setErrorCode('TRANSFORM_OUTPUT_INGESTION_BLOCKED')
         setStatus('failed')
       }
@@ -150,13 +154,18 @@ export function RemoveBackgroundPanel({
   }, [])
 
   const handleCreateNode = useCallback(() => {
-    // Require outputAssetId to confirm platform ingestion before creating derived node.
-    // Never write executor-ephemeral outputMediaUrl to the canvas without a stable asset ID.
-    if (!result?.outputAssetId || !result.outputMediaUrl) return
+    // All five ingestion criteria required. stableOutputMediaUrl is the platform-owned URL —
+    // never the executor-ephemeral outputMediaUrl.
+    if (
+      !result?.outputAssetId ||
+      !result.stableOutputMediaUrl ||
+      result.outputOwner !== 'creator-city' ||
+      result.ingestionStatus !== 'validated'
+    ) return
     onCreateDerivedNode({
       sourceNodeId: sourceNode.id,
       title: `${sourceNode.title ?? '图片'} · 主体抠图`,
-      resultImageUrl: result.outputMediaUrl,
+      resultImageUrl: result.stableOutputMediaUrl,
       maskUrl: result.maskUrl,
       assetTransformMeta: {
         transformKind: 'remove-background',
@@ -260,7 +269,7 @@ export function RemoveBackgroundPanel({
       )}
 
       {/* ── Done: checkerboard preview ── */}
-      {status === 'done' && result?.outputMediaUrl && (
+      {status === 'done' && result?.stableOutputMediaUrl && (
         <div style={{ margin: '12px 12px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(99,102,241,0.2)' }}>
           <div style={{
             background: 'repeating-conic-gradient(#333 0% 25%, #444 0% 50%) 0 0 / 16px 16px',
@@ -271,7 +280,7 @@ export function RemoveBackgroundPanel({
           }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={result.outputMediaUrl}
+              src={result.stableOutputMediaUrl}
               alt="主体抠图结果预览"
               style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain' }}
             />

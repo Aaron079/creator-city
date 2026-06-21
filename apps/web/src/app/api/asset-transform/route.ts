@@ -240,6 +240,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       clearTimeout(timeoutId)
     }
 
+    // Executor does not implement async /submit — hard-fail, never sync-fallback.
+    if (executorRes.status === 404 || executorRes.status === 405 || executorRes.status === 501) {
+      return jsonError('TRANSFORM_EXECUTOR_UNSUPPORTED', '执行器未实现异步 /submit，请升级执行器', 503)
+    }
+
     if (!executorRes.ok) {
       const errBody = await executorRes.json().catch(() => ({})) as Record<string, unknown>
       const errCode = typeof errBody.errorCode === 'string' ? errBody.errorCode : 'TRANSFORM_UNKNOWN'
