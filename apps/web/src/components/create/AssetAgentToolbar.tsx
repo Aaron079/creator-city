@@ -44,6 +44,8 @@ export interface AssetAgentToolbarProps {
   onOpenSceneLighting?: () => void
   onOpenCameraLexicon?: () => void
   onOpenPromptBooster?: () => void
+  onOpenRemoveBackground?: () => void
+  onOpenHdReconstruction?: () => void
 }
 
 function stopEvent(e: React.MouseEvent | React.PointerEvent) {
@@ -72,6 +74,8 @@ export function AssetAgentToolbar({
   onOpenSceneLighting,
   onOpenCameraLexicon,
   onOpenPromptBooster,
+  onOpenRemoveBackground,
+  onOpenHdReconstruction,
 }: AssetAgentToolbarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
@@ -377,15 +381,6 @@ export function AssetAgentToolbar({
                 <div className="ntb-menu-section-title">✂ 后期</div>
                 <button
                   type="button" data-no-node-drag="true"
-                  className="ntb-menu-item ntb-menu-item-soon"
-                  disabled
-                >
-                  <span className="ntb-menu-item-icon">✦</span>
-                  增强
-                  <span className="asset-agent-soon-badge" style={{ marginLeft: 'auto' }}>soon</span>
-                </button>
-                <button
-                  type="button" data-no-node-drag="true"
                   className="ntb-menu-item"
                   onClick={(e) => { stopEvent(e); onOpenColorGrade?.(); closeAll() }}
                 >
@@ -400,6 +395,34 @@ export function AssetAgentToolbar({
                   <span className="ntb-menu-item-icon">🎨</span>
                   视觉风格包
                 </button>
+
+                {/* Asset Remix — pixel-level transforms */}
+                {nodeKind === 'image' && (onOpenRemoveBackground ?? onOpenHdReconstruction) ? (
+                  <>
+                    <div className="ntb-menu-divider" />
+                    <div className="ntb-menu-section-title">⚡ 资产再创作</div>
+                    {onOpenRemoveBackground ? (
+                      <button
+                        type="button" data-no-node-drag="true"
+                        className="ntb-menu-item"
+                        onClick={(e) => { stopEvent(e); onOpenRemoveBackground(); closeAll() }}
+                      >
+                        <span className="ntb-menu-item-icon">✂</span>
+                        主体抠图
+                      </button>
+                    ) : null}
+                    {onOpenHdReconstruction ? (
+                      <button
+                        type="button" data-no-node-drag="true"
+                        className="ntb-menu-item"
+                        onClick={(e) => { stopEvent(e); onOpenHdReconstruction(); closeAll() }}
+                      >
+                        <span className="ntb-menu-item-icon">⬆</span>
+                        高清重建
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
               </>
             ) : null}
           </div>

@@ -38,6 +38,47 @@ import { PromptBoosterPanel } from '@/components/create/PromptBoosterPanel'
 import { BatchPromptRewriterPanel } from '@/components/create/BatchPromptRewriterPanel'
 import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
+import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
+import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
+
+// ─── Asset Transform capability cache (module-level, session-scoped) ──────────
+// Fetched once per page session from GET /api/asset-transform.
+// Defaults to fully disabled so toolbar entries are hidden until confirmed available.
+
+type AssetTransformCaps = { removeBackground: boolean; upscale: boolean }
+let _atCapCache: AssetTransformCaps | null = null
+let _atCapFetchedAt = 0
+const AT_CAP_TTL_MS = 5 * 60 * 1000 // 5 min
+
+async function fetchAssetTransformCaps(): Promise<AssetTransformCaps> {
+  const disabled: AssetTransformCaps = { removeBackground: false, upscale: false }
+  const now = Date.now()
+  if (_atCapCache && now - _atCapFetchedAt < AT_CAP_TTL_MS) return _atCapCache
+  try {
+    const res = await fetch('/api/asset-transform', {
+      credentials: 'include',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) { _atCapCache = disabled; _atCapFetchedAt = now; return disabled }
+    const data = await res.json() as {
+      enabled?: boolean
+      executorReady?: boolean
+      capabilities?: Array<{ kind: string; available: boolean }>
+    }
+    if (!data.enabled || !data.executorReady) { _atCapCache = disabled; _atCapFetchedAt = now; return disabled }
+    const caps = data.capabilities ?? []
+    _atCapCache = {
+      removeBackground: caps.some((c) => c.kind === 'remove-background' && c.available),
+      upscale: caps.some((c) => c.kind === 'upscale' && c.available),
+    }
+    _atCapFetchedAt = now
+    return _atCapCache
+  } catch {
+    // Executor unreachable — keep tools hidden
+    return disabled
+  }
+}
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
@@ -2437,6 +2478,9 @@ export function VisualCanvasWorkspace({
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
+  const [isRemoveBackgroundOpen, setIsRemoveBackgroundOpen] = useState(false)
+  const [isHdReconstructionOpen, setIsHdReconstructionOpen] = useState(false)
+  const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
   const [canvasPrompt, setCanvasPrompt] = useState('')
@@ -2583,6 +2627,12 @@ export function VisualCanvasWorkspace({
       generationAbortControllersRef.current.clear()
       activeGenerationNodeIdsRef.current.clear()
     }
+  }, [])
+
+  // Fetch asset transform capabilities once per session (module-level cache).
+  // Toolbar entries are hidden by default; only shown when confirmed available.
+  useEffect(() => {
+    fetchAssetTransformCaps().then(setAssetTransformCaps).catch(() => {/* stay disabled */})
   }, [])
 
   useEffect(() => {
@@ -2756,6 +2806,8 @@ export function VisualCanvasWorkspace({
     setIsBatchRewriterOpen(false)
     setIsLookPackageOpen(false)
     setIsColorGradePaletteOpen(false)
+    setIsRemoveBackgroundOpen(false)
+    setIsHdReconstructionOpen(false)
     setEditingNodeId(null)
     setActiveCanvasModal(null)
   }, [])
@@ -2785,6 +2837,8 @@ export function VisualCanvasWorkspace({
       case 'batch-rewriter':     setIsBatchRewriterOpen(true); break
       case 'look-package':       setIsLookPackageOpen(true); break
       case 'color-grade':        setIsColorGradePaletteOpen(true); break
+      case 'remove-background':  setIsRemoveBackgroundOpen(true); break
+      case 'hd-reconstruction':  setIsHdReconstructionOpen(true); break
       case 'generation':
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
         break
@@ -8849,7 +8903,104 @@ export function VisualCanvasWorkspace({
         </>
       ) : null}
 
+      {/* Remove Background — Asset Remix Tool 1 */}
+      {isRemoveBackgroundOpen && saveStatus !== 'opening' && activeNode?.kind === 'image' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => closeCanvasPanel()}
+          />
+          <RemoveBackgroundPanel
+            sourceNode={{
+              id: activeNode.id,
+              title: activeNode.title ?? undefined,
+              kind: 'image',
+              resultImageUrl: activeNode.resultImageUrl ?? null,
+            }}
+            projectId={projectId ?? ''}
+            workflowId={workflowId}
+            onCreateDerivedNode={({ sourceNodeId, title, resultImageUrl, maskUrl, assetTransformMeta }) => {
+              // Defense-in-depth: require outputAssetId to confirm platform ingestion.
+              // Panels already gate this in handleDone/handleCreateNode. This guard prevents
+              // accidental node creation with executor-ephemeral URLs if that check is bypassed.
+              const hasStableAsset = !!(assetTransformMeta.outputAssetId as string | undefined)
+              const sourceNode = nodes.find((n) => n.id === sourceNodeId)
+              createNode('image', {
+                title,
+                prompt: sourceNode?.prompt ?? '',
+                parentNodeId: sourceNodeId,
+                status: hasStableAsset && resultImageUrl ? 'done' : 'idle',
+                resultImageUrl: hasStableAsset ? resultImageUrl : undefined,
+                metadataJson: {
+                  assetTransform: assetTransformMeta,
+                  ...(maskUrl ? { maskUrl } : {}),
+                  toolSummaryText: '主体抠图 · 主体已提取',
+                  sourceNodeTitle: sourceNode?.title ?? undefined,
+                  derivedToolChannel: {
+                    toolId: 'remove-background',
+                    label: '✂ 主体抠图',
+                    icon: '✂',
+                    sourceNodeId,
+                  },
+                },
+              })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+              closeCanvasPanel()
+            }}
+            onClose={() => closeCanvasPanel()}
+          />
+        </>
+      ) : null}
 
+      {/* HD Reconstruction — Asset Remix Tool 2 */}
+      {isHdReconstructionOpen && saveStatus !== 'opening' && activeNode?.kind === 'image' ? (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            aria-hidden="true"
+            onPointerDown={() => closeCanvasPanel()}
+          />
+          <HdReconstructionPanel
+            sourceNode={{
+              id: activeNode.id,
+              title: activeNode.title ?? undefined,
+              kind: 'image',
+              resultImageUrl: activeNode.resultImageUrl ?? null,
+            }}
+            projectId={projectId ?? ''}
+            workflowId={workflowId}
+            onCreateDerivedNode={({ sourceNodeId, title, resultImageUrl, assetTransformMeta }) => {
+              // Defense-in-depth: require outputAssetId to confirm platform ingestion.
+              const hasStableAsset = !!(assetTransformMeta.outputAssetId as string | undefined)
+              const sourceNode = nodes.find((n) => n.id === sourceNodeId)
+              createNode('image', {
+                title,
+                prompt: sourceNode?.prompt ?? '',
+                parentNodeId: sourceNodeId,
+                status: hasStableAsset && resultImageUrl ? 'done' : 'idle',
+                resultImageUrl: hasStableAsset ? resultImageUrl : undefined,
+                metadataJson: {
+                  assetTransform: assetTransformMeta,
+                  toolSummaryText: `高清重建 · ${(assetTransformMeta.params as { scale?: number } | undefined)?.scale ?? 2}×`,
+                  sourceNodeTitle: sourceNode?.title ?? undefined,
+                  derivedToolChannel: {
+                    toolId: 'hd-reconstruction',
+                    label: '⬆ 高清重建',
+                    icon: '⬆',
+                    sourceNodeId,
+                  },
+                },
+              })
+              flushLocalSnapshot()
+              scheduleCanvasSave(0)
+              closeCanvasPanel()
+            }}
+            onClose={() => closeCanvasPanel()}
+          />
+        </>
+      ) : null}
 
       <AnimatePresence mode="wait">
         {activePanel === 'assets' ? (
@@ -9273,6 +9424,16 @@ export function VisualCanvasWorkspace({
               directorTargetNodeIdRef.current = activeNode.id
               openCanvasPanel('prompt-booster')
             }}
+            onOpenRemoveBackground={
+              activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.removeBackground
+                ? () => openCanvasPanel('remove-background')
+                : undefined
+            }
+            onOpenHdReconstruction={
+              activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.upscale
+                ? () => openCanvasPanel('hd-reconstruction')
+                : undefined
+            }
           />
         </div>
       ) : null}
