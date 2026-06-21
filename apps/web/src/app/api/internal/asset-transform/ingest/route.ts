@@ -25,7 +25,7 @@
  */
 
 import { type NextRequest } from 'next/server'
-import { jsonOk, jsonError } from '@/lib/api/json-response'
+import { jsonError } from '@/lib/api/json-response'
 import { verifyIngestHmac } from '@/lib/asset-transform/assetTransformHmac'
 import { validateCreatorTransformId } from '@/lib/asset-transform/assetTransformOss'
 
@@ -100,9 +100,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { ctid, outputKey, outputSha256, outputSizeBytes, outputWidth, outputHeight,
     maskKey, maskSha256, maskSizeBytes, userId, projectId, nodeId,
-    selectedIou, selectedStability, candidateCount, artifactId, artifactSha256, timing } = body
+    selectedIou, selectedStability, artifactId } = body
 
-  // Required field validation
+  // Required field validation (candidateCount, artifactSha256, timing used in Phase 1B implementation)
   if (!ctid || !outputKey || !outputSha256 || !outputSizeBytes || !outputWidth || !outputHeight
     || !maskKey || !maskSha256 || !maskSizeBytes || !userId || !projectId || !nodeId
     || selectedIou === undefined || selectedStability === undefined || !artifactId) {
