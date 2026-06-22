@@ -339,10 +339,10 @@ function HomeCapsuleNav({
   }, [])
 
   return (
-    <nav className="absolute left-1/2 top-10 z-20 flex w-[min(94vw,1240px)] -translate-x-1/2 items-center justify-between gap-5 rounded-[28px] border border-white/10 bg-white/[0.045] px-5 py-4 shadow-[0_22px_70px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:px-7">
-      <Link href="/" className="flex items-center gap-3 text-[22px] font-semibold tracking-[-0.03em] text-white">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/[0.035]">
-          <Sparkles className="h-5 w-5" />
+    <nav className="absolute left-1/2 top-7 z-20 flex w-[min(92vw,1280px)] -translate-x-1/2 items-center justify-between gap-6 rounded-[24px] border border-white/[0.085] bg-white/[0.035] px-4 py-2 shadow-[0_18px_54px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl sm:px-5">
+      <Link href="/" className="flex items-center gap-2.5 text-[20px] font-semibold tracking-[-0.03em] text-white">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/[0.032]">
+          <Sparkles className="h-4 w-4" />
         </span>
         Creator City
       </Link>
@@ -390,9 +390,9 @@ function HomeCapsuleNav({
       {isAuthenticated && user ? (
         <Link
           href="/account"
-          className="flex shrink-0 items-center gap-3 rounded-[18px] border border-white/10 bg-white/[0.065] py-2 pl-2 pr-4 text-[13px] font-semibold text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/18 hover:bg-white/[0.095] hover:text-white"
+          className="flex shrink-0 items-center gap-2.5 rounded-[16px] border border-white/[0.095] bg-white/[0.055] py-1.5 pl-1.5 pr-3.5 text-[13px] font-semibold text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] transition hover:border-white/18 hover:bg-white/[0.085] hover:text-white"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[13px] font-bold text-[#17111c]">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-[12px] font-bold text-[#17111c]">
             {getUserInitial(user.displayName, user.email)}
           </span>
           <span className="max-w-[112px] truncate">
@@ -403,13 +403,13 @@ function HomeCapsuleNav({
         <div className="flex shrink-0 items-center gap-2">
           <Link
             href="/auth/login"
-            className="rounded-[16px] border border-white/10 bg-white/[0.055] px-4 py-2.5 text-[13px] font-semibold text-white/72 transition hover:border-white/20 hover:bg-white/[0.085] hover:text-white"
+            className="rounded-[15px] border border-white/10 bg-white/[0.05] px-3.5 py-2 text-[13px] font-semibold text-white/72 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
           >
             登录
           </Link>
           <Link
             href="/auth/register"
-            className="rounded-[16px] bg-white px-4 py-2.5 text-[13px] font-semibold text-[#17111c] transition hover:bg-white/90"
+            className="rounded-[15px] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#17111c] transition hover:bg-white/90"
           >
             注册
           </Link>
