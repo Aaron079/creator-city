@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
+import { useCurrentUser } from '@/lib/auth/use-current-user'
+import { useAuthStore } from '@/store/auth.store'
 import {
   ArrowDown,
   Boxes,
@@ -82,8 +84,28 @@ const HOME_NAV_GROUPS = [
   },
 ]
 
+function getUserInitial(displayName?: string | null, email?: string | null): string {
+  const name = displayName?.trim()
+  if (name) return ([...name][0] ?? 'U').toUpperCase()
+  const e = email?.trim()
+  if (e) return (e[0] ?? 'U').toUpperCase()
+  return 'U'
+}
+
+function getUserShortName(displayName?: string | null, email?: string | null): string {
+  const name = displayName?.trim()
+  if (name) return name
+  const e = email?.trim()
+  if (e) return e.split('@')[0] ?? e
+  return '用户'
+}
+
 export function HomeLanding() {
   const router = useRouter()
+  const { user, isAuthenticated } = useAuthStore()
+  const { status: sessionStatus, user: sessionUser } = useCurrentUser()
+  const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
+  const effectiveIsAuthenticated = sessionStatus === 'authenticated' || ((sessionStatus === 'loading' || sessionStatus === 'unknown') && isAuthenticated)
 
   const handleCanvasEntry = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -118,14 +140,14 @@ export function HomeLanding() {
 
       <section className="relative z-10 min-h-screen px-5 py-6 sm:px-7 lg:px-9">
         <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-[1740px] flex-col overflow-hidden rounded-[34px] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_28px_90px_rgba(0,0,0,0.38)]">
-          <HomeCapsuleNav handleCanvasEntry={handleCanvasEntry} />
+          <HomeCapsuleNav
+            handleCanvasEntry={handleCanvasEntry}
+            isAuthenticated={effectiveIsAuthenticated}
+            user={effectiveUser}
+          />
 
           <div className="flex flex-1 items-center justify-center px-5 pb-20 pt-32 text-center sm:px-10 lg:pt-36">
             <div className="mx-auto max-w-5xl">
-              <div className="mx-auto mb-10 inline-flex items-center gap-4 rounded-full border border-white/10 bg-white/[0.035] p-2 pr-6 text-[17px] font-semibold text-white/46 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
-                <span className="rounded-full bg-white px-5 py-2.5 text-[#18121b]">NEW</span>
-                Membership-first · BYOK-first
-              </div>
               <h1 className="text-[clamp(64px,10vw,148px)] font-semibold leading-[0.94] tracking-[-0.045em] text-white">
                 Creator City
               </h1>
@@ -283,7 +305,15 @@ export function HomeLanding() {
   )
 }
 
-function HomeCapsuleNav({ handleCanvasEntry }: { handleCanvasEntry: (event: MouseEvent<HTMLAnchorElement>) => void }) {
+function HomeCapsuleNav({
+  handleCanvasEntry,
+  isAuthenticated,
+  user,
+}: {
+  handleCanvasEntry: (event: MouseEvent<HTMLAnchorElement>) => void
+  isAuthenticated: boolean
+  user: { displayName?: string | null; email?: string | null } | null
+}) {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -345,9 +375,34 @@ function HomeCapsuleNav({ handleCanvasEntry }: { handleCanvasEntry: (event: Mous
           </div>
         ))}
       </div>
-      <Link href="/create" onClick={handleCanvasEntry} className="shrink-0 rounded-[18px] bg-white px-6 py-3 text-[15px] font-semibold text-[#17111c] transition hover:bg-white/90">
-        开始创作
-      </Link>
+      {isAuthenticated && user ? (
+        <Link
+          href="/account"
+          className="flex shrink-0 items-center gap-3 rounded-[18px] border border-white/10 bg-white/[0.065] py-2 pl-2 pr-4 text-[13px] font-semibold text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/18 hover:bg-white/[0.095] hover:text-white"
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[13px] font-bold text-[#17111c]">
+            {getUserInitial(user.displayName, user.email)}
+          </span>
+          <span className="max-w-[112px] truncate">
+            {getUserShortName(user.displayName, user.email)}
+          </span>
+        </Link>
+      ) : (
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/auth/login"
+            className="rounded-[16px] border border-white/10 bg-white/[0.055] px-4 py-2.5 text-[13px] font-semibold text-white/72 transition hover:border-white/20 hover:bg-white/[0.085] hover:text-white"
+          >
+            登录
+          </Link>
+          <Link
+            href="/auth/register"
+            className="rounded-[16px] bg-white px-4 py-2.5 text-[13px] font-semibold text-[#17111c] transition hover:bg-white/90"
+          >
+            注册
+          </Link>
+        </div>
+      )}
     </nav>
   )
 }
