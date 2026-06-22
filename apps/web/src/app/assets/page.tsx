@@ -72,20 +72,20 @@ function promptPreview(prompt?: string | null) {
 // ─── Style constants ──────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  IMAGE: { label: '图片', bg: 'rgba(167,139,250,0.12)', color: '#a78bfa' },
-  VIDEO: { label: '视频', bg: 'rgba(251,146,60,0.1)', color: '#fb923c' },
-  AUDIO: { label: '音频', bg: 'rgba(52,211,153,0.08)', color: '#34d399' },
-  SCRIPT: { label: '文本', bg: 'rgba(148,163,184,0.1)', color: '#94a3b8' },
-  DOCUMENT: { label: '文件', bg: 'rgba(148,163,184,0.1)', color: '#94a3b8' },
+  IMAGE: { label: '图片', bg: '#e8f0ff', color: '#2563eb' },
+  VIDEO: { label: '视频', bg: '#fff7ed', color: '#c2410c' },
+  AUDIO: { label: '音频', bg: '#ecfdf3', color: '#2e7d5b' },
+  SCRIPT: { label: '文本', bg: '#f2f4f7', color: '#667085' },
+  DOCUMENT: { label: '文件', bg: '#f2f4f7', color: '#667085' },
 }
 
 const SELECT_STYLE: React.CSSProperties = {
-  padding: '7px 12px',
-  borderRadius: '8px',
-  border: '1px solid rgba(255,255,255,0.1)',
-  background: 'rgba(255,255,255,0.05)',
-  color: 'rgba(255,255,255,0.7)',
-  fontSize: '13px',
+  padding: '10px 12px',
+  borderRadius: '10px',
+  border: '1px solid #dbe3ef',
+  background: '#fff',
+  color: '#344054',
+  fontSize: '14px',
   cursor: 'pointer',
   outline: 'none',
 }
@@ -93,9 +93,9 @@ const SELECT_STYLE: React.CSSProperties = {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function TypeChip({ type }: { type: string }) {
-  const cfg = TYPE_CONFIG[type] ?? { label: type, bg: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)' }
+  const cfg = TYPE_CONFIG[type] ?? { label: type, bg: '#f2f4f7', color: '#667085' }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: 600, background: cfg.bg, color: cfg.color }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '7px', fontSize: '11px', fontWeight: 650, background: cfg.bg, color: cfg.color }}>
       {cfg.label}
     </span>
   )
@@ -115,7 +115,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       type="button"
       onClick={copy}
       aria-label={label}
-      style={{ padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: copied ? '#34d399' : 'rgba(255,255,255,0.45)', fontSize: '11px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
+      style={{ padding: '3px 9px', borderRadius: '8px', border: '1px solid #dbe3ef', background: '#fff', color: copied ? '#2e7d5b' : '#667085', fontSize: '11px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
     >
       {copied ? '已复制' : '复制'}
     </button>
@@ -124,9 +124,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
   return (
-    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '16px 20px', minWidth: '100px' }}>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: accent ?? '#e8e8f0', letterSpacing: '-0.03em' }}>{value}</div>
-      <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.38)', marginTop: '4px' }}>{label}</div>
+    <div style={{ background: '#fff', border: '1px solid #dbe3ef', borderRadius: '14px', padding: '16px 20px', minWidth: '112px', boxShadow: '0 8px 24px rgba(16,24,40,0.04)' }}>
+      <div style={{ fontSize: '24px', fontWeight: 700, color: accent ?? '#101828', letterSpacing: 0 }}>{value}</div>
+      <div style={{ fontSize: '12px', color: '#667085', marginTop: '4px' }}>{label}</div>
     </div>
   )
 }
@@ -135,7 +135,7 @@ function ImagePreview({ asset }: { asset: AssetItem }) {
   const url = bestUrl(asset)
   if (!url) {
     return (
-      <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(167,139,250,0.06)', color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>
+      <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2f6fb', color: '#98a2b3', fontSize: '12px' }}>
         暂无预览
       </div>
     )
@@ -145,7 +145,7 @@ function ImagePreview({ asset }: { asset: AssetItem }) {
     <img
       src={url}
       alt={asset.title ?? asset.name}
-      style={{ display: 'block', width: '100%', height: '160px', objectFit: 'cover', background: 'rgba(255,255,255,0.04)' }}
+      style={{ display: 'block', width: '100%', height: '180px', objectFit: 'cover', background: '#f2f6fb' }}
     />
   )
 }
@@ -154,7 +154,7 @@ function VideoPreview({ asset }: { asset: AssetItem }) {
   const url = bestUrl(asset)
   if (!url) {
     return (
-      <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(251,146,60,0.06)', color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>
+      <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff7ed', color: '#98a2b3', fontSize: '12px' }}>
         暂无预览
       </div>
     )
@@ -166,7 +166,7 @@ function VideoPreview({ asset }: { asset: AssetItem }) {
       controls
       playsInline
       preload="metadata"
-      style={{ display: 'block', width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
+      style={{ display: 'block', width: '100%', height: '180px', objectFit: 'cover', background: '#101828' }}
     />
   )
 }
@@ -198,10 +198,10 @@ function VisibilityToggle({ asset, onToggled }: { asset: AssetItem; onToggled: (
       title={asset.isPublic ? '设为私有' : '设为公开'}
       style={{
         padding: '2px 8px',
-        borderRadius: '5px',
-        border: '1px solid rgba(255,255,255,0.09)',
-        background: asset.isPublic ? 'rgba(52,211,153,0.08)' : 'rgba(255,255,255,0.04)',
-        color: asset.isPublic ? '#6ee7b7' : 'rgba(255,255,255,0.35)',
+        borderRadius: '8px',
+        border: '1px solid #dbe3ef',
+        background: asset.isPublic ? '#ecfdf3' : '#f8fafc',
+        color: asset.isPublic ? '#2e7d5b' : '#667085',
         fontSize: '10px',
         cursor: busy ? 'not-allowed' : 'pointer',
         opacity: busy ? 0.5 : 1,
@@ -224,13 +224,14 @@ function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggl
   return (
     <article
       style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: '12px',
+        background: '#fff',
+        border: '1px solid #dbe3ef',
+        borderRadius: '16px',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
+        boxShadow: '0 10px 30px rgba(16,24,40,0.05)',
       }}
     >
       {/* Media preview */}
@@ -242,21 +243,21 @@ function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggl
         {/* Top row: type chip + visibility + date */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <TypeChip type={asset.type} />
-          {dur ? <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>{dur}</span> : null}
+          {dur ? <span style={{ fontSize: '11px', color: '#667085', background: '#f2f4f7', padding: '2px 6px', borderRadius: '6px' }}>{dur}</span> : null}
           <VisibilityToggle asset={asset} onToggled={onPublicToggled} />
-          <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{formatDate(asset.createdAt)}</span>
+          <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#98a2b3', flexShrink: 0 }}>{formatDate(asset.createdAt)}</span>
         </div>
 
         {/* Title */}
         {asset.title || asset.name ? (
-          <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#e8e8f0', lineHeight: '1.4', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          <p style={{ margin: 0, fontSize: '14px', fontWeight: 650, color: '#101828', lineHeight: '1.4', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
             {asset.title ?? asset.name}
           </p>
         ) : null}
 
         {/* Prompt preview */}
         {preview ? (
-          <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.45)', lineHeight: '1.5', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#667085', lineHeight: '1.5', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
             {preview}
           </p>
         ) : null}
@@ -264,27 +265,27 @@ function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggl
         {/* Meta row */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {asset.providerId ? (
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
-              <span style={{ color: 'rgba(255,255,255,0.18)' }}>Provider </span>{asset.providerId}
+            <div style={{ fontSize: '11px', color: '#667085' }}>
+              <span style={{ color: '#98a2b3' }}>Provider </span>{asset.providerId}
             </div>
           ) : null}
           {wh || bytes ? (
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
+            <div style={{ fontSize: '11px', color: '#667085' }}>
               {[wh, bytes].filter(Boolean).join(' · ')}
             </div>
           ) : null}
           {asset.project ? (
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.28)' }}>
-              <span style={{ color: 'rgba(255,255,255,0.18)' }}>项目 </span>{asset.project.title}
+            <div style={{ fontSize: '11px', color: '#667085' }}>
+              <span style={{ color: '#98a2b3' }}>项目 </span>{asset.project.title}
             </div>
           ) : null}
         </div>
 
         {/* Action row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid #edf1f7' }}>
           <a
             href={`/assets/${asset.id}`}
-            style={{ padding: '2px 9px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap', fontWeight: 500 }}
+            style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap', fontWeight: 600 }}
           >
             详情
           </a>
@@ -295,7 +296,7 @@ function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggl
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                style={{ padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.45)', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                style={{ padding: '3px 9px', borderRadius: '8px', border: '1px solid #dbe3ef', background: '#fff', color: '#667085', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap' }}
               >
                 打开 ↗
               </a>
@@ -303,7 +304,7 @@ function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggl
           ) : null}
           {asset.generationJobId ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
-              <code style={{ fontFamily: 'ui-monospace,monospace', fontSize: '10px', color: 'rgba(255,255,255,0.25)' }}>
+              <code style={{ fontFamily: 'ui-monospace,monospace', fontSize: '10px', color: '#98a2b3' }}>
                 {shortId(asset.generationJobId)}
               </code>
               <CopyButton text={asset.generationJobId} label="复制任务 ID" />
@@ -390,49 +391,49 @@ export default function AssetsPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#f6f8fb', color: '#101828', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif' }}>
       {/* Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '16px', padding: '0 32px', height: '60px', background: 'rgba(10,10,15,0.9)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-        <a href="/community" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'rgba(255,255,255,0.34)', textDecoration: 'none', padding: '5px 9px', borderRadius: '7px' }}>
+      <header style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '16px', padding: '0 32px', height: '60px', background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid #dbe3ef' }}>
+        <a href="/community" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#667085', textDecoration: 'none', padding: '5px 9px', borderRadius: '7px' }}>
           ← 社群
         </a>
-        <div style={{ width: '1px', height: '16px', background: 'rgba(255,255,255,0.08)' }} />
-        <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', padding: '6px 10px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}>
+        <div style={{ width: '1px', height: '16px', background: '#dbe3ef' }} />
+        <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#2563eb', textDecoration: 'none', padding: '6px 10px', borderRadius: '9px', border: '1px solid #c8d7ee', background: '#e8f0ff' }}>
           ← 返回画布
         </a>
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)' }} />
-        <h1 style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', margin: 0 }}>Gallery · 资产中心</h1>
+        <div style={{ width: '1px', height: '20px', background: '#dbe3ef' }} />
+        <h1 style={{ fontSize: '14px', fontWeight: 650, color: '#101828', margin: 0 }}>Gallery · 资产中心</h1>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.22)' }}>只读 · 不触发生成</span>
+          <span style={{ fontSize: '11px', color: '#98a2b3' }}>只读 · 不触发生成</span>
           <button
             type="button"
             onClick={() => { void fetchAssets() }}
             disabled={loading}
-            style={{ padding: '5px 12px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.55)', fontSize: '12px', cursor: loading ? 'not-allowed' : 'pointer' }}
+            style={{ padding: '6px 12px', borderRadius: '9px', border: '1px solid #dbe3ef', background: '#fff', color: '#475467', fontSize: '12px', cursor: loading ? 'not-allowed' : 'pointer' }}
           >
             {loading ? '加载中…' : '刷新'}
           </button>
         </div>
       </header>
 
-      <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '40px 24px 80px' }}>
+      <main style={{ maxWidth: '1180px', margin: '0 auto', padding: '40px 24px 80px' }}>
         {/* Title */}
         <div style={{ marginBottom: '32px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#e8e8f0', margin: '0 0 6px', letterSpacing: '-0.02em' }}>资产中心</h2>
-          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.38)', margin: 0 }}>集中管理已生成图片、视频与可复用创作素材</p>
+          <h2 style={{ fontSize: '28px', fontWeight: 700, color: '#101828', margin: '0 0 8px', letterSpacing: 0 }}>资产中心</h2>
+          <p style={{ fontSize: '14px', color: '#667085', margin: 0 }}>集中管理已生成图片、视频与可复用创作素材</p>
         </div>
 
         {/* Stats */}
         {!loading && !error ? (
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '32px' }}>
             <StatCard label="全部资产" value={stats.total} />
-            <StatCard label="图片资产" value={stats.images} accent={stats.images > 0 ? '#a78bfa' : undefined} />
-            <StatCard label="视频资产" value={stats.videos} accent={stats.videos > 0 ? '#fb923c' : undefined} />
+            <StatCard label="图片资产" value={stats.images} accent={stats.images > 0 ? '#2563eb' : undefined} />
+            <StatCard label="视频资产" value={stats.videos} accent={stats.videos > 0 ? '#c2410c' : undefined} />
           </div>
         ) : null}
 
         {/* Filters */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px', alignItems: 'center', border: '1px solid #dbe3ef', background: '#fff', borderRadius: '16px', padding: '12px', boxShadow: '0 8px 24px rgba(16,24,40,0.04)' }}>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={SELECT_STYLE} aria-label="按类型筛选">
             {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -445,7 +446,7 @@ export default function AssetsPage() {
             aria-label="搜索资产"
           />
           {displayed.length > 0 ? (
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.28)', marginLeft: 'auto' }}>
+            <span style={{ fontSize: '12px', color: '#667085', marginLeft: 'auto' }}>
               显示 {displayed.length} 条
             </span>
           ) : null}
@@ -453,30 +454,30 @@ export default function AssetsPage() {
 
         {/* Content */}
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0', color: 'rgba(255,255,255,0.28)', fontSize: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0', color: '#667085', fontSize: '14px' }}>
             加载中…
           </div>
         ) : error ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '12px' }}>
-            <div style={{ fontSize: '14px', color: 'rgba(248,113,113,0.8)' }}>无法读取资产列表，请稍后重试</div>
-            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.28)' }}>{error}</div>
+            <div style={{ fontSize: '14px', color: '#b42318' }}>无法读取资产列表，请稍后重试</div>
+            <div style={{ fontSize: '12px', color: '#667085' }}>{error}</div>
             <button
               type="button"
               onClick={() => { void fetchAssets() }}
-              style={{ marginTop: '8px', padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', fontSize: '13px', cursor: 'pointer' }}
+              style={{ marginTop: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '13px', cursor: 'pointer' }}
             >
               重试
             </button>
           </div>
         ) : displayed.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '8px' }}>
-            <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.3)' }}>暂无资产</div>
-            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.18)' }}>
+            <div style={{ fontSize: '14px', color: '#667085' }}>暂无资产</div>
+            <div style={{ fontSize: '12px', color: '#98a2b3' }}>
               {typeFilter || search ? '当前筛选条件下没有匹配的资产' : '请先在画布生成图片或视频，资产将自动出现在这里'}
             </div>
             <a
               href="/create"
-              style={{ marginTop: '12px', padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', fontSize: '13px', textDecoration: 'none' }}
+              style={{ marginTop: '12px', padding: '8px 18px', borderRadius: '10px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '13px', textDecoration: 'none' }}
             >
               去画布生成 →
             </a>

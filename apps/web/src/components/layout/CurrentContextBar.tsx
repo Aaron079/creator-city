@@ -23,6 +23,7 @@ import { useProjectRoleStore } from '@/store/project-role.store'
 import { useTaskStore } from '@/store/task.store'
 import { useTeamStore } from '@/store/team.store'
 import { useVersionHistoryStore } from '@/store/version-history.store'
+import styles from './nonCanvasShell.module.css'
 
 function sectionFromPath(pathname: string) {
   if (pathname.startsWith('/projects/')) return 'project-home'
@@ -152,8 +153,8 @@ export function CurrentContextBar() {
       ]
 
   return (
-    <div className="sticky top-16 z-40 border-b border-white/[0.06] bg-[#0b1220]/82 backdrop-blur-xl">
-      <div className="mx-auto max-w-7xl px-6 py-4">
+    <div className={`${styles.contextBar} sticky top-16 z-40`}>
+      <div className={`${styles.contextInner} mx-auto max-w-7xl px-6 py-4`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <BreadcrumbHeader items={breadcrumbItems} />

@@ -92,7 +92,7 @@ export default function AccountPage() {
 
   return (
     <DashboardShell>
-      <main className="mx-auto max-w-2xl px-4 py-8">
+      <main className="mx-auto max-w-4xl px-4 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-semibold text-white">账号设置</h1>
@@ -126,7 +126,7 @@ export default function AccountPage() {
             className="flex flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
           >
             <span className="flex items-center gap-2"><span className="text-base">◎</span><span>平台额度</span></span>
-            <span className="text-[11px] text-white/30">积分充值 · 消耗流水</span>
+            <span className="text-[11px] text-white/30">余额与历史流水</span>
           </Link>
           <Link
             href="/account/providers"
@@ -151,7 +151,7 @@ export default function AccountPage() {
           </Link>
         </div>
         <div className="mt-3 mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/30 leading-relaxed">
-          <span><span className="text-white/40">◎ 平台额度</span>：购买积分，Creator City 代付 API 调用</span>
+          <span><span className="text-white/40">◎ 平台额度</span>：保留余额与历史流水，第一版普通用户不开放充值</span>
           <span>·</span>
           <span><span className="text-violet-300/60">⚡ 我的 API</span>：自带 Provider Key，API 费用直付给服务商，不扣平台积分</span>
           <span>·</span>

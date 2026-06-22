@@ -1,0 +1,231 @@
+.shell {
+  --cc-page: #f6f8fb;
+  --cc-page-soft: #eef4fb;
+  --cc-surface: #ffffff;
+  --cc-surface-2: #f8fafc;
+  --cc-ink: #101828;
+  --cc-muted: #667085;
+  --cc-faint: #98a2b3;
+  --cc-border: #dbe3ef;
+  --cc-border-strong: #c9d5e6;
+  --cc-blue: #2563eb;
+  --cc-blue-soft: #e8f0ff;
+  --cc-green: #2e7d5b;
+  --cc-amber: #a16207;
+  --cc-red: #b42318;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(37, 99, 235, 0.08), transparent 30rem),
+    linear-gradient(180deg, #fbfdff 0%, var(--cc-page) 42%, #f3f6fb 100%);
+  color: var(--cc-ink);
+}
+
+.content {
+  color: var(--cc-ink);
+}
+
+.content :global(a) {
+  text-underline-offset: 3px;
+}
+
+.content :global(button),
+.content :global(a),
+.content :global(input),
+.content :global(textarea),
+.content :global(select) {
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+.content :global(:focus-visible) {
+  outline: 3px solid rgba(37, 99, 235, 0.22);
+  outline-offset: 2px;
+}
+
+.content :global(.text-white),
+.content :global([class~="text-white"]) {
+  color: var(--cc-ink) !important;
+}
+
+.content :global([class*="text-white/"]),
+.content :global([class*="text-white\\/"]) {
+  color: var(--cc-muted) !important;
+}
+
+.content :global([class*="text-sky-"]),
+.content :global([class*="text-violet-"]),
+.content :global([class*="text-cyan-"]) {
+  color: var(--cc-blue) !important;
+}
+
+.content :global([class*="text-emerald-"]),
+.content :global([class*="text-green-"]) {
+  color: var(--cc-green) !important;
+}
+
+.content :global([class*="text-amber-"]) {
+  color: var(--cc-amber) !important;
+}
+
+.content :global([class*="text-rose-"]),
+.content :global([class*="text-red-"]) {
+  color: var(--cc-red) !important;
+}
+
+.content :global([class*="border-white/"]),
+.content :global([class*="border-white\\/"]) {
+  border-color: var(--cc-border) !important;
+}
+
+.content :global([class*="bg-white/"]),
+.content :global([class*="bg-white\\/"]) {
+  background-color: var(--cc-surface) !important;
+}
+
+.content :global([class*="bg-black/"]) {
+  background-color: var(--cc-surface-2) !important;
+}
+
+.content :global(.rounded-3xl) {
+  border-radius: 20px !important;
+}
+
+.content :global(.rounded-2xl) {
+  border-radius: 16px !important;
+}
+
+.content :global(.rounded-xl) {
+  border-radius: 12px !important;
+}
+
+.content :global(.shadow),
+.content :global([class*="shadow"]) {
+  box-shadow: 0 12px 34px rgba(16, 24, 40, 0.08) !important;
+}
+
+.content :global(.input-field) {
+  width: 100%;
+  border: 1px solid var(--cc-border);
+  border-radius: 12px;
+  background: var(--cc-surface);
+  color: var(--cc-ink);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.02);
+}
+
+.content :global(.input-field::placeholder) {
+  color: var(--cc-faint);
+}
+
+.contextBar {
+  border-bottom: 1px solid var(--cc-border);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.contextInner {
+  color: var(--cc-ink);
+}
+
+.contextInner :global(.text-white),
+.contextInner :global([class~="text-white"]) {
+  color: var(--cc-ink) !important;
+}
+
+.contextInner :global([class*="text-white/"]),
+.contextInner :global([class*="text-white\\/"]) {
+  color: var(--cc-muted) !important;
+}
+
+.contextInner :global([class*="border-white/"]),
+.contextInner :global([class*="border-white\\/"]) {
+  border-color: var(--cc-border) !important;
+}
+
+.contextInner :global([class*="bg-white/"]),
+.contextInner :global([class*="bg-white\\/"]) {
+  background-color: var(--cc-surface) !important;
+}
+
+.contextInner :global([class*="text-amber-"]) {
+  color: var(--cc-amber) !important;
+}
+
+.navLight {
+  border-bottom: 1px solid rgba(219, 227, 239, 0.9);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--cc-ink);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.navDark {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 15, 26, 0.88);
+  color: #fff;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.navButtonLight {
+  border: 1px solid transparent;
+  color: #475467;
+}
+
+.navButtonLight:hover,
+.navButtonLightActive {
+  border-color: var(--cc-border);
+  background: var(--cc-blue-soft);
+  color: var(--cc-blue);
+}
+
+.navButtonDark {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.navButtonDark:hover,
+.navButtonDarkActive {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.navMenuLight {
+  border: 1px solid var(--cc-border);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12);
+}
+
+.navMenuDark {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.9);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
+.navMenuItemLight {
+  color: #475467;
+}
+
+.navMenuItemLight:hover {
+  background: #f2f6fb;
+  color: #101828;
+}
+
+.navMenuItemDark {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.navMenuItemDark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content :global(*) {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

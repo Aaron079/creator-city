@@ -14,24 +14,43 @@ export const metadata = {
 }
 
 const glassPanel = {
-  borderRadius: 30,
-  border: '1px solid rgba(255,255,255,0.10)',
-  background: 'rgba(255,255,255,0.025)',
-  backdropFilter: 'blur(24px)',
-  WebkitBackdropFilter: 'blur(24px)',
+  borderRadius: 20,
+  border: '1px solid #dbe3ef',
+  background: '#fff',
   padding: '24px',
+  boxShadow: '0 10px 30px rgba(16,24,40,0.05)',
 }
 
 const card = {
-  borderRadius: 22,
-  border: '1px solid rgba(255,255,255,0.06)',
-  background: 'rgba(0,0,0,0.18)',
+  borderRadius: 16,
+  border: '1px solid #e4eaf3',
+  background: '#f8fafc',
   padding: '16px 18px',
 }
 
 export default function MarketplacePage() {
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff' }}>
+    <div style={{ minHeight: '100vh', background: '#f6f8fb', color: '#101828' }}>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .marketplace-section-header > div {
+              border-bottom-color: #dbe3ef !important;
+            }
+            .marketplace-section-header a,
+            .marketplace-section-header span {
+              color: #667085 !important;
+            }
+            .marketplace-section-header nav a[href="/marketplace"] {
+              background: #e8f0ff !important;
+              color: #2563eb !important;
+            }
+            .marketplace-section-header > div > span {
+              background: #dbe3ef !important;
+            }
+          `,
+        }}
+      />
       <TopNavigation />
 
       <main
@@ -44,21 +63,22 @@ export default function MarketplacePage() {
           gap: 28,
         }}
       >
-        <CommunitySectionHeader
-          districtZh="交易市场"
-          desc="创作者资产展示 · 会员授权合作意向登记。"
-          activeHref="/marketplace"
-        />
+        <div className="marketplace-section-header">
+          <CommunitySectionHeader
+            districtZh="交易市场"
+            desc="创作者资产展示 · 会员授权合作意向登记。"
+            activeHref="/marketplace"
+          />
+        </div>
 
         {/* ── Hero banner ── */}
         <section
           style={{
-            borderRadius: 34,
-            border: '1px solid rgba(255,255,255,0.10)',
-            background: 'rgba(255,255,255,0.03)',
-            backdropFilter: 'blur(28px)',
-            WebkitBackdropFilter: 'blur(28px)',
+            borderRadius: 24,
+            border: '1px solid #dbe3ef',
+            background: 'linear-gradient(135deg,#ffffff 0%,#f4f8ff 100%)',
             padding: '32px',
+            boxShadow: '0 18px 50px rgba(16,24,40,0.07)',
           }}
         >
           <div
@@ -77,7 +97,7 @@ export default function MarketplacePage() {
                   fontWeight: 700,
                   letterSpacing: '0.24em',
                   textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,0.32)',
+                  color: '#98a2b3',
                 }}
               >
                 Marketplace
@@ -86,9 +106,9 @@ export default function MarketplacePage() {
                 style={{
                   marginTop: 14,
                   fontSize: 36,
-                  fontWeight: 300,
-                  letterSpacing: '-0.05em',
-                  color: '#fff',
+                  fontWeight: 700,
+                  letterSpacing: 0,
+                  color: '#101828',
                 }}
               >
                 创作者市场
@@ -99,12 +119,12 @@ export default function MarketplacePage() {
                   maxWidth: 600,
                   fontSize: 15,
                   lineHeight: 1.8,
-                  color: 'rgba(255,255,255,0.54)',
+                  color: '#667085',
                 }}
               >
                 创作者资产展示与授权意向登记。
                 <br />
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.30)' }}>
+                <span style={{ fontSize: 12, color: '#667085' }}>
                   第一版不开放平台内积分支付，如需授权合作请直接联系创作者。Creator City 会员可查看创作者联系方式并提交合作意向。
                 </span>
               </p>
@@ -116,9 +136,9 @@ export default function MarketplacePage() {
                 fontWeight: 700,
                 letterSpacing: '0.10em',
                 textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.38)',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.09)',
+                color: '#2563eb',
+                background: '#e8f0ff',
+                border: '1px solid #c8d7ee',
                 borderRadius: 99,
                 padding: '2px 9px',
                 whiteSpace: 'nowrap',
@@ -136,11 +156,11 @@ export default function MarketplacePage() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 borderRadius: 99,
-                border: '1px solid rgba(255,255,255,0.10)',
-                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid #c8d7ee',
+                background: '#fff',
                 padding: '7px 16px',
                 fontSize: 13,
-                color: 'rgba(255,255,255,0.75)',
+                color: '#2563eb',
                 textDecoration: 'none',
               }}
             >
@@ -152,11 +172,11 @@ export default function MarketplacePage() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 borderRadius: 99,
-                border: '1px solid rgba(255,255,255,0.10)',
-                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid #dbe3ef',
+                background: '#fff',
                 padding: '7px 16px',
                 fontSize: 13,
-                color: 'rgba(255,255,255,0.75)',
+                color: '#475467',
                 textDecoration: 'none',
               }}
             >
@@ -176,7 +196,7 @@ export default function MarketplacePage() {
               fontWeight: 700,
               letterSpacing: '0.24em',
               textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.32)',
+              color: '#98a2b3',
             }}
           >
             服务委托 · Coming Soon
@@ -185,14 +205,14 @@ export default function MarketplacePage() {
             style={{
               marginTop: 10,
               fontSize: 22,
-              fontWeight: 300,
-              letterSpacing: '-0.04em',
-              color: '#fff',
+            fontWeight: 700,
+              letterSpacing: 0,
+              color: '#101828',
             }}
           >
             创作者服务委托
           </div>
-          <p style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: 'rgba(255,255,255,0.40)' }}>
+          <p style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: '#667085' }}>
             创作者接单、项目委托、服务报价等功能正在规划中，尚未上线。
           </p>
           <div
@@ -211,8 +231,9 @@ export default function MarketplacePage() {
                     fontSize: 12,
                     padding: '5px 14px',
                     borderRadius: 99,
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    color: 'rgba(255,255,255,0.30)',
+                    border: '1px solid #dbe3ef',
+                    color: '#667085',
+                    background: '#f8fafc',
                     cursor: 'not-allowed',
                   }}
                 >
@@ -238,12 +259,12 @@ export default function MarketplacePage() {
                 fontWeight: 700,
                 letterSpacing: '0.24em',
                 textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.32)',
+                color: '#98a2b3',
               }}
             >
               平台规则
             </div>
-            <div style={{ marginTop: 10, fontSize: 22, fontWeight: 300, letterSpacing: '-0.04em', color: '#fff' }}>
+            <div style={{ marginTop: 10, fontSize: 22, fontWeight: 700, letterSpacing: 0, color: '#101828' }}>
               交易规则预览
             </div>
             <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -255,7 +276,7 @@ export default function MarketplacePage() {
                     alignItems: 'flex-start',
                     gap: 14,
                     paddingBottom: i < marketplaceRules.length - 1 ? 14 : 0,
-                    borderBottom: i < marketplaceRules.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                    borderBottom: i < marketplaceRules.length - 1 ? '1px solid #edf1f7' : 'none',
                   }}
                 >
                   <span
@@ -264,22 +285,22 @@ export default function MarketplacePage() {
                       width: 22,
                       height: 22,
                       borderRadius: 7,
-                      background: 'rgba(255,255,255,0.06)',
+                      background: '#e8f0ff',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: 11,
                       fontWeight: 700,
-                      color: 'rgba(255,255,255,0.30)',
+                      color: '#2563eb',
                     }}
                   >
                     {i + 1}
                   </span>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.80)', marginBottom: 5 }}>
+                    <div style={{ fontSize: 14, fontWeight: 650, color: '#101828', marginBottom: 5 }}>
                       {rule.title}
                     </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.65, color: 'rgba(255,255,255,0.44)' }}>
+                    <div style={{ fontSize: 13, lineHeight: 1.65, color: '#667085' }}>
                       {rule.detail}
                     </div>
                   </div>
@@ -295,12 +316,12 @@ export default function MarketplacePage() {
                 fontWeight: 700,
                 letterSpacing: '0.24em',
                 textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.32)',
+                color: '#98a2b3',
               }}
             >
               安全提示
             </div>
-            <div style={{ marginTop: 10, fontSize: 22, fontWeight: 300, letterSpacing: '-0.04em', color: '#fff' }}>
+            <div style={{ marginTop: 10, fontSize: 22, fontWeight: 700, letterSpacing: 0, color: '#101828' }}>
               保护自己与他人
             </div>
             <ul style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -316,7 +337,7 @@ export default function MarketplacePage() {
                       background: 'rgba(167,139,250,0.55)',
                     }}
                   />
-                  <span style={{ fontSize: 14, lineHeight: 1.75, color: 'rgba(255,255,255,0.56)' }}>{item.tip}</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.75, color: '#667085' }}>{item.tip}</span>
                 </li>
               ))}
             </ul>
@@ -331,12 +352,12 @@ export default function MarketplacePage() {
               fontWeight: 700,
               letterSpacing: '0.24em',
               textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.32)',
+              color: '#98a2b3',
             }}
           >
             快速导航
           </div>
-          <div style={{ marginTop: 10, fontSize: 22, fontWeight: 300, letterSpacing: '-0.04em', color: '#fff' }}>
+          <div style={{ marginTop: 10, fontSize: 22, fontWeight: 700, letterSpacing: 0, color: '#101828' }}>
             前往其他页面
           </div>
           <div
@@ -357,11 +378,11 @@ export default function MarketplacePage() {
                   flexDirection: 'column',
                   gap: 4,
                   textDecoration: 'none',
-                  color: '#fff',
+                  color: '#2563eb',
                 }}
               >
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.80)' }}>{link.label}</span>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.4 }}>{link.desc}</span>
+                <span style={{ fontSize: 14, fontWeight: 650, color: '#101828' }}>{link.label}</span>
+                <span style={{ fontSize: 12, color: '#667085', lineHeight: 1.4 }}>{link.desc}</span>
               </Link>
             ))}
           </div>

@@ -151,8 +151,8 @@ function ListingCard({
 
   const licenseColor =
     item.licenseMode === 'reusable_commercial'
-      ? { bg: 'rgba(251,146,60,0.12)', color: '#fdba74', label: '💼 商用复用' }
-      : { bg: 'rgba(96,165,250,0.12)', color: '#93c5fd', label: '🔄 非商用复用' }
+      ? { bg: '#fff7ed', color: '#c2410c', label: '商用复用' }
+      : { bg: '#eef6ff', color: '#1769aa', label: '非商用复用' }
 
   // Determine action button
   const renderActionButton = () => {
@@ -165,8 +165,9 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.06)',
-            color: 'rgba(255,255,255,0.20)',
+            border: '1px solid #e4eaf2',
+            background: '#f7f9fc',
+            color: '#98a2b3',
             userSelect: 'none',
           }}
         >
@@ -186,8 +187,9 @@ function ListingCard({
                 fontSize: 12,
                 padding: '7px 0',
                 borderRadius: 10,
-                border: '1px solid rgba(251,191,36,0.25)',
-                color: '#fbbf24',
+                border: '1px solid #fde68a',
+                background: '#fffbeb',
+                color: '#a16207',
                 userSelect: 'none',
               }}
             >
@@ -202,7 +204,7 @@ function ListingCard({
                   padding: '2px 0',
                   background: 'none',
                   border: 'none',
-                  color: 'rgba(248,113,113,0.55)',
+                  color: '#b42318',
                   cursor: 'pointer',
                   userSelect: 'none',
                 }}
@@ -223,8 +225,9 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.3)',
+              border: '1px solid #e4eaf2',
+              background: '#f7f9fc',
+              color: '#98a2b3',
               userSelect: 'none',
             }}
           >
@@ -243,8 +246,8 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(251,191,36,0.2)',
-              color: 'rgba(251,191,36,0.55)',
+              border: '1px solid #fde68a',
+              color: '#a16207',
               background: 'transparent',
               cursor: 'pointer',
               userSelect: 'none',
@@ -264,8 +267,9 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(248,113,113,0.2)',
-              color: 'rgba(248,113,113,0.65)',
+              border: '1px solid #fecaca',
+              background: '#fff5f5',
+              color: '#b42318',
               userSelect: 'none',
             }}
           >
@@ -283,8 +287,9 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(74,222,128,0.3)',
-              color: '#4ade80',
+              border: '1px solid #bbf7d0',
+              background: '#f0fdf4',
+              color: '#15803d',
               userSelect: 'none',
             }}
           >
@@ -303,15 +308,16 @@ function ListingCard({
                 fontSize: 12,
                 padding: '7px 0',
                 borderRadius: 10,
-                border: '1px solid rgba(147,197,253,0.35)',
-                color: '#93c5fd',
+                border: '1px solid #bfdbfe',
+                background: '#eff6ff',
+                color: '#1d4ed8',
                 textDecoration: 'none',
                 display: 'block',
               }}
             >
               {CREDITS_PAYMENT_ENABLED ? '卖家已确认报价 · 去支付' : '卖家已响应 · 查看详情'}
             </Link>
-            <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.28)', userSelect: 'none' }}>
+            <span style={{ textAlign: 'center', fontSize: 10, color: '#667085', userSelect: 'none' }}>
               {CREDITS_PAYMENT_ENABLED ? '尚未扣款，点击资产页面完成支付。' : '请通过创作者主页联系沟通授权方式。'}
             </span>
           </div>
@@ -327,8 +333,9 @@ function ListingCard({
               fontSize: 12,
               padding: '7px 0',
               borderRadius: 10,
-              border: '1px solid rgba(248,113,113,0.25)',
-              color: 'rgba(248,113,113,0.8)',
+              border: '1px solid #fecaca',
+              background: '#fff5f5',
+              color: '#b42318',
               userSelect: 'none',
             }}
           >
@@ -347,15 +354,16 @@ function ListingCard({
                 fontSize: 12,
                 padding: '7px 0',
                 borderRadius: 10,
-                border: '1px solid rgba(251,191,36,0.2)',
-                color: 'rgba(251,191,36,0.7)',
+                border: '1px solid #c7d2fe',
+                background: '#eef2ff',
+                color: '#3730a3',
                 textDecoration: 'none',
                 display: 'block',
               }}
             >
               申请授权合作 →
             </Link>
-            <span style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.25)', userSelect: 'none', lineHeight: 1.5 }}>
+            <span style={{ textAlign: 'center', fontSize: 10, color: '#667085', userSelect: 'none', lineHeight: 1.5 }}>
               第一版暂不支持平台内积分支付，请点击查看资产详情联系创作者。
             </span>
           </div>
@@ -372,8 +380,8 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(251,191,36,0.35)',
-            color: orderState === 'loading' ? 'rgba(255,255,255,0.3)' : '#fbbf24',
+            border: '1px solid #fde68a',
+            color: orderState === 'loading' ? '#98a2b3' : '#a16207',
             background: 'transparent',
             cursor: orderState === 'loading' ? 'wait' : 'pointer',
             userSelect: 'none',
@@ -394,8 +402,9 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.04)',
-            color: 'rgba(255,255,255,0.18)',
+            border: '1px solid #e4eaf2',
+            background: '#f7f9fc',
+            color: '#98a2b3',
             cursor: 'not-allowed',
             userSelect: 'none',
           }}
@@ -415,8 +424,9 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(74,222,128,0.25)',
-            color: '#4ade80',
+            border: '1px solid #bbf7d0',
+            background: '#f0fdf4',
+            color: '#15803d',
             userSelect: 'none',
           }}
         >
@@ -434,8 +444,9 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(248,113,113,0.25)',
-            color: 'rgba(248,113,113,0.8)',
+            border: '1px solid #fecaca',
+            background: '#fff5f5',
+            color: '#b42318',
             userSelect: 'none',
           }}
         >
@@ -454,8 +465,8 @@ function ListingCard({
           fontSize: 12,
           padding: '7px 0',
           borderRadius: 10,
-          border: '1px solid rgba(96,165,250,0.35)',
-          color: grantState === 'loading' ? 'rgba(255,255,255,0.3)' : '#93c5fd',
+          border: '1px solid #bfdbfe',
+          color: grantState === 'loading' ? '#98a2b3' : '#1d4ed8',
           background: 'transparent',
           cursor: grantState === 'loading' ? 'wait' : 'pointer',
           userSelect: 'none',
@@ -469,9 +480,10 @@ function ListingCard({
   return (
     <div
       style={{
-        borderRadius: 22,
-        border: '1px solid rgba(255,255,255,0.06)',
-        background: 'rgba(0,0,0,0.18)',
+        borderRadius: 18,
+        border: '1px solid #dbe3ef',
+        background: '#ffffff',
+        boxShadow: '0 18px 45px rgba(15, 23, 42, 0.07)',
         padding: '16px 18px',
         display: 'flex',
         flexDirection: 'column',
@@ -485,7 +497,7 @@ function ListingCard({
           aspectRatio: '16/9',
           borderRadius: 12,
           overflow: 'hidden',
-          background: 'rgba(255,255,255,0.04)',
+          background: '#f2f6fb',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -496,7 +508,7 @@ function ListingCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumb} alt={item.title ?? item.asset.title ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <span style={{ fontSize: 28, opacity: 0.2 }}>
+          <span style={{ fontSize: 28, opacity: 0.45 }}>
             {item.asset.type === 'VIDEO' ? '🎬' : item.asset.type === 'AUDIO' ? '🎵' : '🖼️'}
           </span>
         )}
@@ -508,7 +520,7 @@ function ListingCard({
           style={{
             fontSize: 13,
             fontWeight: 500,
-            color: '#fff',
+            color: '#101828',
             lineHeight: 1.3,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -517,7 +529,7 @@ function ListingCard({
         >
           {item.title ?? item.asset.title ?? '未命名'}
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{item.seller.displayName}</div>
+        <div style={{ fontSize: 11, color: '#667085', marginTop: 3 }}>{item.seller.displayName}</div>
       </div>
 
       {/* Badges */}
@@ -535,12 +547,12 @@ function ListingCard({
           {licenseColor.label}
         </span>
         {isFree && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(74,222,128,0.08)', color: 'rgba(74,222,128,0.7)', fontWeight: 600 }}>
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: '#f0fdf4', color: '#15803d', fontWeight: 600 }}>
             免费
           </span>
         )}
         {isPaid && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(251,191,36,0.08)', color: 'rgba(251,191,36,0.7)' }}>
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: '#fffbeb', color: '#a16207' }}>
             {item.priceCredits} 积分
           </span>
         )}
@@ -556,8 +568,9 @@ function ListingCard({
             fontSize: 12,
             padding: '7px 0',
             borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.10)',
-            color: 'rgba(255,255,255,0.70)',
+            border: '1px solid #dbe3ef',
+            background: '#ffffff',
+            color: '#344054',
             textDecoration: 'none',
           }}
         >
@@ -566,7 +579,7 @@ function ListingCard({
         {renderActionButton()}
       </div>
       {isPaid && !isSeller && (
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 10, color: '#98a2b3', marginTop: 2, lineHeight: 1.5 }}>
           当前仅提交申请，不扣款、不生成授权
         </div>
       )}
@@ -629,44 +642,44 @@ export function MarketplaceListings() {
   return (
     <section
       style={{
-        borderRadius: 30,
-        border: '1px solid rgba(255,255,255,0.10)',
-        background: 'rgba(255,255,255,0.025)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
+        borderRadius: 24,
+        border: '1px solid #dbe3ef',
+        background: '#ffffff',
+        boxShadow: '0 24px 60px rgba(15, 23, 42, 0.08)',
         padding: '24px',
       }}
     >
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.24em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#1d4ed8' }}>
         正式上架资产 · Active Listings
       </div>
-      <div style={{ marginTop: 10, fontSize: 22, fontWeight: 300, letterSpacing: '-0.04em', color: '#fff' }}>
+      <div style={{ marginTop: 10, fontSize: 24, fontWeight: 650, color: '#101828' }}>
         已上架资产
       </div>
-      <p style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: 'rgba(255,255,255,0.42)' }}>
+      <p style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: '#667085' }}>
         以下为创作者正式上架的可复用资产 Listing。
         <br />
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
+        <span style={{ fontSize: 11, color: '#98a2b3' }}>
           免费资产可直接领取授权。付费授权可提交申请意向，不扣款、不生成正式授权。
         </span>
       </p>
 
       {loading ? (
-        <div style={{ marginTop: 24, fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>加载中…</div>
+        <div style={{ marginTop: 24, fontSize: 13, color: '#667085' }}>加载中…</div>
       ) : error ? (
-        <div style={{ marginTop: 24, fontSize: 13, color: 'rgba(248,113,113,0.7)' }}>{error}</div>
+        <div style={{ marginTop: 24, fontSize: 13, color: '#b42318' }}>{error}</div>
       ) : items.length === 0 ? (
         <div
           style={{
             marginTop: 24,
             padding: '20px',
             borderRadius: 16,
-            border: '1px dashed rgba(255,255,255,0.08)',
+            border: '1px dashed #cbd5e1',
+            background: '#f8fafc',
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>暂无正式上架资产</div>
-          <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.2)', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 13, color: '#475467' }}>暂无正式上架资产</div>
+          <div style={{ marginTop: 6, fontSize: 11, color: '#98a2b3', lineHeight: 1.6 }}>
             创作者可在资产详情页设置可复用授权意图，然后创建 Listing 草稿并激活上架。
           </div>
         </div>
@@ -675,8 +688,8 @@ export function MarketplaceListings() {
           style={{
             marginTop: 20,
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 12,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gap: 16,
           }}
         >
           {items.map((item) => (
