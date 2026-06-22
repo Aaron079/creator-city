@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import CardSwap, { Card } from './CardSwap'
 import SoftAurora from './SoftAurora'
+import VariableProximity from './VariableProximity'
 
 const primaryButton =
   'inline-flex h-14 items-center justify-center gap-2 rounded-[22px] bg-white px-8 text-[15px] font-semibold text-[#16121b] shadow-[0_18px_54px_rgba(255,255,255,0.18)] transition hover:-translate-y-0.5 hover:bg-white/92'
@@ -102,6 +103,7 @@ function getUserShortName(displayName?: string | null, email?: string | null): s
 
 export function HomeLanding() {
   const router = useRouter()
+  const heroTitleRef = useRef<HTMLDivElement>(null)
   const { user, isAuthenticated } = useAuthStore()
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
   const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
@@ -148,8 +150,18 @@ export function HomeLanding() {
 
           <div className="flex flex-1 items-center justify-center px-5 pb-20 pt-32 text-center sm:px-10 lg:pt-36">
             <div className="mx-auto max-w-5xl">
-              <h1 className="text-[clamp(64px,10vw,148px)] font-semibold leading-[0.94] tracking-[-0.045em] text-white">
-                Creator City
+              <h1
+                ref={heroTitleRef}
+                className="text-[clamp(64px,10vw,148px)] font-semibold leading-[0.94] tracking-[-0.045em] text-white"
+              >
+                <VariableProximity
+                  label="Creator City"
+                  fromFontVariationSettings="'wght' 620"
+                  toFontVariationSettings="'wght' 980"
+                  containerRef={heroTitleRef}
+                  radius={168}
+                  falloff="gaussian"
+                />
               </h1>
               <p className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl">
                 AI 创作者的会员制工作台
