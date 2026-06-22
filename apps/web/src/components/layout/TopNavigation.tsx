@@ -200,10 +200,10 @@ export function TopNavigation() {
 
   return (
     <header className={`${isCanvasRoute ? styles.navDark : styles.navLight} fixed inset-x-0 top-0 z-50`}>
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-5">
+      <div className="mx-auto flex h-11 max-w-7xl items-center justify-between gap-2 px-4">
 
         {/* Left: logo + 5 dropdown nav groups */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Link href="/" className="shrink-0">
             <CreatorCityLogo size="sm" />
           </Link>
@@ -221,7 +221,7 @@ export function TopNavigation() {
                   onMouseLeave={handleMenuLeave}
                 >
                   <button
-                    className={`inline-flex items-center gap-0.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${
+                    className={`inline-flex items-center gap-0.5 rounded-xl px-2 py-1 text-[12px] transition ${
                       isCanvasRoute
                         ? isActive ? styles.navButtonDarkActive : styles.navButtonDark
                         : isActive ? styles.navButtonLightActive : styles.navButtonLight
@@ -286,12 +286,12 @@ export function TopNavigation() {
         </div>
 
         {/* Right: search + user */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
 
           {/* Community shortcut */}
           <Link
             href="/community"
-            className={`hidden rounded-xl px-2.5 py-1.5 text-[12px] transition sm:inline-flex ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10 hover:text-white'}`}
+            className={`hidden rounded-xl px-2 py-1 text-[12px] transition sm:inline-flex ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10 hover:text-white'}`}
           >
             社群
           </Link>
@@ -300,7 +300,7 @@ export function TopNavigation() {
           <div className="relative" ref={searchRef}>
             <button
               onClick={() => setSearchOpen((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white'}`}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-2 py-1 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white'}`}
             >
               <span aria-hidden="true">⌕</span>
               <span className="hidden sm:inline">搜索</span>
@@ -376,8 +376,8 @@ export function TopNavigation() {
               onMouseLeave={handleMenuLeave}
             >
               {/* Trigger */}
-              <button className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] hover:border-white/20' : 'border border-white/10 bg-white/[0.04] hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10'}`}>
-                <div className={`h-7 w-7 shrink-0 rounded-full text-center text-xs font-semibold leading-7 ${isCanvasRoute ? 'bg-white/[0.08] text-white' : 'bg-white/[0.08] text-white'}`}>
+              <button className={`flex items-center gap-2 rounded-xl px-2 py-1 transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] hover:border-white/20' : 'border border-white/10 bg-white/[0.04] hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10'}`}>
+                <div className={`h-6 w-6 shrink-0 rounded-full text-center text-[11px] font-semibold leading-6 ${isCanvasRoute ? 'bg-white/[0.08] text-white' : 'bg-white/[0.08] text-white'}`}>
                   {getUserInitial(effectiveUser.displayName, effectiveUser.email)}
                 </div>
                 <div className={`max-w-[80px] truncate text-[12px] font-medium ${isCanvasRoute ? 'text-white' : 'text-white/86'}`}>
@@ -476,13 +476,13 @@ export function TopNavigation() {
             <div className="hidden items-center gap-2 md:flex">
               <Link
                 href="/auth/login"
-                className={`rounded-xl px-3 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-fuchsia-400/40 hover:text-white'}`}
+                className={`rounded-xl px-2.5 py-1 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-fuchsia-400/40 hover:text-white'}`}
               >
                 登录
               </Link>
               <Link
                 href="/auth/register"
-                className={`rounded-xl px-3 py-1.5 text-[12px] font-medium transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.08] text-white hover:border-white/20 hover:bg-white/[0.12]' : 'border border-fuchsia-400/40 bg-fuchsia-500/18 text-white hover:bg-fuchsia-500/28'}`}
+                className={`rounded-xl px-2.5 py-1 text-[12px] font-medium transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.08] text-white hover:border-white/20 hover:bg-white/[0.12]' : 'border border-fuchsia-400/40 bg-fuchsia-500/18 text-white hover:bg-fuchsia-500/28'}`}
               >
                 注册
               </Link>

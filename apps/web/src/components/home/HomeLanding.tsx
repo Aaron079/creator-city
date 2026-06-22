@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
@@ -22,7 +22,65 @@ const secondaryButton =
   'inline-flex h-14 items-center justify-center gap-2 rounded-[22px] border border-white/12 bg-white/[0.055] px-8 text-[15px] font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] backdrop-blur transition hover:-translate-y-0.5 hover:border-fuchsia-200/34 hover:bg-fuchsia-300/12 hover:text-white'
 
 const capsuleLink =
-  'text-[15px] font-semibold text-white/46 transition hover:text-white'
+  'inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[13px] font-semibold text-white/52 transition hover:bg-white/[0.055] hover:text-white'
+
+const HOME_NAV_GROUPS = [
+  {
+    label: '创作',
+    key: 'create',
+    items: [
+      { label: 'AI 画布', href: '/create' },
+      { label: '生成任务', href: '/tasks' },
+      { label: 'API 中心', href: '/providers' },
+    ],
+  },
+  {
+    label: '市场',
+    key: 'market',
+    items: [
+      { label: '市场总览', href: '/marketplace' },
+      { label: '创作者主页', href: '/creator-profile-preview', badge: '即将' },
+      { label: '需求广场', href: '/demand-board-preview', badge: '即将' },
+      { label: '报价方案', href: '/proposal-flow-preview', badge: '即将' },
+    ],
+  },
+  {
+    label: '工作台',
+    key: 'workspace',
+    items: [
+      { label: '项目中心', href: '/projects' },
+      { label: '资产中心', href: '/assets' },
+      { label: 'Dashboard', href: '/dashboard' },
+    ],
+  },
+  {
+    label: '我的 API',
+    key: 'myapi',
+    items: [
+      { label: 'API 账户管理', href: '/account/providers' },
+      { label: 'API Key 接入指南', href: '/help/api-keys' },
+      { label: '生成用量', href: '/account/usage' },
+    ],
+  },
+  {
+    label: '平台',
+    key: 'platform',
+    items: [
+      { label: '路线图', href: '/roadmap' },
+      { label: '商业模式', href: '/pricing' },
+      { label: '协议版权', href: '/terms-preview' },
+    ],
+  },
+  {
+    label: '社区与帮助',
+    key: 'community',
+    items: [
+      { label: '社区', href: '/community' },
+      { label: '诊断帮助', href: '/help' },
+      { label: '提交反馈', href: '/feedback' },
+    ],
+  },
+]
 
 export function HomeLanding() {
   const router = useRouter()
@@ -226,20 +284,68 @@ export function HomeLanding() {
 }
 
 function HomeCapsuleNav({ handleCanvasEntry }: { handleCanvasEntry: (event: MouseEvent<HTMLAnchorElement>) => void }) {
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleMenuEnter = useCallback((key: string) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    setOpenMenu(key)
+  }, [])
+
+  const handleMenuLeave = useCallback(() => {
+    closeTimer.current = setTimeout(() => setOpenMenu(null), 140)
+  }, [])
+
   return (
-    <nav className="absolute left-1/2 top-10 z-20 flex w-[min(92vw,980px)] -translate-x-1/2 items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.045] px-5 py-4 shadow-[0_22px_70px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:px-7">
+    <nav className="absolute left-1/2 top-10 z-20 flex w-[min(94vw,1240px)] -translate-x-1/2 items-center justify-between gap-5 rounded-[28px] border border-white/10 bg-white/[0.045] px-5 py-4 shadow-[0_22px_70px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:px-7">
       <Link href="/" className="flex items-center gap-3 text-[22px] font-semibold tracking-[-0.03em] text-white">
         <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/[0.035]">
           <Sparkles className="h-5 w-5" />
         </span>
         Creator City
       </Link>
-      <div className="hidden items-center gap-9 md:flex">
-        <a href="#engine" className={capsuleLink}>创作引擎</a>
-        <Link href="/marketplace" className={capsuleLink}>市场</Link>
-        <Link href="/pricing" className={capsuleLink}>会员</Link>
+      <div className="hidden items-center gap-1 lg:flex">
+        {HOME_NAV_GROUPS.map((group) => (
+          <div
+            key={group.key}
+            className="relative"
+            onMouseEnter={() => handleMenuEnter(group.key)}
+            onMouseLeave={handleMenuLeave}
+          >
+            <button className={capsuleLink}>
+              {group.label}
+              <span className="text-[9px] text-white/28">▾</span>
+            </button>
+            {openMenu === group.key ? (
+              <div
+                className="absolute left-1/2 top-full z-30 mt-3 w-[210px] -translate-x-1/2 overflow-hidden rounded-[22px] border border-white/10 bg-[#15101d]/92 p-1.5 shadow-[0_26px_74px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
+                onMouseEnter={() => handleMenuEnter(group.key)}
+                onMouseLeave={handleMenuLeave}
+              >
+                {group.items.map((item) => {
+                  const isCreate = item.href === '/create'
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={isCreate ? handleCanvasEntry : undefined}
+                      className="flex items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5 text-[12px] font-semibold text-white/64 transition hover:bg-white/[0.075] hover:text-white"
+                    >
+                      <span>{item.label}</span>
+                      {'badge' in item && item.badge ? (
+                        <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] text-white/42">
+                          {item.badge}
+                        </span>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
-      <Link href="/create" onClick={handleCanvasEntry} className="rounded-[18px] bg-white px-6 py-3 text-[15px] font-semibold text-[#17111c] transition hover:bg-white/90">
+      <Link href="/create" onClick={handleCanvasEntry} className="shrink-0 rounded-[18px] bg-white px-6 py-3 text-[15px] font-semibold text-[#17111c] transition hover:bg-white/90">
         开始创作
       </Link>
     </nav>
