@@ -1,9 +1,9 @@
 'use client'
 
-import Link from 'next/link'
 import { useMemo } from 'react'
 import { usePathname } from 'next/navigation'
 import { BreadcrumbHeader } from '@/components/layout/BreadcrumbHeader'
+import { MagicBentoLink } from '@/components/layout/MagicBentoLink'
 import { aggregateProducerDashboard } from '@/lib/dashboard/aggregate'
 import { buildWorkspacePortfolio } from '@/lib/projects/workspace'
 import { buildPersonalWorkQueue } from '@/lib/workqueue/aggregate'
@@ -183,13 +183,15 @@ export function CurrentContextBar() {
 
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
-              <Link
+              <MagicBentoLink
                 key={`${section}-${action.actionLabel}`}
                 href={action.actionHref}
-                className="inline-flex rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
+                variant="context"
+                className="text-sm"
+                glowColor="6, 182, 212"
               >
                 {action.actionLabel}
-              </Link>
+              </MagicBentoLink>
             ))}
           </div>
         </div>

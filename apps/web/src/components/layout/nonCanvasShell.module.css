@@ -120,34 +120,34 @@
 }
 
 .contextBar {
-  border-bottom: 1px solid var(--cc-border);
-  background: rgba(255, 255, 255, 0.86);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 15, 23, 0.84);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
 
 .contextInner {
-  color: var(--cc-ink);
+  color: #fff;
 }
 
 .contextInner :global(.text-white),
 .contextInner :global([class~="text-white"]) {
-  color: var(--cc-ink) !important;
+  color: #fff !important;
 }
 
 .contextInner :global([class*="text-white/"]),
 .contextInner :global([class*="text-white\\/"]) {
-  color: var(--cc-muted) !important;
+  color: rgba(255, 255, 255, 0.56) !important;
 }
 
 .contextInner :global([class*="border-white/"]),
 .contextInner :global([class*="border-white\\/"]) {
-  border-color: var(--cc-border) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 .contextInner :global([class*="bg-white/"]),
 .contextInner :global([class*="bg-white\\/"]) {
-  background-color: var(--cc-surface) !important;
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 .contextInner :global([class*="text-amber-"]) {
@@ -155,9 +155,9 @@
 }
 
 .navLight {
-  border-bottom: 1px solid rgba(219, 227, 239, 0.9);
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--cc-ink);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 15, 23, 0.86);
+  color: #fff;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -172,14 +172,14 @@
 
 .navButtonLight {
   border: 1px solid transparent;
-  color: #475467;
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .navButtonLight:hover,
 .navButtonLightActive {
-  border-color: var(--cc-border);
-  background: var(--cc-blue-soft);
-  color: var(--cc-blue);
+  border-color: rgba(132, 0, 255, 0.38);
+  background: rgba(132, 0, 255, 0.12);
+  color: #fff;
 }
 
 .navButtonDark {
@@ -193,9 +193,11 @@
 }
 
 .navMenuLight {
-  border: 1px solid var(--cc-border);
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(11, 8, 15, 0.94);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
 }
 
 .navMenuDark {
@@ -205,12 +207,12 @@
 }
 
 .navMenuItemLight {
-  color: #475467;
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .navMenuItemLight:hover {
-  background: #f2f6fb;
-  color: #101828;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 .navMenuItemDark {

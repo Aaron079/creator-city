@@ -1,0 +1,45 @@
+.container {
+  position: absolute;
+  right: 14%;
+  bottom: 14%;
+  perspective: 980px;
+  transform: translate(0, 6%);
+  transform-origin: bottom right;
+  overflow: visible;
+}
+
+.card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 133, 212, 0.22), transparent 32%),
+    radial-gradient(circle at 76% 56%, rgba(116, 128, 255, 0.18), transparent 34%),
+    linear-gradient(145deg, rgba(31, 22, 42, 0.92), rgba(10, 8, 15, 0.96));
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    right: 50%;
+    bottom: 8%;
+    transform: translate(50%, 4%) scale(0.82);
+    transform-origin: bottom center;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    right: 50%;
+    bottom: 18%;
+    transform: translate(50%, 0) scale(0.46);
+  }
+}

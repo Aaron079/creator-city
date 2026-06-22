@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
+import ChromaGrid, { type ChromaItem } from '@/components/assets/ChromaGrid'
 
 interface AssetItem {
   id: string
@@ -35,8 +34,6 @@ interface ApiResponse {
   errorCode?: string
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function bestUrl(asset: AssetItem): string {
   return asset.resolvedUrl || asset.url || asset.dataUrl || ''
 }
@@ -44,7 +41,13 @@ function bestUrl(asset: AssetItem): string {
 function formatDate(iso: string) {
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return iso
-  return d.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('zh-CN', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function formatDuration(sec?: number | null) {
@@ -53,270 +56,111 @@ function formatDuration(sec?: number | null) {
   return `${Math.floor(sec / 60)}m${Math.floor(sec % 60)}s`
 }
 
-function formatBytes(size?: number | null) {
-  if (!size) return null
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
-
 function shortId(id: string) {
-  return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id
+  return id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id
 }
 
-function promptPreview(prompt?: string | null) {
-  if (!prompt) return null
-  return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt
+function assetTitle(asset: AssetItem) {
+  return asset.title || asset.name || `Asset ${shortId(asset.id)}`
 }
 
-// ─── Style constants ──────────────────────────────────────────────────────────
-
-const TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  IMAGE: { label: '图片', bg: '#e8f0ff', color: '#2563eb' },
-  VIDEO: { label: '视频', bg: '#fff7ed', color: '#c2410c' },
-  AUDIO: { label: '音频', bg: '#ecfdf3', color: '#2e7d5b' },
-  SCRIPT: { label: '文本', bg: '#f2f4f7', color: '#667085' },
-  DOCUMENT: { label: '文件', bg: '#f2f4f7', color: '#667085' },
+function assetKindLabel(asset: AssetItem) {
+  if (asset.type === 'IMAGE') return 'AI Image'
+  if (asset.type === 'VIDEO') return 'Video Asset'
+  if (asset.type === 'AUDIO') return 'Audio Asset'
+  return 'Creative Asset'
 }
 
-const SELECT_STYLE: React.CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: '10px',
-  border: '1px solid #dbe3ef',
-  background: '#fff',
-  color: '#344054',
+function placeholderImage(asset: AssetItem, index: number) {
+  const palettes = [
+    ['#111827', '#2563eb', '#67e8f9'],
+    ['#140f1f', '#a855f7', '#f472b6'],
+    ['#101816', '#10b981', '#d9f99d'],
+    ['#191308', '#f59e0b', '#fde68a'],
+    ['#180d16', '#ef4444', '#f0abfc'],
+    ['#07151f', '#06b6d4', '#93c5fd'],
+  ]
+  const [a, b, c] = palettes[index % palettes.length] ?? palettes[0]!
+  const title = assetKindLabel(asset)
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${a}"/>
+          <stop offset="54%" stop-color="${b}"/>
+          <stop offset="100%" stop-color="${c}"/>
+        </linearGradient>
+        <radialGradient id="glow" cx="62%" cy="36%" r="55%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity=".42"/>
+          <stop offset="52%" stop-color="#ffffff" stop-opacity=".08"/>
+          <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="720" height="720" fill="url(#bg)"/>
+      <rect x="58" y="72" width="604" height="576" rx="54" fill="#030407" opacity=".22" stroke="#fff" stroke-opacity=".22"/>
+      <path d="M112 520 C206 400 270 430 366 304 C450 194 526 214 612 130" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".44"/>
+      <circle cx="220" cy="415" r="10" fill="#fff" opacity=".78"/>
+      <circle cx="494" cy="245" r="10" fill="#fff" opacity=".78"/>
+      <rect width="720" height="720" fill="url(#glow)"/>
+      <text x="72" y="610" fill="#fff" opacity=".82" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">${title}</text>
+    </svg>
+  `
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+function previewImage(asset: AssetItem, index: number) {
+  if (asset.type === 'IMAGE') return bestUrl(asset) || placeholderImage(asset, index)
+  if (asset.thumbnailUrl) return asset.thumbnailUrl
+  return placeholderImage(asset, index)
+}
+
+const CHROMA_PALETTES = [
+  { borderColor: '#4f46e5', gradient: 'linear-gradient(145deg, rgba(79, 70, 229, 0.62), #06050a 72%)' },
+  { borderColor: '#10b981', gradient: 'linear-gradient(210deg, rgba(16, 185, 129, 0.56), #050708 72%)' },
+  { borderColor: '#f59e0b', gradient: 'linear-gradient(165deg, rgba(245, 158, 11, 0.52), #070604 72%)' },
+  { borderColor: '#ef4444', gradient: 'linear-gradient(195deg, rgba(239, 68, 68, 0.48), #080507 72%)' },
+  { borderColor: '#8b5cf6', gradient: 'linear-gradient(225deg, rgba(139, 92, 246, 0.56), #06040b 72%)' },
+  { borderColor: '#06b6d4', gradient: 'linear-gradient(135deg, rgba(6, 182, 212, 0.5), #04080a 72%)' },
+]
+
+function toChromaItem(asset: AssetItem, index: number): ChromaItem {
+  const dur = formatDuration(asset.duration)
+  const size = asset.width && asset.height ? `${asset.width} × ${asset.height}` : asset.status ?? 'READY'
+  const palette = CHROMA_PALETTES[index % CHROMA_PALETTES.length] ?? CHROMA_PALETTES[0]!
+  const visibility = asset.isPublic ? 'Public' : 'Private'
+  const project = asset.project?.title ? `@${asset.project.title}` : `#${shortId(asset.id)}`
+
+  return {
+    image: previewImage(asset, index),
+    title: assetTitle(asset),
+    subtitle: [assetKindLabel(asset), dur ?? size].filter(Boolean).join(' · '),
+    handle: project,
+    location: `${visibility} · ${formatDate(asset.createdAt)}`,
+    borderColor: palette.borderColor,
+    gradient: palette.gradient,
+    url: `/assets/${asset.id}`,
+  }
+}
+
+const SELECT_STYLE: CSSProperties = {
+  padding: '11px 12px',
+  borderRadius: '12px',
+  border: '1px solid rgba(255,255,255,0.14)',
+  background: 'rgba(255,255,255,0.07)',
+  color: '#f8f5ff',
   fontSize: '14px',
   cursor: 'pointer',
   outline: 'none',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function TypeChip({ type }: { type: string }) {
-  const cfg = TYPE_CONFIG[type] ?? { label: type, bg: '#f2f4f7', color: '#667085' }
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '7px', fontSize: '11px', fontWeight: 650, background: cfg.bg, color: cfg.color }}>
-      {cfg.label}
-    </span>
-  )
+const TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
+  IMAGE: { label: '图片', bg: 'rgba(96,165,250,0.16)', color: '#bfdbfe' },
+  VIDEO: { label: '视频', bg: 'rgba(251,146,60,0.16)', color: '#fed7aa' },
+  AUDIO: { label: '音频', bg: 'rgba(52,211,153,0.16)', color: '#bbf7d0' },
+  SCRIPT: { label: '文本', bg: 'rgba(226,232,240,0.12)', color: '#cbd5e1' },
+  DOCUMENT: { label: '文件', bg: 'rgba(226,232,240,0.12)', color: '#cbd5e1' },
 }
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const copy = () => {
-    void navigator.clipboard?.writeText(text)
-    setCopied(true)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setCopied(false), 1800)
-  }
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      aria-label={label}
-      style={{ padding: '3px 9px', borderRadius: '8px', border: '1px solid #dbe3ef', background: '#fff', color: copied ? '#2e7d5b' : '#667085', fontSize: '11px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-    >
-      {copied ? '已复制' : '复制'}
-    </button>
-  )
-}
-
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid #dbe3ef', borderRadius: '14px', padding: '16px 20px', minWidth: '112px', boxShadow: '0 8px 24px rgba(16,24,40,0.04)' }}>
-      <div style={{ fontSize: '24px', fontWeight: 700, color: accent ?? '#101828', letterSpacing: 0 }}>{value}</div>
-      <div style={{ fontSize: '12px', color: '#667085', marginTop: '4px' }}>{label}</div>
-    </div>
-  )
-}
-
-function ImagePreview({ asset }: { asset: AssetItem }) {
-  const url = bestUrl(asset)
-  if (!url) {
-    return (
-      <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2f6fb', color: '#98a2b3', fontSize: '12px' }}>
-        暂无预览
-      </div>
-    )
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={url}
-      alt={asset.title ?? asset.name}
-      style={{ display: 'block', width: '100%', height: '180px', objectFit: 'cover', background: '#f2f6fb' }}
-    />
-  )
-}
-
-function VideoPreview({ asset }: { asset: AssetItem }) {
-  const url = bestUrl(asset)
-  if (!url) {
-    return (
-      <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff7ed', color: '#98a2b3', fontSize: '12px' }}>
-        暂无预览
-      </div>
-    )
-  }
-  return (
-    // eslint-disable-next-line jsx-a11y/media-has-caption
-    <video
-      src={url}
-      controls
-      playsInline
-      preload="metadata"
-      style={{ display: 'block', width: '100%', height: '180px', objectFit: 'cover', background: '#101828' }}
-    />
-  )
-}
-
-function VisibilityToggle({ asset, onToggled }: { asset: AssetItem; onToggled: (id: string, next: boolean) => void }) {
-  const [busy, setBusy] = useState(false)
-  async function toggle(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    if (busy) return
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/assets/${asset.id}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPublic: !asset.isPublic }),
-      })
-      if (res.ok) onToggled(asset.id, !asset.isPublic)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <button
-      type="button"
-      onClick={(e) => { void toggle(e) }}
-      disabled={busy}
-      title={asset.isPublic ? '设为私有' : '设为公开'}
-      style={{
-        padding: '2px 8px',
-        borderRadius: '8px',
-        border: '1px solid #dbe3ef',
-        background: asset.isPublic ? '#ecfdf3' : '#f8fafc',
-        color: asset.isPublic ? '#2e7d5b' : '#667085',
-        fontSize: '10px',
-        cursor: busy ? 'not-allowed' : 'pointer',
-        opacity: busy ? 0.5 : 1,
-        whiteSpace: 'nowrap',
-        fontWeight: 500,
-      }}
-    >
-      {busy ? '…' : asset.isPublic ? '🌐 公开' : '🔒 私有'}
-    </button>
-  )
-}
-
-function AssetCard({ asset, onPublicToggled }: { asset: AssetItem; onPublicToggled: (id: string, next: boolean) => void }) {
-  const url = bestUrl(asset)
-  const preview = promptPreview(asset.prompt)
-  const bytes = formatBytes(asset.sizeBytes)
-  const dur = formatDuration(asset.duration)
-  const wh = asset.width && asset.height ? `${asset.width}×${asset.height}` : null
-
-  return (
-    <article
-      style={{
-        background: '#fff',
-        border: '1px solid #dbe3ef',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        boxShadow: '0 10px 30px rgba(16,24,40,0.05)',
-      }}
-    >
-      {/* Media preview */}
-      {asset.type === 'IMAGE' ? <ImagePreview asset={asset} /> : null}
-      {asset.type === 'VIDEO' ? <VideoPreview asset={asset} /> : null}
-
-      {/* Card body */}
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-        {/* Top row: type chip + visibility + date */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <TypeChip type={asset.type} />
-          {dur ? <span style={{ fontSize: '11px', color: '#667085', background: '#f2f4f7', padding: '2px 6px', borderRadius: '6px' }}>{dur}</span> : null}
-          <VisibilityToggle asset={asset} onToggled={onPublicToggled} />
-          <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#98a2b3', flexShrink: 0 }}>{formatDate(asset.createdAt)}</span>
-        </div>
-
-        {/* Title */}
-        {asset.title || asset.name ? (
-          <p style={{ margin: 0, fontSize: '14px', fontWeight: 650, color: '#101828', lineHeight: '1.4', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-            {asset.title ?? asset.name}
-          </p>
-        ) : null}
-
-        {/* Prompt preview */}
-        {preview ? (
-          <p style={{ margin: 0, fontSize: '12px', color: '#667085', lineHeight: '1.5', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-            {preview}
-          </p>
-        ) : null}
-
-        {/* Meta row */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {asset.providerId ? (
-            <div style={{ fontSize: '11px', color: '#667085' }}>
-              <span style={{ color: '#98a2b3' }}>Provider </span>{asset.providerId}
-            </div>
-          ) : null}
-          {wh || bytes ? (
-            <div style={{ fontSize: '11px', color: '#667085' }}>
-              {[wh, bytes].filter(Boolean).join(' · ')}
-            </div>
-          ) : null}
-          {asset.project ? (
-            <div style={{ fontSize: '11px', color: '#667085' }}>
-              <span style={{ color: '#98a2b3' }}>项目 </span>{asset.project.title}
-            </div>
-          ) : null}
-        </div>
-
-        {/* Action row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid #edf1f7' }}>
-          <a
-            href={`/assets/${asset.id}`}
-            style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap', fontWeight: 600 }}
-          >
-            详情
-          </a>
-          {url ? (
-            <>
-              <CopyButton text={url} label="复制 URL" />
-              <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                style={{ padding: '3px 9px', borderRadius: '8px', border: '1px solid #dbe3ef', background: '#fff', color: '#667085', fontSize: '11px', textDecoration: 'none', whiteSpace: 'nowrap' }}
-              >
-                打开 ↗
-              </a>
-            </>
-          ) : null}
-          {asset.generationJobId ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
-              <code style={{ fontFamily: 'ui-monospace,monospace', fontSize: '10px', color: '#98a2b3' }}>
-                {shortId(asset.generationJobId)}
-              </code>
-              <CopyButton text={asset.generationJobId} label="复制任务 ID" />
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  )
-}
-
-// ─── Filter options ───────────────────────────────────────────────────────────
 
 const TYPE_OPTIONS = [
   { value: '', label: '全部类型' },
@@ -324,7 +168,23 @@ const TYPE_OPTIONS = [
   { value: 'VIDEO', label: '视频' },
 ]
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+function TypeChip({ type }: { type: string }) {
+  const cfg = TYPE_CONFIG[type] ?? { label: type, bg: 'rgba(226,232,240,0.12)', color: '#cbd5e1' }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 26, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 650, background: cfg.bg, color: cfg.color }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div style={{ minWidth: 126, padding: '16px 18px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.12)', background: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045))', boxShadow: '0 18px 45px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.10)' }}>
+      <div style={{ fontSize: 26, fontWeight: 720, color: accent ?? '#f8f5ff', letterSpacing: 0 }}>{value}</div>
+      <div style={{ fontSize: 12, color: 'rgba(248,245,255,0.55)', marginTop: 5 }}>{label}</div>
+    </div>
+  )
+}
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<AssetItem[]>([])
@@ -332,6 +192,7 @@ export default function AssetsPage() {
   const [error, setError] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [allAssets, setAllAssets] = useState<AssetItem[]>([])
 
   const fetchAssets = useCallback(async () => {
     setLoading(true)
@@ -344,7 +205,7 @@ export default function AssetsPage() {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })
-      const data: ApiResponse = await res.json() as ApiResponse
+      const data = await res.json() as ApiResponse
       if (res.status === 401) {
         setError('请先登录后查看资产。')
         setAssets([])
@@ -369,131 +230,116 @@ export default function AssetsPage() {
   }, [typeFilter])
 
   useEffect(() => { void fetchAssets() }, [fetchAssets])
-
-  // Client-side search filter on prompt / title / name
-  const searchLower = search.trim().toLowerCase()
-  const displayed = searchLower
-    ? assets.filter((a) =>
-        (a.prompt ?? '').toLowerCase().includes(searchLower)
-        || (a.title ?? '').toLowerCase().includes(searchLower)
-        || a.name.toLowerCase().includes(searchLower)
-      )
-    : assets
-
-  // Stats (over all loaded assets, ignoring type/search filter for stat cards)
-  const [allAssets, setAllAssets] = useState<AssetItem[]>([])
   useEffect(() => { if (!typeFilter) setAllAssets(assets) }, [assets, typeFilter])
+
+  const displayed = useMemo(() => {
+    const searchLower = search.trim().toLowerCase()
+    if (!searchLower) return assets
+    return assets.filter((asset) =>
+      (asset.prompt ?? '').toLowerCase().includes(searchLower)
+      || (asset.title ?? '').toLowerCase().includes(searchLower)
+      || asset.name.toLowerCase().includes(searchLower)
+      || (asset.project?.title ?? '').toLowerCase().includes(searchLower)
+    )
+  }, [assets, search])
+
   const statsSource = allAssets.length > 0 ? allAssets : assets
   const stats = {
     total: statsSource.length,
-    images: statsSource.filter((a) => a.type === 'IMAGE').length,
-    videos: statsSource.filter((a) => a.type === 'VIDEO').length,
+    images: statsSource.filter((asset) => asset.type === 'IMAGE').length,
+    videos: statsSource.filter((asset) => asset.type === 'VIDEO').length,
   }
+  const chromaItems = displayed.map(toChromaItem)
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f6f8fb', color: '#101828', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif' }}>
-      {/* Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '16px', padding: '0 32px', height: '60px', background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid #dbe3ef' }}>
-        <a href="/community" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#667085', textDecoration: 'none', padding: '5px 9px', borderRadius: '7px' }}>
+    <div style={{ minHeight: '100vh', background: '#0b0710', color: '#f8f5ff', fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,sans-serif', overflowX: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', background: 'radial-gradient(circle at 18% 12%, rgba(236,72,153,0.18), transparent 24%), radial-gradient(circle at 78% 8%, rgba(79,70,229,0.20), transparent 28%), radial-gradient(circle at 50% 92%, rgba(20,184,166,0.14), transparent 30%), linear-gradient(180deg, #120d19 0%, #08060b 48%, #050407 100%)' }} />
+
+      <header style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 14, padding: '0 32px', height: 66, background: 'rgba(10,7,14,0.72)', backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+        <a href="/community" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(248,245,255,0.64)', textDecoration: 'none', padding: '7px 10px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.10)' }}>
           ← 社群
         </a>
-        <div style={{ width: '1px', height: '16px', background: '#dbe3ef' }} />
-        <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#2563eb', textDecoration: 'none', padding: '6px 10px', borderRadius: '9px', border: '1px solid #c8d7ee', background: '#e8f0ff' }}>
-          ← 返回画布
+        <a href="/create" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#fff', textDecoration: 'none', padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)' }}>
+          AI Canvas
         </a>
-        <div style={{ width: '1px', height: '20px', background: '#dbe3ef' }} />
-        <h1 style={{ fontSize: '14px', fontWeight: 650, color: '#101828', margin: 0 }}>Gallery · 资产中心</h1>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '11px', color: '#98a2b3' }}>只读 · 不触发生成</span>
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.12)' }} />
+        <h1 style={{ fontSize: 14, fontWeight: 650, color: '#fff', margin: 0 }}>作品展示</h1>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11, color: 'rgba(248,245,255,0.42)' }}>Gallery · Assets</span>
           <button
             type="button"
             onClick={() => { void fetchAssets() }}
             disabled={loading}
-            style={{ padding: '6px 12px', borderRadius: '9px', border: '1px solid #dbe3ef', background: '#fff', color: '#475467', fontSize: '12px', cursor: loading ? 'not-allowed' : 'pointer' }}
+            style={{ padding: '8px 13px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.07)', color: 'rgba(248,245,255,0.84)', fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer' }}
           >
             {loading ? '加载中…' : '刷新'}
           </button>
         </div>
       </header>
 
-      <main style={{ maxWidth: '1180px', margin: '0 auto', padding: '40px 24px 80px' }}>
-        {/* Title */}
-        <div style={{ marginBottom: '32px' }}>
-          <h2 style={{ fontSize: '28px', fontWeight: 700, color: '#101828', margin: '0 0 8px', letterSpacing: 0 }}>资产中心</h2>
-          <p style={{ fontSize: '14px', color: '#667085', margin: 0 }}>集中管理已生成图片、视频与可复用创作素材</p>
-        </div>
-
-        {/* Stats */}
-        {!loading && !error ? (
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '32px' }}>
-            <StatCard label="全部资产" value={stats.total} />
-            <StatCard label="图片资产" value={stats.images} accent={stats.images > 0 ? '#2563eb' : undefined} />
-            <StatCard label="视频资产" value={stats.videos} accent={stats.videos > 0 ? '#c2410c' : undefined} />
+      <main style={{ position: 'relative', zIndex: 1, maxWidth: 1480, margin: '0 auto', padding: '34px 28px 96px' }}>
+        <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'end', gap: 24, marginBottom: 18 }}>
+          <div>
+            <h2 style={{ margin: '0 0 8px', fontSize: 'clamp(32px, 4.6vw, 58px)', lineHeight: 0.96, letterSpacing: 0, fontWeight: 760 }}>作品展示</h2>
+            <p style={{ margin: 0, maxWidth: 720, color: 'rgba(248,245,255,0.58)', fontSize: 14, lineHeight: 1.65 }}>
+              以作品墙方式浏览图片、视频与可复用资产。鼠标移动会唤醒局部色彩，点击卡片进入资产详情。
+            </p>
           </div>
-        ) : null}
+          {!loading && !error ? (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <StatCard label="全部资产" value={stats.total} />
+              <StatCard label="图片资产" value={stats.images} accent="#93c5fd" />
+              <StatCard label="视频资产" value={stats.videos} accent="#fdba74" />
+            </div>
+          ) : null}
+        </section>
 
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px', alignItems: 'center', border: '1px solid #dbe3ef', background: '#fff', borderRadius: '16px', padding: '12px', boxShadow: '0 8px 24px rgba(16,24,40,0.04)' }}>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={SELECT_STYLE} aria-label="按类型筛选">
-            {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 24, alignItems: 'center', border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.045)', borderRadius: 22, padding: 12, boxShadow: '0 20px 70px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08)' }}>
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} style={SELECT_STYLE} aria-label="按类型筛选">
+            {TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索 prompt / 标题…"
-            style={{ ...SELECT_STYLE, minWidth: '200px', flex: 1, maxWidth: '320px' }}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索 prompt / 标题 / 项目…"
+            style={{ ...SELECT_STYLE, minWidth: 220, flex: 1, maxWidth: 420 }}
             aria-label="搜索资产"
           />
-          {displayed.length > 0 ? (
-            <span style={{ fontSize: '12px', color: '#667085', marginLeft: 'auto' }}>
-              显示 {displayed.length} 条
-            </span>
-          ) : null}
-        </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
+            {typeFilter ? <TypeChip type={typeFilter} /> : <span style={{ color: 'rgba(248,245,255,0.50)', fontSize: 12, alignSelf: 'center' }}>全部类型</span>}
+            {displayed.length > 0 ? <span style={{ color: 'rgba(248,245,255,0.50)', fontSize: 12, alignSelf: 'center' }}>显示 {displayed.length} 条</span> : null}
+          </div>
+        </section>
 
-        {/* Content */}
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0', color: '#667085', fontSize: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 420, color: 'rgba(248,245,255,0.58)', fontSize: 14 }}>
             加载中…
           </div>
         ) : error ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '12px' }}>
-            <div style={{ fontSize: '14px', color: '#b42318' }}>无法读取资产列表，请稍后重试</div>
-            <div style={{ fontSize: '12px', color: '#667085' }}>{error}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 420, justifyContent: 'center', gap: 12, borderRadius: 28, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.045)' }}>
+            <div style={{ fontSize: 15, color: '#fca5a5' }}>无法读取资产列表，请稍后重试</div>
+            <div style={{ fontSize: 12, color: 'rgba(248,245,255,0.52)' }}>{error}</div>
             <button
               type="button"
               onClick={() => { void fetchAssets() }}
-              style={{ marginTop: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '13px', cursor: 'pointer' }}
+              style={{ marginTop: 8, padding: '9px 18px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.16)', background: 'rgba(255,255,255,0.09)', color: '#fff', fontSize: 13, cursor: 'pointer' }}
             >
               重试
             </button>
           </div>
         ) : displayed.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '8px' }}>
-            <div style={{ fontSize: '14px', color: '#667085' }}>暂无资产</div>
-            <div style={{ fontSize: '12px', color: '#98a2b3' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 420, justifyContent: 'center', gap: 10, borderRadius: 28, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.045)' }}>
+            <div style={{ fontSize: 15, color: 'rgba(248,245,255,0.72)' }}>暂无资产</div>
+            <div style={{ fontSize: 12, color: 'rgba(248,245,255,0.44)' }}>
               {typeFilter || search ? '当前筛选条件下没有匹配的资产' : '请先在画布生成图片或视频，资产将自动出现在这里'}
             </div>
-            <a
-              href="/create"
-              style={{ marginTop: '12px', padding: '8px 18px', borderRadius: '10px', border: '1px solid #c8d7ee', background: '#e8f0ff', color: '#2563eb', fontSize: '13px', textDecoration: 'none' }}
-            >
-              去画布生成 →
+            <a href="/create" style={{ marginTop: 12, padding: '10px 18px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: '#fff', color: '#09070c', fontSize: 13, textDecoration: 'none', fontWeight: 650 }}>
+              去画布生成
             </a>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-            {displayed.map((asset) => (
-                <AssetCard
-                  key={asset.id}
-                  asset={asset}
-                  onPublicToggled={(id, next) => {
-                    setAssets((prev) => prev.map((a) => a.id === id ? { ...a, isPublic: next } : a))
-                  }}
-                />
-              ))}
-          </div>
+          <ChromaGrid items={chromaItems} columns={3} rows={Math.ceil(chromaItems.length / 3)} radius={360} />
         )}
       </main>
     </div>

@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { clientLogout } from '@/lib/auth/client'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 import { clearUserScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
+import { MagicBentoLink } from '@/components/layout/MagicBentoLink'
 import styles from './nonCanvasShell.module.css'
 
 type NavItem = { label: string; href: string; badge?: string }
@@ -232,12 +233,34 @@ export function TopNavigation() {
 
                   {openMenu === group.key && (
                     <div
-                      className={`${isCanvasRoute ? styles.navMenuDark : styles.navMenuLight} absolute left-0 top-full z-[200] mt-2 w-[176px] overflow-hidden rounded-2xl py-1.5`}
+                      className={`${isCanvasRoute ? styles.navMenuDark : styles.navMenuLight} absolute left-0 top-full z-[200] mt-2 w-[208px] overflow-hidden rounded-2xl py-1.5`}
                       onMouseEnter={() => handleMenuEnter(group.key)}
                       onMouseLeave={handleMenuLeave}
                     >
                       {group.items.map((item) => {
                         const isCreate = item.href === '/create'
+                        const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                        if (!isCanvasRoute) {
+                          return (
+                            <MagicBentoLink
+                              key={item.href}
+                              href={item.href}
+                              active={active}
+                              className="mx-1.5 my-1 text-[12px]"
+                              glowColor={group.key === 'market' ? '236, 72, 153' : group.key === 'workspace' ? '6, 182, 212' : group.key === 'myapi' ? '99, 102, 241' : '132, 0, 255'}
+                              onClick={isCreate ? handleCreateClick : undefined}
+                            >
+                              <span className="flex w-full items-center justify-between gap-2">
+                                <span>{item.label}</span>
+                                {item.badge ? (
+                                  <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/55">
+                                    {item.badge}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </MagicBentoLink>
+                          )
+                        }
                         return (
                           <a
                             key={item.href}
@@ -268,7 +291,7 @@ export function TopNavigation() {
           {/* Community shortcut */}
           <Link
             href="/community"
-            className={`hidden rounded-xl px-2.5 py-1.5 text-[12px] transition sm:inline-flex ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+            className={`hidden rounded-xl px-2.5 py-1.5 text-[12px] transition sm:inline-flex ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10 hover:text-white'}`}
           >
             社群
           </Link>
@@ -277,7 +300,7 @@ export function TopNavigation() {
           <div className="relative" ref={searchRef}>
             <button
               onClick={() => setSearchOpen((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/58 hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white'}`}
             >
               <span aria-hidden="true">⌕</span>
               <span className="hidden sm:inline">搜索</span>
@@ -294,30 +317,51 @@ export function TopNavigation() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜索页面、功能或流程…"
-                    className={`w-full rounded-xl px-3 py-2 text-[13px] outline-none ${isCanvasRoute ? 'border border-white/10 bg-white/[0.06] text-white placeholder-white/30 focus:border-white/20' : 'border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:border-blue-300'}`}
+                    className={`w-full rounded-xl px-3 py-2 text-[13px] outline-none ${isCanvasRoute ? 'border border-white/10 bg-white/[0.06] text-white placeholder-white/30 focus:border-white/20' : 'border border-white/10 bg-white/[0.06] text-white placeholder-white/30 focus:border-indigo-300/50'}`}
                   />
                 </div>
-                <div className="max-h-[300px] overflow-y-auto pb-2">
+                <div className="max-h-[300px] overflow-y-auto px-1.5 pb-2">
                   {filteredItems.length === 0 ? (
                     <div className={`px-4 py-6 text-center text-[12px] ${isCanvasRoute ? 'text-white/30' : 'text-slate-400'}`}>没有找到入口</div>
                   ) : (
-                    filteredItems.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => { setSearchOpen(false); setSearchQuery('') }}
-                        className={`flex items-center justify-between gap-3 px-4 py-2.5 transition ${isCanvasRoute ? 'hover:bg-white/[0.08] hover:text-white' : 'hover:bg-slate-50'}`}
-                      >
-                        <div className="min-w-0">
-                          <div className={`text-[13px] ${isCanvasRoute ? 'text-white/80' : 'text-slate-800'}`}>{item.label}</div>
-                          <div className={`truncate font-mono text-[10px] ${isCanvasRoute ? 'text-white/28' : 'text-slate-400'}`}>{item.href}</div>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${isCanvasRoute ? 'bg-white/[0.04] text-white/35' : 'bg-slate-100 text-slate-500'}`}>{item.group}</span>
-                      </Link>
-                    ))
+                    filteredItems.map((item) => {
+                      if (!isCanvasRoute) {
+                        return (
+                          <MagicBentoLink
+                            key={`${item.group}-${item.href}-${item.label}`}
+                            href={item.href}
+                            className="my-1 text-[12px]"
+                            glowColor="99, 102, 241"
+                            onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+                          >
+                            <span className="flex w-full items-center justify-between gap-3">
+                              <span className="min-w-0">
+                                <span className="block text-[13px] text-white/85">{item.label}</span>
+                                <span className="block truncate font-mono text-[10px] text-white/35">{item.href}</span>
+                              </span>
+                              <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/45">{item.group}</span>
+                            </span>
+                          </MagicBentoLink>
+                        )
+                      }
+                      return (
+                        <Link
+                          key={`${item.group}-${item.href}-${item.label}`}
+                          href={item.href}
+                          onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+                          className="flex items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-white/[0.08] hover:text-white"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-[13px] text-white/80">{item.label}</div>
+                            <div className="truncate font-mono text-[10px] text-white/28">{item.href}</div>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-white/35">{item.group}</span>
+                        </Link>
+                      )
+                    })
                   )}
                 </div>
-                <div className={`border-t px-4 py-2 text-[10px] ${isCanvasRoute ? 'border-white/[0.06] text-white/25' : 'border-slate-100 text-slate-400'}`}>
+                <div className={`border-t px-4 py-2 text-[10px] ${isCanvasRoute ? 'border-white/[0.06] text-white/25' : 'border-white/[0.06] text-white/28'}`}>
                   仅搜索已开放页面，不触发生成或保存。
                 </div>
               </div>
@@ -332,14 +376,14 @@ export function TopNavigation() {
               onMouseLeave={handleMenuLeave}
             >
               {/* Trigger */}
-              <button className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] hover:border-white/20' : 'border border-slate-200 bg-white hover:border-blue-200'}`}>
-                <div className={`h-7 w-7 shrink-0 rounded-full text-center text-xs font-semibold leading-7 ${isCanvasRoute ? 'bg-white/[0.08] text-white' : 'bg-blue-50 text-blue-700'}`}>
+              <button className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] hover:border-white/20' : 'border border-white/10 bg-white/[0.04] hover:border-fuchsia-400/40 hover:bg-fuchsia-500/10'}`}>
+                <div className={`h-7 w-7 shrink-0 rounded-full text-center text-xs font-semibold leading-7 ${isCanvasRoute ? 'bg-white/[0.08] text-white' : 'bg-white/[0.08] text-white'}`}>
                   {getUserInitial(effectiveUser.displayName, effectiveUser.email)}
                 </div>
-                <div className={`max-w-[80px] truncate text-[12px] font-medium ${isCanvasRoute ? 'text-white' : 'text-slate-800'}`}>
+                <div className={`max-w-[80px] truncate text-[12px] font-medium ${isCanvasRoute ? 'text-white' : 'text-white/86'}`}>
                   {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
                 </div>
-                <span className={`text-[8px] ${isCanvasRoute ? 'text-white/25' : 'text-slate-400'}`}>▾</span>
+                <span className={`text-[8px] ${isCanvasRoute ? 'text-white/25' : 'text-white/30'}`}>▾</span>
               </button>
 
               {/* Dropdown */}
@@ -351,12 +395,12 @@ export function TopNavigation() {
                 >
                   {/* User identity header */}
                   <div className="px-3.5 pb-2 pt-2">
-                    <p className={`truncate text-[12px] font-medium ${isCanvasRoute ? 'text-white/80' : 'text-slate-800'}`}>
+                    <p className={`truncate text-[12px] font-medium ${isCanvasRoute ? 'text-white/80' : 'text-white/82'}`}>
                       {getUserShortName(effectiveUser.displayName, effectiveUser.email)}
                     </p>
-                    <p className={`truncate text-[10px] ${isCanvasRoute ? 'text-white/30' : 'text-slate-500'}`}>{effectiveUser.email}</p>
+                    <p className={`truncate text-[10px] ${isCanvasRoute ? 'text-white/30' : 'text-white/34'}`}>{effectiveUser.email}</p>
                   </div>
-                  <div className={`mx-2 mb-1 border-t ${isCanvasRoute ? 'border-white/[0.07]' : 'border-slate-100'}`} />
+                  <div className={`mx-2 mb-1 border-t ${isCanvasRoute ? 'border-white/[0.07]' : 'border-white/[0.07]'}`} />
 
                   {/* Account links */}
                   <Link
@@ -366,20 +410,33 @@ export function TopNavigation() {
                   >
                     <span>⚙</span> 账号设置
                   </Link>
-                  <Link
-                    href="/account/providers"
-                    className={`${isCanvasRoute ? 'text-violet-300/80 hover:bg-violet-500/[0.08] hover:text-violet-200' : 'text-blue-700 hover:bg-blue-50'} flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition`}
-                    onClick={() => setOpenMenu(null)}
-                  >
-                    <span>⚡</span> 我的 API 账户
-                  </Link>
-                  <Link
-                    href="/account/usage"
-                    className={`${isCanvasRoute ? 'text-sky-300/70 hover:bg-sky-500/[0.06] hover:text-sky-200' : 'text-slate-600 hover:bg-slate-50'} flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition`}
-                    onClick={() => setOpenMenu(null)}
-                  >
-                    <span>📊</span> 生成用量
-                  </Link>
+                  {isCanvasRoute ? (
+                    <>
+                      <Link
+                        href="/account/providers"
+                        className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.08] hover:text-violet-200"
+                        onClick={() => setOpenMenu(null)}
+                      >
+                        <span>⚡</span> 我的 API 账户
+                      </Link>
+                      <Link
+                        href="/account/usage"
+                        className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-sky-300/70 transition hover:bg-sky-500/[0.06] hover:text-sky-200"
+                        onClick={() => setOpenMenu(null)}
+                      >
+                        <span>📊</span> 生成用量
+                      </Link>
+                    </>
+                  ) : (
+                    <div className="px-1.5">
+                      <MagicBentoLink href="/account/providers" className="my-1 text-[12px]" glowColor="99, 102, 241" onClick={() => setOpenMenu(null)}>
+                        <span className="flex items-center gap-2.5"><span>⚡</span> 我的 API 账户</span>
+                      </MagicBentoLink>
+                      <MagicBentoLink href="/account/usage" className="my-1 text-[12px]" glowColor="6, 182, 212" onClick={() => setOpenMenu(null)}>
+                        <span className="flex items-center gap-2.5"><span>📊</span> 生成用量</span>
+                      </MagicBentoLink>
+                    </div>
+                  )}
                   <Link
                     href="/account/credits"
                     className={`${isCanvasRoute ? styles.navMenuItemDark : styles.navMenuItemLight} flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition`}
@@ -387,20 +444,28 @@ export function TopNavigation() {
                   >
                     <span>◎</span> 积分与充值
                   </Link>
-                  <Link
-                    href="/account/membership"
-                    className={`${isCanvasRoute ? 'text-amber-300/70 hover:bg-amber-500/[0.06] hover:text-amber-200' : 'text-amber-700 hover:bg-amber-50'} flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition`}
-                    onClick={() => setOpenMenu(null)}
-                  >
-                    <span>★</span> 会员中心
-                  </Link>
+                  {isCanvasRoute ? (
+                    <Link
+                      href="/account/membership"
+                      className="flex items-center gap-2.5 px-3.5 py-[7px] text-[12px] text-amber-300/70 transition hover:bg-amber-500/[0.06] hover:text-amber-200"
+                      onClick={() => setOpenMenu(null)}
+                    >
+                      <span>★</span> 会员中心
+                    </Link>
+                  ) : (
+                    <div className="px-1.5">
+                      <MagicBentoLink href="/account/membership" className="my-1 text-[12px]" glowColor="245, 158, 11" onClick={() => setOpenMenu(null)}>
+                        <span className="flex items-center gap-2.5"><span>★</span> 会员中心</span>
+                      </MagicBentoLink>
+                    </div>
+                  )}
 
-                  <div className={`mx-2 my-1 border-t ${isCanvasRoute ? 'border-white/[0.07]' : 'border-slate-100'}`} />
+                  <div className={`mx-2 my-1 border-t ${isCanvasRoute ? 'border-white/[0.07]' : 'border-white/[0.07]'}`} />
 
                   {/* Logout */}
                   <button
                     onClick={() => void handleLogout()}
-                    className={`flex w-full items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition ${isCanvasRoute ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/70' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+                    className={`flex w-full items-center gap-2.5 px-3.5 py-[7px] text-[12px] transition ${isCanvasRoute ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/70' : 'text-white/42 hover:bg-white/[0.06] hover:text-white/72'}`}
                   >
                     <span>↩</span> 登出
                   </button>
@@ -411,13 +476,13 @@ export function TopNavigation() {
             <div className="hidden items-center gap-2 md:flex">
               <Link
                 href="/auth/login"
-                className={`rounded-xl px-3 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-white/20 hover:text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+                className={`rounded-xl px-3 py-1.5 text-[12px] transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-white/20 hover:text-white' : 'border border-white/10 bg-white/[0.04] text-white/70 hover:border-fuchsia-400/40 hover:text-white'}`}
               >
                 登录
               </Link>
               <Link
                 href="/auth/register"
-                className={`rounded-xl px-3 py-1.5 text-[12px] font-medium transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.08] text-white hover:border-white/20 hover:bg-white/[0.12]' : 'border border-blue-600 bg-blue-600 text-white hover:bg-blue-700'}`}
+                className={`rounded-xl px-3 py-1.5 text-[12px] font-medium transition ${isCanvasRoute ? 'border border-white/10 bg-white/[0.08] text-white hover:border-white/20 hover:bg-white/[0.12]' : 'border border-fuchsia-400/40 bg-fuchsia-500/18 text-white hover:bg-fuchsia-500/28'}`}
               >
                 注册
               </Link>

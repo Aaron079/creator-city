@@ -1,0 +1,205 @@
+.grid {
+  position: relative;
+  width: 100%;
+  min-height: 620px;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 420px));
+  grid-auto-rows: auto;
+  justify-content: center;
+  gap: 22px;
+  margin: 0 auto;
+  padding: 0;
+  box-sizing: border-box;
+  --x: 50%;
+  --y: 50%;
+  --r: 300px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 526px;
+  border-radius: 26px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--card-gradient);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: border-color 240ms ease, transform 240ms ease, box-shadow 240ms ease;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+  --spotlight-color: rgba(255, 255, 255, 0.22);
+}
+
+.card:hover {
+  border-color: var(--card-border);
+  transform: translateY(-4px);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.55), 0 0 34px color-mix(in srgb, var(--card-border) 28%, transparent);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--mouse-x) var(--mouse-y), var(--spotlight-color), transparent 68%);
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+
+.card:hover::before {
+  opacity: 1;
+}
+
+.imageFrame {
+  position: relative;
+  z-index: 1;
+  padding: 14px 14px 0;
+}
+
+.imageFrame img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 18px;
+  background: #14111b;
+  filter: saturate(0.82) contrast(1.06);
+}
+
+.info {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 8px;
+  column-gap: 14px;
+  padding: 22px 20px 24px;
+  color: #f8f5ff;
+  font-family: var(--font-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+
+.title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(21px, 2vw, 28px);
+  line-height: 1.08;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.handle {
+  align-self: start;
+  color: rgba(248, 245, 255, 0.58);
+  font-size: clamp(16px, 1.4vw, 22px);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.subtitle {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: rgba(248, 245, 255, 0.58);
+  font-size: clamp(16px, 1.5vw, 22px);
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.location {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(248, 245, 255, 0.74);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.overlay,
+.fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.001);
+}
+
+.overlay {
+  z-index: 3;
+  backdrop-filter: grayscale(1) brightness(0.78);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.78);
+  mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    transparent 0%,
+    transparent 15%,
+    rgba(0, 0, 0, 0.12) 30%,
+    rgba(0, 0, 0, 0.28) 48%,
+    rgba(0, 0, 0, 0.48) 66%,
+    rgba(0, 0, 0, 0.72) 86%,
+    white 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    transparent 0%,
+    transparent 15%,
+    rgba(0, 0, 0, 0.12) 30%,
+    rgba(0, 0, 0, 0.28) 48%,
+    rgba(0, 0, 0, 0.48) 66%,
+    rgba(0, 0, 0, 0.72) 86%,
+    white 100%
+  );
+}
+
+.fade {
+  z-index: 4;
+  opacity: 1;
+  backdrop-filter: grayscale(1) brightness(0.74);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.74);
+  transition: opacity 250ms ease;
+  mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    white 0%,
+    white 16%,
+    rgba(255, 255, 255, 0.86) 34%,
+    rgba(255, 255, 255, 0.62) 58%,
+    rgba(255, 255, 255, 0.3) 82%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    white 0%,
+    white 16%,
+    rgba(255, 255, 255, 0.86) 34%,
+    rgba(255, 255, 255, 0.62) 58%,
+    rgba(255, 255, 255, 0.3) 82%,
+    transparent 100%
+  );
+}
+
+@media (max-width: 1220px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 420px));
+  }
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    min-height: auto;
+  }
+
+  .card {
+    min-height: 410px;
+    border-radius: 22px;
+  }
+}

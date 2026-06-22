@@ -2,6 +2,7 @@
 // Renders a breadcrumb row: ← 社群 / [district name + desc] / [district pills]
 
 import Link from 'next/link'
+import { MagicBentoLink } from '@/components/layout/MagicBentoLink'
 
 const DISTRICTS = [
   { en: 'Plaza', href: '/explore' },
@@ -74,27 +75,21 @@ export function CommunitySectionHeader({ districtZh, desc, activeHref }: Communi
       {/* District navigation pills */}
       <nav
         aria-label="City districts"
-        style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0, flexWrap: 'wrap' }}
+        style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}
       >
         {DISTRICTS.map((d) => {
           const active = activeHref === d.href
           return (
-            <Link
+            <MagicBentoLink
               key={d.href}
               href={d.href}
-              style={{
-                fontSize: 11,
-                color: active ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.28)',
-                textDecoration: 'none',
-                padding: '4px 8px',
-                borderRadius: 6,
-                background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                fontWeight: active ? 600 : 400,
-                whiteSpace: 'nowrap',
-              }}
+              variant="pill"
+              active={active}
+              className="text-[11px]"
+              glowColor={d.en === 'Gallery' ? '168, 85, 247' : d.en === 'Market' ? '251, 146, 60' : d.en === 'Studio' ? '52, 211, 153' : '96, 165, 250'}
             >
               {d.en}
-            </Link>
+            </MagicBentoLink>
           )
         })}
       </nav>

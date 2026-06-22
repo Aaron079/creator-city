@@ -5,6 +5,7 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { FeedbackProvider } from "@/lib/feedback/useFeedback";
 import { FloatingAgent } from "@/components/agent/FloatingAgent";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { NonCanvasSplashCursor } from "@/components/layout/NonCanvasSplashCursor";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -26,6 +27,7 @@ export default function RootLayout({
         <FeedbackProvider>
           <AuthProvider>
             <PageTransition>{children}</PageTransition>
+            <NonCanvasSplashCursor />
             <FloatingAgent />
           </AuthProvider>
         </FeedbackProvider>
