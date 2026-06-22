@@ -1,0 +1,65 @@
+.card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 18% 18%, rgba(168, 85, 247, 0.24), transparent 34%),
+    radial-gradient(circle at 82% 24%, rgba(59, 130, 246, 0.22), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.025));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.28) 48%, transparent 62%);
+  transform: translateX(-32%) rotate(8deg);
+  transition: transform 700ms ease;
+  pointer-events: none;
+}
+
+.card:hover::before {
+  transform: translateX(32%) rotate(8deg);
+}
+
+.mesh {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at 50% 30%, black, transparent 72%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.video {
+  width: 100%;
+  height: 190px;
+  border-radius: 18px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.25);
+  transform: scaleX(-1);
+}
+
+.videoShell {
+  position: relative;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.reflection {
+  position: absolute;
+  inset: auto 10% -28px;
+  height: 40px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(236, 72, 153, 0.26), rgba(59, 130, 246, 0.24));
+  filter: blur(18px);
+  opacity: 0.7;
+}

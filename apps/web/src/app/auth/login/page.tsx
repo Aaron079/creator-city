@@ -4,7 +4,8 @@ import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
-import { clientLogin } from '@/lib/auth/client'
+import { clientLogin, type AuthUserPublic } from '@/lib/auth/client'
+import { loginWithPasskey } from '@/lib/auth/passkey-client'
 
 function LoginForm() {
   const router = useRouter()
@@ -13,6 +14,23 @@ function LoginForm() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
+
+  const completeLogin = (user: AuthUserPublic) => {
+    setAuth(null, {
+      id: user.id,
+      username: user.username ?? '',
+      displayName: user.displayName,
+      email: user.email,
+      avatarUrl: user.avatarUrl ?? undefined,
+      role: user.role,
+      reputation: 0,
+      level: 1,
+      credits: 0,
+    })
+    const next = searchParams.get('next') ?? '/create'
+    router.push(next)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,23 +38,28 @@ function LoginForm() {
     setLoading(true)
     try {
       const user = await clientLogin(form.email, form.password)
-      setAuth(null, {
-        id: user.id,
-        username: user.username ?? '',
-        displayName: user.displayName,
-        email: user.email,
-        avatarUrl: user.avatarUrl ?? undefined,
-        role: user.role,
-        reputation: 0,
-        level: 1,
-        credits: 0,
-      })
-      const next = searchParams.get('next') ?? '/create'
-      router.push(next)
+      completeLogin(user)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '登录失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handlePasskeyLogin = async () => {
+    setError('')
+    if (!form.email.trim()) {
+      setError('请先输入邮箱，再使用 Passkey 登录。')
+      return
+    }
+    setPasskeyLoading(true)
+    try {
+      const user = await loginWithPasskey(form.email)
+      completeLogin(user)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Passkey 登录失败')
+    } finally {
+      setPasskeyLoading(false)
     }
   }
 
@@ -88,6 +111,22 @@ function LoginForm() {
           >
             {loading ? '登录中…' : '登录'}
           </button>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+            <div className="text-sm font-medium text-white">设备生物识别登录</div>
+            <p className="mt-1 text-xs leading-5 text-white/45">
+              已绑定 Passkey 的账号可使用 Touch ID、Face ID、Windows Hello 或系统解锁登录。
+              Creator City 不读取或保存指纹、人脸数据。
+            </p>
+            <button
+              type="button"
+              onClick={handlePasskeyLogin}
+              disabled={passkeyLoading || loading}
+              className="mt-3 w-full rounded-xl border border-white/10 bg-white py-2.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50"
+            >
+              {passkeyLoading ? '等待设备验证…' : '使用 Passkey 登录'}
+            </button>
+          </div>
 
           <p className="text-center text-sm text-white/40">
             还没有账号？{' '}

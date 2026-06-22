@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { useAuthStore } from '@/store/auth.store'
 import { clientLogout } from '@/lib/auth/client'
+import { BiometricAccessCard } from '@/components/account/BiometricAccessCard'
+import { getPasskeyCapability, registerPasskey, type PasskeyCapability } from '@/lib/auth/passkey-client'
 
 interface ProfileData {
   username: string | null
@@ -31,6 +33,12 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [passkeyCapability, setPasskeyCapability] = useState<PasskeyCapability>({
+    webauthn: false,
+    platformAuthenticator: false,
+  })
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
+  const [passkeyCount, setPasskeyCount] = useState(0)
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -39,9 +47,18 @@ export default function AccountPage() {
     }
     void (async () => {
       try {
-        const res = await fetch('/api/user/profile', { credentials: 'include' })
-        if (res.ok) {
-          const data = await res.json() as { profile: ProfileData | null }
+        const [profileRes, credentialsRes, capability] = await Promise.all([
+          fetch('/api/user/profile', { credentials: 'include' }),
+          fetch('/api/auth/passkey/credentials', { credentials: 'include' }),
+          getPasskeyCapability(),
+        ])
+        setPasskeyCapability(capability)
+        if (credentialsRes.ok) {
+          const data = await credentialsRes.json() as { credentials?: unknown[] }
+          setPasskeyCount(data.credentials?.length ?? 0)
+        }
+        if (profileRes.ok) {
+          const data = await profileRes.json() as { profile: ProfileData | null }
           setForm({
             displayName: user.displayName,
             username: data.profile?.username ?? '',
@@ -56,6 +73,20 @@ export default function AccountPage() {
       }
     })()
   }, [isAuthenticated, user, router])
+
+  const handleRegisterPasskey = async () => {
+    setPasskeyLoading(true)
+    setNotice(null)
+    try {
+      await registerPasskey(`${user?.displayName ?? 'Creator City'} 的设备`)
+      setPasskeyCount((count) => count + 1)
+      setNotice({ type: 'success', message: '本设备 Passkey 已绑定。下次登录可使用指纹、面部识别或系统解锁。' })
+    } catch (err) {
+      setNotice({ type: 'error', message: err instanceof Error ? err.message : 'Passkey 绑定失败。' })
+    } finally {
+      setPasskeyLoading(false)
+    }
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -165,6 +196,14 @@ export default function AccountPage() {
             📖 API Key 接入指南 — 了解如何连接自己的 Provider
           </Link>
         </div>
+
+        <BiometricAccessCard
+          supported={passkeyCapability.webauthn}
+          platformAuthenticator={passkeyCapability.platformAuthenticator}
+          loading={passkeyLoading}
+          credentialCount={passkeyCount}
+          onRegister={handleRegisterPasskey}
+        />
 
         {notice && (
           <div className={`mb-5 rounded-xl px-4 py-3 text-sm ${notice.type === 'success' ? 'bg-green-500/10 border border-green-500/20 text-green-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'}`}>
