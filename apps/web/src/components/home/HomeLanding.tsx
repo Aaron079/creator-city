@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 import { useAuthStore } from '@/store/auth.store'
@@ -85,6 +85,37 @@ const HOME_NAV_GROUPS = [
   },
 ]
 
+const TOOL_STACK_CARDS = [
+  {
+    index: '01',
+    title: 'AI Generate',
+    subtitle: 'Prompt to image / video',
+    description: '把想法转为图片、视频和镜头素材。',
+    accent: 'from-fuchsia-400 via-pink-300 to-indigo-300',
+  },
+  {
+    index: '02',
+    title: 'Asset Decompose',
+    subtitle: 'Break assets into editable parts',
+    description: '把已生成资产拆成可重构、可复用的创作片段。',
+    accent: 'from-violet-300 via-fuchsia-300 to-pink-300',
+  },
+  {
+    index: '03',
+    title: 'Remix Studio',
+    subtitle: 'Reframe, restyle, rebuild',
+    description: '围绕已有素材快速改构图、换风格、做再设计。',
+    accent: 'from-indigo-300 via-purple-300 to-fuchsia-300',
+  },
+  {
+    index: '04',
+    title: 'Provenance Trace',
+    subtitle: 'Keep origin and license context',
+    description: '让资产来源、授权意向和协作记录留在同一条线上。',
+    accent: 'from-pink-300 via-rose-200 to-violet-300',
+  },
+]
+
 function getUserInitial(displayName?: string | null, email?: string | null): string {
   const name = displayName?.trim()
   if (name) return ([...name][0] ?? 'U').toUpperCase()
@@ -105,8 +136,11 @@ export function HomeLanding() {
   const router = useRouter()
   const { user, isAuthenticated } = useAuthStore()
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
+  const reduceHomeMotion = useReduceHomeMotion()
+  const [engineRef, engineNearViewport] = useNearViewport<HTMLElement>('0px')
   const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
   const effectiveIsAuthenticated = sessionStatus === 'authenticated' || ((sessionStatus === 'loading' || sessionStatus === 'unknown') && isAuthenticated)
+  const runEngineAnimation = engineNearViewport && !reduceHomeMotion
 
   const handleCanvasEntry = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -118,21 +152,25 @@ export function HomeLanding() {
   return (
     <main className="relative overflow-hidden bg-[#100d16] text-white">
       <div className="fixed inset-0 z-0 bg-[#100d16]">
-        <SoftAurora
-          speed={0.48}
-          scale={1.56}
-          brightness={1.12}
-          color1="#fff2ff"
-          color2="#ec22a4"
-          noiseFrequency={2.45}
-          noiseAmplitude={1}
-          bandHeight={0.45}
-          bandSpread={1.08}
-          octaveDecay={0.12}
-          layerOffset={0.42}
-          colorSpeed={0.88}
-          mouseInfluence={0.22}
-        />
+        {reduceHomeMotion ? (
+          <StaticAuroraLayer />
+        ) : (
+          <SoftAurora
+            speed={0.48}
+            scale={1.56}
+            brightness={1.12}
+            color1="#fff2ff"
+            color2="#ec22a4"
+            noiseFrequency={2.45}
+            noiseAmplitude={1}
+            bandHeight={0.45}
+            bandSpread={1.08}
+            octaveDecay={0.12}
+            layerOffset={0.42}
+            colorSpeed={0.88}
+            mouseInfluence={0.22}
+          />
+        )}
       </div>
       <div
         aria-hidden="true"
@@ -150,18 +188,24 @@ export function HomeLanding() {
           <div className="flex flex-1 items-center justify-center px-5 pb-20 pt-32 text-center sm:px-10 lg:pt-36">
             <div className="mx-auto w-full max-w-5xl">
               <div className="mx-auto h-[clamp(112px,16vw,230px)] w-full max-w-[1180px]">
-                <TextPressure
-                  text="Creator City"
-                  flex
-                  width
-                  weight
-                  alpha={false}
-                  italic={false}
-                  stroke={false}
-                  textColor="#ffffff"
-                  minFontSize={72}
-                  className="tracking-[-0.075em]"
-                />
+                {reduceHomeMotion ? (
+                  <h1 className="flex h-full items-center justify-center text-[clamp(72px,14vw,220px)] font-black leading-none text-white">
+                    Creator City
+                  </h1>
+                ) : (
+                  <TextPressure
+                    text="Creator City"
+                    flex
+                    width
+                    weight
+                    alpha={false}
+                    italic={false}
+                    stroke={false}
+                    textColor="#ffffff"
+                    minFontSize={72}
+                    className="tracking-[-0.075em]"
+                  />
+                )}
               </div>
               <p className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl">
                 AI 创作者的会员制工作台
@@ -189,7 +233,7 @@ export function HomeLanding() {
         </div>
       </section>
 
-      <section id="engine" className="relative z-10 min-h-screen px-5 py-20 sm:px-6 sm:py-24">
+      <section ref={engineRef} id="engine" className="relative z-10 min-h-screen px-5 py-20 sm:px-6 sm:py-24">
         <SectionGlow />
         <div className="relative mx-auto grid min-h-[calc(100vh-12rem)] max-w-7xl items-center gap-16 lg:grid-cols-[0.88fr_1.12fr]">
           <div className="max-w-xl text-center lg:text-left">
@@ -216,52 +260,25 @@ export function HomeLanding() {
 
           <div className="relative min-h-[420px] overflow-visible sm:min-h-[620px]">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_64%_50%,rgba(236,72,153,0.18),transparent_40%),radial-gradient(circle_at_72%_54%,rgba(88,80,236,0.22),transparent_42%)]" />
-            <CardSwap
-              width={520}
-              height={370}
-              cardDistance={66}
-              verticalDistance={74}
-              delay={4300}
-              pauseOnHover
-              skewAmount={5}
-            >
-              <Card>
-                <ToolStackCard
-                  index="01"
-                  title="AI Generate"
-                  subtitle="Prompt to image / video"
-                  description="把想法转为图片、视频和镜头素材。"
-                  accent="from-fuchsia-400 via-pink-300 to-indigo-300"
-                />
-              </Card>
-              <Card>
-                <ToolStackCard
-                  index="02"
-                  title="Asset Decompose"
-                  subtitle="Break assets into editable parts"
-                  description="把已生成资产拆成可重构、可复用的创作片段。"
-                  accent="from-violet-300 via-fuchsia-300 to-pink-300"
-                />
-              </Card>
-              <Card>
-                <ToolStackCard
-                  index="03"
-                  title="Remix Studio"
-                  subtitle="Reframe, restyle, rebuild"
-                  description="围绕已有素材快速改构图、换风格、做再设计。"
-                  accent="from-indigo-300 via-purple-300 to-fuchsia-300"
-                />
-              </Card>
-              <Card>
-                <ToolStackCard
-                  index="04"
-                  title="Provenance Trace"
-                  subtitle="Keep origin and license context"
-                  description="让资产来源、授权意向和协作记录留在同一条线上。"
-                  accent="from-pink-300 via-rose-200 to-violet-300"
-                />
-              </Card>
-            </CardSwap>
+            {runEngineAnimation ? (
+              <CardSwap
+                width={520}
+                height={370}
+                cardDistance={66}
+                verticalDistance={74}
+                delay={4300}
+                pauseOnHover
+                skewAmount={5}
+              >
+                {TOOL_STACK_CARDS.map((card) => (
+                  <Card key={card.index}>
+                    <ToolStackCard {...card} />
+                  </Card>
+                ))}
+              </CardSwap>
+            ) : (
+              <StaticToolStackDeck />
+            )}
           </div>
         </div>
       </section>
@@ -315,6 +332,106 @@ export function HomeLanding() {
       </section>
     </main>
   )
+}
+
+function StaticAuroraLayer() {
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 bg-[radial-gradient(ellipse_at_22%_58%,rgba(236,34,164,0.26),transparent_30rem),radial-gradient(ellipse_at_57%_58%,rgba(255,186,242,0.24),transparent_28rem),radial-gradient(ellipse_at_84%_62%,rgba(55,79,222,0.30),transparent_34rem),linear-gradient(180deg,#100d16_0%,#130f19_48%,#0c0a12_100%)]"
+    />
+  )
+}
+
+function StaticToolStackDeck() {
+  const visibleCards = TOOL_STACK_CARDS.slice(0, 3)
+
+  return (
+    <div className="absolute bottom-[14%] right-[14%] h-[370px] w-[520px] max-w-[86vw] origin-bottom-right translate-y-[6%] perspective-[980px] max-lg:right-1/2 max-lg:bottom-[8%] max-lg:translate-x-1/2 max-lg:translate-y-[4%] max-lg:scale-[0.82] max-lg:origin-bottom max-sm:bottom-[18%] max-sm:scale-[0.46]">
+      {visibleCards.map((card, index) => {
+        const transforms = [
+          'translate3d(-50%, -50%, 0) skewY(5deg)',
+          'translate3d(calc(-50% + 66px), calc(-50% - 74px), -99px) skewY(5deg)',
+          'translate3d(calc(-50% + 132px), calc(-50% - 148px), -198px) skewY(5deg)',
+        ]
+
+        return (
+          <div
+            key={card.index}
+            className="absolute left-1/2 top-1/2 h-[370px] w-[520px] overflow-hidden rounded-[28px] border border-white/14 bg-[radial-gradient(circle_at_24%_18%,rgba(255,133,212,0.22),transparent_32%),radial-gradient(circle_at_76%_56%,rgba(116,128,255,0.18),transparent_34%),linear-gradient(145deg,rgba(31,22,42,0.92),rgba(10,8,15,0.96))] shadow-[0_28px_90px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backface-hidden"
+            style={{
+              transform: transforms[index],
+              zIndex: visibleCards.length - index,
+            }}
+          >
+            <ToolStackCard {...card} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function shouldReduceHomeMotion() {
+  if (typeof window === 'undefined') return false
+
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+  const isLowMemoryDevice = typeof deviceMemory === 'number' && deviceMemory <= 4
+
+  return (
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    window.matchMedia('(max-width: 767px)').matches ||
+    window.matchMedia('(pointer: coarse)').matches ||
+    isLowMemoryDevice
+  )
+}
+
+function useReduceHomeMotion() {
+  const [reduceMotion, setReduceMotion] = useState(false)
+
+  useEffect(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const mobileQuery = window.matchMedia('(max-width: 767px)')
+    const pointerQuery = window.matchMedia('(pointer: coarse)')
+
+    const update = () => setReduceMotion(shouldReduceHomeMotion())
+    update()
+
+    motionQuery.addEventListener('change', update)
+    mobileQuery.addEventListener('change', update)
+    pointerQuery.addEventListener('change', update)
+
+    return () => {
+      motionQuery.removeEventListener('change', update)
+      mobileQuery.removeEventListener('change', update)
+      pointerQuery.removeEventListener('change', update)
+    }
+  }, [])
+
+  return reduceMotion
+}
+
+function useNearViewport<T extends HTMLElement>(rootMargin: string) {
+  const ref = useRef<T | null>(null)
+  const [nearViewport, setNearViewport] = useState(false)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setNearViewport(true)
+      return undefined
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setNearViewport(entry?.isIntersecting ?? false),
+      { rootMargin, threshold: 0.08 }
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [rootMargin])
+
+  return [ref, nearViewport] as const
 }
 
 function HomeCapsuleNav({
