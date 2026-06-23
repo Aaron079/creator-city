@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCurrentUser } from '@/lib/auth/use-current-user'
 import { useAuthStore } from '@/store/auth.store'
@@ -180,7 +180,6 @@ export function HomeLanding() {
             handleCanvasEntry={handleCanvasEntry}
             isAuthenticated={effectiveIsAuthenticated}
             user={effectiveUser}
-            enableLanyard={!reduceHomeMotion}
           />
 
           <div className="flex flex-1 items-center justify-center px-5 pb-20 pt-32 text-center sm:px-10 lg:pt-36">
@@ -395,15 +394,12 @@ function HomeCapsuleNav({
   handleCanvasEntry,
   isAuthenticated,
   user,
-  enableLanyard,
 }: {
   handleCanvasEntry: (event: MouseEvent<HTMLAnchorElement>) => void
   isAuthenticated: boolean
   user: { displayName?: string | null; email?: string | null } | null
-  enableLanyard: boolean
 }) {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [lanyardDropped, setLanyardDropped] = useState(true)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleMenuEnter = useCallback((key: string) => {
@@ -416,18 +412,7 @@ function HomeCapsuleNav({
   }, [])
 
   return (
-    <div
-      className="absolute left-1/2 top-7 z-30 w-[min(92vw,1280px)] -translate-x-1/2"
-      onMouseEnter={() => setLanyardDropped(true)}
-    >
-      {enableLanyard ? (
-        <HomeLanyardHandle
-          dropped={lanyardDropped}
-          onRetract={() => setLanyardDropped(false)}
-          onDrop={() => setLanyardDropped(true)}
-        />
-      ) : null}
-      <nav className="relative z-20 flex items-center justify-between gap-6 rounded-[24px] border border-white/[0.085] bg-white/[0.035] px-4 py-2 shadow-[0_18px_54px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl sm:px-5">
+    <nav className="absolute left-1/2 top-7 z-30 flex w-[min(92vw,1280px)] -translate-x-1/2 items-center justify-between gap-6 rounded-[24px] border border-white/[0.085] bg-white/[0.035] px-4 py-2 shadow-[0_18px_54px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-2xl sm:px-5">
         <Link href="/" className="flex items-center gap-2.5 text-[20px] font-semibold tracking-[-0.03em] text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/[0.032]">
             <Sparkles className="h-4 w-4" />
@@ -504,103 +489,6 @@ function HomeCapsuleNav({
           </div>
         )}
       </nav>
-    </div>
-  )
-}
-
-function HomeLanyardHandle({
-  dropped,
-  onDrop,
-  onRetract,
-}: {
-  dropped: boolean
-  onDrop: () => void
-  onRetract: () => void
-}) {
-  const [dragY, setDragY] = useState(0)
-  const dragStartY = useRef<number | null>(null)
-  const dragYRef = useRef(0)
-  const suppressClickRef = useRef(false)
-
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    dragStartY.current = event.clientY
-    dragYRef.current = 0
-    suppressClickRef.current = false
-    setDragY(0)
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [])
-
-  const handlePointerMove = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    if (dragStartY.current === null) return
-    const nextDragY = Math.max(0, Math.min(148, event.clientY - dragStartY.current))
-    dragYRef.current = nextDragY
-    setDragY(nextDragY)
-  }, [])
-
-  const handlePointerEnd = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    if (dragStartY.current === null) return
-    event.currentTarget.releasePointerCapture(event.pointerId)
-    dragStartY.current = null
-    suppressClickRef.current = dragYRef.current > 4
-
-    if (dragYRef.current > 92) {
-      onRetract()
-    } else {
-      onDrop()
-    }
-    dragYRef.current = 0
-    setDragY(0)
-  }, [onDrop, onRetract])
-
-  const translateY = dropped ? 62 + dragY : -38
-  const rotate = dropped ? dragY * 0.04 - 1.5 : 0
-
-  return (
-    <button
-      type="button"
-      aria-label="Creator City navigation lanyard"
-      className="absolute left-[58%] top-0 z-10 hidden w-[128px] -translate-x-1/2 cursor-grab select-none outline-none transition-[transform,opacity] duration-500 ease-out active:cursor-grabbing lg:block"
-      style={{
-        opacity: dropped ? 1 : 0.64,
-        transform: `translate3d(-50%, ${translateY}px, 0) rotate(${rotate}deg)`,
-      }}
-      onClick={() => {
-        if (suppressClickRef.current) {
-          suppressClickRef.current = false
-          return
-        }
-        if (dropped) onRetract()
-        else onDrop()
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
-    >
-      <span
-        aria-hidden="true"
-        className="absolute left-1/2 top-[-72px] h-[92px] w-[2px] -translate-x-1/2 rounded-full bg-gradient-to-b from-white/0 via-white/48 to-white/18 shadow-[0_0_18px_rgba(255,255,255,0.24)]"
-      />
-      <span
-        aria-hidden="true"
-        className="absolute left-1/2 top-[-11px] h-7 w-16 -translate-x-1/2 rounded-full border border-white/12 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
-      />
-      <span className="relative block overflow-hidden rounded-[24px] border border-white/16 bg-[linear-gradient(145deg,rgba(255,255,255,0.16),rgba(255,255,255,0.045)),radial-gradient(circle_at_26%_12%,rgba(255,255,255,0.38),transparent_24%),linear-gradient(160deg,rgba(43,34,58,0.94),rgba(14,10,20,0.98))] px-3 pb-4 pt-7 text-center shadow-[0_28px_90px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-2xl">
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-3 h-2.5 w-9 -translate-x-1/2 rounded-full border border-white/20 bg-black/24"
-        />
-        <span className="block text-[10px] font-semibold uppercase tracking-[0.32em] text-white/44">
-          Creator
-        </span>
-        <span className="mt-0.5 block text-[21px] font-semibold tracking-[-0.04em] text-white">
-          City
-        </span>
-        <span className="mt-2.5 block rounded-full border border-fuchsia-100/14 bg-fuchsia-200/[0.075] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.20em] text-fuchsia-50/60">
-          Navigation
-        </span>
-      </span>
-    </button>
   )
 }
 
