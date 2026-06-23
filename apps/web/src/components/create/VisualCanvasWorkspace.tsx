@@ -152,6 +152,8 @@ import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, bu
 import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettingsForNode, saveSceneLightingForNode } from '@/lib/canvas/nodeDirectorContextStorage'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
+import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
+import type { NodeToolContext } from '@/lib/canvas/nodeToolContext'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -2482,7 +2484,7 @@ export function VisualCanvasWorkspace({
   const [isHdReconstructionOpen, setIsHdReconstructionOpen] = useState(false)
   const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
-  const [lookPanelDefaultNodeId, setLookPanelDefaultNodeId] = useState<string | undefined>(undefined)
+  const [lockedNodeToolContext, setLockedNodeToolContext] = useState<NodeToolContext | null>(null)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('user_provider_account')
@@ -2809,6 +2811,7 @@ export function VisualCanvasWorkspace({
     setIsRemoveBackgroundOpen(false)
     setIsHdReconstructionOpen(false)
     setEditingNodeId(null)
+    setLockedNodeToolContext(null)
     setActiveCanvasModal(null)
   }, [])
 
@@ -2848,6 +2851,28 @@ export function VisualCanvasWorkspace({
   const openGenerationDialog = useCallback(
     (nodeId: string) => { openCanvasPanel('generation', { nodeId }) },
     [openCanvasPanel],
+  )
+
+  const openNodeScopedTool = useCallback(
+    (panelId: CanvasModalId, node: VisualCanvasNode) => {
+      // resetCanvasModalStates (called inside openCanvasPanel) sets lockedNodeToolContext to null.
+      // Calling setLockedNodeToolContext(ctx) AFTER openCanvasPanel in the same event handler
+      // causes React to batch both updates; ctx wins because it is the later setState call.
+      openCanvasPanel(panelId)
+      setLockedNodeToolContext({
+        projectId: projectId ?? '',
+        targetNodeId: node.id,
+        targetAssetId: node.assetId,
+        targetKind: node.kind,
+        targetTitle: node.title,
+        prompt: node.prompt,
+        resultImageUrl: node.resultImageUrl,
+        resultVideoUrl: node.resultVideoUrl,
+        posterUrl: node.preview?.poster,
+        hasMediaResult: nodeHasMediaResult(node),
+      })
+    },
+    [openCanvasPanel, projectId],
   )
   // ── End Canvas Modal Manager ─────────────────────────────────────────────
 
@@ -8229,10 +8254,6 @@ export function VisualCanvasWorkspace({
         }}
         onOpenPromptTool={(tool) => {
           if (tool === 'batch-rewriter') openCanvasPanel('batch-rewriter')
-          else if (tool === 'look-package') {
-            setLookPanelDefaultNodeId(undefined)
-            openCanvasPanel('look-package')
-          }
         }}
       />
     </div>
@@ -8341,7 +8362,9 @@ export function VisualCanvasWorkspace({
       {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
         (() => {
-          const lexTarget = editingNode ?? activeNode
+          const lexTarget = lockedNodeToolContext
+            ? (nodes.find((n) => n.id === lockedNodeToolContext.targetNodeId) ?? null)
+            : (editingNode ?? activeNode)
           const lexApplicable = lexTarget?.kind === 'image' || lexTarget?.kind === 'video'
           if (!lexApplicable || !lexTarget) return null
           const lexSourceNode = {
@@ -8398,7 +8421,7 @@ export function VisualCanvasWorkspace({
                 flushLocalSnapshot()
                 scheduleCanvasSave(0)
               }}
-              onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
+              onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel(); setWorkflowContext(null) }}
               workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
             />
           )
@@ -8414,12 +8437,16 @@ export function VisualCanvasWorkspace({
             onPointerDown={() => { closeCanvasPanel(); setWorkflowContext(null) }}
           />
           <AssetVariantPlannerPanel
-            node={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode) : (editingNode ?? activeNode)}
+            node={lockedNodeToolContext
+              ? (nodes.find((n) => n.id === lockedNodeToolContext.targetNodeId) ?? null)
+              : workflowContext
+                ? (nodes.find((n) => n.id === workflowContext.sourceNodeId) ?? editingNode ?? activeNode)
+                : (editingNode ?? activeNode)}
             canvasPrompt={workflowContext ? (nodes.find((n) => n.id === workflowContext.sourceNodeId)?.prompt ?? '') : canvasPrompt}
             canInsert={editingNode !== null || workflowContext !== null}
             onInsert={handleVariantInsert}
             onCreateNode={handleVariantCreateNode}
-            onClose={() => { closeCanvasPanel(); setWorkflowContext(null) }}
+            onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel(); setWorkflowContext(null) }}
             workflowTargetNodeTitle={workflowContext ? (nodes.find((n) => n.id === workflowContext.targetNodeId)?.title ?? '下游任务') : undefined}
           />
         </>
@@ -8597,14 +8624,14 @@ export function VisualCanvasWorkspace({
           open={isCameraControlOpen}
           value={cameraSettings}
           onChange={updateCameraSettings}
-          onClose={() => closeCanvasPanel()}
+          onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
           sourceNode={isCameraControlOpen ? (() => {
-            const sn = nodes.find((n) => n.id === (directorTargetNodeIdRef.current ?? editingNodeId))
+            const sn = nodes.find((n) => n.id === (lockedNodeToolContext?.targetNodeId ?? null))
             if (!sn) return null
             return { title: sn.title ?? '', kind: (sn.kind === 'image' || sn.kind === 'video' ? sn.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: sn.resultImageUrl, resultVideoUrl: sn.resultVideoUrl }
           })() : null}
           onCreateDerived={(settings) => {
-            const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
+            const sourceId = lockedNodeToolContext?.targetNodeId ?? null
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
             if (!sourceNode) return
             const cameraCtx = buildCameraPromptContext(settings)
@@ -8652,14 +8679,14 @@ export function VisualCanvasWorkspace({
           open={isSceneLightingOpen}
           value={sceneLightingSettings}
           onChange={updateSceneLightingSettings}
-          onClose={() => closeCanvasPanel()}
+          onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
           sourceNode={isSceneLightingOpen ? (() => {
-            const sn = nodes.find((n) => n.id === (directorTargetNodeIdRef.current ?? editingNodeId))
+            const sn = nodes.find((n) => n.id === (lockedNodeToolContext?.targetNodeId ?? null))
             if (!sn) return null
             return { title: sn.title ?? '', kind: (sn.kind === 'image' || sn.kind === 'video' ? sn.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: sn.resultImageUrl, resultVideoUrl: sn.resultVideoUrl }
           })() : null}
           onCreateDerived={(settings) => {
-            const sourceId = directorTargetNodeIdRef.current ?? editingNodeId
+            const sourceId = lockedNodeToolContext?.targetNodeId ?? null
             const sourceNode = sourceId ? nodes.find((n) => n.id === sourceId) : null
             if (!sourceNode) return
             const lightingCtx = buildSceneLightingPromptContext(settings)
@@ -8704,7 +8731,7 @@ export function VisualCanvasWorkspace({
 
       {isPromptBoosterOpen && saveStatus !== 'opening' ? (
         (() => {
-          const boostTargetId = directorTargetNodeIdRef.current ?? activeNodeId
+          const boostTargetId = lockedNodeToolContext?.targetNodeId ?? null
           const boostSrc = boostTargetId ? nodes.find((n) => n.id === boostTargetId) : null
           const boostSourceNode = boostSrc
             ? { title: boostSrc.title ?? '', kind: (boostSrc.kind === 'image' || boostSrc.kind === 'video' ? boostSrc.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: boostSrc.resultImageUrl, resultVideoUrl: boostSrc.resultVideoUrl }
@@ -8713,6 +8740,7 @@ export function VisualCanvasWorkspace({
             <PromptBoosterPanel
               nodes={nodes}
               initialNodeId={boostTargetId ?? undefined}
+              lockedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
               sourceNode={boostSourceNode}
               onAppendPrompt={(nodeId, appendText) => {
                 const target = nodes.find((n) => n.id === nodeId)
@@ -8765,7 +8793,7 @@ export function VisualCanvasWorkspace({
                 flushLocalSnapshot()
                 scheduleCanvasSave(0)
               }}
-              onClose={() => closeCanvasPanel()}
+              onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
             />
           )
         })()
@@ -8794,7 +8822,7 @@ export function VisualCanvasWorkspace({
 
       {isLookPackageOpen && saveStatus !== 'opening' ? (
         (() => {
-          const lookTargetId = lookPanelDefaultNodeId ?? directorTargetNodeIdRef.current ?? activeNodeId
+          const lookTargetId = lockedNodeToolContext?.targetNodeId ?? null
           const lookSrc = lookTargetId ? nodes.find((n) => n.id === lookTargetId) : null
           const lookSourceNode = lookSrc
             ? { title: lookSrc.title ?? '', kind: (lookSrc.kind === 'image' || lookSrc.kind === 'video' ? lookSrc.kind : 'text') as 'image' | 'video' | 'text', resultImageUrl: lookSrc.resultImageUrl, resultVideoUrl: lookSrc.resultVideoUrl }
@@ -8802,6 +8830,7 @@ export function VisualCanvasWorkspace({
           return (
             <LookPackagePanel
               nodes={nodes.map((n) => ({ ...n, resultImageUrl: n.resultImageUrl ?? null }))}
+              lockedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
               sourceNode={lookSourceNode}
               onApplyLook={(updates) => {
                 for (const { nodeId, prompt } of updates) {
@@ -8847,7 +8876,7 @@ export function VisualCanvasWorkspace({
                 flushLocalSnapshot()
                 scheduleCanvasSave(0)
               }}
-              onClose={() => closeCanvasPanel()}
+              onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
               defaultSelectedNodeId={lookTargetId ?? undefined}
             />
           )
@@ -8864,6 +8893,7 @@ export function VisualCanvasWorkspace({
           />
           <ColorGradePalettePanel
             nodes={nodes}
+            lockedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
             onApplyGrade={(updates) => {
               for (const { nodeId, prompt } of updates) {
                 handleNodePatch(nodeId, { prompt })
@@ -8897,8 +8927,8 @@ export function VisualCanvasWorkspace({
               flushLocalSnapshot()
               scheduleCanvasSave(0)
             }}
-            onClose={() => closeCanvasPanel()}
-            defaultSelectedNodeId={editingNodeId ?? activeNodeId ?? undefined}
+            onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
+            defaultSelectedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
           />
         </>
       ) : null}
@@ -9409,21 +9439,20 @@ export function VisualCanvasWorkspace({
             reframeMode={reframeMode}
             onReframeChange={setReframeMode}
             onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
-            onOpenColorGrade={() => openCanvasPanel('color-grade')}
-            onOpenLookPackage={() => { directorTargetNodeIdRef.current = activeNode.id; setLookPanelDefaultNodeId(activeNode.id); openCanvasPanel('look-package') }}
-            onOpenVariantPlanner={() => openCanvasPanel('variant-planner')}
+            onOpenGenerationDialog={() => openGenerationDialog(activeNode.id)}
+            assetTransformCaps={assetTransformCaps}
+            onOpenColorGrade={() => openNodeScopedTool('color-grade', activeNode)}
+            onOpenLookPackage={() => openNodeScopedTool('look-package', activeNode)}
+            onOpenVariantPlanner={() => openNodeScopedTool('variant-planner', activeNode)}
             onOpenABCompare={() => openCanvasPanel('ab-compare')}
             onOpenKeyframeExtractor={() => openCanvasPanel('keyframe-extractor')}
-            onOpenCameraControl={() => { directorTargetNodeIdRef.current = activeNode.id; openCanvasPanel('camera-control') }}
-            onOpenSceneLighting={() => { directorTargetNodeIdRef.current = activeNode.id; openCanvasPanel('scene-lighting') }}
+            onOpenCameraControl={() => openNodeScopedTool('camera-control', activeNode)}
+            onOpenSceneLighting={() => openNodeScopedTool('scene-lighting', activeNode)}
             onOpenCameraLexicon={() => {
               setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
-              openCanvasPanel('camera-lexicon')
+              openNodeScopedTool('camera-lexicon', activeNode)
             }}
-            onOpenPromptBooster={() => {
-              directorTargetNodeIdRef.current = activeNode.id
-              openCanvasPanel('prompt-booster')
-            }}
+            onOpenPromptBooster={() => openNodeScopedTool('prompt-booster', activeNode)}
             onOpenRemoveBackground={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.removeBackground
                 ? () => openCanvasPanel('remove-background')
@@ -9671,6 +9700,11 @@ export function VisualCanvasWorkspace({
           style={{ ...nodeDialogStyle, height: 'auto', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
+          <UpstreamTaskStrip
+            targetNodeId={editingNode.id}
+            nodes={nodes}
+            edges={edges}
+          />
           <CanvasPromptBox
             layout="node"
             multiline
@@ -9759,7 +9793,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; openCanvasPanel('camera-control') }}
+                  onClick={() => openNodeScopedTool('camera-control', editingNode)}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasCameraContext(cameraSettings) ? 'text-violet-300/70 bg-violet-500/[0.07] border-violet-500/20 hover:bg-violet-500/[0.14] hover:text-violet-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   🎥 {hasCameraContext(cameraSettings) ? `摄影机：${getCameraModelLabel(cameraSettings.cameraBody)}` : '摄影机控制'}
@@ -9769,7 +9803,7 @@ export function VisualCanvasWorkspace({
               {(editingNode.kind === 'image' || editingNode.kind === 'video') && (
                 <button
                   type="button"
-                  onClick={() => { directorTargetNodeIdRef.current = editingNode.id; openCanvasPanel('scene-lighting') }}
+                  onClick={() => openNodeScopedTool('scene-lighting', editingNode)}
                   className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 border transition ${hasSceneLightingContext(sceneLightingSettings) ? 'text-amber-300/70 bg-amber-500/[0.07] border-amber-500/20 hover:bg-amber-500/[0.14] hover:text-amber-200' : 'text-white/30 bg-white/[0.02] border-white/[0.07] hover:text-white/55 hover:border-white/[0.13]'}`}
                 >
                   💡 {hasSceneLightingContext(sceneLightingSettings) ? `场景光线 ×${activeSceneLightingCount(sceneLightingSettings)}` : '场景光线'}

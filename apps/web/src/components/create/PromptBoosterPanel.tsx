@@ -20,6 +20,7 @@ import { DirectorToolPanelFrame, type DirectorSourceNode } from '@/components/ca
 interface PromptBoosterPanelProps {
   nodes: PromptBoostNode[]
   initialNodeId?: string
+  lockedNodeId?: string
   onAppendPrompt: (nodeId: string, appendText: string) => void
   onCreateDerived?: (nodeId: string, appendText: string, suggestionTitle?: string) => void
   onClose: () => void
@@ -77,6 +78,7 @@ function runAnalysis(node: PromptBoostNode | null): PromptBoostReport | null {
 export function PromptBoosterPanel({
   nodes,
   initialNodeId,
+  lockedNodeId,
   onAppendPrompt,
   onCreateDerived,
   onClose,
@@ -85,9 +87,14 @@ export function PromptBoosterPanel({
   const supportedNodes = useMemo(() => nodes.filter(isBoostableNode), [nodes])
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() => {
-    const preferred = supportedNodes.find((n) => n.id === initialNodeId)
+    const preferred = supportedNodes.find((n) => n.id === (lockedNodeId ?? initialNodeId))
     return preferred?.id ?? supportedNodes[0]?.id ?? null
   })
+
+  // Keep selectedNodeId in sync with lock — user cannot change it in node mode
+  useEffect(() => {
+    if (lockedNodeId) setSelectedNodeId(lockedNodeId)
+  }, [lockedNodeId])
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) ?? null,
@@ -217,24 +224,36 @@ export function PromptBoosterPanel({
           </div>
         ) : (
           <>
-            {/* Node picker */}
-            <div className="mb-4">
-              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                分析节点
-              </label>
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedNodeId ?? ''}
-                  onChange={(e) => setSelectedNodeId(e.target.value || null)}
-                  className="flex-1 rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-1.5 text-[12px] text-slate-100 outline-none focus:border-white/25"
-                >
-                  {supportedNodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {KIND_LABEL[n.kind] ?? n.kind}
-                      {n.title ? ` — ${n.title.slice(0, 28)}` : ''}
-                    </option>
-                  ))}
-                </select>
+            {/* Node picker — hidden in node-locked mode */}
+            {!lockedNodeId && supportedNodes.length > 1 ? (
+              <div className="mb-4">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                  分析节点
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedNodeId ?? ''}
+                    onChange={(e) => setSelectedNodeId(e.target.value || null)}
+                    className="flex-1 rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-1.5 text-[12px] text-slate-100 outline-none focus:border-white/25"
+                  >
+                    {supportedNodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {KIND_LABEL[n.kind] ?? n.kind}
+                        {n.title ? ` — ${n.title.slice(0, 28)}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleReanalyze}
+                    className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/5 hover:text-white/80"
+                  >
+                    重新分析
+                  </button>
+                </div>
+              </div>
+            ) : !lockedNodeId ? (
+              <div className="mb-4 flex justify-end">
                 <button
                   type="button"
                   onClick={handleReanalyze}
@@ -243,7 +262,17 @@ export function PromptBoosterPanel({
                   重新分析
                 </button>
               </div>
-            </div>
+            ) : (
+              <div className="mb-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleReanalyze}
+                  className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-white/60 transition hover:border-white/20 hover:bg-white/5 hover:text-white/80"
+                >
+                  重新分析
+                </button>
+              </div>
+            )}
 
             {/* Node summary */}
             {selectedNode && (

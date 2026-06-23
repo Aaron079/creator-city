@@ -39,6 +39,7 @@ interface LookPackagePanelProps {
   onCreateDerivedNode?: (req: DerivedNodeRequest) => void
   onClose: () => void
   defaultSelectedNodeId?: string
+  lockedNodeId?: string
   sourceNode?: DirectorSourceNode | null
 }
 
@@ -102,7 +103,7 @@ function LookCard({
   )
 }
 
-export function LookPackagePanel({ nodes, onApplyLook, onCreateDerivedNode, onClose, defaultSelectedNodeId, sourceNode }: LookPackagePanelProps) {
+export function LookPackagePanel({ nodes, onApplyLook, onCreateDerivedNode, onClose, defaultSelectedNodeId, lockedNodeId, sourceNode }: LookPackagePanelProps) {
   const [categoryFilter, setCategoryFilter] = useState<LookCategory | 'all'>('all')
   const [selectedLookId, setSelectedLookId] = useState<string | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<SelectedLookCategories>(DEFAULT_SELECTED_CATEGORIES)
@@ -111,11 +112,15 @@ export function LookPackagePanel({ nodes, onApplyLook, onCreateDerivedNode, onCl
   const [copied, setCopied] = useState(false)
 
   const primaryNode = useMemo(
-    () =>
-      nodes.find((n) => n.id === defaultSelectedNodeId) ??
-      nodes.find((n) => n.kind === 'image' || n.kind === 'video') ??
-      null,
-    [nodes, defaultSelectedNodeId],
+    () => {
+      if (lockedNodeId) return nodes.find((n) => n.id === lockedNodeId) ?? null
+      return (
+        nodes.find((n) => n.id === defaultSelectedNodeId) ??
+        nodes.find((n) => n.kind === 'image' || n.kind === 'video') ??
+        null
+      )
+    },
+    [nodes, defaultSelectedNodeId, lockedNodeId],
   )
 
   const filteredLooks = useMemo(

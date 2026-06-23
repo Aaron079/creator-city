@@ -23,7 +23,7 @@ interface CanvasToolDockProps {
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'shot-sequencer') => void
-  onOpenPromptTool: (tool: 'batch-rewriter' | 'look-package') => void
+  onOpenPromptTool: (tool: 'batch-rewriter') => void
 }
 
 const NODE_OPTIONS: Array<{

@@ -44,6 +44,7 @@ interface ColorGradePalettePanelProps {
   onCreateGradeNode?: (req: CreateGradeNodeRequest) => void
   onClose: () => void
   defaultSelectedNodeId?: string
+  lockedNodeId?: string
 }
 
 type ActiveTab = 'wheels' | 'curves' | 'qualifier' | 'texture' | 'output'
@@ -543,6 +544,7 @@ export function ColorGradePalettePanel({
   onCreateGradeNode,
   onClose,
   defaultSelectedNodeId,
+  lockedNodeId,
 }: ColorGradePalettePanelProps) {
   const [setting, setSetting] = useState<ColorGradeSetting>(createDefaultColorGradeSetting)
   const [activeTab, setActiveTab] = useState<ActiveTab>('wheels')
@@ -562,8 +564,11 @@ export function ColorGradePalettePanel({
   // Single-node mode: always target the node that opened the panel.
   // No multi-select — to grade a different node, close the panel and open it from that node.
   const primaryNode = useMemo(
-    () => eligibleNodes.find((n) => n.id === defaultSelectedNodeId) ?? eligibleNodes[0] ?? null,
-    [eligibleNodes, defaultSelectedNodeId],
+    () => {
+      if (lockedNodeId) return eligibleNodes.find((n) => n.id === lockedNodeId) ?? null
+      return eligibleNodes.find((n) => n.id === defaultSelectedNodeId) ?? eligibleNodes[0] ?? null
+    },
+    [eligibleNodes, defaultSelectedNodeId, lockedNodeId],
   )
 
   // CSS filter for live preview — recomputed on every setting change (wheel drag / slider)
