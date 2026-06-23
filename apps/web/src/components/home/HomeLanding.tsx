@@ -15,7 +15,6 @@ import {
   UserRound,
 } from 'lucide-react'
 import CardSwap, { Card } from './CardSwap'
-import DotField from './DotField'
 import SoftAurora from './SoftAurora'
 import TextPressure from './TextPressure'
 
@@ -133,21 +132,6 @@ export function HomeLanding() {
           layerOffset={0.42}
           colorSpeed={0.88}
           mouseInfluence={0.22}
-        />
-      </div>
-      <div className="pointer-events-none fixed inset-0 z-0 opacity-70 [mask-image:linear-gradient(180deg,transparent_0%,black_12%,black_86%,transparent_100%)]">
-        <DotField
-          dotRadius={1.35}
-          dotSpacing={18}
-          cursorRadius={460}
-          cursorForce={0.08}
-          bulgeStrength={54}
-          glowRadius={220}
-          sparkle
-          waveAmplitude={0.42}
-          gradientFrom="rgba(255, 198, 244, 0.22)"
-          gradientTo="rgba(103, 92, 255, 0.20)"
-          glowColor="rgba(236, 72, 153, 0.22)"
         />
       </div>
       <div
