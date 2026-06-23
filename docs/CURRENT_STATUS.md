@@ -4471,3 +4471,76 @@ no subject replacement, no face change, no product redesign, no composition chan
 
 **First launch path VALIDATED / CLOSED:**
 会员订阅 ✅ · BYOK-first ✅ · Canvas local draft + manual cloud save ✅ · Marketplace inquiry/contact mode ✅ · No platform credit payment ✅ · No automatic refund ✅ · No wallet/ledger side effects ✅ · Admin gates ✅ · No NFT/on-chain ✅
+
+---
+
+## P0-CANVAS-NODE-CONTEXT-AND-TOOL-CENTER-RESTRUCTURE — VALIDATED / CLOSED
+
+**Date:** 2026-06-24
+**Implementation SHA:** 5ed8439
+**Main SHA:** ff299bd
+**Production Deploy:** creator-city-qs7cf0wph-aarons-projects-e26427fd.vercel.app → creator-city-vert.vercel.app
+**Branch:** parallel/canvas-commercial → main (fast-forward)
+**Status:** VALIDATED / CLOSED
+
+### 验收摘要
+
+| 验收项 | 结果 |
+|---|---|
+| Production Browser QA | 26 PASS / 0 blocking failures |
+| Static validation (type-check / lint / build / diff-check) | ALL PASS |
+| Forbidden zone diffs (api / prisma / cn-executor / billing / providers / pkg / lockfile / config) | ALL EMPTY |
+| Generation / BYOK / Provider / Billing 语义未改变 | CONFIRMED |
+| Source not overwritten | CONFIRMED |
+| Payment worktree untouched | CONFIRMED |
+
+### 已验证功能
+
+| Feature | 验收标准 | 结果 |
+|---|---|---|
+| 3-button Toolbar (任务/工具/资产) | Image: 3 buttons [任务][工具][资产] | ✅ PASS |
+| | Video: 3 buttons [任务][工具][资产] | ✅ PASS |
+| | Text: 2 buttons [任务][工具], no 资产 | ✅ PASS |
+| NodeToolCenter | 2 sections: 提示词与导演参数 + 分析与预览 | ✅ PASS |
+| | No node selector `<select>` | ✅ PASS |
+| | No A/B Compare in tool center | ✅ PASS |
+| | No keyframe extraction in tool center | ✅ PASS |
+| Asset Menu — Image | 下载 / 全屏 / 版本对比 (A/B) / no keyframe | ✅ PASS |
+| Asset Menu — Video | 关键帧提取 (keyframe) / 版本对比 (A/B) | ✅ PASS |
+| NodeToolContext Source Lock | Open tool from A → click B → A's dialog stays open | ✅ PASS (screenshot confirmed) |
+| UpstreamTaskStrip | Visible above CanvasPromptBox; shows direct upstream content | ✅ PASS |
+| | No `<video>` element (poster-only) | ✅ PASS |
+| | No mp4 request from UpstreamTaskStrip | ✅ PASS |
+| Left Rail | No look-package; director tools + prompt tools present | ✅ PASS |
+| Modal / Menu | Tool center ↔ asset menu mutually exclusive; Escape closes | ✅ PASS |
+| Console | 0 Maximum update depth / key error / stale target errors | ✅ PASS |
+| Network | 0 auto POST generate/image; 0 auto POST generate/video; 0 auto PUT canvas | ✅ PASS |
+
+### 实现文件（12 files, 726 insertions, 291 deletions）
+
+```
+apps/web/src/components/create/AssetAgentToolbar.tsx       (restructured to 3-button)
+apps/web/src/components/create/CanvasToolDock.tsx          (look-package removed)
+apps/web/src/components/create/ColorGradePalettePanel.tsx  (lockedNodeId prop)
+apps/web/src/components/create/LookPackagePanel.tsx        (lockedNodeId prop)
+apps/web/src/components/create/PromptBoosterPanel.tsx      (lockedNodeId prop + picker hide)
+apps/web/src/components/create/VisualCanvasWorkspace.tsx   (openNodeScopedTool + lockedNodeToolContext)
+apps/web/src/components/create/canvas/node-tools/NodeToolCenter.tsx    (NEW)
+apps/web/src/components/create/canvas/node-tools/nodeToolRegistry.ts  (NEW)
+apps/web/src/components/create/canvas/node-tools/nodeToolTypes.ts      (NEW)
+apps/web/src/components/create/canvas/task/UpstreamTaskStrip.tsx       (NEW)
+apps/web/src/lib/canvas/edgeInputBinding.ts    (NEW)
+apps/web/src/lib/canvas/nodeToolContext.ts     (NEW)
+```
+
+### 边界确认
+
+- Payment changed: No
+- Billing changed: No
+- Provider changed: No
+- Generate routes changed: No
+- Prisma schema changed: No
+- cn-executor changed: No
+- Env changed: No
+- Production DB changed: No
+- Source overwritten: No
