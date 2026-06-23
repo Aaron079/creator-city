@@ -15,8 +15,9 @@ import {
   UserRound,
 } from 'lucide-react'
 import CardSwap, { Card } from './CardSwap'
+import DotField from './DotField'
 import SoftAurora from './SoftAurora'
-import VariableProximity from './VariableProximity'
+import TextPressure from './TextPressure'
 
 const primaryButton =
   'inline-flex h-14 items-center justify-center gap-2 rounded-[22px] bg-white px-8 text-[15px] font-semibold text-[#16121b] shadow-[0_18px_54px_rgba(255,255,255,0.18)] transition hover:-translate-y-0.5 hover:bg-white/92'
@@ -103,7 +104,6 @@ function getUserShortName(displayName?: string | null, email?: string | null): s
 
 export function HomeLanding() {
   const router = useRouter()
-  const heroTitleRef = useRef<HTMLDivElement>(null)
   const { user, isAuthenticated } = useAuthStore()
   const { status: sessionStatus, user: sessionUser } = useCurrentUser()
   const effectiveUser = sessionUser ?? ((sessionStatus === 'loading' || sessionStatus === 'unknown') ? user : null)
@@ -135,9 +135,24 @@ export function HomeLanding() {
           mouseInfluence={0.22}
         />
       </div>
+      <div className="pointer-events-none fixed inset-0 z-0 opacity-70 [mask-image:linear-gradient(180deg,transparent_0%,black_12%,black_86%,transparent_100%)]">
+        <DotField
+          dotRadius={1.35}
+          dotSpacing={18}
+          cursorRadius={460}
+          cursorForce={0.08}
+          bulgeStrength={54}
+          glowRadius={220}
+          sparkle
+          waveAmplitude={0.42}
+          gradientFrom="rgba(255, 198, 244, 0.22)"
+          gradientTo="rgba(103, 92, 255, 0.20)"
+          glowColor="rgba(236, 72, 153, 0.22)"
+        />
+      </div>
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_50%_55%,rgba(255,136,222,0.10),transparent_34rem),radial-gradient(circle_at_78%_58%,rgba(40,76,255,0.13),transparent_30rem),linear-gradient(180deg,rgba(16,13,22,0.18)_0%,rgba(16,13,22,0.58)_70%,rgba(16,13,22,0.88)_100%)]"
+        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_50%_55%,rgba(255,136,222,0.10),transparent_34rem),radial-gradient(circle_at_78%_58%,rgba(40,76,255,0.13),transparent_30rem),linear-gradient(180deg,rgba(16,13,22,0.10)_0%,rgba(16,13,22,0.48)_70%,rgba(16,13,22,0.82)_100%)]"
       />
 
       <section className="relative z-10 min-h-screen px-5 py-6 sm:px-7 lg:px-9">
@@ -149,20 +164,21 @@ export function HomeLanding() {
           />
 
           <div className="flex flex-1 items-center justify-center px-5 pb-20 pt-32 text-center sm:px-10 lg:pt-36">
-            <div className="mx-auto max-w-5xl">
-              <h1
-                ref={heroTitleRef}
-                className="text-[clamp(64px,10vw,148px)] font-semibold leading-[0.94] tracking-[-0.045em] text-white"
-              >
-                <VariableProximity
-                  label="Creator City"
-                  fromFontVariationSettings="'wght' 620"
-                  toFontVariationSettings="'wght' 980"
-                  containerRef={heroTitleRef}
-                  radius={168}
-                  falloff="gaussian"
+            <div className="mx-auto w-full max-w-5xl">
+              <div className="mx-auto h-[clamp(112px,16vw,230px)] w-full max-w-[1180px]">
+                <TextPressure
+                  text="Creator City"
+                  flex
+                  width
+                  weight
+                  alpha={false}
+                  italic={false}
+                  stroke={false}
+                  textColor="#ffffff"
+                  minFontSize={72}
+                  className="tracking-[-0.075em]"
                 />
-              </h1>
+              </div>
               <p className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl">
                 AI 创作者的会员制工作台
               </p>
