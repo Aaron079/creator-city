@@ -70,7 +70,7 @@ export async function POST(request: Request) {
   const nodeId = typeof b.nodeId === 'string' ? b.nodeId : undefined
 
   // ── Reserve credits (also authenticates the user) ────────────────────────
-  const billing = await setupBilling(null, 'openai-text', 'text', prompt, { projectId, nodeId })
+  const billing = await setupBilling(request, 'openai-text', 'text', prompt, { projectId, nodeId })
   if (!billing.ok) {
     return NextResponse.json(billing.errorResponse, { status: billing.status })
   }

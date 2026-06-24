@@ -1811,6 +1811,12 @@ function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResu
 
 const GENERATION_FETCH_HINT = 'Browser could not complete request. Check Network tab, route availability, auth redirect, or CORS.'
 
+function createGenerationIdempotencyKey(projectId: string | undefined, nodeId: string | undefined, clientActionId = crypto.randomUUID()) {
+  const scopedProjectId = projectId?.trim() || 'projectless'
+  const scopedNodeId = nodeId?.trim() || 'nodeless'
+  return `gen:${scopedProjectId}:${scopedNodeId}:${clientActionId}`
+}
+
 async function callGenerationApi(
   nodeType: ToolProviderNodeType,
   providerId: string,
@@ -1823,6 +1829,7 @@ async function callGenerationApi(
   system?: string,
   model?: string,
   signal?: AbortSignal,
+  generationIdempotencyKey?: string,
   billingMode?: 'platform_credits' | 'user_provider_account',
   userProviderAccountId?: string,
 ): Promise<GenerateApiResult> {
@@ -1907,6 +1914,10 @@ async function callGenerationApi(
         }
 
   let response: Response
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (generationIdempotencyKey) {
+    headers['Idempotency-Key'] = generationIdempotencyKey
+  }
   // image: backend awaits cn-executor up to 50s, so frontend must exceed that
   // video: cn-executor takes 60-180s, backend times out at 12s and returns queued
   const postTimeoutMs = nodeType === 'image' ? 70_000 : nodeType === 'video' ? 90_000 : undefined
@@ -1914,7 +1925,7 @@ async function callGenerationApi(
     response = await fetch(endpoint, {
       method,
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(requestBody),
       ...(postTimeoutMs ? { signal: timeoutSignal(postTimeoutMs, signal) } : {}),
     })
@@ -4902,6 +4913,7 @@ export function VisualCanvasWorkspace({
           },
         })
         const nodeType = node.kind === 'image' ? 'image' : 'video'
+        const generationIdempotencyKey = createGenerationIdempotencyKey(effectiveProjectId, node.id)
         let result = await callGenerationApi(
           nodeType,
           selectedProviderId,
@@ -4914,6 +4926,7 @@ export function VisualCanvasWorkspace({
           undefined,
           selectedModel,
           generationController.signal,
+          generationIdempotencyKey,
         )
         if (generationController.signal.aborted) return
 
@@ -6762,6 +6775,7 @@ export function VisualCanvasWorkspace({
     const videoImageResolution = nodeSnapshot.kind === 'video'
       ? resolveImageInputForVideoNode({ videoNode: nodeSnapshot, allNodes: nodes, edges })
       : null
+    const generationIdempotencyKey = createGenerationIdempotencyKey(projectId, nodeSnapshot.id)
 
     void callGenerationApi(
       nodeType,
@@ -6781,6 +6795,7 @@ export function VisualCanvasWorkspace({
       undefined,
       generationProviderId,
       generationController?.signal,
+      generationIdempotencyKey,
       (nodeType === 'text' || nodeType === 'image') ? billingMode : undefined,
       (nodeType === 'text' || nodeType === 'image') && billingMode === 'user_provider_account' ? selectedUserAccountId : undefined,
     ).then(async (result) => {

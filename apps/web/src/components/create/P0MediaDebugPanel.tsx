@@ -170,6 +170,12 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
+function createDebugGenerationIdempotencyKey(projectId: string | undefined, nodeId: string | undefined, clientActionId = crypto.randomUUID()) {
+  const scopedProjectId = projectId?.trim() || 'projectless'
+  const scopedNodeId = nodeId?.trim() || 'nodeless'
+  return `gen:${scopedProjectId}:${scopedNodeId}:${clientActionId}`
+}
+
 function nullableString(value: unknown) {
   const text = stringValue(value)
   return text || null
@@ -1192,13 +1198,14 @@ export function P0MediaDebugPanel({
       failGeneration(result)
       throw new Error(result.message)
     }
+      const generationIdempotencyKey = createDebugGenerationIdempotencyKey(projectId, node.id)
       let response: Response
       try {
         response = await fetch(`/api/generate/${node.kind}`, {
           method: 'POST',
           cache: 'no-store',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Idempotency-Key': generationIdempotencyKey },
           body: JSON.stringify({
             prompt,
             compiledPrompt: prompt,

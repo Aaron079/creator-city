@@ -40,6 +40,43 @@ const PROVIDER_USD_COST_CENTS: Record<string, number> = {
   suno: 8,
 }
 
+function reserveLedgerIdempotencyKey(userId: string, billingRequestId?: string) {
+  return billingRequestId ? `generation:${userId}:${billingRequestId}:reserve` : undefined
+}
+
+function settleLedgerIdempotencyKey(jobId: string, billingRequestId?: string | null) {
+  return billingRequestId ? `generation:${jobId}:settle` : undefined
+}
+
+function refundLedgerIdempotencyKey(jobId: string, billingRequestId?: string | null) {
+  return billingRequestId ? `generation:${jobId}:refund` : undefined
+}
+
+function paymentFulfillmentIdempotencyKey(orderId: string) {
+  return `payment-order:${orderId}:fulfill`
+}
+
+function assertSameReservationContext(existing: {
+  projectId?: string | null
+  nodeId?: string | null
+  providerId: string
+  nodeType: string
+}, input: {
+  projectId?: string
+  nodeId?: string
+  providerId: string
+  nodeType: string
+}) {
+  const mismatch =
+    (existing.projectId ?? undefined) !== (input.projectId ?? undefined)
+    || (existing.nodeId ?? undefined) !== (input.nodeId ?? undefined)
+    || existing.providerId !== input.providerId
+    || existing.nodeType !== input.nodeType
+  if (mismatch) {
+    throw new BadRequestException('BILLING_IDEMPOTENCY_CONTEXT_CONFLICT')
+  }
+}
+
 // ─── Default packages (seeded if none exist) ─────────────────────────────────
 
 const DEFAULT_PACKAGES = [
@@ -179,30 +216,67 @@ export class CreditsService {
 
   async freeze(
     userId: string,
-    input: { providerId: string; nodeType: string; prompt: string; externalJobId?: string },
+    input: {
+      providerId: string
+      nodeType: string
+      prompt: string
+      externalJobId?: string
+      projectId?: string
+      nodeId?: string
+      billingRequestId?: string
+    },
   ): Promise<{ jobId: string; estimatedCost: number; balance: number }> {
     const wallet = await this.getOrCreateWallet(userId)
     const estimatedCost = this.estimateCost(input.providerId, input.nodeType)
 
-    if (wallet.balance < estimatedCost) {
-      throw new BadRequestException(
-        `Insufficient credits: need ${estimatedCost}, have ${wallet.balance}. Please purchase more credits.`,
-      )
+    if (input.billingRequestId) {
+      const existing = await this.prisma.generationJob.findFirst({
+        where: { userId, billingRequestId: input.billingRequestId },
+      })
+      if (existing) {
+        assertSameReservationContext(existing, input)
+        return { jobId: existing.id, estimatedCost: existing.estimatedCost, balance: wallet.balance }
+      }
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.userCreditWallet.update({
-        where: { id: wallet.id },
+      if (input.billingRequestId) {
+        const existing = await tx.generationJob.findFirst({
+          where: { userId, billingRequestId: input.billingRequestId },
+        })
+        if (existing) {
+          assertSameReservationContext(existing, input)
+          return { job: existing, updated: wallet }
+        }
+      }
+
+      const reserved = await tx.userCreditWallet.updateMany({
+        where: {
+          id: wallet.id,
+          balance: { gte: estimatedCost },
+        },
         data: {
           balance: { decrement: estimatedCost },
           frozenBalance: { increment: estimatedCost },
         },
       })
+      if (reserved.count !== 1) {
+        const latest = await tx.userCreditWallet.findUnique({ where: { id: wallet.id } })
+        throw new BadRequestException(
+          `Insufficient credits: need ${estimatedCost}, have ${latest?.balance ?? 0}. Please purchase more credits.`,
+        )
+      }
+
+      const updated = await tx.userCreditWallet.findUnique({ where: { id: wallet.id } })
+      if (!updated) throw new NotFoundException('Wallet not found')
 
       const job = await tx.generationJob.create({
         data: {
           userId,
           walletId: wallet.id,
+          projectId: input.projectId ?? null,
+          nodeId: input.nodeId ?? null,
+          billingRequestId: input.billingRequestId ?? null,
           providerId: input.providerId,
           nodeType: input.nodeType,
           prompt: input.prompt,
@@ -225,6 +299,7 @@ export class CreditsService {
           refType: 'generation_job',
           refId: job.id,
           generationJobId: job.id,
+          idempotencyKey: reserveLedgerIdempotencyKey(userId, input.billingRequestId),
           note: `${input.providerId} / ${input.nodeType} generation`,
           description: `${input.providerId} / ${input.nodeType} generation`,
         },
@@ -255,21 +330,22 @@ export class CreditsService {
     const refund = frozenUsed - cost
 
     await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: jobId, billingStatus: 'FROZEN' },
+        data: {
+          billingStatus: 'SETTLED',
+          actualCost: cost,
+          settledAt: new Date(),
+        },
+      })
+      if (claimed.count !== 1) return
+
       const updated = await tx.userCreditWallet.update({
         where: { id: wallet.id },
         data: {
           frozenBalance: { decrement: frozenUsed },
           balance: refund > 0 ? { increment: refund } : undefined,
           totalConsumed: { increment: cost },
-        },
-      })
-
-      await tx.generationJob.update({
-        where: { id: jobId },
-        data: {
-          billingStatus: 'SETTLED',
-          actualCost: cost,
-          settledAt: new Date(),
         },
       })
 
@@ -285,6 +361,7 @@ export class CreditsService {
           refType: 'generation_job',
           refId: jobId,
           generationJobId: jobId,
+          idempotencyKey: settleLedgerIdempotencyKey(jobId, job.billingRequestId),
           note: `Settled: ${cost} credits consumed`,
           description: `Settled: ${cost} credits consumed`,
         },
@@ -315,19 +392,20 @@ export class CreditsService {
     if (!wallet) throw new NotFoundException('Wallet not found for job')
 
     await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: jobId, billingStatus: 'FROZEN' },
+        data: {
+          billingStatus: 'REFUNDED',
+          errorMessage: reason,
+        },
+      })
+      if (claimed.count !== 1) return
+
       const updated = await tx.userCreditWallet.update({
         where: { id: wallet.id },
         data: {
           frozenBalance: { decrement: job.estimatedCost },
           balance: { increment: job.estimatedCost },
-        },
-      })
-
-      await tx.generationJob.update({
-        where: { id: jobId },
-        data: {
-          billingStatus: 'REFUNDED',
-          errorMessage: reason,
         },
       })
 
@@ -343,6 +421,7 @@ export class CreditsService {
           refType: 'generation_job',
           refId: jobId,
           generationJobId: jobId,
+          idempotencyKey: refundLedgerIdempotencyKey(jobId, job.billingRequestId),
           note: reason ?? 'Generation failed — credits refunded',
           description: reason ?? 'Generation failed — credits refunded',
         },
@@ -399,9 +478,14 @@ export class CreditsService {
       currency?: string
       amount?: number
       externalOrderId?: string
+      idempotencyKey?: string
     },
   ): Promise<PaymentOrder> {
     const wallet = await this.getOrCreateWallet(userId)
+    if (input.idempotencyKey) {
+      const existing = await this.prisma.paymentOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey } })
+      if (existing) return existing
+    }
     return this.prisma.paymentOrder.create({
       data: {
         userId,
@@ -415,6 +499,7 @@ export class CreditsService {
         currency: input.currency ?? 'USD',
         amount: input.amount ?? input.priceUSD,
         externalOrderId: input.externalOrderId ?? input.stripeSessionId ?? undefined,
+        idempotencyKey: input.idempotencyKey ?? null,
         status: 'PENDING',
       },
     })
@@ -426,6 +511,10 @@ export class CreditsService {
     externalOrderId?: string
     stripePaymentIntentId?: string
     externalPaymentId?: string
+    provider?: string
+    currency?: string
+    amount?: number
+    credits?: number
     rawNotifyJson?: string
   }): Promise<void> {
     const order = input.orderId
@@ -436,29 +525,54 @@ export class CreditsService {
           ? await this.prisma.paymentOrder.findUnique({ where: { stripeSessionId: input.stripeSessionId } })
           : null
     if (!order) throw new NotFoundException('Payment order not found')
+    if (input.provider !== undefined && order.provider !== input.provider) {
+      throw new BadRequestException('Payment order provider mismatch')
+    }
+    if (input.currency !== undefined && order.currency !== input.currency) {
+      throw new BadRequestException('Payment order currency mismatch')
+    }
+    if (input.amount !== undefined && order.amount !== input.amount) {
+      throw new BadRequestException('Payment order amount mismatch')
+    }
+    if (input.credits !== undefined && order.credits !== input.credits) {
+      throw new BadRequestException('Payment order credits mismatch')
+    }
     if (order.status === 'PAID') return
+    if (order.status !== 'PENDING') {
+      throw new BadRequestException(`Payment order status is not PENDING: ${order.status}`)
+    }
 
-    const wallet = await this.prisma.userCreditWallet.findUnique({ where: { id: order.walletId } })
-    if (!wallet) throw new NotFoundException('Wallet not found for order')
+    const rawNotifyJson = input.rawNotifyJson
+      ? JSON.parse(input.rawNotifyJson) as Prisma.InputJsonValue
+      : undefined
 
     await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.paymentOrder.updateMany({
+        where: { id: order.id, status: 'PENDING' },
+        data: {
+          status: 'PAID',
+          stripePaymentIntentId: input.stripePaymentIntentId ?? null,
+          externalPaymentId: input.externalPaymentId ?? input.stripePaymentIntentId ?? null,
+          rawNotifyJson,
+          fulfilledAt: new Date(),
+          issuedAt: new Date(),
+          paidAt: new Date(),
+        },
+      })
+      if (claimed.count !== 1) {
+        const latest = await tx.paymentOrder.findUnique({ where: { id: order.id } })
+        if (latest?.status === 'PAID') return
+        throw new BadRequestException(`Payment order status is not PENDING: ${latest?.status ?? 'UNKNOWN'}`)
+      }
+
+      const wallet = await tx.userCreditWallet.findUnique({ where: { id: order.walletId } })
+      if (!wallet) throw new NotFoundException('Wallet not found for order')
+
       const updated = await tx.userCreditWallet.update({
         where: { id: wallet.id },
         data: {
           balance: { increment: order.credits },
           totalPurchased: { increment: order.credits },
-        },
-      })
-
-      await tx.paymentOrder.update({
-        where: { id: order.id },
-        data: {
-          status: 'PAID',
-          stripePaymentIntentId: input.stripePaymentIntentId ?? null,
-          externalPaymentId: input.externalPaymentId ?? input.stripePaymentIntentId ?? null,
-          rawNotifyJson: input.rawNotifyJson ? JSON.parse(input.rawNotifyJson) as Prisma.InputJsonValue : undefined,
-          issuedAt: new Date(),
-          paidAt: new Date(),
         },
       })
 
@@ -474,6 +588,7 @@ export class CreditsService {
           refType: 'payment_order',
           refId: order.id,
           paymentOrderId: order.id,
+          idempotencyKey: paymentFulfillmentIdempotencyKey(order.id),
           note: `Purchased ${order.credits} credits via ${order.provider}`,
           description: `Purchased ${order.credits} credits via ${order.provider}`,
         },

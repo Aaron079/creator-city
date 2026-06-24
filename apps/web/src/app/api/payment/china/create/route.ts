@@ -3,7 +3,11 @@ import { PaymentOrderStatus } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { getCreditPackage } from '@/lib/billing/packages'
 import { db } from '@/lib/db'
-import { getOrCreateWallet } from '@/lib/credits/server'
+import {
+  assertPlatformCreditsRechargeEnabled,
+  getOrCreateWallet,
+  getPlatformCreditsRechargeDisabledPayload,
+} from '@/lib/credits/server'
 import { createChinaPayment } from '@/lib/payment/china/gateway'
 import { isChinaPaymentError } from '@/lib/payment/china/errors'
 import type { ChinaPaymentProvider } from '@/lib/payment/china/types'
@@ -21,6 +25,35 @@ type ChinaPaymentErrorDetails = {
   rawSubCode?: string
   rawMessage?: string
   rawSubMessage?: string
+}
+
+const PAYMENT_IDEMPOTENCY_HEADERS = [
+  'Idempotency-Key',
+  'X-Idempotency-Key',
+  'X-Creator-Request-Id',
+] as const
+
+function normalizeIdempotencyKey(value: string | null) {
+  const trimmed = value?.trim() ?? ''
+  if (!trimmed || trimmed.length > 200) return null
+  return trimmed
+}
+
+function getPaymentIdempotencyKey(request: NextRequest, userId: string) {
+  for (const header of PAYMENT_IDEMPOTENCY_HEADERS) {
+    const value = normalizeIdempotencyKey(request.headers.get(header))
+    if (value) return `payment-order:${userId}:${value}`
+  }
+  return null
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'P2002',
+  )
 }
 
 function getAppUrl(request: NextRequest) {
@@ -48,6 +81,14 @@ function getErrorDetails(details: unknown): ChinaPaymentErrorDetails {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    assertPlatformCreditsRechargeEnabled()
+  } catch (error) {
+    const disabled = getPlatformCreditsRechargeDisabledPayload(error)
+    if (disabled) return NextResponse.json(disabled, { status: 503 })
+    throw error
+  }
+
   let user
   try {
     user = await getCurrentUser()
@@ -82,32 +123,84 @@ export async function POST(request: NextRequest) {
 
   const credits = pkg.credits + pkg.bonusCredits
   let orderId: string | null = null
+  let createdOrderThisRequest = false
 
   try {
     const wallet = await getOrCreateWallet(user.id)
-    const outTradeNo = `cc_cn_${body.provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const idempotencyKey = getPaymentIdempotencyKey(request, user.id)
     const dbPackage = await db.creditPackage.findUnique({ where: { id: pkg.id }, select: { id: true } }).catch(() => null)
-    const order = await db.paymentOrder.create({
-      data: {
-        userId: user.id,
-        walletId: wallet.id,
-        packageId: dbPackage?.id ?? null,
-        region: 'CN',
-        provider: body.provider,
-        currency: 'CNY',
-        amount: price.amount,
-        externalOrderId: outTradeNo,
-        status: PaymentOrderStatus.PENDING,
-        credits,
-        priceUSD: Math.round(price.amount / Number(process.env.USD_CNY_RATE ?? 7.2)),
-        rawNotifyJson: {
-          source: 'china-payment-gateway',
-          packageId: pkg.id,
+    let order = idempotencyKey
+      ? await db.paymentOrder.findUnique({ where: { idempotencyKey } }).catch(() => null)
+      : null
+    let outTradeNo = order?.externalOrderId ?? `cc_cn_${body.provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+    if (order) {
+      if (
+        order.userId !== user.id
+        || order.provider !== body.provider
+        || order.currency !== 'CNY'
+        || order.amount !== price.amount
+        || order.credits !== credits
+      ) {
+        return NextResponse.json({ success: false, errorCode: 'PAYMENT_IDEMPOTENCY_CONFLICT', message: '该支付幂等键已用于不同订单' }, { status: 409 })
+      }
+      if (order.status === PaymentOrderStatus.PAID) {
+        return NextResponse.json({
+          success: true,
+          orderId: order.id,
+          provider: body.provider,
+          outTradeNo,
+          amountCnyFen: price.amount,
           packageName: pkg.name,
-          checkoutMode: body.provider === 'alipay' ? 'qr' : 'native',
-        },
-      },
-    })
+          credits,
+          status: order.status,
+        })
+      }
+      if (order.status !== PaymentOrderStatus.PENDING) {
+        return NextResponse.json({ success: false, errorCode: 'PAYMENT_ORDER_NOT_REUSABLE', message: `订单状态不可复用：${order.status}` }, { status: 409 })
+      }
+    } else {
+      try {
+        order = await db.paymentOrder.create({
+          data: {
+            userId: user.id,
+            walletId: wallet.id,
+            packageId: dbPackage?.id ?? null,
+            region: 'CN',
+            provider: body.provider,
+            currency: 'CNY',
+            amount: price.amount,
+            externalOrderId: outTradeNo,
+            idempotencyKey,
+            status: PaymentOrderStatus.PENDING,
+            credits,
+            priceUSD: Math.round(price.amount / Number(process.env.USD_CNY_RATE ?? 7.2)),
+            rawNotifyJson: {
+              source: 'china-payment-gateway',
+              packageId: pkg.id,
+              packageName: pkg.name,
+              checkoutMode: body.provider === 'alipay' ? 'qr' : 'native',
+            },
+          },
+        })
+        createdOrderThisRequest = true
+      } catch (error) {
+        if (!idempotencyKey || !isUniqueConstraintError(error)) throw error
+        order = await db.paymentOrder.findUnique({ where: { idempotencyKey } })
+        if (!order) throw error
+        outTradeNo = order.externalOrderId ?? outTradeNo
+        if (
+          order.userId !== user.id
+          || order.provider !== body.provider
+          || order.currency !== 'CNY'
+          || order.amount !== price.amount
+          || order.credits !== credits
+        ) {
+          return NextResponse.json({ success: false, errorCode: 'PAYMENT_IDEMPOTENCY_CONFLICT', message: '该支付幂等键已用于不同订单' }, { status: 409 })
+        }
+      }
+    }
+    if (!order) throw new Error('PAYMENT_ORDER_CREATE_FAILED')
     orderId = order.id
 
     const appUrl = getAppUrl(request)
@@ -138,7 +231,7 @@ export async function POST(request: NextRequest) {
       prepayId: payment.prepayId,
     })
   } catch (error) {
-    if (orderId) {
+    if (orderId && createdOrderThisRequest) {
       await db.paymentOrder.update({
         where: { id: orderId },
         data: {

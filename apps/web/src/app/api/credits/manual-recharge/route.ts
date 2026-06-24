@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
-import { submitManualRechargeRequest } from '@/lib/credits/server'
+import {
+  assertPlatformCreditsRechargeEnabled,
+  getPlatformCreditsRechargeDisabledPayload,
+  submitManualRechargeRequest,
+} from '@/lib/credits/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  try {
+    assertPlatformCreditsRechargeEnabled()
+  } catch (err) {
+    const disabled = getPlatformCreditsRechargeDisabledPayload(err)
+    if (disabled) return NextResponse.json(disabled, { status: 503 })
+    throw err
+  }
+
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ message: '请先登录' }, { status: 401 })
 

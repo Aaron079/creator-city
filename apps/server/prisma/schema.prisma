@@ -1137,6 +1137,7 @@ model CreditLedger {
   refId     String?
   paymentOrderId String?
   generationJobId String?
+  idempotencyKey String?      @unique
   note      String?
   description String?
   createdAt DateTime         @default(now())
@@ -1183,11 +1184,13 @@ model PaymentOrder {
   amount                Int                @default(0)
   externalOrderId       String?            @unique
   externalPaymentId     String?            @unique
+  idempotencyKey         String?            @unique
   externalCustomerId    String?
   rawNotifyJson         Json?
   status                PaymentOrderStatus @default(PENDING)
   credits               Int
   priceUSD              Int
+  fulfilledAt           DateTime?
   issuedAt              DateTime?
   paidAt                DateTime?
   createdAt             DateTime           @default(now())
@@ -1213,6 +1216,7 @@ model GenerationJob {
   walletId      String?
   externalJobId String?
   providerJobId String?
+  billingRequestId String?
   providerId    String
   provider      String?
   nodeType      String
@@ -1242,10 +1246,12 @@ model GenerationJob {
   @@index([walletId])
   @@index([status])
   @@index([billingStatus])
+  @@index([billingRequestId])
   @@index([providerId])
   @@index([providerJobId])
   @@index([outputAssetId])
   @@index([createdAt])
+  @@unique([userId, billingRequestId])
 }
 
 model ProviderCostLedger {

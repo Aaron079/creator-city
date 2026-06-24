@@ -7,6 +7,41 @@
 import { db } from '@/lib/db'
 import { CreditLedgerType, PaymentOrderStatus } from '@prisma/client'
 
+export const PLATFORM_CREDITS_RECHARGE_DISABLED = {
+  success: false,
+  errorCode: 'PLATFORM_CREDITS_RECHARGE_DISABLED',
+  message: '平台充值功能暂未开放。',
+} as const
+
+export class PlatformCreditsRechargeDisabledError extends Error {
+  constructor() {
+    super(PLATFORM_CREDITS_RECHARGE_DISABLED.message)
+    this.name = 'PlatformCreditsRechargeDisabledError'
+  }
+}
+
+export function assertPlatformCreditsRechargeEnabled() {
+  if (process.env.PLATFORM_CREDITS_RECHARGE_ENABLED !== 'true') {
+    throw new PlatformCreditsRechargeDisabledError()
+  }
+}
+
+export function getPlatformCreditsRechargeDisabledPayload(error: unknown) {
+  if (error instanceof PlatformCreditsRechargeDisabledError) {
+    return PLATFORM_CREDITS_RECHARGE_DISABLED
+  }
+  return null
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function paymentFulfillmentIdempotencyKey(orderId: string) {
+  return `payment-order:${orderId}:fulfill`
+}
+
 // ── Wallet ─────────────────────────────────────────────────────
 
 export async function getOrCreateWallet(userId: string) {
@@ -107,11 +142,37 @@ export async function approveManualRecharge(
   const order = await db.paymentOrder.findUnique({ where: { id: orderId } })
   if (!order) throw new Error('订单不存在')
   if (order.provider !== 'manual') throw new Error('不是人工充值订单')
+  if (order.status === PaymentOrderStatus.PAID) return
   if (order.status !== PaymentOrderStatus.PENDING) throw new Error('订单状态不是 PENDING')
 
-  const wallet = await getOrCreateWallet(order.userId)
-
   await db.$transaction(async (tx) => {
+    const claimed = await tx.paymentOrder.updateMany({
+      where: {
+        id: orderId,
+        provider: 'manual',
+        status: PaymentOrderStatus.PENDING,
+      },
+      data: {
+        status: PaymentOrderStatus.PAID,
+        fulfilledAt: new Date(),
+        paidAt: new Date(),
+        issuedAt: new Date(),
+        rawNotifyJson: {
+          ...jsonObject(order.rawNotifyJson),
+          approvedBy: adminUserId,
+          approvalNote: adminNote ?? null,
+        },
+      },
+    })
+    if (claimed.count === 0) {
+      const latest = await tx.paymentOrder.findUnique({ where: { id: orderId } })
+      if (latest?.status === PaymentOrderStatus.PAID) return
+      throw new Error('订单状态不是 PENDING')
+    }
+
+    const wallet = await tx.userCreditWallet.findUnique({ where: { id: order.walletId } })
+    if (!wallet) throw new Error('钱包不存在')
+
     const updated = await tx.userCreditWallet.update({
       where: { id: wallet.id },
       data: {
@@ -130,21 +191,8 @@ export async function approveManualRecharge(
         balance: updated.balance,
         amountCredits: order.credits,
         paymentOrderId: orderId,
+        idempotencyKey: paymentFulfillmentIdempotencyKey(orderId),
         description: adminNote ?? '充值申请已通过',
-      },
-    })
-
-    await tx.paymentOrder.update({
-      where: { id: orderId },
-      data: {
-        status: PaymentOrderStatus.PAID,
-        paidAt: new Date(),
-        issuedAt: new Date(),
-        rawNotifyJson: {
-          ...((order.rawNotifyJson as Record<string, unknown>) ?? {}),
-          approvedBy: adminUserId,
-          approvalNote: adminNote ?? null,
-        },
       },
     })
   })
