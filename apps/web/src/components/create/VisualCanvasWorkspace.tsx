@@ -154,6 +154,13 @@ import { CinematicCameraControlPanel } from '@/components/create/CinematicCamera
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
 import type { NodeToolContext } from '@/lib/canvas/nodeToolContext'
+import {
+  validateLocalImageFile,
+  readImageDimensions,
+  buildLocalImportMetadata,
+  buildUploadFormData,
+  getImportNodeTitle,
+} from '@/lib/canvas/localImageImport'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -2560,6 +2567,7 @@ export function VisualCanvasWorkspace({
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
+  const [isLocalImageDragOver, setIsLocalImageDragOver] = useState(false)
   const timersRef = useRef<number[]>([])
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [creditModal, setCreditModal] = useState<{ open: boolean; requiredCredits?: number; availableCredits?: number }>({ open: false })
@@ -7476,6 +7484,90 @@ export function VisualCanvasWorkspace({
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom])
 
+  const handleLocalImageDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsLocalImageDragOver(false)
+
+    const validFiles: File[] = []
+    let hasInvalidType = false
+    let hasTooLarge = false
+
+    for (const f of Array.from(e.dataTransfer.files)) {
+      const v = validateLocalImageFile(f)
+      if (v.ok) {
+        validFiles.push(f)
+      } else if (v.error.code === 'INVALID_TYPE') {
+        hasInvalidType = true
+      } else if (v.error.code === 'TOO_LARGE') {
+        hasTooLarge = true
+      }
+    }
+
+    if (hasInvalidType && hasTooLarge) {
+      showCanvasFeedback('部分文件无法导入：仅支持 JPG / PNG / WebP，且不能超过 20MB')
+    } else if (hasInvalidType) {
+      showCanvasFeedback('仅支持 JPG / PNG / WebP 图片')
+    } else if (hasTooLarge) {
+      showCanvasFeedback('图片不能超过 20MB')
+    }
+
+    const files = validFiles.slice(0, 10)
+
+    if (files.length === 0) return
+
+    const basePos = getViewportWorldPoint(e.clientX, e.clientY)
+    const NODE_H_OFFSET = 280
+
+    const nodeEntries = files.map((file, index) => {
+      const node = createNode('image', {
+        title: getImportNodeTitle(file),
+        status: 'running',
+        position: { x: basePos.x + index * NODE_H_OFFSET, y: basePos.y },
+        metadataJson: {
+          importedFromLocal: true,
+          importSource: 'drag-drop',
+          originalFileName: file.name,
+          mimeType: file.type,
+        },
+      })
+      handleNodePatch(node.id, { resultPreview: '上传中…' })
+      return { file, nodeId: node.id }
+    })
+
+    const CONCURRENT = 3
+    for (let i = 0; i < nodeEntries.length; i += CONCURRENT) {
+      const batch = nodeEntries.slice(i, i + CONCURRENT)
+      await Promise.all(
+        batch.map(async ({ file, nodeId }) => {
+          try {
+            await readImageDimensions(file)
+            const fd = buildUploadFormData(file, projectId, workflowId || undefined, nodeId)
+            const res = await fetch('/api/assets/upload', { method: 'POST', body: fd })
+            const json = await res.json() as { success: boolean; asset?: { id: string; url: string }; message?: string }
+            if (!res.ok || !json.success || !json.asset?.url) {
+              throw new Error(json.message ?? '上传失败')
+            }
+            handleNodePatch(nodeId, {
+              resultImageUrl: json.asset.url,
+              status: 'idle',
+              resultPreview: undefined,
+              assetId: json.asset.id,
+              metadataJson: buildLocalImportMetadata(file, json.asset.id),
+            })
+            flushLocalSnapshot()
+            scheduleCanvasSave(0)
+          } catch (err) {
+            handleNodePatch(nodeId, {
+              status: 'error',
+              errorMessage: err instanceof Error ? err.message : '上传失败',
+              resultPreview: undefined,
+            })
+          }
+        }),
+      )
+    }
+  }, [createNode, flushLocalSnapshot, getViewportWorldPoint, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+
   const findConnectorTarget = useCallback((clientX: number, clientY: number): { nodeId: string; handle: 'left' | 'right' } | null => {
     const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     const connector = element?.closest('[data-canvas-connector="true"]') as HTMLElement | null
@@ -9154,7 +9246,37 @@ export function VisualCanvasWorkspace({
         onPointerCancel={handleCanvasPointerUp}
         onDoubleClick={handleCanvasDoubleClick}
         onClick={handleCanvasClick}
+        onDragOver={(e) => {
+          if (Array.from(e.dataTransfer.types).includes('Files')) {
+            e.preventDefault()
+            setIsLocalImageDragOver(true)
+          }
+        }}
+        onDragLeave={(e) => {
+          if (!viewportRef.current?.contains(e.relatedTarget as Node)) {
+            setIsLocalImageDragOver(false)
+          }
+        }}
+        onDrop={(e) => { void handleLocalImageDrop(e) }}
       >
+        {isLocalImageDragOver ? (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 9999,
+            background: 'rgba(0,180,255,0.08)',
+            border: '2px dashed rgba(0,180,255,0.5)',
+            borderRadius: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none',
+          }}>
+            <div style={{
+              background: 'rgba(0,0,0,0.7)', borderRadius: 10,
+              padding: '14px 24px', color: 'rgba(0,200,255,0.9)',
+              fontSize: 15, fontWeight: 600, letterSpacing: '0.02em',
+            }}>
+              拖放图片到画布
+            </div>
+          </div>
+        ) : null}
         {saveStatus !== 'opening' && !hasStarted && nodes.length === 0 ? (
           <div className="canvas-empty-overlay">
             <div className="canvas-empty-hint-row">
