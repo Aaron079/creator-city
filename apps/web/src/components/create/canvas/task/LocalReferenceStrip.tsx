@@ -289,7 +289,7 @@ export function LocalReferenceStrip({
       {/* Image reference section */}
       {showImageSection && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: refs.length > 0 ? 8 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div style={labelStyle}>
               本地参考输入{refs.length > 0 ? ` (${refs.length})` : ''}
             </div>
@@ -300,6 +300,10 @@ export function LocalReferenceStrip({
             >
               + 上传参考图
             </button>
+          </div>
+
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: refs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
+            参考图已保存到任务上下文；当前 Provider 不支持直接参考图输入，可复制图片 URL 至 Prompt，或后续使用支持图生图的 Provider。
           </div>
 
           {refs.length > 0 && (
@@ -327,7 +331,7 @@ export function LocalReferenceStrip({
       {/* Script / text section */}
       {showScriptSection && (
         <div style={{ marginTop: showImageSection ? 8 : 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: scriptInputs.length > 0 ? 8 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div style={labelStyle}>
               剧本 / 文本输入{scriptInputs.length > 0 ? ` (${scriptInputs.length})` : ''}
             </div>
@@ -338,6 +342,10 @@ export function LocalReferenceStrip({
             >
               + 上传文本文件
             </button>
+          </div>
+
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: scriptInputs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
+            TXT / Markdown / Fountain / SRT / VTT / CSV / JSON · 仅本次草稿，需"应用到 Prompt"后生效
           </div>
 
           {scriptInputs.length > 0 && (
@@ -351,7 +359,7 @@ export function LocalReferenceStrip({
           <input
             ref={scriptInputRef}
             type="file"
-            accept=".txt,.md,text/plain,text/markdown"
+            accept=".txt,.md,.markdown,.fountain,.csv,.srt,.vtt,.json,text/plain,text/markdown,text/csv,application/json,text/vtt"
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0]
