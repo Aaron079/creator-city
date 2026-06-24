@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
 
     // Batch-fetch all candidate CanvasNodes in one query instead of N serial findUnique calls.
     const assetItems = assets.filter((a) => a.nodeId && a.workflowId && a.url)
+    if (assetItems.length === 0) return jsonOk({ recovered: 0, skipped: assets.length, items: [] })
+
     const candidateNodes = await db.canvasNode.findMany({
       where: {
         OR: assetItems.map((a) => ({ workflowId: a.workflowId!, nodeId: a.nodeId! })),

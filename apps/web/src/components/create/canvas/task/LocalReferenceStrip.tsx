@@ -16,6 +16,18 @@ interface LocalReferenceStripProps {
   onApplyScript: (text: string) => void
 }
 
+function friendlyUploadError(msg: string | undefined): string {
+  if (!msg) return '上传失败'
+  if (msg.includes('UPLOAD_TIMEOUT') || msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('超时')) return '超时，请重试'
+  if (msg.includes('STORAGE_UPLOAD_FAILED') || msg.includes('存储失败')) return '存储失败'
+  if (msg.includes('PROJECT_CHECK_FAILED') || msg.includes('验证失败')) return '验证失败'
+  if (msg.includes('ASSET_RECORD_FAILED') || msg.includes('记录失败')) return '记录失败'
+  if (msg.includes('FILE_TOO_LARGE') || msg.includes('20MB')) return '文件过大'
+  if (msg.includes('UNAUTHORIZED') || msg.includes('登录')) return '请先登录'
+  if (msg.includes('prisma') || msg.includes('Prisma') || msg.includes('Invalid `')) return '上传失败'
+  return '上传失败'
+}
+
 function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: string) => void }) {
   const isUploading = entry.status === 'uploading'
   const isError = entry.status === 'error'
@@ -132,12 +144,12 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
       </span>
 
       {/* Error message */}
-      {isError && entry.errorMessage && (
+      {isError && (
         <div
           style={{ fontSize: 8, color: 'rgba(255,100,100,0.6)', textAlign: 'center', maxWidth: '100%', wordBreak: 'break-all' }}
-          title={entry.errorMessage}
+          title={entry.errorMessage ?? '上传失败'}
         >
-          {entry.errorMessage.includes('UPLOAD_TIMEOUT') ? '超时，请重试' : entry.errorMessage.slice(0, 20)}
+          {friendlyUploadError(entry.errorMessage)}
         </div>
       )}
     </div>

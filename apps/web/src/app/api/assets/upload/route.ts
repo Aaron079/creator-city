@@ -39,12 +39,20 @@ function getMetadataJson(args: {
 }) {
   return {
     storageProvider: args.storageProvider,
-    bucket: args.bucket,
-    key: args.key,
-    storageKey: args.key,
+    ...(args.bucket != null ? { bucket: args.bucket } : {}),
+    ...(args.key != null ? { key: args.key, storageKey: args.key } : {}),
     originalName: args.originalName,
     source: 'assets-upload',
   } satisfies Prisma.InputJsonObject
+}
+
+function safePrismaError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error || fallback)
+  // Never expose raw Prisma internals to the client
+  if (message.includes('prisma.') || message.includes('Prisma') || message.includes('PrismaClient')) {
+    return fallback
+  }
+  return message || fallback
 }
 
 export async function POST(request: NextRequest) {
@@ -71,24 +79,41 @@ export async function POST(request: NextRequest) {
   const title = String(formData.get('title') ?? '').trim() || file.name || 'Uploaded asset'
   const assetId = crypto.randomUUID()
 
-  try {
-    if (projectId) {
+  // Step 1: verify project ownership (if projectId provided)
+  if (projectId) {
+    try {
       const project = await db.project.findUnique({
         where: { id: projectId },
         select: { ownerId: true },
       })
       if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在', 404)
       if (project.ownerId !== user.id) return jsonError('FORBIDDEN', '无权上传到该项目', 403)
+    } catch (err) {
+      console.error('[assets/upload] project check failed', { projectId, err })
+      return jsonError('PROJECT_CHECK_FAILED', '项目验证失败，请重试', 500)
     }
+  }
 
+  // Step 2: upload file to storage
+  let uploaded: Awaited<ReturnType<typeof uploadAsset>>
+  try {
     const buffer = Buffer.from(await file.arrayBuffer())
-    const uploaded = await uploadAsset(buffer, {
+    uploaded = await uploadAsset(buffer, {
       filename: `${assetId}-${safeFileName(file.name)}`,
       mimeType: contentType,
       projectId,
       userId: user.id,
       type: assetType,
     })
+  } catch (err) {
+    console.error('[assets/upload] storage upload failed', { assetId, err })
+    const msg = err instanceof Error ? err.message : '文件上传失败'
+    const isTimeout = msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('abort')
+    return jsonError('STORAGE_UPLOAD_FAILED', isTimeout ? '上传超时，请重试' : '文件存储失败，请重试', 500)
+  }
+
+  // Step 3: create Asset record in DB
+  try {
     const metadataJson = getMetadataJson({
       storageProvider: uploaded.storageProvider,
       bucket: uploaded.bucket,
@@ -124,10 +149,9 @@ export async function POST(request: NextRequest) {
         tags: ['upload', assetType],
       },
     })
-
     return NextResponse.json({ success: true, asset: serializeAsset(asset) }, { status: 201 })
-  } catch (error) {
-    console.error('[assets/upload] failed', error)
-    return jsonError('ASSET_UPLOAD_FAILED', error instanceof Error ? error.message : '上传素材失败', 500)
+  } catch (err) {
+    console.error('[assets/upload] asset DB create failed', { assetId, url: uploaded.url, err })
+    return jsonError('ASSET_RECORD_FAILED', safePrismaError(err, '素材记录创建失败，请重试'), 500)
   }
 }
