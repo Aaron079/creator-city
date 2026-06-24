@@ -144,3 +144,51 @@ describe('buildUploadFormData', () => {
     assert.equal(LOCAL_IMPORT_MAX_DIMENSION, 8192)
   })
 })
+
+describe('uploadImageWithTimeout', () => {
+  test('throws UPLOAD_TIMEOUT on AbortError', async () => {
+    const originalFetch = globalThis.fetch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).fetch = async (_url: string, opts: RequestInit) => {
+      await new Promise<void>((_resolve, reject) => {
+        opts.signal?.addEventListener('abort', () => reject(Object.assign(new Error('AbortError'), { name: 'AbortError' })))
+      })
+    }
+    const { uploadImageWithTimeout } = await import('./localImageImport')
+    const fd = new FormData()
+    const p = uploadImageWithTimeout(fd, 1)
+    await assert.rejects(p, (err: Error) => {
+      assert.equal(err.message, 'UPLOAD_TIMEOUT')
+      return true
+    })
+    ;(globalThis as any).fetch = originalFetch
+  })
+
+  test('throws on non-ok response', async () => {
+    const originalFetch = globalThis.fetch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).fetch = async () => ({
+      ok: false,
+      json: async () => ({ success: false, message: '服务器错误' }),
+    })
+    const { uploadImageWithTimeout } = await import('./localImageImport')
+    const fd = new FormData()
+    await assert.rejects(uploadImageWithTimeout(fd), /服务器错误/)
+    ;(globalThis as any).fetch = originalFetch
+  })
+
+  test('returns asset on success', async () => {
+    const originalFetch = globalThis.fetch
+    const mockAsset = { id: 'asset-1', url: 'https://oss.example.com/test.jpg', name: 'test.jpg' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).fetch = async () => ({
+      ok: true,
+      json: async () => ({ success: true, asset: mockAsset }),
+    })
+    const { uploadImageWithTimeout } = await import('./localImageImport')
+    const fd = new FormData()
+    const result = await uploadImageWithTimeout(fd)
+    assert.deepEqual(result, mockAsset)
+    ;(globalThis as any).fetch = originalFetch
+  })
+})

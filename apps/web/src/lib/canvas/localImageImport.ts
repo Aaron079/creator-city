@@ -2,6 +2,17 @@ export const LOCAL_IMPORT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/web
 export const LOCAL_IMPORT_MAX_SIZE_BYTES = 20 * 1024 * 1024
 export const LOCAL_IMPORT_MAX_DIMENSION = 8192
 
+export interface LocalRefEntry {
+  inputId: string
+  status: 'uploading' | 'done' | 'error'
+  assetId?: string
+  mediaUrl?: string
+  originalFileName: string
+  mimeType: string
+  uploadedAt?: string
+  errorMessage?: string
+}
+
 export interface LocalImportValidationError {
   file: File
   code: 'INVALID_TYPE' | 'TOO_LARGE' | 'DIMENSION_TOO_LARGE'
@@ -103,4 +114,37 @@ export function getImportNodeTitle(file: File): string {
 
 export function isDragEventWithImageFiles(e: DragEvent | React.DragEvent): boolean {
   return Array.from(e.dataTransfer?.types ?? []).includes('Files')
+}
+
+export async function uploadImageWithTimeout(
+  fd: FormData,
+  timeoutMs = 60000,
+): Promise<{ id: string; url: string; name: string }> {
+  const controller = new AbortController()
+  const timer = typeof window !== 'undefined'
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch('/api/assets/upload', {
+      method: 'POST',
+      body: fd,
+      signal: controller.signal,
+    })
+    const json = await res.json() as {
+      success: boolean
+      asset?: { id: string; url: string; name: string }
+      message?: string
+    }
+    if (!res.ok || !json.success || !json.asset?.url) {
+      throw new Error(json.message ?? '上传失败')
+    }
+    return json.asset
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('UPLOAD_TIMEOUT')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }

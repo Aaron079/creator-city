@@ -153,6 +153,7 @@ import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettings
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
+import { LocalReferenceStrip } from '@/components/create/canvas/task/LocalReferenceStrip'
 import type { NodeToolContext } from '@/lib/canvas/nodeToolContext'
 import {
   validateLocalImageFile,
@@ -160,7 +161,14 @@ import {
   buildLocalImportMetadata,
   buildUploadFormData,
   getImportNodeTitle,
+  uploadImageWithTimeout,
+  type LocalRefEntry,
 } from '@/lib/canvas/localImageImport'
+import {
+  validateLocalScriptFile,
+  readScriptFile,
+  type LocalScriptEntry,
+} from '@/lib/canvas/localScriptImport'
 
 class CanvasNodeErrorBoundary extends Component<
   { children: ReactNode; nodeId: string },
@@ -2522,6 +2530,8 @@ export function VisualCanvasWorkspace({
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
+  const [dialogLocalRefs, setDialogLocalRefs] = useState<LocalRefEntry[]>([])
+  const [dialogScriptInputs, setDialogScriptInputs] = useState<LocalScriptEntry[]>([])
   const [assetRecoverBatchStatus, setAssetRecoverBatchStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle')
   const [recoverNodeStatus, setRecoverNodeStatus] = useState<'idle' | 'running' | 'done-recovered' | 'done-empty' | 'failed'>('idle')
   const [recoverNodeCount, setRecoverNodeCount] = useState(0)
@@ -2593,6 +2603,7 @@ export function VisualCanvasWorkspace({
   const deletedEdgeIdsRef = useRef<string[]>([])
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
   const latestEdgesRef = useRef<CanvasEdge[]>([])
+  const prevEditingNodeIdRef = useRef<string | null>(null)
   const latestViewportRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } })
   const latestCommentsRef = useRef<CanvasComment[]>([])
   const mediaReviewZRef = useRef(1)
@@ -4605,6 +4616,30 @@ export function VisualCanvasWorkspace({
       setSceneLightingSettings(loadSceneLightingForNode(projectId, editingNodeId))
       directorTargetNodeIdRef.current = editingNodeId
     }
+  }, [editingNodeId])
+
+  // Initialize dialog local refs from node metadata when dialog opens for a new node
+  useEffect(() => {
+    if (editingNodeId === prevEditingNodeIdRef.current) return
+    prevEditingNodeIdRef.current = editingNodeId
+    if (!editingNodeId) {
+      setDialogLocalRefs([])
+      setDialogScriptInputs([])
+      return
+    }
+    const node = latestNodesRef.current.find((n) => n.id === editingNodeId)
+    const meta = metadataRecord(node?.metadataJson)
+    const taskInputs = meta.taskInputs as { references?: unknown[] } | undefined
+    const refs = Array.isArray(taskInputs?.references)
+      ? (taskInputs.references as LocalRefEntry[]).filter(
+          (r): r is LocalRefEntry =>
+            typeof r === 'object' && r !== null &&
+            typeof (r as LocalRefEntry).inputId === 'string' &&
+            (r as LocalRefEntry).status === 'done',
+        )
+      : []
+    setDialogLocalRefs(refs)
+    setDialogScriptInputs([])
   }, [editingNodeId])
 
   useEffect(() => {
@@ -7484,6 +7519,100 @@ export function VisualCanvasWorkspace({
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom])
 
+  // ── Dialog local reference upload ──────────────────────────────────────────
+
+  const handleDialogReferenceUpload = useCallback(async (file: File) => {
+    if (!editingNode) return
+    const nodeId = editingNode.id
+    const validation = validateLocalImageFile(file)
+    if (!validation.ok) {
+      showCanvasFeedback(validation.error.message)
+      return
+    }
+    const inputId = `local-ref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setDialogLocalRefs((prev) => [...prev, {
+      inputId,
+      status: 'uploading' as const,
+      originalFileName: file.name,
+      mimeType: file.type,
+    }])
+    try {
+      await readImageDimensions(file)
+      const fd = buildUploadFormData(file, projectId, workflowId ?? undefined, nodeId)
+      const asset = await uploadImageWithTimeout(fd)
+      const doneEntry: LocalRefEntry = {
+        inputId,
+        status: 'done',
+        assetId: asset.id,
+        mediaUrl: asset.url,
+        originalFileName: file.name,
+        mimeType: file.type,
+        uploadedAt: new Date().toISOString(),
+      }
+      setDialogLocalRefs((prev) => prev.map((r) => r.inputId === inputId ? doneEntry : r))
+      // Persist into node metadata
+      const currentNode = latestNodesRef.current.find((n) => n.id === nodeId)
+      const meta = metadataRecord(currentNode?.metadataJson)
+      const existingRefs = ((meta.taskInputs as { references?: unknown[] } | undefined)?.references ?? []) as LocalRefEntry[]
+      const updatedRefs = [...existingRefs.filter((r) => r.inputId !== inputId), doneEntry]
+      handleNodePatch(nodeId, {
+        metadataJson: { ...meta, taskInputs: { version: 1, references: updatedRefs } },
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传失败'
+      setDialogLocalRefs((prev) => prev.map((r) => r.inputId === inputId
+        ? { ...r, status: 'error' as const, errorMessage: msg }
+        : r
+      ))
+      showCanvasFeedback(msg === 'UPLOAD_TIMEOUT' ? '上传超时，请重试' : msg)
+    }
+  }, [editingNode, projectId, workflowId, handleNodePatch, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
+
+  const handleDialogReferenceRemove = useCallback((inputId: string) => {
+    if (!editingNode) return
+    const nodeId = editingNode.id
+    setDialogLocalRefs((prev) => prev.filter((r) => r.inputId !== inputId))
+    const currentNode = latestNodesRef.current.find((n) => n.id === nodeId)
+    const meta = metadataRecord(currentNode?.metadataJson)
+    const existingRefs = ((meta.taskInputs as { references?: unknown[] } | undefined)?.references ?? []) as LocalRefEntry[]
+    handleNodePatch(nodeId, {
+      metadataJson: {
+        ...meta,
+        taskInputs: { version: 1, references: existingRefs.filter((r) => r.inputId !== inputId) },
+      },
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+  }, [editingNode, handleNodePatch, flushLocalSnapshot, scheduleCanvasSave])
+
+  const handleDialogScriptUpload = useCallback(async (file: File) => {
+    const validation = validateLocalScriptFile(file)
+    if (!validation.ok) {
+      showCanvasFeedback(validation.error.message)
+      return
+    }
+    try {
+      const entry = await readScriptFile(file)
+      setDialogScriptInputs((prev) => [...prev, entry])
+    } catch (err) {
+      showCanvasFeedback(err instanceof Error ? err.message : '文件读取失败')
+    }
+  }, [showCanvasFeedback])
+
+  const handleDialogScriptRemove = useCallback((inputId: string) => {
+    setDialogScriptInputs((prev) => prev.filter((s) => s.inputId !== inputId))
+  }, [])
+
+  const handleDialogScriptApply = useCallback((text: string) => {
+    const newPrompt = canvasPrompt.trim() ? `${canvasPrompt}\n\n${text}` : text
+    setCanvasPrompt(newPrompt)
+    if (editingNode) handleNodePatch(editingNode.id, { prompt: newPrompt })
+  }, [canvasPrompt, editingNode, handleNodePatch])
+
+  // ── End dialog local reference upload ──────────────────────────────────────
+
   const handleLocalImageDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsLocalImageDragOver(false)
@@ -7542,24 +7671,21 @@ export function VisualCanvasWorkspace({
           try {
             await readImageDimensions(file)
             const fd = buildUploadFormData(file, projectId, workflowId || undefined, nodeId)
-            const res = await fetch('/api/assets/upload', { method: 'POST', body: fd })
-            const json = await res.json() as { success: boolean; asset?: { id: string; url: string }; message?: string }
-            if (!res.ok || !json.success || !json.asset?.url) {
-              throw new Error(json.message ?? '上传失败')
-            }
+            const asset = await uploadImageWithTimeout(fd)
             handleNodePatch(nodeId, {
-              resultImageUrl: json.asset.url,
+              resultImageUrl: asset.url,
               status: 'idle',
               resultPreview: undefined,
-              assetId: json.asset.id,
-              metadataJson: buildLocalImportMetadata(file, json.asset.id),
+              assetId: asset.id,
+              metadataJson: buildLocalImportMetadata(file, asset.id),
             })
             flushLocalSnapshot()
             scheduleCanvasSave(0)
           } catch (err) {
+            const raw = err instanceof Error ? err.message : '上传失败'
             handleNodePatch(nodeId, {
               status: 'error',
-              errorMessage: err instanceof Error ? err.message : '上传失败',
+              errorMessage: raw === 'UPLOAD_TIMEOUT' ? '上传超时，请重试' : raw,
               resultPreview: undefined,
             })
           }
@@ -9826,6 +9952,16 @@ export function VisualCanvasWorkspace({
             targetNodeId={editingNode.id}
             nodes={nodes}
             edges={edges}
+          />
+          <LocalReferenceStrip
+            nodeKind={editingNode.kind}
+            refs={dialogLocalRefs}
+            scriptInputs={dialogScriptInputs}
+            onImageUpload={(file) => { void handleDialogReferenceUpload(file) }}
+            onRemoveRef={handleDialogReferenceRemove}
+            onScriptUpload={(file) => { void handleDialogScriptUpload(file) }}
+            onRemoveScript={handleDialogScriptRemove}
+            onApplyScript={handleDialogScriptApply}
           />
           <CanvasPromptBox
             layout="node"
