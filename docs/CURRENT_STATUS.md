@@ -1,5 +1,7 @@
 # Creator City — Current Status
 
+Last updated: 2026-06-24 (P0-CANVAS-NODE-CONTEXT-DIALOG-UI-CLEANUP VALIDATED / CLOSED — commit 12009ee; production JS bundle verified live; bottom topbar removed; upstream task input renders as horizontal compact cards with upstream strip flexDir=row and itemCount=2; close button preserved; real generate button preserved; video upstream does not mount <video>; prior old UI report traced to stale browser JS cache, not product behavior; no generation/provider/billing/canvas save/API/schema changes)
+
 Last updated: 2026-06-22 (P0-ASSET-REMIX-PHASE-1A-INTERNAL-INGEST-IMPLEMENTATION IMPLEMENTED / WAITING_SECURITY_QA — CC Internal Ingest route implemented behind production-disabled gate. Sub-statuses: Gate DONE / PRODUCTION_DISABLED (ASSET_TRANSFORM_INTERNAL_INGEST_ENABLED + CC_INTERNAL_INGEST_TOKEN required; no env enabled); HMAC DONE (missing/wrong/stale/body-tamper rejected); Ownership DONE (project + image canvas node + source Asset owner/project/READY revalidated); OSS validation DONE (canonical subject.png/mask.png prefix binding, traversal guard, HEAD+GET, MIME=image/png, size, SHA-256); SHA/PNG/dimensions/alpha DONE (subject+mask PNG parse, dimensions match, subject alpha required, mask SHA required); Artifact gate DONE (sam2.1-hiera-base-plus + SHA-256 a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5 only); Confidence gate DONE (HIGH only; medium/low and low IOU/stability/scoreGap rejected); Stable object DONE (deterministic subject-stable.png + mask-stable.png PUT); Asset creation DONE (READY IMAGE Asset with transform metadata); Idempotency real conclusion: DB-level same-ctid serialization uses pg_advisory_xact_lock(hashtext('ingest:{ctid}')) inside $transaction plus metadataJson transformId lookup before create — no unique schema change; Source immutable DONE (source node/asset never updated/deleted); Production tools HIDDEN; Targeted ingest tests 31/31 PASS; NEXT: P0-ASSET-REMIX-PHASE-1A-INTERNAL-INGEST-SECURITY-QA; Railway/RunPod/Staging remains BLOCKED)
 
 Last updated: 2026-06-22 (P0-ASSET-REMIX-PHASE-1A-ARTIFACT-APPROVAL-AND-EXECUTOR-BASELINE-CLOSEOUT COMPLETE — Artifact: sam2.1-hiera-base-plus approvalStatus=APPROVED_INTERNAL_ALPHA (Founder approved 2026-06-21); publicProductionApproved=false; SHA-256=a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5 HASH_VERIFIED; ArtifactRegistry: ReleaseChannel enum + require_approved_for_channel(); internal-alpha channel allows APPROVED_INTERNAL_ALPHA; production channel requires APPROVED (not granted) + publicProductionApproved=true (not set); approval cannot bypass sha256 check; 125/125 tests PASS; Executor: committed f03d3b3 on main; private GitHub repo created: https://github.com/Aaron079/creator-city-asset-executor (private=true); pushed; artifacts/cache/ gitignored — zero weights in repo; no Railway service; no RunPod endpoint; no real GPU inference; _ARTIFACT_APPROVED=False in gateway (production feature gate unchanged); Creator City generate routes untouched; all production tools hidden; NEXT: P0-ASSET-REMIX-PHASE-1A-INTERNAL-INGEST-IMPLEMENTATION)
@@ -4544,3 +4546,34 @@ apps/web/src/lib/canvas/nodeToolContext.ts     (NEW)
 - Env changed: No
 - Production DB changed: No
 - Source overwritten: No
+
+---
+
+## P0-CANVAS-NODE-CONTEXT-DIALOG-UI-CLEANUP — VALIDATED / CLOSED
+
+**Date:** 2026-06-24
+**Implementation SHA:** 12009ee
+**Status:** VALIDATED / CLOSED
+
+### 生产验收摘要
+
+| 验收项 | 结果 |
+|---|---|
+| Production JS bundle | ✅ 生效 |
+| `canvas-node-dialog-topbar` 出现次数 | ✅ 0 |
+| Upstream task input | ✅ 横向 compact cards |
+| Upstream strip layout | ✅ `flexDir = row` |
+| Upstream strip itemCount | ✅ 2 |
+| 真实生成按钮 | ✅ preserved |
+| 关闭按钮 | ✅ preserved |
+| 视频上游 | ✅ 不挂载 `<video>` |
+| 旧界面问题 | ✅ 浏览器缓存旧 JS bundle，不是产品问题 |
+
+### 边界确认
+
+- Generation changed: No
+- Provider changed: No
+- Billing changed: No
+- Canvas save changed: No
+- API changed: No
+- Schema changed: No
