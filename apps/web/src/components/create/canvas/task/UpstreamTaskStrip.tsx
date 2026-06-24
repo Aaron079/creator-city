@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
 import { getNodeImageUrl } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
@@ -28,8 +28,6 @@ const ROLE_LABELS: Record<string, string> = {
   audio: '音频',
 }
 
-const MAX_VISIBLE = 2
-
 function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string }) {
   const roleLabel = ROLE_LABELS[role] ?? role
   const isImage = node.kind === 'image'
@@ -44,22 +42,24 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
     thumbUrl = getProxiedMediaUrl(node.preview.poster)
   }
 
-  const textSummary = isText && node.resultText
-    ? node.resultText.slice(0, 80) + (node.resultText.length > 80 ? '…' : '')
+  const textPreview = isText && node.resultText
+    ? node.resultText.slice(0, 40) + (node.resultText.length > 40 ? '…' : '')
     : null
 
   return (
     <div
       style={{
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 8,
-        padding: '6px 10px',
+        gap: 4,
+        padding: '6px 8px',
         borderRadius: 8,
         background: 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(255,255,255,0.07)',
-        minWidth: 0,
-        flex: 1,
+        width: 80,
+        minWidth: 80,
+        flex: 'none',
       }}
     >
       {/* Thumbnail or icon */}
@@ -68,53 +68,49 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
           src={thumbUrl}
           alt={node.title || node.kind}
           style={{
-            width: 36,
-            height: 36,
+            width: 56,
+            height: 40,
             objectFit: 'cover',
-            borderRadius: 5,
+            borderRadius: 4,
             flexShrink: 0,
             background: 'rgba(255,255,255,0.06)',
           }}
         />
       ) : (
         <div style={{
-          width: 36, height: 36, borderRadius: 5, flexShrink: 0,
+          width: 56, height: 40, borderRadius: 4, flexShrink: 0,
           background: 'rgba(255,255,255,0.06)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16,
+          fontSize: textPreview ? 10 : 18,
+          color: 'rgba(255,255,255,0.4)',
+          overflow: 'hidden',
+          padding: textPreview ? '2px 4px' : 0,
+          lineHeight: 1.3,
+          wordBreak: 'break-all',
         }}>
-          {isImage ? '🖼' : isVideo ? '🎬' : '📝'}
+          {textPreview ?? (isImage ? '🖼' : isVideo ? '🎬' : '📝')}
         </div>
       )}
 
-      {/* Labels */}
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 600,
-          color: 'rgba(255,255,255,0.72)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {node.title || node.kind}
-        </div>
-        {textSummary ? (
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 1, lineHeight: 1.3 }}>
-            {textSummary}
-          </div>
-        ) : (
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>
-            {node.status === 'done' ? '已完成' : node.status === 'idle' ? '待生成' : node.status}
-          </div>
-        )}
+      {/* Title */}
+      <div style={{
+        fontSize: 10, fontWeight: 600,
+        color: 'rgba(255,255,255,0.6)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        maxWidth: '100%',
+        textAlign: 'center',
+      }}>
+        {node.title || node.kind}
       </div>
 
       {/* Role badge */}
       <span style={{
-        fontSize: 9, letterSpacing: '0.04em',
+        fontSize: 9, letterSpacing: '0.03em',
         color: 'rgba(0,210,255,0.6)',
         background: 'rgba(0,210,255,0.06)',
         border: '1px solid rgba(0,210,255,0.15)',
-        borderRadius: 4,
-        padding: '1px 5px',
+        borderRadius: 3,
+        padding: '1px 4px',
         flexShrink: 0,
       }}>
         {roleLabel}
@@ -124,8 +120,6 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
 }
 
 export function UpstreamTaskStrip({ targetNodeId, nodes, edges }: UpstreamTaskStripProps) {
-  const [expanded, setExpanded] = useState(false)
-
   const incomingItems = useMemo(() => {
     const nodeMap = new Map(nodes.map((n) => [n.id, n]))
     return edges
@@ -139,9 +133,6 @@ export function UpstreamTaskStrip({ targetNodeId, nodes, edges }: UpstreamTaskSt
   }, [targetNodeId, nodes, edges])
 
   if (incomingItems.length === 0) return null
-
-  const visible = expanded ? incomingItems : incomingItems.slice(0, MAX_VISIBLE)
-  const hiddenCount = incomingItems.length - MAX_VISIBLE
 
   return (
     <div
@@ -158,23 +149,13 @@ export function UpstreamTaskStrip({ targetNodeId, nodes, edges }: UpstreamTaskSt
       }}>
         上游任务输入 ({incomingItems.length})
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {visible.map((item) => (
+      <div style={{
+        display: 'flex', flexDirection: 'row', gap: 6,
+        overflowX: 'auto', paddingBottom: 2,
+      }}>
+        {incomingItems.map((item) => (
           <UpstreamTaskItem key={item.edge.id} node={item.node} role={item.role} />
         ))}
-        {!expanded && hiddenCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'rgba(255,255,255,0.35)', fontSize: 10, textAlign: 'left',
-              padding: '2px 4px',
-            }}
-          >
-            另有 {hiddenCount} 个上游节点…
-          </button>
-        )}
       </div>
     </div>
   )

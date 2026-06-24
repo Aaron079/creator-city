@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefCallback } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefCallback } from 'react'
 import { createPortal } from 'react-dom'
 
 export interface CanvasPromptFooterOption {
@@ -268,11 +268,6 @@ export function CanvasPromptBox({
     }
   }, [])
 
-  const focusPromptInput = useCallback(() => {
-    const input = boxRef.current?.querySelector<HTMLTextAreaElement | HTMLInputElement>('.canvas-prompt-input')
-    input?.focus()
-  }, [])
-
   const showToolLabel = useCallback((toolId: string, persist = false) => {
     if (toolLabelTimerRef.current) {
       window.clearTimeout(toolLabelTimerRef.current)
@@ -291,40 +286,6 @@ export function CanvasPromptBox({
     if (toolLabelTimerRef.current) return
     setActiveToolId((current) => (current === toolId ? null : current))
   }, [])
-
-  const activateNodeTool = useCallback((toolId: string) => {
-    showToolLabel(toolId, true)
-
-    if (toolId === 'select') {
-      focusPromptInput()
-      return
-    }
-
-    if (toolId === 'video') {
-      if (providerItem) {
-        setOpenFooterId((current) => (current === providerItem.id ? null : providerItem.id))
-      }
-      focusPromptInput()
-      return
-    }
-
-    if (toolId === 'generate') {
-      onGenerate?.()
-      return
-    }
-
-    if (toolId === 'reference') {
-      setOpenFooterId((current) => (current === 'params' ? null : 'params'))
-      return
-    }
-  }, [focusPromptInput, onGenerate, providerItem, showToolLabel])
-
-  const nodeDialogTools = [
-    { id: 'select', label: '编辑内容', icon: '▱', active: true },
-    { id: 'video', label: '视频模型', icon: '▻' },
-    { id: 'generate', label: generateLabel === '生成中…' ? '生成中' : '生成节点', icon: '＋', solid: true },
-    { id: 'reference', label: '参数参考', icon: '♙＋', solid: true },
-  ] as const
 
   const promptInput = multiline || layout === 'workspace' ? (
     <textarea
@@ -588,45 +549,22 @@ export function CanvasPromptBox({
     <div ref={boxRef} className="canvas-prompt-box is-node">
       {renderFooterPanel()}
 
-      <div className="canvas-node-dialog-topbar">
-        <div className="canvas-node-dialog-tools">
-          {nodeDialogTools.map((tool, index) => (
-            <Fragment key={tool.id}>
-              {index === 1 ? <span className="canvas-node-dialog-separator" aria-hidden="true" /> : null}
-              <button
-                type="button"
-                className={`canvas-node-dialog-tool ${'active' in tool && tool.active ? 'is-active' : ''} ${'solid' in tool && tool.solid ? 'is-solid' : ''} ${activeToolId === tool.id ? 'is-showing-label' : ''}`}
-                aria-label={tool.label}
-                title={tool.label}
-                onClick={() => activateNodeTool(tool.id)}
-                onMouseEnter={() => showToolLabel(tool.id)}
-                onMouseLeave={() => hideToolLabel(tool.id)}
-                onFocus={() => showToolLabel(tool.id)}
-                onBlur={() => hideToolLabel(tool.id)}
-              >
-                <span className="canvas-node-dialog-tool-icon" aria-hidden="true">{tool.icon}</span>
-                <span className="canvas-node-tool-label" aria-hidden="true">{tool.label}</span>
-              </button>
-            </Fragment>
-          ))}
-        </div>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className={`canvas-node-dialog-expand ${activeToolId === 'close' ? 'is-showing-label' : ''}`}
-            aria-label="关闭节点面板"
-            title="关闭节点面板"
-            onMouseEnter={() => showToolLabel('close')}
-            onMouseLeave={() => hideToolLabel('close')}
-            onFocus={() => showToolLabel('close')}
-            onBlur={() => hideToolLabel('close')}
-          >
-            <span className="canvas-node-dialog-close-icon" aria-hidden="true" />
-            <span className="canvas-node-tool-label" aria-hidden="true">关闭面板</span>
-          </button>
-        ) : null}
-      </div>
+      {onClose ? (
+        <button
+          type="button"
+          onClick={onClose}
+          className={`canvas-node-dialog-expand ${activeToolId === 'close' ? 'is-showing-label' : ''}`}
+          aria-label="关闭节点面板"
+          title="关闭节点面板"
+          onMouseEnter={() => showToolLabel('close')}
+          onMouseLeave={() => hideToolLabel('close')}
+          onFocus={() => showToolLabel('close')}
+          onBlur={() => hideToolLabel('close')}
+        >
+          <span className="canvas-node-dialog-close-icon" aria-hidden="true" />
+          <span className="canvas-node-tool-label" aria-hidden="true">关闭面板</span>
+        </button>
+      ) : null}
 
       {videoModeInfo ? (
         <div className={`canvas-video-mode-bar${videoModeInfo.mode === 'image-to-video' ? ' is-image-to-video' : videoModeInfo.mode === 'image-missing' ? ' is-warning' : ''}`}>
