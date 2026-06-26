@@ -82,7 +82,7 @@ async function fetchAssetTransformCaps(): Promise<AssetTransformCaps> {
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
-import { CanvasRightInspector, type InspectorEdgeRef } from '@/components/canvas/inspector/CanvasRightInspector'
+// CanvasRightInspector removed — inspector panel not used
 import { CanvasBottomDock } from '@/components/canvas/dock/CanvasBottomDock'
 import type { CanvasModalId } from '@/components/canvas/modal/canvasModalTypes'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
@@ -4375,25 +4375,6 @@ export function VisualCanvasWorkspace({
     return nodes.find((n) => n.id === sid) ?? undefined
   }, [activeNode, nodes])
 
-  const inspectorIncomingEdges = useMemo<InspectorEdgeRef[]>(() => {
-    if (!activeNodeId) return []
-    return edges.filter((e) => e.toNodeId === activeNodeId).map((e) => ({
-      id: e.id,
-      fromNodeId: e.fromNodeId,
-      toNodeId: e.toNodeId,
-      label: e.label,
-    }))
-  }, [activeNodeId, edges])
-
-  const inspectorOutgoingEdges = useMemo<InspectorEdgeRef[]>(() => {
-    if (!activeNodeId) return []
-    return edges.filter((e) => e.fromNodeId === activeNodeId).map((e) => ({
-      id: e.id,
-      fromNodeId: e.fromNodeId,
-      toNodeId: e.toNodeId,
-      label: e.label,
-    }))
-  }, [activeNodeId, edges])
 
   const generationTasks = useMemo(() => collectGenerationTasks(nodes), [nodes])
   const runningGenerationTaskCount = useMemo(
@@ -8502,21 +8483,8 @@ export function VisualCanvasWorkspace({
       topCommand={topCommandBar}
       leftRail={leftToolRail}
       showLeftRail
-      rightInspector={activeNode && isRightInspectorOpen ? (
-        <CanvasRightInspector
-          key={activeNode.id}
-          node={activeNode}
-          sourceNode={inspectorSourceNode}
-          incomingEdges={inspectorIncomingEdges}
-          outgoingEdges={inspectorOutgoingEdges}
-          nodeTitleById={nodeTitleById}
-          onClose={() => setIsRightInspectorOpen(false)}
-          onOpenGenerationDialog={() => openGenerationDialog(activeNode.id)}
-          onSelectNode={(id) => setActiveNodeId(id)}
-          projectId={projectId ?? undefined}
-        />
-      ) : undefined}
-      showRightInspector={Boolean(activeNode && isRightInspectorOpen)}
+      rightInspector={undefined}
+      showRightInspector={false}
       bottomDock={
         <CanvasBottomDock
           expanded={isBottomDockExpanded}
