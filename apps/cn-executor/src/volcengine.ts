@@ -141,6 +141,8 @@ export type SeedreamInput = {
   providerId?: string | null
   aspectRatio?: string | null
   resolution?: string | null
+  /** Reference image URLs for image-to-image generation. V1: max 1 URL. Must be public https. */
+  referenceImages?: string[]
   /** BYOK: user-supplied API key. Overrides VOLCENGINE_ARK_API_KEY. Never logged or stored. */
   apiKeyOverride?: string
   /** BYOK: user-supplied endpoint/model ID. Overrides VOLCENGINE_SEEDREAM_MODEL. Never logged or stored. */
@@ -204,6 +206,9 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
   // For BYOK: use the user's endpoint ID as the model (Volcengine Ark endpoint IDs are valid model values).
   const model = (input.endpointOverride?.trim() || process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()) ?? ''
   const size = normalizeSeedreamSize(input.aspectRatio)
+  const referenceImages = (input.referenceImages ?? []).filter(
+    (url) => typeof url === 'string' && /^https:\/\//i.test(url),
+  ).slice(0, 1)
   const submittedInput: Record<string, unknown> = {
     providerId: input.providerId ?? null,
     model,
@@ -213,8 +218,8 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
     aspectRatio: input.aspectRatio ?? null,
     resolution: input.resolution ?? null,
     promptChars: input.prompt.length,
-    hasReferenceImages: false,
-    referenceImageCount: 0,
+    hasReferenceImages: referenceImages.length > 0,
+    referenceImageCount: referenceImages.length,
   }
 
   if (!apiKey) {
@@ -236,15 +241,18 @@ export async function generateSeedreamImage(input: SeedreamInput): Promise<Seedr
     }
   }
 
-  // Minimal valid Volcengine ARK ImageGenerations body.
-  // Do NOT include chat-only params (stream, sequential_image_generation, referenceImages, etc.).
+  // Volcengine ARK ImageGenerations body.
   // watermark is intentionally omitted — it is a premium/account-specific feature that causes 403
   // on accounts without that permission, which maps to PROVIDER_AUTH_FAILED and masks the real error.
+  // image field: official Seedream reference image parameter (image-to-image). V1: single URL only.
   const reqBody: Record<string, unknown> = {
     model,
     prompt: input.prompt,
     size,
     response_format: 'url',
+  }
+  if (referenceImages.length > 0) {
+    reqBody.image = referenceImages[0]
   }
 
   let response: Response

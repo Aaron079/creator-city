@@ -1881,6 +1881,7 @@ async function callGenerationApi(
         projectId,
         workflowId,
         nodeId,
+        ...(inputAssets?.length ? { inputAssets } : {}),
         ...(billingMode === 'user_provider_account' && userProviderAccountId
           ? { billingMode, userProviderAccountId }
           : {}),
@@ -6792,6 +6793,21 @@ export function VisualCanvasWorkspace({
       ? (dialogLocalRefs.find((r) => r.status === 'done' && r.mediaUrl && isProviderAccessibleUrl(r.mediaUrl))?.mediaUrl ?? null)
       : null
 
+    // Build reference inputAssets for image nodes (image-to-image)
+    // Priority: upstream image > local uploaded reference (only ready, https URLs)
+    const imageInputAssets: Array<{ id: string; type: string; url: string; kind: string; mediaUrl: string }> = []
+    if (nodeSnapshot.kind === 'image') {
+      const upstreamRef = upstreamImageAssets.find((a) => a.url && isProviderAccessibleUrl(a.url))
+      if (upstreamRef?.url) {
+        imageInputAssets.push({ id: upstreamRef.id, type: 'image', kind: 'image', url: upstreamRef.url, mediaUrl: upstreamRef.url })
+      } else {
+        const localRef = dialogLocalRefs.find((r) => r.status === 'done' && r.mediaUrl && isProviderAccessibleUrl(r.mediaUrl))
+        if (localRef?.mediaUrl) {
+          imageInputAssets.push({ id: localRef.inputId, type: 'image', kind: 'image', url: localRef.mediaUrl, mediaUrl: localRef.mediaUrl })
+        }
+      }
+    }
+
     void callGenerationApi(
       nodeType,
       generationProviderId,
@@ -6806,7 +6822,7 @@ export function VisualCanvasWorkspace({
           }
         : { ratio: promptRatio },
       nodeSnapshot.id,
-      nodeSnapshot.kind === 'image' || nodeSnapshot.kind === 'video' ? [] : upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
+      nodeSnapshot.kind === 'image' ? imageInputAssets : nodeSnapshot.kind === 'video' ? [] : upstreamImageAssets.length > 0 ? upstreamImageAssets : undefined,
       nodeType === 'image' || nodeType === 'video' ? projectId : undefined,
       nodeType === 'image' || nodeType === 'video' ? workflowId : undefined,
       undefined,
@@ -9858,6 +9874,7 @@ export function VisualCanvasWorkspace({
             onScriptUpload={(file) => { void handleDialogScriptUpload(file) }}
             onRemoveScript={handleDialogScriptRemove}
             onApplyScript={handleDialogScriptApply}
+            supportsReferenceImage={CURRENT_PROVIDER_CAPABILITIES.supportsReferenceImage}
           />
           <CanvasPromptBox
             layout="node"

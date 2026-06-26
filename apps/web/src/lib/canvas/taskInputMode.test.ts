@@ -62,8 +62,8 @@ describe('getTaskInputMode — image nodes', () => {
     assert.equal(getTaskInputMode('image', false, true, CAPS_NONE), 'text-to-image')
   })
 
-  test('image node, local ref, CURRENT_PROVIDER_CAPABILITIES → text-to-image (Seedream unsupported)', () => {
-    assert.equal(getTaskInputMode('image', false, true, CURRENT_PROVIDER_CAPABILITIES), 'text-to-image')
+  test('image node, local ref, CURRENT_PROVIDER_CAPABILITIES → image-to-image (Seedream supports via cn-executor)', () => {
+    assert.equal(getTaskInputMode('image', false, true, CURRENT_PROVIDER_CAPABILITIES), 'image-to-image')
   })
 })
 
@@ -106,8 +106,8 @@ describe('getTaskInputMode — video nodes', () => {
 })
 
 describe('getTaskInputMode — CURRENT_PROVIDER_CAPABILITIES reflects real state', () => {
-  test('image-to-image NOT supported (Seedream has no referenceImages)', () => {
-    assert.equal(CURRENT_PROVIDER_CAPABILITIES.supportsReferenceImage, false)
+  test('image-to-image IS supported (Seedream supports image field via cn-executor)', () => {
+    assert.equal(CURRENT_PROVIDER_CAPABILITIES.supportsReferenceImage, true)
   })
 
   test('image-to-video IS supported (Seedance accepts imageUrl)', () => {

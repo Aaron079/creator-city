@@ -14,6 +14,7 @@ interface LocalReferenceStripProps {
   onScriptUpload: (file: File) => void
   onRemoveScript: (inputId: string) => void
   onApplyScript: (text: string) => void
+  supportsReferenceImage?: boolean
 }
 
 function friendlyUploadError(msg: string | undefined): string {
@@ -248,6 +249,7 @@ export function LocalReferenceStrip({
   onScriptUpload,
   onRemoveScript,
   onApplyScript,
+  supportsReferenceImage = false,
 }: LocalReferenceStripProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const scriptInputRef = useRef<HTMLInputElement | null>(null)
@@ -303,7 +305,9 @@ export function LocalReferenceStrip({
           </div>
 
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: refs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
-            参考图已保存到任务上下文；当前 Provider 不支持直接参考图输入，可复制图片 URL 至 Prompt，或后续使用支持图生图的 Provider。
+            {nodeKind === 'image' && supportsReferenceImage
+              ? '上传后，参考图将参与本次图片生成（图生图）。最多 1 张，仅支持 https 地址。'
+              : '参考图已保存到任务上下文，将随 Prompt 提交给模型。'}
           </div>
 
           {refs.length > 0 && (

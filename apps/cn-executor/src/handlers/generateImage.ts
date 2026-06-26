@@ -47,6 +47,8 @@ export type ImageExecutionInput = {
   resolution?: string
   projectId?: string
   nodeId?: string
+  /** Reference image URLs for image-to-image. V1: max 1 URL. Must be https. */
+  referenceImages?: string[]
   /** BYOK: user-supplied Volcengine Ark API key. Overrides env var. Never logged or stored. */
   apiKeyOverride?: string
   /** BYOK: user-supplied endpoint/model ID. Overrides env var. Never logged or stored. */
@@ -87,6 +89,14 @@ export type ImageExecutionResult = {
   ossRequestId?: string
 }
 
+function isSafeReferenceUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+  if (!/^https:\/\//i.test(url)) return false
+  // Reject private/local addresses
+  if (/localhost|127\.\d|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.\d+/.test(url)) return false
+  return true
+}
+
 export function parseImageExecutionInput(body: Record<string, unknown>): ImageExecutionInput | { errorCode: string; message: string } {
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
   if (!prompt) {
@@ -100,7 +110,12 @@ export function parseImageExecutionInput(body: Record<string, unknown>): ImageEx
   const resolution = typeof body.resolution === 'string' ? body.resolution.trim() || undefined : undefined
   const projectId = typeof body.projectId === 'string' ? body.projectId.trim() || undefined : undefined
   const nodeId = typeof body.nodeId === 'string' ? body.nodeId.trim() || undefined : undefined
-  return { prompt, model, providerId, aspectRatio, resolution, projectId, nodeId }
+
+  // Reference images: only safe https URLs, max 1 per V1
+  const rawRefs = Array.isArray(body.referenceImages) ? body.referenceImages : []
+  const referenceImages = rawRefs.filter(isSafeReferenceUrl).slice(0, 1)
+
+  return { prompt, model, providerId, aspectRatio, resolution, projectId, nodeId, referenceImages: referenceImages.length > 0 ? referenceImages : undefined }
 }
 
 export async function executeImageGeneration(input: ImageExecutionInput): Promise<ImageExecutionResult> {

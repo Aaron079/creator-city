@@ -11,10 +11,11 @@ export type TaskInputCapabilities = {
   supportsImageToVideo: boolean
 }
 
-// Volcengine Seedream image: no reference image support (referenceImages always [])
+// Volcengine Seedream image: supports `image` field for reference/conditioning (image-to-image).
+// Wired through cn-executor → volcengine.ts reqBody.image. Max 1 https URL; base64 not supported.
 // Volcengine Seedance video: full imageUrl support (image_url content part)
 export const CURRENT_PROVIDER_CAPABILITIES: TaskInputCapabilities = {
-  supportsReferenceImage: false,
+  supportsReferenceImage: true,
   supportsImageToVideo: true,
 }
 

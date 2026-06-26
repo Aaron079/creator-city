@@ -409,6 +409,11 @@ async function runImageJob(
     input.submittedInput && typeof input.submittedInput === 'object' && !Array.isArray(input.submittedInput)
       ? (input.submittedInput as Record<string, unknown>)
       : null
+  // Read reference images from job input — validated server-side before storage
+  const rawRefImages = Array.isArray(input.referenceImages) ? input.referenceImages : []
+  const referenceImages = rawRefImages
+    .filter((u: unknown): u is string => typeof u === 'string' && /^https:\/\//i.test(u))
+    .slice(0, 1)
 
   const execInput: ImageExecutionInput = {
     prompt: job.prompt,
@@ -417,6 +422,7 @@ async function runImageJob(
     aspectRatio,
     projectId: projectId ?? undefined,
     nodeId: nodeId || undefined,
+    ...(referenceImages.length > 0 ? { referenceImages } : {}),
     // BYOK: inject user credentials if provided — never log these values
     ...(userCredential ? { apiKeyOverride: userCredential.apiKey, endpointOverride: userCredential.endpointId } : {}),
   }

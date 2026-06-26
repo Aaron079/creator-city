@@ -119,12 +119,35 @@ function extractMissingColumn(err: unknown): string | null {
     ?? null
 }
 
+/** Extract safe reference image URLs from request inputAssets. V1: max 1 https URL. */
+function extractReferenceImages(rawAssets: unknown): string[] {
+  if (!Array.isArray(rawAssets)) return []
+  return rawAssets
+    .flatMap((asset: unknown) => {
+      if (!asset || typeof asset !== 'object') return []
+      const a = asset as Record<string, unknown>
+      // Accept type or kind === 'image'
+      const kind = typeof a.kind === 'string' ? a.kind : typeof a.type === 'string' ? a.type : ''
+      if (kind !== 'image') return []
+      // URL: prefer mediaUrl, fallback to url
+      const rawUrl = typeof a.mediaUrl === 'string' ? a.mediaUrl : typeof a.url === 'string' ? a.url : ''
+      if (!rawUrl) return []
+      // Must be https
+      if (!/^https:\/\//i.test(rawUrl)) return []
+      // Reject private/local addresses
+      if (/localhost|127\.\d|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.\d+/.test(rawUrl)) return []
+      return [rawUrl]
+    })
+    .slice(0, 1) // V1: single primary reference
+}
+
 async function createImageGenerationJob(args: {
   userId: string
   providerId: string
   prompt: string
   body: ImageGenerateBody
   model?: string | null
+  referenceImages?: string[]
 }) {
   const inputJson = {
     prompt: args.prompt,
@@ -133,6 +156,7 @@ async function createImageGenerationJob(args: {
     model: args.model ?? null,
     workflowId: args.body.workflowId,
     nodeId: args.body.nodeId,
+    ...(args.referenceImages?.length ? { referenceImages: args.referenceImages } : {}),
   }
   // Production DB may lag behind schema. Retry stripping each missing column until insert succeeds.
   // Missing columns come one at a time from Prisma, so each retry strips exactly one more.
@@ -275,7 +299,7 @@ export async function POST(request: NextRequest) {
 
     const aspectRatio = body!.aspectRatio ?? '16:9'
     const size = body.size
-    const referenceImages: string[] = []
+    const referenceImages: string[] = extractReferenceImages(body.inputAssets)
     const requestModel = providerRow?.model ?? null
     const submittedModel = providerId === 'volcengine-seedream-image'
       ? (process.env.VOLCENGINE_SEEDREAM_MODEL?.trim() || requestModel)
@@ -401,6 +425,7 @@ export async function POST(request: NextRequest) {
             executorKind,
             billingMode: 'user_provider_account',
             userProviderAccountId,
+            ...(referenceImages.length > 0 ? { referenceImages } : {}),
           },
         },
       }).catch((err: unknown) => {
@@ -576,6 +601,7 @@ export async function POST(request: NextRequest) {
           prompt,
           body,
           model: requestModel,
+          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         }).catch((error: unknown) => {
           jobCreateError = error
           console.warn('[api/generate/image] failed to create GenerationJob', error)
@@ -904,6 +930,7 @@ export async function POST(request: NextRequest) {
         prompt,
         body,
         model: raw.model,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
       }).catch((error: unknown) => {
         console.warn('[api/generate/image] failed to create GenerationJob', error)
         return null
