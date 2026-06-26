@@ -6025,14 +6025,15 @@
     linear-gradient(135deg, var(--node-preview-from, #101827), var(--node-preview-to, #315cff));
 }
 
-.scope :global(.canvas-node-card.node-image) {
+/* Image card is frameless only when a result image is loaded (full-bleed display) */
+.scope :global(.canvas-node-card.node-image:has(.canvas-node-preview.is-image-result)) {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
 
-.scope :global(.canvas-node-card.node-image:hover),
-.scope :global(.canvas-node-card.node-image.is-active) {
+.scope :global(.canvas-node-card.node-image:has(.canvas-node-preview.is-image-result):hover),
+.scope :global(.canvas-node-card.node-image:has(.canvas-node-preview.is-image-result).is-active) {
   border-color: transparent;
   box-shadow: none;
 }
