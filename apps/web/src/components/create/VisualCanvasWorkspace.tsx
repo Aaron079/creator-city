@@ -155,6 +155,7 @@ import { SceneLightingControlPanel } from '@/components/create/SceneLightingCont
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
 import { LocalReferenceStrip } from '@/components/create/canvas/task/LocalReferenceStrip'
 import type { NodeToolContext } from '@/lib/canvas/nodeToolContext'
+import { getTaskInputMode, getTaskInputModeLabel, CURRENT_PROVIDER_CAPABILITIES } from '@/lib/canvas/taskInputMode'
 import {
   validateLocalImageFile,
   readImageDimensions,
@@ -2552,7 +2553,7 @@ export function VisualCanvasWorkspace({
   const [activeSceneLabSourceNodeId, setActiveSceneLabSourceNodeId] = useState('')
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null)
   const [openContextMenuAnchor, setOpenContextMenuAnchor] = useState<{ nodeId: string; x: number; y: number } | null>(null)
-  const [refImagePickerOpen, setRefImagePickerOpen] = useState(false)
+
   const [workflowContext, setWorkflowContext] = useState<{ sourceNodeId: string; targetNodeId: string } | null>(null)
   const [textEditorDraft, setTextEditorDraft] = useState('')
   const [textEditorCopied, setTextEditorCopied] = useState(false)
@@ -6805,6 +6806,10 @@ export function VisualCanvasWorkspace({
     const videoImageResolution = nodeSnapshot.kind === 'video'
       ? resolveImageInputForVideoNode({ videoNode: nodeSnapshot, allNodes: nodes, edges })
       : null
+    // Fall back to local uploaded reference if no upstream edge image
+    const videoLocalRefImageUrl = nodeSnapshot.kind === 'video' && !videoImageResolution?.imageUrl
+      ? (dialogLocalRefs.find((r) => r.status === 'done' && r.mediaUrl && isProviderAccessibleUrl(r.mediaUrl))?.mediaUrl ?? null)
+      : null
 
     void callGenerationApi(
       nodeType,
@@ -6814,7 +6819,9 @@ export function VisualCanvasWorkspace({
         ? {
             ratio: promptRatio,
             duration: 5,
-            ...(videoImageResolution?.imageUrl ? { imageUrl: videoImageResolution.imageUrl } : {}),
+            ...((videoImageResolution?.imageUrl ?? videoLocalRefImageUrl)
+              ? { imageUrl: (videoImageResolution?.imageUrl ?? videoLocalRefImageUrl)! }
+              : {}),
           }
         : { ratio: promptRatio },
       nodeSnapshot.id,
@@ -7221,7 +7228,7 @@ export function VisualCanvasWorkspace({
     }).finally(() => {
       if (generationController) finishNodeGeneration(nodeSnapshot.id, generationController)
     })
-  }, [beginNodeGeneration, billingMode, buildResultLabel, cameraSettings, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, sceneBible, sceneLightingSettings, selectedUserAccountId, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
+  }, [beginNodeGeneration, billingMode, buildResultLabel, cameraSettings, canvasPrompt, characterBible, commitEdges, createGeneratedAsset, defaultVideoProviderId, dialogLocalRefs, edges, editingNode, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, imageProviderStatusMap, liveStatusLoading, liveStatusMap, nodes, normalizedPromptModel, projectId, promptParameter, promptRatio, promptStage, scheduleCanvasSave, sceneBible, sceneLightingSettings, selectedUserAccountId, setDialogError, showCanvasFeedback, styleBible, videoProviderStatusMap, workflowId])
 
   const handlePromptChange = useCallback((value: string) => {
     setCanvasPrompt(value)
@@ -8190,8 +8197,21 @@ export function VisualCanvasWorkspace({
         sourceNodeTitle: sourceNode?.title,
       }
     }
+
+    // Check local uploaded reference images (done + stable URL)
+    const stableLocalRef = dialogLocalRefs.find(
+      (r) => r.status === 'done' && r.mediaUrl && isProviderAccessibleUrl(r.mediaUrl)
+    )
+    if (stableLocalRef) {
+      return {
+        mode: 'image-to-video' as const,
+        thumbnailUrl: getProxiedMediaUrl(stableLocalRef.mediaUrl!),
+        sourceNodeTitle: stableLocalRef.originalFileName,
+      }
+    }
+
     return { mode: 'text-to-video' as const }
-  }, [editingNode, nodes, edges])
+  }, [editingNode, nodes, edges, dialogLocalRefs])
 
   const selectedImageProviderStatus = editingNode?.kind === 'image'
     ? getImageProviderStatus(imageProviderStatusMap, normalizedPromptModel, liveStatusMap, liveStatusLoading)
@@ -9715,99 +9735,6 @@ export function VisualCanvasWorkspace({
         </div>
       ) : null}
 
-      {/* Reference image picker — opened from video node "文生视频" bar */}
-      {refImagePickerOpen && editingNode?.kind === 'video' && (() => {
-        const candidateImageNodes = nodes.filter(
-          (n) => n.kind === 'image' && n.id !== editingNode.id && (n.resultImageUrl || n.resultPreview || n.assetId),
-        )
-        const connectRef = (sourceNodeId: string) => {
-          const alreadyConnected = edges.some(
-            (e) => e.fromNodeId === sourceNodeId && e.toNodeId === editingNode.id,
-          )
-          if (!alreadyConnected) {
-            const edgeId = `edge-${sourceNodeId}-${editingNode.id}-${Date.now()}`
-            commitEdges((current) => [
-              ...current,
-              {
-                id: edgeId,
-                fromNodeId: sourceNodeId,
-                toNodeId: editingNode.id,
-                status: 'active',
-                type: 'flow',
-                metadataJson: { sourceHandle: 'right', targetHandle: 'left', createdFrom: 'ref-image-picker' },
-              },
-            ])
-            scheduleCanvasSave(0)
-            showCanvasFeedback('已连接参考图')
-          } else {
-            showCanvasFeedback('已存在连接')
-          }
-          setRefImagePickerOpen(false)
-        }
-        return (
-          <>
-            <div
-              className="fixed inset-0"
-              style={{ zIndex: 1189 }}
-              onClick={() => setRefImagePickerOpen(false)}
-            />
-            <div
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] max-h-[480px] overflow-y-auto rounded-2xl border border-white/10 bg-[#0f1117]/96 shadow-2xl backdrop-blur-xl"
-              style={{ zIndex: 1190 }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
-                <div>
-                  <p className="text-[13px] font-semibold text-white/85">选择参考图节点</p>
-                  <p className="mt-0.5 text-[11px] text-white/40">选中后将创建连线，切换为图生视频模式</p>
-                </div>
-                <button
-                  type="button"
-                  className="text-[11px] text-white/30 hover:text-white/60"
-                  onClick={() => setRefImagePickerOpen(false)}
-                >
-                  取消
-                </button>
-              </div>
-              {candidateImageNodes.length === 0 ? (
-                <div className="px-5 py-8 text-center text-[12px] text-white/35">
-                  暂无可用的图片节点。请先生成一张图片，再连接为参考图。
-                </div>
-              ) : (
-                <div className="p-3 space-y-2">
-                  {candidateImageNodes.map((imgNode) => (
-                    <button
-                      key={imgNode.id}
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-white/20 hover:bg-white/[0.07]"
-                      onClick={() => connectRef(imgNode.id)}
-                    >
-                      {imgNode.resultImageUrl || imgNode.resultPreview ? (
-                        <img
-                          src={getProxiedMediaUrl(imgNode.resultImageUrl ?? imgNode.resultPreview ?? '')}
-                          alt={imgNode.title}
-                          className="h-12 w-20 shrink-0 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-20 shrink-0 items-center justify-center rounded-lg bg-white/5 text-white/20 text-lg">
-                          ▦
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12px] font-medium text-white/80">{imgNode.title || 'Image'}</p>
-                        <p className="mt-0.5 truncate text-[11px] text-white/35">
-                          {imgNode.prompt?.slice(0, 60) || '无描述'}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )
-      })()}
 
       <GenerationTasksPanel
         open={generationTasksOpen}
@@ -10018,7 +9945,18 @@ export function VisualCanvasWorkspace({
             }
             footerItems={promptFooterItems}
             videoModeInfo={editingNode.kind === 'video' ? videoModeInfo : undefined}
-            onRequestReferenceImage={editingNode.kind === 'video' && videoModeInfo?.mode === 'text-to-video' ? () => setRefImagePickerOpen(true) : undefined}
+            taskInputModeLabel={(() => {
+              const hasUpstream = videoModeInfo?.mode === 'image-to-video'
+              const hasLocalRef = dialogLocalRefs.some((r) => r.status === 'done' && r.mediaUrl && isProviderAccessibleUrl(r.mediaUrl))
+              const mode = getTaskInputMode(
+                editingNode.kind as 'text' | 'image' | 'video',
+                hasUpstream,
+                hasLocalRef,
+                CURRENT_PROVIDER_CAPABILITIES,
+              )
+              if (editingNode.kind === 'video' && videoModeInfo?.mode !== 'text-to-video') return undefined
+              return getTaskInputModeLabel(mode)
+            })()}
             inputRef={(element) => {
               promptInputRef.current = element
             }}

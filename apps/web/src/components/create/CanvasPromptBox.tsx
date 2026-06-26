@@ -56,7 +56,7 @@ interface CanvasPromptBoxProps {
   showAllModelsInline?: boolean
   footerItems?: CanvasPromptFooterItem[]
   videoModeInfo?: VideoModeInfo
-  onRequestReferenceImage?: () => void
+  taskInputModeLabel?: string
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
   panelPortalTarget?: Element | null
@@ -114,7 +114,7 @@ export function CanvasPromptBox({
   extraPills: _extraPills = [],
   footerItems = [],
   videoModeInfo,
-  onRequestReferenceImage,
+  taskInputModeLabel,
   inputRef,
   onClose,
   panelPortalTarget,
@@ -566,7 +566,7 @@ export function CanvasPromptBox({
         </button>
       ) : null}
 
-      {videoModeInfo ? (
+      {videoModeInfo && videoModeInfo.mode !== 'text-to-video' ? (
         <div className={`canvas-video-mode-bar${videoModeInfo.mode === 'image-to-video' ? ' is-image-to-video' : videoModeInfo.mode === 'image-missing' ? ' is-warning' : ''}`}>
           {videoModeInfo.mode === 'image-to-video' ? (
             <>
@@ -604,28 +604,11 @@ export function CanvasPromptBox({
                 <span className="canvas-video-mode-desc">视频到视频生成暂未开放，将以文生视频模式运行</span>
               </div>
             </>
-          ) : (
-            <>
-              <span className="canvas-video-mode-icon">⊡</span>
-              <div className="canvas-video-mode-text">
-                <span className="canvas-video-mode-label">文生视频</span>
-                <span className="canvas-video-mode-desc">
-                  {onRequestReferenceImage
-                    ? '未连接参考图 · 点击添加图生视频参考'
-                    : '未连接参考图，将根据 Prompt 直接生成'}
-                </span>
-              </div>
-              {onRequestReferenceImage ? (
-                <button
-                  type="button"
-                  className="ml-auto shrink-0 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/55 transition hover:border-white/30 hover:bg-white/10 hover:text-white/85"
-                  onClick={onRequestReferenceImage}
-                >
-                  + 选择参考图
-                </button>
-              ) : null}
-            </>
-          )}
+          ) : null}
+        </div>
+      ) : taskInputModeLabel ? (
+        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', padding: '2px 0 4px', letterSpacing: '0.04em' }}>
+          {taskInputModeLabel}
         </div>
       ) : null}
 
