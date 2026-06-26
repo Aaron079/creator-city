@@ -505,7 +505,7 @@ const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
-const NODE_DIALOG_GAP = 16
+const NODE_DIALOG_GAP = 32
 const NODE_DIALOG_HEIGHT = 500
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
@@ -8107,7 +8107,7 @@ export function VisualCanvasWorkspace({
 
     const viewportMargin = 24
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const dialogWidth = Math.max(320, Math.min(860, window.innerWidth - viewportMargin * 2))
+    const dialogWidth = Math.max(320, Math.min(720, window.innerWidth - viewportMargin * 2))
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom

@@ -1687,7 +1687,7 @@ export function CanvasNodeCard({
         width: videoAspectRatioValue < 1 ? 'auto' : '100%',
       } as CSSProperties
     : undefined
-  const canOpenCreativeAssets = Boolean(onOpenCreativeAssets && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video'))
+  const canOpenCreativeAssets = Boolean(onOpenCreativeAssets && (node.kind === 'image' || node.kind === 'video'))
   const canOpenAssetIntelligence = Boolean(onOpenAssetIntelligence && assetIntelligenceTagCount > 0 && (node.kind === 'image' || node.kind === 'video'))
   const mediaPersistence = mediaPersistenceRecord(nodeMetadata)
   const lastResolveResult = metadataRecord(nodeMetadata.p0LastResolveResult || nodeMetadata.p0LastRecoveryResult || nodeMetadata.assetResolveResult)
@@ -3803,7 +3803,7 @@ export function CanvasNodeCard({
       ) : null}
       {(onOpenPromptInspector || canOpenCreativeAssets || onAddToStoryboard) && (node.kind === 'text' || node.kind === 'image' || node.kind === 'video') ? (
         <div className="absolute bottom-2 left-2 z-[6] flex max-w-[calc(100%-16px)] items-center gap-1.5" data-no-node-drag="true">
-          {onOpenPromptInspector ? (
+          {onOpenPromptInspector && node.kind !== 'text' ? (
             <button
               type="button"
               className="inline-flex min-h-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 px-2 text-[10px] font-semibold text-white/70 shadow-sm transition hover:border-cyan-200/25 hover:bg-cyan-200/10 hover:text-cyan-50"

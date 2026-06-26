@@ -14,7 +14,6 @@ import {
 const CAPS_FULL: TaskInputCapabilities = { supportsReferenceImage: true, supportsImageToVideo: true }
 const CAPS_NONE: TaskInputCapabilities = { supportsReferenceImage: false, supportsImageToVideo: false }
 const CAPS_VIDEO_ONLY: TaskInputCapabilities = { supportsReferenceImage: false, supportsImageToVideo: true }
-const CAPS_IMAGE_ONLY: TaskInputCapabilities = { supportsReferenceImage: true, supportsImageToVideo: false }
 
 describe('getTaskInputMode — text nodes', () => {
   test('text node, no inputs → text-to-text', () => {

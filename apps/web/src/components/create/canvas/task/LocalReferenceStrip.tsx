@@ -345,7 +345,7 @@ export function LocalReferenceStrip({
           </div>
 
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: scriptInputs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
-            TXT / Markdown / Fountain / SRT / VTT / CSV / JSON · 仅本次草稿，需"应用到 Prompt"后生效
+            TXT / Markdown / Fountain / SRT / VTT / CSV / JSON · 仅本次草稿，需&quot;应用到 Prompt&quot;后生效
           </div>
 
           {scriptInputs.length > 0 && (

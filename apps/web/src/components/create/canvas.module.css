@@ -683,7 +683,10 @@
     0 0 28px rgba(138, 43, 226, 0.08),
     inset 0 1px 0 rgba(180, 150, 220, 0.09);
 }
-.scope :global(.canvas-node-card.node-image) { --canvas-glow: rgba(0, 220, 255, 0.30); }
+.scope :global(.canvas-node-card.node-image) {
+  --canvas-glow: rgba(0, 220, 255, 0.30);
+  border-color: rgba(0, 220, 255, 0.28);
+}
 
 .scope :global(.canvas-node-card.node-image .canvas-node-body) {
   align-items: center;
@@ -691,14 +694,15 @@
 }
 /* Image node: cyan-tinted hover border */
 .scope :global(.canvas-node-card.node-image:hover) {
-  border-color: rgba(0, 220, 255, 0.20);
+  border-color: rgba(0, 220, 255, 0.55);
 }
 .scope :global(.canvas-node-card.node-image.is-active) {
-  border-color: rgba(0, 220, 255, 0.28);
+  border-width: 1.5px;
+  border-color: rgba(0, 220, 255, 0.80);
   box-shadow:
     0 18px 42px rgba(0, 0, 0, 0.32),
-    0 0 0 1px rgba(0, 220, 255, 0.18),
-    0 0 32px rgba(0, 220, 255, 0.08);
+    0 0 0 1px rgba(0, 220, 255, 0.36),
+    0 0 32px rgba(0, 220, 255, 0.14);
 }
 
 .scope :global(.canvas-node-card.node-video) { --canvas-glow: rgba(160, 60, 255, 0.32); }
