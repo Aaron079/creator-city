@@ -505,7 +505,7 @@ const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
-const NODE_DIALOG_GAP = 32
+const NODE_DIALOG_GAP = 56
 const NODE_DIALOG_HEIGHT = 500
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
@@ -4590,7 +4590,7 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     if (!activeNodeId) setIsRightInspectorOpen(false)
-    else setIsRightInspectorOpen(true)
+    // Inspector does not auto-open on node select
   }, [activeNodeId])
 
   useEffect(() => {
