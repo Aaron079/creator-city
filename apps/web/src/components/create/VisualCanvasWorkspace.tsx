@@ -9564,6 +9564,7 @@ export function VisualCanvasWorkspace({
                     const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
                     return Boolean(sid && !nodeTitleById.has(sid))
                   })()}
+                  onOpenGenerationDialog={node.kind === 'text' ? () => openGenerationDialog(node.id) : undefined}
                 />
               </CanvasNodeErrorBoundary>
             </div>

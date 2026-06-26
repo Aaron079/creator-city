@@ -801,6 +801,10 @@
   color: rgba(255, 255, 255, 0.46);
 }
 
+.scope :global(.canvas-node-empty.empty-text) {
+  cursor: pointer;
+}
+
 .scope :global(.canvas-node-empty-icon) {
   font-size: 30px;
   color: rgba(255, 255, 255, 0.34);

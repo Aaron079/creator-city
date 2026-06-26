@@ -85,6 +85,7 @@ interface CanvasNodeCardProps {
   onCreateDerivedVideo?: () => void
   sourceNodeTitle?: string
   sourceNodeMissing?: boolean
+  onOpenGenerationDialog?: () => void
 }
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
@@ -1471,6 +1472,7 @@ export function CanvasNodeCard({
   onCreateDerivedVideo,
   sourceNodeTitle,
   sourceNodeMissing = false,
+  onOpenGenerationDialog,
 }: CanvasNodeCardProps) {
   const meta = NODE_META[node.kind]
 
@@ -3326,39 +3328,53 @@ export function CanvasNodeCard({
         })()}
         <div className="canvas-node-body">
           {node.kind === 'text' ? (
-            <button
-              type="button"
-              data-no-node-drag="true"
-              className={`canvas-node-text-result ${textIsPlaceholder ? 'is-placeholder' : ''} ${node.status === 'error' || node.status === 'failed' || node.status === 'cancelled' ? 'is-error' : ''}`}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-              }}
-              onMouseDown={(event) => {
-                event.stopPropagation()
-              }}
-              onWheel={(event) => {
-                event.stopPropagation()
-              }}
-              onWheelCapture={(event) => {
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onSelect()
-              }}
-              onDoubleClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onOpenPreview('text')
-              }}
-              aria-label="查看或编辑文本结果"
-            >
-              {(node.status === 'error' || node.status === 'failed' || node.status === 'cancelled') && textResult ? (
-                <span className="canvas-node-text-error">{textErrorSummary}</span>
-              ) : null}
-              <span className="canvas-node-text-copy">{textDisplay}</span>
-            </button>
+            textIsPlaceholder ? (
+              <div
+                className={`canvas-node-empty empty-text`}
+                data-no-node-drag="true"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onSelect()
+                  onOpenGenerationDialog?.()
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                data-no-node-drag="true"
+                className={`canvas-node-text-result ${node.status === 'error' || node.status === 'failed' || node.status === 'cancelled' ? 'is-error' : ''}`}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onWheel={(event) => {
+                  event.stopPropagation()
+                }}
+                onWheelCapture={(event) => {
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onSelect()
+                  onOpenGenerationDialog?.()
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onOpenPreview('text')
+                }}
+                aria-label="查看或编辑文本结果"
+              >
+                {(node.status === 'error' || node.status === 'failed' || node.status === 'cancelled') && textResult ? (
+                  <span className="canvas-node-text-error">{textErrorSummary}</span>
+                ) : null}
+                <span className="canvas-node-text-copy">{textDisplay}</span>
+              </button>
+            )
           ) : hasMediaResult ? (
             <div
               className={`canvas-node-preview preview-${node.kind} ${getResultPreviewClass(node.kind)} ${node.preview?.type === 'placeholder-video' ? 'has-placeholder-preview' : ''}`}
