@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { submitManualRechargeRequest } from '@/lib/credits/server'
+import { paymentLaunchGate } from '@/lib/payment/paymentLaunchGate'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const gate = paymentLaunchGate()
+  if (gate) return NextResponse.json(gate.body, { status: gate.status })
+
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ message: '请先登录' }, { status: 401 })
 

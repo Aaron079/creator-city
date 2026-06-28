@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PaymentOrderStatus } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { paymentLaunchGate } from '@/lib/payment/paymentLaunchGate'
 import { getCreditPackage } from '@/lib/billing/packages'
 import { db } from '@/lib/db'
 import { getOrCreateWallet } from '@/lib/credits/server'
@@ -48,6 +49,9 @@ function getErrorDetails(details: unknown): ChinaPaymentErrorDetails {
 }
 
 export async function POST(request: NextRequest) {
+  const gate = paymentLaunchGate()
+  if (gate) return NextResponse.json(gate.body, { status: gate.status })
+
   let user
   try {
     user = await getCurrentUser()

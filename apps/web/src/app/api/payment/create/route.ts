@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createPaymentIntent } from '@/lib/payment/stripe'
+import { paymentLaunchGate } from '@/lib/payment/paymentLaunchGate'
 
 /**
  * POST /api/payment/create
@@ -17,6 +18,9 @@ import { createPaymentIntent } from '@/lib/payment/stripe'
  *   })
  */
 export async function POST(req: NextRequest) {
+  const gate = paymentLaunchGate()
+  if (gate) return NextResponse.json(gate.body, { status: gate.status })
+
   try {
     const body = await req.json()
     const { orderId, amount } = body as { orderId?: string; amount?: number }

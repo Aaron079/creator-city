@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPaymentOrder } from '@/lib/billing/orders'
 import { choosePaymentProvider, createCheckout } from '@/lib/billing/payment-router'
 import { extractBearerToken } from '@/lib/credits/jwt-decode'
+import { paymentLaunchGate } from '@/lib/payment/paymentLaunchGate'
 import type { BillingRegion, PaymentProvider } from '@/lib/billing/types'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const gate = paymentLaunchGate()
+  if (gate) return NextResponse.json(gate.body, { status: gate.status })
+
   const token = extractBearerToken(req.headers.get('authorization'))
   if (!token) return NextResponse.json({ error: 'Unauthorized', message: '请先登录后购买积分' }, { status: 401 })
 
