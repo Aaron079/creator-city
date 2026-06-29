@@ -599,42 +599,48 @@ export function MarketplaceListings() {
   useEffect(() => {
     let cancelled = false
 
-    // Load current user id, listings, and pending orders in parallel
-    Promise.all([
-      fetch('/api/auth/me', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ user?: { id: string } }>)
-        .then((d) => d.user?.id ?? null)
-        .catch(() => null),
-      fetch('/api/marketplace/listings', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ items?: ListingItem[] }>)
-        .then((d) => d.items ?? []),
-      fetch('/api/me/marketplace-orders?role=buyer', { credentials: 'include' })
-        .then((r) => r.json() as Promise<{ items?: Array<{ id: string; listingId: string; status: string }> }>)
-        .then((d) => {
-          const map = new Map<string, { id: string; status: string }>()
-          for (const o of d.items ?? []) {
-            // Items are sorted desc by createdAt; first match per listing is most recent
-            if (!map.has(o.listingId)) {
-              map.set(o.listingId, { id: o.id, status: o.status })
-            }
-          }
-          return map
-        })
-        .catch(() => new Map<string, { id: string; status: string }>()),
-    ])
-      .then(([userId, listingItems, orderMap]) => {
+    const loadMarketplace = async () => {
+      try {
+        const [userId, listingItems] = await Promise.all([
+          fetch('/api/auth/me', { credentials: 'include' })
+            .then((r) => r.json() as Promise<{ user?: { id: string } }>)
+            .then((d) => d.user?.id ?? null)
+            .catch(() => null),
+          fetch('/api/marketplace/listings', { credentials: 'include' })
+            .then((r) => r.json() as Promise<{ items?: ListingItem[] }>)
+            .then((d) => d.items ?? []),
+        ])
+
+        let orderMap = new Map<string, { id: string; status: string }>()
+        if (userId) {
+          orderMap = await fetch('/api/me/marketplace-orders?role=buyer', { credentials: 'include' })
+            .then((r) => r.json() as Promise<{ items?: Array<{ id: string; listingId: string; status: string }> }>)
+            .then((d) => {
+              const map = new Map<string, { id: string; status: string }>()
+              for (const o of d.items ?? []) {
+                // Items are sorted desc by createdAt; first match per listing is most recent
+                if (!map.has(o.listingId)) {
+                  map.set(o.listingId, { id: o.id, status: o.status })
+                }
+              }
+              return map
+            })
+            .catch(() => new Map<string, { id: string; status: string }>())
+        }
+
         if (!cancelled) {
           setCurrentUserId(userId)
           setItems(listingItems)
           setOrderByListingId(orderMap)
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setError('加载失败，请刷新页面重试')
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    }
+
+    void loadMarketplace()
 
     return () => { cancelled = true }
   }, [])

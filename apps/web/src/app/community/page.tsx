@@ -202,8 +202,8 @@ export default function CommunityPage() {
           justifyContent: 'space-between',
         }}>
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.20)', lineHeight: 1.6, margin: 0 }}>
-            当前为前端预览阶段 · 动态数据为 mock · 不连接数据库<br />
-            Web3 身份为视觉预览，不做真实链上逻辑
+            Creator City 社区入口持续开放中，作品展示、创作者主页与市场发现会逐步更新。<br />
+            Web3 身份相关能力将以清晰标识逐步上线。
           </p>
           <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
             <Link

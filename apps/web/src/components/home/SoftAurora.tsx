@@ -1,7 +1,7 @@
 'use client'
 
 import { Mesh, Program, Renderer, Triangle } from 'ogl'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styles from './SoftAurora.module.css'
 
 type SoftAuroraProps = {
@@ -28,6 +28,24 @@ function hexToVec3(hex: string) {
     parseInt(h.slice(2, 4), 16) / 255,
     parseInt(h.slice(4, 6), 16) / 255,
   ]
+}
+
+function canCreateWebGLContext() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false
+  if (!('WebGLRenderingContext' in window) && !('WebGL2RenderingContext' in window)) return false
+
+  const canvas = document.createElement('canvas')
+  try {
+    const gl =
+      canvas.getContext('webgl2') ??
+      canvas.getContext('webgl')
+
+    if (!gl) return false
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
+    return true
+  } catch {
+    return false
+  }
 }
 
 const vertexShader = `
@@ -180,101 +198,118 @@ export default function SoftAurora({
   mouseInfluence = 0.25,
 }: SoftAuroraProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const [webglAvailable, setWebglAvailable] = useState(true)
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const renderer = new Renderer({ alpha: true, premultipliedAlpha: false })
-    const gl = renderer.gl
-    gl.clearColor(0, 0, 0, 0)
-
-    const geometry = new Triangle(gl)
-    const program = new Program(gl, {
-      vertex: vertexShader,
-      fragment: fragmentShader,
-      uniforms: {
-        uTime: { value: 0 },
-        uResolution: { value: [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height] },
-        uSpeed: { value: speed },
-        uScale: { value: scale },
-        uBrightness: { value: brightness },
-        uColor1: { value: hexToVec3(color1) },
-        uColor2: { value: hexToVec3(color2) },
-        uNoiseFreq: { value: noiseFrequency },
-        uNoiseAmp: { value: noiseAmplitude },
-        uBandHeight: { value: bandHeight },
-        uBandSpread: { value: bandSpread },
-        uOctaveDecay: { value: octaveDecay },
-        uLayerOffset: { value: layerOffset },
-        uColorSpeed: { value: colorSpeed },
-        uMouse: { value: new Float32Array([0.5, 0.5]) },
-        uMouseInfluence: { value: mouseInfluence },
-        uEnableMouse: { value: enableMouseInteraction },
-      },
-    })
-    const mesh = new Mesh(gl, { geometry, program })
-
-    let animationFrameId = 0
-    const currentMouse: [number, number] = [0.5, 0.5]
-    let targetMouse: [number, number] = [0.5, 0.5]
-
-    const resize = () => {
-      renderer.setSize(container.offsetWidth, container.offsetHeight)
-      program.uniforms.uResolution.value = [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height]
+    if (!canCreateWebGLContext()) {
+      setWebglAvailable(false)
+      return
     }
 
-    const handleMouseMove = (event: MouseEvent) => {
-      const rect = gl.canvas.getBoundingClientRect()
-      targetMouse = [
-        (event.clientX - rect.left) / rect.width,
-        1.0 - (event.clientY - rect.top) / rect.height,
-      ]
-    }
+    try {
+      const renderer = new Renderer({ alpha: true, premultipliedAlpha: false })
+      const gl = renderer.gl
+      if (!gl?.canvas) {
+        setWebglAvailable(false)
+        return
+      }
 
-    const handleMouseLeave = () => {
-      targetMouse = [0.5, 0.5]
-    }
+      gl.clearColor(0, 0, 0, 0)
 
-    const update = (time: number) => {
+      const geometry = new Triangle(gl)
+      const program = new Program(gl, {
+        vertex: vertexShader,
+        fragment: fragmentShader,
+        uniforms: {
+          uTime: { value: 0 },
+          uResolution: { value: [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height] },
+          uSpeed: { value: speed },
+          uScale: { value: scale },
+          uBrightness: { value: brightness },
+          uColor1: { value: hexToVec3(color1) },
+          uColor2: { value: hexToVec3(color2) },
+          uNoiseFreq: { value: noiseFrequency },
+          uNoiseAmp: { value: noiseAmplitude },
+          uBandHeight: { value: bandHeight },
+          uBandSpread: { value: bandSpread },
+          uOctaveDecay: { value: octaveDecay },
+          uLayerOffset: { value: layerOffset },
+          uColorSpeed: { value: colorSpeed },
+          uMouse: { value: new Float32Array([0.5, 0.5]) },
+          uMouseInfluence: { value: mouseInfluence },
+          uEnableMouse: { value: enableMouseInteraction },
+        },
+      })
+      const mesh = new Mesh(gl, { geometry, program })
+
+      let animationFrameId = 0
+      const currentMouse: [number, number] = [0.5, 0.5]
+      let targetMouse: [number, number] = [0.5, 0.5]
+
+      const resize = () => {
+        renderer.setSize(container.offsetWidth, container.offsetHeight)
+        program.uniforms.uResolution.value = [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height]
+      }
+
+      const handleMouseMove = (event: MouseEvent) => {
+        const rect = gl.canvas.getBoundingClientRect()
+        targetMouse = [
+          (event.clientX - rect.left) / rect.width,
+          1.0 - (event.clientY - rect.top) / rect.height,
+        ]
+      }
+
+      const handleMouseLeave = () => {
+        targetMouse = [0.5, 0.5]
+      }
+
+      const update = (time: number) => {
+        animationFrameId = requestAnimationFrame(update)
+        program.uniforms.uTime.value = time * 0.001
+
+        if (enableMouseInteraction) {
+          currentMouse[0] += 0.05 * (targetMouse[0] - currentMouse[0])
+          currentMouse[1] += 0.05 * (targetMouse[1] - currentMouse[1])
+          program.uniforms.uMouse.value[0] = currentMouse[0]
+          program.uniforms.uMouse.value[1] = currentMouse[1]
+        } else {
+          program.uniforms.uMouse.value[0] = 0.5
+          program.uniforms.uMouse.value[1] = 0.5
+        }
+
+        renderer.render({ scene: mesh })
+      }
+
+      container.appendChild(gl.canvas)
+      window.addEventListener('resize', resize)
+      resize()
+      setWebglAvailable(true)
+
+      if (enableMouseInteraction) {
+        window.addEventListener('mousemove', handleMouseMove)
+        window.addEventListener('mouseleave', handleMouseLeave)
+      }
+
       animationFrameId = requestAnimationFrame(update)
-      program.uniforms.uTime.value = time * 0.001
 
-      if (enableMouseInteraction) {
-        currentMouse[0] += 0.05 * (targetMouse[0] - currentMouse[0])
-        currentMouse[1] += 0.05 * (targetMouse[1] - currentMouse[1])
-        program.uniforms.uMouse.value[0] = currentMouse[0]
-        program.uniforms.uMouse.value[1] = currentMouse[1]
-      } else {
-        program.uniforms.uMouse.value[0] = 0.5
-        program.uniforms.uMouse.value[1] = 0.5
+      return () => {
+        cancelAnimationFrame(animationFrameId)
+        window.removeEventListener('resize', resize)
+        if (enableMouseInteraction) {
+          window.removeEventListener('mousemove', handleMouseMove)
+          window.removeEventListener('mouseleave', handleMouseLeave)
+        }
+        if (gl.canvas.parentNode === container) {
+          container.removeChild(gl.canvas)
+        }
+        gl.getExtension('WEBGL_lose_context')?.loseContext()
       }
-
-      renderer.render({ scene: mesh })
-    }
-
-    container.appendChild(gl.canvas)
-    window.addEventListener('resize', resize)
-    resize()
-
-    if (enableMouseInteraction) {
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseleave', handleMouseLeave)
-    }
-
-    animationFrameId = requestAnimationFrame(update)
-
-    return () => {
-      cancelAnimationFrame(animationFrameId)
-      window.removeEventListener('resize', resize)
-      if (enableMouseInteraction) {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseleave', handleMouseLeave)
-      }
-      if (gl.canvas.parentNode === container) {
-        container.removeChild(gl.canvas)
-      }
-      gl.getExtension('WEBGL_lose_context')?.loseContext()
+    } catch {
+      setWebglAvailable(false)
+      return
     }
   }, [
     speed,
@@ -293,5 +328,14 @@ export default function SoftAurora({
     mouseInfluence,
   ])
 
-  return <div ref={containerRef} className={styles.container} />
+  return (
+    <div
+      ref={containerRef}
+      className={`${styles.container} ${!webglAvailable ? styles.fallback : ''}`}
+      data-soft-aurora-fallback={!webglAvailable ? 'true' : undefined}
+      aria-hidden="true"
+    >
+      {!webglAvailable ? <div className={styles.fallbackLayer} /> : null}
+    </div>
+  )
 }

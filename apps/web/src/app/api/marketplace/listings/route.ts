@@ -11,20 +11,20 @@ export const dynamic = 'force-dynamic'
 const REUSABLE_MODES = new Set(['reusable_noncommercial', 'reusable_commercial'])
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-// Public: ?assetId=&mine=true → returns seller's own listing for that asset (any status)
+// Private: ?assetId=&mine=true → returns seller's own listing for that asset (any status)
 // Default: returns all ACTIVE listings for the marketplace
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
-
     const { searchParams } = new URL(request.url)
     const assetId = searchParams.get('assetId')
     const mine = searchParams.get('mine') === 'true'
 
     // Seller lookup: GET /api/marketplace/listings?assetId=X&mine=true
     if (assetId && mine) {
+      const user = await getCurrentUser()
+      if (!user) return jsonError('UNAUTHORIZED', '请先登录。', 401)
+
       const listing = await db.assetListing.findFirst({
         where: {
           assetId,
