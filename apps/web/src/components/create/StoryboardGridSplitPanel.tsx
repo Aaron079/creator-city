@@ -95,6 +95,8 @@ function statusLabel(item: CellItem) {
   return '待入库'
 }
 
+const STORYBOARD_GRID_UPLOAD_CONCURRENCY = 1
+
 export function StoryboardGridSplitPanel({
   projectId,
   workflowId,
@@ -248,7 +250,7 @@ export function StoryboardGridSplitPanel({
     setBatchError('')
     const queue = items.filter((item) => !item.deleted && item.status !== 'uploaded')
     const uploaded: StoryboardGridUploadedCell[] = []
-    await mapWithConcurrency(queue, 3, async (item) => {
+    await mapWithConcurrency(queue, STORYBOARD_GRID_UPLOAD_CONCURRENCY, async (item) => {
       const result = await uploadOne(item)
       if (result) uploaded.push(result)
     })
