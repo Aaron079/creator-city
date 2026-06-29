@@ -9225,7 +9225,7 @@ export function VisualCanvasWorkspace({
           const splitTargetId = lockedNodeToolContext?.targetNodeId ?? activeNode?.id ?? null
           const splitSource = splitTargetId ? nodes.find((node) => node.id === splitTargetId) ?? null : null
           if (!splitSource || splitSource.kind !== 'image') return null
-          const sourceMediaUrl = getNodeImageUrl(splitSource) || (splitSource.resultImageUrl ?? '')
+          const sourceMediaUrl = getProxiedMediaUrl(getNodeImageUrl(splitSource) || (splitSource.resultImageUrl ?? ''))
           const sourceAssetId = getNodeAssetId(splitSource)
           return (
             <>

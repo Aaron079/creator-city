@@ -18,7 +18,7 @@ export function loadImageForCanvas(url: string): Promise<HTMLImageElement> {
       }
       resolve(image)
     }
-    image.onerror = () => reject(new Error('图片加载失败，请确认资产链接可访问。'))
+    image.onerror = () => reject(new Error(STORYBOARD_GRID_CORS_ERROR_MESSAGE))
     image.src = url
   })
 }
