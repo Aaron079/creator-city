@@ -51,6 +51,7 @@ export interface AssetAgentToolbarProps {
   onOpenRemoveBackground?: () => void
   onOpenHdReconstruction?: () => void
   onOpenStoryboardGridSplit?: () => void
+  onOpenDrawAnnotation?: () => void
   // Asset Transform capability gates
   assetTransformCaps?: { removeBackground?: boolean; upscale?: boolean }
 }
@@ -85,6 +86,7 @@ export function AssetAgentToolbar({
   onOpenRemoveBackground,
   onOpenHdReconstruction,
   onOpenStoryboardGridSplit,
+  onOpenDrawAnnotation,
   assetTransformCaps = {},
 }: AssetAgentToolbarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
@@ -153,6 +155,7 @@ export function AssetAgentToolbar({
       case 'hd-reconstruction':  onOpenHdReconstruction?.(); break
       case 'color-grade':        onOpenColorGrade?.(); break
       case 'storyboard-grid-split': onOpenStoryboardGridSplit?.(); break
+      case 'draw-annotation':    onOpenDrawAnnotation?.(); break
       default: break
     }
   }

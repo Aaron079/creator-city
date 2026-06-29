@@ -11,6 +11,7 @@ import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 import { getReframeStyle, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 import { getDerivedToolVisual } from '@/lib/canvas/derivedToolVisualConfig'
+import { readAnnotationMetadata } from '@/lib/canvas/annotationMetadata'
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -1566,6 +1567,7 @@ export function CanvasNodeCard({
   const imageMedia = mediaState(node.kind === 'image' ? imageSource : { url: '', source: '' }, imageLoadFailed)
   const videoMedia = mediaState(node.kind === 'video' ? videoSource : { url: '', source: '' }, videoLoadFailed)
   const nodeMetadata = metadataRecord(node.metadataJson)
+  const annotationCount = node.kind === 'image' ? readAnnotationMetadata(nodeMetadata).items.length : 0
   const colorGradeCssFilter = typeof nodeMetadata.colorGradeCssFilter === 'string' && nodeMetadata.colorGradeCssFilter !== 'none'
     ? nodeMetadata.colorGradeCssFilter
     : undefined
@@ -3292,6 +3294,15 @@ export function CanvasNodeCard({
             {typeof paramDuration === 'number' ? (
               <span className="canvas-node-param-tag">{paramDuration}s</span>
             ) : null}
+          </div>
+        ) : null}
+        {annotationCount > 0 ? (
+          <div className="border-b border-cyan-300/12 bg-cyan-300/[0.055] px-2.5 py-1.5" data-testid="node-annotation-badge">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] leading-none text-cyan-200/80">✎</span>
+              <span className="text-[9px] font-semibold leading-none text-cyan-100/82">已标注</span>
+              <span className="ml-auto text-[8px] leading-none text-cyan-100/42">{annotationCount}</span>
+            </div>
           </div>
         ) : null}
         {(() => {

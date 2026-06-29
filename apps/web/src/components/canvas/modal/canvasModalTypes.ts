@@ -35,6 +35,7 @@ export type CanvasModalId =
   | 'remove-background'
   | 'hd-reconstruction'
   | 'storyboard-grid-split'
+  | 'draw-annotation'
 
 export type ModalCloseReason =
   | 'close-button'

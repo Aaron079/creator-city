@@ -40,11 +40,13 @@ import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
 import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
+import { AnnotationPanel } from '@/components/create/AnnotationPanel'
 import {
   StoryboardGridSplitPanel,
   type StoryboardGridSessionSummary,
   type StoryboardGridUploadedCell,
 } from '@/components/create/StoryboardGridSplitPanel'
+import { mergeAnnotationMetadata, type CanvasAnnotationState } from '@/lib/canvas/annotationMetadata'
 
 // ─── Asset Transform capability cache (module-level, session-scoped) ──────────
 // Fetched once per page session from GET /api/asset-transform.
@@ -2504,6 +2506,7 @@ export function VisualCanvasWorkspace({
   const [isRemoveBackgroundOpen, setIsRemoveBackgroundOpen] = useState(false)
   const [isHdReconstructionOpen, setIsHdReconstructionOpen] = useState(false)
   const [isStoryboardGridSplitOpen, setIsStoryboardGridSplitOpen] = useState(false)
+  const [isAnnotationPanelOpen, setIsAnnotationPanelOpen] = useState(false)
   const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lockedNodeToolContext, setLockedNodeToolContext] = useState<NodeToolContext | null>(null)
@@ -2837,6 +2840,7 @@ export function VisualCanvasWorkspace({
     setIsRemoveBackgroundOpen(false)
     setIsHdReconstructionOpen(false)
     setIsStoryboardGridSplitOpen(false)
+    setIsAnnotationPanelOpen(false)
     setEditingNodeId(null)
     setLockedNodeToolContext(null)
     setActiveCanvasModal(null)
@@ -2870,6 +2874,7 @@ export function VisualCanvasWorkspace({
       case 'remove-background':  setIsRemoveBackgroundOpen(true); break
       case 'hd-reconstruction':  setIsHdReconstructionOpen(true); break
       case 'storyboard-grid-split': setIsStoryboardGridSplitOpen(true); break
+      case 'draw-annotation':    setIsAnnotationPanelOpen(true); break
       case 'generation':
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
         break
@@ -4750,6 +4755,25 @@ export function VisualCanvasWorkspace({
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
+
+  const handleSaveNodeAnnotations = useCallback((nodeId: string, annotations: CanvasAnnotationState) => {
+    commitNodes((current) => current.map((node) => {
+      if (node.id !== nodeId) return node
+      return {
+        ...node,
+        metadataJson: mergeAnnotationMetadata({
+          metadataJson: node.metadataJson,
+          annotations,
+        }),
+      }
+    }))
+    flushLocalSnapshot()
+    setSaveStatus('local-draft')
+    setSaveMessage('本地草稿已保存')
+    showCanvasFeedback('画面标注已保存到节点，请保存项目以同步云端。')
+    setLockedNodeToolContext(null)
+    closeCanvasPanel()
+  }, [closeCanvasPanel, commitNodes, flushLocalSnapshot, showCanvasFeedback])
 
   const handleStoryboardGridSourceSession = useCallback((summary: StoryboardGridSessionSummary) => {
     commitNodes((current) => current.map((node) => {
@@ -9219,6 +9243,37 @@ export function VisualCanvasWorkspace({
         </>
       ) : null}
 
+      {/* Image Annotation — metadata-only drawing layer */}
+      {isAnnotationPanelOpen && saveStatus !== 'opening' ? (
+        (() => {
+          const annotationTargetId = lockedNodeToolContext?.targetNodeId ?? activeNode?.id ?? null
+          const annotationSource = annotationTargetId ? nodes.find((node) => node.id === annotationTargetId) ?? null : null
+          if (!annotationSource || annotationSource.kind !== 'image') return null
+          const mediaUrl = getProxiedMediaUrl(getNodeImageUrl(annotationSource) || (annotationSource.resultImageUrl ?? ''))
+          if (!mediaUrl) return null
+          return (
+            <>
+              <div
+                className="fixed inset-0 z-[1199]"
+                aria-hidden="true"
+                onPointerDown={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
+              />
+              <AnnotationPanel
+                sourceNode={{
+                  id: annotationSource.id,
+                  title: annotationSource.title,
+                  prompt: annotationSource.prompt,
+                  mediaUrl,
+                  metadataJson: annotationSource.metadataJson,
+                }}
+                onSave={(annotations) => handleSaveNodeAnnotations(annotationSource.id, annotations)}
+                onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
+              />
+            </>
+          )
+        })()
+      ) : null}
+
       {/* Storyboard Grid Split — client-side crop to real Assets */}
       {isStoryboardGridSplitOpen && saveStatus !== 'opening' ? (
         (() => {
@@ -9819,6 +9874,11 @@ export function VisualCanvasWorkspace({
             onOpenStoryboardGridSplit={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
                 ? () => openNodeScopedTool('storyboard-grid-split', activeNode)
+                : undefined
+            }
+            onOpenDrawAnnotation={
+              activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
+                ? () => openNodeScopedTool('draw-annotation', activeNode)
                 : undefined
             }
           />
