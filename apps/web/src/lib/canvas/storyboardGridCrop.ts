@@ -6,6 +6,8 @@ import {
 
 export const STORYBOARD_GRID_MAX_DIMENSION = 8192
 export const STORYBOARD_GRID_CORS_ERROR_MESSAGE = '无法读取图片像素，请先将图片导入资产库或使用平台图片。'
+export const STORYBOARD_GRID_CROP_MIME_TYPE = 'image/jpeg'
+export const STORYBOARD_GRID_CROP_QUALITY = 0.88
 
 export function loadImageForCanvas(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -26,7 +28,8 @@ export function loadImageForCanvas(url: string): Promise<HTMLImageElement> {
 export function cropImageCellToBlob(
   image: HTMLImageElement | HTMLCanvasElement | ImageBitmap,
   cell: StoryboardGridCell,
-  mimeType = 'image/png',
+  mimeType = STORYBOARD_GRID_CROP_MIME_TYPE,
+  quality = STORYBOARD_GRID_CROP_QUALITY,
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     try {
@@ -45,11 +48,18 @@ export function cropImageCellToBlob(
         } else {
           reject(new Error(STORYBOARD_GRID_CORS_ERROR_MESSAGE))
         }
-      }, mimeType)
+      }, mimeType, quality)
     } catch {
       reject(new Error(STORYBOARD_GRID_CORS_ERROR_MESSAGE))
     }
   })
+}
+
+function extensionForMimeType(mimeType: string) {
+  if (mimeType === 'image/jpeg') return 'jpg'
+  if (mimeType === 'image/webp') return 'webp'
+  if (mimeType === 'image/png') return 'png'
+  return 'png'
 }
 
 export function buildStoryboardGridUploadFormData(args: {
@@ -62,7 +72,9 @@ export function buildStoryboardGridUploadFormData(args: {
   metadata: StoryboardGridCropMetadata
 }): FormData {
   const fd = new FormData()
-  const file = new File([args.blob], `${args.title || 'storyboard-cell'}.png`, { type: args.blob.type || 'image/png' })
+  const mimeType = args.blob.type || STORYBOARD_GRID_CROP_MIME_TYPE
+  const extension = extensionForMimeType(mimeType)
+  const file = new File([args.blob], `${args.title || 'storyboard-cell'}.${extension}`, { type: mimeType })
   fd.append('file', file)
   fd.append('projectId', args.projectId)
   fd.append('type', 'image')

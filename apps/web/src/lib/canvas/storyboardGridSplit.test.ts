@@ -160,4 +160,31 @@ describe('buildStoryboardGridUploadFormData', () => {
     assert.equal(fd.has('key'), false)
     assert.equal(fd.has('storageKey'), false)
   })
+
+  test('names crop upload files according to the blob mime type', () => {
+    const cell = buildGridCells('2x2', 1000, 500)[0]
+    assert.ok(cell)
+    const metadata = buildCropMetadata({
+      cell,
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      sourceNodeId: 'node-source',
+      sourceAssetId: 'asset-source',
+      parentAssetId: 'asset-parent',
+      gridSessionId: 'grid-session-1',
+    })
+
+    const fd = buildStoryboardGridUploadFormData({
+      blob: new Blob(['cell'], { type: 'image/jpeg' }),
+      projectId: 'project-1',
+      sourceNodeId: 'node-source',
+      title: 'cell-1',
+      metadata,
+    })
+
+    const file = fd.get('file')
+    assert.ok(file instanceof File)
+    assert.equal(file.name, 'cell-1.jpg')
+    assert.equal(file.type, 'image/jpeg')
+  })
 })
