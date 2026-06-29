@@ -40,6 +40,11 @@ import { LookPackagePanel } from '@/components/create/LookPackagePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
 import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
+import {
+  StoryboardGridSplitPanel,
+  type StoryboardGridSessionSummary,
+  type StoryboardGridUploadedCell,
+} from '@/components/create/StoryboardGridSplitPanel'
 
 // ─── Asset Transform capability cache (module-level, session-scoped) ──────────
 // Fetched once per page session from GET /api/asset-transform.
@@ -2498,6 +2503,7 @@ export function VisualCanvasWorkspace({
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
   const [isRemoveBackgroundOpen, setIsRemoveBackgroundOpen] = useState(false)
   const [isHdReconstructionOpen, setIsHdReconstructionOpen] = useState(false)
+  const [isStoryboardGridSplitOpen, setIsStoryboardGridSplitOpen] = useState(false)
   const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lockedNodeToolContext, setLockedNodeToolContext] = useState<NodeToolContext | null>(null)
@@ -2830,6 +2836,7 @@ export function VisualCanvasWorkspace({
     setIsColorGradePaletteOpen(false)
     setIsRemoveBackgroundOpen(false)
     setIsHdReconstructionOpen(false)
+    setIsStoryboardGridSplitOpen(false)
     setEditingNodeId(null)
     setLockedNodeToolContext(null)
     setActiveCanvasModal(null)
@@ -2862,6 +2869,7 @@ export function VisualCanvasWorkspace({
       case 'color-grade':        setIsColorGradePaletteOpen(true); break
       case 'remove-background':  setIsRemoveBackgroundOpen(true); break
       case 'hd-reconstruction':  setIsHdReconstructionOpen(true); break
+      case 'storyboard-grid-split': setIsStoryboardGridSplitOpen(true); break
       case 'generation':
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
         break
@@ -4652,6 +4660,7 @@ export function VisualCanvasWorkspace({
       parentNodeId?: string
       resultImageUrl?: string
       resultVideoUrl?: string
+      assetId?: string
       metadataJson?: Record<string, unknown>
       edgeLabel?: string
       edgeToolId?: string
@@ -4696,6 +4705,7 @@ export function VisualCanvasWorkspace({
       resultPreview: undefined,
       resultImageUrl: options?.resultImageUrl,
       resultVideoUrl: options?.resultVideoUrl,
+      assetId: options?.assetId,
       metadataJson: options?.metadataJson,
       x: position.x,
       y: position.y,
@@ -4740,6 +4750,76 @@ export function VisualCanvasWorkspace({
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
+
+  const handleStoryboardGridSourceSession = useCallback((summary: StoryboardGridSessionSummary) => {
+    commitNodes((current) => current.map((node) => {
+      if (node.id !== summary.sourceNodeId) return node
+      return {
+        ...node,
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          gridCropSession: summary,
+        },
+      }
+    }))
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+  }, [commitNodes, flushLocalSnapshot, scheduleCanvasSave])
+
+  const handleCreateStoryboardGridCellNode = useCallback((
+    sourceNodeId: string,
+    cell: StoryboardGridUploadedCell,
+    placementIndex: number,
+    _total: number,
+  ) => {
+    const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
+    if (!sourceNode) return null
+    const title = cell.title || `${sourceNode.title || '分镜'} · ${cell.metadata.index + 1}`
+    const position = {
+      x: sourceNode.x + sourceNode.width + 240 + Math.floor(placementIndex / 4) * 440,
+      y: sourceNode.y + cell.metadata.row * 340,
+    }
+    const node = createNode('image', {
+      title,
+      prompt: sourceNode.prompt ?? '',
+      parentNodeId: sourceNode.id,
+      position,
+      status: 'done',
+      resultImageUrl: cell.assetUrl,
+      assetId: cell.assetId,
+      metadataJson: {
+        assetId: cell.assetId,
+        assetUrl: cell.assetUrl,
+        resolvedUrl: cell.assetUrl,
+        derivedFromTool: 'storyboard-grid-split',
+        derivedFromToolLabel: '分镜拆格',
+        toolSummaryText: `第 ${cell.metadata.index + 1} 格 · R${cell.metadata.row + 1} C${cell.metadata.col + 1}`,
+        sourceNodeTitle: sourceNode.title || sourceNode.kind,
+        cropLineage: cell.metadata,
+        generationDraft: {
+          status: 'asset-derived',
+          sourceNodeId: sourceNode.id,
+          sourceKind: sourceNode.kind,
+          targetKind: 'image',
+          sourceImageUrl: (getNodeImageUrl(sourceNode) || sourceNode.resultImageUrl) ?? null,
+          createdAt: new Date().toISOString(),
+        },
+        mediaPersistence: {
+          status: 'persisted',
+          assetId: cell.assetId,
+          assetUrl: cell.assetUrl,
+          persistedAt: new Date().toISOString(),
+        },
+      },
+      edgeLabel: '分镜拆格',
+      edgeToolId: 'storyboard-grid-split',
+      edgeToolIcon: '▦',
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('分镜格已放入画布。')
+    return node.id
+  }, [createNode, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
 
   const handleMediaDiagnosticsPatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     handleNodePatch(nodeId, patch)
@@ -9139,6 +9219,42 @@ export function VisualCanvasWorkspace({
         </>
       ) : null}
 
+      {/* Storyboard Grid Split — client-side crop to real Assets */}
+      {isStoryboardGridSplitOpen && saveStatus !== 'opening' ? (
+        (() => {
+          const splitTargetId = lockedNodeToolContext?.targetNodeId ?? activeNode?.id ?? null
+          const splitSource = splitTargetId ? nodes.find((node) => node.id === splitTargetId) ?? null : null
+          if (!splitSource || splitSource.kind !== 'image') return null
+          const sourceMediaUrl = getNodeImageUrl(splitSource) || (splitSource.resultImageUrl ?? '')
+          const sourceAssetId = getNodeAssetId(splitSource)
+          return (
+            <>
+              <div
+                className="fixed inset-0 z-[1199]"
+                aria-hidden="true"
+                onPointerDown={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
+              />
+              <StoryboardGridSplitPanel
+                projectId={projectId ?? ''}
+                workflowId={workflowId}
+                sourceNode={{
+                  id: splitSource.id,
+                  title: splitSource.title,
+                  prompt: splitSource.prompt,
+                  mediaUrl: sourceMediaUrl,
+                  assetId: sourceAssetId,
+                }}
+                onCreateCellNode={(cell, placementIndex, total) => (
+                  handleCreateStoryboardGridCellNode(splitSource.id, cell, placementIndex, total)
+                )}
+                onUpdateSourceSession={handleStoryboardGridSourceSession}
+                onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
+              />
+            </>
+          )
+        })()
+      ) : null}
+
       {/* Remove Background — Asset Remix Tool 1 */}
       {isRemoveBackgroundOpen && saveStatus !== 'opening' && activeNode?.kind === 'image' ? (
         <>
@@ -9698,6 +9814,11 @@ export function VisualCanvasWorkspace({
             onOpenHdReconstruction={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.upscale
                 ? () => openCanvasPanel('hd-reconstruction')
+                : undefined
+            }
+            onOpenStoryboardGridSplit={
+              activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
+                ? () => openNodeScopedTool('storyboard-grid-split', activeNode)
                 : undefined
             }
           />

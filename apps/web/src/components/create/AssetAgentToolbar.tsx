@@ -50,6 +50,7 @@ export interface AssetAgentToolbarProps {
   onOpenPromptBooster?: () => void
   onOpenRemoveBackground?: () => void
   onOpenHdReconstruction?: () => void
+  onOpenStoryboardGridSplit?: () => void
   // Asset Transform capability gates
   assetTransformCaps?: { removeBackground?: boolean; upscale?: boolean }
 }
@@ -83,6 +84,7 @@ export function AssetAgentToolbar({
   onOpenPromptBooster,
   onOpenRemoveBackground,
   onOpenHdReconstruction,
+  onOpenStoryboardGridSplit,
   assetTransformCaps = {},
 }: AssetAgentToolbarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
@@ -150,6 +152,7 @@ export function AssetAgentToolbar({
       case 'remove-background':  onOpenRemoveBackground?.(); break
       case 'hd-reconstruction':  onOpenHdReconstruction?.(); break
       case 'color-grade':        onOpenColorGrade?.(); break
+      case 'storyboard-grid-split': onOpenStoryboardGridSplit?.(); break
       default: break
     }
   }
@@ -288,6 +291,22 @@ export function AssetAgentToolbar({
                       ))}
                     </div>
                   </div>
+                </>
+              ) : null}
+              {/* Analysis tools */}
+              {nodeKind === 'image' && hasMediaResult && onOpenStoryboardGridSplit ? (
+                <>
+                  <div className="ntb-menu-divider" />
+                  <div className="ntb-menu-section-title">分镜工具</div>
+                  <button
+                    type="button"
+                    data-no-node-drag="true"
+                    className="ntb-menu-item"
+                    onClick={(e) => { stopEvent(e); onOpenStoryboardGridSplit(); closeAll() }}
+                  >
+                    <span className="ntb-menu-item-icon">▦</span>
+                    分镜拆格
+                  </button>
                 </>
               ) : null}
               {/* Analysis tools */}

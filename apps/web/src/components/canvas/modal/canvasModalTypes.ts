@@ -34,6 +34,7 @@ export type CanvasModalId =
   | 'shot-sequencer'
   | 'remove-background'
   | 'hd-reconstruction'
+  | 'storyboard-grid-split'
 
 export type ModalCloseReason =
   | 'close-button'

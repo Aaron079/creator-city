@@ -4,6 +4,10 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { serializeAsset, toAssetType } from '@/lib/projects/canvas-mappers'
 import { uploadAsset } from '@/lib/assets/storage-adapter'
+import {
+  buildUploadAssetMetadata,
+  parseStoryboardGridSplitLineage,
+} from './storyboard-grid-split-metadata'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,21 +33,6 @@ function inferAssetType(input: string | null, contentType: string) {
   if (contentType.startsWith('audio/')) return 'audio'
   if (contentType.startsWith('text/')) return 'text'
   return 'file'
-}
-
-function getMetadataJson(args: {
-  storageProvider: string
-  bucket?: string | null
-  key?: string | null
-  originalName: string
-}) {
-  return {
-    storageProvider: args.storageProvider,
-    ...(args.bucket != null ? { bucket: args.bucket } : {}),
-    ...(args.key != null ? { key: args.key, storageKey: args.key } : {}),
-    originalName: args.originalName,
-    source: 'assets-upload',
-  } satisfies Prisma.InputJsonObject
 }
 
 function safePrismaError(error: unknown, fallback: string): string {
@@ -78,6 +67,10 @@ export async function POST(request: NextRequest) {
   const assetType = inferAssetType(requestedType, contentType)
   const title = String(formData.get('title') ?? '').trim() || file.name || 'Uploaded asset'
   const assetId = crypto.randomUUID()
+  const lineageResult = parseStoryboardGridSplitLineage(formData)
+  if (!lineageResult.ok) {
+    return jsonError(lineageResult.errorCode, lineageResult.message, 400)
+  }
 
   // Step 1: verify project ownership (if projectId provided)
   if (projectId) {
@@ -114,12 +107,13 @@ export async function POST(request: NextRequest) {
 
   // Step 3: create Asset record in DB
   try {
-    const metadataJson = getMetadataJson({
+    const metadataJson = buildUploadAssetMetadata({
       storageProvider: uploaded.storageProvider,
       bucket: uploaded.bucket,
       key: uploaded.storageKey,
       originalName: file.name,
-    })
+      lineage: lineageResult.lineage,
+    }) as Prisma.InputJsonObject
     const asset = await db.asset.create({
       data: {
         id: assetId,
