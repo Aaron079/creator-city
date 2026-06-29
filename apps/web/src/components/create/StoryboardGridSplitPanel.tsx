@@ -115,6 +115,7 @@ export function StoryboardGridSplitPanel({
   const [batchError, setBatchError] = useState('')
   const imageRef = useRef<HTMLImageElement | null>(null)
 
+  const hasProjectId = Boolean(projectId.trim())
   const canUseSource = Boolean(sourceNode?.id && sourceNode.mediaUrl && sourceNode.assetId)
 
   useEffect(() => {
@@ -247,6 +248,10 @@ export function StoryboardGridSplitPanel({
 
   const uploadAll = useCallback(async () => {
     if (!canUseSource || !sourceNode?.assetId) return
+    if (!hasProjectId) {
+      setBatchError('请先保存项目后再拆格入库。')
+      return
+    }
     setBatchError('')
     const queue = items.filter((item) => !item.deleted && item.status !== 'uploaded')
     const uploaded: StoryboardGridUploadedCell[] = []
@@ -272,7 +277,7 @@ export function StoryboardGridSplitPanel({
       })
     }
     if (uploaded.length !== queue.length) setBatchError('部分分镜上传失败，可对失败格单独重试。')
-  }, [activeItems.length, canUseSource, items, layoutId, onUpdateSourceSession, sessionId, sourceNode?.assetId, sourceNode?.id, uploadOne, uploadedCells])
+  }, [activeItems.length, canUseSource, hasProjectId, items, layoutId, onUpdateSourceSession, sessionId, sourceNode?.assetId, sourceNode?.id, uploadOne, uploadedCells])
 
   const handleCreateOne = useCallback((item: CellItem, placementIndex: number, total: number) => {
     if (item.createdNodeId) return
@@ -372,7 +377,7 @@ export function StoryboardGridSplitPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={!canUseSource || loadingImage || activeItems.length === 0}
+                disabled={!hasProjectId || !canUseSource || loadingImage || activeItems.length === 0}
                 onClick={uploadAll}
                 className="rounded-lg border border-cyan-300/25 bg-cyan-300/12 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-35"
               >
@@ -389,7 +394,11 @@ export function StoryboardGridSplitPanel({
             </div>
           </div>
 
-          {batchError ? <div className="mx-5 mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100/80">{batchError}</div> : null}
+          {!hasProjectId ? (
+            <div className="mx-5 mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100/80">请先保存项目后再拆格入库。</div>
+          ) : batchError ? (
+            <div className="mx-5 mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100/80">{batchError}</div>
+          ) : null}
 
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto p-5">
             {items.map((item) => (

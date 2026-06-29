@@ -8,6 +8,7 @@ import {
   buildUploadAssetMetadata,
   parseStoryboardGridSplitLineage,
 } from './storyboard-grid-split-metadata'
+import { verifyUploadProjectAccess } from './project-validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,19 +73,27 @@ export async function POST(request: NextRequest) {
     return jsonError(lineageResult.errorCode, lineageResult.message, 400)
   }
 
-  // Step 1: verify project ownership (if projectId provided)
-  if (projectId) {
-    try {
-      const project = await db.project.findUnique({
-        where: { id: projectId },
-        select: { ownerId: true },
+  // Step 1: verify project ownership. Storyboard grid crops must be bound to a
+  // saved project so crop assets stay recoverable from /assets after reload.
+  const projectAccess = await verifyUploadProjectAccess({
+    projectId,
+    userId: user.id,
+    required: Boolean(lineageResult.lineage),
+    lookupProjectOwnerId: async (id) => db.project.findUnique({
+      where: { id },
+      select: { ownerId: true },
+    }),
+  })
+  if (!projectAccess.ok) {
+    if (projectAccess.cause) {
+      console.error('[assets/upload] project check failed', {
+        projectIdPrefix: projectId?.slice(0, 8) ?? null,
+        attempts: projectAccess.attempts,
+        errorCode: projectAccess.errorCode,
+        err: projectAccess.cause,
       })
-      if (!project) return jsonError('PROJECT_NOT_FOUND', '项目不存在', 404)
-      if (project.ownerId !== user.id) return jsonError('FORBIDDEN', '无权上传到该项目', 403)
-    } catch (err) {
-      console.error('[assets/upload] project check failed', { projectId, err })
-      return jsonError('PROJECT_CHECK_FAILED', '项目验证失败，请重试', 500)
     }
+    return jsonError(projectAccess.errorCode, projectAccess.message, projectAccess.status)
   }
 
   // Step 2: upload file to storage

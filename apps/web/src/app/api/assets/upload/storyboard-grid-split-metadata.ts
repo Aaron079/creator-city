@@ -94,7 +94,7 @@ export function parseStoryboardGridSplitLineage(formData: FormData): StoryboardG
     return {
       ok: false,
       errorCode: 'INVALID_CROP_BOX',
-      message: '无效的分镜裁切区域。',
+      message: '裁切元数据无效。',
     }
   }
 
@@ -105,7 +105,7 @@ export function parseStoryboardGridSplitLineage(formData: FormData): StoryboardG
     return {
       ok: false,
       errorCode: 'INVALID_GRID_INDEX',
-      message: '无效的分镜序号。',
+      message: '裁切元数据无效。',
     }
   }
 

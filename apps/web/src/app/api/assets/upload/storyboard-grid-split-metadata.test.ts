@@ -107,6 +107,21 @@ describe('buildUploadAssetMetadata', () => {
       const parsed = parseStoryboardGridSplitLineage(fd)
       assert.equal(parsed.ok, false)
       assert.equal(parsed.errorCode, 'INVALID_CROP_BOX')
+      assert.equal(parsed.message, '裁切元数据无效。')
     }
+  })
+
+  test('rejects invalid storyboard grid indexes with a metadata-specific error', () => {
+    const fd = new FormData()
+    fd.append('toolId', 'storyboard-grid-split')
+    fd.append('cropBox', JSON.stringify({ x: 0, y: 0, width: 0.5, height: 0.5 }))
+    fd.append('row', '0')
+    fd.append('col', '-1')
+    fd.append('index', '1')
+
+    const parsed = parseStoryboardGridSplitLineage(fd)
+    assert.equal(parsed.ok, false)
+    assert.equal(parsed.errorCode, 'INVALID_GRID_INDEX')
+    assert.equal(parsed.message, '裁切元数据无效。')
   })
 })

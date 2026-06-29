@@ -10,6 +10,7 @@ import {
   detectGridLayoutFromImageData,
   validateGridLayout,
 } from './storyboardGridDetect'
+import { buildStoryboardGridUploadFormData } from './storyboardGridCrop'
 
 function makeImageData(width: number, height: number, draw?: (data: Uint8ClampedArray) => void) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -116,5 +117,47 @@ describe('detectGridLayoutFromImageData', () => {
     const result = detectGridLayoutFromImageData(image)
     assert.equal(result.layoutId, null)
     assert.ok(result.confidence < 0.7)
+  })
+})
+
+describe('buildStoryboardGridUploadFormData', () => {
+  test('includes the required projectId and allowlisted storyboard metadata only', () => {
+    const cell = buildGridCells('2x2', 1000, 500)[0]
+    assert.ok(cell)
+    const metadata = buildCropMetadata({
+      cell,
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      sourceNodeId: 'node-source',
+      sourceAssetId: 'asset-source',
+      parentAssetId: 'asset-parent',
+      gridSessionId: 'grid-session-1',
+    })
+
+    const fd = buildStoryboardGridUploadFormData({
+      blob: new Blob(['cell'], { type: 'image/png' }),
+      projectId: 'project-1',
+      workflowId: 'workflow-1',
+      sourceNodeId: 'node-source',
+      title: 'cell-1',
+      metadata,
+    })
+
+    assert.equal(fd.get('projectId'), 'project-1')
+    assert.equal(fd.get('workflowId'), 'workflow-1')
+    assert.equal(fd.get('type'), 'image')
+    assert.equal(fd.get('toolId'), 'storyboard-grid-split')
+    assert.equal(fd.get('sourceNodeId'), 'node-source')
+    assert.equal(fd.get('sourceAssetId'), 'asset-source')
+    assert.equal(fd.get('parentAssetId'), 'asset-parent')
+    assert.equal(fd.get('gridSessionId'), 'grid-session-1')
+    assert.equal(fd.get('row'), '0')
+    assert.equal(fd.get('col'), '0')
+    assert.equal(fd.get('index'), '0')
+    assert.equal(fd.has('metadataJson'), false)
+    assert.equal(fd.has('storageProvider'), false)
+    assert.equal(fd.has('bucket'), false)
+    assert.equal(fd.has('key'), false)
+    assert.equal(fd.has('storageKey'), false)
   })
 })
