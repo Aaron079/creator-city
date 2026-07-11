@@ -4,6 +4,7 @@ import { verifyPassword } from '@/lib/auth/password'
 import { createSession } from '@/lib/auth/session'
 import { setSessionCookie } from '@/lib/auth/cookies'
 import { extractSafeError, mapPrismaError, logAndRespond } from '@/lib/auth/errors'
+import { runAuthDbOperationWithRetry } from '@/lib/auth/login-db-retry'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,33 +16,44 @@ export async function POST(req: NextRequest) {
     }
 
     const email = rawEmail.trim().toLowerCase()
-    const user = await db.user.findUnique({
-      where: { email },
-      include: { profile: true },
+
+    const result = await runAuthDbOperationWithRetry('credentials login', async () => {
+      const user = await db.user.findUnique({
+        where: { email },
+        include: { profile: true },
+      })
+
+      // Constant-time-safe: always run verifyPassword even if user not found
+      const dummyHash = '$2a$12$DUMMY_HASH_TO_PREVENT_TIMING_ATTACK_XXXXXXXXXXXXXXXXXX'
+      const passwordOk = user
+        ? await verifyPassword(password, user.passwordHash)
+        : await verifyPassword(password, dummyHash).then(() => false)
+
+      if (!user || !passwordOk) return { ok: false as const, reason: 'invalid_credentials' as const }
+
+      if (user.status === 'BANNED') return { ok: false as const, reason: 'banned' as const }
+      if (user.status !== 'ACTIVE') return { ok: false as const, reason: 'inactive' as const }
+
+      await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+
+      const ua = req.headers.get('user-agent') ?? undefined
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined
+      const token = await createSession(user.id, ua, ip)
+
+      return { ok: true as const, user, token }
     })
 
-    // Constant-time-safe: always run verifyPassword even if user not found
-    const dummyHash = '$2a$12$DUMMY_HASH_TO_PREVENT_TIMING_ATTACK_XXXXXXXXXXXXXXXXXX'
-    const passwordOk = user
-      ? await verifyPassword(password, user.passwordHash)
-      : await verifyPassword(password, dummyHash).then(() => false)
-
-    if (!user || !passwordOk) {
+    if (!result.ok && result.reason === 'invalid_credentials') {
       return NextResponse.json({ message: '邮箱或密码错误。', errorCode: 'INVALID_CREDENTIALS' }, { status: 401 })
     }
-
-    if (user.status === 'BANNED') {
+    if (!result.ok && result.reason === 'banned') {
       return NextResponse.json({ message: '账号已被封禁，请联系支持。' }, { status: 403 })
     }
-    if (user.status !== 'ACTIVE') {
+    if (!result.ok && result.reason === 'inactive') {
       return NextResponse.json({ message: '账号状态异常，请联系支持。' }, { status: 403 })
     }
 
-    await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-
-    const ua = req.headers.get('user-agent') ?? undefined
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined
-    const token = await createSession(user.id, ua, ip)
+    const { user, token } = result
     setSessionCookie(token)
 
     const safeUser = {
