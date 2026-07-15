@@ -169,6 +169,7 @@ import {
   consumePendingCanvasSave,
   type CanvasSaveResponseData,
 } from '@/lib/canvas/canvasSaveIntegrity'
+import { decideCanvasDraftRecovery } from '@/lib/canvas/canvasDraftRecovery'
 import {
   validateLocalImageFile,
   readImageDimensions,
@@ -289,14 +290,6 @@ interface DraftRestorePrompt {
   source: 'snapshot' | 'cache' | 'draft'
 }
 
-interface ServerVersionPrompt {
-  workflowId: string
-  nodes: VisualCanvasNode[]
-  edges: CanvasEdge[]
-  viewport?: unknown
-  serverUpdatedAt?: string
-}
-
 type LocalCanvasSource = 'snapshot' | 'cache' | 'draft'
 
 function getDraftKey(projectId: string) {
@@ -335,16 +328,6 @@ function timeValue(input?: string) {
   if (!input) return 0
   const value = new Date(input).getTime()
   return Number.isFinite(value) ? value : 0
-}
-
-function isLocalCanvasNewer(
-  local: { updatedAt?: string; syncedAt?: string; serverUpdatedAt?: string },
-  serverUpdatedAt?: string,
-) {
-  const localUpdatedAt = timeValue(local.updatedAt)
-  const localSyncedAt = Math.max(timeValue(local.syncedAt), timeValue(local.serverUpdatedAt))
-  const serverTime = timeValue(serverUpdatedAt)
-  return localUpdatedAt > Math.max(localSyncedAt, serverTime) + 500
 }
 
 function getCommentsCacheKey(projectId: string) {
@@ -2479,7 +2462,6 @@ export function VisualCanvasWorkspace({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('opening')
   const [saveMessage, setSaveMessage] = useState('')
   const [draftRestorePrompt, setDraftRestorePrompt] = useState<DraftRestorePrompt | null>(null)
-  const [serverVersionPrompt, setServerVersionPrompt] = useState<ServerVersionPrompt | null>(null)
   const [nodes, setNodes] = useState<VisualCanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
@@ -2966,6 +2948,8 @@ export function VisualCanvasWorkspace({
     try {
       const parsed = JSON.parse(raw) as Partial<CanvasLocalSnapshot>
       if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null
+      const parsedProjectId = typeof parsed.projectId === 'string' ? parsed.projectId : id
+      if (parsedProjectId !== id) return null
       const workflow = typeof parsed.workflowId === 'string' ? parsed.workflowId : ''
       if (!workflow) return null
       const viewport = parsed.viewport && typeof parsed.viewport === 'object'
@@ -2974,7 +2958,7 @@ export function VisualCanvasWorkspace({
       return {
         version: 1,
         source: 'local',
-        projectId: typeof parsed.projectId === 'string' ? parsed.projectId : id,
+        projectId: parsedProjectId,
         workflowId: workflow,
         title: typeof parsed.title === 'string' ? parsed.title : undefined,
         nodes: parsed.nodes as VisualCanvasNode[],
@@ -3168,6 +3152,7 @@ export function VisualCanvasWorkspace({
     nodes: VisualCanvasNode[]
     edges: CanvasEdge[]
     viewport?: unknown
+    allowEmpty?: boolean
     status?: SaveStatus
     message?: string
   }) => {
@@ -3199,10 +3184,10 @@ export function VisualCanvasWorkspace({
         metadataJson: stoppedGenerationMetadata(node.metadataJson, 'reload'),
       }
     })
-    // Never overwrite existing canvas nodes with an empty snapshot from the server.
-    // If the server returns empty nodes but we already have nodes in memory, keep what we have.
+    // Non-authoritative empty snapshots cannot erase in-memory work. An authorized
+    // project load opts in so stale nodes from another project cannot remain visible.
     const existingNodeCount = latestNodesRef.current.length
-    if (sanitizedNodes.length === 0 && existingNodeCount > 0) {
+    if (!args.allowEmpty && sanitizedNodes.length === 0 && existingNodeCount > 0) {
       if (args.status) setSaveStatus(args.status)
       if (args.message !== undefined) setSaveMessage(args.message)
       return
@@ -3400,41 +3385,10 @@ export function VisualCanvasWorkspace({
     }
   }, [applyCanvasSnapshot, draftRestorePrompt, writeUnifiedLocalSnapshot])
 
-  const keepServerEmptyCanvas = useCallback(() => {
+  const keepServerCanvas = useCallback(() => {
     setDraftRestorePrompt(null)
     setSaveStatus('saved')
-    setSaveMessage('使用服务器空画布')
-  }, [])
-
-  const switchToServerVersion = useCallback(() => {
-    if (!projectId || !serverVersionPrompt) return
-    serverSaveVersionRef.current = serverVersionPrompt.serverUpdatedAt
-    applyCanvasSnapshot({
-      projectId,
-      workflowId: serverVersionPrompt.workflowId,
-      title: loadedProjectTitle,
-      nodes: serverVersionPrompt.nodes,
-      edges: serverVersionPrompt.edges,
-      viewport: serverVersionPrompt.viewport,
-      status: 'saved',
-      message: '已切换到服务器版本',
-    })
-    writeCanvasCache({
-      projectId,
-      workflowId: serverVersionPrompt.workflowId,
-      nodes: serverVersionPrompt.nodes,
-      edges: serverVersionPrompt.edges,
-      viewport: serverVersionPrompt.viewport as CanvasCache['viewport'],
-      syncedAt: serverVersionPrompt.serverUpdatedAt,
-      serverUpdatedAt: serverVersionPrompt.serverUpdatedAt,
-    })
-    setServerVersionPrompt(null)
-  }, [applyCanvasSnapshot, loadedProjectTitle, projectId, serverVersionPrompt, writeCanvasCache])
-
-  const keepLocalVersion = useCallback(() => {
-    setServerVersionPrompt(null)
-    setSaveStatus('restored-draft')
-    setSaveMessage('继续使用本地草稿，点击保存可覆盖服务器版本')
+    setSaveMessage('继续使用服务器版本')
   }, [])
 
   const scheduleCanvasSave = useCallback((_delay?: number) => {
@@ -3603,7 +3557,6 @@ export function VisualCanvasWorkspace({
       setSaveStatus('opening')
       setSaveMessage('')
       setDraftRestorePrompt(null)
-      setServerVersionPrompt(null)
       canvasLoadedRef.current = false
       hasHydratedCanvasRef.current = false
       isInitializingRef.current = true
@@ -3658,6 +3611,7 @@ export function VisualCanvasWorkspace({
             nodes: (ensureData.nodes ?? []) as VisualCanvasNode[],
             edges: (ensureData.edges ?? []) as CanvasEdge[],
             viewport: ensureData.viewport ?? ensureData.workflow.viewportJson,
+            allowEmpty: true,
             status: 'saved',
             message: '已同步',
           })
@@ -3748,56 +3702,47 @@ export function VisualCanvasWorkspace({
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
         serverSaveVersionRef.current = serverUpdatedAtText
         const localCandidate = readBestLocalCanvasSnapshot(resolvedProjectId) ?? localPreview
-        const hasLocalCanvas = Boolean(localCandidate?.value.nodes.length)
-        const localIsNewer = Boolean(localCandidate && isLocalCanvasNewer(localCandidate.value, serverUpdatedAtText))
-        const serverTime = timeValue(serverUpdatedAtText)
-        const localTime = timeValue(localCandidate?.value.updatedAt)
-        const serverIsNewer = Boolean(serverNodes.length > 0 && hasLocalCanvas && serverTime > localTime + 500)
-        const shouldRestoreLocalCanvas = Boolean(hasLocalCanvas && (serverNodes.length === 0 || localIsNewer))
         const viewport = data.viewport ?? data.workflow?.viewportJson
-        const effectiveWorkflowId = data.workflow?.id ?? localCandidate?.value.workflowId ?? ''
-        const effectiveNodes = shouldRestoreLocalCanvas && localCandidate ? localCandidate.value.nodes : serverNodes
-        const effectiveEdges = shouldRestoreLocalCanvas && localCandidate ? localCandidate.value.edges : serverEdges
-        const effectiveViewport = shouldRestoreLocalCanvas && localCandidate ? localCandidate.value.viewport : viewport
-        applyCanvasSnapshot({
+        const serverWorkflowId = data.workflow?.id ?? ''
+        const recoveryDecision = decideCanvasDraftRecovery({
           projectId: resolvedProjectId,
-          workflowId: effectiveWorkflowId,
-          title: data.project?.title ?? projectTitle,
-          nodes: effectiveNodes,
-          edges: effectiveEdges,
-          viewport: effectiveViewport,
-        })
-        if (shouldRestoreLocalCanvas && localCandidate) {
-          setDraftRestorePrompt(null)
-          if (serverIsNewer) {
-            setServerVersionPrompt({
-              workflowId: data.workflow?.id ?? effectiveWorkflowId,
-              nodes: serverNodes,
-              edges: serverEdges,
-              viewport,
-              serverUpdatedAt: serverUpdatedAtText,
-            })
-          } else {
-            setServerVersionPrompt(null)
-          }
-          writeUnifiedLocalSnapshot({
-            projectId: resolvedProjectId,
-            workflowId: effectiveWorkflowId,
-            nodes: localCandidate.value.nodes,
-            edges: localCandidate.value.edges,
-            viewport: localCandidate.value.viewport,
+          workflowId: serverWorkflowId,
+          serverUpdatedAt: serverUpdatedAtText,
+          serverNodeCount: serverNodes.length,
+          local: localCandidate ? {
+            projectId: localCandidate.value.projectId,
+            workflowId: localCandidate.value.workflowId,
             updatedAt: localCandidate.value.updatedAt,
             syncedAt: localCandidate.value.syncedAt,
             serverUpdatedAt: localCandidate.value.serverUpdatedAt,
+            nodeCount: localCandidate.value.nodes.length,
+          } : null,
+        })
+        applyCanvasSnapshot({
+          projectId: resolvedProjectId,
+          workflowId: serverWorkflowId,
+          title: data.project?.title ?? projectTitle,
+          nodes: serverNodes,
+          edges: serverEdges,
+          viewport,
+          allowEmpty: true,
+        })
+        if (recoveryDecision.action === 'prompt-local-recovery' && localCandidate) {
+          setDraftRestorePrompt({
+            projectId: resolvedProjectId,
+            workflowId: serverWorkflowId,
+            nodes: localCandidate.value.nodes,
+            edges: localCandidate.value.edges,
+            viewport: localCandidate.value.viewport,
+            source: localCandidate.source,
           })
-          setSaveStatus('local-draft')
-          setSaveMessage(serverIsNewer ? '服务器版本更新，是否切换到服务器版本？' : '检测到本地草稿，点击"保存到云端"可同步。')
+          setSaveStatus('saved')
+          setSaveMessage('检测到未同步的本地草稿，可选择恢复。')
         } else {
           setDraftRestorePrompt(null)
-          setServerVersionPrompt(null)
           writeCanvasCache({
             projectId: resolvedProjectId,
-            workflowId: effectiveWorkflowId,
+            workflowId: serverWorkflowId,
             nodes: serverNodes,
             edges: serverEdges,
             viewport: viewport as CanvasCache['viewport'],
@@ -3840,7 +3785,7 @@ export function VisualCanvasWorkspace({
       cancelled = true
       initAbortRef.current?.abort()
     }
-  }, [applyCanvasSnapshot, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache, writeUnifiedLocalSnapshot])
+  }, [applyCanvasSnapshot, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache])
 
   useEffect(() => {
     latestViewportRef.current = { zoom: canvasZoom, pan: canvasPan }
@@ -8658,7 +8603,7 @@ export function VisualCanvasWorkspace({
         <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
           <div className="text-sm font-semibold text-white">发现本地画布草稿，是否恢复？</div>
           <div className="mt-1 text-xs text-white/50">
-            {draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
+            服务器版本已保留。{draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -8670,27 +8615,10 @@ export function VisualCanvasWorkspace({
             </button>
             <button
               type="button"
-              onClick={keepServerEmptyCanvas}
+              onClick={keepServerCanvas}
               className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
             >
-              使用服务器空画布
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {serverVersionPrompt ? (
-        <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-sky-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
-          <div className="text-sm font-semibold text-white">服务器版本更新，是否切换到服务器版本？</div>
-          <div className="mt-1 text-xs text-white/50">
-            当前已保留本地草稿。服务器版本包含 {serverVersionPrompt.nodes.length} 个节点。
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" className="canvas-secondary-button" onClick={keepLocalVersion}>
-              继续本地草稿
-            </button>
-            <button type="button" className="canvas-panel-primary" onClick={switchToServerVersion}>
-              切换到服务器版本
+              使用服务器版本
             </button>
           </div>
         </div>
