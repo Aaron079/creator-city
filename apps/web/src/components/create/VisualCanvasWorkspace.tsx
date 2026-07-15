@@ -164,6 +164,12 @@ import { LocalReferenceStrip } from '@/components/create/canvas/task/LocalRefere
 import type { NodeToolContext } from '@/lib/canvas/nodeToolContext'
 import { getTaskInputMode, getTaskInputModeLabel, CURRENT_PROVIDER_CAPABILITIES } from '@/lib/canvas/taskInputMode'
 import {
+  CANVAS_SAVE_CLIENT_TIMEOUT_MS,
+  canvasSaveFailure,
+  consumePendingCanvasSave,
+  type CanvasSaveResponseData,
+} from '@/lib/canvas/canvasSaveIntegrity'
+import {
   validateLocalImageFile,
   readImageDimensions,
   buildLocalImportMetadata,
@@ -2606,6 +2612,8 @@ export function VisualCanvasWorkspace({
   const saveTimerRef = useRef<number | null>(null)
   const saveInFlightRef = useRef(false)
   const pendingSaveRef = useRef(false)
+  const saveCanvasRef = useRef<() => Promise<void>>(async () => {})
+  const serverSaveVersionRef = useRef<string | undefined>(undefined)
   const saveRetryTimerRef = useRef<number | null>(null)
   const saveRetryAttemptRef = useRef(0)
   const saveBackoffUntilRef = useRef(0)
@@ -3242,11 +3250,12 @@ export function VisualCanvasWorkspace({
     saveAbortRef.current = controller
     let lastResponseStatus = 0
     let fetchTimedOut = false
-    // 15 s per-request timeout — distinct from the unmount/project-switch abort.
-    // With pool_timeout=6 and 4 session retries, worst-case server auth is ~18 s;
-    // our server-side Promise.race fires at 20 s. 15 s here gives the server
-    // a chance to return 503 first before we abort client-side.
-    const fetchTimeoutId = window.setTimeout(() => { fetchTimedOut = true; controller.abort() }, 15_000)
+    // The client waits beyond the server's internal deadline so a structured
+    // failure arrives before this last-resort browser abort.
+    const fetchTimeoutId = window.setTimeout(
+      () => { fetchTimedOut = true; controller.abort() },
+      CANVAS_SAVE_CLIENT_TIMEOUT_MS,
+    )
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -3261,20 +3270,21 @@ export function VisualCanvasWorkspace({
           edges: snapshot.edges,
           deletedNodeIds: deletedNodeIdsRef.current,
           deletedEdgeIds: deletedEdgeIdsRef.current,
+          baseUpdatedAt: serverSaveVersionRef.current,
         }),
       })
       lastResponseStatus = response.status
       const raw = await response.text()
-      let data: {
+      let data: CanvasSaveResponseData & {
         errorCode?: string
-        message?: string
-        success?: boolean
-        savedAt?: string
-        serverUpdatedAt?: string
         skipped?: boolean
         reason?: string
       }
       try { data = JSON.parse(raw) as typeof data } catch { data = {} }
+      const responseServerVersion = data.serverUpdatedAt ?? data.details?.serverUpdatedAt
+      if (responseServerVersion && data.errorCode !== 'CANVAS_SAVE_CONFLICT') {
+        serverSaveVersionRef.current = responseServerVersion
+      }
       if (response.status === 401) {
         // Do NOT navigate away — that would lose all in-memory canvas state.
         // Write an emergency localStorage draft so nothing is lost, then surface an error.
@@ -3297,9 +3307,8 @@ export function VisualCanvasWorkspace({
         setSaveMessage('登录状态失效，画布暂未保存到服务器。节点已保留在本地草稿中，重新登录后可恢复。')
         return
       }
-      if (!response.ok || data.success === false) {
-        throw new Error(data.message ?? '保存画布失败。')
-      }
+      const saveFailure = canvasSaveFailure(response.ok, data)
+      if (saveFailure) throw new Error(saveFailure)
       if (data.skipped) {
         setSaveStatus('saved')
         setSaveMessage('已同步到云端')
@@ -3308,7 +3317,9 @@ export function VisualCanvasWorkspace({
       }
       deletedNodeIdsRef.current = []
       deletedEdgeIdsRef.current = []
-      flushLocalSnapshot(data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString())
+      const savedAt = data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString()
+      serverSaveVersionRef.current = savedAt
+      flushLocalSnapshot(savedAt)
       setSaveStatus('saved')
       setSaveMessage('已同步到云端')
       saveRetryAttemptRef.current = 0
@@ -3323,9 +3334,16 @@ export function VisualCanvasWorkspace({
       window.clearTimeout(fetchTimeoutId)
       if (saveAbortRef.current === controller) saveAbortRef.current = null
       saveInFlightRef.current = false
-      pendingSaveRef.current = false
+      const shouldDrainPendingSave = consumePendingCanvasSave(pendingSaveRef)
+      if (shouldDrainPendingSave && !isSwitchingProjectRef.current) {
+        window.queueMicrotask(() => { void saveCanvasRef.current() })
+      }
     }
-  }, [getCanvasSnapshot, projectId, router, workflowId, flushLocalSnapshot])
+  }, [getCanvasSnapshot, projectId, workflowId, flushLocalSnapshot])
+
+  useEffect(() => {
+    saveCanvasRef.current = saveCanvas
+  }, [saveCanvas])
 
   const restoreDraftToServer = useCallback(async () => {
     if (!draftRestorePrompt?.workflowId) return
@@ -3356,9 +3374,15 @@ export function VisualCanvasWorkspace({
           deletedEdgeIds: [],
         }),
       })
-      const data = await response.json().catch(() => ({})) as { savedAt?: string; serverUpdatedAt?: string; message?: string }
-      if (!response.ok) throw new Error(data.message ?? '同步草稿失败。')
+      const data = await response.json().catch(() => ({})) as CanvasSaveResponseData & { errorCode?: string }
+      const responseServerVersion = data.serverUpdatedAt ?? data.details?.serverUpdatedAt
+      if (responseServerVersion && data.errorCode !== 'CANVAS_SAVE_CONFLICT') {
+        serverSaveVersionRef.current = responseServerVersion
+      }
+      const saveFailure = canvasSaveFailure(response.ok, data)
+      if (saveFailure) throw new Error(saveFailure)
       const savedAt = data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString()
+      serverSaveVersionRef.current = savedAt
       writeUnifiedLocalSnapshot({
         projectId: draft.projectId,
         workflowId: draft.workflowId,
@@ -3384,6 +3408,7 @@ export function VisualCanvasWorkspace({
 
   const switchToServerVersion = useCallback(() => {
     if (!projectId || !serverVersionPrompt) return
+    serverSaveVersionRef.current = serverVersionPrompt.serverUpdatedAt
     applyCanvasSnapshot({
       projectId,
       workflowId: serverVersionPrompt.workflowId,
@@ -3453,17 +3478,26 @@ export function VisualCanvasWorkspace({
           deletedNodeIds: [],
           deletedEdgeIds: [],
           workflowMetadata: { shotSequence: state },
+          baseUpdatedAt: serverSaveVersionRef.current,
         }),
       })
-      if (!response.ok) return 'failed'
-      const data = await response.json().catch(() => ({})) as { success?: boolean; skipped?: boolean }
-      if (data.success === false) return 'failed'
+      const data = await response.json().catch(() => ({})) as CanvasSaveResponseData & { errorCode?: string; skipped?: boolean }
+      const responseServerVersion = data.serverUpdatedAt ?? data.details?.serverUpdatedAt
+      if (responseServerVersion && data.errorCode !== 'CANVAS_SAVE_CONFLICT') {
+        serverSaveVersionRef.current = responseServerVersion
+      }
+      if (canvasSaveFailure(response.ok, data)) return 'failed'
+      const savedAt = data.serverUpdatedAt ?? data.savedAt
+      if (savedAt) {
+        serverSaveVersionRef.current = savedAt
+        flushLocalSnapshot(savedAt)
+      }
       setCloudShotSequence(state)
       return 'success'
     } catch {
       return 'failed'
     }
-  }, [projectId, workflowId, getCanvasSnapshot])
+  }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
 
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
@@ -3573,6 +3607,7 @@ export function VisualCanvasWorkspace({
       canvasLoadedRef.current = false
       hasHydratedCanvasRef.current = false
       isInitializingRef.current = true
+      serverSaveVersionRef.current = undefined
 
       try {
         const resolvedProjectId = nextProjectId
@@ -3615,6 +3650,7 @@ export function VisualCanvasWorkspace({
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
           } catch (_) { /* private mode */ }
+          serverSaveVersionRef.current = ensureData.serverUpdatedAt ?? ensureData.workflow.updatedAt
           applyCanvasSnapshot({
             projectId: ensureData.project.id,
             workflowId: ensureData.workflow.id,
@@ -3710,6 +3746,7 @@ export function VisualCanvasWorkspace({
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
+        serverSaveVersionRef.current = serverUpdatedAtText
         const localCandidate = readBestLocalCanvasSnapshot(resolvedProjectId) ?? localPreview
         const hasLocalCanvas = Boolean(localCandidate?.value.nodes.length)
         const localIsNewer = Boolean(localCandidate && isLocalCanvasNewer(localCandidate.value, serverUpdatedAtText))

@@ -13,6 +13,7 @@ import {
   getProjectAccess,
 } from '@/lib/projects/ensure-active-project'
 import { isDbConnectionError } from '@/lib/db-error'
+import { CANVAS_SAVE_SERVER_DEADLINE_MS } from '@/lib/canvas/canvasSaveIntegrity'
 
 function sanitizeJson(value: unknown): Prisma.InputJsonValue {
   try {
@@ -309,24 +310,10 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteContext) {
-  // Hard deadline: ensures we return 503 before Vercel's 60 s maxDuration causes a raw 504.
-  // Soft per-batch checks only fire inside the node upsert loop — any hang in getCurrentUser()
-  // or requireProjectAccess() while waiting for a pgBouncer connection bypasses them entirely.
-  let _deadlineId: ReturnType<typeof setTimeout> | null = null
-  const deadlinePromise = new Promise<Response>((resolve) => {
-    _deadlineId = setTimeout(() => {
-      console.warn('[canvas-api] 20 s hard deadline fired — DB likely blocked', { projectId: params.projectId })
-      resolve(jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：服务器响应缓慢，画布已缓存在本地，请稍后重试。', 503))
-    }, 20_000)
-  })
-  try {
-    return await Promise.race([putImpl(request, params), deadlinePromise])
-  } finally {
-    if (_deadlineId !== null) clearTimeout(_deadlineId)
-  }
+  return putImpl(request, params, Date.now())
 }
 
-async function putImpl(request: NextRequest, params: { projectId: string }): Promise<Response> {
+async function putImpl(request: NextRequest, params: { projectId: string }, saveStart: number): Promise<Response> {
   let user
   try {
     user = await getCurrentUser()
@@ -350,6 +337,7 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
     deletedEdgeIds?: string[]
     clearCanvas?: boolean
     workflowMetadata?: Record<string, unknown>
+    baseUpdatedAt?: string
   }
   try {
     body = await request.json() as typeof body
@@ -374,9 +362,9 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
   if (body.nodes.length > 200) {
     return jsonError('CANVAS_TOO_MANY_NODES', `节点数量超限（${body.nodes.length}），当前限制 200 个。`, 413)
   }
-  // Soft deadline: return 503 before Vercel's 60 s hard timeout produces an unstructured 504.
-  const saveStart = Date.now()
-  const SAVE_DEADLINE_MS = 52_000
+  if (body.baseUpdatedAt && Number.isNaN(new Date(body.baseUpdatedAt).getTime())) {
+    return jsonError('VALIDATION_FAILED', 'baseUpdatedAt must be a valid timestamp.', 400)
+  }
 
   let saveStage = 'project_access'
   try {
@@ -404,30 +392,51 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
     }
 
     const now = new Date()
+    const serverUpdatedAt = now.toISOString()
 
-    // Sequential individual writes — avoids pgBouncer interactive-transaction incompatibility.
-    // Atomicity is sacrificed for reliability; the next save will correct any partial state.
-    try {
+    if (Date.now() - saveStart > CANVAS_SAVE_SERVER_DEADLINE_MS) {
+      return jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：服务器响应缓慢，画布尚未写入，请稍后重试。', 503)
+    }
+
+    const workflowUpdate = {
+      ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
+      ...(body.workflowMetadata !== undefined ? {
+        metadataJson: sanitizeJson({
+          ...(workflow.metadataJson && typeof workflow.metadataJson === 'object' && !Array.isArray(workflow.metadataJson)
+            ? workflow.metadataJson as Record<string, unknown>
+            : {}),
+          ...body.workflowMetadata,
+        }),
+      } : {}),
+      updatedAt: now,
+    }
+
+    saveStage = 'workflow_reservation'
+    if (body.baseUpdatedAt) {
+      const reservation = await db.canvasWorkflow.updateMany({
+        where: {
+          id: workflow.id,
+          projectId: params.projectId,
+          updatedAt: new Date(body.baseUpdatedAt),
+        },
+        data: workflowUpdate,
+      })
+      if (reservation.count !== 1) {
+        const currentWorkflow = await db.canvasWorkflow.findUnique({
+          where: { id: workflow.id },
+          select: { updatedAt: true },
+        })
+        return jsonError(
+          'CANVAS_SAVE_CONFLICT',
+          '服务器画布已更新，请刷新或切换版本后再保存。',
+          409,
+          { serverUpdatedAt: currentWorkflow?.updatedAt.toISOString() },
+        )
+      }
+    } else {
       await db.canvasWorkflow.update({
         where: { id: workflow.id },
-        data: {
-          ...(body.viewport !== undefined ? { viewportJson: body.viewport as Prisma.InputJsonValue } : {}),
-          ...(body.workflowMetadata !== undefined ? {
-            metadataJson: sanitizeJson({
-              ...(workflow.metadataJson && typeof workflow.metadataJson === 'object' && !Array.isArray(workflow.metadataJson)
-                ? workflow.metadataJson as Record<string, unknown>
-                : {}),
-              ...body.workflowMetadata,
-            }),
-          } : {}),
-          updatedAt: now,
-        },
-      })
-    } catch (workflowErr) {
-      console.error('[canvas-api] canvasWorkflow.update failed, continuing with node saves', {
-        projectId: params.projectId,
-        workflowId: workflow.id,
-        error: workflowErr instanceof Error ? workflowErr.message : String(workflowErr),
+        data: workflowUpdate,
       })
     }
 
@@ -440,11 +449,16 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
     const validNodes = (body.nodes ?? []).filter((node) => node.id && node.kind)
     const nodeResults: PromiseSettledResult<unknown>[] = []
     for (let batchStart = 0; batchStart < validNodes.length; batchStart += BATCH_SIZE) {
-      if (Date.now() - saveStart > SAVE_DEADLINE_MS) {
+      if (Date.now() - saveStart > CANVAS_SAVE_SERVER_DEADLINE_MS) {
         console.warn('[canvas-api] save deadline reached during node upserts, returning 503', {
           projectId: params.projectId, completedBatch: batchStart, totalNodes: validNodes.length,
         })
-        return jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：数据库响应缓慢，部分节点已暂存，请稍后重试。', 503)
+        return jsonError(
+          'CANVAS_SAVE_TIMEOUT',
+          '保存超时：数据库响应缓慢，部分节点可能已写入，请重试。',
+          503,
+          { serverUpdatedAt },
+        )
       }
       const batchResults = await Promise.allSettled(
         validNodes.slice(batchStart, batchStart + BATCH_SIZE).map((node) => {
@@ -531,12 +545,25 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
         })
       }
     })
+    if (failedNodeIds.length > 0) {
+      return jsonError(
+        'CANVAS_PARTIAL_SAVE',
+        '部分节点未能保存，请重试。',
+        503,
+        { serverUpdatedAt, failedNodeIds },
+      )
+    }
 
-    if (Date.now() - saveStart > SAVE_DEADLINE_MS) {
+    if (Date.now() - saveStart > CANVAS_SAVE_SERVER_DEADLINE_MS) {
       console.warn('[canvas-api] save deadline reached before edge upserts, returning 503', {
         projectId: params.projectId, totalNodes: validNodes.length,
       })
-      return jsonError('CANVAS_SAVE_TIMEOUT', '保存超时：节点已暂存，边将在下次保存时同步，请稍后重试。', 503)
+      return jsonError(
+        'CANVAS_SAVE_TIMEOUT',
+        '保存超时：节点已写入，边将在重试时同步。',
+        503,
+        { serverUpdatedAt },
+      )
     }
     saveStage = 'edge_upserts'
     // Parallel edge upserts for the same reason.
@@ -580,23 +607,62 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
         })
       }
     })
+    if (failedEdgeIds.length > 0) {
+      return jsonError(
+        'CANVAS_PARTIAL_SAVE',
+        '部分连接未能保存，请重试。',
+        503,
+        { serverUpdatedAt, failedEdgeIds },
+      )
+    }
+
+    if (Date.now() - saveStart > CANVAS_SAVE_SERVER_DEADLINE_MS) {
+      return jsonError(
+        'CANVAS_SAVE_TIMEOUT',
+        '保存超时：删除操作将在重试时同步。',
+        503,
+        { serverUpdatedAt },
+      )
+    }
+
+    saveStage = 'deletions'
+    const failedDeletionStages: string[] = []
+    const runDeletion = async (stage: string, operation: () => Promise<unknown>) => {
+      try {
+        await operation()
+      } catch (error) {
+        failedDeletionStages.push(stage)
+        console.error('[canvas-api] deletion stage failed', {
+          projectId: params.projectId,
+          workflowId: workflow.id,
+          stage,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
 
     if (body.clearCanvas && (body.nodes ?? []).length === 0) {
-      await Promise.allSettled([
-        db.canvasEdge.deleteMany({ where: { workflowId: workflow.id } }),
-        db.canvasNode.deleteMany({ where: { workflowId: workflow.id } }),
-      ])
+      await runDeletion('clear_edges', () => db.canvasEdge.deleteMany({ where: { workflowId: workflow.id } }))
+      await runDeletion('clear_nodes', () => db.canvasNode.deleteMany({ where: { workflowId: workflow.id } }))
+    } else {
+      if (body.deletedEdgeIds?.length) {
+        await runDeletion('deleted_edges', () => db.canvasEdge.deleteMany({
+          where: { workflowId: workflow.id, edgeId: { in: body.deletedEdgeIds } },
+        }))
+      }
+      if (body.deletedNodeIds?.length) {
+        await runDeletion('deleted_nodes', () => db.canvasNode.deleteMany({
+          where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
+        }))
+      }
     }
-
-    if (body.deletedNodeIds?.length) {
-      await db.canvasNode.deleteMany({
-        where: { workflowId: workflow.id, nodeId: { in: body.deletedNodeIds } },
-      }).catch((e: unknown) => console.warn('[canvas-api] deletedNodes failed', e))
-    }
-    if (body.deletedEdgeIds?.length) {
-      await db.canvasEdge.deleteMany({
-        where: { workflowId: workflow.id, edgeId: { in: body.deletedEdgeIds } },
-      }).catch((e: unknown) => console.warn('[canvas-api] deletedEdges failed', e))
+    if (failedDeletionStages.length > 0) {
+      return jsonError(
+        'CANVAS_PARTIAL_SAVE',
+        '部分删除操作未能保存，请重试。',
+        503,
+        { serverUpdatedAt, failedDeletionStages },
+      )
     }
 
     // Best-effort lastOpenedAt update — never block the save response.
@@ -607,22 +673,12 @@ async function putImpl(request: NextRequest, params: { projectId: string }): Pro
       console.warn('[canvas] failed to touch lastOpenedAt', { projectId: project.id, error: e }),
     )
 
-    const hasPartialFailure = failedNodeIds.length > 0 || failedEdgeIds.length > 0
-    if (hasPartialFailure) {
-      console.warn('[canvas-api] partial save', {
-        projectId: params.projectId,
-        workflowId: workflow.id,
-        failedNodeIds,
-        failedEdgeIds,
-      })
-    }
     return jsonOk({
       workflowId: workflow.id,
-      savedAt: now.toISOString(),
-      serverUpdatedAt: now.toISOString(),
+      savedAt: serverUpdatedAt,
+      serverUpdatedAt,
       nodeCount: body.nodes.length,
       edgeCount: body.edges.length,
-      ...(hasPartialFailure ? { failedNodeIds, failedEdgeIds, partialSave: true } : {}),
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
