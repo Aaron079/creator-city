@@ -52,3 +52,19 @@ test('dismissal explicitly keeps the server version without a save', () => {
   assert.match(workspace, /onClick=\{keepServerCanvas\}/)
   assert.match(workspace, />\s*使用服务器版本\s*</)
 })
+
+test('clean page leave does not manufacture a newer local draft', () => {
+  assert.match(workspace, /const hasUnsyncedLocalChangesRef = useRef\(false\)/)
+  assert.match(
+    workspace,
+    /const writeUnifiedLocalSnapshot = useCallback\(\(args\?: \{[\s\S]*hasUnsyncedLocalChangesRef\.current = !args\?\.syncedAt/,
+  )
+  assert.match(
+    workspace,
+    /function flushBeforeLeave\(\) \{[\s\S]*if \(hasUnsyncedLocalChangesRef\.current\) flushLocalSnapshot\(\)/,
+  )
+  assert.match(
+    workspace,
+    /const keepServerCanvas = useCallback\(\(\) => \{[\s\S]*flushLocalSnapshot\(serverSaveVersionRef\.current\)/,
+  )
+})

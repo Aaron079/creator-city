@@ -2590,6 +2590,7 @@ export function VisualCanvasWorkspace({
   const activeGenerationNodeIdsRef = useRef<Set<string>>(new Set())
   const isSwitchingProjectRef = useRef(false)
   const skipNextAutosaveRef = useRef(false)
+  const hasUnsyncedLocalChangesRef = useRef(false)
   const providerStatusPerfStartedRef = useRef(false)
   const saveTimerRef = useRef<number | null>(null)
   const saveInFlightRef = useRef(false)
@@ -3100,6 +3101,7 @@ export function VisualCanvasWorkspace({
     const targetProjectId = args?.projectId ?? projectId
     const targetWorkflowId = args?.workflowId ?? workflowId
     if (typeof window === 'undefined' || !targetProjectId || !targetWorkflowId) return
+    hasUnsyncedLocalChangesRef.current = !args?.syncedAt
     const snapshot = getCanvasSnapshot()
     const updatedAt = args?.updatedAt ?? args?.syncedAt ?? new Date().toISOString()
     const nodesForSnapshot = args?.nodes ?? snapshot.nodes
@@ -3334,6 +3336,7 @@ export function VisualCanvasWorkspace({
     if (!draftRestorePrompt?.workflowId) return
     const draft = draftRestorePrompt
     setDraftRestorePrompt(null)
+    hasUnsyncedLocalChangesRef.current = true
     applyCanvasSnapshot({
       projectId: draft.projectId,
       workflowId: draft.workflowId,
@@ -3380,16 +3383,18 @@ export function VisualCanvasWorkspace({
       setSaveStatus('saved')
       setSaveMessage('草稿已恢复并同步')
     } catch (error) {
+      hasUnsyncedLocalChangesRef.current = true
       setSaveStatus('local-draft')
       setSaveMessage(error instanceof Error ? error.message : '草稿已恢复到本地，稍后可再次保存')
     }
   }, [applyCanvasSnapshot, draftRestorePrompt, writeUnifiedLocalSnapshot])
 
   const keepServerCanvas = useCallback(() => {
+    if (serverSaveVersionRef.current) flushLocalSnapshot(serverSaveVersionRef.current)
     setDraftRestorePrompt(null)
     setSaveStatus('saved')
     setSaveMessage('继续使用服务器版本')
-  }, [])
+  }, [flushLocalSnapshot])
 
   const scheduleCanvasSave = useCallback((_delay?: number) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
@@ -3624,6 +3629,7 @@ export function VisualCanvasWorkspace({
             serverUpdatedAt: ensureData.serverUpdatedAt ?? ensureData.workflow.updatedAt,
             syncedAt: ensureData.serverUpdatedAt ?? ensureData.workflow.updatedAt,
           })
+          hasUnsyncedLocalChangesRef.current = false
           canvasLoadedRef.current = true
           hasHydratedCanvasRef.current = true
           isInitializingRef.current = false
@@ -3752,6 +3758,7 @@ export function VisualCanvasWorkspace({
           setSaveStatus('saved')
           setSaveMessage('已同步')
         }
+        hasUnsyncedLocalChangesRef.current = false
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
         isInitializingRef.current = false
@@ -3772,6 +3779,7 @@ export function VisualCanvasWorkspace({
             status: 'local-draft',
             message: '远端画布加载失败，已保留本地草稿。',
           })
+          hasUnsyncedLocalChangesRef.current = true
           hasHydratedCanvasRef.current = true
         }
         setSaveStatus(localFallback?.value.nodes.length ? 'local-draft' : 'failed')
@@ -3804,7 +3812,7 @@ export function VisualCanvasWorkspace({
     if (!projectId || !workflowId) return
 
     function flushBeforeLeave() {
-      flushLocalSnapshot()
+      if (hasUnsyncedLocalChangesRef.current) flushLocalSnapshot()
       clearGenerationTimersAndRequests()
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current)
