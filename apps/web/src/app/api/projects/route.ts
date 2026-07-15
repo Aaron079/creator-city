@@ -9,6 +9,10 @@ import {
   isProjectCanvasSchemaMissing,
   projectJsonError,
 } from '@/lib/projects/api-errors'
+import {
+  countProjectWorkflowNodes,
+  toWorkflowNodeCountMap,
+} from '@/lib/projects/project-summary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -158,6 +162,27 @@ export async function GET(request: NextRequest) {
         warnings.push(`owned_query: ${msg}`)
       }
 
+      const workflowIds = ownedProjects.flatMap((project) => (
+        project.canvasWorkflows.map((workflow) => workflow.id)
+      ))
+      let workflowNodeCounts = new Map<string, number>()
+      if (workflowIds.length > 0) {
+        try {
+          const workflowCounts = await db.canvasWorkflow.findMany({
+            where: { id: { in: workflowIds } },
+            select: {
+              id: true,
+              _count: { select: { nodes: true } },
+            },
+          })
+          workflowNodeCounts = toWorkflowNodeCountMap(workflowCounts)
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          console.warn('[projects] workflow node count query failed', { userId: user.id, error })
+          warnings.push(`node_count_query: ${msg}`)
+        }
+      }
+
       const projects = ownedProjects.map((project) => {
         const workflow = project.canvasWorkflows[0] ?? null
         return {
@@ -172,7 +197,7 @@ export async function GET(request: NextRequest) {
           updatedAt: project.updatedAt,
           lastOpenedAt: project.lastOpenedAt,
           workflowId: workflow?.id ?? null,
-          nodeCount: 0,
+          nodeCount: countProjectWorkflowNodes(project.canvasWorkflows, workflowNodeCounts),
           assetCount: 0,
           ownerRole: 'OWNER',
           membershipRole: null,
