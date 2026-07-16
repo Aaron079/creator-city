@@ -19,20 +19,86 @@ function compareArtifacts(left: CreatorSkillArtifact, right: CreatorSkillArtifac
   return typeOrder || compareStrings(left.artifactId, right.artifactId)
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value
-      .filter((item) => item !== undefined)
-      .map(canonicalize)
-  }
-  if (!value || typeof value !== 'object') return value
-
-  const record = value as Record<string, unknown>
-  const normalized: Record<string, unknown> = {}
-  for (const key of Object.keys(record).sort(compareStrings)) {
-    if (record[key] !== undefined) {
-      normalized[key] = canonicalize(record[key])
+function assertUniqueSourceNodeIds(sourceNodes: CreatorSkillSourceNode[]) {
+  const ids = new Set<string>()
+  for (const sourceNode of sourceNodes) {
+    if (ids.has(sourceNode.id)) {
+      throw new TypeError(`Duplicate source node id: ${sourceNode.id}`)
     }
+    ids.add(sourceNode.id)
+  }
+}
+
+function assertUniqueArtifactIdentities(artifacts: CreatorSkillArtifact[]) {
+  const idsByType = new Map<string, Set<string>>()
+  for (const artifact of artifacts) {
+    const ids = idsByType.get(artifact.artifactType) ?? new Set<string>()
+    if (ids.has(artifact.artifactId)) {
+      throw new TypeError(
+        `Duplicate artifact identity: ${artifact.artifactType}, ${artifact.artifactId}`,
+      )
+    }
+    ids.add(artifact.artifactId)
+    idsByType.set(artifact.artifactType, ids)
+  }
+}
+
+function unsupportedValue(value: unknown): never {
+  if (value && typeof value === 'object') {
+    const name = value.constructor?.name ?? 'non-plain object'
+    throw new TypeError(`Unsupported fingerprint value: ${name}`)
+  }
+  throw new TypeError(`Unsupported fingerprint value: ${typeof value}`)
+}
+
+function canonicalize(value: unknown, active = new WeakSet<object>()): unknown {
+  if (value === null) return null
+
+  const valueType = typeof value
+  if (valueType === 'string' || valueType === 'boolean') return value
+  if (valueType === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new TypeError('Fingerprint numbers must be finite')
+    }
+    return value
+  }
+  if (valueType !== 'object') return unsupportedValue(value)
+
+  const objectValue = value as object
+  if (active.has(objectValue)) {
+    throw new TypeError('Cyclic fingerprint input')
+  }
+
+  if (Array.isArray(value)) {
+    active.add(objectValue)
+    try {
+      return value
+        .filter((item) => item !== undefined)
+        .map((item) => canonicalize(item, active))
+    } finally {
+      active.delete(objectValue)
+    }
+  }
+
+  const prototype = Object.getPrototypeOf(objectValue)
+  if (prototype !== Object.prototype && prototype !== null) {
+    return unsupportedValue(value)
+  }
+  if (Object.getOwnPropertySymbols(objectValue).length > 0) {
+    throw new TypeError('Unsupported fingerprint value: symbol key')
+  }
+
+  active.add(objectValue)
+  const record = objectValue as Record<string, unknown>
+  const normalized: Record<string, unknown> = {}
+  try {
+    for (const key of Object.keys(record).sort(compareStrings)) {
+      if (record[key] !== undefined) {
+        normalized[key] = canonicalize(record[key], active)
+      }
+    }
+  } finally {
+    active.delete(objectValue)
   }
   return normalized
 }
@@ -51,6 +117,9 @@ export function createCreatorSkillFingerprint(
   skillVersion: string,
   input: CreatorSkillRunInput,
 ): string {
+  assertUniqueSourceNodeIds(input.sourceNodes)
+  if (input.artifacts) assertUniqueArtifactIdentities(input.artifacts)
+
   const orderedInput: CreatorSkillRunInput = {
     ...input,
     sourceNodes: [...input.sourceNodes].sort(compareSourceNodes),

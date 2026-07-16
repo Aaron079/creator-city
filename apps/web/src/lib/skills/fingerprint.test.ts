@@ -140,6 +140,24 @@ describe('executable Creator Skill contracts', () => {
 })
 
 describe('createCreatorSkillFingerprint', () => {
+  test('matches the golden FNV-1a fingerprint for an exact canonical input', () => {
+    const input: CreatorSkillRunInput = {
+      sourceNodes: [
+        {
+          id: 'node-1',
+          kind: 'text',
+          title: 'Opening',
+          prompt: 'Hello',
+        },
+      ],
+    }
+
+    assert.equal(
+      createCreatorSkillFingerprint('golden-skill', '1.0.0', input),
+      'csf1_210df68c',
+    )
+  })
+
   test('is independent of option key order', () => {
     const left = createInput()
     const right = createInput()
@@ -203,6 +221,30 @@ describe('createCreatorSkillFingerprint', () => {
     )
   })
 
+  test('rejects duplicate source node ids', () => {
+    const input = createInput()
+    const firstNode = input.sourceNodes[0]
+    assert.ok(firstNode)
+    input.sourceNodes.push({ ...firstNode, title: 'Duplicate identity' })
+
+    assert.throws(
+      () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+      { name: 'TypeError', message: /Duplicate source node id: node-b/ },
+    )
+  })
+
+  test('rejects duplicate artifact type and id identity pairs', () => {
+    const input = createInput()
+    const firstArtifact = input.artifacts?.[0]
+    assert.ok(firstArtifact)
+    input.artifacts?.push({ ...firstArtifact, payload: { duplicate: true } })
+
+    assert.throws(
+      () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+      { name: 'TypeError', message: /Duplicate artifact identity: scene-list, artifact-b/ },
+    )
+  })
+
   test('is independent of nested metadata key order', () => {
     const left = createInput()
     const right = createInput()
@@ -236,6 +278,80 @@ describe('createCreatorSkillFingerprint', () => {
     assert.equal(
       createCreatorSkillFingerprint('script-analysis', '1.0.0', left),
       createCreatorSkillFingerprint('script-analysis', '1.0.0', right),
+    )
+  })
+
+  test('accepts JSON-compatible primitives, arrays, and null-prototype objects', () => {
+    const nullPrototypeOptions = Object.create(null) as Record<string, unknown>
+    nullPrototypeOptions.values = [null, true, 'text', 42, undefined]
+    nullPrototypeOptions.nested = Object.assign(Object.create(null), { enabled: false })
+    const left = createInput()
+    left.options = nullPrototypeOptions
+    const right = createInput()
+    right.options = {
+      values: [null, true, 'text', 42],
+      nested: { enabled: false },
+    }
+
+    assert.equal(
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', left),
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', right),
+    )
+  })
+
+  test('rejects unsupported primitive and object values with controlled errors', () => {
+    class UnsupportedInstance {}
+    const unsupportedValues: Array<[string, unknown]> = [
+      ['function', () => undefined],
+      ['symbol', Symbol('unsupported')],
+      ['Date', new Date('2026-01-01T00:00:00.000Z')],
+      ['Map', new Map([['key', 'value']])],
+      ['Set', new Set(['value'])],
+      ['RegExp', /value/],
+      ['class instance', new UnsupportedInstance()],
+    ]
+
+    for (const [label, value] of unsupportedValues) {
+      const input = createInput()
+      input.options = { value }
+      assert.throws(
+        () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+        { name: 'TypeError', message: /Unsupported fingerprint value/ },
+        label,
+      )
+    }
+  })
+
+  test('rejects non-finite numbers with controlled errors', () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const input = createInput()
+      input.options = { value }
+      assert.throws(
+        () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+        { name: 'TypeError', message: /Fingerprint numbers must be finite/ },
+      )
+    }
+  })
+
+  test('rejects bigint values with controlled errors', () => {
+    const input = createInput()
+    input.options = { value: BigInt(1) }
+
+    assert.throws(
+      () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+      { name: 'TypeError', message: /Unsupported fingerprint value: bigint/ },
+    )
+  })
+
+  test('rejects cyclic inputs with a controlled error', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const input = createInput()
+    input.options = cyclic
+
+    assert.throws(
+      () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+      { name: 'TypeError', message: /Cyclic fingerprint input/ },
     )
   })
 
@@ -427,6 +543,49 @@ describe('Creator Skill artifacts', () => {
       sourceNodeIds: [''],
       sourceArtifactIds: [],
       payload: {},
+    }), false)
+  })
+
+  test('rejects untrimmed artifact and source identifiers', () => {
+    const valid = {
+      artifactId: 'artifact-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      sourceArtifactIds: ['parent-a'],
+      payload: {},
+    }
+
+    assert.equal(isCreatorSkillArtifact({ ...valid, artifactId: ' artifact-1' }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, artifactType: 'scene-list ' }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceNodeIds: [' node-a'] }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceArtifactIds: ['parent-a '] }), false)
+  })
+
+  test('rejects source identifier arrays that are unsorted or contain duplicates', () => {
+    const valid = {
+      artifactId: 'artifact-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      sourceArtifactIds: ['parent-a'],
+      payload: {},
+    }
+
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceNodeIds: ['node-b', 'node-a'] }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceNodeIds: ['node-a', 'node-a'] }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceArtifactIds: ['parent-b', 'parent-a'] }), false)
+    assert.equal(isCreatorSkillArtifact({ ...valid, sourceArtifactIds: ['parent-a', 'parent-a'] }), false)
+  })
+
+  test('rejects artifacts with an undefined payload', () => {
+    assert.equal(isCreatorSkillArtifact({
+      artifactId: 'artifact-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: [],
+      sourceArtifactIds: [],
+      payload: undefined,
     }), false)
   })
 })

@@ -24,9 +24,21 @@ function normalizeSourceIdentifiers(value: unknown, field: string) {
   return [...new Set(value.map((id) => normalizeRequiredIdentifier(id, field)))].sort()
 }
 
-function isIdentifierArray(value: unknown): value is string[] {
-  return Array.isArray(value)
-    && value.every((id) => typeof id === 'string' && Boolean(id.trim()))
+function isTrimmedIdentifier(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value === value.trim()
+}
+
+function isCanonicalIdentifierArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false
+
+  for (let index = 0; index < value.length; index += 1) {
+    const id = value[index]
+    if (!isTrimmedIdentifier(id)) return false
+    if (index > 0 && value[index - 1] >= id) return false
+  }
+  return true
 }
 
 export function createCreatorSkillArtifact<T>(
@@ -50,14 +62,13 @@ export function isCreatorSkillArtifact(value: unknown): value is CreatorSkillArt
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
 
   const artifact = value as Record<string, unknown>
-  return typeof artifact.artifactId === 'string'
-    && Boolean(artifact.artifactId.trim())
-    && typeof artifact.artifactType === 'string'
-    && Boolean(artifact.artifactType.trim())
+  return isTrimmedIdentifier(artifact.artifactId)
+    && isTrimmedIdentifier(artifact.artifactType)
     && typeof artifact.artifactVersion === 'number'
     && Number.isInteger(artifact.artifactVersion)
     && artifact.artifactVersion > 0
-    && isIdentifierArray(artifact.sourceNodeIds)
-    && isIdentifierArray(artifact.sourceArtifactIds)
+    && isCanonicalIdentifierArray(artifact.sourceNodeIds)
+    && isCanonicalIdentifierArray(artifact.sourceArtifactIds)
     && Object.prototype.hasOwnProperty.call(artifact, 'payload')
+    && artifact.payload !== undefined
 }
