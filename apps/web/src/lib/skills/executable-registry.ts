@@ -1,11 +1,21 @@
 import type {
   CreatorExecutableSkill,
+  CreatorSkillCategory,
   CreatorSkillManifest,
   CreatorSkillTarget,
 } from './types'
 
 const SEMANTIC_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const CREATOR_SKILL_TARGETS = new Set<CreatorSkillTarget>(['text', 'image', 'video'])
+const CREATOR_SKILL_CATEGORIES = new Set<CreatorSkillCategory>([
+  'story',
+  'visual',
+  'color',
+  'camera',
+  'character',
+  'scene',
+  'continuity',
+])
 
 function normalizeIdentifier(value: unknown, field: string) {
   if (typeof value !== 'string' || !value.trim()) {
@@ -19,7 +29,9 @@ function normalizeArtifactTypes(value: unknown, field: string, requireOne = fals
     throw new TypeError(`${field} must be ${requireOne ? 'a non-empty' : 'an'} array`)
   }
 
-  return Array.from(value, (artifactType) => normalizeIdentifier(artifactType, field))
+  return [...new Set(
+    Array.from(value, (artifactType) => normalizeIdentifier(artifactType, field)),
+  )]
 }
 
 function normalizeNodeKinds(value: unknown) {
@@ -32,35 +44,90 @@ function normalizeNodeKinds(value: unknown) {
       throw new TypeError(`Invalid accepted node kind: ${String(kind)}`)
     }
   }
-  return nodeKinds as CreatorSkillTarget[]
+  return [...new Set(nodeKinds)] as CreatorSkillTarget[]
 }
 
 function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest {
   const id = normalizeIdentifier(manifest.id, 'manifest.id')
-  if (typeof manifest.version !== 'string' || !SEMANTIC_VERSION_PATTERN.test(manifest.version)) {
+  const name = normalizeIdentifier(manifest.name, 'manifest.name')
+  const description = normalizeIdentifier(manifest.description, 'manifest.description')
+  const version = manifest.version
+  const category = manifest.category
+  const executionPolicy = manifest.executionPolicy
+  const independentlyCallable = manifest.independentlyCallable
+  const inputNodeKinds = manifest.acceptedNodeKinds
+  const inputArtifactTypes = manifest.acceptedArtifactTypes
+  const inputOutputArtifactTypes = manifest.outputArtifactTypes
+  if (typeof version !== 'string' || !SEMANTIC_VERSION_PATTERN.test(version)) {
     throw new TypeError('manifest.version must use numeric major.minor.patch format')
   }
-  if (manifest.executionPolicy !== 'deterministic-local') {
+  if (!CREATOR_SKILL_CATEGORIES.has(category)) {
+    throw new TypeError(`Invalid Creator Skill category: ${String(category)}`)
+  }
+  if (executionPolicy !== 'deterministic-local') {
     throw new TypeError('Stage A executable Skills must use deterministic-local execution')
   }
-  if (manifest.independentlyCallable !== true) {
+  if (independentlyCallable !== true) {
     throw new TypeError('Executable Creator Skills must be independently callable')
   }
 
-  return {
-    ...manifest,
+  const acceptedNodeKinds = Object.freeze(normalizeNodeKinds(inputNodeKinds))
+  const acceptedArtifactTypes = Object.freeze(normalizeArtifactTypes(
+    inputArtifactTypes,
+    'acceptedArtifactTypes',
+  ))
+  const outputArtifactTypes = Object.freeze(normalizeArtifactTypes(
+    inputOutputArtifactTypes,
+    'outputArtifactTypes',
+    true,
+  ))
+
+  return Object.freeze({
     id,
-    acceptedNodeKinds: normalizeNodeKinds(manifest.acceptedNodeKinds),
-    acceptedArtifactTypes: normalizeArtifactTypes(
-      manifest.acceptedArtifactTypes,
-      'acceptedArtifactTypes',
-    ),
-    outputArtifactTypes: normalizeArtifactTypes(
-      manifest.outputArtifactTypes,
-      'outputArtifactTypes',
-      true,
-    ),
+    version,
+    name,
+    description,
+    category,
+    executionPolicy,
+    acceptedNodeKinds: acceptedNodeKinds as unknown as CreatorSkillTarget[],
+    acceptedArtifactTypes: acceptedArtifactTypes as unknown as string[],
+    outputArtifactTypes: outputArtifactTypes as unknown as string[],
+    independentlyCallable: true,
+  })
+}
+
+function createReadonlyMapFacade(
+  backing: Map<string, CreatorExecutableSkill>,
+): ReadonlyMap<string, CreatorExecutableSkill> {
+  let facade: ReadonlyMap<string, CreatorExecutableSkill>
+  const view: ReadonlyMap<string, CreatorExecutableSkill> = {
+    get size() {
+      return backing.size
+    },
+    get(key) {
+      return backing.get(key)
+    },
+    has(key) {
+      return backing.has(key)
+    },
+    forEach(callback, thisArg) {
+      backing.forEach((value, key) => callback.call(thisArg, value, key, facade))
+    },
+    entries() {
+      return backing.entries()
+    },
+    keys() {
+      return backing.keys()
+    },
+    values() {
+      return backing.values()
+    },
+    [Symbol.iterator]() {
+      return backing[Symbol.iterator]()
+    },
   }
+  facade = Object.freeze(view)
+  return facade
 }
 
 function compareDecimalStrings(left: string, right: string) {
@@ -87,18 +154,23 @@ export function createCreatorExecutableSkillRegistry(
   const registry = new Map<string, CreatorExecutableSkill>()
 
   for (const skill of skills) {
-    if (!skill || typeof skill !== 'object' || typeof skill.run !== 'function' || !skill.manifest) {
+    if (!skill || typeof skill !== 'object') {
       throw new TypeError('Executable Creator Skill must include a manifest and run function')
     }
-    const manifest = normalizeManifest(skill.manifest)
+    const run = skill.run
+    const inputManifest = skill.manifest
+    if (typeof run !== 'function' || !inputManifest) {
+      throw new TypeError('Executable Creator Skill must include a manifest and run function')
+    }
+    const manifest = normalizeManifest(inputManifest)
     const key = `${manifest.id}@${manifest.version}`
     if (registry.has(key)) {
       throw new TypeError(`Duplicate executable Creator Skill: ${key}`)
     }
-    registry.set(key, { ...skill, manifest })
+    registry.set(key, Object.freeze({ manifest, run }))
   }
 
-  return registry
+  return createReadonlyMapFacade(registry)
 }
 
 export function getExecutableCreatorSkillFromRegistry(

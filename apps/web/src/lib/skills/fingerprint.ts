@@ -51,6 +51,19 @@ function unsupportedValue(value: unknown): never {
   throw new TypeError(`Unsupported fingerprint value: ${typeof value}`)
 }
 
+function defineEnumerableDataProperty(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+) {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  })
+}
+
 function canonicalize(value: unknown, active = new WeakSet<object>()): unknown {
   if (value === null) return null
 
@@ -94,7 +107,7 @@ function canonicalize(value: unknown, active = new WeakSet<object>()): unknown {
   try {
     for (const key of Object.keys(record).sort(compareStrings)) {
       if (record[key] !== undefined) {
-        normalized[key] = canonicalize(record[key], active)
+        defineEnumerableDataProperty(normalized, key, canonicalize(record[key], active))
       }
     }
   } finally {

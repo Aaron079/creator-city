@@ -72,6 +72,17 @@ function createInput(): CreatorSkillRunInput {
   }
 }
 
+function createOwnProtoRecord(value: unknown): Record<string, unknown> {
+  const record: Record<string, unknown> = {}
+  Object.defineProperty(record, '__proto__', {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  })
+  return record
+}
+
 function createResult(
   skillId: string,
   skillVersion: string,
@@ -109,7 +120,13 @@ function createSkill(
   ),
 ): CreatorExecutableSkill {
   return {
-    manifest: { ...BASE_MANIFEST, ...manifest },
+    manifest: {
+      ...BASE_MANIFEST,
+      acceptedNodeKinds: [...BASE_MANIFEST.acceptedNodeKinds],
+      acceptedArtifactTypes: [...BASE_MANIFEST.acceptedArtifactTypes],
+      outputArtifactTypes: [...BASE_MANIFEST.outputArtifactTypes],
+      ...manifest,
+    },
     run,
   }
 }
@@ -136,6 +153,9 @@ describe('createCreatorExecutableSkillRegistry', () => {
   test('rejects invalid manifest identity, policy, callability, and output types', () => {
     const invalidSkills: Array<[string, CreatorExecutableSkill]> = [
       ['blank ID', createSkill({ id: '   ' })],
+      ['blank name', createSkill({ name: '   ' })],
+      ['blank description', createSkill({ description: '   ' })],
+      ['invalid category', createSkill({ category: 'invalid' } as never)],
       ['invalid version', createSkill({ version: '1.0' })],
       ['prerelease version', createSkill({ version: '1.0.0-beta.1' })],
       ['non-local policy', createSkill({ executionPolicy: 'external-media' })],
@@ -194,6 +214,37 @@ describe('createCreatorExecutableSkillRegistry', () => {
     assert.equal(getExecutableCreatorSkill('test-skill'), null)
     assert.ok(CREATOR_SKILL_REGISTRY.length > 0)
     assert.notEqual(CREATOR_EXECUTABLE_SKILL_REGISTRY, CREATOR_SKILL_REGISTRY)
+  })
+
+  test('returns an immutable facade over frozen defensive Skill snapshots', () => {
+    const skill = createSkill({
+      name: '  Frozen skill  ',
+      description: '  Frozen description  ',
+      acceptedNodeKinds: ['text', 'text', 'image'],
+      acceptedArtifactTypes: [' script ', 'script', 'outline'],
+      outputArtifactTypes: [' scene-list ', 'scene-list', 'shot-list'],
+    })
+    const registry = createCreatorExecutableSkillRegistry([skill])
+    const registered = getExecutableCreatorSkillFromRegistry(registry, 'test-skill')!
+
+    skill.manifest.name = 'Mutated original'
+    skill.manifest.acceptedNodeKinds.length = 0
+    skill.manifest.acceptedArtifactTypes.push('mutated')
+    skill.manifest.outputArtifactTypes.push('mutated')
+
+    assert.equal(registered.manifest.name, 'Frozen skill')
+    assert.equal(registered.manifest.description, 'Frozen description')
+    assert.deepEqual(registered.manifest.acceptedNodeKinds, ['text', 'image'])
+    assert.deepEqual(registered.manifest.acceptedArtifactTypes, ['script', 'outline'])
+    assert.deepEqual(registered.manifest.outputArtifactTypes, ['scene-list', 'shot-list'])
+    assert.equal((registry as unknown as Record<string, unknown>).set, undefined)
+    assert.equal((registry as unknown as Record<string, unknown>).clear, undefined)
+    assert.equal((registry as unknown as Record<string, unknown>).delete, undefined)
+    assert.ok(Object.isFrozen(registry))
+    assert.ok(Object.isFrozen(registered))
+    assert.ok(Object.isFrozen(registered.manifest))
+    assert.ok(Object.isFrozen(registered.manifest.acceptedNodeKinds))
+    assert.throws(() => registered.manifest.outputArtifactTypes.push('mutated'))
   })
 })
 
@@ -349,6 +400,74 @@ describe('runCreatorSkillFromRegistry', () => {
     )
   })
 
+  test('contains hostile registry lookup, iteration, and Skill access', () => {
+    const throwingGetRegistry = {
+      get() {
+        throw new Error('hostile get')
+      },
+    } as unknown as ReadonlyMap<string, CreatorExecutableSkill>
+    const throwingValuesRegistry = {
+      values() {
+        throw new Error('hostile values')
+      },
+    } as unknown as ReadonlyMap<string, CreatorExecutableSkill>
+    const hostileSkill = Object.defineProperty(
+      { run: () => createResult('test-skill', '1.0.0', 'csf1_deadbeef') },
+      'manifest',
+      {
+        get() {
+          throw new Error('hostile manifest')
+        },
+      },
+    ) as unknown as CreatorExecutableSkill
+    const hostileSkillRegistry = new Map<string, CreatorExecutableSkill>([
+      ['test-skill@1.0.0', hostileSkill],
+    ])
+
+    const attempts: Array<() => CreatorSkillRunResult> = [
+      () => runCreatorSkillFromRegistry(
+        throwingGetRegistry,
+        'test-skill',
+        createInput(),
+        '1.0.0',
+      ),
+      () => runCreatorSkillFromRegistry(throwingValuesRegistry, 'test-skill', createInput()),
+      () => runCreatorSkillFromRegistry(
+        hostileSkillRegistry,
+        'test-skill',
+        createInput(),
+        '1.0.0',
+      ),
+    ]
+
+    for (const attempt of attempts) {
+      assert.doesNotThrow(() => {
+        assertBlocked(attempt(), 'INVALID_SKILL_INPUT')
+      })
+    }
+  })
+
+  test('isolates execution from mutation of a hostile external Skill manifest', () => {
+    const skill = createSkill()
+    skill.run = (_input, fingerprint) => {
+      skill.manifest.outputArtifactTypes.length = 0
+      return createResult('test-skill', '1.0.0', fingerprint)
+    }
+    const externalRegistry = new Map<string, CreatorExecutableSkill>([
+      ['test-skill@1.0.0', skill],
+    ])
+
+    const result = runCreatorSkillFromRegistry(
+      externalRegistry,
+      'test-skill',
+      createInput(),
+      '1.0.0',
+    )
+
+    assert.equal(result.status, 'ready')
+    assert.equal(result.artifacts.length, 1)
+  })
+
   test('converts executor exceptions into blocked results', () => {
     const registry = createCreatorExecutableSkillRegistry([
       createSkill({}, () => {
@@ -482,6 +601,225 @@ describe('runCreatorSkillFromRegistry', () => {
     assert.deepEqual(resultArtifact.sourceNodeIds, ['node-a', 'node-b'])
   })
 
+  test('normalizes valid evidence and issues and rejects malformed entries', () => {
+    const validEvidence = {
+      evidenceId: 'evidence-1',
+      ruleId: 'rule-1',
+      sourceNodeId: 'node-a',
+      lineStart: 1,
+      lineEnd: 2,
+      excerpt: 'Opening excerpt',
+      explanation: 'Supports the scene split.',
+    }
+    const validIssue = {
+      code: 'REVIEW_SCENE',
+      message: 'Review the opening scene.',
+      sourceNodeId: 'node-a',
+      artifactId: 'scenes-1',
+    }
+    const invalidEvidenceEntries: unknown[] = [
+      { ...validEvidence, evidenceId: '   ' },
+      { ...validEvidence, sourceNodeId: 'missing-node' },
+      { ...validEvidence, lineStart: 0 },
+      { ...validEvidence, lineStart: 3, lineEnd: 2 },
+      { ...validEvidence, excerpt: '   ' },
+      { ...validEvidence, extra: true },
+    ]
+    const invalidIssueEntries: unknown[] = [
+      { ...validIssue, code: '   ' },
+      { ...validIssue, message: '   ' },
+      { ...validIssue, sourceNodeId: 'missing-node' },
+      { ...validIssue, artifactId: 'missing-artifact' },
+      { ...validIssue, sourceNodeId: 42 },
+      { ...validIssue, extra: true },
+    ]
+
+    for (const evidence of invalidEvidenceEntries) {
+      const skill = createSkill({}, (_input, fingerprint) => ({
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        evidence: [evidence] as never,
+      }))
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          createCreatorExecutableSkillRegistry([skill]),
+          'test-skill',
+          createInput(),
+        ),
+        'INVALID_SKILL_OUTPUT',
+      )
+    }
+
+    for (const issue of invalidIssueEntries) {
+      const skill = createSkill({}, (_input, fingerprint) => ({
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        warnings: [issue] as never,
+      }))
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          createCreatorExecutableSkillRegistry([skill]),
+          'test-skill',
+          createInput(),
+        ),
+        'INVALID_SKILL_OUTPUT',
+      )
+    }
+
+    const normalizedSkill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      evidence: [{
+        ...validEvidence,
+        evidenceId: ' evidence-1 ',
+        ruleId: ' rule-1 ',
+        sourceNodeId: ' node-a ',
+        excerpt: ' Opening excerpt ',
+        explanation: ' Supports the scene split. ',
+      }],
+      warnings: [{
+        ...validIssue,
+        code: ' REVIEW_SCENE ',
+        message: ' Review the opening scene. ',
+        sourceNodeId: ' node-a ',
+        artifactId: ' scenes-1 ',
+      }],
+    }))
+    const normalized = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([normalizedSkill]),
+      'test-skill',
+      createInput(),
+    )
+
+    assert.deepEqual(normalized.evidence, [validEvidence])
+    assert.deepEqual(normalized.warnings, [validIssue])
+  })
+
+  test('rejects duplicate and invalid-provenance output Artifacts', () => {
+    const artifact = createCreatorSkillArtifact({
+      artifactId: 'scenes-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      sourceArtifactIds: ['script-1'],
+      payload: {},
+    })
+    const invalidArtifactSets = [
+      [artifact, { ...artifact, payload: { duplicate: true } }],
+      [{ ...artifact, sourceNodeIds: ['missing-node'] }],
+      [{ ...artifact, sourceArtifactIds: ['missing-artifact'] }],
+    ]
+
+    for (const artifacts of invalidArtifactSets) {
+      const skill = createSkill({}, (_input, fingerprint) => ({
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        artifacts,
+      }))
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          createCreatorExecutableSkillRegistry([skill]),
+          'test-skill',
+          createInput(),
+        ),
+        'INVALID_SKILL_OUTPUT',
+      )
+    }
+  })
+
+  test('enforces output status invariants', () => {
+    const blocker = { code: 'BLOCKED', message: 'Execution is blocked.' }
+    const invalidResults: CreatorSkillRunResult[] = [
+      {
+        ...createResult('test-skill', '1.0.0', 'csf1_deadbeef'),
+        status: 'blocked',
+        blockers: [blocker],
+      },
+      {
+        ...createResult('test-skill', '1.0.0', 'csf1_deadbeef'),
+        status: 'blocked',
+        artifacts: [],
+      },
+      {
+        ...createResult('test-skill', '1.0.0', 'csf1_deadbeef'),
+        blockers: [blocker],
+      },
+      {
+        ...createResult('test-skill', '1.0.0', 'csf1_deadbeef'),
+        status: 'needs-review',
+        blockers: [blocker],
+      },
+    ]
+
+    for (const invalidResult of invalidResults) {
+      const skill = createSkill({}, () => invalidResult)
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          createCreatorExecutableSkillRegistry([skill]),
+          'test-skill',
+          createInput(),
+        ),
+        'INVALID_SKILL_OUTPUT',
+      )
+    }
+  })
+
+  test('deep-clones normalized evidence, warnings, and blockers', () => {
+    const evidence = {
+      evidenceId: 'evidence-1',
+      ruleId: 'rule-1',
+      sourceNodeId: 'node-a',
+      lineStart: 1,
+      lineEnd: 1,
+      excerpt: 'Opening',
+      explanation: 'Supports the opening.',
+    }
+    const warning = {
+      code: 'REVIEW_SCENE',
+      message: 'Review the opening.',
+      sourceNodeId: 'node-a',
+      artifactId: 'scenes-1',
+    }
+    const blocker = {
+      code: 'MISSING_CONTEXT',
+      message: 'Context is missing.',
+      sourceNodeId: 'node-a',
+      artifactId: 'script-1',
+    }
+    const readySkill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      evidence: [evidence],
+      warnings: [warning],
+    }))
+    const blockedSkill = createSkill({ id: 'blocked-skill' }, (_input, fingerprint) => ({
+      skillId: 'blocked-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'blocked',
+      artifacts: [],
+      evidence: [],
+      warnings: [],
+      blockers: [blocker],
+    }))
+
+    const ready = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([readySkill]),
+      'test-skill',
+      createInput(),
+    )
+    const blocked = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([blockedSkill]),
+      'blocked-skill',
+      createInput(),
+    )
+
+    assert.notEqual(ready.evidence[0], evidence)
+    assert.notEqual(ready.warnings[0], warning)
+    assert.notEqual(blocked.blockers[0], blocker)
+    evidence.excerpt = 'Mutated'
+    warning.message = 'Mutated'
+    blocker.message = 'Mutated'
+    assert.equal(ready.evidence[0]?.excerpt, 'Opening')
+    assert.equal(ready.warnings[0]?.message, 'Review the opening.')
+    assert.equal(blocked.blockers[0]?.message, 'Context is missing.')
+  })
+
   test('forces registered identity fields and preserves meaningful text', () => {
     const skill = createSkill(
       { id: ' identity-skill ', version: '1.2.3' },
@@ -583,6 +921,72 @@ describe('runCreatorSkillFromRegistry', () => {
       runCreatorSkillFromRegistry(registry, 'test-skill', left),
       runCreatorSkillFromRegistry(registry, 'test-skill', right),
     )
+  })
+
+  test('preserves an own enumerable __proto__ input key without changing prototypes', () => {
+    const skill = createSkill({}, (input, fingerprint) => {
+      const options = input.options!
+      return {
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        artifacts: [
+          createCreatorSkillArtifact({
+            artifactId: 'scenes-1',
+            artifactType: 'scene-list',
+            artifactVersion: 1,
+            sourceNodeIds: ['node-a', 'node-b'],
+            sourceArtifactIds: ['script-1'],
+            payload: {
+              hasOwnProto: Object.prototype.hasOwnProperty.call(options, '__proto__'),
+              hasOrdinaryPrototype: Object.getPrototypeOf(options) === Object.prototype,
+              protoValue: options.__proto__,
+            },
+          }),
+        ],
+      }
+    })
+    const input = createInput()
+    input.options = createOwnProtoRecord({ polluted: true })
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      input,
+    )
+
+    assert.deepEqual(result.artifacts[0]?.payload, {
+      hasOwnProto: true,
+      hasOrdinaryPrototype: true,
+      protoValue: { polluted: true },
+    })
+  })
+
+  test('preserves an own enumerable __proto__ output key without changing prototypes', () => {
+    const payload = createOwnProtoRecord({ polluted: true })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      artifacts: [
+        createCreatorSkillArtifact({
+          artifactId: 'scenes-1',
+          artifactType: 'scene-list',
+          artifactVersion: 1,
+          sourceNodeIds: ['node-a', 'node-b'],
+          sourceArtifactIds: ['script-1'],
+          payload,
+        }),
+      ],
+    }))
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      createInput(),
+    )
+    const resultPayload = result.artifacts[0]?.payload as Record<string, unknown>
+
+    assert.ok(Object.prototype.hasOwnProperty.call(resultPayload, '__proto__'))
+    assert.equal(Object.getPrototypeOf(resultPayload), Object.prototype)
+    assert.deepEqual(resultPayload.__proto__, { polluted: true })
+    assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined)
   })
 
   test('does not expose caller-owned nested input to a mutating executor', () => {

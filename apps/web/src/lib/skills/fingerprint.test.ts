@@ -66,6 +66,17 @@ function createInput(): CreatorSkillRunInput {
   }
 }
 
+function createOwnProtoRecord(value: unknown): Record<string, unknown> {
+  const record: Record<string, unknown> = {}
+  Object.defineProperty(record, '__proto__', {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  })
+  return record
+}
+
 describe('executable Creator Skill contracts', () => {
   test('exposes the exact manifest, artifact, and run-result field names', () => {
     const manifest = {
@@ -431,6 +442,29 @@ describe('createCreatorSkillFingerprint', () => {
       Date.now = originalDateNow
       Math.random = originalRandom
     }
+  })
+
+  test('fingerprints an own enumerable __proto__ key as data without prototype mutation', () => {
+    const withProto = createInput()
+    withProto.options = createOwnProtoRecord({ polluted: true })
+    const withoutProto = createInput()
+    withoutProto.options = {}
+
+    const fingerprint = createCreatorSkillFingerprint(
+      'script-analysis',
+      '1.0.0',
+      withProto,
+    )
+
+    assert.notEqual(
+      fingerprint,
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', withoutProto),
+    )
+    assert.equal(
+      fingerprint,
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', withProto),
+    )
+    assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined)
   })
 })
 

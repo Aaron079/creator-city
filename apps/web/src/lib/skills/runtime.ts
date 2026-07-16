@@ -1,12 +1,14 @@
 import { isCreatorSkillArtifact } from './artifacts'
 import {
   CREATOR_EXECUTABLE_SKILL_REGISTRY,
+  createCreatorExecutableSkillRegistry,
   getExecutableCreatorSkillFromRegistry,
 } from './executable-registry'
 import { createCreatorSkillFingerprint } from './fingerprint'
 import type {
   CreatorExecutableSkill,
   CreatorSkillArtifact,
+  CreatorSkillEvidence,
   CreatorSkillIssue,
   CreatorSkillRunInput,
   CreatorSkillRunResult,
@@ -24,6 +26,19 @@ function compareStrings(left: string, right: string) {
   if (left < right) return -1
   if (left > right) return 1
   return 0
+}
+
+function defineEnumerableDataProperty(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+) {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  })
 }
 
 function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknown {
@@ -65,7 +80,7 @@ function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknow
   try {
     for (const key of Object.keys(objectValue).sort(compareStrings)) {
       const clonedValue = cloneInputValue((value as Record<string, unknown>)[key], active)
-      if (clonedValue !== undefined) clone[key] = clonedValue
+      if (clonedValue !== undefined) defineEnumerableDataProperty(clone, key, clonedValue)
     }
   } finally {
     active.delete(objectValue)
@@ -228,11 +243,112 @@ function hasSupportedInput(skill: CreatorExecutableSkill, input: CreatorSkillRun
     && !hasUnsupportedArtifact
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function hasExactFields(
+  record: Record<string, unknown>,
+  requiredFields: readonly string[],
+  optionalFields: readonly string[] = [],
+) {
+  const ownKeys = Reflect.ownKeys(record)
+  if (ownKeys.some((key) => typeof key !== 'string')) return false
+  const allowedFields = new Set([...requiredFields, ...optionalFields])
+  return requiredFields.every((field) => Object.prototype.hasOwnProperty.call(record, field))
+    && ownKeys.every((key) => allowedFields.has(key as string))
+}
+
+function normalizeOutputString(value: unknown, field: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new TypeError(`${field} must be a non-empty string`)
+  }
+  return value.trim()
+}
+
+function normalizeEvidence(
+  value: unknown,
+  sourceNodeIds: ReadonlySet<string>,
+): CreatorSkillEvidence {
+  const fields = [
+    'evidenceId',
+    'ruleId',
+    'sourceNodeId',
+    'lineStart',
+    'lineEnd',
+    'excerpt',
+    'explanation',
+  ] as const
+  if (!isPlainRecord(value) || !hasExactFields(value, fields)) {
+    throw new TypeError('Evidence must use the exact Creator Skill evidence shape')
+  }
+  const sourceNodeId = normalizeOutputString(value.sourceNodeId, 'evidence.sourceNodeId')
+  if (!sourceNodeIds.has(sourceNodeId)) {
+    throw new TypeError('Evidence sourceNodeId must reference an input source node')
+  }
+  if (!Number.isInteger(value.lineStart)
+    || !Number.isInteger(value.lineEnd)
+    || (value.lineStart as number) < 1
+    || (value.lineEnd as number) < (value.lineStart as number)) {
+    throw new TypeError('Evidence line range must be positive and ordered')
+  }
+
+  return {
+    evidenceId: normalizeOutputString(value.evidenceId, 'evidence.evidenceId'),
+    ruleId: normalizeOutputString(value.ruleId, 'evidence.ruleId'),
+    sourceNodeId,
+    lineStart: value.lineStart as number,
+    lineEnd: value.lineEnd as number,
+    excerpt: normalizeOutputString(value.excerpt, 'evidence.excerpt'),
+    explanation: normalizeOutputString(value.explanation, 'evidence.explanation'),
+  }
+}
+
+function normalizeIssue(
+  value: unknown,
+  sourceNodeIds: ReadonlySet<string>,
+  artifactIds: ReadonlySet<string>,
+): CreatorSkillIssue {
+  const requiredFields = ['code', 'message'] as const
+  const optionalFields = ['sourceNodeId', 'artifactId'] as const
+  if (!isPlainRecord(value) || !hasExactFields(value, requiredFields, optionalFields)) {
+    throw new TypeError('Issue must use the exact Creator Skill issue shape')
+  }
+
+  const issue: CreatorSkillIssue = {
+    code: normalizeOutputString(value.code, 'issue.code'),
+    message: normalizeOutputString(value.message, 'issue.message'),
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'sourceNodeId')) {
+    const sourceNodeId = normalizeOutputString(value.sourceNodeId, 'issue.sourceNodeId')
+    if (!sourceNodeIds.has(sourceNodeId)) {
+      throw new TypeError('Issue sourceNodeId must reference an input source node')
+    }
+    issue.sourceNodeId = sourceNodeId
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'artifactId')) {
+    const artifactId = normalizeOutputString(value.artifactId, 'issue.artifactId')
+    if (!artifactIds.has(artifactId)) {
+      throw new TypeError('Issue artifactId must reference an input or output Artifact')
+    }
+    issue.artifactId = artifactId
+  }
+  return issue
+}
+
+type NormalizedExecutionResult = Pick<
+  CreatorSkillRunResult,
+  'status' | 'artifacts' | 'evidence' | 'warnings' | 'blockers'
+>
+
 function normalizeExecutionResult(
   value: unknown,
   outputArtifactTypes: string[],
-): { result: CreatorSkillRunResult; artifacts: CreatorSkillArtifact[] } | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  input: CreatorSkillRunInput,
+): NormalizedExecutionResult | null {
+  if (!isPlainRecord(value)) return null
   const result = value as Partial<CreatorSkillRunResult>
   if (!['ready', 'needs-review', 'blocked'].includes(result.status ?? '')) return null
   if (!Array.isArray(result.artifacts)
@@ -242,12 +358,50 @@ function normalizeExecutionResult(
     return null
   }
   const artifacts = Array.from(result.artifacts, normalizeArtifact)
-  if (artifacts.some((artifact) => !outputArtifactTypes.includes(artifact.artifactType))) {
+  const sourceNodeIds = new Set(input.sourceNodes.map((node) => node.id))
+  const inputArtifactIds = new Set((input.artifacts ?? []).map((artifact) => artifact.artifactId))
+  const outputArtifactIds = new Set<string>()
+  const artifactIdsByType = new Map<string, Set<string>>()
+  for (const artifact of artifacts) {
+    if (!outputArtifactTypes.includes(artifact.artifactType)) return null
+    if (artifact.sourceNodeIds.some((sourceNodeId) => !sourceNodeIds.has(sourceNodeId))) {
+      return null
+    }
+    if (artifact.sourceArtifactIds.some((artifactId) => !inputArtifactIds.has(artifactId))) {
+      return null
+    }
+    const artifactIds = artifactIdsByType.get(artifact.artifactType) ?? new Set<string>()
+    if (artifactIds.has(artifact.artifactId)) return null
+    artifactIds.add(artifact.artifactId)
+    artifactIdsByType.set(artifact.artifactType, artifactIds)
+    outputArtifactIds.add(artifact.artifactId)
+  }
+
+  const knownArtifactIds = new Set([...inputArtifactIds, ...outputArtifactIds])
+  const evidence = Array.from(
+    result.evidence,
+    (entry) => normalizeEvidence(entry, sourceNodeIds),
+  )
+  const warnings = Array.from(
+    result.warnings,
+    (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
+  )
+  const blockers = Array.from(
+    result.blockers,
+    (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
+  )
+  if (result.status === 'blocked') {
+    if (artifacts.length > 0 || blockers.length === 0) return null
+  } else if (blockers.length > 0) {
     return null
   }
+
   return {
-    result: result as CreatorSkillRunResult,
+    status: result.status as CreatorSkillRunResult['status'],
     artifacts,
+    evidence,
+    warnings,
+    blockers,
   }
 }
 
@@ -272,9 +426,9 @@ export function runCreatorSkillFromRegistry(
     )
   }
 
-  let skill: CreatorExecutableSkill | null
+  let registeredSkill: CreatorExecutableSkill | null
   try {
-    skill = getExecutableCreatorSkillFromRegistry(registry, skillId, skillVersion)
+    registeredSkill = getExecutableCreatorSkillFromRegistry(registry, skillId, skillVersion)
   } catch {
     return blockedResult(
       normalizedSkillId,
@@ -284,13 +438,34 @@ export function runCreatorSkillFromRegistry(
       'Creator Skill lookup failed.',
     )
   }
-  if (!skill) {
+  if (!registeredSkill) {
     return blockedResult(
       normalizedSkillId,
       normalizedSkillVersion,
       FALLBACK_FINGERPRINT,
       'SKILL_NOT_FOUND',
       'Executable Creator Skill was not found.',
+    )
+  }
+
+  let skill: CreatorExecutableSkill
+  try {
+    const isolatedRegistry = createCreatorExecutableSkillRegistry([registeredSkill])
+    const isolatedSkill = isolatedRegistry.values().next().value
+    if (!isolatedSkill
+      || isolatedSkill.manifest.id !== normalizedSkillId
+      || (normalizedSkillVersion
+        && isolatedSkill.manifest.version !== normalizedSkillVersion)) {
+      throw new TypeError('Registry returned a mismatched Creator Skill')
+    }
+    skill = isolatedSkill
+  } catch {
+    return blockedResult(
+      normalizedSkillId,
+      normalizedSkillVersion,
+      FALLBACK_FINGERPRINT,
+      'INVALID_SKILL_INPUT',
+      'Creator Skill registration is invalid.',
     )
   }
 
@@ -337,7 +512,11 @@ export function runCreatorSkillFromRegistry(
   }
 
   try {
-    const normalizedExecution = normalizeExecutionResult(executionResult, outputArtifactTypes)
+    const normalizedExecution = normalizeExecutionResult(
+      executionResult,
+      outputArtifactTypes,
+      normalizedInput,
+    )
     if (!normalizedExecution) {
       return blockedResult(
         id,
@@ -349,14 +528,14 @@ export function runCreatorSkillFromRegistry(
     }
 
     return {
-      ...normalizedExecution.result,
       skillId: id,
       skillVersion: version,
       runFingerprint,
+      status: normalizedExecution.status,
       artifacts: normalizedExecution.artifacts,
-      evidence: [...normalizedExecution.result.evidence],
-      warnings: [...normalizedExecution.result.warnings],
-      blockers: [...normalizedExecution.result.blockers],
+      evidence: normalizedExecution.evidence,
+      warnings: normalizedExecution.warnings,
+      blockers: normalizedExecution.blockers,
     }
   } catch {
     return blockedResult(
