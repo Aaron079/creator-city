@@ -1,3 +1,5 @@
 export * from './types'
 export * from './default-skills'
 export * from './registry'
+export * from './artifacts'
+export * from './fingerprint'
