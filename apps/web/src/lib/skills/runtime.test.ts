@@ -453,6 +453,35 @@ describe('runCreatorSkillFromRegistry', () => {
     )
   })
 
+  test('classifies throwing input Artifact slots separately from source-node slots', () => {
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+    const artifactInput = createInput()
+    artifactInput.artifacts = new Proxy(artifactInput.artifacts!, {
+      get(target, property, receiver) {
+        if (property === '0') throw new Error('hostile Artifact slot')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const sourceNodeInput = createInput()
+    sourceNodeInput.sourceNodes = new Proxy(sourceNodeInput.sourceNodes, {
+      get(target, property, receiver) {
+        if (property === '0') throw new Error('hostile source-node slot')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    assert.doesNotThrow(() => {
+      assertBlocked(
+        runCreatorSkillFromRegistry(registry, 'test-skill', artifactInput),
+        'INVALID_SKILL_ARTIFACT',
+      )
+      assertBlocked(
+        runCreatorSkillFromRegistry(registry, 'test-skill', sourceNodeInput),
+        'INVALID_SKILL_INPUT',
+      )
+    })
+  })
+
   test('returns a controlled result when the Skill is missing', () => {
     assertBlocked(
       runCreatorSkill('missing', createInput()),

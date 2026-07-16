@@ -51,12 +51,25 @@ function transformDenseArray<T>(
     throw invalidArray(`${field} must be an array`)
   }
   const transformed: T[] = []
-  const length = value.length
+  let length: number
+  try {
+    length = value.length
+  } catch {
+    throw invalidArray(`${field} could not be read`)
+  }
   for (let index = 0; index < length; index += 1) {
-    if (!Object.prototype.hasOwnProperty.call(value, index)) {
+    let hasOwnSlot: boolean
+    let item: unknown
+    try {
+      hasOwnSlot = Object.prototype.hasOwnProperty.call(value, index)
+      if (hasOwnSlot) item = value[index]
+    } catch {
+      throw invalidArray(`${field}[${index}] could not be read`)
+    }
+    if (!hasOwnSlot) {
       throw invalidArray(`${field} must be a dense array`)
     }
-    transformed.push(transform(value[index]))
+    transformed.push(transform(item))
   }
   return transformed
 }
