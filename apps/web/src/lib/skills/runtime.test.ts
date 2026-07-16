@@ -382,6 +382,37 @@ describe('runCreatorSkillFromRegistry', () => {
     )
   })
 
+  test('classifies every throwing input Artifact accessor as an invalid Artifact', () => {
+    const fields = [
+      'artifactId',
+      'artifactType',
+      'artifactVersion',
+      'sourceNodeIds',
+      'sourceArtifactIds',
+      'payload',
+    ] as const
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+
+    for (const field of fields) {
+      const input = createInput()
+      const artifact = { ...input.artifacts![0]! }
+      Object.defineProperty(artifact, field, {
+        enumerable: true,
+        get() {
+          throw new Error(`hostile ${field} accessor`)
+        },
+      })
+      input.artifacts = [artifact]
+
+      assert.doesNotThrow(() => {
+        assertBlocked(
+          runCreatorSkillFromRegistry(registry, 'test-skill', input),
+          'INVALID_SKILL_ARTIFACT',
+        )
+      })
+    }
+  })
+
   test('classifies unsupported Artifact payload values as malformed Artifacts', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
@@ -576,6 +607,41 @@ describe('runCreatorSkillFromRegistry', () => {
       ),
       'INVALID_SKILL_OUTPUT',
     )
+  })
+
+  test('classifies every throwing output Artifact accessor as invalid output', () => {
+    const fields = [
+      'artifactId',
+      'artifactType',
+      'artifactVersion',
+      'sourceNodeIds',
+      'sourceArtifactIds',
+      'payload',
+    ] as const
+
+    for (const field of fields) {
+      const skill = createSkill({}, (_input, fingerprint) => {
+        const result = createResult('test-skill', '1.0.0', fingerprint)
+        Object.defineProperty(result.artifacts[0]!, field, {
+          enumerable: true,
+          get() {
+            throw new Error(`hostile ${field} accessor`)
+          },
+        })
+        return result
+      })
+
+      assert.doesNotThrow(() => {
+        assertBlocked(
+          runCreatorSkillFromRegistry(
+            createCreatorExecutableSkillRegistry([skill]),
+            'test-skill',
+            createInput(),
+          ),
+          'INVALID_SKILL_OUTPUT',
+        )
+      })
+    }
   })
 
   test('rejects output Artifacts with unsupported payload values', () => {

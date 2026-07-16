@@ -148,50 +148,50 @@ function normalizeSourceNode(value: unknown): CreatorSkillSourceNode {
 }
 
 function normalizeArtifact(value: unknown): CreatorSkillArtifact {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
-  }
-  const record = value as Record<string, unknown>
-  const invalidArtifact = (message: string) => new InvalidArtifactError(message)
-  const sourceNodeIds = transformDenseArray<string>(
-    record.sourceNodeIds,
-    'artifact.sourceNodeIds',
-    (id) => id as string,
-    invalidArtifact,
-  )
-  const sourceArtifactIds = transformDenseArray<string>(
-    record.sourceArtifactIds,
-    'artifact.sourceArtifactIds',
-    (id) => id as string,
-    invalidArtifact,
-  )
-  if (!Object.prototype.hasOwnProperty.call(record, 'payload')) {
-    throw new InvalidArtifactError('Artifact must include a payload')
-  }
-  const snapshot: CreatorSkillArtifact = {
-    artifactId: record.artifactId as string,
-    artifactType: record.artifactType as string,
-    artifactVersion: record.artifactVersion as number,
-    sourceNodeIds,
-    sourceArtifactIds,
-    payload: record.payload,
-  }
-  if (!isCreatorSkillArtifact(snapshot)) {
-    throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
-  }
-  let payload: unknown
   try {
-    payload = cloneInputValue(snapshot.payload)
-  } catch {
-    throw new InvalidArtifactError('Artifact payload must use supported input values')
-  }
-  return {
-    artifactId: snapshot.artifactId,
-    artifactType: snapshot.artifactType,
-    artifactVersion: snapshot.artifactVersion,
-    sourceNodeIds,
-    sourceArtifactIds,
-    payload,
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
+    }
+    const record = value as Record<string, unknown>
+    const invalidArtifact = (message: string) => new InvalidArtifactError(message)
+    const sourceNodeIds = transformDenseArray<string>(
+      record.sourceNodeIds,
+      'artifact.sourceNodeIds',
+      (id) => id as string,
+      invalidArtifact,
+    )
+    const sourceArtifactIds = transformDenseArray<string>(
+      record.sourceArtifactIds,
+      'artifact.sourceArtifactIds',
+      (id) => id as string,
+      invalidArtifact,
+    )
+    if (!Object.prototype.hasOwnProperty.call(record, 'payload')) {
+      throw new InvalidArtifactError('Artifact must include a payload')
+    }
+    const snapshot: CreatorSkillArtifact = {
+      artifactId: record.artifactId as string,
+      artifactType: record.artifactType as string,
+      artifactVersion: record.artifactVersion as number,
+      sourceNodeIds,
+      sourceArtifactIds,
+      payload: record.payload,
+    }
+    if (!isCreatorSkillArtifact(snapshot)) {
+      throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
+    }
+    const payload = cloneInputValue(snapshot.payload)
+    return {
+      artifactId: snapshot.artifactId,
+      artifactType: snapshot.artifactType,
+      artifactVersion: snapshot.artifactVersion,
+      sourceNodeIds,
+      sourceArtifactIds,
+      payload,
+    }
+  } catch (error) {
+    if (error instanceof InvalidArtifactError) throw error
+    throw new InvalidArtifactError('Artifact could not be normalized')
   }
 }
 
