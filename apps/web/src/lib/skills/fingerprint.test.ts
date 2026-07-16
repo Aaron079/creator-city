@@ -466,6 +466,72 @@ describe('createCreatorSkillFingerprint', () => {
     )
     assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined)
   })
+
+  test('uses indexed top-level source and Artifact elements instead of custom iterators', () => {
+    const hostile = createInput()
+    const clean = createInput()
+    const fakeSourceNode = {
+      id: 'fake-node',
+      kind: 'text' as const,
+      title: 'Fake',
+      prompt: 'Fake prompt',
+    }
+    const fakeArtifact = {
+      artifactId: 'fake-artifact',
+      artifactType: 'fake-type',
+      artifactVersion: 1,
+      sourceNodeIds: [] as string[],
+      sourceArtifactIds: [] as string[],
+      payload: {},
+    }
+    Object.defineProperty(hostile.sourceNodes, Symbol.iterator, {
+      value: function* iterator() {
+        yield fakeSourceNode
+      },
+    })
+    Object.defineProperty(hostile.artifacts!, Symbol.iterator, {
+      value: function* iterator() {
+        yield fakeArtifact
+      },
+    })
+
+    assert.equal(
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', hostile),
+      createCreatorSkillFingerprint('script-analysis', '1.0.0', clean),
+    )
+  })
+
+  test('uses indexed nested array elements instead of custom filter, map, or iteration', () => {
+    const hostileValues: unknown[] = [{ value: 1 }, { value: 2 }]
+    Object.defineProperties(hostileValues, {
+      filter: {
+        value() {
+          throw new Error('hostile filter')
+        },
+      },
+      map: {
+        value() {
+          throw new Error('hostile map')
+        },
+      },
+      [Symbol.iterator]: {
+        value() {
+          throw new Error('hostile iterator')
+        },
+      },
+    })
+    const hostile = createInput()
+    hostile.options = { values: hostileValues }
+    const clean = createInput()
+    clean.options = { values: [{ value: 1 }, { value: 2 }] }
+
+    assert.doesNotThrow(() => {
+      assert.equal(
+        createCreatorSkillFingerprint('script-analysis', '1.0.0', hostile),
+        createCreatorSkillFingerprint('script-analysis', '1.0.0', clean),
+      )
+    })
+  })
 })
 
 describe('Creator Skill artifacts', () => {
@@ -634,5 +700,67 @@ describe('Creator Skill artifacts', () => {
       sourceArtifactIds: [],
       payload: undefined,
     }), false)
+  })
+
+  test('constructs and guards source ID arrays from indexed elements only', () => {
+    const sourceNodeIds = ['node-b', 'node-a']
+    const sourceArtifactIds = ['parent-b', 'parent-a']
+    for (const ids of [sourceNodeIds, sourceArtifactIds]) {
+      Object.defineProperties(ids, {
+        map: {
+          value() {
+            throw new Error('hostile map')
+          },
+        },
+        [Symbol.iterator]: {
+          value() {
+            throw new Error('hostile iterator')
+          },
+        },
+      })
+    }
+
+    const artifact = createCreatorSkillArtifact({
+      artifactId: 'artifact-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds,
+      sourceArtifactIds,
+      payload: {},
+    })
+
+    assert.deepEqual(artifact.sourceNodeIds, ['node-a', 'node-b'])
+    assert.deepEqual(artifact.sourceArtifactIds, ['parent-a', 'parent-b'])
+    assert.equal(isCreatorSkillArtifact(artifact), true)
+  })
+
+  test('contains hostile source ID getters as controlled constructor and guard failures', () => {
+    const hostileIds = new Proxy(['node-a'], {
+      get(target, property, receiver) {
+        if (property === '0') throw new Error('hostile index getter')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    assert.throws(
+      () => createCreatorSkillArtifact({
+        artifactId: 'artifact-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: hostileIds,
+        payload: {},
+      }),
+      { name: 'TypeError' },
+    )
+    assert.doesNotThrow(() => {
+      assert.equal(isCreatorSkillArtifact({
+        artifactId: 'artifact-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: hostileIds,
+        sourceArtifactIds: [],
+        payload: {},
+      }), false)
+    })
   })
 })

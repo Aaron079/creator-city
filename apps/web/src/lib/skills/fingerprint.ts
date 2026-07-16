@@ -19,9 +19,25 @@ function compareArtifacts(left: CreatorSkillArtifact, right: CreatorSkillArtifac
   return typeOrder || compareStrings(left.artifactId, right.artifactId)
 }
 
+function copyDenseArray<T>(value: unknown, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${field} must be an array`)
+  }
+  const copy: T[] = []
+  const length = value.length
+  for (let index = 0; index < length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) {
+      throw new TypeError(`${field} must be a dense array`)
+    }
+    copy.push(value[index] as T)
+  }
+  return copy
+}
+
 function assertUniqueSourceNodeIds(sourceNodes: CreatorSkillSourceNode[]) {
   const ids = new Set<string>()
-  for (const sourceNode of sourceNodes) {
+  for (let index = 0; index < sourceNodes.length; index += 1) {
+    const sourceNode = sourceNodes[index]!
     if (ids.has(sourceNode.id)) {
       throw new TypeError(`Duplicate source node id: ${sourceNode.id}`)
     }
@@ -31,7 +47,8 @@ function assertUniqueSourceNodeIds(sourceNodes: CreatorSkillSourceNode[]) {
 
 function assertUniqueArtifactIdentities(artifacts: CreatorSkillArtifact[]) {
   const idsByType = new Map<string, Set<string>>()
-  for (const artifact of artifacts) {
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = artifacts[index]!
     const ids = idsByType.get(artifact.artifactType) ?? new Set<string>()
     if (ids.has(artifact.artifactId)) {
       throw new TypeError(
@@ -85,9 +102,14 @@ function canonicalize(value: unknown, active = new WeakSet<object>()): unknown {
   if (Array.isArray(value)) {
     active.add(objectValue)
     try {
-      return value
-        .filter((item) => item !== undefined)
-        .map((item) => canonicalize(item, active))
+      const normalized: unknown[] = []
+      const length = value.length
+      for (let index = 0; index < length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) continue
+        const item = value[index]
+        if (item !== undefined) normalized.push(canonicalize(item, active))
+      }
+      return normalized
     } finally {
       active.delete(objectValue)
     }
@@ -130,14 +152,21 @@ export function createCreatorSkillFingerprint(
   skillVersion: string,
   input: CreatorSkillRunInput,
 ): string {
-  assertUniqueSourceNodeIds(input.sourceNodes)
-  if (input.artifacts) assertUniqueArtifactIdentities(input.artifacts)
+  const sourceNodes = copyDenseArray<CreatorSkillSourceNode>(input.sourceNodes, 'sourceNodes')
+  const artifacts = input.artifacts === undefined
+    ? undefined
+    : copyDenseArray<CreatorSkillArtifact>(input.artifacts, 'artifacts')
+  assertUniqueSourceNodeIds(sourceNodes)
+  if (artifacts) assertUniqueArtifactIdentities(artifacts)
+
+  sourceNodes.sort(compareSourceNodes)
+  artifacts?.sort(compareArtifacts)
 
   const orderedInput: CreatorSkillRunInput = {
     ...input,
-    sourceNodes: [...input.sourceNodes].sort(compareSourceNodes),
-    ...(input.artifacts
-      ? { artifacts: [...input.artifacts].sort(compareArtifacts) }
+    sourceNodes,
+    ...(artifacts
+      ? { artifacts }
       : {}),
   }
   const serialized = JSON.stringify(canonicalize({

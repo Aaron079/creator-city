@@ -41,6 +41,26 @@ function defineEnumerableDataProperty(
   })
 }
 
+function transformDenseArray<T>(
+  value: unknown,
+  field: string,
+  transform: (item: unknown) => T,
+  invalidArray: (message: string) => Error = (message) => new TypeError(message),
+): T[] {
+  if (!Array.isArray(value)) {
+    throw invalidArray(`${field} must be an array`)
+  }
+  const transformed: T[] = []
+  const length = value.length
+  for (let index = 0; index < length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) {
+      throw invalidArray(`${field} must be a dense array`)
+    }
+    transformed.push(transform(value[index]))
+  }
+  return transformed
+}
+
 function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknown {
   if (value === null) return null
 
@@ -59,9 +79,14 @@ function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknow
   if (Array.isArray(value)) {
     active.add(objectValue)
     try {
-      return value
-        .filter((item) => item !== undefined)
-        .map((item) => cloneInputValue(item, active))
+      const clone: unknown[] = []
+      const length = value.length
+      for (let index = 0; index < length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) continue
+        const item = value[index]
+        if (item !== undefined) clone.push(cloneInputValue(item, active))
+      }
+      return clone
     } finally {
       active.delete(objectValue)
     }
@@ -123,21 +148,49 @@ function normalizeSourceNode(value: unknown): CreatorSkillSourceNode {
 }
 
 function normalizeArtifact(value: unknown): CreatorSkillArtifact {
-  if (!isCreatorSkillArtifact(value)) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
+  }
+  const record = value as Record<string, unknown>
+  const invalidArtifact = (message: string) => new InvalidArtifactError(message)
+  const sourceNodeIds = transformDenseArray<string>(
+    record.sourceNodeIds,
+    'artifact.sourceNodeIds',
+    (id) => id as string,
+    invalidArtifact,
+  )
+  const sourceArtifactIds = transformDenseArray<string>(
+    record.sourceArtifactIds,
+    'artifact.sourceArtifactIds',
+    (id) => id as string,
+    invalidArtifact,
+  )
+  if (!Object.prototype.hasOwnProperty.call(record, 'payload')) {
+    throw new InvalidArtifactError('Artifact must include a payload')
+  }
+  const snapshot: CreatorSkillArtifact = {
+    artifactId: record.artifactId as string,
+    artifactType: record.artifactType as string,
+    artifactVersion: record.artifactVersion as number,
+    sourceNodeIds,
+    sourceArtifactIds,
+    payload: record.payload,
+  }
+  if (!isCreatorSkillArtifact(snapshot)) {
     throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
   }
   let payload: unknown
   try {
-    payload = cloneInputValue(value.payload)
+    payload = cloneInputValue(snapshot.payload)
   } catch {
     throw new InvalidArtifactError('Artifact payload must use supported input values')
   }
   return {
-    artifactId: value.artifactId,
-    artifactType: value.artifactType,
-    artifactVersion: value.artifactVersion,
-    sourceNodeIds: [...value.sourceNodeIds],
-    sourceArtifactIds: [...value.sourceArtifactIds],
+    artifactId: snapshot.artifactId,
+    artifactType: snapshot.artifactType,
+    artifactVersion: snapshot.artifactVersion,
+    sourceNodeIds,
+    sourceArtifactIds,
     payload,
   }
 }
@@ -167,10 +220,12 @@ function normalizeRunInput(value: CreatorSkillRunInput): CreatorSkillRunInput {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Creator Skill input must be an object')
   }
-  if (!Array.isArray(value.sourceNodes)) {
+  const inputSourceNodes = value.sourceNodes
+  const inputArtifacts = value.artifacts
+  if (!Array.isArray(inputSourceNodes)) {
     throw new TypeError('sourceNodes must be an array')
   }
-  if (value.artifacts !== undefined && !Array.isArray(value.artifacts)) {
+  if (inputArtifacts !== undefined && !Array.isArray(inputArtifacts)) {
     throw new InvalidArtifactError('artifacts must be an array')
   }
   if (value.options !== undefined) {
@@ -180,16 +235,24 @@ function normalizeRunInput(value: CreatorSkillRunInput): CreatorSkillRunInput {
     }
   }
 
-  const sourceNodes = value.sourceNodes
-    .map(normalizeSourceNode)
-    .sort((left, right) => compareStrings(left.id, right.id))
-  const artifacts = value.artifacts
-    ? Array.from(value.artifacts, normalizeArtifact)
-    .sort((left, right) => (
+  const sourceNodes = transformDenseArray(
+    inputSourceNodes,
+    'sourceNodes',
+    normalizeSourceNode,
+  )
+  sourceNodes.sort((left, right) => compareStrings(left.id, right.id))
+  const artifacts = inputArtifacts
+    ? transformDenseArray(
+      inputArtifacts,
+      'artifacts',
+      normalizeArtifact,
+      (message) => new InvalidArtifactError(message),
+    )
+    : undefined
+  artifacts?.sort((left, right) => (
       compareStrings(left.artifactType, right.artifactType)
       || compareStrings(left.artifactId, right.artifactId)
     ))
-    : undefined
 
   return {
     sourceNodes,
@@ -352,21 +415,29 @@ type NormalizedExecutionResult = Pick<
 
 function normalizeExecutionResult(
   value: unknown,
-  outputArtifactTypes: string[],
-  input: CreatorSkillRunInput,
+  outputArtifactTypes: readonly string[],
+  sourceNodeIds: ReadonlySet<string>,
+  inputArtifactIds: ReadonlySet<string>,
 ): NormalizedExecutionResult | null {
   if (!isPlainRecord(value)) return null
   const result = value as Partial<CreatorSkillRunResult>
-  if (!['ready', 'needs-review', 'blocked'].includes(result.status ?? '')) return null
-  if (!Array.isArray(result.artifacts)
-    || !Array.isArray(result.evidence)
-    || !Array.isArray(result.warnings)
-    || !Array.isArray(result.blockers)) {
+  const status = result.status
+  const resultArtifacts = result.artifacts
+  const resultEvidence = result.evidence
+  const resultWarnings = result.warnings
+  const resultBlockers = result.blockers
+  if (!['ready', 'needs-review', 'blocked'].includes(status ?? '')) return null
+  if (!Array.isArray(resultArtifacts)
+    || !Array.isArray(resultEvidence)
+    || !Array.isArray(resultWarnings)
+    || !Array.isArray(resultBlockers)) {
     return null
   }
-  const artifacts = Array.from(result.artifacts, normalizeArtifact)
-  const sourceNodeIds = new Set(input.sourceNodes.map((node) => node.id))
-  const inputArtifactIds = new Set((input.artifacts ?? []).map((artifact) => artifact.artifactId))
+  const artifacts = transformDenseArray(
+    resultArtifacts,
+    'result.artifacts',
+    normalizeArtifact,
+  )
   const outputArtifactIds = new Set<string>()
   const artifactIdsByType = new Map<string, Set<string>>()
   for (const artifact of artifacts) {
@@ -385,26 +456,29 @@ function normalizeExecutionResult(
   }
 
   const knownArtifactIds = new Set([...inputArtifactIds, ...outputArtifactIds])
-  const evidence = Array.from(
-    result.evidence,
+  const evidence = transformDenseArray(
+    resultEvidence,
+    'result.evidence',
     (entry) => normalizeEvidence(entry, sourceNodeIds),
   )
-  const warnings = Array.from(
-    result.warnings,
+  const warnings = transformDenseArray(
+    resultWarnings,
+    'result.warnings',
     (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
   )
-  const blockers = Array.from(
-    result.blockers,
+  const blockers = transformDenseArray(
+    resultBlockers,
+    'result.blockers',
     (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
   )
-  if (result.status === 'blocked') {
+  if (status === 'blocked') {
     if (artifacts.length > 0 || blockers.length === 0) return null
   } else if (blockers.length > 0) {
     return null
   }
 
   return {
-    status: result.status as CreatorSkillRunResult['status'],
+    status: status as CreatorSkillRunResult['status'],
     artifacts,
     evidence,
     warnings,
@@ -505,6 +579,18 @@ export function runCreatorSkillFromRegistry(
     )
   }
 
+  const inputSourceNodeIds = new Set<string>()
+  for (let index = 0; index < normalizedInput.sourceNodes.length; index += 1) {
+    inputSourceNodeIds.add(normalizedInput.sourceNodes[index]!.id)
+  }
+  const inputArtifactIds = new Set<string>()
+  const normalizedArtifacts = normalizedInput.artifacts
+  if (normalizedArtifacts) {
+    for (let index = 0; index < normalizedArtifacts.length; index += 1) {
+      inputArtifactIds.add(normalizedArtifacts[index]!.artifactId)
+    }
+  }
+
   let executionResult: CreatorSkillRunResult
   try {
     executionResult = skill.run(normalizedInput, runFingerprint)
@@ -522,7 +608,8 @@ export function runCreatorSkillFromRegistry(
     const normalizedExecution = normalizeExecutionResult(
       executionResult,
       outputArtifactTypes,
-      normalizedInput,
+      inputSourceNodeIds,
+      inputArtifactIds,
     )
     if (!normalizedExecution) {
       return blockedResult(

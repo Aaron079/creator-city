@@ -17,11 +17,29 @@ function normalizeRequiredIdentifier(value: unknown, field: string) {
 }
 
 function normalizeSourceIdentifiers(value: unknown, field: string) {
-  if (!Array.isArray(value)) {
-    throw new TypeError(`${field} must be an array`)
+  try {
+    if (!Array.isArray(value)) {
+      throw new TypeError(`${field} must be an array`)
+    }
+    const normalized: string[] = []
+    const seen = new Set<string>()
+    const length = value.length
+    for (let index = 0; index < length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new TypeError(`${field} must be a dense array`)
+      }
+      const id = normalizeRequiredIdentifier(value[index], field)
+      if (!seen.has(id)) {
+        seen.add(id)
+        normalized.push(id)
+      }
+    }
+    normalized.sort()
+    return normalized
+  } catch (error) {
+    if (error instanceof TypeError) throw error
+    throw new TypeError(`${field} could not be read`)
   }
-
-  return [...new Set(value.map((id) => normalizeRequiredIdentifier(id, field)))].sort()
 }
 
 function isTrimmedIdentifier(value: unknown): value is string {
@@ -31,14 +49,19 @@ function isTrimmedIdentifier(value: unknown): value is string {
 }
 
 function isCanonicalIdentifierArray(value: unknown): value is string[] {
-  if (!Array.isArray(value)) return false
-
-  for (let index = 0; index < value.length; index += 1) {
-    const id = value[index]
-    if (!isTrimmedIdentifier(id)) return false
-    if (index > 0 && value[index - 1] >= id) return false
+  try {
+    if (!Array.isArray(value)) return false
+    const length = value.length
+    for (let index = 0; index < length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) return false
+      const id = value[index]
+      if (!isTrimmedIdentifier(id)) return false
+      if (index > 0 && value[index - 1] >= id) return false
+    }
+    return true
+  } catch {
+    return false
   }
-  return true
 }
 
 export function createCreatorSkillArtifact<T>(
@@ -62,16 +85,20 @@ export function createCreatorSkillArtifact<T>(
 }
 
 export function isCreatorSkillArtifact(value: unknown): value is CreatorSkillArtifact {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
 
-  const artifact = value as Record<string, unknown>
-  return isTrimmedIdentifier(artifact.artifactId)
-    && isTrimmedIdentifier(artifact.artifactType)
-    && typeof artifact.artifactVersion === 'number'
-    && Number.isInteger(artifact.artifactVersion)
-    && artifact.artifactVersion > 0
-    && isCanonicalIdentifierArray(artifact.sourceNodeIds)
-    && isCanonicalIdentifierArray(artifact.sourceArtifactIds)
-    && Object.prototype.hasOwnProperty.call(artifact, 'payload')
-    && artifact.payload !== undefined
+    const artifact = value as Record<string, unknown>
+    return isTrimmedIdentifier(artifact.artifactId)
+      && isTrimmedIdentifier(artifact.artifactType)
+      && typeof artifact.artifactVersion === 'number'
+      && Number.isInteger(artifact.artifactVersion)
+      && artifact.artifactVersion > 0
+      && isCanonicalIdentifierArray(artifact.sourceNodeIds)
+      && isCanonicalIdentifierArray(artifact.sourceArtifactIds)
+      && Object.prototype.hasOwnProperty.call(artifact, 'payload')
+      && artifact.payload !== undefined
+  } catch {
+    return false
+  }
 }

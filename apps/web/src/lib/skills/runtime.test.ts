@@ -258,6 +258,55 @@ describe('createCreatorExecutableSkillRegistry', () => {
     assert.equal(registered.manifest.name, name)
     assert.equal(registered.manifest.description, description)
   })
+
+  test('registers indexed Skill and manifest array elements without custom iteration', () => {
+    const skill = createSkill({
+      acceptedNodeKinds: ['text', 'image'],
+      acceptedArtifactTypes: ['script', 'outline'],
+      outputArtifactTypes: ['scene-list', 'shot-list'],
+    })
+    const manifestArrays = [
+      skill.manifest.acceptedNodeKinds,
+      skill.manifest.acceptedArtifactTypes,
+      skill.manifest.outputArtifactTypes,
+    ]
+    for (const values of manifestArrays) {
+      Object.defineProperty(values, Symbol.iterator, {
+        value() {
+          throw new Error('hostile manifest iterator')
+        },
+      })
+    }
+    const skills = [skill]
+    Object.defineProperty(skills, Symbol.iterator, {
+      value() {
+        throw new Error('hostile Skills iterator')
+      },
+    })
+
+    const registry = createCreatorExecutableSkillRegistry(skills)
+    const registered = getExecutableCreatorSkillFromRegistry(registry, 'test-skill')!
+
+    assert.deepEqual(registered.manifest.acceptedNodeKinds, ['text', 'image'])
+    assert.deepEqual(registered.manifest.acceptedArtifactTypes, ['script', 'outline'])
+    assert.deepEqual(registered.manifest.outputArtifactTypes, ['scene-list', 'shot-list'])
+  })
+
+  test('contains hostile manifest array getters as controlled registry failures', () => {
+    const hostileNodeKinds = new Proxy(['text'] as Array<'text'>, {
+      get(target, property, receiver) {
+        if (property === '0') throw new Error('hostile manifest index')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    assert.throws(
+      () => createCreatorExecutableSkillRegistry([
+        createSkill({ acceptedNodeKinds: hostileNodeKinds }),
+      ]),
+      { name: 'TypeError' },
+    )
+  })
 })
 
 describe('runCreatorSkillFromRegistry', () => {
@@ -1061,6 +1110,136 @@ describe('runCreatorSkillFromRegistry', () => {
     runCreatorSkillFromRegistry(registry, 'test-skill', input)
 
     assert.deepEqual(input, snapshot)
+  })
+
+  test('copies runtime input from indexed elements before a mutating executor runs', () => {
+    const input = createInput()
+    const callerSourceNodes = input.sourceNodes
+    const callerNestedValues = [{ value: 1 }]
+    input.options = { nestedValues: callerNestedValues }
+    Object.defineProperty(callerSourceNodes, 'map', {
+      value() {
+        return [callerSourceNodes[0]!, callerSourceNodes[1]!]
+      },
+    })
+    Object.defineProperties(callerNestedValues, {
+      filter: {
+        value() {
+          return callerNestedValues
+        },
+      },
+      map: {
+        value() {
+          return callerNestedValues
+        },
+      },
+    })
+    const originalNodePrompt = callerSourceNodes.find((node) => node.id === 'node-a')!.prompt
+    const skill = createSkill({}, (ownedInput, fingerprint) => {
+      ownedInput.sourceNodes[0]!.prompt = 'executor mutation'
+      const nestedValues = ownedInput.options!.nestedValues as Array<{ value: number }>
+      nestedValues[0]!.value = 99
+      return createResult('test-skill', '1.0.0', fingerprint)
+    })
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      input,
+    )
+
+    assert.equal(result.status, 'ready')
+    assert.equal(
+      callerSourceNodes.find((node) => node.id === 'node-a')!.prompt,
+      originalNodePrompt,
+    )
+    assert.equal(callerNestedValues[0]!.value, 1)
+  })
+
+  test('normalizes runtime input Artifacts by indexed slots without custom iteration', () => {
+    const input = createInput()
+    Object.defineProperty(input.artifacts!, Symbol.iterator, {
+      value() {
+        throw new Error('hostile input Artifact iterator')
+      },
+    })
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+
+    const result = runCreatorSkillFromRegistry(registry, 'test-skill', input)
+
+    assert.equal(result.status, 'ready')
+    assert.equal(result.artifacts.length, 1)
+  })
+
+  test('normalizes output collections by indexed slots without custom iteration', () => {
+    const skill = createSkill({}, (_input, fingerprint) => {
+      const result = createResult('test-skill', '1.0.0', fingerprint)
+      const outputArrays = [
+        result.artifacts,
+        result.evidence,
+        result.warnings,
+        result.blockers,
+      ]
+      for (const values of outputArrays) {
+        Object.defineProperty(values, Symbol.iterator, {
+          value() {
+            throw new Error('hostile output iterator')
+          },
+        })
+      }
+      return result
+    })
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      createInput(),
+    )
+
+    assert.equal(result.status, 'ready')
+    assert.equal(result.artifacts.length, 1)
+  })
+
+  test('deep-clones nested output arrays without caller-controlled filter or map', () => {
+    const executorValues = [{ value: 1 }]
+    Object.defineProperties(executorValues, {
+      filter: {
+        value() {
+          return executorValues
+        },
+      },
+      map: {
+        value() {
+          return executorValues
+        },
+      },
+    })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      artifacts: [
+        createCreatorSkillArtifact({
+          artifactId: 'scenes-1',
+          artifactType: 'scene-list',
+          artifactVersion: 1,
+          sourceNodeIds: ['node-a', 'node-b'],
+          sourceArtifactIds: ['script-1'],
+          payload: { values: executorValues },
+        }),
+      ],
+    }))
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      createInput(),
+    )
+    const outputValues = (result.artifacts[0]?.payload as {
+      values: Array<{ value: number }>
+    }).values
+
+    executorValues[0]!.value = 99
+    assert.equal(outputValues[0]!.value, 1)
+    assert.notEqual(outputValues, executorValues)
   })
 
   test('contains fingerprint normalization failures with a stable fallback fingerprint', () => {

@@ -31,27 +31,59 @@ function validateMeaningfulText(value: unknown, field: string) {
   return value
 }
 
+function copyDenseArray<T>(value: unknown, field: string): T[] {
+  try {
+    if (!Array.isArray(value)) {
+      throw new TypeError(`${field} must be an array`)
+    }
+    const copy: T[] = []
+    const length = value.length
+    for (let index = 0; index < length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new TypeError(`${field} must be a dense array`)
+      }
+      copy.push(value[index] as T)
+    }
+    return copy
+  } catch (error) {
+    if (error instanceof TypeError) throw error
+    throw new TypeError(`${field} could not be read`)
+  }
+}
+
 function normalizeArtifactTypes(value: unknown, field: string, requireOne = false) {
-  if (!Array.isArray(value) || (requireOne && value.length === 0)) {
+  const artifactTypes = copyDenseArray<unknown>(value, field)
+  if (requireOne && artifactTypes.length === 0) {
     throw new TypeError(`${field} must be ${requireOne ? 'a non-empty' : 'an'} array`)
   }
 
-  return [...new Set(
-    Array.from(value, (artifactType) => normalizeIdentifier(artifactType, field)),
-  )]
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (let index = 0; index < artifactTypes.length; index += 1) {
+    const artifactType = normalizeIdentifier(artifactTypes[index], field)
+    if (!seen.has(artifactType)) {
+      seen.add(artifactType)
+      normalized.push(artifactType)
+    }
+  }
+  return normalized
 }
 
 function normalizeNodeKinds(value: unknown) {
-  if (!Array.isArray(value)) {
-    throw new TypeError('acceptedNodeKinds must be an array')
-  }
-  const nodeKinds = Array.from(value)
-  for (const kind of nodeKinds) {
+  const nodeKinds = copyDenseArray<unknown>(value, 'acceptedNodeKinds')
+  const normalized: CreatorSkillTarget[] = []
+  const seen = new Set<CreatorSkillTarget>()
+  for (let index = 0; index < nodeKinds.length; index += 1) {
+    const kind = nodeKinds[index]
     if (!CREATOR_SKILL_TARGETS.has(kind as CreatorSkillTarget)) {
       throw new TypeError(`Invalid accepted node kind: ${String(kind)}`)
     }
+    if (!seen.has(kind as CreatorSkillTarget)) {
+      seen.add(kind as CreatorSkillTarget)
+      normalized.push(kind as CreatorSkillTarget)
+    }
   }
-  return [...new Set(nodeKinds)] as CreatorSkillTarget[]
+  return normalized
 }
 
 function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest {
@@ -106,18 +138,24 @@ function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest
 function createReadonlyMapFacade(
   backing: Map<string, CreatorExecutableSkill>,
 ): ReadonlyMap<string, CreatorExecutableSkill> {
-  let facade: ReadonlyMap<string, CreatorExecutableSkill>
-  const view: ReadonlyMap<string, CreatorExecutableSkill> = {
+  const facade: ReadonlyMap<string, CreatorExecutableSkill> = Object.freeze({
     get size() {
       return backing.size
     },
-    get(key) {
+    get(key: string) {
       return backing.get(key)
     },
-    has(key) {
+    has(key: string) {
       return backing.has(key)
     },
-    forEach(callback, thisArg) {
+    forEach(
+      callback: (
+        value: CreatorExecutableSkill,
+        key: string,
+        map: ReadonlyMap<string, CreatorExecutableSkill>,
+      ) => void,
+      thisArg?: unknown,
+    ) {
       backing.forEach((value, key) => callback.call(thisArg, value, key, facade))
     },
     entries() {
@@ -132,8 +170,7 @@ function createReadonlyMapFacade(
     [Symbol.iterator]() {
       return backing[Symbol.iterator]()
     },
-  }
-  facade = Object.freeze(view)
+  })
   return facade
 }
 
@@ -159,8 +196,10 @@ export function createCreatorExecutableSkillRegistry(
   skills: CreatorExecutableSkill[],
 ): ReadonlyMap<string, CreatorExecutableSkill> {
   const registry = new Map<string, CreatorExecutableSkill>()
+  const skillList = copyDenseArray<CreatorExecutableSkill>(skills, 'skills')
 
-  for (const skill of skills) {
+  for (let index = 0; index < skillList.length; index += 1) {
+    const skill = skillList[index]!
     if (!skill || typeof skill !== 'object') {
       throw new TypeError('Executable Creator Skill must include a manifest and run function')
     }
