@@ -232,8 +232,8 @@ describe('createCreatorExecutableSkillRegistry', () => {
     skill.manifest.acceptedArtifactTypes.push('mutated')
     skill.manifest.outputArtifactTypes.push('mutated')
 
-    assert.equal(registered.manifest.name, 'Frozen skill')
-    assert.equal(registered.manifest.description, 'Frozen description')
+    assert.equal(registered.manifest.name, '  Frozen skill  ')
+    assert.equal(registered.manifest.description, '  Frozen description  ')
     assert.deepEqual(registered.manifest.acceptedNodeKinds, ['text', 'image'])
     assert.deepEqual(registered.manifest.acceptedArtifactTypes, ['script', 'outline'])
     assert.deepEqual(registered.manifest.outputArtifactTypes, ['scene-list', 'shot-list'])
@@ -245,6 +245,18 @@ describe('createCreatorExecutableSkillRegistry', () => {
     assert.ok(Object.isFrozen(registered.manifest))
     assert.ok(Object.isFrozen(registered.manifest.acceptedNodeKinds))
     assert.throws(() => registered.manifest.outputArtifactTypes.push('mutated'))
+  })
+
+  test('preserves exact non-empty manifest display text', () => {
+    const name = '  Display\nname  '
+    const description = '  Description with  deliberate spacing.\n  '
+    const registry = createCreatorExecutableSkillRegistry([
+      createSkill({ name, description }),
+    ])
+    const registered = getExecutableCreatorSkillFromRegistry(registry, 'test-skill')!
+
+    assert.equal(registered.manifest.name, name)
+    assert.equal(registered.manifest.description, description)
   })
 })
 
@@ -688,8 +700,51 @@ describe('runCreatorSkillFromRegistry', () => {
       createInput(),
     )
 
-    assert.deepEqual(normalized.evidence, [validEvidence])
-    assert.deepEqual(normalized.warnings, [validIssue])
+    assert.deepEqual(normalized.evidence, [{
+      ...validEvidence,
+      excerpt: ' Opening excerpt ',
+      explanation: ' Supports the scene split. ',
+    }])
+    assert.deepEqual(normalized.warnings, [{
+      ...validIssue,
+      message: ' Review the opening scene. ',
+    }])
+  })
+
+  test('preserves exact non-empty evidence and issue prose', () => {
+    const excerpt = '  Opening\nexcerpt  '
+    const explanation = '  Supports  the scene split.\n  '
+    const message = '  Review\nthis  scene.  '
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      evidence: [{
+        evidenceId: ' evidence-1 ',
+        ruleId: ' rule-1 ',
+        sourceNodeId: ' node-a ',
+        lineStart: 1,
+        lineEnd: 2,
+        excerpt,
+        explanation,
+      }],
+      warnings: [{
+        code: ' REVIEW_SCENE ',
+        message,
+        sourceNodeId: ' node-a ',
+        artifactId: ' scenes-1 ',
+      }],
+    }))
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      createInput(),
+    )
+
+    assert.equal(result.evidence[0]?.evidenceId, 'evidence-1')
+    assert.equal(result.evidence[0]?.excerpt, excerpt)
+    assert.equal(result.evidence[0]?.explanation, explanation)
+    assert.equal(result.warnings[0]?.code, 'REVIEW_SCENE')
+    assert.equal(result.warnings[0]?.message, message)
   })
 
   test('rejects duplicate and invalid-provenance output Artifacts', () => {

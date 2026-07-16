@@ -24,6 +24,13 @@ function normalizeIdentifier(value: unknown, field: string) {
   return value.trim()
 }
 
+function validateMeaningfulText(value: unknown, field: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new TypeError(`${field} must be a non-empty string`)
+  }
+  return value
+}
+
 function normalizeArtifactTypes(value: unknown, field: string, requireOne = false) {
   if (!Array.isArray(value) || (requireOne && value.length === 0)) {
     throw new TypeError(`${field} must be ${requireOne ? 'a non-empty' : 'an'} array`)
@@ -49,8 +56,8 @@ function normalizeNodeKinds(value: unknown) {
 
 function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest {
   const id = normalizeIdentifier(manifest.id, 'manifest.id')
-  const name = normalizeIdentifier(manifest.name, 'manifest.name')
-  const description = normalizeIdentifier(manifest.description, 'manifest.description')
+  const name = validateMeaningfulText(manifest.name, 'manifest.name')
+  const description = validateMeaningfulText(manifest.description, 'manifest.description')
   const version = manifest.version
   const category = manifest.category
   const executionPolicy = manifest.executionPolicy

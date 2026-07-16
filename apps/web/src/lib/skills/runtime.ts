@@ -268,6 +268,13 @@ function normalizeOutputString(value: unknown, field: string) {
   return value.trim()
 }
 
+function preserveOutputText(value: unknown, field: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new TypeError(`${field} must be a non-empty string`)
+  }
+  return value
+}
+
 function normalizeEvidence(
   value: unknown,
   sourceNodeIds: ReadonlySet<string>,
@@ -301,8 +308,8 @@ function normalizeEvidence(
     sourceNodeId,
     lineStart: value.lineStart as number,
     lineEnd: value.lineEnd as number,
-    excerpt: normalizeOutputString(value.excerpt, 'evidence.excerpt'),
-    explanation: normalizeOutputString(value.explanation, 'evidence.explanation'),
+    excerpt: preserveOutputText(value.excerpt, 'evidence.excerpt'),
+    explanation: preserveOutputText(value.explanation, 'evidence.explanation'),
   }
 }
 
@@ -319,7 +326,7 @@ function normalizeIssue(
 
   const issue: CreatorSkillIssue = {
     code: normalizeOutputString(value.code, 'issue.code'),
-    message: normalizeOutputString(value.message, 'issue.message'),
+    message: preserveOutputText(value.message, 'issue.message'),
   }
   if (Object.prototype.hasOwnProperty.call(value, 'sourceNodeId')) {
     const sourceNodeId = normalizeOutputString(value.sourceNodeId, 'issue.sourceNodeId')
