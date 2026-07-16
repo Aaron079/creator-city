@@ -19,19 +19,20 @@ function normalizeArtifactTypes(value: unknown, field: string, requireOne = fals
     throw new TypeError(`${field} must be ${requireOne ? 'a non-empty' : 'an'} array`)
   }
 
-  return value.map((artifactType) => normalizeIdentifier(artifactType, field))
+  return Array.from(value, (artifactType) => normalizeIdentifier(artifactType, field))
 }
 
 function normalizeNodeKinds(value: unknown) {
   if (!Array.isArray(value)) {
     throw new TypeError('acceptedNodeKinds must be an array')
   }
-  for (const kind of value) {
+  const nodeKinds = Array.from(value)
+  for (const kind of nodeKinds) {
     if (!CREATOR_SKILL_TARGETS.has(kind as CreatorSkillTarget)) {
       throw new TypeError(`Invalid accepted node kind: ${String(kind)}`)
     }
   }
-  return [...value] as CreatorSkillTarget[]
+  return nodeKinds as CreatorSkillTarget[]
 }
 
 function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest {

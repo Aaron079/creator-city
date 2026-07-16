@@ -169,11 +169,12 @@ function normalizeRunInput(value: CreatorSkillRunInput): CreatorSkillRunInput {
     .map(normalizeSourceNode)
     .sort((left, right) => compareStrings(left.id, right.id))
   const artifacts = value.artifacts
-    ?.map(normalizeArtifact)
+    ? Array.from(value.artifacts, normalizeArtifact)
     .sort((left, right) => (
       compareStrings(left.artifactType, right.artifactType)
       || compareStrings(left.artifactId, right.artifactId)
     ))
+    : undefined
 
   return {
     sourceNodes,
@@ -227,23 +228,27 @@ function hasSupportedInput(skill: CreatorExecutableSkill, input: CreatorSkillRun
     && !hasUnsupportedArtifact
 }
 
-function isValidExecutionResult(
+function normalizeExecutionResult(
   value: unknown,
   outputArtifactTypes: string[],
-): value is CreatorSkillRunResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+): { result: CreatorSkillRunResult; artifacts: CreatorSkillArtifact[] } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const result = value as Partial<CreatorSkillRunResult>
-  if (!['ready', 'needs-review', 'blocked'].includes(result.status ?? '')) return false
+  if (!['ready', 'needs-review', 'blocked'].includes(result.status ?? '')) return null
   if (!Array.isArray(result.artifacts)
     || !Array.isArray(result.evidence)
     || !Array.isArray(result.warnings)
     || !Array.isArray(result.blockers)) {
-    return false
+    return null
   }
-  return result.artifacts.every((artifact) => (
-    isCreatorSkillArtifact(artifact)
-    && outputArtifactTypes.includes(artifact.artifactType)
-  ))
+  const artifacts = Array.from(result.artifacts, normalizeArtifact)
+  if (artifacts.some((artifact) => !outputArtifactTypes.includes(artifact.artifactType))) {
+    return null
+  }
+  return {
+    result: result as CreatorSkillRunResult,
+    artifacts,
+  }
 }
 
 export function runCreatorSkillFromRegistry(
@@ -332,7 +337,8 @@ export function runCreatorSkillFromRegistry(
   }
 
   try {
-    if (!isValidExecutionResult(executionResult, outputArtifactTypes)) {
+    const normalizedExecution = normalizeExecutionResult(executionResult, outputArtifactTypes)
+    if (!normalizedExecution) {
       return blockedResult(
         id,
         version,
@@ -343,14 +349,14 @@ export function runCreatorSkillFromRegistry(
     }
 
     return {
-      ...executionResult,
+      ...normalizedExecution.result,
       skillId: id,
       skillVersion: version,
       runFingerprint,
-      artifacts: [...executionResult.artifacts],
-      evidence: [...executionResult.evidence],
-      warnings: [...executionResult.warnings],
-      blockers: [...executionResult.blockers],
+      artifacts: normalizedExecution.artifacts,
+      evidence: [...normalizedExecution.result.evidence],
+      warnings: [...normalizedExecution.result.warnings],
+      blockers: [...normalizedExecution.result.blockers],
     }
   } catch {
     return blockedResult(

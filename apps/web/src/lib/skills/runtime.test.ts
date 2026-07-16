@@ -142,6 +142,13 @@ describe('createCreatorExecutableSkillRegistry', () => {
       ['not independently callable', createSkill({ independentlyCallable: false } as never)],
       ['empty output types', createSkill({ outputArtifactTypes: [] })],
       ['blank output type', createSkill({ outputArtifactTypes: [' '] })],
+      ['sparse accepted node kinds', createSkill({ acceptedNodeKinds: new Array<'text'>(1) })],
+      ['sparse accepted Artifact types', createSkill({
+        acceptedArtifactTypes: new Array<string>(1),
+      })],
+      ['sparse output Artifact types', createSkill({
+        outputArtifactTypes: new Array<string>(1),
+      })],
     ]
 
     for (const [label, skill] of invalidSkills) {
@@ -292,6 +299,17 @@ describe('runCreatorSkillFromRegistry', () => {
     }
   })
 
+  test('classifies sparse input Artifact arrays as malformed Artifacts', () => {
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+    const input = createInput()
+    input.artifacts = new Array(1)
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(registry, 'test-skill', input),
+      'INVALID_SKILL_ARTIFACT',
+    )
+  })
+
   test('returns a controlled result when the Skill is missing', () => {
     assertBlocked(
       runCreatorSkill('missing', createInput()),
@@ -378,6 +396,90 @@ describe('runCreatorSkillFromRegistry', () => {
       ),
       'INVALID_SKILL_OUTPUT',
     )
+  })
+
+  test('rejects output Artifacts with unsupported payload values', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const unsupportedPayloads = [
+      new Date('2026-01-01T00:00:00.000Z'),
+      new Map([['key', 'value']]),
+      cyclic,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]
+
+    for (const payload of unsupportedPayloads) {
+      const skill = createSkill({}, (_input, fingerprint) => ({
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        artifacts: [
+          createCreatorSkillArtifact({
+            artifactId: 'scenes-1',
+            artifactType: 'scene-list',
+            artifactVersion: 1,
+            sourceNodeIds: ['node-a', 'node-b'],
+            sourceArtifactIds: ['script-1'],
+            payload,
+          }),
+        ],
+      }))
+
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          createCreatorExecutableSkillRegistry([skill]),
+          'test-skill',
+          createInput(),
+        ),
+        'INVALID_SKILL_OUTPUT',
+      )
+    }
+  })
+
+  test('rejects sparse output Artifact arrays', () => {
+    const skill = createSkill({}, (_input, fingerprint) => {
+      const result = createResult('test-skill', '1.0.0', fingerprint)
+      result.artifacts = new Array(1)
+      return result
+    })
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        createInput(),
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
+  test('returns normalized output Artifacts without executor-owned references', () => {
+    const payload = { scenes: [{ title: 'Opening' }] }
+    const artifact = createCreatorSkillArtifact({
+      artifactId: 'scenes-1',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a', 'node-b'],
+      sourceArtifactIds: ['script-1'],
+      payload,
+    })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      artifacts: [artifact],
+    }))
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      createInput(),
+    )
+    const resultArtifact = result.artifacts[0]!
+
+    assert.notEqual(resultArtifact, artifact)
+    assert.notEqual(resultArtifact.payload, payload)
+    payload.scenes[0]!.title = 'Mutated after execution'
+    artifact.sourceNodeIds.push('node-c')
+    assert.deepEqual(resultArtifact.payload, { scenes: [{ title: 'Opening' }] })
+    assert.deepEqual(resultArtifact.sourceNodeIds, ['node-a', 'node-b'])
   })
 
   test('forces registered identity fields and preserves meaningful text', () => {
