@@ -2,10 +2,10 @@ import type { CreatorSkillArtifact } from './types'
 
 type CreatorSkillArtifactInput<T> = {
   artifactId: string
-  type: string
-  version: number
+  artifactType: string
+  artifactVersion: number
   sourceNodeIds: readonly string[]
-  sourceArtifactIds: readonly string[]
+  sourceArtifactIds?: readonly string[]
   payload: T
 }
 
@@ -32,16 +32,16 @@ function isIdentifierArray(value: unknown): value is string[] {
 export function createCreatorSkillArtifact<T>(
   input: CreatorSkillArtifactInput<T>,
 ): CreatorSkillArtifact<T> {
-  if (!Number.isInteger(input.version) || input.version <= 0) {
-    throw new TypeError('version must be a positive integer')
+  if (!Number.isInteger(input.artifactVersion) || input.artifactVersion <= 0) {
+    throw new TypeError('artifactVersion must be a positive integer')
   }
 
   return {
     artifactId: normalizeRequiredIdentifier(input.artifactId, 'artifactId'),
-    type: normalizeRequiredIdentifier(input.type, 'type'),
-    version: input.version,
+    artifactType: normalizeRequiredIdentifier(input.artifactType, 'artifactType'),
+    artifactVersion: input.artifactVersion,
     sourceNodeIds: normalizeSourceIdentifiers(input.sourceNodeIds, 'sourceNodeIds'),
-    sourceArtifactIds: normalizeSourceIdentifiers(input.sourceArtifactIds, 'sourceArtifactIds'),
+    sourceArtifactIds: normalizeSourceIdentifiers(input.sourceArtifactIds ?? [], 'sourceArtifactIds'),
     payload: input.payload,
   }
 }
@@ -52,11 +52,11 @@ export function isCreatorSkillArtifact(value: unknown): value is CreatorSkillArt
   const artifact = value as Record<string, unknown>
   return typeof artifact.artifactId === 'string'
     && Boolean(artifact.artifactId.trim())
-    && typeof artifact.type === 'string'
-    && Boolean(artifact.type.trim())
-    && typeof artifact.version === 'number'
-    && Number.isInteger(artifact.version)
-    && artifact.version > 0
+    && typeof artifact.artifactType === 'string'
+    && Boolean(artifact.artifactType.trim())
+    && typeof artifact.artifactVersion === 'number'
+    && Number.isInteger(artifact.artifactVersion)
+    && artifact.artifactVersion > 0
     && isIdentifierArray(artifact.sourceNodeIds)
     && isIdentifierArray(artifact.sourceArtifactIds)
     && Object.prototype.hasOwnProperty.call(artifact, 'payload')

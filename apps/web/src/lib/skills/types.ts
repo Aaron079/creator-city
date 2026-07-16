@@ -44,12 +44,12 @@ export type CreatorSkillReviewStatus = 'pending' | 'approved' | 'rejected'
 
 export type CreatorSkillManifest = {
   id: string
-  version: number
+  version: string
   name: string
   description: string
-  category: string
+  category: CreatorSkillCategory
   executionPolicy: CreatorSkillExecutionPolicy
-  acceptedNodeKinds: string[]
+  acceptedNodeKinds: CreatorSkillTarget[]
   acceptedArtifactTypes: string[]
   outputArtifactTypes: string[]
   independentlyCallable: true
@@ -57,7 +57,7 @@ export type CreatorSkillManifest = {
 
 export type CreatorSkillSourceNode = {
   id: string
-  kind: string
+  kind: CreatorSkillTarget
   title: string
   prompt: string
   resultText?: string
@@ -71,8 +71,8 @@ export type CreatorSkillProjectContext = {
 
 export type CreatorSkillArtifact<T = unknown> = {
   artifactId: string
-  type: string
-  version: number
+  artifactType: string
+  artifactVersion: number
   sourceNodeIds: string[]
   sourceArtifactIds: string[]
   payload: T
@@ -104,8 +104,8 @@ export type CreatorSkillRunInput = {
 
 export type CreatorSkillRunResult = {
   skillId: string
-  version: number
-  fingerprint: string
+  skillVersion: string
+  runFingerprint: string
   status: CreatorSkillRunStatus
   artifacts: CreatorSkillArtifact[]
   evidence: CreatorSkillEvidence[]
@@ -118,5 +118,5 @@ export type CreatorExecutableSkill = {
   run: (
     input: CreatorSkillRunInput,
     fingerprint: string,
-  ) => CreatorSkillRunResult | Promise<CreatorSkillRunResult>
+  ) => CreatorSkillRunResult
 }

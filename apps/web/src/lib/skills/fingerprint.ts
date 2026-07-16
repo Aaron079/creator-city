@@ -4,10 +4,6 @@ import type {
   CreatorSkillSourceNode,
 } from './types'
 
-function normalizeString(value: string) {
-  return value.normalize('NFC')
-}
-
 function compareStrings(left: string, right: string) {
   if (left < right) return -1
   if (left > right) return 1
@@ -15,19 +11,15 @@ function compareStrings(left: string, right: string) {
 }
 
 function compareSourceNodes(left: CreatorSkillSourceNode, right: CreatorSkillSourceNode) {
-  return compareStrings(normalizeString(left.id), normalizeString(right.id))
-}
-
-function artifactSortKey(artifact: CreatorSkillArtifact) {
-  return `${normalizeString(artifact.type)}\u0000${normalizeString(artifact.artifactId)}`
+  return compareStrings(left.id, right.id)
 }
 
 function compareArtifacts(left: CreatorSkillArtifact, right: CreatorSkillArtifact) {
-  return compareStrings(artifactSortKey(left), artifactSortKey(right))
+  const typeOrder = compareStrings(left.artifactType, right.artifactType)
+  return typeOrder || compareStrings(left.artifactId, right.artifactId)
 }
 
 function canonicalize(value: unknown): unknown {
-  if (typeof value === 'string') return normalizeString(value)
   if (Array.isArray(value)) {
     return value
       .filter((item) => item !== undefined)
@@ -39,7 +31,7 @@ function canonicalize(value: unknown): unknown {
   const normalized: Record<string, unknown> = {}
   for (const key of Object.keys(record).sort(compareStrings)) {
     if (record[key] !== undefined) {
-      normalized[normalizeString(key)] = canonicalize(record[key])
+      normalized[key] = canonicalize(record[key])
     }
   }
   return normalized
@@ -56,7 +48,7 @@ function fnv1a(value: string) {
 
 export function createCreatorSkillFingerprint(
   skillId: string,
-  skillVersion: number,
+  skillVersion: string,
   input: CreatorSkillRunInput,
 ): string {
   const orderedInput: CreatorSkillRunInput = {
