@@ -16,6 +16,7 @@ import type {
 
 const FALLBACK_FINGERPRINT = 'csf1_00000000'
 const CREATOR_SKILL_TARGETS = new Set<CreatorSkillTarget>(['text', 'image', 'video'])
+const SEMANTIC_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 class InvalidArtifactError extends TypeError {}
 
@@ -62,7 +63,7 @@ function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknow
   active.add(objectValue)
   const clone: Record<string, unknown> = {}
   try {
-    for (const key of Object.keys(objectValue)) {
+    for (const key of Object.keys(objectValue).sort(compareStrings)) {
       const clonedValue = cloneInputValue((value as Record<string, unknown>)[key], active)
       if (clonedValue !== undefined) clone[key] = clonedValue
     }
@@ -110,13 +111,19 @@ function normalizeArtifact(value: unknown): CreatorSkillArtifact {
   if (!isCreatorSkillArtifact(value)) {
     throw new InvalidArtifactError('Artifact must use the canonical Creator Skill shape')
   }
+  let payload: unknown
+  try {
+    payload = cloneInputValue(value.payload)
+  } catch {
+    throw new InvalidArtifactError('Artifact payload must use supported input values')
+  }
   return {
     artifactId: value.artifactId,
     artifactType: value.artifactType,
     artifactVersion: value.artifactVersion,
     sourceNodeIds: [...value.sourceNodeIds],
     sourceArtifactIds: [...value.sourceArtifactIds],
-    payload: cloneInputValue(value.payload),
+    payload,
   }
 }
 
@@ -245,11 +252,37 @@ export function runCreatorSkillFromRegistry(
   input: CreatorSkillRunInput,
   skillVersion?: string,
 ): CreatorSkillRunResult {
-  const skill = getExecutableCreatorSkillFromRegistry(registry, skillId, skillVersion)
+  const normalizedSkillId = typeof skillId === 'string' ? skillId.trim() : ''
+  const normalizedSkillVersion = typeof skillVersion === 'string' ? skillVersion.trim() : ''
+  const hasInvalidVersion = skillVersion !== undefined
+    && (typeof skillVersion !== 'string'
+      || !SEMANTIC_VERSION_PATTERN.test(normalizedSkillVersion))
+  if (!normalizedSkillId || hasInvalidVersion) {
+    return blockedResult(
+      normalizedSkillId,
+      normalizedSkillVersion,
+      FALLBACK_FINGERPRINT,
+      'INVALID_SKILL_INPUT',
+      'Creator Skill identity or version is invalid.',
+    )
+  }
+
+  let skill: CreatorExecutableSkill | null
+  try {
+    skill = getExecutableCreatorSkillFromRegistry(registry, skillId, skillVersion)
+  } catch {
+    return blockedResult(
+      normalizedSkillId,
+      normalizedSkillVersion,
+      FALLBACK_FINGERPRINT,
+      'INVALID_SKILL_INPUT',
+      'Creator Skill lookup failed.',
+    )
+  }
   if (!skill) {
     return blockedResult(
-      typeof skillId === 'string' ? skillId.trim() : '',
-      typeof skillVersion === 'string' ? skillVersion.trim() : '',
+      normalizedSkillId,
+      normalizedSkillVersion,
       FALLBACK_FINGERPRINT,
       'SKILL_NOT_FOUND',
       'Executable Creator Skill was not found.',

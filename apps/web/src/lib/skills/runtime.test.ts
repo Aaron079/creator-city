@@ -171,6 +171,17 @@ describe('createCreatorExecutableSkillRegistry', () => {
     assert.equal(getExecutableCreatorSkillFromRegistry(registry, 'missing'), null)
   })
 
+  test('compares semantic-version components without numeric precision loss', () => {
+    const lower = createSkill({ id: 'large-version', version: '9007199254740992.0.0' })
+    const higher = createSkill({ id: 'large-version', version: '9007199254740993.0.0' })
+    const registry = createCreatorExecutableSkillRegistry([lower, higher])
+
+    assert.equal(
+      getExecutableCreatorSkillFromRegistry(registry, 'large-version')?.manifest.version,
+      '9007199254740993.0.0',
+    )
+  })
+
   test('keeps the executable registry empty and separate from the legacy prompt registry', () => {
     assert.equal(CREATOR_EXECUTABLE_SKILL_REGISTRY.size, 0)
     assert.equal(getExecutableCreatorSkill('test-skill'), null)
@@ -252,9 +263,70 @@ describe('runCreatorSkillFromRegistry', () => {
     )
   })
 
+  test('classifies unsupported Artifact payload values as malformed Artifacts', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const unsupportedPayloads = [
+      new Date('2026-01-01T00:00:00.000Z'),
+      new Map([['key', 'value']]),
+      cyclic,
+    ]
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+
+    for (const payload of unsupportedPayloads) {
+      const input = createInput()
+      input.artifacts = [
+        createCreatorSkillArtifact({
+          artifactId: 'script-1',
+          artifactType: 'script',
+          artifactVersion: 1,
+          sourceNodeIds: ['node-a'],
+          payload,
+        }),
+      ]
+
+      assertBlocked(
+        runCreatorSkillFromRegistry(registry, 'test-skill', input),
+        'INVALID_SKILL_ARTIFACT',
+      )
+    }
+  })
+
   test('returns a controlled result when the Skill is missing', () => {
     assertBlocked(
       runCreatorSkill('missing', createInput()),
+      'SKILL_NOT_FOUND',
+    )
+  })
+
+  test('contains invalid dynamic Skill versions without throwing', () => {
+    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+    const invalidVersions: unknown[] = [42, { major: 1 }, '1.0']
+
+    for (const invalidVersion of invalidVersions) {
+      assert.doesNotThrow(() => {
+        assert.equal(
+          getExecutableCreatorSkillFromRegistry(
+            registry,
+            'test-skill',
+            invalidVersion as string,
+          ),
+          null,
+        )
+      })
+      assertBlocked(
+        runCreatorSkillFromRegistry(
+          registry,
+          'test-skill',
+          createInput(),
+          invalidVersion as string,
+        ),
+        'INVALID_SKILL_INPUT',
+      )
+    }
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(registry, 'test-skill', createInput(), '9.0.0'),
       'SKILL_NOT_FOUND',
     )
   })
@@ -352,6 +424,58 @@ describe('runCreatorSkillFromRegistry', () => {
     const right = createInput()
     right.sourceNodes.reverse()
     right.artifacts?.reverse()
+
+    assert.deepEqual(
+      runCreatorSkillFromRegistry(registry, 'test-skill', left),
+      runCreatorSkillFromRegistry(registry, 'test-skill', right),
+    )
+  })
+
+  test('recursively canonicalizes object key order before executor inspection', () => {
+    const skill = createSkill({}, (input, fingerprint) => {
+      const sourceNode = input.sourceNodes.find((node) => node.id === 'node-b')!
+      const metadata = sourceNode.metadataJson as Record<string, unknown>
+      const metadataNested = metadata.alpha as Record<string, unknown>
+      const options = input.options as Record<string, unknown>
+      const optionsNested = options.alpha as Record<string, unknown>
+      return {
+        ...createResult('test-skill', '1.0.0', fingerprint),
+        artifacts: [
+          createCreatorSkillArtifact({
+            artifactId: 'scenes-1',
+            artifactType: 'scene-list',
+            artifactVersion: 1,
+            sourceNodeIds: ['node-a', 'node-b'],
+            sourceArtifactIds: ['script-1'],
+            payload: {
+              metadataKeys: Object.keys(metadata),
+              metadataNestedKeys: Object.keys(metadataNested),
+              optionKeys: Object.keys(options),
+              optionNestedKeys: Object.keys(optionsNested),
+            },
+          }),
+        ],
+      }
+    })
+    const registry = createCreatorExecutableSkillRegistry([skill])
+    const left = createInput()
+    const right = createInput()
+    left.sourceNodes[0]!.metadataJson = {
+      zeta: true,
+      alpha: { zeta: 2, alpha: 1 },
+    }
+    right.sourceNodes[0]!.metadataJson = {
+      alpha: { alpha: 1, zeta: 2 },
+      zeta: true,
+    }
+    left.options = {
+      zeta: true,
+      alpha: { zeta: 2, alpha: 1 },
+    }
+    right.options = {
+      alpha: { alpha: 1, zeta: 2 },
+      zeta: true,
+    }
 
     assert.deepEqual(
       runCreatorSkillFromRegistry(registry, 'test-skill', left),

@@ -62,15 +62,19 @@ function normalizeManifest(manifest: CreatorSkillManifest): CreatorSkillManifest
   }
 }
 
-function semanticVersionParts(version: string) {
-  return version.split('.').map(Number)
+function compareDecimalStrings(left: string, right: string) {
+  const lengthDifference = left.length - right.length
+  if (lengthDifference !== 0) return lengthDifference
+  if (left < right) return -1
+  if (left > right) return 1
+  return 0
 }
 
 function compareSemanticVersions(left: string, right: string) {
-  const leftParts = semanticVersionParts(left)
-  const rightParts = semanticVersionParts(right)
+  const leftParts = left.split('.')
+  const rightParts = right.split('.')
   for (let index = 0; index < 3; index += 1) {
-    const difference = leftParts[index]! - rightParts[index]!
+    const difference = compareDecimalStrings(leftParts[index]!, rightParts[index]!)
     if (difference !== 0) return difference
   }
   return 0
@@ -105,6 +109,7 @@ export function getExecutableCreatorSkillFromRegistry(
   if (!normalizedId) return null
 
   if (skillVersion !== undefined) {
+    if (typeof skillVersion !== 'string') return null
     const normalizedVersion = skillVersion.trim()
     if (!SEMANTIC_VERSION_PATTERN.test(normalizedVersion)) return null
     return registry.get(`${normalizedId}@${normalizedVersion}`) ?? null
