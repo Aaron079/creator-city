@@ -1,8 +1,3 @@
-import { registerExecutableCreatorSkill } from './executable-registry'
-import { SCRIPT_SEGMENTATION_SKILL } from './script-segmentation'
-
-registerExecutableCreatorSkill(SCRIPT_SEGMENTATION_SKILL)
-
 export * from './types'
 export * from './default-skills'
 export * from './registry'

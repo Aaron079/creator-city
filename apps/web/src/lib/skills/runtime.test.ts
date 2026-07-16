@@ -209,8 +209,19 @@ describe('createCreatorExecutableSkillRegistry', () => {
     )
   })
 
-  test('keeps the executable registry empty and separate from the legacy prompt registry', () => {
-    assert.equal(CREATOR_EXECUTABLE_SKILL_REGISTRY.size, 0)
+  test('keeps only the built-in script Skill separate from the legacy prompt registry', () => {
+    const builtIn = getExecutableCreatorSkill('script-segmentation')
+
+    assert.equal(CREATOR_EXECUTABLE_SKILL_REGISTRY.size, 1)
+    assert.deepEqual(
+      Array.from(CREATOR_EXECUTABLE_SKILL_REGISTRY.keys()),
+      ['script-segmentation@1.0.0'],
+    )
+    assert.equal(builtIn?.manifest.id, 'script-segmentation')
+    assert.equal(builtIn?.manifest.version, '1.0.0')
+    assert.ok(Object.isFrozen(builtIn))
+    assert.ok(Object.isFrozen(builtIn?.manifest))
+    assert.ok(Object.isFrozen(builtIn?.manifest.acceptedNodeKinds))
     assert.equal(getExecutableCreatorSkill('test-skill'), null)
     assert.ok(CREATOR_SKILL_REGISTRY.length > 0)
     assert.notEqual(CREATOR_EXECUTABLE_SKILL_REGISTRY, CREATOR_SKILL_REGISTRY)
@@ -306,6 +317,24 @@ describe('createCreatorExecutableSkillRegistry', () => {
       ]),
       { name: 'TypeError' },
     )
+  })
+})
+
+describe('runCreatorSkill', () => {
+  test('runs the statically registered script Skill without importing the barrel', () => {
+    const result = runCreatorSkill('script-segmentation', {
+      sourceNodes: [{
+        id: 'direct-script',
+        kind: 'text',
+        title: 'Direct runtime import',
+        prompt: 'EXT. CITY STREET - NIGHT\nRain runs along the curb.',
+      }],
+    })
+
+    assert.equal(result.status, 'ready')
+    assert.equal(result.artifacts.length, 1)
+    assert.equal(result.artifacts[0]?.artifactType, 'scene-breakdown')
+    assert.equal(result.artifacts[0]?.sourceNodeIds[0], 'direct-script')
   })
 })
 

@@ -1,3 +1,4 @@
+import { SCRIPT_SEGMENTATION_SKILL } from './script-segmentation'
 import type {
   CreatorExecutableSkill,
   CreatorSkillCategory,
@@ -244,23 +245,9 @@ export function getExecutableCreatorSkillFromRegistry(
   return latest
 }
 
-const executableSkillRegistryBacking = new Map<string, CreatorExecutableSkill>()
-
-export const CREATOR_EXECUTABLE_SKILL_REGISTRY = createReadonlyMapFacade(
-  executableSkillRegistryBacking,
-)
-
-export function registerExecutableCreatorSkill(skill: CreatorExecutableSkill) {
-  const validatedRegistry = createCreatorExecutableSkillRegistry([skill])
-  const validatedSkill = validatedRegistry.values().next().value
-  if (!validatedSkill) throw new TypeError('Executable Creator Skill registration failed')
-
-  const key = `${validatedSkill.manifest.id}@${validatedSkill.manifest.version}`
-  if (executableSkillRegistryBacking.has(key)) {
-    throw new TypeError(`Duplicate executable Creator Skill: ${key}`)
-  }
-  executableSkillRegistryBacking.set(key, validatedSkill)
-}
+export const CREATOR_EXECUTABLE_SKILL_REGISTRY = createCreatorExecutableSkillRegistry([
+  SCRIPT_SEGMENTATION_SKILL,
+])
 
 export function getExecutableCreatorSkill(
   skillId: string,
