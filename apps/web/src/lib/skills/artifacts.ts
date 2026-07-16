@@ -47,6 +47,9 @@ export function createCreatorSkillArtifact<T>(
   if (!Number.isInteger(input.artifactVersion) || input.artifactVersion <= 0) {
     throw new TypeError('artifactVersion must be a positive integer')
   }
+  if (input.payload === undefined) {
+    throw new TypeError('payload must not be undefined')
+  }
 
   return {
     artifactId: normalizeRequiredIdentifier(input.artifactId, 'artifactId'),

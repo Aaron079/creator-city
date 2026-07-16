@@ -517,6 +517,19 @@ describe('Creator Skill artifacts', () => {
     assert.throws(() => createCreatorSkillArtifact({ ...valid, artifactVersion: 1.5 }), /artifactVersion/)
   })
 
+  test('rejects an undefined payload when creating an artifact', () => {
+    assert.throws(
+      () => createCreatorSkillArtifact({
+        artifactId: 'artifact-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: [],
+        payload: undefined,
+      }),
+      { name: 'TypeError', message: /payload must not be undefined/ },
+    )
+  })
+
   test('recognizes only structurally valid artifacts with exact field names', () => {
     assert.equal(isCreatorSkillArtifact(null), false)
     assert.equal(isCreatorSkillArtifact({}), false)
