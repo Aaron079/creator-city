@@ -301,6 +301,7 @@ describe('script-segmentation headed scripts', () => {
       'EXT. ALLEY - NIGHT',
       'MAYA',
       'Keep quiet.',
+      '',
       'THE DOOR OPENS.',
     ].join('\n'))
     const scenes = payloadOf(result).scenes
@@ -316,6 +317,98 @@ describe('script-segmentation headed scripts', () => {
       '',
       '',
       'THE DOOR OPENS.',
+    ])
+  })
+
+  test('supports empty-colon cues and excludes their contiguous dialogue blocks', () => {
+    const source = [
+      'INT. CONTROL ROOM - NIGHT',
+      'MAYA:',
+      'Do not move.',
+      'Keep your hands visible.',
+      '',
+      'The warning light changes.',
+      'EXT. PLATFORM - NIGHT',
+      '林夏：',
+      '别动。',
+      '我马上回来。',
+    ].join('\n')
+    const result = runWithText(source)
+    const scenes = payloadOf(result).scenes
+
+    assert.deepEqual(scenes.map((scene) => ({
+      characters: scene.characters,
+      actionSummary: scene.actionSummary,
+      sourceText: scene.sourceText,
+      lineStart: scene.lineStart,
+      lineEnd: scene.lineEnd,
+    })), [
+      {
+        characters: ['MAYA'],
+        actionSummary: 'The warning light changes.',
+        sourceText: [
+          'INT. CONTROL ROOM - NIGHT',
+          'MAYA:',
+          'Do not move.',
+          'Keep your hands visible.',
+          '',
+          'The warning light changes.',
+        ].join('\n'),
+        lineStart: 1,
+        lineEnd: 6,
+      },
+      {
+        characters: ['林夏'],
+        actionSummary: '',
+        sourceText: [
+          'EXT. PLATFORM - NIGHT',
+          '林夏：',
+          '别动。',
+          '我马上回来。',
+        ].join('\n'),
+        lineStart: 7,
+        lineEnd: 10,
+      },
+    ])
+  })
+
+  test('keeps standalone and inline-colon dialogue continuations out of action summaries', () => {
+    const source = [
+      'INT. OFFICE - DAY',
+      'MAYA',
+      'Stay here.',
+      'Do not answer the phone.',
+      'The corridor is not safe.',
+      'EXT. ALLEY - NIGHT',
+      '林夏',
+      '别出声。',
+      '他们还在附近。',
+      'INT. LAB - NIGHT',
+      'MAYA: Watch the monitor.',
+      'The signal is getting stronger.',
+      'It is almost here.',
+      'INT. HALL - NIGHT',
+      'MAYA: First channel.',
+      'Keep listening.',
+      'LIN:',
+      'Second channel.',
+      'Do not interrupt.',
+    ].join('\n')
+    const result = runWithText(source)
+    const scenes = payloadOf(result).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['MAYA'],
+      ['林夏'],
+      ['MAYA'],
+      ['MAYA', 'LIN'],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', '', ''])
+    assert.deepEqual(scenes.map((scene) => [scene.lineStart, scene.lineEnd]), [
+      [1, 5],
+      [6, 9],
+      [10, 13],
+      [14, 19],
     ])
   })
 
@@ -342,6 +435,53 @@ describe('script-segmentation headed scripts', () => {
       { heading: '内景：房间 夜', location: '房间', timeOfDay: '夜' },
       { heading: '第二场、内景：车站 日', location: '车站', timeOfDay: '日' },
       { heading: '第三场: 外景、天台 黄昏', location: '天台', timeOfDay: '黄昏' },
+    ])
+  })
+
+  test('extracts English heading tokens after Chinese numbered prefixes', () => {
+    const source = [
+      '第1场 INT. CAFE - DAY',
+      'Maya waits beside the window.',
+      '第二场：EXT. ROOFTOP - NIGHT',
+      'Rain crosses the concrete.',
+      '第三场、I/E. TRAIN - DAWN',
+      'The doors slide shut.',
+    ].join('\n')
+    const result = runWithText(source)
+    const scenes = payloadOf(result).scenes
+
+    assert.deepEqual(scenes.map((scene) => ({
+      heading: scene.heading,
+      location: scene.location,
+      timeOfDay: scene.timeOfDay,
+      sourceText: scene.sourceText,
+      lineStart: scene.lineStart,
+      lineEnd: scene.lineEnd,
+    })), [
+      {
+        heading: '第1场 INT. CAFE - DAY',
+        location: 'CAFE',
+        timeOfDay: 'DAY',
+        sourceText: '第1场 INT. CAFE - DAY\nMaya waits beside the window.',
+        lineStart: 1,
+        lineEnd: 2,
+      },
+      {
+        heading: '第二场：EXT. ROOFTOP - NIGHT',
+        location: 'ROOFTOP',
+        timeOfDay: 'NIGHT',
+        sourceText: '第二场：EXT. ROOFTOP - NIGHT\nRain crosses the concrete.',
+        lineStart: 3,
+        lineEnd: 4,
+      },
+      {
+        heading: '第三场、I/E. TRAIN - DAWN',
+        location: 'TRAIN',
+        timeOfDay: 'DAWN',
+        sourceText: '第三场、I/E. TRAIN - DAWN\nThe doors slide shut.',
+        lineStart: 5,
+        lineEnd: 6,
+      },
     ])
   })
 

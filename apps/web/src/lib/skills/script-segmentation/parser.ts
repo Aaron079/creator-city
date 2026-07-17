@@ -25,7 +25,7 @@ const CHINESE_TIME_TOKENS = new Set([
 const LATIN_NAME = /^\p{Script=Latin}[\p{Script=Latin}'-]*(?:\s+\p{Script=Latin}[\p{Script=Latin}'-]*){0,2}$/u
 const STANDALONE_LATIN_CUE = /^[A-Z][A-Z'-]*(?:\s+[A-Z][A-Z'-]*){0,2}$/
 const STANDALONE_CHINESE_CUE = /^\p{Script=Han}{2,4}$/u
-const COLON_CUE = /^([^:：]{1,40})\s*[:：]\s*(\S.*)$/u
+const COLON_CUE = /^([^:：]{1,40})\s*[:：]\s*(.*)$/u
 const TRANSITION_LABEL = /^(?:FADE(?:\s+(?:IN|OUT|TO(?:\s+\S+){0,3}))?|CUT(?:\s+TO(?:\s+\S+){0,3})?|DISSOLVE(?:\s+TO(?:\s+\S+){0,3})?|SMASH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|MATCH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|JUMP\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|WIPE(?:\s+TO(?:\s+\S+){0,3})?|IRIS\s+(?:IN|OUT))$/i
 
 type HeadingInfo = {
@@ -73,6 +73,13 @@ function parseEnglishHeading(heading: string): HeadingInfo | null {
 function parseChineseHeading(heading: string): HeadingInfo | null {
   const numberedMatch = heading.match(CHINESE_NUMBERED_HEADING)
   let rest = numberedMatch ? heading.slice(numberedMatch[0].length) : heading
+  const englishHeading = numberedMatch ? parseEnglishHeading(rest.trim()) : null
+  if (englishHeading) {
+    return {
+      ...englishHeading,
+      heading,
+    }
+  }
   const settingMatch = rest.match(CHINESE_SETTING_MARKER)
 
   if (!numberedMatch && !settingMatch) return null
@@ -132,7 +139,7 @@ function characterKey(name: string) {
   return isAscii ? name.toUpperCase() : name
 }
 
-function canBeImmediateDialogue(
+function canStartDialogueBlock(
   lines: readonly string[],
   range: SceneRange,
   index: number,
@@ -150,6 +157,7 @@ function classifyScene(
   const characters: string[] = []
   const seen = new Set<string>()
   const lineKinds = new Map<number, SceneLineKind>()
+  let inDialogueBlock = false
 
   const addCharacter = (name: string) => {
     const key = characterKey(name)
@@ -161,17 +169,14 @@ function classifyScene(
   for (let index = range.start; index <= range.end; index += 1) {
     if (index === range.headingIndex) {
       lineKinds.set(index, 'heading')
+      inDialogueBlock = false
       continue
     }
-    if (lineKinds.get(index) === 'dialogue') continue
 
     const line = lines[index]!
     if (!line.trim()) {
       lineKinds.set(index, 'blank')
-      continue
-    }
-    if (isTransition(line)) {
-      lineKinds.set(index, 'transition')
+      inDialogueBlock = false
       continue
     }
 
@@ -179,14 +184,25 @@ function classifyScene(
     if (colonCue) {
       lineKinds.set(index, 'cue')
       addCharacter(colonCue)
+      inDialogueBlock = true
       continue
     }
 
     const standaloneCue = extractStandaloneCue(line)
-    if (standaloneCue && canBeImmediateDialogue(lines, range, index + 1)) {
+    if (standaloneCue && canStartDialogueBlock(lines, range, index + 1)) {
       lineKinds.set(index, 'cue')
-      lineKinds.set(index + 1, 'dialogue')
       addCharacter(standaloneCue)
+      inDialogueBlock = true
+      continue
+    }
+
+    if (isTransition(line)) {
+      lineKinds.set(index, 'transition')
+      continue
+    }
+
+    if (inDialogueBlock) {
+      lineKinds.set(index, 'dialogue')
       continue
     }
 
