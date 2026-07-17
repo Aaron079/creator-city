@@ -46,6 +46,15 @@ describe('Creator Skill review panel static boundary', () => {
     assert.match(panel, /evidence\.excerpt/)
   })
 
+  test('generic apply control reflects the canApply disabled state', () => {
+    const applyControl = panel
+      .match(/<button\b[^>]*>/gs)
+      ?.find((tag) => /data-testid=["']creator-skill-apply["']/.test(tag))
+
+    assert.ok(applyControl, 'generic apply control should exist')
+    assert.match(applyControl, /disabled=\{!canApply\}/)
+  })
+
   test('segmentation runs locally from a fresh source snapshot on open and rerun', () => {
     assert.match(segmentation, /import\s+\{[^}]*runCreatorSkill[^}]*\}\s+from\s+['"]@\/lib\/skills['"]/s)
     assert.match(
