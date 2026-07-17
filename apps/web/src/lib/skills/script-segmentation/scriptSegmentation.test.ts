@@ -699,6 +699,21 @@ describe('script-segmentation headed scripts', () => {
     assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', ''])
   })
 
+  test('checks qualified standalone cue length after stripping the qualifier', () => {
+    const fortyCharacterName = 'A'.repeat(40)
+
+    for (const qualifier of ['(V.O.)', '(O.S.)', "(CONT'D)"]) {
+      const scene = payloadOf(runWithText([
+        'INT. RADIO ROOM - NIGHT',
+        `${fortyCharacterName} ${qualifier}`,
+        'Can you hear me?',
+      ].join('\n'))).scenes[0]!
+
+      assert.deepEqual(scene.characters, [fortyCharacterName], qualifier)
+      assert.equal(scene.actionSummary, '', qualifier)
+    }
+  })
+
   test('deduplicates character names with deterministic Unicode uppercase keys', () => {
     const scene = payloadOf(runWithText([
       'INT. CAFE - DAY',

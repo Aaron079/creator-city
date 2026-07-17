@@ -288,7 +288,7 @@ function extractColonCue(line: string) {
 
 function extractStandaloneCue(line: string) {
   const cue = line.trim()
-  if (!cue || cue.length > 40 || isTransition(cue)) return null
+  if (!cue || isTransition(cue)) return null
   return normalizeCueName(cue)
 }
 
