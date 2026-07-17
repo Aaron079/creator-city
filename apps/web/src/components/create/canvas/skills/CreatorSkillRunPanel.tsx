@@ -87,7 +87,9 @@ export function CreatorSkillRunPanel({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (event.isComposing) return
         event.preventDefault()
+        event.stopPropagation()
         onCloseRef.current()
         return
       }

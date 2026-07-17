@@ -82,6 +82,13 @@ describe('Creator Skill review panel static boundary', () => {
     assert.doesNotMatch(panel, /\}, \[onClose\]\)/)
   })
 
+  test('generic modal preserves reviews during IME composition and consumes dismissal Escape', () => {
+    assert.match(
+      panel,
+      /event\.key === ['"]Escape['"]\)\s*\{\s*if \(event\.isComposing\) return[\s\S]{0,200}?event\.preventDefault\(\)[\s\S]{0,100}?event\.stopPropagation\(\)[\s\S]{0,100}?onCloseRef\.current\(\)/,
+    )
+  })
+
   test('generic result lists use collision-safe indexed React keys', () => {
     assert.match(
       panel,
