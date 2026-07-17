@@ -228,9 +228,10 @@ describe('script-segmentation headed scripts', () => {
         expectedCharacters: ['MAYA'],
       },
       {
-        label: 'Latin standalone cue with immediate dialogue',
+        label: 'multiword Latin standalone cue',
         body: ['ALICE SMITH', 'Stay close.'],
-        expectedCharacters: ['ALICE SMITH'],
+        expectedCharacters: [],
+        expectedActionSummary: 'ALICE SMITH',
       },
       {
         label: 'Chinese standalone cue with immediate dialogue',
@@ -288,7 +289,7 @@ describe('script-segmentation headed scripts', () => {
     }
   })
 
-  test('treats explicit colon delimiters as strong Unicode cue evidence', () => {
+  test('applies V1 positive structure to explicit cues', () => {
     const fortyCharacterName = 'A'.repeat(40)
     const scenes = payloadOf(runWithText([
       'INT. HALL - NIGHT',
@@ -308,12 +309,128 @@ describe('script-segmentation headed scripts', () => {
     assert.deepEqual(scenes.map((scene) => scene.characters), [
       ['李冲'],
       ['小明'],
-      ['LI CHONG'],
-      ['XIAO MING'],
-      ['MAYA RUN'],
+      [],
+      [],
+      [],
       [fortyCharacterName],
     ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), [
+      '',
+      '',
+      'LI CHONG: Go now.',
+      'XIAO MING: Do not look back.',
+      'MAYA RUN (v.o.): Keep moving.',
+      '',
+    ])
+  })
+
+  test('keeps generic colon labels as action under positive cue grammar', () => {
+    const actionLines = [
+      'PHONE RINGS: Loudly.',
+      '电话响起：铃声刺耳。',
+      '音效：门砰地关上。',
+      '淡出：画面转黑。',
+    ]
+
+    for (const action of actionLines) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+  })
+
+  test('keeps non-cue standalone labels as action even before nonempty text', () => {
+    for (const action of ['LIGHTS FLICKER', '林夏抬头']) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+        'The room changes.',
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+  })
+
+  test('preserves required Latin, Chinese, and qualified positive cues', () => {
+    const scenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      'MAYA',
+      'Stay close.',
+      'INT. ROOM - NIGHT',
+      '林夏',
+      '别回头。',
+      'INT. STAIRWELL - NIGHT',
+      '李冲：快走。',
+      'INT. ALLEY - NIGHT',
+      '小明：别回头。',
+      'INT. CAFE - DAY',
+      'Élodie: Bonjour.',
+      'INT. RADIO ROOM - NIGHT',
+      'MAYA (V.O.)',
+      'Can you hear me?',
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['MAYA'],
+      ['林夏'],
+      ['李冲'],
+      ['小明'],
+      ['Élodie'],
+      ['MAYA'],
+    ])
     assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', '', '', '', ''])
+  })
+
+  test('accepts the bounded Chinese role and kinship vocabulary', () => {
+    const roles = [
+      '旁白',
+      '母亲',
+      '父亲',
+      '警察',
+      '医生',
+      '店员',
+      '导演',
+      '老师',
+      '男人',
+      '女人',
+      '男孩',
+      '女孩',
+    ]
+
+    for (const role of roles) {
+      const colonScene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        `${role}：继续。`,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(colonScene.characters, [role], `${role} colon cue`)
+
+      const standaloneScene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        role,
+        '继续。',
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(standaloneScene.characters, [role], `${role} standalone cue`)
+    }
+  })
+
+  test('accepts single-token Latin roles and internal name punctuation', () => {
+    const scenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      'NARRATOR: Begin.',
+      'INT. ROOM - NIGHT',
+      "O'NEIL: Wait.",
+      'INT. STREET - NIGHT',
+      'ANNA-MARIE: Stop.',
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['NARRATOR'],
+      ["O'NEIL"],
+      ['ANNA-MARIE'],
+    ])
   })
 
   test('distinguishes reviewer action prose from structured explicit cues', () => {
@@ -399,27 +516,34 @@ describe('script-segmentation headed scripts', () => {
       assert.equal(scene.actionSummary, action, action)
     }
 
-    const characters = payloadOf(runWithText([
+    const scenes = payloadOf(runWithText([
       'INT. STAIRWELL - NIGHT',
       '李冲：快走。',
       'INT. STREET - NIGHT',
       '小跑：等等我。',
       'INT. GYM - DAY',
       '跑步教练：再来一圈。',
-    ].join('\n'))).scenes.map((scene) => scene.characters)
-    assert.deepEqual(characters, [['李冲'], ['小跑'], ['跑步教练']])
+    ].join('\n'))).scenes
+    assert.deepEqual(scenes.map((scene) => scene.characters), [['李冲'], ['小跑'], []])
+    assert.equal(scenes[2]?.actionSummary, '跑步教练：再来一圈。')
   })
 
-  test('keeps surname and action-word ambiguity heuristics on standalone cues', () => {
-    for (const action of ['李冲', '小明', 'MAYA RUN']) {
+  test('applies the same positive name structure to standalone cues', () => {
+    const cases = [
+      { line: '李冲', expectedCharacters: ['李冲'], expectedActionSummary: '' },
+      { line: '小明', expectedCharacters: ['小明'], expectedActionSummary: '' },
+      { line: 'MAYA RUN', expectedCharacters: [], expectedActionSummary: 'MAYA RUN' },
+    ]
+
+    for (const scenario of cases) {
       const scene = payloadOf(runWithText([
         'INT. HALL - NIGHT',
-        action,
+        scenario.line,
         'Keep moving.',
       ].join('\n'))).scenes[0]!
 
-      assert.deepEqual(scene.characters, [], action)
-      assert.equal(scene.actionSummary, action, action)
+      assert.deepEqual(scene.characters, scenario.expectedCharacters, scenario.line)
+      assert.equal(scene.actionSummary, scenario.expectedActionSummary, scenario.line)
     }
   })
 
@@ -453,19 +577,19 @@ describe('script-segmentation headed scripts', () => {
     const chineseCases = [
       '门打开',
       '门关闭',
-      '林进入',
-      '林离开',
-      '林转身',
-      '林走开',
-      '林跑来',
-      '林看门',
-      '林推门',
-      '林拉门',
-      '林坐下',
-      '林站起',
-      '林笑了',
-      '林哭了',
-      '林冲出',
+      '人进入',
+      '人离开',
+      '人转身',
+      '人走开',
+      '人跑来',
+      '人看门',
+      '人推门',
+      '人拉门',
+      '人坐下',
+      '人站起',
+      '人笑了',
+      '人哭了',
+      '人冲出',
     ]
 
     for (const action of [...latinCases, ...chineseCases]) {
@@ -561,7 +685,7 @@ describe('script-segmentation headed scripts', () => {
     const scene = payloadOf(runWithText([
       'INT. CAFE - DAY',
       'Élodie: Bonjour.',
-      'ÉLODIE: Encore.',
+      'E\u0301LODIE: Encore.',
     ].join('\n'))).scenes[0]!
 
     assert.deepEqual(scene.characters, ['Élodie'])
