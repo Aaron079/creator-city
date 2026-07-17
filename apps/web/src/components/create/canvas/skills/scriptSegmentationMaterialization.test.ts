@@ -411,6 +411,37 @@ describe('planScriptSceneMaterialization validation', () => {
     }
   })
 
+  test('treats absent and own undefined optional scene fields as equivalent', () => {
+    const approvalWithUndefined = approve(FIRST_SCENE, {
+      location: undefined,
+      timeOfDay: undefined,
+    })
+    const artifactWithUndefined = resultFixture()
+    const payload = artifactWithUndefined.artifacts[0]!.payload as {
+      format: 'headed-script'
+      scenes: ScriptSceneDraft[]
+    }
+    payload.scenes[0]!.location = undefined
+    payload.scenes[0]!.timeOfDay = undefined
+
+    const fromUndefinedApproval = plan({
+      approvedScenes: [approvalWithUndefined],
+    })
+    const fromUndefinedArtifact = plan({
+      result: artifactWithUndefined,
+      approvedScenes: [approve(FIRST_SCENE)],
+    })
+
+    assert.deepEqual(
+      fromUndefinedApproval.create.map(({ resultId }) => resultId),
+      ['scene-001'],
+    )
+    assert.deepEqual(
+      fromUndefinedArtifact.create.map(({ resultId }) => resultId),
+      ['scene-001'],
+    )
+  })
+
   test('rejects inherited required values in results, Artifacts, scenes, and approvals', () => {
     const inheritedResult = resultFixture() as CreatorSkillRunResult & Record<string, unknown>
     Reflect.deleteProperty(inheritedResult, 'skillId')

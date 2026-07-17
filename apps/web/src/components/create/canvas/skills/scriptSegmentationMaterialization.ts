@@ -343,7 +343,7 @@ function findSceneBreakdown(artifactsValue: unknown, sourceNodeId: string) {
 }
 
 function sameOptionalString(left: OptionalStringSnapshot, right: OptionalStringSnapshot) {
-  return left.present === right.present && left.value === right.value
+  return left.value === right.value
 }
 
 function sameStringArray(left: readonly string[], right: readonly string[]) {
