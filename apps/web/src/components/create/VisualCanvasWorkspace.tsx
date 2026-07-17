@@ -41,6 +41,8 @@ import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePan
 import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
 import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
+import { ScriptSegmentationPanel } from '@/components/create/canvas/skills/ScriptSegmentationPanel'
+import type { SceneNodeMaterializationPlan } from '@/components/create/canvas/skills/scriptSegmentationMaterialization'
 import {
   StoryboardGridSplitPanel,
   type StoryboardGridSessionSummary,
@@ -127,7 +129,7 @@ import { collectGenerationTasks, type CanvasGenerationTask } from '@/lib/canvas/
 import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 import { getEdgeDirectorConfig } from '@/lib/canvas/edge-director'
 import { buildStoryboardFromCanvas } from '@/lib/storyboard'
-import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type ProjectStyleBible } from '@/lib/skills'
+import { CREATOR_SKILL_REGISTRY, getDefaultCreatorSkillIds, resolveCreatorSkills, type CreatorSkillSourceNode, type ProjectStyleBible } from '@/lib/skills'
 import {
   characterIdsMetadata,
   getNodeCharacterIds,
@@ -2498,6 +2500,7 @@ export function VisualCanvasWorkspace({
   const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lockedNodeToolContext, setLockedNodeToolContext] = useState<NodeToolContext | null>(null)
+  const [scriptSegmentationSource, setScriptSegmentationSource] = useState<CreatorSkillSourceNode | null>(null)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('user_provider_account')
@@ -2834,6 +2837,7 @@ export function VisualCanvasWorkspace({
     setIsAnnotationPanelOpen(false)
     setEditingNodeId(null)
     setLockedNodeToolContext(null)
+    setScriptSegmentationSource(null)
     setActiveCanvasModal(null)
   }, [])
 
@@ -4741,6 +4745,69 @@ export function VisualCanvasWorkspace({
     setPreferredKind(kind)
     return node
   }, [canvasPan.x, canvasPan.y, canvasZoom, commitEdges, commitNodes, nodes, promptStage])
+
+  const openScriptSegmentation = useCallback((node: VisualCanvasNode) => {
+    if (node.kind !== 'text') return
+    const sourceSnapshot: CreatorSkillSourceNode = Object.freeze({
+      id: node.id,
+      kind: 'text',
+      title: node.title,
+      prompt: node.prompt ?? '',
+      resultText: typeof node.resultText === 'string' ? node.resultText : undefined,
+      metadataJson: node.metadataJson,
+    })
+    openNodeScopedTool('script-segmentation', node)
+    setScriptSegmentationSource(sourceSnapshot)
+  }, [openNodeScopedTool])
+
+  const handleApplyScriptSegmentation = useCallback((plans: SceneNodeMaterializationPlan[]) => {
+    const analyzedSource = scriptSegmentationSource
+    if (!analyzedSource) return
+    const currentSource = latestNodesRef.current.find((node) => node.id === analyzedSource.id)
+    const analyzedSourceText = analyzedSource.resultText?.trim()
+      ? analyzedSource.resultText
+      : analyzedSource.prompt
+    const currentSourceText = currentSource?.resultText?.trim()
+      ? currentSource.resultText
+      : currentSource?.prompt
+
+    if (
+      !currentSource
+      || currentSource.kind !== 'text'
+      || currentSourceText !== analyzedSourceText
+    ) {
+      closeCanvasPanel()
+      showCanvasFeedback('源文本已变化，请重新运行剧本分场。')
+      return
+    }
+
+    const textNodeSize = getNodeSize('text')
+    plans.forEach((plan, index) => {
+      createNode('text', {
+        title: plan.title,
+        prompt: plan.prompt,
+        parentNodeId: analyzedSource.id,
+        metadataJson: plan.metadataJson,
+        edgeLabel: '剧本分场',
+        edgeToolId: 'script-segmentation',
+        edgeToolIcon: '§',
+        position: {
+          x: currentSource.x + currentSource.width + 240,
+          y: currentSource.y + index * (textNodeSize.height + 64),
+        },
+      })
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback(`已创建 ${plans.length} 个剧本分场节点。`)
+    closeCanvasPanel()
+  }, [closeCanvasPanel, createNode, flushLocalSnapshot, scheduleCanvasSave, scriptSegmentationSource, showCanvasFeedback])
+
+  useEffect(() => {
+    if (activeCanvasModal !== 'script-segmentation' || !scriptSegmentationSource) return
+    const currentSource = nodes.find((node) => node.id === scriptSegmentationSource.id)
+    if (!currentSource || currentSource.kind !== 'text') closeCanvasPanel()
+  }, [activeCanvasModal, closeCanvasPanel, nodes, scriptSegmentationSource])
 
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
@@ -8642,6 +8709,17 @@ export function VisualCanvasWorkspace({
 
       {/* CanvasToolDock moved to Shell leftRail slot */}
 
+      {activeCanvasModal === 'script-segmentation'
+        && scriptSegmentationSource?.kind === 'text'
+        && nodes.find((node) => node.id === scriptSegmentationSource.id)?.kind === 'text' ? (
+        <ScriptSegmentationPanel
+          sourceNode={scriptSegmentationSource}
+          existingNodes={nodes.map((node) => ({ metadataJson: node.metadataJson }))}
+          onApply={handleApplyScriptSegmentation}
+          onClose={closeCanvasPanel}
+        />
+      ) : null}
+
       {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
         (() => {
@@ -9834,6 +9912,11 @@ export function VisualCanvasWorkspace({
               openNodeScopedTool('camera-lexicon', activeNode)
             }}
             onOpenPromptBooster={() => openNodeScopedTool('prompt-booster', activeNode)}
+            onOpenScriptSegmentation={
+              activeNode.kind === 'text'
+                ? () => openScriptSegmentation(activeNode)
+                : undefined
+            }
             onOpenRemoveBackground={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.removeBackground
                 ? () => openCanvasPanel('remove-background')

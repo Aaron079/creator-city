@@ -20,6 +20,7 @@ export type CanvasModalId =
   | 'scene-lighting'
   | 'camera-lexicon'
   | 'prompt-booster'
+  | 'script-segmentation'
   | 'character-bible'
   | 'scene-bible'
   | 'shot-list-builder'
