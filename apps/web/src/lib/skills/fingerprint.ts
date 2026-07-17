@@ -103,11 +103,28 @@ function canonicalize(value: unknown, active = new WeakSet<object>()): unknown {
     active.add(objectValue)
     try {
       const normalized: unknown[] = []
-      const length = value.length
+      let length: number
+      try {
+        length = value.length
+      } catch {
+        throw new TypeError('Fingerprint array length could not be read')
+      }
       for (let index = 0; index < length; index += 1) {
-        if (!Object.prototype.hasOwnProperty.call(value, index)) continue
-        const item = value[index]
-        if (item !== undefined) normalized.push(canonicalize(item, active))
+        let hasOwnSlot: boolean
+        let item: unknown
+        try {
+          hasOwnSlot = Object.prototype.hasOwnProperty.call(value, index)
+          if (hasOwnSlot) item = value[index]
+        } catch {
+          throw new TypeError(`Fingerprint array entry ${index} could not be read`)
+        }
+        if (!hasOwnSlot) {
+          throw new TypeError('Fingerprint arrays must be dense arrays')
+        }
+        if (item === undefined) {
+          throw new TypeError('Fingerprint arrays must not contain undefined array entries')
+        }
+        normalized.push(canonicalize(item, active))
       }
       return normalized
     } finally {

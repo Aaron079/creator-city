@@ -294,7 +294,7 @@ describe('createCreatorSkillFingerprint', () => {
 
   test('accepts JSON-compatible primitives, arrays, and null-prototype objects', () => {
     const nullPrototypeOptions = Object.create(null) as Record<string, unknown>
-    nullPrototypeOptions.values = [null, true, 'text', 42, undefined]
+    nullPrototypeOptions.values = [null, true, 'text', 42]
     nullPrototypeOptions.nested = Object.assign(Object.create(null), { enabled: false })
     const left = createInput()
     left.options = nullPrototypeOptions
@@ -307,6 +307,78 @@ describe('createCreatorSkillFingerprint', () => {
     assert.equal(
       createCreatorSkillFingerprint('script-analysis', '1.0.0', left),
       createCreatorSkillFingerprint('script-analysis', '1.0.0', right),
+    )
+  })
+
+  test('rejects a nested sparse array instead of colliding with its compact form', () => {
+    const sparse = createInput()
+    const sparseValues = [1, 2, 3]
+    delete sparseValues[1]
+    sparse.options = { values: sparseValues }
+    const compact = createInput()
+    compact.options = { values: [1, 3] }
+    const compactFingerprint = createCreatorSkillFingerprint(
+      'script-analysis',
+      '1.0.0',
+      compact,
+    )
+    let sparseFingerprint: string | undefined
+
+    assert.throws(
+      () => {
+        sparseFingerprint = createCreatorSkillFingerprint(
+          'script-analysis',
+          '1.0.0',
+          sparse,
+        )
+      },
+      { name: 'TypeError', message: /dense array/ },
+    )
+    assert.notEqual(sparseFingerprint, compactFingerprint)
+  })
+
+  test('rejects a nested own undefined array slot instead of colliding with its compact form', () => {
+    const withUndefined = createInput()
+    const values = [1, undefined, 2]
+    assert.equal(Object.prototype.hasOwnProperty.call(values, 1), true)
+    withUndefined.options = { values }
+    const compact = createInput()
+    compact.options = { values: [1, 2] }
+    const compactFingerprint = createCreatorSkillFingerprint(
+      'script-analysis',
+      '1.0.0',
+      compact,
+    )
+    let undefinedFingerprint: string | undefined
+
+    assert.throws(
+      () => {
+        undefinedFingerprint = createCreatorSkillFingerprint(
+          'script-analysis',
+          '1.0.0',
+          withUndefined,
+        )
+      },
+      { name: 'TypeError', message: /undefined array entries/ },
+    )
+    assert.notEqual(undefinedFingerprint, compactFingerprint)
+  })
+
+  test('contains hostile nested array getters as controlled fingerprint failures', () => {
+    const input = createInput()
+    const values = [1, 2]
+    Object.defineProperty(values, 1, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error('hostile nested array getter')
+      },
+    })
+    input.options = { values }
+
+    assert.throws(
+      () => createCreatorSkillFingerprint('script-analysis', '1.0.0', input),
+      { name: 'TypeError', message: /could not be read/ },
     )
   })
 

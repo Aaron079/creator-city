@@ -1151,6 +1151,153 @@ describe('runCreatorSkillFromRegistry', () => {
     )
   })
 
+  const invalidNestedInputCases: Array<[
+    string,
+    (input: CreatorSkillRunInput) => void,
+  ]> = [
+    ['options sparse arrays', (input) => {
+      const values = [1, 2, 3]
+      delete values[1]
+      input.options = { values }
+    }],
+    ['options own undefined array slots', (input) => {
+      input.options = { values: [1, undefined, 2] }
+    }],
+    ['source metadata sparse arrays', (input) => {
+      const values = [1, 2, 3]
+      delete values[1]
+      input.sourceNodes[0]!.metadataJson = { values }
+    }],
+    ['source metadata own undefined array slots', (input) => {
+      input.sourceNodes[0]!.metadataJson = { values: [1, undefined, 2] }
+    }],
+  ]
+
+  for (const [label, configureInput] of invalidNestedInputCases) {
+    test(`blocks ${label} before execution with the fallback fingerprint`, () => {
+      let executionCount = 0
+      const skill = createSkill({}, (_input, fingerprint) => {
+        executionCount += 1
+        return createResult('test-skill', '1.0.0', fingerprint)
+      })
+      const input = createInput()
+      configureInput(input)
+
+      const result = runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        input,
+      )
+
+      assertBlocked(result, 'INVALID_SKILL_INPUT')
+      assert.equal(result.runFingerprint, 'csf1_00000000')
+      assert.equal(executionCount, 0)
+    })
+  }
+
+  test('contains hostile nested input array getters before execution', () => {
+    let executionCount = 0
+    const skill = createSkill({}, (_input, fingerprint) => {
+      executionCount += 1
+      return createResult('test-skill', '1.0.0', fingerprint)
+    })
+    const registry = createCreatorExecutableSkillRegistry([skill])
+
+    for (const location of ['options', 'metadata'] as const) {
+      const input = createInput()
+      const values = [1, 2]
+      Object.defineProperty(values, 1, {
+        enumerable: true,
+        configurable: true,
+        get() {
+          throw new Error('hostile nested input array getter')
+        },
+      })
+      if (location === 'options') {
+        input.options = { values }
+      } else {
+        input.sourceNodes[0]!.metadataJson = { values }
+      }
+
+      assert.doesNotThrow(() => {
+        const result = runCreatorSkillFromRegistry(registry, 'test-skill', input)
+        assertBlocked(result, 'INVALID_SKILL_INPUT')
+        assert.equal(result.runFingerprint, 'csf1_00000000')
+      })
+    }
+    assert.equal(executionCount, 0)
+  })
+
+  for (const [label, values] of [
+    ['sparse', () => {
+      const nested = [1, 2, 3]
+      delete nested[1]
+      return nested
+    }],
+    ['own undefined', () => [1, undefined, 2]],
+  ] as const) {
+    test(`classifies Artifact payload nested ${label} arrays as malformed Artifacts`, () => {
+      let executionCount = 0
+      const skill = createSkill({}, (_input, fingerprint) => {
+        executionCount += 1
+        return createResult('test-skill', '1.0.0', fingerprint)
+      })
+      const input = createInput()
+      input.artifacts = [{
+        ...input.artifacts![0]!,
+        payload: { values: values() },
+      }]
+
+      const result = runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        input,
+      )
+
+      assertBlocked(result, 'INVALID_SKILL_ARTIFACT')
+      assert.equal(result.runFingerprint, 'csf1_00000000')
+      assert.equal(executionCount, 0)
+    })
+  }
+
+  test('preserves exact valid dense nested array order for executor input', () => {
+    const expected = ['third', 'first', 'second']
+    let executionCount = 0
+    const skill = createSkill({}, (input, fingerprint) => {
+      executionCount += 1
+      assert.deepEqual(input.options?.values, expected)
+      const metadata = input.sourceNodes.find((node) => node.id === 'node-b')
+        ?.metadataJson as Record<string, unknown>
+      assert.deepEqual(
+        metadata.values,
+        expected,
+      )
+      assert.deepEqual(
+        (input.artifacts?.[0]?.payload as Record<string, unknown>).values,
+        expected,
+      )
+      return createResult('test-skill', '1.0.0', fingerprint)
+    })
+    const input = createInput()
+    input.options = { values: [...expected] }
+    input.sourceNodes[0]!.metadataJson = { values: [...expected] }
+    input.artifacts = [{
+      ...input.artifacts![0]!,
+      payload: { values: [...expected] },
+    }]
+    const snapshot = structuredClone(input)
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      input,
+    )
+
+    assert.equal(result.status, 'ready')
+    assert.equal(executionCount, 1)
+    assert.deepEqual(input, snapshot)
+  })
+
   test('preserves an own enumerable __proto__ input key without changing prototypes', () => {
     const skill = createSkill({}, (input, fingerprint) => {
       const options = input.options!

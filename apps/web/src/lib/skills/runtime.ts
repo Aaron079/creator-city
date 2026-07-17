@@ -92,14 +92,16 @@ function cloneInputValue(value: unknown, active = new WeakSet<object>()): unknow
   if (Array.isArray(value)) {
     active.add(objectValue)
     try {
-      const clone: unknown[] = []
-      const length = value.length
-      for (let index = 0; index < length; index += 1) {
-        if (!Object.prototype.hasOwnProperty.call(value, index)) continue
-        const item = value[index]
-        if (item !== undefined) clone.push(cloneInputValue(item, active))
-      }
-      return clone
+      return transformDenseArray(
+        value,
+        'Nested input array',
+        (item) => {
+          if (item === undefined) {
+            throw new TypeError('Nested input arrays must not contain undefined entries')
+          }
+          return cloneInputValue(item, active)
+        },
+      )
     } finally {
       active.delete(objectValue)
     }
