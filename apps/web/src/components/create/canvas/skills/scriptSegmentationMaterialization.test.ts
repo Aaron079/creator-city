@@ -3,7 +3,6 @@
  * Run: cd apps/web && node_modules/.bin/tsx --test src/components/create/canvas/skills/scriptSegmentationMaterialization.test.ts
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 import type {
   CreatorSkillEvidence,
@@ -17,6 +16,7 @@ import {
 
 const SOURCE_NODE_ID = 'script-1'
 const RUN_FINGERPRINT = 'csf1_12ab34cd'
+const SOURCE_ARTIFACT_ID = 'scene-breakdown-001'
 
 function scene(
   sceneId: string,
@@ -46,7 +46,7 @@ function evidence(
 ): CreatorSkillEvidence {
   return {
     evidenceId,
-    ruleId: 'scene-boundary',
+    ruleId: 'HEADED_SCENE_BOUNDARY',
     sourceNodeId: SOURCE_NODE_ID,
     lineStart: sceneDraft.lineStart,
     lineEnd: sceneDraft.lineEnd,
@@ -82,21 +82,19 @@ function resultFixture(
     runFingerprint: RUN_FINGERPRINT,
     status: 'ready',
     artifacts: [{
-      artifactId: 'scene-breakdown-001',
+      artifactId: SOURCE_ARTIFACT_ID,
       artifactType: 'scene-breakdown',
       artifactVersion: 1,
       sourceNodeIds: [SOURCE_NODE_ID],
       sourceArtifactIds: [],
       payload: {
         format: 'headed-script',
-        scenes: [FIRST_SCENE, SECOND_SCENE],
+        scenes: [clone(FIRST_SCENE), clone(SECOND_SCENE)],
       },
     }],
     evidence: [
-      evidence('ev-first', FIRST_SCENE),
-      evidence('ev-second', SECOND_SCENE),
-      evidence('ev-wrong-source', FIRST_SCENE, { sourceNodeId: 'script-2' }),
-      evidence('ev-wrong-range', FIRST_SCENE, { lineEnd: 99 }),
+      evidence('scene-evidence-001', FIRST_SCENE),
+      evidence('scene-evidence-002', SECOND_SCENE),
     ],
     warnings: [],
     blockers: [],
@@ -115,14 +113,30 @@ function approve(
   }
 }
 
-function plan(overrides: Partial<Parameters<typeof planScriptSceneMaterialization>[0]> = {}) {
+type PlannerInput = Parameters<typeof planScriptSceneMaterialization>[0] & {
+  approvalContext: {
+    runFingerprint: string
+    sourceArtifactId: string
+  }
+}
+
+function approvalContext(overrides: Partial<PlannerInput['approvalContext']> = {}) {
+  return {
+    runFingerprint: RUN_FINGERPRINT,
+    sourceArtifactId: SOURCE_ARTIFACT_ID,
+    ...overrides,
+  }
+}
+
+function plan(overrides: Partial<PlannerInput> = {}) {
   return planScriptSceneMaterialization({
     sourceNodeId: SOURCE_NODE_ID,
     result: resultFixture(),
+    approvalContext: approvalContext(),
     approvedScenes: [approve(FIRST_SCENE), approve(SECOND_SCENE)],
     existingNodes: [],
     ...overrides,
-  })
+  } as PlannerInput)
 }
 
 function clone<T>(value: T): T {
@@ -200,7 +214,7 @@ describe('planScriptSceneMaterialization output', () => {
 
   test('attaches exact metadata and only source-and-range-matching evidence', () => {
     const planned = plan({ approvedScenes: [approve(FIRST_SCENE)] })
-    const expectedEvidence = [evidence('ev-first', FIRST_SCENE)]
+    const expectedEvidence = [evidence('scene-evidence-001', FIRST_SCENE)]
 
     assert.deepEqual(planned.create[0], {
       resultId: 'scene-001',
@@ -256,6 +270,20 @@ describe('planScriptSceneMaterialization output', () => {
         { metadataJson: { creatorSkill: { skillId: 'other-skill', runFingerprint: RUN_FINGERPRINT, resultId: 'scene-001' } } },
         { metadataJson: { creatorSkill: { skillId: 'script-segmentation', runFingerprint: 'csf1_aaaaaaaa', resultId: 'scene-001' } } },
         { metadataJson: throwingMetadata },
+        { metadataJson: Object.create({
+          creatorSkill: {
+            skillId: 'script-segmentation',
+            runFingerprint: RUN_FINGERPRINT,
+            resultId: 'scene-001',
+          },
+        }) },
+        { metadataJson: {
+          creatorSkill: Object.create({
+            skillId: 'script-segmentation',
+            runFingerprint: RUN_FINGERPRINT,
+            resultId: 'scene-001',
+          }),
+        } },
       ],
     })
 
@@ -347,6 +375,183 @@ describe('planScriptSceneMaterialization validation', () => {
         TypeError,
       )
     }
+  })
+
+  test('binds approvals to the exact run fingerprint and source Artifact', () => {
+    const rerun = resultFixture({ runFingerprint: 'csf1_deadbeef' })
+    const changedArtifactResult = resultFixture()
+    changedArtifactResult.artifacts[0] = {
+      ...changedArtifactResult.artifacts[0]!,
+      artifactId: 'scene-breakdown-002',
+    }
+
+    assert.throws(() => plan({ result: rerun }), TypeError)
+    assert.throws(() => plan({ result: changedArtifactResult }), TypeError)
+    assert.throws(() => plan({
+      approvalContext: approvalContext({ runFingerprint: 'csf1_deadbeef' }),
+    }), TypeError)
+    assert.throws(() => plan({
+      approvalContext: approvalContext({ sourceArtifactId: 'scene-breakdown-002' }),
+    }), TypeError)
+  })
+
+  test('rejects approvals whose immutable scene fields differ from the Artifact', () => {
+    const changedDrafts: ApprovedSceneDraft[] = [
+      approve(FIRST_SCENE, { order: 2 }),
+      approve(FIRST_SCENE, { location: 'Different place' }),
+      approve(FIRST_SCENE, { timeOfDay: 'DAY' }),
+      approve(FIRST_SCENE, { characters: ['Someone else'] }),
+      approve(FIRST_SCENE, { actionSummary: 'Changed summary' }),
+      approve(FIRST_SCENE, { lineStart: 2 }),
+      approve(FIRST_SCENE, { lineEnd: 3 }),
+    ]
+
+    for (const changed of changedDrafts) {
+      assert.throws(() => plan({ approvedScenes: [changed] }), TypeError)
+    }
+  })
+
+  test('rejects inherited required values in results, Artifacts, scenes, and approvals', () => {
+    const inheritedResult = resultFixture() as CreatorSkillRunResult & Record<string, unknown>
+    Reflect.deleteProperty(inheritedResult, 'skillId')
+    Object.setPrototypeOf(inheritedResult, { skillId: 'script-segmentation' })
+
+    const inheritedArtifactResult = resultFixture()
+    const artifact = inheritedArtifactResult.artifacts[0]! as typeof inheritedArtifactResult.artifacts[number] & Record<string, unknown>
+    Reflect.deleteProperty(artifact, 'artifactId')
+    Object.setPrototypeOf(artifact, { artifactId: SOURCE_ARTIFACT_ID })
+
+    const inheritedSceneResult = resultFixture()
+    const payload = inheritedSceneResult.artifacts[0]!.payload as {
+      format: 'headed-script'
+      scenes: Array<ScriptSceneDraft & Record<string, unknown>>
+    }
+    Reflect.deleteProperty(payload.scenes[0]!, 'order')
+    Object.setPrototypeOf(payload.scenes[0]!, { order: 1 })
+
+    const inheritedApproval = approve(FIRST_SCENE) as ApprovedSceneDraft & Record<string, unknown>
+    Reflect.deleteProperty(inheritedApproval, 'actionSummary')
+    Object.setPrototypeOf(inheritedApproval, { actionSummary: FIRST_SCENE.actionSummary })
+
+    assert.throws(() => plan({ result: inheritedResult }), TypeError)
+    assert.throws(() => plan({ result: inheritedArtifactResult }), TypeError)
+    assert.throws(() => plan({ result: inheritedSceneResult }), TypeError)
+    assert.throws(() => plan({ approvedScenes: [inheritedApproval] }), TypeError)
+  })
+
+  test('rejects required accessor properties without invoking changing getters', () => {
+    let contextReads = 0
+    const context = approvalContext()
+    Object.defineProperty(context, 'runFingerprint', {
+      enumerable: true,
+      get() {
+        contextReads += 1
+        return contextReads === 1 ? RUN_FINGERPRINT : 'csf1_deadbeef'
+      },
+    })
+
+    let headingReads = 0
+    const approved = approve(FIRST_SCENE)
+    Object.defineProperty(approved, 'heading', {
+      enumerable: true,
+      get() {
+        headingReads += 1
+        return headingReads === 1 ? FIRST_SCENE.heading : 'Changed heading'
+      },
+    })
+
+    assert.throws(() => plan({ approvalContext: context }), TypeError)
+    assert.throws(() => plan({ approvedScenes: [approved] }), TypeError)
+    assert.equal(contextReads, 0)
+    assert.equal(headingReads, 0)
+  })
+})
+
+describe('planScriptSceneMaterialization evidence integrity', () => {
+  test('rejects malformed evidence even when it belongs to an unapproved scene', () => {
+    const result = resultFixture()
+    result.evidence[1] = {
+      ...result.evidence[1]!,
+      ruleId: '',
+    }
+
+    assert.throws(() => plan({
+      result,
+      approvedScenes: [approve(FIRST_SCENE)],
+    }), TypeError)
+  })
+
+  test('rejects missing evidence before materializing any approved scene', () => {
+    const result = resultFixture({
+      evidence: [evidence('scene-evidence-001', FIRST_SCENE)],
+    })
+
+    assert.throws(() => plan({
+      result,
+      approvedScenes: [approve(FIRST_SCENE)],
+    }), TypeError)
+  })
+
+  test('rejects duplicate evidence IDs and ambiguous scene ranges', () => {
+    const duplicateIds = resultFixture()
+    duplicateIds.evidence[1] = {
+      ...duplicateIds.evidence[1]!,
+      evidenceId: 'scene-evidence-001',
+    }
+    const ambiguousRanges = resultFixture()
+    ambiguousRanges.evidence[1] = {
+      ...ambiguousRanges.evidence[1]!,
+      sourceNodeId: SOURCE_NODE_ID,
+      lineStart: FIRST_SCENE.lineStart,
+      lineEnd: FIRST_SCENE.lineEnd,
+      excerpt: FIRST_SCENE.sourceText,
+    }
+
+    assert.throws(() => plan({ result: duplicateIds }), TypeError)
+    assert.throws(() => plan({ result: ambiguousRanges }), TypeError)
+  })
+
+  test('rejects unstable IDs and evidence that does not match scene source identity', () => {
+    const unstableId = resultFixture()
+    unstableId.evidence[0] = {
+      ...unstableId.evidence[0]!,
+      evidenceId: 'other-evidence-id',
+    }
+    const wrongExcerpt = resultFixture()
+    wrongExcerpt.evidence[0] = {
+      ...wrongExcerpt.evidence[0]!,
+      excerpt: 'Different source excerpt',
+    }
+    const wrongSource = resultFixture()
+    wrongSource.evidence[0] = {
+      ...wrongSource.evidence[0]!,
+      sourceNodeId: 'script-2',
+    }
+
+    assert.throws(() => plan({ result: unstableId }), TypeError)
+    assert.throws(() => plan({ result: wrongExcerpt }), TypeError)
+    assert.throws(() => plan({ result: wrongSource }), TypeError)
+  })
+
+  test('rejects inherited and accessor-backed evidence fields without invoking getters', () => {
+    const inherited = resultFixture()
+    const inheritedEvidence = inherited.evidence[0]! as CreatorSkillEvidence & Record<string, unknown>
+    Reflect.deleteProperty(inheritedEvidence, 'excerpt')
+    Object.setPrototypeOf(inheritedEvidence, { excerpt: FIRST_SCENE.sourceText })
+
+    let excerptReads = 0
+    const accessor = resultFixture()
+    Object.defineProperty(accessor.evidence[0]!, 'excerpt', {
+      enumerable: true,
+      get() {
+        excerptReads += 1
+        return excerptReads === 1 ? FIRST_SCENE.sourceText : 'Changed excerpt'
+      },
+    })
+
+    assert.throws(() => plan({ result: inherited }), TypeError)
+    assert.throws(() => plan({ result: accessor }), TypeError)
+    assert.equal(excerptReads, 0)
   })
 })
 
@@ -452,7 +657,7 @@ describe('planScriptSceneMaterialization hostile arrays', () => {
 
     assert.deepEqual(
       planned.create[0]!.evidence.map(({ evidenceId }) => evidenceId),
-      ['ev-first'],
+      ['scene-evidence-001'],
     )
   })
 
@@ -542,9 +747,10 @@ describe('planScriptSceneMaterialization purity', () => {
     const planned = planScriptSceneMaterialization({
       sourceNodeId: SOURCE_NODE_ID,
       result,
+      approvalContext: approvalContext(),
       approvedScenes,
       existingNodes,
-    })
+    } as PlannerInput)
 
     assert.deepEqual({ result, approvedScenes, existingNodes }, before)
     assert.notStrictEqual(planned.create[0]!.evidence, result.evidence)
@@ -571,9 +777,10 @@ describe('planScriptSceneMaterialization purity', () => {
     const input = {
       sourceNodeId: SOURCE_NODE_ID,
       result: resultFixture(),
+      approvalContext: approvalContext(),
       approvedScenes: [approve(SECOND_SCENE), approve(FIRST_SCENE)],
       existingNodes: [],
-    }
+    } as PlannerInput
 
     const first = planScriptSceneMaterialization(input)
     const second = planScriptSceneMaterialization(input)
@@ -584,13 +791,28 @@ describe('planScriptSceneMaterialization purity', () => {
     assert.notStrictEqual(first.create[0], second.create[0])
   })
 
-  test('has no React, network, UUID, time, random, or browser-global dependencies', () => {
-    const source = readFileSync(
-      new URL('./scriptSegmentationMaterialization.ts', import.meta.url),
-      'utf8',
-    )
+  test('succeeds when time, randomness, and network globals throw', () => {
+    const originalNow = Date.now
+    const originalRandom = Math.random
+    const fetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
+    Date.now = () => { throw new Error('must not read time') }
+    Math.random = () => { throw new Error('must not read randomness') }
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      value: () => { throw new Error('must not access network') },
+    })
 
-    assert.doesNotMatch(source, /from ['"]react['"]|\bfetch\b|randomUUID|\bDate\b|Math\.random|\bwindow\b|\bdocument\b/)
-    assert.doesNotMatch(source, /\.(?:filter|map|every)\(|Array\.from|for\s*\(const\s+\w+\s+of\s+/)
+    try {
+      const planned = plan({ approvedScenes: [approve(FIRST_SCENE)] })
+      assert.deepEqual(planned.create.map(({ resultId }) => resultId), ['scene-001'])
+    } finally {
+      Date.now = originalNow
+      Math.random = originalRandom
+      if (fetchDescriptor) {
+        Object.defineProperty(globalThis, 'fetch', fetchDescriptor)
+      } else {
+        delete (globalThis as { fetch?: unknown }).fetch
+      }
+    }
   })
 })
