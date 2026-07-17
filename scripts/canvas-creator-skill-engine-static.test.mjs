@@ -117,7 +117,6 @@ describe('Creator Skill canvas integration static boundary', () => {
     assert.match(workspace, /type\s+CreatorSkillSourceNode/)
     assert.match(workspace, /activeCanvasModal\s*===\s*['"]script-segmentation['"]/)
     assert.match(workspace, /\.kind\s*===\s*['"]text['"]/)
-    assert.match(workspace, /nodes\.find\([\s\S]{0,180}?\.id\s*===\s*[\s\S]{0,80}?\.id/)
 
     const panel = scriptSegmentationPanelUsage(workspace)
     assert.match(panel, /sourceNode=\{[^}]+\}/)
@@ -138,7 +137,10 @@ describe('Creator Skill canvas integration static boundary', () => {
     assert.ok(applyBoundary, 'workspace should own a script segmentation apply callback')
 
     const assertBoundary = (source) => {
-      assert.match(source, /latestNodesRef\.current\.find/)
+      assert.match(
+        source,
+        /latestNodesRef\.current\.find\(\([^)]*\)\s*=>\s*[^)]*\.id\s*===\s*[^)]*\.id\)/,
+      )
       assert.ok(count(source, /resultText\?\.trim\(\)/g) >= 2)
       assert.match(source, /!\w*current\w*/i)
       assert.match(source, /\.kind\s*!==\s*['"]text['"]/)
@@ -156,28 +158,83 @@ describe('Creator Skill canvas integration static boundary', () => {
     ))
   })
 
-  test('approved nonduplicates use createNode with unchanged metadata and indexed positions', () => {
+  test('approved nonduplicates resolve against evolving occupancy and append actual created nodes', () => {
     const applyBoundary = scriptSegmentationCallbacks(workspace).find((source) => (
       source.includes("createNode('text'")
     ))
     assert.ok(applyBoundary)
-    assert.match(applyBoundary, /\.forEach\(\(\w+\s*,\s*index\)\s*=>/)
-    assert.match(applyBoundary, /createNode\(\s*['"]text['"]\s*,\s*\{/)
-    for (const expected of [
-      /title:\s*\w+\.title/,
-      /prompt:\s*\w+\.prompt/,
-      /parentNodeId:\s*\w+\.id/,
-      /metadataJson:\s*\w+\.metadataJson/,
-      /edgeLabel:\s*['"]剧本分场['"]/,
-      /edgeToolId:\s*['"]script-segmentation['"]/,
-      /edgeToolIcon:\s*['"]§['"]/,
-      /position:\s*\{[\s\S]*?index/,
-    ]) assert.match(applyBoundary, expected)
-    assert.doesNotMatch(applyBoundary, /metadataJson:\s*\{/)
-    assert.match(applyBoundary, /flushLocalSnapshot\(\)/)
-    assert.match(applyBoundary, /scheduleCanvasSave\(0\)/)
-    assert.match(applyBoundary, /showCanvasFeedback\(/)
-    assert.match(applyBoundary, /closeCanvasPanel\(\)/)
+
+    const assertBoundary = (source) => {
+      const occupancyMatch = source.match(
+        /const\s+(\w+)\s*=\s*\[\s*\.\.\.latestNodesRef\.current\s*\]/,
+      )
+      assert.ok(occupancyMatch, 'batch occupancy must snapshot the latest nodes')
+      const occupancy = occupancyMatch[1]
+      assert.match(source, /\.forEach\(\(\w+\s*,\s*index\)\s*=>/)
+      const positionMatch = source.match(
+        new RegExp(`const\\s+(\\w+)\\s*=\\s*resolveNonOverlappingPosition\\(\\s*\\{[\\s\\S]*?width:[\\s\\S]*?height:[\\s\\S]*?\\}\\s*,\\s*${occupancy}\\s*\\)`),
+      )
+      assert.ok(positionMatch, 'candidate rectangle must resolve against evolving occupancy')
+      const resolvedPosition = positionMatch[1]
+      const createdMatch = source.match(
+        /const\s+(\w+)\s*=\s*createNode\(\s*['"]text['"]\s*,\s*\{/,
+      )
+      assert.ok(createdMatch, 'createNode return value must be retained')
+      const createdNode = createdMatch[1]
+      for (const expected of [
+        /title:\s*\w+\.title/,
+        /prompt:\s*\w+\.prompt/,
+        /parentNodeId:\s*\w+\.id/,
+        /metadataJson:\s*\w+\.metadataJson/,
+        /edgeLabel:\s*['"]剧本分场['"]/,
+        /edgeToolId:\s*['"]script-segmentation['"]/,
+        /edgeToolIcon:\s*['"]§['"]/,
+      ]) assert.match(source, expected)
+      assert.match(
+        source,
+        new RegExp(`(?:position\\s*:\\s*${resolvedPosition}|\\b${resolvedPosition}\\s*,)`),
+      )
+      assert.doesNotMatch(source, /metadataJson:\s*\{/)
+      assert.match(
+        source,
+        new RegExp(`${occupancy}\\.push\\(\\s*${createdNode}\\s*\\)`),
+      )
+      assert.ok(
+        source.indexOf(`${occupancy}.push`) > source.indexOf(`const ${createdNode} = createNode`),
+        'actual created node must join occupancy after creation',
+      )
+    }
+
+    assertMutationCaught(assertBoundary, applyBoundary, (source) => (
+      source.replace(/\[\s*\.\.\.latestNodesRef\.current\s*\]/, '[]')
+    ))
+    assertMutationCaught(assertBoundary, applyBoundary, (source) => (
+      source.replace(/\},\s*occupancy\)/, '}, latestNodesRef.current)')
+    ))
+    assertMutationCaught(assertBoundary, applyBoundary, (source) => (
+      source.replace(/\n\s*\w+\.push\(\s*\w+\s*\)/, '')
+    ))
+  })
+
+  test('successful mixed creation keeps duplicate feedback mounted', () => {
+    const applyBoundary = scriptSegmentationCallbacks(workspace).find((source) => (
+      source.includes("createNode('text'")
+    ))
+    assert.ok(applyBoundary)
+
+    const assertBoundary = (source) => {
+      const successStart = source.indexOf("const textNodeSize = getNodeSize('text')")
+      assert.ok(successStart >= 0)
+      const successPath = source.slice(successStart)
+      assert.match(successPath, /flushLocalSnapshot\(\)/)
+      assert.match(successPath, /scheduleCanvasSave\(0\)/)
+      assert.match(successPath, /showCanvasFeedback\(/)
+      assert.doesNotMatch(successPath, /closeCanvasPanel\(\)/)
+    }
+
+    assertMutationCaught(assertBoundary, applyBoundary, (source) => (
+      `${source}\ncloseCanvasPanel()`
+    ))
   })
 
   test('integration remains local canvas orchestration with no source patch or remote side effects', () => {

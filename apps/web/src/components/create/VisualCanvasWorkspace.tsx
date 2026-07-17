@@ -4782,8 +4782,15 @@ export function VisualCanvasWorkspace({
     }
 
     const textNodeSize = getNodeSize('text')
+    const occupancy = [...latestNodesRef.current]
     plans.forEach((plan, index) => {
-      createNode('text', {
+      const position = resolveNonOverlappingPosition({
+        x: currentSource.x + currentSource.width + 240,
+        y: currentSource.y + index * (textNodeSize.height + 64),
+        width: textNodeSize.width,
+        height: textNodeSize.height,
+      }, occupancy)
+      const createdNode = createNode('text', {
         title: plan.title,
         prompt: plan.prompt,
         parentNodeId: analyzedSource.id,
@@ -4791,16 +4798,13 @@ export function VisualCanvasWorkspace({
         edgeLabel: '剧本分场',
         edgeToolId: 'script-segmentation',
         edgeToolIcon: '§',
-        position: {
-          x: currentSource.x + currentSource.width + 240,
-          y: currentSource.y + index * (textNodeSize.height + 64),
-        },
+        position,
       })
+      occupancy.push(createdNode)
     })
     flushLocalSnapshot()
     scheduleCanvasSave(0)
     showCanvasFeedback(`已创建 ${plans.length} 个剧本分场节点。`)
-    closeCanvasPanel()
   }, [closeCanvasPanel, createNode, flushLocalSnapshot, scheduleCanvasSave, scriptSegmentationSource, showCanvasFeedback])
 
   useEffect(() => {
