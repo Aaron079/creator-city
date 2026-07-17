@@ -22,9 +22,8 @@ const CHINESE_TIME_TOKENS = new Set([
   '深夜',
   '黎明',
 ])
-const LATIN_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}'-]*(?:\s+\p{Lu}[\p{Script=Latin}\p{M}'-]*)?$/u
-const EXPLICIT_UNICODE_NAME = /^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)*$/u
-const STANDALONE_CHINESE_CUE = /^\p{Script=Han}{2,4}$/u
+const LATIN_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}]*(?:['\u2019-]\p{Script=Latin}[\p{Script=Latin}\p{M}]*)*(?:\s+\p{Lu}[\p{Script=Latin}\p{M}]*(?:['\u2019-]\p{Script=Latin}[\p{Script=Latin}\p{M}]*)*)?$/u
+const CHINESE_BASE_NAME = /^\p{Script=Han}{2,4}$/u
 const COLON_CUE = /^([^:：]+)\s*[:：]\s*(.*)$/u
 const TRANSITION_LABEL = /^(?:FADE(?:\s+(?:IN|OUT|TO(?:\s+\S+){0,3}))?|CUT(?:\s+TO(?:\s+\S+){0,3})?|DISSOLVE(?:\s+TO(?:\s+\S+){0,3})?|SMASH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|MATCH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|JUMP\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|WIPE(?:\s+TO(?:\s+\S+){0,3})?|IRIS\s+(?:IN|OUT))$/i
 const CUE_QUALIFIER = /\s+\((?:V\.O\.|O\.S\.|CONT'D)\)$/iu
@@ -101,6 +100,25 @@ const LATIN_ACTION_WORDS = new Set([
   'WALKED',
   'WALKS',
 ])
+const EXPLICIT_LATIN_ACTION_WORDS = new Set([
+  'CLOSES',
+  'CRIES',
+  'ENTERS',
+  'EXITS',
+  'LAUGHS',
+  'LEAVES',
+  'LOOKS',
+  'MOVES',
+  'OPENS',
+  'PULLS',
+  'PUSHES',
+  'RUNS',
+  'SITS',
+  'SMILES',
+  'STANDS',
+  'TURNS',
+  'WALKS',
+])
 const COMMON_CHINESE_SURNAMES = new Set(Array.from(
   '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏窦章云苏潘葛范彭郎鲁韦昌马苗方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余顾孟平黄穆萧尹姚邵湛汪祁毛禹狄米贝臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万柯管卢莫房解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀惠甄曲家封芮储靳段富巫乌焦巴弓牧山谷车侯全班仰秋仲伊宫宁栾甘厉祖武符刘景詹龙叶幸司黎白怀蒲鄂赖卓蔺屠蒙池乔党翟谭贡劳姬申冉桑桂牛边燕冀浦尚农温庄晏柴瞿阎连茹习艾鱼容向古易慎戈廖庾居衡步都耿满弘匡国文寇广东欧沃利蔚越隆师聂晁勾敖融冷辛阚那简饶曾沙鞠关查荆红游权盖益桓',
 ))
@@ -120,6 +138,12 @@ const CHINESE_ROLE_SUFFIXES = [
   '队长',
   '主任',
   '教授',
+  '教练',
+  '演员',
+  '记者',
+  '主持人',
+  '服务员',
+  '旁白',
   '父亲',
   '母亲',
   '爸爸',
@@ -135,6 +159,7 @@ const CHINESE_ROLE_SUFFIXES = [
   '舅舅',
   '姑姑',
 ]
+const CHINESE_NICKNAME_PREFIXES = ['小', '老', '阿']
 const CHINESE_ACTION_HINTS = [
   '打开',
   '关闭',
@@ -261,25 +286,56 @@ function isPlausibleStandaloneLatinName(name: string) {
     && !containsProductionLabel(name)
 }
 
-function isPlausibleChineseName(name: string) {
-  if (!STANDALONE_CHINESE_CUE.test(name)) return false
-  if (CHINESE_ACTION_HINTS.some((hint) => name.includes(hint))) return false
-
+function hasChineseSurnameOrRoleStructure(name: string) {
   return COMMON_CHINESE_SURNAMES.has(Array.from(name)[0]!)
     || CHINESE_ROLE_SUFFIXES.some((suffix) => name.endsWith(suffix))
+}
+
+function hasExplicitChinesePersonStructure(name: string) {
+  return hasChineseSurnameOrRoleStructure(name)
+    || CHINESE_NICKNAME_PREFIXES.some((prefix) => name.startsWith(prefix))
+}
+
+function hasChineseActionHint(name: string) {
+  return CHINESE_ACTION_HINTS.some((hint) => name.includes(hint))
+}
+
+function isPlausibleStandaloneChineseName(name: string) {
+  if (!CHINESE_BASE_NAME.test(name)) return false
+  if (CHINESE_ACTION_HINTS.some((hint) => name.includes(hint))) return false
+
+  return hasChineseSurnameOrRoleStructure(name)
+}
+
+function isPlausibleExplicitLatinName(name: string) {
+  if (!LATIN_NAME.test(name)) return false
+
+  const tokens = name.toUpperCase().split(/\s+/)
+  return !LATIN_ARTICLES.has(tokens[0]!)
+    && !tokens.some((token) => EXPLICIT_LATIN_ACTION_WORDS.has(token))
+}
+
+function isPlausibleExplicitChineseName(name: string) {
+  if (!CHINESE_BASE_NAME.test(name)) return false
+  return hasExplicitChinesePersonStructure(name) || !hasChineseActionHint(name)
 }
 
 function normalizeExplicitCueName(rawName: string) {
   const name = stripCueQualifier(rawName)
   if (!name || Array.from(name).length > 40 || isTransition(name)) return null
-  if (containsProductionLabel(name) || !EXPLICIT_UNICODE_NAME.test(name)) return null
-  return name
+  if (containsProductionLabel(name)) return null
+  if (isPlausibleExplicitLatinName(name) || isPlausibleExplicitChineseName(name)) {
+    return name
+  }
+  return null
 }
 
 function normalizeStandaloneCueName(rawName: string) {
   const name = stripCueQualifier(rawName)
   if (!name || Array.from(name).length > 40 || isTransition(name)) return null
-  if (isPlausibleStandaloneLatinName(name) || isPlausibleChineseName(name)) return name
+  if (isPlausibleStandaloneLatinName(name) || isPlausibleStandaloneChineseName(name)) {
+    return name
+  }
   return null
 }
 

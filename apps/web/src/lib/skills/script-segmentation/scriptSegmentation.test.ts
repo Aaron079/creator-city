@@ -316,6 +316,100 @@ describe('script-segmentation headed scripts', () => {
     assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', '', '', '', ''])
   })
 
+  test('distinguishes reviewer action prose from structured explicit cues', () => {
+    const scenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      'The door opens: slowly.',
+      'INT. ROOM - NIGHT',
+      '门缓缓打开：一束光照进来。',
+      'INT. STAIRWELL - NIGHT',
+      '李冲：快走。',
+      'INT. ALLEY - NIGHT',
+      '小明：别回头。',
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      [],
+      [],
+      ['李冲'],
+      ['小明'],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), [
+      'The door opens: slowly.',
+      '门缓缓打开：一束光照进来。',
+      '',
+      '',
+    ])
+  })
+
+  test('rejects article-led and action-like Latin explicit labels', () => {
+    const actionLines = [
+      'THE DOOR: Opens slowly.',
+      'DOOR OPENS: Slowly.',
+      'DOOR CLOSES: Slowly.',
+      'MAYA ENTERS: Quietly.',
+      'MAYA EXITS: Quietly.',
+      'MAYA RUNS: Quickly.',
+      'MAYA WALKS: Slowly.',
+      'MAYA LOOKS: Back.',
+      'MAYA TURNS: Back.',
+      'MAYA PUSHES: Hard.',
+      'MAYA PULLS: Hard.',
+      'MAYA SITS: Quietly.',
+      'MAYA STANDS: Quietly.',
+      'MAYA SMILES: Softly.',
+      'MAYA CRIES: Quietly.',
+    ]
+
+    for (const action of actionLines) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+  })
+
+  test('rejects Chinese action labels unless person structure overrides the hint', () => {
+    const actionLines = [
+      '门打开：一束光照进来。',
+      '门关闭：房间暗下来。',
+      '人进入：脚步声靠近。',
+      '人离开：门重新关上。',
+      '人转身：影子掠过墙面。',
+      '人走开：脚步声渐远。',
+      '人跑开：脚步声变快。',
+      '人看门：走廊空无一人。',
+      '人推门：门轴发出声响。',
+      '人拉门：门锁轻轻震动。',
+      '人坐下：椅子发出声响。',
+      '人站起：桌面轻轻晃动。',
+      '人笑了：声音传过走廊。',
+      '人哭了：雨声盖过呼吸。',
+      '人冲出：门撞上墙面。',
+    ]
+
+    for (const action of actionLines) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+
+    const characters = payloadOf(runWithText([
+      'INT. STAIRWELL - NIGHT',
+      '李冲：快走。',
+      'INT. STREET - NIGHT',
+      '小跑：等等我。',
+      'INT. GYM - DAY',
+      '跑步教练：再来一圈。',
+    ].join('\n'))).scenes.map((scene) => scene.characters)
+    assert.deepEqual(characters, [['李冲'], ['小跑'], ['跑步教练']])
+  })
+
   test('keeps surname and action-word ambiguity heuristics on standalone cues', () => {
     for (const action of ['李冲', '小明', 'MAYA RUN']) {
       const scene = payloadOf(runWithText([
