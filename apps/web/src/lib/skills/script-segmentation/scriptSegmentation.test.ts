@@ -228,10 +228,9 @@ describe('script-segmentation headed scripts', () => {
         expectedCharacters: ['MAYA'],
       },
       {
-        label: 'multiword Latin standalone cue',
+        label: 'two-token Latin standalone cue',
         body: ['ALICE SMITH', 'Stay close.'],
-        expectedCharacters: [],
-        expectedActionSummary: 'ALICE SMITH',
+        expectedCharacters: ['ALICE SMITH'],
       },
       {
         label: 'Chinese standalone cue with immediate dialogue',
@@ -309,19 +308,38 @@ describe('script-segmentation headed scripts', () => {
     assert.deepEqual(scenes.map((scene) => scene.characters), [
       ['李冲'],
       ['小明'],
-      [],
-      [],
+      ['LI CHONG'],
+      ['XIAO MING'],
       [],
       [fortyCharacterName],
     ])
     assert.deepEqual(scenes.map((scene) => scene.actionSummary), [
       '',
       '',
-      'LI CHONG: Go now.',
-      'XIAO MING: Do not look back.',
+      '',
+      '',
       'MAYA RUN (v.o.): Keep moving.',
       '',
     ])
+  })
+
+  test('accepts bounded two-token Latin cues and qualified variants', () => {
+    const scenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      'ALICE SMITH: Stay close.',
+      'INT. OFFICE - DAY',
+      'LI CHONG:',
+      'Keep moving.',
+      'INT. RADIO ROOM - NIGHT',
+      'ALICE SMITH (V.O.): Can you hear me?',
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['ALICE SMITH'],
+      ['LI CHONG'],
+      ['ALICE SMITH'],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', ''])
   })
 
   test('keeps generic colon labels as action under positive cue grammar', () => {

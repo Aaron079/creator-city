@@ -22,7 +22,7 @@ const CHINESE_TIME_TOKENS = new Set([
   '深夜',
   '黎明',
 ])
-const LATIN_CHARACTER_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}]*(?:['\u2019-]\p{Script=Latin}[\p{Script=Latin}\p{M}]*)*$/u
+const LATIN_CHARACTER_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}]*(?:['\u2019-]\p{Script=Latin}[\p{Script=Latin}\p{M}]*)*(?:\s+\p{Lu}[\p{Script=Latin}\p{M}]*(?:['\u2019-]\p{Script=Latin}[\p{Script=Latin}\p{M}]*)*)?$/u
 const CHINESE_SURNAME_NAME = /^\p{Script=Han}{2,3}$/u
 const CHINESE_NICKNAME = /^(?:小|老|阿)\p{Script=Han}{1,3}$/u
 const COLON_CUE = /^([^:：]+)\s*[:：]\s*(.*)$/u
@@ -49,6 +49,66 @@ const PRODUCTION_LABELS = new Set([
   'TITLE',
   'VFX',
   'VO',
+])
+const LATIN_ARTICLES = new Set(['A', 'AN', 'THE'])
+const LATIN_ACTION_VERBS = new Set([
+  'CLOSE',
+  'CLOSED',
+  'CLOSES',
+  'CRIED',
+  'CRIES',
+  'CRY',
+  'ENTER',
+  'ENTERED',
+  'ENTERS',
+  'EXIT',
+  'EXITED',
+  'EXITS',
+  'FLICKER',
+  'FLICKERED',
+  'FLICKERS',
+  'LAUGH',
+  'LAUGHED',
+  'LAUGHS',
+  'LEAVE',
+  'LEAVES',
+  'LEFT',
+  'LOOK',
+  'LOOKED',
+  'LOOKS',
+  'MOVE',
+  'MOVED',
+  'MOVES',
+  'OPEN',
+  'OPENED',
+  'OPENS',
+  'PULL',
+  'PULLED',
+  'PULLS',
+  'PUSH',
+  'PUSHED',
+  'PUSHES',
+  'RANG',
+  'RING',
+  'RINGS',
+  'RAN',
+  'RUN',
+  'RUNS',
+  'SAT',
+  'SIT',
+  'SITS',
+  'SMILE',
+  'SMILED',
+  'SMILES',
+  'STAND',
+  'STANDS',
+  'STOOD',
+  'TURN',
+  'TURNED',
+  'TURNS',
+  'WALK',
+  'WALKED',
+  'WALKS',
 ])
 const COMMON_CHINESE_SURNAMES = new Set(Array.from(
   '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏窦章云苏潘葛范彭郎鲁韦昌马苗方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余顾孟平黄穆萧尹姚邵湛汪祁毛禹狄米贝臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万柯管卢莫房解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀惠甄曲家封芮储靳段富巫乌焦巴弓牧山谷车侯全班仰秋仲伊宫宁栾甘厉祖武符刘景詹龙叶幸司黎白怀蒲鄂赖卓蔺屠蒙池乔党翟谭贡劳姬申冉桑桂牛边燕冀浦尚农温庄晏柴瞿阎连茹习艾鱼容向古易慎戈廖庾居衡步都耿满弘匡国文寇广东欧沃利蔚越隆师聂晁勾敖融冷辛阚那简饶曾沙鞠关查荆红游权盖益桓',
@@ -203,11 +263,19 @@ function isPlausibleChineseCharacterName(name: string) {
     && COMMON_CHINESE_SURNAMES.has(Array.from(name)[0]!)
 }
 
+function isPlausibleLatinCharacterName(name: string) {
+  if (!LATIN_CHARACTER_NAME.test(name)) return false
+
+  const tokens = name.toUpperCase().split(/\s+/)
+  return !LATIN_ARTICLES.has(tokens[0]!)
+    && !tokens.some((token) => LATIN_ACTION_VERBS.has(token))
+}
+
 function normalizeCueName(rawName: string) {
   const name = stripCueQualifier(rawName)
   if (!name || Array.from(name).length > 40 || isTransition(name)) return null
   if (containsProductionLabel(name)) return null
-  if (LATIN_CHARACTER_NAME.test(name) || isPlausibleChineseCharacterName(name)) {
+  if (isPlausibleLatinCharacterName(name) || isPlausibleChineseCharacterName(name)) {
     return name
   }
   return null
