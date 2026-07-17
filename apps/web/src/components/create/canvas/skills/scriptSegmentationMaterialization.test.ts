@@ -136,6 +136,29 @@ function deepFreeze(value: unknown, seen = new Set<object>()): void {
   Object.freeze(value)
 }
 
+function defineOwnArrayMethod(
+  array: unknown[],
+  key: 'filter' | 'map' | 'every' | typeof Symbol.iterator,
+  value: (...args: never[]) => unknown,
+) {
+  Object.defineProperty(array, key, {
+    configurable: true,
+    value,
+  })
+}
+
+function throwingArraySlot<T>(entries: T[], index = 0): T[] {
+  const array = entries.slice()
+  Object.defineProperty(array, index, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      throw new Error('caller-controlled slot getter')
+    },
+  })
+  return array
+}
+
 describe('planScriptSceneMaterialization output', () => {
   test('creates approved scenes only and preserves Artifact order', () => {
     const planned = plan({
@@ -327,6 +350,185 @@ describe('planScriptSceneMaterialization validation', () => {
   })
 })
 
+describe('planScriptSceneMaterialization hostile arrays', () => {
+  test('rejects two indexed Artifacts when an own filter tries to hide one', () => {
+    const firstArtifact = resultFixture().artifacts[0]!
+    const artifacts = [
+      firstArtifact,
+      { ...clone(firstArtifact), artifactId: 'scene-breakdown-002' },
+    ]
+    defineOwnArrayMethod(artifacts, 'filter', () => [artifacts[0]!])
+    defineOwnArrayMethod(artifacts, 'map', () => { throw new Error('must not call map') })
+    defineOwnArrayMethod(artifacts, 'every', () => { throw new Error('must not call every') })
+    defineOwnArrayMethod(artifacts, Symbol.iterator, () => { throw new Error('must not iterate') })
+
+    assert.throws(
+      () => plan({ result: resultFixture({ artifacts }) }),
+      TypeError,
+    )
+  })
+
+  test('preserves indexed Artifact scene order despite a reversing iterator', () => {
+    const result = resultFixture()
+    const payload = result.artifacts[0]!.payload as {
+      format: 'headed-script'
+      scenes: ScriptSceneDraft[]
+    }
+    defineOwnArrayMethod(payload.scenes, Symbol.iterator, function* () {
+      yield payload.scenes[1]!
+      yield payload.scenes[0]!
+    })
+
+    const planned = plan({ result })
+
+    assert.deepEqual(planned.create.map(({ resultId }) => resultId), [
+      'scene-001',
+      'scene-002',
+    ])
+  })
+
+  test('ignores an own scenes map that tries to hide indexed scene IDs', () => {
+    const result = resultFixture()
+    const payload = result.artifacts[0]!.payload as {
+      format: 'headed-script'
+      scenes: ScriptSceneDraft[]
+    }
+    defineOwnArrayMethod(payload.scenes, 'map', () => [])
+    defineOwnArrayMethod(payload.scenes, 'filter', () => { throw new Error('must not call filter') })
+    defineOwnArrayMethod(payload.scenes, 'every', () => { throw new Error('must not call every') })
+
+    const planned = plan({ result })
+
+    assert.deepEqual(planned.create.map(({ resultId }) => resultId), [
+      'scene-001',
+      'scene-002',
+    ])
+  })
+
+  test('rejects invalid indexed characters when an own every lies about them', () => {
+    const result = resultFixture()
+    const payload = result.artifacts[0]!.payload as {
+      format: 'headed-script'
+      scenes: ScriptSceneDraft[]
+    }
+    const characters = [42] as unknown as string[]
+    defineOwnArrayMethod(characters, 'every', () => true)
+    defineOwnArrayMethod(characters, 'filter', () => { throw new Error('must not call filter') })
+    defineOwnArrayMethod(characters, 'map', () => { throw new Error('must not call map') })
+    defineOwnArrayMethod(characters, Symbol.iterator, () => { throw new Error('must not iterate') })
+    payload.scenes[0] = { ...payload.scenes[0]!, characters }
+
+    assert.throws(() => plan({ result }), TypeError)
+  })
+
+  test('does not let an approval iterator skip an invalid indexed approval', () => {
+    const approvedScenes = [
+      approve(FIRST_SCENE),
+      approve(SECOND_SCENE, { sceneId: 'scene-999' }),
+    ]
+    defineOwnArrayMethod(approvedScenes, 'filter', () => { throw new Error('must not call filter') })
+    defineOwnArrayMethod(approvedScenes, 'map', () => { throw new Error('must not call map') })
+    defineOwnArrayMethod(approvedScenes, 'every', () => { throw new Error('must not call every') })
+    defineOwnArrayMethod(approvedScenes, Symbol.iterator, function* () {
+      yield approvedScenes[0]!
+    })
+
+    assert.throws(() => plan({ approvedScenes }), TypeError)
+  })
+
+  test('reads evidence by indexed slots despite a hiding iterator', () => {
+    const result = resultFixture()
+    defineOwnArrayMethod(result.evidence, 'filter', () => { throw new Error('must not call filter') })
+    defineOwnArrayMethod(result.evidence, 'map', () => { throw new Error('must not call map') })
+    defineOwnArrayMethod(result.evidence, 'every', () => { throw new Error('must not call every') })
+    defineOwnArrayMethod(result.evidence, Symbol.iterator, function* () {
+      yield result.evidence[1]!
+    })
+
+    const planned = plan({
+      result,
+      approvedScenes: [approve(FIRST_SCENE)],
+    })
+
+    assert.deepEqual(
+      planned.create[0]!.evidence.map(({ evidenceId }) => evidenceId),
+      ['ev-first'],
+    )
+  })
+
+  test('detects duplicate existing nodes without invoking own array methods', () => {
+    const existingNodes = [{
+      metadataJson: {
+        creatorSkill: {
+          skillId: 'script-segmentation',
+          runFingerprint: RUN_FINGERPRINT,
+          resultId: 'scene-001',
+        },
+      },
+    }]
+    defineOwnArrayMethod(existingNodes, 'filter', () => { throw new Error('must not call filter') })
+    defineOwnArrayMethod(existingNodes, 'map', () => { throw new Error('must not call map') })
+    defineOwnArrayMethod(existingNodes, 'every', () => { throw new Error('must not call every') })
+    defineOwnArrayMethod(existingNodes, Symbol.iterator, () => { throw new Error('must not iterate') })
+
+    const planned = plan({
+      approvedScenes: [approve(FIRST_SCENE)],
+      existingNodes,
+    })
+
+    assert.deepEqual(planned.create, [])
+    assert.deepEqual(planned.duplicates, ['scene-001'])
+  })
+
+  test('contains caller-controlled collection slot getters as TypeError', () => {
+    const artifact = resultFixture().artifacts[0]!
+    const sceneWithThrowingCharacters = {
+      ...FIRST_SCENE,
+      characters: throwingArraySlot(['Maya']),
+    }
+    const cases: Array<() => unknown> = [
+      () => plan({
+        result: resultFixture({ artifacts: throwingArraySlot([artifact]) }),
+      }),
+      () => plan({
+        result: resultFixture({
+          artifacts: [{
+            ...artifact,
+            payload: {
+              format: 'headed-script',
+              scenes: throwingArraySlot([FIRST_SCENE]),
+            },
+          }],
+        }),
+      }),
+      () => plan({
+        result: resultFixture({
+          artifacts: [{
+            ...artifact,
+            payload: {
+              format: 'headed-script',
+              scenes: [sceneWithThrowingCharacters],
+            },
+          }],
+        }),
+      }),
+      () => plan({ approvedScenes: throwingArraySlot([approve(FIRST_SCENE)]) }),
+      () => plan({
+        result: resultFixture({
+          evidence: throwingArraySlot([evidence('ev-first', FIRST_SCENE)]),
+        }),
+        approvedScenes: [approve(FIRST_SCENE)],
+      }),
+      () => plan({
+        approvedScenes: [approve(FIRST_SCENE)],
+        existingNodes: throwingArraySlot([{ metadataJson: {} }]),
+      }),
+    ]
+
+    for (const run of cases) assert.throws(run, TypeError)
+  })
+})
+
 describe('planScriptSceneMaterialization purity', () => {
   test('does not mutate frozen inputs or alias inputs and output evidence', () => {
     const result = resultFixture()
@@ -389,5 +591,6 @@ describe('planScriptSceneMaterialization purity', () => {
     )
 
     assert.doesNotMatch(source, /from ['"]react['"]|\bfetch\b|randomUUID|\bDate\b|Math\.random|\bwindow\b|\bdocument\b/)
+    assert.doesNotMatch(source, /\.(?:filter|map|every)\(|Array\.from|for\s*\(const\s+\w+\s+of\s+/)
   })
 })

@@ -69,16 +69,30 @@ function isTrimmedIdentifier(value: unknown): value is string {
     && value === value.trim()
 }
 
-function isDenseArray(value: unknown): value is unknown[] {
-  if (!Array.isArray(value)) return false
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.prototype.hasOwnProperty.call(value, index)) return false
+function snapshotDenseArray<T>(value: unknown, field: string): T[] {
+  if (!Array.isArray(value)) fail(`${field} must be an array`)
+
+  const length = value.length
+  const snapshot = new Array<T>(length)
+  for (let index = 0; index < length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) {
+      fail(`${field} must be a dense array`)
+    }
+    try {
+      snapshot[index] = value[index] as T
+    } catch {
+      fail(`${field} contains an unreadable slot`)
+    }
   }
-  return true
+  return snapshot
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return isDenseArray(value) && value.every((entry) => typeof entry === 'string')
+function isStringArray(value: unknown, field: string) {
+  const entries = snapshotDenseArray<unknown>(value, field)
+  for (let index = 0; index < entries.length; index += 1) {
+    if (typeof entries[index] !== 'string') return false
+  }
+  return true
 }
 
 function isOptionalString(value: unknown) {
@@ -96,7 +110,7 @@ function isScriptSceneDraft(value: unknown): value is ScriptSceneDraft {
     && typeof value.heading === 'string'
     && isOptionalString(value.location)
     && isOptionalString(value.timeOfDay)
-    && isStringArray(value.characters)
+    && isStringArray(value.characters, 'scene characters')
     && typeof value.actionSummary === 'string'
     && typeof value.sourceText === 'string'
     && Boolean(value.sourceText.trim())
@@ -111,44 +125,52 @@ function readPayload(value: unknown): SceneBreakdownPayload {
   if (value.format !== 'headed-script' && value.format !== 'paragraph-fallback') {
     fail('scene-breakdown payload format is invalid')
   }
-  if (!isDenseArray(value.scenes) || value.scenes.length === 0) {
+  const scenes = snapshotDenseArray<unknown>(value.scenes, 'scene-breakdown scenes')
+  if (scenes.length === 0) {
     fail('scene-breakdown scenes must be a nonempty dense array')
   }
 
   const sceneIds = new Set<string>()
   const orders = new Set<number>()
-  for (const candidate of value.scenes) {
+  const validatedScenes = new Array<ScriptSceneDraft>(scenes.length)
+  for (let index = 0; index < scenes.length; index += 1) {
+    const candidate = scenes[index]
     if (!isScriptSceneDraft(candidate)) fail('scene-breakdown scene is invalid')
     if (sceneIds.has(candidate.sceneId) || orders.has(candidate.order)) {
       fail('scene-breakdown scene IDs and orders must be unique')
     }
     sceneIds.add(candidate.sceneId)
     orders.add(candidate.order)
+    validatedScenes[index] = candidate
   }
 
-  return value as SceneBreakdownPayload
+  return {
+    format: value.format,
+    scenes: validatedScenes,
+  }
 }
 
 function findSceneBreakdown(
   result: CreatorSkillRunResult,
   sourceNodeId: string,
 ) {
-  if (!isDenseArray(result.artifacts)) fail('result artifacts must be a dense array')
-
-  const candidates = result.artifacts.filter((artifact) => {
-    try {
-      return isRecord(artifact)
-        && artifact.artifactType === 'scene-breakdown'
-        && artifact.artifactVersion === 1
-    } catch {
-      return false
+  const artifacts = snapshotDenseArray<unknown>(result.artifacts, 'result artifacts')
+  let candidate: unknown
+  let candidateCount = 0
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = artifacts[index]
+    if (isRecord(artifact)
+      && artifact.artifactType === 'scene-breakdown'
+      && artifact.artifactVersion === 1) {
+      candidate = artifact
+      candidateCount += 1
     }
-  })
-  if (candidates.length !== 1 || !isCreatorSkillArtifact(candidates[0])) {
+  }
+  if (candidateCount !== 1 || !isCreatorSkillArtifact(candidate)) {
     fail('result must contain exactly one valid scene-breakdown Artifact v1')
   }
 
-  const artifact = candidates[0]
+  const artifact = candidate
   if (artifact.sourceNodeIds.length !== 1 || artifact.sourceNodeIds[0] !== sourceNodeId) {
     fail('scene-breakdown source does not match the supplied source node')
   }
@@ -163,11 +185,14 @@ function readApprovals(
   approvedScenes: ApprovedSceneDraft[],
   artifactScenes: ScriptSceneDraft[],
 ) {
-  if (!isDenseArray(approvedScenes)) fail('approvedScenes must be a dense array')
-
-  const artifactSceneIds = new Set(artifactScenes.map((scene) => scene.sceneId))
+  const approvalEntries = snapshotDenseArray<unknown>(approvedScenes, 'approvedScenes')
+  const artifactSceneIds = new Set<string>()
+  for (let index = 0; index < artifactScenes.length; index += 1) {
+    artifactSceneIds.add(artifactScenes[index]!.sceneId)
+  }
   const approvals = new Map<string, ApprovedSceneDraft>()
-  for (const candidate of approvedScenes) {
+  for (let index = 0; index < approvalEntries.length; index += 1) {
+    const candidate = approvalEntries[index]
     if (!isRecord(candidate)) fail('approved scene must be an object')
     if (!isTrimmedIdentifier(candidate.sceneId) || !artifactSceneIds.has(candidate.sceneId)) {
       fail('approved scene does not exist in the Artifact')
@@ -207,14 +232,22 @@ function cloneEvidence(value: CreatorSkillEvidence): CreatorSkillEvidence {
   }
 }
 
+function cloneEvidenceArray(values: readonly CreatorSkillEvidence[]) {
+  const clones = new Array<CreatorSkillEvidence>(values.length)
+  for (let index = 0; index < values.length; index += 1) {
+    clones[index] = cloneEvidence(values[index]!)
+  }
+  return clones
+}
+
 function matchingEvidence(
-  evidence: CreatorSkillEvidence[],
+  evidence: readonly unknown[],
   sourceNodeId: string,
   scene: ScriptSceneDraft,
 ) {
-  if (!isDenseArray(evidence)) fail('result evidence must be a dense array')
   const matches: CreatorSkillEvidence[] = []
-  for (const candidate of evidence) {
+  for (let index = 0; index < evidence.length; index += 1) {
+    const candidate = evidence[index]
     try {
       if (validEvidence(candidate)
         && candidate.sourceNodeId === sourceNodeId
@@ -233,13 +266,15 @@ function duplicateResultIds(
   existingNodes: Array<{ metadataJson?: unknown }>,
   runFingerprint: string,
 ) {
-  if (!Array.isArray(existingNodes)) fail('existingNodes must be an array')
+  const nodes = snapshotDenseArray<{ metadataJson?: unknown }>(
+    existingNodes,
+    'existingNodes',
+  )
   const duplicates = new Set<string>()
 
-  for (let index = 0; index < existingNodes.length; index += 1) {
-    if (!Object.prototype.hasOwnProperty.call(existingNodes, index)) continue
+  for (let index = 0; index < nodes.length; index += 1) {
     try {
-      const metadata = existingNodes[index]?.metadataJson
+      const metadata = nodes[index]?.metadataJson
       if (!isRecord(metadata) || !isRecord(metadata.creatorSkill)) continue
       const creatorSkill = metadata.creatorSkill
       if (creatorSkill.skillId === SKILL_ID
@@ -276,10 +311,12 @@ function planMaterialization(input: MaterializationInput): MaterializationResult
   const artifact = findSceneBreakdown(result, input.sourceNodeId)
   const approvals = readApprovals(input.approvedScenes, artifact.payload.scenes)
   const existingResultIds = duplicateResultIds(input.existingNodes, result.runFingerprint)
+  const resultEvidence = snapshotDenseArray<unknown>(result.evidence, 'result evidence')
   const create: SceneNodeMaterializationPlan[] = []
   const duplicates: string[] = []
 
-  for (const artifactScene of artifact.payload.scenes) {
+  for (let index = 0; index < artifact.payload.scenes.length; index += 1) {
+    const artifactScene = artifact.payload.scenes[index]!
     const approved = approvals.get(artifactScene.sceneId)
     if (!approved) continue
     if (existingResultIds.has(artifactScene.sceneId)) {
@@ -288,7 +325,7 @@ function planMaterialization(input: MaterializationInput): MaterializationResult
     }
 
     const sceneEvidence = matchingEvidence(
-      result.evidence,
+      resultEvidence,
       input.sourceNodeId,
       artifactScene,
     )
@@ -306,10 +343,10 @@ function planMaterialization(input: MaterializationInput): MaterializationResult
           resultType: 'scene',
           resultId: artifactScene.sceneId,
           reviewStatus: 'approved',
-          evidence: sceneEvidence.map(cloneEvidence),
+          evidence: cloneEvidenceArray(sceneEvidence),
         },
       },
-      evidence: sceneEvidence.map(cloneEvidence),
+      evidence: cloneEvidenceArray(sceneEvidence),
     })
   }
 
