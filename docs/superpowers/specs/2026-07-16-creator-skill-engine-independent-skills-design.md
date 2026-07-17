@@ -311,7 +311,7 @@ metadataJson.creatorSkill = {
 }
 ```
 
-来源节点保持不变。应用时先查找相同 `runFingerprint + resultId`，存在时提示复用、创建新版本或取消，不静默复制。
+来源节点保持不变。审核批次必须绑定产生它的 `runFingerprint` 和来源 Artifact ID，不能把旧审核选择套用到新的重跑结果。应用时先查找相同 `runFingerprint + resultId`，存在时提示复用、创建新版本或取消，不静默复制。
 
 ## 10. 限制与错误处理
 

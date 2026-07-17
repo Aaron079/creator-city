@@ -455,6 +455,11 @@ export type ApprovedSceneDraft = ScriptSceneDraft & {
   reviewStatus: 'approved'
 }
 
+export type ScriptSceneApprovalContext = {
+  runFingerprint: string
+  sourceArtifactId: string
+}
+
 export type SceneNodeMaterializationPlan = {
   resultId: string
   title: string
@@ -466,6 +471,7 @@ export type SceneNodeMaterializationPlan = {
 export function planScriptSceneMaterialization(input: {
   sourceNodeId: string
   result: CreatorSkillRunResult
+  approvalContext: ScriptSceneApprovalContext
   approvedScenes: ApprovedSceneDraft[]
   existingNodes: Array<{ metadataJson?: unknown }>
 }): {
@@ -474,7 +480,7 @@ export function planScriptSceneMaterialization(input: {
 }
 ```
 
-Cover approved-only output, stable scene order, edited heading/text preservation, exact metadata, scene-specific evidence, rejection of blocked results, rejection of stale source identity, and duplicate detection by `runFingerprint + resultId`.
+Cover approved-only output, stable scene order, edited heading/text preservation, exact metadata, scene-specific evidence, rejection of blocked results, rejection of stale source identity, rejection of approvals from another run fingerprint or source Artifact, and duplicate detection by `runFingerprint + resultId`.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
@@ -493,7 +499,10 @@ The helper must not import React, workspace state, fetch, UUID helpers, or `Date
 - result Skill ID is `script-segmentation`;
 - result status is not `blocked`;
 - the `scene-breakdown` Artifact references the provided source node;
+- the approval context matches the exact result fingerprint and `scene-breakdown` Artifact ID;
 - approved scene IDs exist in the Artifact;
+- approved scene immutable fields still match the Artifact while edited heading/text remain allowed;
+- every Artifact scene has exactly one canonical, source-matching evidence record;
 - an existing `metadataJson.creatorSkill` record with the same fingerprint/result ID is reported as a duplicate and omitted from `create`.
 
 Do not generate canvas node IDs in this helper. Canvas IDs remain an application-layer concern and never enter the Skill fingerprint.
@@ -572,7 +581,7 @@ type ScriptSegmentationPanelProps = {
 }
 ```
 
-On open and explicit rerun, call the local runtime synchronously from a fresh source snapshot. Keep checkboxes unselected until the user approves each scene. Editing a heading or scene text changes only the panel draft. Applying calls `planScriptSceneMaterialization`; duplicates stay visible as warnings and are not silently recreated.
+On open and explicit rerun, call the local runtime synchronously from a fresh source snapshot. Keep checkboxes unselected until the user approves each scene. Editing a heading or scene text changes only the panel draft. Applying calls `planScriptSceneMaterialization` with the exact run fingerprint and `scene-breakdown` Artifact ID captured by that review batch; duplicates stay visible as warnings and are not silently recreated.
 
 Use a compact scrollable scene list with checkboxes, editable heading input, editable scene text area, source line label, and expandable evidence. Do not nest decorative cards or add automatic generation controls.
 
