@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, FileSearch } from 'lucide-react'
 import {
   runCreatorSkill,
@@ -33,12 +33,28 @@ type SceneReviewDraft = ScriptSceneDraft & {
 }
 
 type ScriptSegmentationReview = {
+  sourceIdentity: string
   sourceNodeId: string
   result: CreatorSkillRunResult
   displayResult: CreatorSkillRunResult
   artifact: SceneBreakdownArtifact | null
   drafts: SceneReviewDraft[]
 }
+
+type ScriptSegmentationPanelState = {
+  review: ScriptSegmentationReview
+  duplicateSceneIds: string[]
+  applyError: string
+  applyLocked: boolean
+}
+
+type ScriptSegmentationApplicationOutcome = {
+  error: string
+  applyLocked: boolean
+}
+
+export const SCRIPT_SEGMENTATION_PLANNING_ERROR = '无法规划当前审核结果，请检查场景内容后再试。'
+export const SCRIPT_SEGMENTATION_PARTIAL_APPLY_ERROR = '场景创建过程中发生错误，部分节点可能已创建。请检查画布中的实际结果；当前审核批次已锁定。'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -142,6 +158,15 @@ function sourceNodeSnapshot(sourceNode: CreatorSkillSourceNode): CreatorSkillSou
   }
 }
 
+export function getScriptSegmentationSourceIdentity(
+  sourceNode: CreatorSkillSourceNode,
+) {
+  const effectiveText = sourceNode.resultText?.trim()
+    ? sourceNode.resultText
+    : sourceNode.prompt
+  return JSON.stringify([sourceNode.id, sourceNode.kind, effectiveText])
+}
+
 export function runScriptSegmentationReview(
   sourceNode: CreatorSkillSourceNode,
 ): ScriptSegmentationReview {
@@ -159,11 +184,48 @@ export function runScriptSegmentationReview(
     : []
 
   return {
+    sourceIdentity: getScriptSegmentationSourceIdentity(sourceSnapshot),
     sourceNodeId: sourceSnapshot.id,
     result,
     displayResult: resultForDisplay(result, artifact),
     artifact,
     drafts,
+  }
+}
+
+export function createScriptSegmentationPanelState(
+  sourceNode: CreatorSkillSourceNode,
+): ScriptSegmentationPanelState {
+  return {
+    review: runScriptSegmentationReview(sourceNode),
+    duplicateSceneIds: [],
+    applyError: '',
+    applyLocked: false,
+  }
+}
+
+export function resetScriptSegmentationPanelStateForSource(
+  current: ScriptSegmentationPanelState,
+  sourceNode: CreatorSkillSourceNode,
+): ScriptSegmentationPanelState {
+  return current.review.sourceIdentity === getScriptSegmentationSourceIdentity(sourceNode)
+    ? current
+    : createScriptSegmentationPanelState(sourceNode)
+}
+
+export function applyScriptSegmentationPlans(
+  plans: SceneNodeMaterializationPlan[],
+  onApply: (plans: SceneNodeMaterializationPlan[]) => void,
+): ScriptSegmentationApplicationOutcome {
+  if (plans.length === 0) return { error: '', applyLocked: false }
+  try {
+    onApply(plans)
+    return { error: '', applyLocked: false }
+  } catch {
+    return {
+      error: SCRIPT_SEGMENTATION_PARTIAL_APPLY_ERROR,
+      applyLocked: true,
+    }
   }
 }
 
@@ -209,23 +271,35 @@ export function ScriptSegmentationPanel({
   onApply,
   onClose,
 }: ScriptSegmentationPanelProps) {
-  const [review, setReview] = useState(() => runScriptSegmentationReview(sourceNode))
-  const [duplicateSceneIds, setDuplicateSceneIds] = useState<string[]>([])
-  const [applyError, setApplyError] = useState('')
+  const [panelState, setPanelState] = useState(() => (
+    createScriptSegmentationPanelState(sourceNode)
+  ))
+  const latestSourceNodeRef = useRef(sourceNode)
+  latestSourceNodeRef.current = sourceNode
+  const incomingSourceIdentity = getScriptSegmentationSourceIdentity(sourceNode)
+  const { review, duplicateSceneIds, applyError, applyLocked } = panelState
   const { sourceNodeId, result, displayResult, artifact, drafts } = review
   const approvedCount = drafts.filter((scene) => scene.approved).length
   const hasBlankApprovedScene = drafts.some((scene) => (
     scene.approved && !scene.sourceText.trim()
   ))
-  const canApply = result.status !== 'blocked'
+  const sourceIsCurrent = review.sourceIdentity === incomingSourceIdentity
+  const canApply = sourceIsCurrent
+    && result.status !== 'blocked'
     && artifact !== null
     && approvedCount > 0
     && !hasBlankApprovedScene
+    && !applyLocked
+
+  useEffect(() => {
+    setPanelState((current) => resetScriptSegmentationPanelStateForSource(
+      current,
+      latestSourceNodeRef.current,
+    ))
+  }, [incomingSourceIdentity])
 
   const handleRerun = () => {
-    setReview(runScriptSegmentationReview(sourceNode))
-    setDuplicateSceneIds([])
-    setApplyError('')
+    setPanelState(createScriptSegmentationPanelState(sourceNode))
   }
 
   const updateDraft = (
@@ -233,30 +307,37 @@ export function ScriptSegmentationPanel({
     field: 'heading' | 'sourceText',
     value: string,
   ) => {
-    setReview((current) => ({
+    setPanelState((current) => ({
       ...current,
-      drafts: current.drafts.map((scene) => (
-        scene.sceneId === sceneId ? { ...scene, [field]: value } : scene
-      )),
+      applyError: current.applyLocked ? current.applyError : '',
+      review: {
+        ...current.review,
+        drafts: current.review.drafts.map((scene) => (
+          scene.sceneId === sceneId ? { ...scene, [field]: value } : scene
+        )),
+      },
     }))
-    setApplyError('')
   }
 
   const toggleApproval = (sceneId: string) => {
-    setReview((current) => ({
+    setPanelState((current) => ({
       ...current,
-      drafts: current.drafts.map((scene) => (
-        scene.sceneId === sceneId ? { ...scene, approved: !scene.approved } : scene
-      )),
+      applyError: current.applyLocked ? current.applyError : '',
+      review: {
+        ...current.review,
+        drafts: current.review.drafts.map((scene) => (
+          scene.sceneId === sceneId ? { ...scene, approved: !scene.approved } : scene
+        )),
+      },
     }))
-    setApplyError('')
   }
 
   const handleApply = () => {
     if (!canApply || !artifact) return
     const approvedScenes = approvedSceneDrafts(drafts)
+    let planned: ReturnType<typeof planScriptSceneMaterialization>
     try {
-      const planned = planScriptSceneMaterialization({
+      planned = planScriptSceneMaterialization({
         sourceNodeId,
         result,
         approvalContext: {
@@ -266,13 +347,23 @@ export function ScriptSegmentationPanel({
         approvedScenes,
         existingNodes,
       })
-      setDuplicateSceneIds(planned.duplicates)
-      setApplyError('')
-      onApply(planned.create)
     } catch {
-      setDuplicateSceneIds([])
-      setApplyError('无法应用当前审核结果，请重新运行后再试。')
+      setPanelState((current) => ({
+        ...current,
+        duplicateSceneIds: [],
+        applyError: SCRIPT_SEGMENTATION_PLANNING_ERROR,
+        applyLocked: false,
+      }))
+      return
     }
+
+    const outcome = applyScriptSegmentationPlans(planned.create, onApply)
+    setPanelState((current) => ({
+      ...current,
+      duplicateSceneIds: [...planned.duplicates],
+      applyError: outcome.error,
+      applyLocked: outcome.applyLocked,
+    }))
   }
 
   return (
@@ -375,9 +466,9 @@ export function ScriptSegmentationPanel({
                             证据 ({sceneEvidence.length})
                           </summary>
                           <div className="mt-2 space-y-2 border-l border-cyan-200/20 pl-2.5">
-                            {sceneEvidence.map((evidence) => (
+                            {sceneEvidence.map((evidence, index) => (
                               <blockquote
-                                key={evidence.evidenceId}
+                                key={[scene.sceneId, evidence.evidenceId, index].join(':')}
                                 className="whitespace-pre-wrap break-words text-[10px] leading-4 text-white/48"
                               >
                                 {evidence.excerpt}

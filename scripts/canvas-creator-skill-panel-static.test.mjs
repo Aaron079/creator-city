@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
 
 const panelUrl = new URL(
@@ -13,6 +16,16 @@ const segmentationUrl = new URL(
 
 const panel = readFileSync(panelUrl, 'utf8')
 const segmentation = readFileSync(segmentationUrl, 'utf8')
+const webRoot = fileURLToPath(new URL('../apps/web/', import.meta.url))
+const tsx = resolve(webRoot, 'node_modules/.bin/tsx')
+
+function assertTsxEvaluation(code) {
+  const run = spawnSync(tsx, ['--eval', code], {
+    cwd: webRoot,
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, [run.stdout, run.stderr].filter(Boolean).join('\n'))
+}
 
 describe('Creator Skill review panel static boundary', () => {
   test('generic shell exposes the required review contract and stable controls', () => {
@@ -55,6 +68,130 @@ describe('Creator Skill review panel static boundary', () => {
     assert.match(applyControl, /disabled=\{!canApply\}/)
   })
 
+  test('generic modal focus is mount-stable and contains Tab navigation', () => {
+    assert.match(panel, /const onCloseRef = useRef\(onClose\)/)
+    assert.match(panel, /onCloseRef\.current = onClose/)
+    assert.match(panel, /event\.key === ['"]Escape['"][\s\S]*onCloseRef\.current\(\)/)
+    assert.match(panel, /event\.key\s*(?:===|!==)\s*['"]Tab['"]/)
+    assert.match(panel, /event\.shiftKey/)
+    assert.match(panel, /event\.preventDefault\(\)/)
+    assert.match(
+      panel,
+      /useEffect\(\(\) => \{[\s\S]*document\.addEventListener\(['"]keydown['"][\s\S]*\}, \[\]\)/,
+    )
+    assert.doesNotMatch(panel, /\}, \[onClose\]\)/)
+  })
+
+  test('generic result lists use collision-safe indexed React keys', () => {
+    assert.match(
+      panel,
+      /result\.blockers\.map\(\(blocker,\s*index\)[\s\S]{0,500}?key=\{[^}]*index[^}]*\}/,
+    )
+    assert.match(
+      panel,
+      /result\.warnings\.map\(\(warning,\s*index\)[\s\S]{0,500}?key=\{[^}]*index[^}]*\}/,
+    )
+    assert.match(
+      panel,
+      /result\.evidence\.map\(\(evidence,\s*index\)[\s\S]{0,500}?key=\{[^}]*index[^}]*\}/,
+    )
+    assert.match(
+      segmentation,
+      /sceneEvidence\.map\(\(evidence,\s*index\)[\s\S]{0,500}?key=\{[^}]*index[^}]*\}/,
+    )
+  })
+
+  test('stale source reset preserves equal reviews and clears changed-source state', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        createScriptSegmentationPanelState,
+        resetScriptSegmentationPanelStateForSource,
+      } from './src/components/create/canvas/skills/ScriptSegmentationPanel'
+
+      const source = {
+        id: 'source-1',
+        kind: 'text',
+        title: 'Original title',
+        prompt: 'INT. ROOM - DAY\\nMAYA\\nWe begin here.',
+      }
+      const dirty = createScriptSegmentationPanelState(source)
+      dirty.review.drafts[0].approved = true
+      dirty.duplicateSceneIds = ['scene-001']
+      dirty.applyError = 'old error'
+      dirty.applyLocked = true
+
+      const equalSource = {
+        ...source,
+        title: 'Unrelated title change',
+        metadataJson: { rerender: true },
+      }
+      assert.equal(
+        resetScriptSegmentationPanelStateForSource(dirty, equalSource),
+        dirty,
+      )
+
+      for (const changedSource of [
+        { ...source, id: 'source-2' },
+        { ...source, prompt: source.prompt + '\\nA changed ending.' },
+      ]) {
+        const reset = resetScriptSegmentationPanelStateForSource(dirty, changedSource)
+        assert.notEqual(reset, dirty)
+        assert.notEqual(reset.review, dirty.review)
+        assert.ok(reset.review.drafts.every((scene) => scene.approved === false))
+        assert.deepEqual(reset.duplicateSceneIds, [])
+        assert.equal(reset.applyError, '')
+        assert.equal(reset.applyLocked, false)
+      }
+    `)
+
+    assert.match(
+      segmentation,
+      /useEffect\(\(\) => \{[\s\S]{0,400}resetScriptSegmentationPanelStateForSource\([\s\S]{0,200}latestSourceNodeRef\.current[\s\S]{0,100}\}, \[incomingSourceIdentity\]\)/,
+    )
+    assert.match(segmentation, /sourceIsCurrent/)
+  })
+
+  test('application boundary skips empty plans and locks truthful callback failures', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        applyScriptSegmentationPlans,
+        SCRIPT_SEGMENTATION_PLANNING_ERROR,
+        SCRIPT_SEGMENTATION_PARTIAL_APPLY_ERROR,
+      } from './src/components/create/canvas/skills/ScriptSegmentationPanel'
+
+      let calls = 0
+      const duplicatesOnly = applyScriptSegmentationPlans([], () => { calls += 1 })
+      assert.equal(calls, 0)
+      assert.equal(duplicatesOnly.applyLocked, false)
+      assert.equal(duplicatesOnly.error, '')
+
+      const plans = [{ resultId: 'scene-001' }]
+      const failed = applyScriptSegmentationPlans(plans, () => {
+        calls += 1
+        throw new Error('partial creation')
+      })
+      assert.equal(calls, 1)
+      assert.equal(failed.applyLocked, true)
+      assert.equal(failed.error, SCRIPT_SEGMENTATION_PARTIAL_APPLY_ERROR)
+      assert.match(failed.error, /部分/)
+      assert.match(failed.error, /检查/)
+      assert.doesNotMatch(failed.error, /重新运行|重跑/)
+      assert.match(SCRIPT_SEGMENTATION_PLANNING_ERROR, /规划/)
+      assert.doesNotMatch(SCRIPT_SEGMENTATION_PLANNING_ERROR, /部分/)
+    `)
+
+    assert.match(segmentation, /SCRIPT_SEGMENTATION_PLANNING_ERROR/)
+    assert.match(
+      segmentation,
+      /catch\s*\{[\s\S]{0,240}SCRIPT_SEGMENTATION_PLANNING_ERROR/,
+    )
+    assert.match(segmentation, /applyScriptSegmentationPlans\(planned\.create,\s*onApply\)/)
+    assert.match(segmentation, /applyLocked:\s*outcome\.applyLocked/)
+    assert.match(segmentation, /const canApply =[\s\S]{0,240}&& !applyLocked/)
+  })
+
   test('segmentation runs locally from a fresh source snapshot on open and rerun', () => {
     assert.match(segmentation, /import\s+\{[^}]*runCreatorSkill[^}]*\}\s+from\s+['"]@\/lib\/skills['"]/s)
     assert.match(
@@ -67,7 +204,7 @@ describe('Creator Skill review panel static boundary', () => {
     )
     assert.doesNotMatch(segmentation, /sourceNodes:\s*\[sourceNode\]/)
     assert.ok(
-      segmentation.match(/runScriptSegmentationReview\(sourceNode\)/g)?.length >= 2,
+      segmentation.match(/createScriptSegmentationPanelState\(sourceNode\)/g)?.length >= 2,
       'the component should create a review batch on open and on explicit rerun',
     )
   })
@@ -97,7 +234,7 @@ describe('Creator Skill review panel static boundary', () => {
     assert.match(segmentation, /existingNodes/)
     assert.match(segmentation, /planned\.duplicates/)
     assert.match(segmentation, /data-testid=["']script-segmentation-duplicates["']/)
-    assert.match(segmentation, /onApply\(planned\.create\)/)
+    assert.match(segmentation, /onApply\(plans\)/)
     assert.doesNotMatch(segmentation, /onApply\(planned\)/)
   })
 

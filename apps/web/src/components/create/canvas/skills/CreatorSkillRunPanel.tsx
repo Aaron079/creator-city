@@ -49,6 +49,19 @@ const STATUS_PRESENTATION = {
   icon: typeof CheckCircle2
 }>
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function resultEntryKey(index: number, ...identity: Array<string | undefined>) {
+  return `${identity.map((part) => part ?? '').join(':')}:${index}`
+}
+
 export function CreatorSkillRunPanel({
   manifest,
   result,
@@ -60,6 +73,8 @@ export function CreatorSkillRunPanel({
   children,
 }: CreatorSkillRunPanelProps) {
   const panelRef = useRef<HTMLElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const titleId = `creator-skill-${manifest.id}-title`
   const status = STATUS_PRESENTATION[result.status]
   const StatusIcon = status.icon
@@ -71,14 +86,42 @@ export function CreatorSkillRunPanel({
     panelRef.current?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const panel = panelRef.current
+      if (!panel) return
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true')
+      if (focusable.length === 0) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      const active = document.activeElement
+      const focusIsOutside = !active || !panel.contains(active)
+      if (event.shiftKey && (active === first || active === panel || focusIsOutside)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || active === panel || focusIsOutside)) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       previousFocus?.focus()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div
@@ -148,8 +191,8 @@ export function CreatorSkillRunPanel({
                 阻塞项
               </h3>
               <ul className="mt-2 divide-y divide-white/[0.06]">
-                {result.blockers.map((blocker) => (
-                  <li key={`${blocker.code}:${blocker.artifactId ?? blocker.sourceNodeId ?? ''}`} className="py-2 first:pt-0 last:pb-0">
+                {result.blockers.map((blocker, index) => (
+                  <li key={resultEntryKey(index, blocker.code, blocker.artifactId, blocker.sourceNodeId)} className="py-2 first:pt-0 last:pb-0">
                     <p className="break-words text-[11px] font-medium text-rose-100/90">{blocker.message}</p>
                     <p className="mt-0.5 break-all text-[9px] text-rose-200/45">{blocker.code}</p>
                   </li>
@@ -165,8 +208,8 @@ export function CreatorSkillRunPanel({
                 警告
               </h3>
               <ul className="mt-2 divide-y divide-white/[0.06]">
-                {result.warnings.map((warning) => (
-                  <li key={`${warning.code}:${warning.artifactId ?? warning.sourceNodeId ?? ''}`} className="py-2 first:pt-0 last:pb-0">
+                {result.warnings.map((warning, index) => (
+                  <li key={resultEntryKey(index, warning.code, warning.artifactId, warning.sourceNodeId)} className="py-2 first:pt-0 last:pb-0">
                     <p className="break-words text-[11px] text-amber-100/85">{warning.message}</p>
                     <p className="mt-0.5 break-all text-[9px] text-amber-200/40">{warning.code}</p>
                   </li>
@@ -184,8 +227,8 @@ export function CreatorSkillRunPanel({
                 证据 ({result.evidence.length})
               </h3>
               <div className="mt-2 divide-y divide-white/[0.06]">
-                {result.evidence.map((evidence) => (
-                  <details key={evidence.evidenceId} className="group py-2 first:pt-0 last:pb-0">
+                {result.evidence.map((evidence, index) => (
+                  <details key={resultEntryKey(index, evidence.evidenceId)} className="group py-2 first:pt-0 last:pb-0">
                     <summary className="cursor-pointer break-words text-[10px] font-medium text-white/48 marker:text-white/30 hover:text-white/72">
                       第 {evidence.lineStart}-{evidence.lineEnd} 行 · {evidence.explanation}
                     </summary>
