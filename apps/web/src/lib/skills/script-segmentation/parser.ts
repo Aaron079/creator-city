@@ -4,9 +4,9 @@ import type { SceneBreakdownPayload, ScriptSceneDraft } from './types'
 const MAX_SCENES = 40
 const CHINESE_NUMBER = '[0-9零〇一二三四五六七八九十百千万两]+'
 const CHINESE_NUMBERED_HEADING = new RegExp(
-  `^(?:第${CHINESE_NUMBER}场|场景\\s*${CHINESE_NUMBER})(?:\\s+|$)`,
+  `^(?:第${CHINESE_NUMBER}场|场景\\s*${CHINESE_NUMBER})(?:\\s+|[：:、]\\s*|$)`,
 )
-const CHINESE_SETTING_MARKER = /^(内外景|内景|外景)(?:\s+|$)/
+const CHINESE_SETTING_MARKER = /^(内外景|内景|外景)(?:\s+|[：:、]\s*|$)/
 const ENGLISH_HEADING = /^(INT\/EXT\.|INT\.|EXT\.|I\/E\.)(?:\s*|$)(.*)$/i
 const CHINESE_TIME_TOKENS = new Set([
   '日',
@@ -22,9 +22,11 @@ const CHINESE_TIME_TOKENS = new Set([
   '深夜',
   '黎明',
 ])
-const STANDALONE_LATIN_CUE = /^(?=.*[A-Z])[A-Z0-9 ._'-]{1,40}$/
-const COLON_CUE = /^([^:：]{1,40})\s*[:：]/
-const CUE_NAME = /^[\p{L}\p{N} ._'-]+$/u
+const LATIN_NAME = /^\p{Script=Latin}[\p{Script=Latin}'-]*(?:\s+\p{Script=Latin}[\p{Script=Latin}'-]*){0,2}$/u
+const STANDALONE_LATIN_CUE = /^[A-Z][A-Z'-]*(?:\s+[A-Z][A-Z'-]*){0,2}$/
+const STANDALONE_CHINESE_CUE = /^\p{Script=Han}{2,4}$/u
+const COLON_CUE = /^([^:：]{1,40})\s*[:：]\s*(\S.*)$/u
+const TRANSITION_LABEL = /^(?:FADE(?:\s+(?:IN|OUT|TO(?:\s+\S+){0,3}))?|CUT(?:\s+TO(?:\s+\S+){0,3})?|DISSOLVE(?:\s+TO(?:\s+\S+){0,3})?|SMASH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|MATCH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|JUMP\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|WIPE(?:\s+TO(?:\s+\S+){0,3})?|IRIS\s+(?:IN|OUT))$/i
 
 type HeadingInfo = {
   heading: string
@@ -37,6 +39,13 @@ type SceneRange = {
   end: number
   headingIndex?: number
   heading?: HeadingInfo
+}
+
+type SceneLineKind = 'heading' | 'blank' | 'transition' | 'cue' | 'dialogue' | 'action'
+
+type SceneClassification = {
+  characters: string[]
+  lineKinds: Map<number, SceneLineKind>
 }
 
 export type ScriptSegmentationParseResult = {
@@ -90,16 +99,32 @@ function parseHeading(line: string): HeadingInfo | null {
   return parseEnglishHeading(heading) ?? parseChineseHeading(heading)
 }
 
+function isTransition(line: string) {
+  const label = line
+    .trim()
+    .split(/[:：]/, 1)[0]!
+    .replace(/[.!?。！？]+$/u, '')
+    .trim()
+  return TRANSITION_LABEL.test(label)
+}
+
+function isPlausibleName(name: string) {
+  if (!name || name.length > 40 || isTransition(name)) return false
+  return LATIN_NAME.test(name) || STANDALONE_CHINESE_CUE.test(name)
+}
+
 function extractColonCue(line: string) {
   const match = line.trim().match(COLON_CUE)
   const name = match?.[1]?.trim() ?? ''
-  if (!name || !CUE_NAME.test(name)) return null
-  return name
+  return isPlausibleName(name) ? name : null
 }
 
 function extractStandaloneCue(line: string) {
   const cue = line.trim()
-  return STANDALONE_LATIN_CUE.test(cue) ? cue : null
+  if (!cue || cue.length > 40 || isTransition(cue)) return null
+  return STANDALONE_LATIN_CUE.test(cue) || STANDALONE_CHINESE_CUE.test(cue)
+    ? cue
+    : null
 }
 
 function characterKey(name: string) {
@@ -107,38 +132,68 @@ function characterKey(name: string) {
   return isAscii ? name.toUpperCase() : name
 }
 
-function extractCharacters(
+function canBeImmediateDialogue(
   lines: readonly string[],
   range: SceneRange,
+  index: number,
 ) {
+  if (index > range.end || index === range.headingIndex) return false
+  const line = lines[index]!
+  if (!line.trim() || isTransition(line) || extractColonCue(line)) return false
+  return !extractStandaloneCue(line)
+}
+
+function classifyScene(
+  lines: readonly string[],
+  range: SceneRange,
+): SceneClassification {
   const characters: string[] = []
   const seen = new Set<string>()
+  const lineKinds = new Map<number, SceneLineKind>()
 
-  for (let index = range.start; index <= range.end; index += 1) {
-    if (index === range.headingIndex) continue
-    const line = lines[index]!
-    const name = extractColonCue(line) ?? extractStandaloneCue(line)
-    if (!name) continue
+  const addCharacter = (name: string) => {
     const key = characterKey(name)
-    if (seen.has(key)) continue
+    if (seen.has(key)) return
     seen.add(key)
     characters.push(name)
   }
 
-  return characters
-}
-
-function extractActionSummary(
-  lines: readonly string[],
-  range: SceneRange,
-) {
   for (let index = range.start; index <= range.end; index += 1) {
-    if (index === range.headingIndex) continue
-    const line = lines[index]!.trim()
-    if (!line || extractColonCue(line) || extractStandaloneCue(line)) continue
-    return line
+    if (index === range.headingIndex) {
+      lineKinds.set(index, 'heading')
+      continue
+    }
+    if (lineKinds.get(index) === 'dialogue') continue
+
+    const line = lines[index]!
+    if (!line.trim()) {
+      lineKinds.set(index, 'blank')
+      continue
+    }
+    if (isTransition(line)) {
+      lineKinds.set(index, 'transition')
+      continue
+    }
+
+    const colonCue = extractColonCue(line)
+    if (colonCue) {
+      lineKinds.set(index, 'cue')
+      addCharacter(colonCue)
+      continue
+    }
+
+    const standaloneCue = extractStandaloneCue(line)
+    if (standaloneCue && canBeImmediateDialogue(lines, range, index + 1)) {
+      lineKinds.set(index, 'cue')
+      lineKinds.set(index + 1, 'dialogue')
+      addCharacter(standaloneCue)
+      continue
+    }
+
+    lineKinds.set(index, 'action')
   }
-  return ''
+
+  return { characters, lineKinds }
 }
 
 function collectHeadings(lines: readonly string[]) {
@@ -190,14 +245,23 @@ function createScene(
   index: number,
 ): ScriptSceneDraft {
   const order = index + 1
+  const classification = classifyScene(lines, range)
+  let actionSummary = ''
+  for (let lineIndex = range.start; lineIndex <= range.end; lineIndex += 1) {
+    if (classification.lineKinds.get(lineIndex) === 'action') {
+      actionSummary = lines[lineIndex]!.trim()
+      break
+    }
+  }
+
   return {
     sceneId: `scene-${String(order).padStart(3, '0')}`,
     order,
     heading: range.heading?.heading ?? '',
     ...(range.heading?.location ? { location: range.heading.location } : {}),
     ...(range.heading?.timeOfDay ? { timeOfDay: range.heading.timeOfDay } : {}),
-    characters: extractCharacters(lines, range),
-    actionSummary: extractActionSummary(lines, range),
+    characters: classification.characters,
+    actionSummary,
     sourceText: lines.slice(range.start, range.end + 1).join('\n'),
     lineStart: range.start + 1,
     lineEnd: range.end + 1,

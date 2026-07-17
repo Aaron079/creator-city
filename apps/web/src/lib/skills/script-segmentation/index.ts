@@ -62,7 +62,7 @@ export const SCRIPT_SEGMENTATION_SKILL: CreatorExecutableSkill = {
         'The Text source is empty or contains only whitespace.',
       )
     }
-    if (normalizedSource.replace(/\s/gu, '').length < 8) {
+    if (Array.from(normalizedSource.replace(/\s/gu, '')).length < 8) {
       return blockedResult(
         runFingerprint,
         'SCRIPT_SOURCE_TOO_SHORT',

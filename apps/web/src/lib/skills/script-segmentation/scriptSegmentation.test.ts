@@ -205,20 +205,157 @@ describe('script-segmentation headed scripts', () => {
     assert.equal(payload.scenes[1]!.timeOfDay, 'NIGHT')
   })
 
-  test('extracts only explicit character cues and deduplicates first-seen names', () => {
+  test('accepts plausible cue formats and rejects transitions or uppercase action', () => {
+    const cases: Array<{
+      label: string
+      body: string[]
+      expectedCharacters: string[]
+      expectedActionSummary?: string
+    }> = [
+      {
+        label: 'Latin colon cue',
+        body: ['MAYA: Hold the signal.'],
+        expectedCharacters: ['MAYA'],
+      },
+      {
+        label: 'Chinese colon cue',
+        body: ['林夏：别回头。'],
+        expectedCharacters: ['林夏'],
+      },
+      {
+        label: 'first-seen deduplication',
+        body: ['MAYA: Hold.', 'MAYA：Keep moving.'],
+        expectedCharacters: ['MAYA'],
+      },
+      {
+        label: 'Latin standalone cue with immediate dialogue',
+        body: ['ALICE SMITH', 'Stay close.'],
+        expectedCharacters: ['ALICE SMITH'],
+      },
+      {
+        label: 'Chinese standalone cue with immediate dialogue',
+        body: ['林夏', '别动。'],
+        expectedCharacters: ['林夏'],
+      },
+      {
+        label: 'standalone cue without immediate dialogue',
+        body: ['MAYA', '', 'The handle turns.'],
+        expectedCharacters: [],
+      },
+      {
+        label: 'transition labels',
+        body: [
+          'FADE IN:',
+          'CUT TO:',
+          'DISSOLVE TO:',
+          'SMASH CUT:',
+          'MATCH CUT:',
+          'FADE TO WHITE:',
+          'FADE OUT',
+          'The next shot begins.',
+        ],
+        expectedCharacters: [],
+        expectedActionSummary: 'The next shot begins.',
+      },
+      {
+        label: 'uppercase action',
+        body: ['THE DOOR OPENS.', 'Maya steps inside.'],
+        expectedCharacters: [],
+        expectedActionSummary: 'THE DOOR OPENS.',
+      },
+      {
+        label: 'implausibly long name',
+        body: ['ONE TWO THREE FOUR: Keep moving.'],
+        expectedCharacters: [],
+      },
+    ]
+
+    for (const scenario of cases) {
+      const result = runWithText([
+        'INT. CONTROL ROOM - NIGHT',
+        ...scenario.body,
+      ].join('\n'))
+
+      const scene = payloadOf(result).scenes[0]!
+      assert.deepEqual(
+        scene.characters,
+        scenario.expectedCharacters,
+        scenario.label,
+      )
+      if (scenario.expectedActionSummary !== undefined) {
+        assert.equal(scene.actionSummary, scenario.expectedActionSummary, scenario.label)
+      }
+    }
+  })
+
+  test('classifies cues and dialogue once before selecting later explicit action', () => {
     const result = runWithText([
       'INT. CONTROL ROOM - NIGHT',
-      'Screens flicker across the wall.',
-      'MAYA: Hold the signal.',
-      'LIN',
-      'We have ten seconds.',
-      'MAYA：别回头。',
-      '林夏冲向门口。',
+      'MAYA',
+      'Do not move.',
+      'EXT. PLATFORM - NIGHT',
+      '林夏',
+      '别动。',
+      'INT. OFFICE - DAY',
+      'MAYA: Stay here.',
+      'EXT. ALLEY - NIGHT',
+      'MAYA',
+      'Keep quiet.',
+      'THE DOOR OPENS.',
     ].join('\n'))
-    const scene = payloadOf(result).scenes[0]!
+    const scenes = payloadOf(result).scenes
 
-    assert.deepEqual(scene.characters, ['MAYA', 'LIN'])
-    assert.equal(scene.actionSummary, 'Screens flicker across the wall.')
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['MAYA'],
+      ['林夏'],
+      ['MAYA'],
+      ['MAYA'],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), [
+      '',
+      '',
+      '',
+      'THE DOOR OPENS.',
+    ])
+  })
+
+  test('accepts controlled delimiters in Chinese headings', () => {
+    const result = runWithText([
+      '第一场：外景 街道 夜',
+      '雨水漫过路沿。',
+      '内景：房间 夜',
+      '灯光轻轻闪烁。',
+      '第二场、内景：车站 日',
+      '人群穿过大厅。',
+      '第三场: 外景、天台 黄昏',
+      '风吹动晾衣绳。',
+    ].join('\n'))
+    const payload = payloadOf(result)
+
+    assert.equal(payload.format, 'headed-script')
+    assert.deepEqual(payload.scenes.map(({ heading, location, timeOfDay }) => ({
+      heading,
+      location,
+      timeOfDay,
+    })), [
+      { heading: '第一场：外景 街道 夜', location: '街道', timeOfDay: '夜' },
+      { heading: '内景：房间 夜', location: '房间', timeOfDay: '夜' },
+      { heading: '第二场、内景：车站 日', location: '车站', timeOfDay: '日' },
+      { heading: '第三场: 外景、天台 黄昏', location: '天台', timeOfDay: '黄昏' },
+    ])
+  })
+
+  test('does not treat Chinese prose prefixes as headings', () => {
+    const result = runWithText([
+      '第一场雨落下来。',
+      '内景故事继续展开。',
+      '外景人物也只是描述。',
+    ].join('\n'))
+    const payload = payloadOf(result)
+
+    assert.equal(payload.format, 'paragraph-fallback')
+    assert.equal(payload.scenes.length, 1)
+    assert.equal(payload.scenes[0]!.heading, '')
   })
 
   test('preserves exact ranges, source text, evidence, and artifact provenance', () => {
@@ -288,14 +425,20 @@ describe('script-segmentation headed scripts', () => {
     assert.equal(payloadOf(result).scenes[0]!.heading, 'EXT. FIELD - DAY')
   })
 
-  test('is deterministic and does not access fetch', async () => {
+  test('is deterministic without clocks, randomness, or network access', () => {
     const input: CreatorSkillRunInput = {
       sourceNodes: [textNode('INT. LAB - NIGHT\nA monitor pulses.\nMAYA: Ready.')],
     }
+    const originalDateNow = Date.now
+    const originalRandom = Math.random
     const originalFetch = globalThis.fetch
-    let fetchCalls = 0
+    Date.now = () => {
+      throw new Error('Clock access is forbidden')
+    }
+    Math.random = () => {
+      throw new Error('Randomness is forbidden')
+    }
     globalThis.fetch = async () => {
-      fetchCalls += 1
       throw new Error('Network access is forbidden')
     }
 
@@ -303,8 +446,9 @@ describe('script-segmentation headed scripts', () => {
       const first = runCreatorSkill('script-segmentation', input)
       const second = runCreatorSkill('script-segmentation', input)
       assert.deepEqual(second, first)
-      assert.equal(fetchCalls, 0)
     } finally {
+      Date.now = originalDateNow
+      Math.random = originalRandom
       globalThis.fetch = originalFetch
     }
   })
@@ -382,6 +526,22 @@ describe('script-segmentation fallback and limits', () => {
     assert.equal(payload.scenes[39]?.sceneId, 'scene-040')
     assert.ok(result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED'))
   })
+
+  test('caps paragraph fallback output at 40 scenes with exact retained ranges', () => {
+    const source = Array.from({ length: 42 }, (_, index) => (
+      `Paragraph ${index + 1} contains enough source text.`
+    )).join('\n\n')
+    const result = runWithText(source)
+    const payload = payloadOf(result)
+
+    assert.equal(result.status, 'needs-review')
+    assert.equal(payload.format, 'paragraph-fallback')
+    assert.equal(payload.scenes.length, 40)
+    assert.equal(result.evidence.length, 40)
+    assert.equal(payload.scenes[39]?.lineStart, 79)
+    assert.equal(payload.scenes[39]?.lineEnd, 79)
+    assert.ok(result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED'))
+  })
 })
 
 describe('script-segmentation blockers', () => {
@@ -398,6 +558,16 @@ describe('script-segmentation blockers', () => {
 
     assertBlockedWithoutOutput(result)
     assert.equal(result.blockers[0]?.code, 'SCRIPT_SOURCE_TOO_SHORT')
+  })
+
+  test('counts the eight-character minimum by Unicode code points', () => {
+    const sevenCodePoints = runWithText('😀 😀 😀 😀 😀 😀 😀')
+    const eightCodePoints = runWithText('😀 😀 😀 😀 😀 😀 😀 😀')
+
+    assertBlockedWithoutOutput(sevenCodePoints)
+    assert.equal(sevenCodePoints.blockers[0]?.code, 'SCRIPT_SOURCE_TOO_SHORT')
+    assert.equal(eightCodePoints.status, 'needs-review')
+    assert.equal(payloadOf(eightCodePoints).scenes[0]?.actionSummary, '😀 😀 😀 😀 😀 😀 😀 😀')
   })
 
   test('blocks image-only input without artifacts or evidence', () => {
