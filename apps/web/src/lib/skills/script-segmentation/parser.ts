@@ -22,11 +22,135 @@ const CHINESE_TIME_TOKENS = new Set([
   '深夜',
   '黎明',
 ])
-const LATIN_NAME = /^\p{Script=Latin}[\p{Script=Latin}'-]*(?:\s+\p{Script=Latin}[\p{Script=Latin}'-]*){0,2}$/u
-const STANDALONE_LATIN_CUE = /^[A-Z][A-Z'-]*(?:\s+[A-Z][A-Z'-]*){0,2}$/
+const LATIN_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}'-]*(?:\s+\p{Lu}[\p{Script=Latin}\p{M}'-]*)?$/u
 const STANDALONE_CHINESE_CUE = /^\p{Script=Han}{2,4}$/u
 const COLON_CUE = /^([^:：]{1,40})\s*[:：]\s*(.*)$/u
 const TRANSITION_LABEL = /^(?:FADE(?:\s+(?:IN|OUT|TO(?:\s+\S+){0,3}))?|CUT(?:\s+TO(?:\s+\S+){0,3})?|DISSOLVE(?:\s+TO(?:\s+\S+){0,3})?|SMASH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|MATCH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|JUMP\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|WIPE(?:\s+TO(?:\s+\S+){0,3})?|IRIS\s+(?:IN|OUT))$/i
+const CUE_QUALIFIER = /\s+\((?:V\.O\.|O\.S\.|CONT'D)\)$/iu
+const PRODUCTION_LABELS = new Set([
+  'ANGLE',
+  'CAMERA',
+  'CAPTION',
+  'CHYRON',
+  'CREDITS',
+  'FX',
+  'INSERT',
+  'INTERCUT',
+  'MONTAGE',
+  'MUSIC',
+  'OS',
+  'POV',
+  'SFX',
+  'SHOT',
+  'SOUND',
+  'SUBTITLE',
+  'SUPER',
+  'TITLE',
+  'VFX',
+  'VO',
+])
+const LATIN_ARTICLES = new Set(['A', 'AN', 'THE'])
+const LATIN_ACTION_WORDS = new Set([
+  'CLOSE',
+  'CLOSED',
+  'CLOSES',
+  'CRIED',
+  'CRIES',
+  'CRY',
+  'ENTER',
+  'ENTERED',
+  'ENTERS',
+  'EXIT',
+  'EXITED',
+  'EXITS',
+  'LAUGH',
+  'LAUGHED',
+  'LAUGHS',
+  'LEAVE',
+  'LEAVES',
+  'LEFT',
+  'LOOK',
+  'LOOKED',
+  'LOOKS',
+  'MOVE',
+  'MOVED',
+  'MOVES',
+  'OPEN',
+  'OPENED',
+  'OPENS',
+  'PULL',
+  'PULLED',
+  'PULLS',
+  'PUSH',
+  'PUSHED',
+  'PUSHES',
+  'RAN',
+  'RUN',
+  'RUNS',
+  'SAT',
+  'SIT',
+  'SITS',
+  'STAND',
+  'STANDS',
+  'STOOD',
+  'TURN',
+  'TURNED',
+  'TURNS',
+  'WALK',
+  'WALKED',
+  'WALKS',
+])
+const COMMON_CHINESE_SURNAMES = new Set(Array.from(
+  '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏窦章云苏潘葛范彭郎鲁韦昌马苗方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余顾孟平黄穆萧尹姚邵湛汪祁毛禹狄米贝臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万柯管卢莫房解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀惠甄曲家封芮储靳段富巫乌焦巴弓牧山谷车侯全班仰秋仲伊宫宁栾甘厉祖武符刘景詹龙叶幸司黎白怀蒲鄂赖卓蔺屠蒙池乔党翟谭贡劳姬申冉桑桂牛边燕冀浦尚农温庄晏柴瞿阎连茹习艾鱼容向古易慎戈廖庾居衡步都耿满弘匡国文寇广东欧沃利蔚越隆师聂晁勾敖融冷辛阚那简饶曾沙鞠关查荆红游权盖益桓',
+))
+const CHINESE_ROLE_SUFFIXES = [
+  '老师',
+  '医生',
+  '警察',
+  '警官',
+  '师傅',
+  '经理',
+  '老板',
+  '导演',
+  '店员',
+  '司机',
+  '保安',
+  '护士',
+  '队长',
+  '主任',
+  '教授',
+  '父亲',
+  '母亲',
+  '爸爸',
+  '妈妈',
+  '爷爷',
+  '奶奶',
+  '哥哥',
+  '姐姐',
+  '弟弟',
+  '妹妹',
+  '叔叔',
+  '阿姨',
+  '舅舅',
+  '姑姑',
+]
+const CHINESE_ACTION_HINTS = [
+  '打开',
+  '关闭',
+  '进入',
+  '离开',
+  '转身',
+  '走',
+  '跑',
+  '看',
+  '推',
+  '拉',
+  '坐',
+  '站',
+  '笑',
+  '哭',
+  '冲',
+]
 
 type HeadingInfo = {
   heading: string
@@ -115,28 +239,50 @@ function isTransition(line: string) {
   return TRANSITION_LABEL.test(label)
 }
 
-function isPlausibleName(name: string) {
-  if (!name || name.length > 40 || isTransition(name)) return false
-  return LATIN_NAME.test(name) || STANDALONE_CHINESE_CUE.test(name)
+function stripCueQualifier(name: string) {
+  return name.trim().replace(CUE_QUALIFIER, '').trim()
+}
+
+function isPlausibleLatinName(name: string, standalone: boolean) {
+  if (!LATIN_NAME.test(name)) return false
+  if (standalone && name !== name.toUpperCase()) return false
+
+  const tokens = name.toUpperCase().split(/\s+/)
+  return !LATIN_ARTICLES.has(tokens[0]!)
+    && !tokens.some((token) => LATIN_ACTION_WORDS.has(token))
+    && !tokens.some((token) => PRODUCTION_LABELS.has(token))
+}
+
+function isPlausibleChineseName(name: string) {
+  if (!STANDALONE_CHINESE_CUE.test(name)) return false
+  if (CHINESE_ACTION_HINTS.some((hint) => name.includes(hint))) return false
+
+  return COMMON_CHINESE_SURNAMES.has(Array.from(name)[0]!)
+    || CHINESE_ROLE_SUFFIXES.some((suffix) => name.endsWith(suffix))
+}
+
+function normalizeCueName(rawName: string, standalone: boolean) {
+  const name = stripCueQualifier(rawName)
+  if (!name || Array.from(name).length > 40 || isTransition(name)) return null
+  if (isPlausibleLatinName(name, standalone) || isPlausibleChineseName(name)) {
+    return name
+  }
+  return null
 }
 
 function extractColonCue(line: string) {
   const match = line.trim().match(COLON_CUE)
-  const name = match?.[1]?.trim() ?? ''
-  return isPlausibleName(name) ? name : null
+  return normalizeCueName(match?.[1] ?? '', false)
 }
 
 function extractStandaloneCue(line: string) {
   const cue = line.trim()
   if (!cue || cue.length > 40 || isTransition(cue)) return null
-  return STANDALONE_LATIN_CUE.test(cue) || STANDALONE_CHINESE_CUE.test(cue)
-    ? cue
-    : null
+  return normalizeCueName(cue, true)
 }
 
 function characterKey(name: string) {
-  const isAscii = Array.from(name).every((character) => character.codePointAt(0)! <= 0x7f)
-  return isAscii ? name.toUpperCase() : name
+  return name.toUpperCase()
 }
 
 function canStartDialogueBlock(
@@ -198,6 +344,7 @@ function classifyScene(
 
     if (isTransition(line)) {
       lineKinds.set(index, 'transition')
+      inDialogueBlock = false
       continue
     }
 

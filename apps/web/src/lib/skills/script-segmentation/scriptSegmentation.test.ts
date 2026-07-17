@@ -288,6 +288,133 @@ describe('script-segmentation headed scripts', () => {
     }
   })
 
+  test('preserves ambiguous Latin and Chinese standalone lines as action', () => {
+    const latinCases = [
+      'THE DOOR OPENS',
+      'THE DOOR',
+      'A MAN',
+      'AN OFFICER',
+      'DOOR OPENS',
+      'MAYA RUNS',
+    ]
+    const chineseCases = [
+      '门打开',
+      '门关闭',
+      '林进入',
+      '林离开',
+      '林转身',
+      '林走开',
+      '林跑来',
+      '林看门',
+      '林推门',
+      '林拉门',
+      '林坐下',
+      '林站起',
+      '林笑了',
+      '林哭了',
+      '林冲出',
+    ]
+
+    for (const action of [...latinCases, ...chineseCases]) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+        'Do not move.',
+      ].join('\n'))).scenes[0]!
+
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+
+    const namedScenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      '林夏',
+      '别动。',
+      'INT. STATION - DAY',
+      '老警察',
+      '请出示证件。',
+    ].join('\n'))).scenes
+    assert.deepEqual(namedScenes.map((scene) => scene.characters), [['林夏'], ['老警察']])
+    assert.deepEqual(namedScenes.map((scene) => scene.actionSummary), ['', ''])
+  })
+
+  test('rejects production labels in colon and standalone cue forms', () => {
+    const labels = [
+      'SFX',
+      'VFX',
+      'MUSIC',
+      'SUPER',
+      'TITLE',
+      'CHYRON',
+      'INSERT',
+      'ANGLE',
+      'POV',
+      'VO',
+      'OS',
+    ]
+
+    for (const label of labels) {
+      const colonScene = payloadOf(runWithText([
+        'INT. STUDIO - DAY',
+        `${label}: Production direction.`,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(colonScene.characters, [], `${label} colon form`)
+      assert.equal(colonScene.actionSummary, `${label}: Production direction.`, `${label} colon form`)
+
+      const standaloneScene = payloadOf(runWithText([
+        'INT. STUDIO - DAY',
+        label,
+        'Production direction.',
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(standaloneScene.characters, [], `${label} standalone form`)
+      assert.equal(standaloneScene.actionSummary, label, `${label} standalone form`)
+    }
+  })
+
+  test('ends an active dialogue block at a transition line', () => {
+    const scene = payloadOf(runWithText([
+      'INT. CONTROL ROOM - NIGHT',
+      'MAYA: Run.',
+      'CUT TO:',
+      'The door opens.',
+    ].join('\n'))).scenes[0]!
+
+    assert.deepEqual(scene.characters, ['MAYA'])
+    assert.equal(scene.actionSummary, 'The door opens.')
+  })
+
+  test('supports controlled English cue qualifiers and stores the base name', () => {
+    const scenes = payloadOf(runWithText([
+      'INT. RADIO ROOM - NIGHT',
+      'MAYA (v.o.)',
+      'Can you hear me?',
+      'INT. CORRIDOR - NIGHT',
+      'JORDAN (O.S.): Stay there.',
+      'Do not open the door.',
+      'INT. LAB - DAY',
+      "MAYA (cont'd):",
+      'The signal is back.',
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['MAYA'],
+      ['JORDAN'],
+      ['MAYA'],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', ''])
+  })
+
+  test('deduplicates character names with deterministic Unicode uppercase keys', () => {
+    const scene = payloadOf(runWithText([
+      'INT. CAFE - DAY',
+      'Élodie: Bonjour.',
+      'ÉLODIE: Encore.',
+    ].join('\n'))).scenes[0]!
+
+    assert.deepEqual(scene.characters, ['Élodie'])
+    assert.equal(scene.actionSummary, '')
+  })
+
   test('classifies cues and dialogue once before selecting later explicit action', () => {
     const result = runWithText([
       'INT. CONTROL ROOM - NIGHT',
