@@ -265,7 +265,7 @@ describe('script-segmentation headed scripts', () => {
       },
       {
         label: 'implausibly long name',
-        body: ['ONE TWO THREE FOUR: Keep moving.'],
+        body: [`${'A'.repeat(41)}: Keep moving.`],
         expectedCharacters: [],
       },
     ]
@@ -285,6 +285,65 @@ describe('script-segmentation headed scripts', () => {
       if (scenario.expectedActionSummary !== undefined) {
         assert.equal(scene.actionSummary, scenario.expectedActionSummary, scenario.label)
       }
+    }
+  })
+
+  test('treats explicit colon delimiters as strong Unicode cue evidence', () => {
+    const fortyCharacterName = 'A'.repeat(40)
+    const scenes = payloadOf(runWithText([
+      'INT. HALL - NIGHT',
+      '李冲：快走。',
+      'INT. STAIRWELL - NIGHT',
+      '小明：别回头。',
+      'INT. OFFICE - DAY',
+      'LI CHONG: Go now.',
+      'INT. STREET - NIGHT',
+      'XIAO MING: Do not look back.',
+      'INT. GARAGE - NIGHT',
+      'MAYA RUN (v.o.): Keep moving.',
+      'INT. WAREHOUSE - NIGHT',
+      `${fortyCharacterName} (O.S.): Stay there.`,
+    ].join('\n'))).scenes
+
+    assert.deepEqual(scenes.map((scene) => scene.characters), [
+      ['李冲'],
+      ['小明'],
+      ['LI CHONG'],
+      ['XIAO MING'],
+      ['MAYA RUN'],
+      [fortyCharacterName],
+    ])
+    assert.deepEqual(scenes.map((scene) => scene.actionSummary), ['', '', '', '', '', ''])
+  })
+
+  test('keeps surname and action-word ambiguity heuristics on standalone cues', () => {
+    for (const action of ['李冲', '小明', 'MAYA RUN']) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        action,
+        'Keep moving.',
+      ].join('\n'))).scenes[0]!
+
+      assert.deepEqual(scene.characters, [], action)
+      assert.equal(scene.actionSummary, action, action)
+    }
+  })
+
+  test('still rejects explicit colon labels and names with invalid punctuation', () => {
+    const cases = [
+      'SFX: Door slam.',
+      'SFX (V.O.): Door slam.',
+      'CUT TO: The hall.',
+      'MAYA!: Run.',
+      'MAYA/JORDAN: Run.',
+    ]
+
+    for (const line of cases) {
+      const scene = payloadOf(runWithText([
+        'INT. HALL - NIGHT',
+        line,
+      ].join('\n'))).scenes[0]!
+      assert.deepEqual(scene.characters, [], line)
     }
   })
 

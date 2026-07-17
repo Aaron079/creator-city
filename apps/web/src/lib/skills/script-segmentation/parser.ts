@@ -23,8 +23,9 @@ const CHINESE_TIME_TOKENS = new Set([
   '黎明',
 ])
 const LATIN_NAME = /^\p{Lu}[\p{Script=Latin}\p{M}'-]*(?:\s+\p{Lu}[\p{Script=Latin}\p{M}'-]*)?$/u
+const EXPLICIT_UNICODE_NAME = /^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)*$/u
 const STANDALONE_CHINESE_CUE = /^\p{Script=Han}{2,4}$/u
-const COLON_CUE = /^([^:：]{1,40})\s*[:：]\s*(.*)$/u
+const COLON_CUE = /^([^:：]+)\s*[:：]\s*(.*)$/u
 const TRANSITION_LABEL = /^(?:FADE(?:\s+(?:IN|OUT|TO(?:\s+\S+){0,3}))?|CUT(?:\s+TO(?:\s+\S+){0,3})?|DISSOLVE(?:\s+TO(?:\s+\S+){0,3})?|SMASH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|MATCH\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|JUMP\s+CUT(?:\s+TO(?:\s+\S+){0,3})?|WIPE(?:\s+TO(?:\s+\S+){0,3})?|IRIS\s+(?:IN|OUT))$/i
 const CUE_QUALIFIER = /\s+\((?:V\.O\.|O\.S\.|CONT'D)\)$/iu
 const PRODUCTION_LABELS = new Set([
@@ -243,14 +244,21 @@ function stripCueQualifier(name: string) {
   return name.trim().replace(CUE_QUALIFIER, '').trim()
 }
 
-function isPlausibleLatinName(name: string, standalone: boolean) {
+function containsProductionLabel(name: string) {
+  return name
+    .toUpperCase()
+    .split(/\s+/)
+    .some((token) => PRODUCTION_LABELS.has(token))
+}
+
+function isPlausibleStandaloneLatinName(name: string) {
   if (!LATIN_NAME.test(name)) return false
-  if (standalone && name !== name.toUpperCase()) return false
+  if (name !== name.toUpperCase()) return false
 
   const tokens = name.toUpperCase().split(/\s+/)
   return !LATIN_ARTICLES.has(tokens[0]!)
     && !tokens.some((token) => LATIN_ACTION_WORDS.has(token))
-    && !tokens.some((token) => PRODUCTION_LABELS.has(token))
+    && !containsProductionLabel(name)
 }
 
 function isPlausibleChineseName(name: string) {
@@ -261,24 +269,29 @@ function isPlausibleChineseName(name: string) {
     || CHINESE_ROLE_SUFFIXES.some((suffix) => name.endsWith(suffix))
 }
 
-function normalizeCueName(rawName: string, standalone: boolean) {
+function normalizeExplicitCueName(rawName: string) {
   const name = stripCueQualifier(rawName)
   if (!name || Array.from(name).length > 40 || isTransition(name)) return null
-  if (isPlausibleLatinName(name, standalone) || isPlausibleChineseName(name)) {
-    return name
-  }
+  if (containsProductionLabel(name) || !EXPLICIT_UNICODE_NAME.test(name)) return null
+  return name
+}
+
+function normalizeStandaloneCueName(rawName: string) {
+  const name = stripCueQualifier(rawName)
+  if (!name || Array.from(name).length > 40 || isTransition(name)) return null
+  if (isPlausibleStandaloneLatinName(name) || isPlausibleChineseName(name)) return name
   return null
 }
 
 function extractColonCue(line: string) {
   const match = line.trim().match(COLON_CUE)
-  return normalizeCueName(match?.[1] ?? '', false)
+  return normalizeExplicitCueName(match?.[1] ?? '')
 }
 
 function extractStandaloneCue(line: string) {
   const cue = line.trim()
   if (!cue || cue.length > 40 || isTransition(cue)) return null
-  return normalizeCueName(cue, true)
+  return normalizeStandaloneCueName(cue)
 }
 
 function characterKey(name: string) {
