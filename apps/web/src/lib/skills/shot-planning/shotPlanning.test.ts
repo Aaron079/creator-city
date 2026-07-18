@@ -80,6 +80,10 @@ function run(input: CreatorSkillRunInput) {
   )
 }
 
+function runRaw(input: CreatorSkillRunInput) {
+  return shotSkill().run(input, 'csf1_boundary_test')
+}
+
 function runText(source: string, options: Record<string, unknown> = {}) {
   return run({ sourceNodes: [textNode(source)], options })
 }
@@ -205,6 +209,13 @@ describe('shot-planning manifest and options', () => {
       userInstruction: '',
     })
     assert.deepEqual(normalize({ requestedShotCount: Symbol('invalid') }), {
+      requestedShotCount: 5,
+      outputMode: 'mixed',
+      pacing: 'standard',
+      shotSizeStrategy: 'auto',
+      userInstruction: '',
+    })
+    assert.deepEqual(normalize({ requestedShotCount: null }), {
       requestedShotCount: 5,
       outputMode: 'mixed',
       pacing: 'standard',
@@ -393,6 +404,67 @@ describe('independent input contracts', () => {
     assert.equal(allShots(result)[0]?.lineStart, 20)
   })
 
+  test('accepts a reviewed beat subset without rewriting immutable identity or order', () => {
+    const artifact = narrativeArtifact() as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    const beatTwo = artifact.payload.scenes[0]!.beats[1]!
+    artifact.payload.scenes[0]!.beats = [beatTwo]
+
+    const result = run({
+      sourceNodes: [],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.deepEqual(allShots(result).map((shot) => ({
+      beatId: shot.beatId,
+      lineStart: shot.lineStart,
+    })), [{
+      beatId: 'scene-002-beat-002',
+      lineStart: 21,
+    }])
+    assert.equal(beatTwo.order, 2)
+
+    const paired = run({
+      sourceNodes: [textNode([
+        'Maya opens panel 1.',
+        'Leo gasps at signal 2.',
+        'Maya opens panel 3.',
+      ].join('\n'), { id: 'materialized-scene-node' })],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+    assert.notEqual(paired.status, 'blocked')
+    assert.deepEqual(paired.artifacts[0]?.sourceNodeIds, ['materialized-scene-node'])
+  })
+
+  test('accepts reviewed beat reordering and plans by preserved original order', () => {
+    const artifact = narrativeArtifact() as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    const beats = artifact.payload.scenes[0]!.beats
+    artifact.payload.scenes[0]!.beats = [beats[2]!, beats[0]!]
+
+    const result = run({
+      sourceNodes: [],
+      artifacts: [artifact],
+      options: { requestedShotCount: 2 },
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.deepEqual(allShots(result).map((shot) => shot.beatId), [
+      'scene-002-beat-001',
+      'scene-002-beat-003',
+    ])
+    assert.deepEqual(
+      artifact.payload.scenes[0]!.beats.map((beat) => beat.order),
+      [3, 1],
+      'planning must not mutate or rewrite the reviewed Artifact',
+    )
+  })
+
   test('accepts a materialized matching Text plus Artifact and rejects conflict', () => {
     const artifact = sceneBreakdownArtifact()
     const source = (artifact.payload as { scenes: Array<{ sourceText: string }> })
@@ -439,6 +511,59 @@ describe('independent input contracts', () => {
       sourceNodes: [],
       artifacts: [reversedLines],
     }), 'SHOT_ARTIFACT_INVALID')
+  })
+
+  test('blocks duplicate or invalid immutable beat identity, order, scene, and ranges', () => {
+    const mutateSecondBeat = (
+      patch: Record<string, unknown>,
+    ): CreatorSkillArtifact => {
+      const artifact = narrativeArtifact() as CreatorSkillArtifact<{
+        scenes: Array<{ beats: Array<Record<string, unknown>> }>
+      }>
+      artifact.payload.scenes[0]!.beats[1] = {
+        ...artifact.payload.scenes[0]!.beats[1],
+        ...patch,
+      }
+      return artifact
+    }
+    const cases = [
+      mutateSecondBeat({ beatId: 'scene-002-beat-001' }),
+      mutateSecondBeat({ order: 1 }),
+      mutateSecondBeat({ beatId: 'scene-002-beat-000', order: 0 }),
+      mutateSecondBeat({ beatId: 'scene-003-beat-002', sceneId: 'scene-003' }),
+      mutateSecondBeat({ lineStart: 0, lineEnd: 0 }),
+    ]
+
+    for (const artifact of cases) {
+      assertBlocked(run({ sourceNodes: [], artifacts: [artifact] }), 'SHOT_ARTIFACT_INVALID')
+    }
+  })
+
+  test('returns controlled blockers for malformed direct Text source fields', () => {
+    const valid = textNode('Maya opens the panel.')
+    const accessorResultText = { ...valid }
+    Object.defineProperty(accessorResultText, 'resultText', {
+      get() {
+        throw new Error('must not read source accessors')
+      },
+      enumerable: true,
+    })
+    const malformed = [
+      { ...valid, id: '' },
+      { ...valid, id: '   ' },
+      { ...valid, id: ' text-1 ' },
+      { ...valid, title: 42 },
+      { ...valid, prompt: 42 },
+      { ...valid, resultText: 42 },
+      accessorResultText,
+    ]
+
+    for (const sourceNode of malformed) {
+      const result = runRaw({
+        sourceNodes: [sourceNode as unknown as CreatorSkillSourceNode],
+      })
+      assertBlocked(result, 'SHOT_SOURCE_INVALID')
+    }
   })
 })
 

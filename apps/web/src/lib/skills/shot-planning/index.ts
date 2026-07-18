@@ -77,9 +77,49 @@ function blockedResult(
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+  } catch {
+    return false
+  }
+}
+
+function ownDataDescriptor(value: object, key: string) {
+  try {
+    return Object.getOwnPropertyDescriptor(value, key)
+  } catch {
+    return undefined
+  }
+}
+
+function isCanonicalTextSourceNode(value: unknown) {
+  if (!isPlainRecord(value)) return false
+  const idField = ownDataDescriptor(value, 'id')
+  const kindField = ownDataDescriptor(value, 'kind')
+  const titleField = ownDataDescriptor(value, 'title')
+  const promptField = ownDataDescriptor(value, 'prompt')
+  const resultTextField = ownDataDescriptor(value, 'resultText')
+  if (!idField || !('value' in idField)
+    || !kindField || !('value' in kindField)
+    || !titleField || !('value' in titleField)
+    || !promptField || !('value' in promptField)
+    || (resultTextField !== undefined && !('value' in resultTextField))) {
+    return false
+  }
+  const id = idField.value
+  const kind = kindField.value
+  const title = titleField.value
+  const prompt = promptField.value
+  const resultText = resultTextField?.value
+  return typeof id === 'string'
+    && id.length > 0
+    && id === id.trim()
+    && kind === 'text'
+    && typeof title === 'string'
+    && typeof prompt === 'string'
+    && (resultText === undefined || typeof resultText === 'string')
 }
 
 function isDenseArray(value: unknown): value is unknown[] {
@@ -143,13 +183,17 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
     if (!isDenseArray(value.scenes)) return { valid: false, limitExceeded: false }
     const scenes: NarrativeBeatMapPayload['scenes'] = []
     let totalBeats = 0
-    let previousSceneOrder = 0
-    for (const sceneValue of value.scenes) {
+    const sceneIds = new Set<string>()
+    const sceneOrders = new Set<number>()
+    for (let sceneIndex = 0; sceneIndex < value.scenes.length; sceneIndex += 1) {
+      const sceneValue = value.scenes[sceneIndex]
       if (!isPlainRecord(sceneValue)
         || !hasExactFields(sceneValue, ['sceneId', 'order', 'heading', 'beats'])
         || !Number.isSafeInteger(sceneValue.order)
-        || (sceneValue.order as number) <= previousSceneOrder
+        || (sceneValue.order as number) < 1
         || sceneValue.sceneId !== `scene-${String(sceneValue.order).padStart(3, '0')}`
+        || sceneIds.has(sceneValue.sceneId as string)
+        || sceneOrders.has(sceneValue.order as number)
         || typeof sceneValue.heading !== 'string'
         || !Array.isArray(sceneValue.beats)
         || sceneValue.beats.length === 0) {
@@ -162,8 +206,8 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
         return { valid: false, limitExceeded: false }
       }
       const beats: NarrativeBeatDraft[] = []
-      let previousLineStart = 0
-      let previousLineEnd = 0
+      const beatIds = new Set<string>()
+      const beatOrders = new Set<number>()
       for (let index = 0; index < sceneValue.beats.length; index += 1) {
         totalBeats += 1
         if (totalBeats > MAX_SHOTS) return { valid: false, limitExceeded: true }
@@ -173,9 +217,12 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
             'beatId', 'sceneId', 'order', 'type', 'sourceText', 'summary',
             'lineStart', 'lineEnd', 'reviewStatus',
           ], ['needsReviewReason'])
-          || beatValue.beatId !== `${sceneValue.sceneId}-beat-${String(index + 1).padStart(3, '0')}`
+          || !Number.isSafeInteger(beatValue.order)
+          || (beatValue.order as number) < 1
+          || beatValue.beatId !== `${sceneValue.sceneId}-beat-${String(beatValue.order).padStart(3, '0')}`
           || beatValue.sceneId !== sceneValue.sceneId
-          || beatValue.order !== index + 1
+          || beatIds.has(beatValue.beatId as string)
+          || beatOrders.has(beatValue.order as number)
           || !VALID_BEAT_TYPES.has(beatValue.type as string)
           || typeof beatValue.sourceText !== 'string'
           || !beatValue.sourceText.trim()
@@ -184,20 +231,30 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
           || !Number.isSafeInteger(beatValue.lineEnd)
           || (beatValue.lineStart as number) < 1
           || (beatValue.lineEnd as number) < (beatValue.lineStart as number)
-          || (index > 0 && (
-            (beatValue.lineStart as number) < previousLineStart
-            || ((beatValue.lineStart as number) < previousLineEnd
-              && !((beatValue.lineStart as number) === previousLineStart
-                && (beatValue.lineEnd as number) === previousLineEnd))
-          ))
           || beatValue.reviewStatus !== 'pending'
           || (beatValue.needsReviewReason !== undefined
             && typeof beatValue.needsReviewReason !== 'string')) {
           return { valid: false, limitExceeded: false }
         }
         beats.push(beatValue as unknown as NarrativeBeatDraft)
-        previousLineStart = beatValue.lineStart as number
-        previousLineEnd = beatValue.lineEnd as number
+        beatIds.add(beatValue.beatId as string)
+        beatOrders.add(beatValue.order as number)
+      }
+      beats.sort((left, right) => left.order - right.order)
+      let previousLineStart = 0
+      let previousLineEnd = 0
+      for (let index = 0; index < beats.length; index += 1) {
+        const beat = beats[index]!
+        if (index > 0 && (
+          beat.lineStart < previousLineStart
+          || (beat.lineStart < previousLineEnd
+            && !(beat.lineStart === previousLineStart
+              && beat.lineEnd === previousLineEnd))
+        )) {
+          return { valid: false, limitExceeded: false }
+        }
+        previousLineStart = beat.lineStart
+        previousLineEnd = beat.lineEnd
       }
       scenes.push({
         sceneId: sceneValue.sceneId as string,
@@ -205,8 +262,10 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
         heading: sceneValue.heading,
         beats,
       })
-      previousSceneOrder = sceneValue.order as number
+      sceneIds.add(sceneValue.sceneId as string)
+      sceneOrders.add(sceneValue.order as number)
     }
+    scenes.sort((left, right) => left.order - right.order)
     return { valid: true, payload: { scenes } }
   } catch {
     return { valid: false, limitExceeded: false }
@@ -245,11 +304,17 @@ function canonicalText(value: string) {
 }
 
 function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: string) {
-  let artifactText = ''
+  const normalizedSource = canonicalText(sourceText)
+  let searchOffset = 0
   for (const scene of payload.scenes) {
-    for (const beat of scene.beats) artifactText += beat.sourceText
+    for (const beat of scene.beats) {
+      const excerpt = canonicalText(beat.sourceText)
+      const matchOffset = normalizedSource.indexOf(excerpt, searchOffset)
+      if (matchOffset === -1) return false
+      searchOffset = matchOffset + excerpt.length
+    }
   }
-  return canonicalText(artifactText) === canonicalText(sourceText)
+  return true
 }
 
 function hasMinimumSource(sourceText: string) {
@@ -268,8 +333,7 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
     const artifacts = input.artifacts ?? []
     if (input.sourceNodes.length > 1
       || artifacts.length > 1
-      || (input.sourceNodes.length === 0 && artifacts.length === 0)
-      || (input.sourceNodes.length === 1 && input.sourceNodes[0]?.kind !== 'text')) {
+      || (input.sourceNodes.length === 0 && artifacts.length === 0)) {
       return blockedResult(
         runFingerprint,
         'SHOT_SOURCE_COUNT_INVALID',
@@ -278,6 +342,13 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
     }
 
     const sourceNode = input.sourceNodes[0]
+    if (sourceNode && !isCanonicalTextSourceNode(sourceNode)) {
+      return blockedResult(
+        runFingerprint,
+        'SHOT_SOURCE_INVALID',
+        'The Text source node has invalid identity or fields.',
+      )
+    }
     const sourceText = sourceNode
       ? (sourceNode.resultText?.trim() ? sourceNode.resultText : sourceNode.prompt)
         .replace(/\r\n/g, '\n')
