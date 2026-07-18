@@ -206,11 +206,12 @@ describe('planScriptSceneMaterialization output', () => {
     assert.equal(planned.create[0]!.prompt, editedText)
   })
 
-  test('keeps edited scene Artifacts valid for downstream handoff', () => {
+  test('keeps independently edited heading and text in a canonical downstream Artifact', () => {
     const editedText = 'Wind tears the map.\nMaya does not move.\nA siren sounds.'
+    const editedHeading = 'EXT. RADIO TOWER - DAWN'
     const planned = plan({
       approvedScenes: [approve(FIRST_SCENE, {
-        heading: 'EXT. RADIO TOWER - DAWN',
+        heading: editedHeading,
         sourceText: editedText,
       })],
     })
@@ -221,13 +222,16 @@ describe('planScriptSceneMaterialization output', () => {
     }
 
     assert.deepEqual(readSceneBreakdownPayload(artifact.payload).valid, true)
-    assert.equal(payload.format, 'paragraph-fallback')
-    assert.equal(payload.scenes[0]!.heading, '')
-    assert.equal(payload.scenes[0]!.sourceText, editedText)
+    assert.equal(payload.format, 'headed-script')
+    assert.equal(payload.scenes[0]!.heading, editedHeading)
+    assert.equal(payload.scenes[0]!.sourceText, `${editedHeading}\n${editedText}`)
     assert.deepEqual(
       [payload.scenes[0]!.lineStart, payload.scenes[0]!.lineEnd],
-      [1, 3],
+      [1, 4],
     )
+    assert.equal(planned.create[0]!.prompt, editedText)
+    assert.deepEqual(artifact.sourceNodeIds, [SOURCE_NODE_ID])
+    assert.deepEqual(artifact.sourceArtifactIds, [SOURCE_ARTIFACT_ID])
   })
 
   test('uses a Chinese scene-order title when the edited heading is blank', () => {

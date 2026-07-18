@@ -577,9 +577,11 @@ function planMaterialization(inputValue: MaterializationInput): MaterializationR
     if (!evidence) fail('approved scene is missing canonical evidence')
     const approvedSourceText = normalizeArtifactSourceText(approved.sourceText)
     const approvedHeading = approved.heading.trim()
-    const preservesHeadedFormat = artifact.payload.format === 'headed-script'
-      && Boolean(approvedHeading)
-      && containsTrimmedLine(approvedSourceText, approvedHeading)
+    const canonicalSourceText = approvedHeading
+      && !containsTrimmedLine(approvedSourceText, approvedHeading)
+      ? `${approvedHeading}\n${approvedSourceText}`
+      : approvedSourceText
+    const preservesHeadedFormat = Boolean(approvedHeading)
     const approvedArtifact: CreatorSkillArtifact = {
       artifactId: `scene-breakdown-${artifactScene.sceneId}-approved`,
       artifactType: 'scene-breakdown',
@@ -596,9 +598,9 @@ function planMaterialization(inputValue: MaterializationInput): MaterializationR
           ...(approved.timeOfDay.value !== undefined ? { timeOfDay: approved.timeOfDay.value } : {}),
           characters: approved.characters.slice(),
           actionSummary: artifactScene.actionSummary,
-          sourceText: approvedSourceText,
+          sourceText: canonicalSourceText,
           lineStart: artifactScene.lineStart,
-          lineEnd: artifactScene.lineStart + lineCount(approvedSourceText) - 1,
+          lineEnd: artifactScene.lineStart + lineCount(canonicalSourceText) - 1,
           reviewStatus: 'pending',
         }],
       },

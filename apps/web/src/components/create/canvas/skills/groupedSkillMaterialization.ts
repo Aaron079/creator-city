@@ -449,6 +449,84 @@ function snapshotArtifact<TScene>(
   return found
 }
 
+type CanonicalProvenanceItem = {
+  sceneId: string
+  order: number
+  sourceText: string
+  lineStart: number
+  lineEnd: number
+}
+
+type CanonicalProvenanceScene = {
+  sceneId: string
+  order: number
+}
+
+function validateCanonicalProvenance<
+  TItem extends CanonicalProvenanceItem,
+  TScene extends CanonicalProvenanceScene,
+>(
+  scenes: TScene[],
+  itemKind: 'beat' | 'shot',
+  itemsForScene: (scene: TScene) => TItem[],
+  itemId: (item: TItem) => string,
+) {
+  const scenesByImmutableOrder = scenes.slice().sort((left, right) => left.order - right.order)
+  let previousSceneLineEnd = 0
+  for (let sceneIndex = 0; sceneIndex < scenesByImmutableOrder.length; sceneIndex += 1) {
+    const scene = scenesByImmutableOrder[sceneIndex]!
+    const expectedSceneId = `scene-${String(scene.order).padStart(3, '0')}`
+    if (scene.sceneId !== expectedSceneId) fail('scene identity is not canonical')
+
+    const items = itemsForScene(scene)
+    if (items.length === 0) fail(`canonical ${itemKind} scene must be nonempty`)
+    const itemsByImmutableOrder = items.slice().sort((left, right) => left.order - right.order)
+    let previousItem: TItem | undefined
+    for (let itemIndex = 0; itemIndex < itemsByImmutableOrder.length; itemIndex += 1) {
+      const item = itemsByImmutableOrder[itemIndex]!
+      const expectedItemId = `${scene.sceneId}-${itemKind}-${String(item.order).padStart(3, '0')}`
+      if (item.sceneId !== scene.sceneId || itemId(item) !== expectedItemId) {
+        fail(`${itemKind} identity is not canonical`)
+      }
+      if (previousItem) {
+        const exactSameSourceRange = item.lineStart === previousItem.lineStart
+          && item.lineEnd === previousItem.lineEnd
+          && item.sourceText === previousItem.sourceText
+        if (item.lineStart < previousItem.lineStart
+          || (item.lineStart <= previousItem.lineEnd && !exactSameSourceRange)) {
+          fail(`${itemKind} provenance is reversed or overlapping`)
+        }
+      }
+      previousItem = item
+    }
+
+    const firstItem = itemsByImmutableOrder[0]!
+    const finalItem = itemsByImmutableOrder[itemsByImmutableOrder.length - 1]!
+    if (firstItem.lineStart <= previousSceneLineEnd) {
+      fail('scene provenance is reversed or overlapping')
+    }
+    previousSceneLineEnd = finalItem.lineEnd
+  }
+}
+
+function validateNarrativeArtifact(scenes: NarrativeSceneSnapshot[]) {
+  validateCanonicalProvenance(
+    scenes,
+    'beat',
+    (scene) => scene.beats,
+    (beat) => beat.beatId,
+  )
+}
+
+function validateShotArtifact(scenes: ShotSceneSnapshot[]) {
+  validateCanonicalProvenance(
+    scenes,
+    'shot',
+    (scene) => scene.shots,
+    (shot) => shot.shotId,
+  )
+}
+
 function validateIdentity(
   result: ResultSnapshot,
   context: ApprovalContext,
@@ -682,6 +760,7 @@ function planNarrative(inputValue: NarrativeBeatMaterializationInput) {
     'beats',
     snapshotNarrativeScene,
   )
+  validateNarrativeArtifact(artifact.scenes)
   validateIdentity(result, context, artifact.artifactId, 'narrative-beat-analysis')
   const evidence = evidenceById(result.evidence, artifact.sourceNodeIds)
   validateNarrativeEvidence(artifact.scenes, evidence)
@@ -770,6 +849,7 @@ function planShots(inputValue: ShotPlanMaterializationInput) {
   const result = snapshotResult(ownData(input, 'result', 'input.result'))
   const context = snapshotContext(ownData(input, 'approvalContext', 'input.approvalContext'))
   const artifact = snapshotArtifact(result.artifacts, 'shot-plan', 'shots', snapshotShotScene)
+  validateShotArtifact(artifact.scenes)
   validateIdentity(result, context, artifact.artifactId, 'shot-planning')
   const evidence = evidenceById(result.evidence, artifact.sourceNodeIds)
   validateShotEvidence(artifact.scenes, evidence)

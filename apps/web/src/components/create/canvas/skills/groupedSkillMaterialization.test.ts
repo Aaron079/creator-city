@@ -136,6 +136,36 @@ function narrativePlan(overrides: Record<string, unknown> = {}) {
   } as Parameters<typeof planNarrativeBeatMaterialization>[0])
 }
 
+function approvedNarrativeSceneFromResult(
+  result: CreatorSkillRunResult,
+  sceneIndex: number,
+  beatIndexes?: number[],
+): ApprovedNarrativeBeatScene {
+  const payload = result.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+  const source = payload.scenes[sceneIndex]!
+  const indexes = beatIndexes ?? source.beats.map((_, index) => index)
+  return {
+    ...structuredClone(source),
+    beats: indexes.map((index) => ({
+      ...structuredClone(source.beats[index]!),
+      reviewStatus: 'approved' as const,
+    })),
+  }
+}
+
+function syncNarrativeEvidence(result: CreatorSkillRunResult) {
+  const payload = result.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+  result.evidence = payload.scenes.flatMap((scene) => scene.beats.map((beat) => evidence(
+    `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
+    'NARRATIVE_BEAT',
+    beat.lineStart,
+    beat.sourceText,
+  )).map((item, index) => ({
+    ...item,
+    lineEnd: scene.beats[index]!.lineEnd,
+  })))
+}
+
 const SHOT_ARTIFACT_ID = 'shot-plan-001'
 const SHOT_SCENES = [{
   sceneId: 'scene-001',
@@ -224,6 +254,35 @@ function shotPlan(overrides: Record<string, unknown> = {}) {
     existingNodes: [],
     ...overrides,
   } as Parameters<typeof planShotPlanMaterialization>[0])
+}
+
+function approvedShotSceneFromResult(
+  result: CreatorSkillRunResult,
+  indexes?: number[],
+): ApprovedShotPlanScene {
+  const payload = result.artifacts[0]!.payload as { scenes: typeof SHOT_SCENES }
+  const source = payload.scenes[0]!
+  const reviewedIndexes = indexes ?? source.shots.map((_, index) => index)
+  return {
+    ...structuredClone(source),
+    shots: reviewedIndexes.map((index) => ({
+      ...structuredClone(source.shots[index]!),
+      reviewStatus: 'approved' as const,
+    })),
+  }
+}
+
+function syncShotEvidence(result: CreatorSkillRunResult) {
+  const payload = result.artifacts[0]!.payload as { scenes: typeof SHOT_SCENES }
+  result.evidence = payload.scenes.flatMap((scene) => scene.shots.map((shot) => evidence(
+    `shot-plan-evidence-${String(scene.order).padStart(3, '0')}-${String(shot.order).padStart(3, '0')}`,
+    'SHOT_PRIMARY_SOURCE_UNIT',
+    shot.lineStart,
+    shot.sourceText,
+  )).map((item, index) => ({
+    ...item,
+    lineEnd: scene.shots[index]!.lineEnd,
+  })))
 }
 
 function deepFreeze(value: unknown, seen = new Set<object>()): void {
@@ -400,6 +459,135 @@ describe('grouped materialization validation and purity', () => {
     }), TypeError)
     assert.throws(() => narrativePlan({ result: extraEvidence }), TypeError)
     assert.throws(() => narrativePlan({ result: duplicateOrders }), TypeError)
+  })
+
+  test('rejects noncanonical scene, beat, and shot identities before persistence', () => {
+    const malformedScene = narrativeResult()
+    const malformedScenePayload = malformedScene.artifacts[0]!.payload as {
+      scenes: typeof NARRATIVE_SCENES
+    }
+    malformedScenePayload.scenes[0]!.sceneId = 'scene-009'
+    for (const beat of malformedScenePayload.scenes[0]!.beats) {
+      beat.sceneId = 'scene-009'
+      beat.beatId = `scene-009-beat-${String(beat.order).padStart(3, '0')}`
+    }
+
+    const malformedBeat = narrativeResult()
+    const malformedBeatPayload = malformedBeat.artifacts[0]!.payload as {
+      scenes: typeof NARRATIVE_SCENES
+    }
+    malformedBeatPayload.scenes[0]!.beats[0]!.beatId = 'scene-001-beat-999'
+
+    const malformedShot = shotResult()
+    const malformedShotPayload = malformedShot.artifacts[0]!.payload as {
+      scenes: typeof SHOT_SCENES
+    }
+    malformedShotPayload.scenes[0]!.shots[0]!.shotId = 'scene-001-shot-999'
+
+    assert.throws(() => narrativePlan({
+      result: malformedScene,
+      approvedScenes: [approvedNarrativeSceneFromResult(malformedScene, 0)],
+    }), TypeError)
+    assert.throws(() => narrativePlan({
+      result: malformedBeat,
+      approvedScenes: [approvedNarrativeSceneFromResult(malformedBeat, 0)],
+    }), TypeError)
+    assert.throws(() => shotPlan({
+      result: malformedShot,
+      approvedScenes: [approvedShotSceneFromResult(malformedShot)],
+    }), TypeError)
+  })
+
+  test('rejects reversed, partial-overlap, and cross-scene narrative provenance', () => {
+    const reversed = narrativeResult()
+    const reversedPayload = reversed.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+    reversedPayload.scenes[0]!.beats[0]!.lineStart = 4
+    reversedPayload.scenes[0]!.beats[0]!.lineEnd = 4
+    reversedPayload.scenes[0]!.beats[1]!.lineStart = 3
+    reversedPayload.scenes[0]!.beats[1]!.lineEnd = 3
+    syncNarrativeEvidence(reversed)
+
+    const partialOverlap = narrativeResult()
+    const overlapPayload = partialOverlap.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+    overlapPayload.scenes[0]!.beats[0]!.lineStart = 2
+    overlapPayload.scenes[0]!.beats[0]!.lineEnd = 3
+    overlapPayload.scenes[0]!.beats[1]!.lineStart = 3
+    overlapPayload.scenes[0]!.beats[1]!.lineEnd = 4
+    syncNarrativeEvidence(partialOverlap)
+
+    const crossSceneOverlap = narrativeResult()
+    const crossPayload = crossSceneOverlap.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+    crossPayload.scenes[1]!.beats[0]!.lineStart = 3
+    crossPayload.scenes[1]!.beats[0]!.lineEnd = 3
+    syncNarrativeEvidence(crossSceneOverlap)
+
+    assert.throws(() => narrativePlan({
+      result: reversed,
+      approvedScenes: [approvedNarrativeSceneFromResult(reversed, 0)],
+    }), TypeError)
+    assert.throws(() => narrativePlan({
+      result: partialOverlap,
+      approvedScenes: [approvedNarrativeSceneFromResult(partialOverlap, 0)],
+    }), TypeError)
+    assert.throws(() => narrativePlan({
+      result: crossSceneOverlap,
+      approvedScenes: [approvedNarrativeSceneFromResult(crossSceneOverlap, 1)],
+    }), TypeError)
+  })
+
+  test('rejects reversed shot provenance in immutable shot order', () => {
+    const result = shotResult()
+    const payload = result.artifacts[0]!.payload as { scenes: typeof SHOT_SCENES }
+    payload.scenes[0]!.shots[0]!.lineStart = 4
+    payload.scenes[0]!.shots[0]!.lineEnd = 4
+    payload.scenes[0]!.shots[1]!.lineStart = 3
+    payload.scenes[0]!.shots[1]!.lineEnd = 3
+    syncShotEvidence(result)
+
+    assert.throws(() => shotPlan({
+      result,
+      approvedScenes: [approvedShotSceneFromResult(result, [1, 0])],
+    }), TypeError)
+  })
+
+  test('allows exact shared source ranges while preserving reviewed payload order', () => {
+    const narrative = narrativeResult()
+    const narrativePayload = narrative.artifacts[0]!.payload as { scenes: typeof NARRATIVE_SCENES }
+    const narrativeBeats = narrativePayload.scenes[0]!.beats
+    narrativeBeats[1]!.lineStart = narrativeBeats[0]!.lineStart
+    narrativeBeats[1]!.lineEnd = narrativeBeats[0]!.lineEnd
+    narrativeBeats[1]!.sourceText = narrativeBeats[0]!.sourceText
+    syncNarrativeEvidence(narrative)
+
+    const shot = shotResult()
+    const shotPayload = shot.artifacts[0]!.payload as { scenes: typeof SHOT_SCENES }
+    const shots = shotPayload.scenes[0]!.shots
+    shots[1]!.lineStart = shots[0]!.lineStart
+    shots[1]!.lineEnd = shots[0]!.lineEnd
+    shots[1]!.sourceText = shots[0]!.sourceText
+    syncShotEvidence(shot)
+
+    const narrativePlanned = narrativePlan({
+      result: narrative,
+      approvedScenes: [approvedNarrativeSceneFromResult(narrative, 0, [1, 0])],
+    })
+    const shotPlanned = shotPlan({
+      result: shot,
+      approvedScenes: [approvedShotSceneFromResult(shot, [1, 0])],
+    })
+
+    const approvedBeats = narrativePlanned.create[0]!.metadataJson.creatorSkill
+      .approvedArtifact.payload as { scenes: Array<{ beats: Array<{ beatId: string }> }> }
+    const approvedShots = shotPlanned.create[0]!.metadataJson.creatorSkill
+      .approvedArtifact.payload as { scenes: Array<{ shots: Array<{ shotId: string }> }> }
+    assert.deepEqual(approvedBeats.scenes[0]!.beats.map(({ beatId }) => beatId), [
+      'scene-001-beat-002',
+      'scene-001-beat-001',
+    ])
+    assert.deepEqual(approvedShots.scenes[0]!.shots.map(({ shotId }) => shotId), [
+      'scene-001-shot-002',
+      'scene-001-shot-001',
+    ])
   })
 
   test('omits own undefined optional values from canonical approved Artifacts', () => {
