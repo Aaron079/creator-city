@@ -1,0 +1,817 @@
+import type {
+  NarrativeBeatMapPayload,
+  ShotPlanPayload,
+} from '../../../../lib/skills'
+import { cloneAndValidateStoryboardState } from '../../../../lib/storyboard/director'
+import {
+  createRecipeMaterializationIdentity,
+} from '../../../../lib/storyboard/recipe/identity'
+import {
+  analyzeStoryboardDirectorRecipe,
+  summarizeStoryboardDirectorRecipe,
+} from '../../../../lib/storyboard/recipe/intelligence'
+import {
+  storyboardDirectorRecipeMetadata,
+  readStoryboardDirectorRecipe,
+} from '../../../../lib/storyboard/recipe/persistence'
+import type {
+  StoryboardDirectorMaterializationReceipt,
+  StoryboardDirectorRecipe,
+} from '../../../../lib/storyboard/recipe/types'
+import type { ShotCard, StoryboardState } from '../../../../lib/storyboard/types'
+import {
+  planNarrativeBeatMaterialization,
+  planShotPlanMaterialization,
+  type ApprovedNarrativeBeat,
+  type ApprovedNarrativeBeatScene,
+  type ApprovedShotPlan,
+  type ApprovedShotPlanScene,
+} from './groupedSkillMaterialization'
+import {
+  planScriptSceneMaterialization,
+  type ApprovedSceneDraft,
+} from './scriptSegmentationMaterialization'
+
+const MATERIALIZATION_KINDS = [
+  'scene',
+  'beat',
+  'shot-plan',
+  'shot-card',
+  'draft-node',
+] as const
+
+type GroupedKind = 'scene' | 'beat' | 'shot-plan'
+type ExistingNode = { metadataJson?: unknown; title?: string; prompt?: string }
+type ExistingControlNode = ExistingNode & { id: string }
+
+type SafeRead =
+  | { status: 'absent' }
+  | { status: 'invalid' }
+  | { status: 'value'; value: unknown }
+
+function fail(message: string): never {
+  throw new TypeError(message)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  try {
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+  } catch {
+    return false
+  }
+}
+
+function ownData(value: unknown, key: PropertyKey): SafeRead {
+  if (!value || typeof value !== 'object') return { status: 'absent' }
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor) return { status: 'absent' }
+    if (!descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      return { status: 'invalid' }
+    }
+    return { status: 'value', value: descriptor.value }
+  } catch {
+    return { status: 'invalid' }
+  }
+}
+
+function ownValue(value: unknown, key: PropertyKey) {
+  const property = ownData(value, key)
+  return property.status === 'value' ? property.value : undefined
+}
+
+function exactOwnKeys(value: unknown, expected: readonly string[]) {
+  if (!isPlainRecord(value)) return false
+  try {
+    const keys = Reflect.ownKeys(value)
+    return keys.length === expected.length
+      && keys.every((key) => typeof key === 'string' && expected.includes(key))
+  } catch {
+    return false
+  }
+}
+
+function requiredId(value: unknown, field: string) {
+  if (typeof value !== 'string' || !value || value !== value.trim()) {
+    fail(`${field} must be a trimmed nonempty string`)
+  }
+  return value
+}
+
+function sourceArtifactId(
+  artifact: StoryboardDirectorRecipe['scene']['approvedArtifact'],
+  field: string,
+) {
+  if (!artifact || artifact.sourceArtifactIds.length !== 1) {
+    fail(`${field} approved Artifact must identify one source Artifact`)
+  }
+  return requiredId(artifact.sourceArtifactIds[0], `${field} source Artifact ID`)
+}
+
+function assertNoBlockingFindings(recipe: StoryboardDirectorRecipe) {
+  if (analyzeStoryboardDirectorRecipe(recipe).some((finding) => finding.severity === 'blocking')) {
+    fail('Storyboard Director Recipe has blocking Intelligence findings')
+  }
+}
+
+function assertRecipeReadyForRequestedKinds(
+  recipe: StoryboardDirectorRecipe,
+  kinds: GroupedKind[],
+) {
+  assertNoBlockingFindings(recipe)
+  const requested = new Set<GroupedKind>()
+  for (const kind of kinds) {
+    if (kind !== 'scene' && kind !== 'beat' && kind !== 'shot-plan') {
+      fail('Storyboard Director grouped materialization kind is invalid')
+    }
+    requested.add(kind)
+  }
+  const stages = [
+    ['scene', recipe.scene],
+    ['beat', recipe.beat],
+    ['shot-plan', recipe.shot],
+  ] as const
+  for (const [kind, stage] of stages) {
+    if (!requested.has(kind)) continue
+    if (stage.status !== 'approved' || !stage.result || !stage.approvedArtifact) {
+      fail(`Storyboard Director ${kind} stage is not ready for materialization`)
+    }
+  }
+}
+
+function assertShotMaterializationReady(recipe: StoryboardDirectorRecipe) {
+  assertNoBlockingFindings(recipe)
+  if (recipe.shot.status !== 'approved'
+    || !recipe.shot.result
+    || !recipe.shot.approvedArtifact) {
+    fail('Storyboard Director shot stage is not ready for materialization')
+  }
+}
+
+export type StoryboardDirectorControlNodePlan = {
+  title: '分镜导演'
+  prompt: string
+  metadataJson: { storyboardDirectorRecipe: StoryboardDirectorRecipe }
+  edgeLabel: '分镜导演'
+  edgeToolId: 'storyboard-director'
+  edgeToolIcon: '🎬'
+}
+
+export function storyboardDirectorRecipeSummary(recipe: StoryboardDirectorRecipe) {
+  const summary = summarizeStoryboardDirectorRecipe(recipe)
+  return [
+    '分镜导演 Recipe',
+    `当前阶段: ${recipe.activeStage}`,
+    `已批准: ${summary.approvedScenes} 场景 / ${summary.approvedBeats} 节拍 / ${summary.approvedShots} 镜头`,
+    `节拍覆盖: ${summary.coveredBeats}/${summary.approvedBeats}`,
+    `待处理: ${summary.blockingCount} 阻塞 / ${summary.advisoryCount} 提醒`,
+    `来源: ${summary.sourceFresh ? '有效' : '已变化'}`,
+    `落地: ${summary.ready ? '可执行' : '未就绪'}`,
+  ].join('\n')
+}
+
+function controlNodePlan(recipe: StoryboardDirectorRecipe): StoryboardDirectorControlNodePlan {
+  return {
+    title: '分镜导演',
+    prompt: storyboardDirectorRecipeSummary(recipe),
+    metadataJson: storyboardDirectorRecipeMetadata(recipe),
+    edgeLabel: '分镜导演',
+    edgeToolId: 'storyboard-director',
+    edgeToolIcon: '🎬',
+  }
+}
+
+function findRecipeIdentityMatches(
+  recipeId: string,
+  existingNodes: ExistingControlNode[],
+) {
+  const valid: string[] = []
+  const invalid: string[] = []
+  for (let index = 0; index < existingNodes.length; index += 1) {
+    const node = existingNodes[index]
+    const nodeId = ownValue(node, 'id')
+    if (typeof nodeId !== 'string' || !nodeId) continue
+    const metadata = ownData(node, 'metadataJson')
+    if (metadata.status !== 'value') continue
+    const stored = ownData(metadata.value, 'storyboardDirectorRecipe')
+    if (stored.status === 'absent') continue
+    if (stored.status !== 'value') {
+      invalid.push(nodeId)
+      continue
+    }
+    const storedId = ownData(stored.value, 'recipeId')
+    if (storedId.status === 'invalid') {
+      invalid.push(nodeId)
+      continue
+    }
+    if (storedId.status !== 'value' || storedId.value !== recipeId) continue
+    const read = readStoryboardDirectorRecipe(metadata.value)
+    if (read.status === 'valid' && read.recipe.recipeId === recipeId) {
+      valid.push(nodeId)
+    } else {
+      invalid.push(nodeId)
+    }
+  }
+  return { valid, invalid }
+}
+
+export function planStoryboardDirectorControlNode(
+  recipe: StoryboardDirectorRecipe,
+  existingNodes: ExistingControlNode[],
+):
+  | { status: 'create'; plan: StoryboardDirectorControlNodePlan }
+  | { status: 'existing'; nodeId: string }
+  | { status: 'conflict'; nodeIds: string[] } {
+  const matches = findRecipeIdentityMatches(recipe.recipeId, existingNodes)
+  if (matches.invalid.length || matches.valid.length > 1) {
+    return { status: 'conflict', nodeIds: [...matches.valid, ...matches.invalid] }
+  }
+  if (matches.valid.length === 1) return { status: 'existing', nodeId: matches.valid[0]! }
+  return { status: 'create', plan: controlNodePlan(recipe) }
+}
+
+function approvedSceneDrafts(recipe: StoryboardDirectorRecipe): ApprovedSceneDraft[] {
+  return recipe.scene.drafts.flatMap(({ decision, ...scene }) => (
+    decision === 'approved'
+      ? [{ ...scene, reviewStatus: 'approved' as const }]
+      : []
+  ))
+}
+
+function approvedBeatScenes(recipe: StoryboardDirectorRecipe): ApprovedNarrativeBeatScene[] {
+  const artifact = recipe.beat.approvedArtifact
+  if (!artifact) fail('Storyboard Director beat approved Artifact is missing')
+  const payload = artifact.payload as NarrativeBeatMapPayload
+  const approved = new Map<string, ApprovedNarrativeBeat[]>()
+  for (const { decision, ...beat } of recipe.beat.drafts) {
+    if (decision === 'approved') {
+      const sceneBeats = approved.get(beat.sceneId) ?? []
+      sceneBeats.push({ ...beat, reviewStatus: 'approved' })
+      approved.set(beat.sceneId, sceneBeats)
+    }
+  }
+  return payload.scenes.map((scene) => ({
+    sceneId: scene.sceneId,
+    order: scene.order,
+    heading: scene.heading,
+    beats: approved.get(scene.sceneId) ?? [],
+  }))
+}
+
+function approvedShotScenes(recipe: StoryboardDirectorRecipe): ApprovedShotPlanScene[] {
+  const artifact = recipe.shot.approvedArtifact
+  if (!artifact) fail('Storyboard Director shot approved Artifact is missing')
+  const payload = artifact.payload as ShotPlanPayload
+  const approved = new Map<string, ApprovedShotPlan[]>()
+  for (const { decision, ...shot } of recipe.shot.drafts) {
+    if (decision === 'approved') {
+      const sceneShots = approved.get(shot.sceneId) ?? []
+      sceneShots.push({ ...shot, reviewStatus: 'approved' })
+      approved.set(shot.sceneId, sceneShots)
+    }
+  }
+  return payload.scenes.map((scene) => ({
+    sceneId: scene.sceneId,
+    order: scene.order,
+    heading: scene.heading,
+    shots: approved.get(scene.sceneId) ?? [],
+  }))
+}
+
+function sceneMaterializationInput(
+  recipe: StoryboardDirectorRecipe,
+  existingNodes: ExistingNode[],
+) {
+  if (!recipe.scene.result || !recipe.scene.approvedArtifact) {
+    fail('Storyboard Director scene stage is incomplete')
+  }
+  return {
+    sourceNodeId: recipe.sourceNode.id,
+    result: recipe.scene.result,
+    approvalContext: {
+      runFingerprint: recipe.scene.result.runFingerprint,
+      sourceArtifactId: sourceArtifactId(recipe.scene.approvedArtifact, 'scene'),
+    },
+    approvedScenes: approvedSceneDrafts(recipe),
+    existingNodes,
+  }
+}
+
+function beatMaterializationInput(
+  recipe: StoryboardDirectorRecipe,
+  existingNodes: ExistingNode[],
+) {
+  if (!recipe.beat.result || !recipe.beat.approvedArtifact) {
+    fail('Storyboard Director beat stage is incomplete')
+  }
+  return {
+    result: recipe.beat.result,
+    approvalContext: {
+      runFingerprint: recipe.beat.result.runFingerprint,
+      sourceArtifactId: sourceArtifactId(recipe.beat.approvedArtifact, 'beat'),
+    },
+    approvedScenes: approvedBeatScenes(recipe),
+    existingNodes,
+  }
+}
+
+function shotMaterializationInput(
+  recipe: StoryboardDirectorRecipe,
+  existingNodes: ExistingNode[],
+) {
+  if (!recipe.shot.result || !recipe.shot.approvedArtifact) {
+    fail('Storyboard Director shot stage is incomplete')
+  }
+  return {
+    result: recipe.shot.result,
+    approvalContext: {
+      runFingerprint: recipe.shot.result.runFingerprint,
+      sourceArtifactId: sourceArtifactId(recipe.shot.approvedArtifact, 'shot'),
+    },
+    approvedScenes: approvedShotScenes(recipe),
+    existingNodes,
+  }
+}
+
+export function planStoryboardDirectorGroupedNodes(
+  recipe: StoryboardDirectorRecipe,
+  kinds: GroupedKind[],
+  existingNodes: ExistingNode[],
+) {
+  assertRecipeReadyForRequestedKinds(recipe, kinds)
+  const scene = kinds.includes('scene')
+    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, existingNodes))
+    : { create: [], duplicates: [] }
+  const beat = kinds.includes('beat')
+    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, existingNodes))
+    : { create: [], duplicates: [] }
+  const shot = kinds.includes('shot-plan')
+    ? planShotPlanMaterialization(shotMaterializationInput(recipe, existingNodes))
+    : { create: [], duplicates: [] }
+  return {
+    create: [...scene.create, ...beat.create, ...shot.create],
+    duplicates: [...scene.duplicates, ...beat.duplicates, ...shot.duplicates],
+  }
+}
+
+function approvedShots(recipe: StoryboardDirectorRecipe): ApprovedShotPlan[] {
+  return recipe.shot.drafts.flatMap(({ decision, ...shot }) => (
+    decision === 'approved'
+      ? [{ ...shot, reviewStatus: 'approved' as const }]
+      : []
+  ))
+}
+
+function recipeShotCard(
+  recipe: StoryboardDirectorRecipe,
+  shot: ApprovedShotPlan,
+  index: number,
+  now: string,
+): ShotCard {
+  const shotType = {
+    wide: 'ELS',
+    full: 'LS',
+    medium: 'MS',
+    close: 'CU',
+    'extreme-close': 'ECU',
+  }[shot.suggestedShotSize]
+  return {
+    id: `recipe-${recipe.recipeId}-${shot.shotId}`,
+    index,
+    title: `S${String(index + 1).padStart(2, '0')}`,
+    shotType,
+    durationSec: shot.duration,
+    directorNote: `${shot.objective}\n${shot.action}`.trim(),
+    nodeIds: [],
+    createdAt: now,
+    updatedAt: now,
+    recipe: {
+      recipeId: recipe.recipeId,
+      sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
+      sceneId: shot.sceneId,
+      ...(shot.beatId ? { beatId: shot.beatId } : {}),
+      shotId: shot.shotId,
+    },
+  }
+}
+
+function sameRecipeFields(left: ShotCard, right: ShotCard) {
+  return left.shotType === right.shotType
+    && left.durationSec === right.durationSec
+    && left.directorNote === right.directorNote
+    && left.recipe?.recipeId === right.recipe?.recipeId
+    && left.recipe?.sourceArtifactId === right.recipe?.sourceArtifactId
+    && left.recipe?.sceneId === right.recipe?.sceneId
+    && left.recipe?.beatId === right.recipe?.beatId
+    && left.recipe?.shotId === right.recipe?.shotId
+}
+
+export function planStoryboardDirectorShotBoardSync(
+  recipe: StoryboardDirectorRecipe,
+  currentState: StoryboardState,
+  now: string,
+) {
+  assertShotMaterializationReady(recipe)
+  const current = cloneAndValidateStoryboardState(currentState)
+  const cards = current.shots.slice()
+  const sameRecipeIndexes = new Map<string, number>()
+  for (let index = 0; index < cards.length; index += 1) {
+    const provenance = cards[index]!.recipe
+    if (provenance?.recipeId !== recipe.recipeId) continue
+    if (sameRecipeIndexes.has(provenance.shotId)) {
+      fail('Storyboard shot board has duplicate matching Recipe shots')
+    }
+    sameRecipeIndexes.set(provenance.shotId, index)
+  }
+
+  const createdShotIds: string[] = []
+  const updatedShotIds: string[] = []
+  let changed = current.version !== '2'
+  for (const shot of approvedShots(recipe)) {
+    const existingIndex = sameRecipeIndexes.get(shot.shotId)
+    if (existingIndex === undefined) {
+      cards.push(recipeShotCard(recipe, shot, cards.length, now))
+      sameRecipeIndexes.set(shot.shotId, cards.length - 1)
+      createdShotIds.push(shot.shotId)
+      changed = true
+      continue
+    }
+    const existing = cards[existingIndex]!
+    const planned = recipeShotCard(recipe, shot, existingIndex, now)
+    if (sameRecipeFields(existing, planned)) continue
+    cards[existingIndex] = {
+      ...existing,
+      shotType: planned.shotType,
+      durationSec: planned.durationSec,
+      directorNote: planned.directorNote,
+      recipe: planned.recipe,
+      nodeIds: existing.nodeIds.slice(),
+      updatedAt: now,
+    }
+    updatedShotIds.push(shot.shotId)
+    changed = true
+  }
+
+  const reindexed = cards.map((card, index) => {
+    const title = card.recipe?.recipeId === recipe.recipeId
+      ? `S${String(index + 1).padStart(2, '0')}`
+      : card.title
+    if (card.index === index && card.title === title) return card
+    changed = true
+    return { ...card, index, title }
+  })
+  return {
+    state: {
+      version: '2',
+      shots: reindexed,
+      updatedAt: changed ? now : current.updatedAt,
+    },
+    createdShotIds,
+    updatedShotIds,
+  }
+}
+
+export type StoryboardDirectorDraftNodePlan = {
+  identity: string
+  resultId: string
+  kind: 'image' | 'video'
+  title: string
+  prompt: string
+  metadataJson: Record<string, unknown>
+}
+
+function evidenceForShot(recipe: StoryboardDirectorRecipe, shot: ApprovedShotPlan) {
+  return (recipe.shot.result?.evidence ?? []).filter((item) => (
+    item.lineStart === shot.lineStart
+    && item.lineEnd === shot.lineEnd
+    && item.excerpt === shot.sourceText
+  )).map((item) => ({ ...item }))
+}
+
+function draftNodePlan(
+  recipe: StoryboardDirectorRecipe,
+  shot: ApprovedShotPlan,
+): StoryboardDirectorDraftNodePlan {
+  const result = recipe.shot.result!
+  const artifact = recipe.shot.approvedArtifact!
+  const identity = createRecipeMaterializationIdentity(
+    recipe.recipeId,
+    'draft-node',
+    artifact.artifactId,
+    shot.shotId,
+  )
+  const kindLabel = shot.outputKind === 'video' ? `视频 ${shot.duration}s` : '图片'
+  const details = [
+    shot.subject.trim() ? `主体：${shot.subject.trim()}` : '',
+    shot.action.trim() ? `行动：${shot.action.trim()}` : '',
+    `景别：${shot.suggestedShotSize}`,
+  ].filter(Boolean)
+  return {
+    identity,
+    resultId: shot.shotId,
+    kind: shot.outputKind,
+    title: `镜头 · ${shot.suggestedShotSize} · ${kindLabel}`,
+    prompt: `${shot.objective.trim() || shot.sourceText}\n\n[${details.join(' · ')}]`,
+    metadataJson: {
+      duration: shot.duration,
+      outputKind: shot.outputKind,
+      shotId: shot.shotId,
+      storyboardDirectorMaterialization: {
+        recipeId: recipe.recipeId,
+        shotId: shot.shotId,
+        sourceArtifactId: artifact.artifactId,
+        identity,
+        outputKind: shot.outputKind,
+        duration: shot.duration,
+      },
+      creatorSkill: {
+        skillId: 'storyboard-director',
+        skillVersion: '1.0.0',
+        runFingerprint: result.runFingerprint,
+        sourceNodeIds: artifact.sourceNodeIds.slice(),
+        sourceArtifactIds: [artifact.artifactId],
+        resultType: 'shot-draft',
+        resultId: shot.shotId,
+        reviewStatus: 'approved',
+        evidence: evidenceForShot(recipe, shot),
+      },
+    },
+  }
+}
+
+function strictDraftMetadataMatches(
+  metadata: unknown,
+  plan: StoryboardDirectorDraftNodePlan,
+) {
+  if (!exactOwnKeys(metadata, [
+    'duration',
+    'outputKind',
+    'shotId',
+    'storyboardDirectorMaterialization',
+    'creatorSkill',
+  ])) return false
+  const expected = plan.metadataJson
+  if (ownValue(metadata, 'duration') !== expected.duration
+    || ownValue(metadata, 'outputKind') !== expected.outputKind
+    || ownValue(metadata, 'shotId') !== expected.shotId) return false
+  const materialization = ownValue(metadata, 'storyboardDirectorMaterialization')
+  const expectedMaterialization = expected.storyboardDirectorMaterialization
+  if (!exactOwnKeys(materialization, [
+    'recipeId',
+    'shotId',
+    'sourceArtifactId',
+    'identity',
+    'outputKind',
+    'duration',
+  ])) return false
+  for (const key of [
+    'recipeId',
+    'shotId',
+    'sourceArtifactId',
+    'identity',
+    'outputKind',
+    'duration',
+  ] as const) {
+    if (ownValue(materialization, key) !== ownValue(expectedMaterialization, key)) return false
+  }
+  const creatorSkill = ownValue(metadata, 'creatorSkill')
+  const expectedSkill = expected.creatorSkill
+  if (!exactOwnKeys(creatorSkill, [
+    'skillId',
+    'skillVersion',
+    'runFingerprint',
+    'sourceNodeIds',
+    'sourceArtifactIds',
+    'resultType',
+    'resultId',
+    'reviewStatus',
+    'evidence',
+  ])) return false
+  for (const key of [
+    'skillId',
+    'skillVersion',
+    'runFingerprint',
+    'resultType',
+    'resultId',
+    'reviewStatus',
+  ] as const) {
+    if (ownValue(creatorSkill, key) !== ownValue(expectedSkill, key)) return false
+  }
+  return sameScalarRecordArray(
+    ownValue(creatorSkill, 'sourceNodeIds'),
+    ownValue(expectedSkill, 'sourceNodeIds'),
+  ) && sameScalarRecordArray(
+    ownValue(creatorSkill, 'sourceArtifactIds'),
+    ownValue(expectedSkill, 'sourceArtifactIds'),
+  ) && sameScalarRecordArray(
+    ownValue(creatorSkill, 'evidence'),
+    ownValue(expectedSkill, 'evidence'),
+  )
+}
+
+function sameScalarRecordArray(left: unknown, right: unknown): boolean {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = ownValue(left, String(index))
+    const rightItem = ownValue(right, String(index))
+    if (isPlainRecord(leftItem) || isPlainRecord(rightItem)) {
+      if (!isPlainRecord(leftItem) || !isPlainRecord(rightItem)) return false
+      let keys: PropertyKey[]
+      try {
+        keys = Reflect.ownKeys(rightItem)
+      } catch {
+        return false
+      }
+      if (!exactOwnKeys(leftItem, keys.filter((key): key is string => typeof key === 'string'))) {
+        return false
+      }
+      for (const key of keys) {
+        if (typeof key !== 'string' || ownValue(leftItem, key) !== ownValue(rightItem, key)) {
+          return false
+        }
+      }
+      continue
+    }
+    if (leftItem !== rightItem) return false
+  }
+  return true
+}
+
+export function planStoryboardDirectorDraftNodes(
+  recipe: StoryboardDirectorRecipe,
+  existingNodes: ExistingNode[],
+) {
+  assertShotMaterializationReady(recipe)
+  const plans = approvedShots(recipe).map((shot) => draftNodePlan(recipe, shot))
+  const byIdentity = new Map(plans.map((plan) => [plan.identity, plan]))
+  const existing = new Set<string>()
+  for (const node of existingNodes) {
+    const metadata = ownData(node, 'metadataJson')
+    if (metadata.status !== 'value') continue
+    const materialization = ownData(metadata.value, 'storyboardDirectorMaterialization')
+    if (materialization.status !== 'value') continue
+    const identity = ownData(materialization.value, 'identity')
+    if (identity.status !== 'value' || typeof identity.value !== 'string') continue
+    const plan = byIdentity.get(identity.value)
+    if (!plan) continue
+    if (!strictDraftMetadataMatches(metadata.value, plan)) {
+      fail('matching Storyboard Director draft metadata is malformed')
+    }
+    if (existing.has(identity.value)) {
+      fail('duplicate Storyboard Director draft materialization identity')
+    }
+    existing.add(identity.value)
+  }
+  return {
+    create: plans.filter((plan) => !existing.has(plan.identity)),
+    duplicates: plans.filter((plan) => existing.has(plan.identity)).map((plan) => plan.identity),
+  }
+}
+
+function uniqueApprovedSceneIds(
+  drafts: Array<{ decision: string; sceneId: string }>,
+) {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const draft of drafts) {
+    if (draft.decision !== 'approved' || seen.has(draft.sceneId)) continue
+    seen.add(draft.sceneId)
+    result.push(draft.sceneId)
+  }
+  return result
+}
+
+function expectedReceiptClaims(recipe: StoryboardDirectorRecipe) {
+  const expected = new Map<string, Omit<StoryboardDirectorMaterializationReceipt, 'targetId'>>()
+  const add = (
+    kind: StoryboardDirectorMaterializationReceipt['kind'],
+    artifactId: string,
+    resultIds: string[],
+  ) => {
+    for (const resultId of resultIds) {
+      const identity = createRecipeMaterializationIdentity(
+        recipe.recipeId,
+        kind,
+        artifactId,
+        resultId,
+      )
+      expected.set(identity, { identity, kind, resultId })
+    }
+  }
+  if (recipe.scene.approvedArtifact) {
+    add(
+      'scene',
+      recipe.scene.approvedArtifact.artifactId,
+      recipe.scene.drafts.filter((item) => item.decision === 'approved').map((item) => item.sceneId),
+    )
+  }
+  if (recipe.beat.approvedArtifact) {
+    add(
+      'beat',
+      recipe.beat.approvedArtifact.artifactId,
+      uniqueApprovedSceneIds(recipe.beat.drafts),
+    )
+  }
+  if (recipe.shot.approvedArtifact) {
+    const shotSceneIds = uniqueApprovedSceneIds(recipe.shot.drafts)
+    const shotIds = recipe.shot.drafts
+      .filter((item) => item.decision === 'approved')
+      .map((item) => item.shotId)
+    add('shot-plan', recipe.shot.approvedArtifact.artifactId, shotSceneIds)
+    add('shot-card', recipe.shot.approvedArtifact.artifactId, shotIds)
+    add('draft-node', recipe.shot.approvedArtifact.artifactId, shotIds)
+  }
+  return expected
+}
+
+function snapshotReceipt(
+  value: unknown,
+  field: string,
+): StoryboardDirectorMaterializationReceipt {
+  if (!exactOwnKeys(value, ['identity', 'kind', 'resultId', 'targetId'])) {
+    fail(`${field} is malformed`)
+  }
+  const identity = requiredId(ownValue(value, 'identity'), `${field}.identity`)
+  const kind = ownValue(value, 'kind')
+  if (!MATERIALIZATION_KINDS.includes(
+    kind as StoryboardDirectorMaterializationReceipt['kind'],
+  )) fail(`${field}.kind is invalid`)
+  return {
+    identity,
+    kind: kind as StoryboardDirectorMaterializationReceipt['kind'],
+    resultId: requiredId(ownValue(value, 'resultId'), `${field}.resultId`),
+    targetId: requiredId(ownValue(value, 'targetId'), `${field}.targetId`),
+  }
+}
+
+export function recordStoryboardDirectorReceipts(
+  recipe: StoryboardDirectorRecipe,
+  completed: Array<{
+    identity: string
+    kind: StoryboardDirectorMaterializationReceipt['kind']
+    resultId: string
+    targetId: string
+  }>,
+  now: string,
+) {
+  const expected = expectedReceiptClaims(recipe)
+  const receipts: StoryboardDirectorMaterializationReceipt[] = []
+  const byIdentity = new Map<string, StoryboardDirectorMaterializationReceipt>()
+  const validate = (receipt: StoryboardDirectorMaterializationReceipt) => {
+    const claim = expected.get(receipt.identity)
+    if (!claim || claim.kind !== receipt.kind || claim.resultId !== receipt.resultId) {
+      fail('receipt claim does not match a deterministic materialization plan')
+    }
+  }
+  for (let index = 0; index < recipe.receipts.length; index += 1) {
+    const receipt = snapshotReceipt(recipe.receipts[index], `recipe.receipts[${index}]`)
+    validate(receipt)
+    const existing = byIdentity.get(receipt.identity)
+    if (existing && existing.targetId !== receipt.targetId) fail('receipt conflict')
+    if (existing) fail('duplicate receipt identity')
+    byIdentity.set(receipt.identity, receipt)
+    receipts.push(receipt)
+  }
+
+  let changed = false
+  for (let index = 0; index < completed.length; index += 1) {
+    const item = snapshotReceipt(completed[index], `completed[${index}]`)
+    validate(item)
+    const existing = byIdentity.get(item.identity)
+    if (existing && existing.targetId !== item.targetId) fail('receipt conflict')
+    if (existing) continue
+    byIdentity.set(item.identity, item)
+    receipts.push(item)
+    changed = true
+  }
+  if (!changed) return recipe
+  return {
+    ...recipe,
+    receipts,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+}
+
+export function importLegacyShotBoard(
+  recipe: StoryboardDirectorRecipe,
+  legacyState: StoryboardState,
+  now: string,
+) {
+  if (recipe.storyboard.shots.length !== 0) {
+    fail('Cannot import legacy Storyboard state into a nonempty cloud shot board')
+  }
+  let storyboard: StoryboardState
+  try {
+    storyboard = cloneAndValidateStoryboardState(legacyState)
+  } catch {
+    return fail('Legacy Storyboard state is invalid')
+  }
+  return {
+    ...recipe,
+    storyboard: { ...storyboard, updatedAt: now },
+    legacyImportStatus: 'imported' as const,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+}

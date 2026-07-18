@@ -49,6 +49,14 @@ export type StoryboardCanvasEdge = {
   target?: string
 }
 
+export type StoryboardRecipeShotProvenance = {
+  recipeId: string
+  sourceArtifactId: string
+  sceneId: string
+  beatId?: string
+  shotId: string
+}
+
 export type ShotCard = {
   id: string
   index: number
@@ -64,6 +72,7 @@ export type ShotCard = {
   thumbnailUrl?: string
   createdAt: string
   updatedAt: string
+  recipe?: StoryboardRecipeShotProvenance
 }
 
 export type StoryboardState = {

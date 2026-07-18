@@ -538,7 +538,24 @@ const SHOT_CARD_OPTIONAL_FIELDS = [
   'characterIds',
   'sceneIds',
   'thumbnailUrl',
+  'recipe',
 ] as const
+
+function validateShotRecipe(value: unknown, field: string) {
+  const provenance = record(
+    value,
+    field,
+    ['recipeId', 'sourceArtifactId', 'sceneId', 'shotId'],
+    ['beatId'],
+  )
+  identifier(provenance.recipeId, `${field}.recipeId`)
+  identifier(provenance.sourceArtifactId, `${field}.sourceArtifactId`)
+  identifier(provenance.sceneId, `${field}.sceneId`)
+  if (Object.prototype.hasOwnProperty.call(provenance, 'beatId')) {
+    identifier(provenance.beatId, `${field}.beatId`)
+  }
+  identifier(provenance.shotId, `${field}.shotId`)
+}
 
 function validateShotCard(value: unknown, field: string) {
   const shot = record(value, field, SHOT_CARD_REQUIRED_FIELDS, SHOT_CARD_OPTIONAL_FIELDS)
@@ -564,6 +581,9 @@ function validateShotCard(value: unknown, field: string) {
     if (!Object.prototype.hasOwnProperty.call(shot, key)) continue
     const ids = stringArray(shot[key], `${field}.${key}`, true)
     assertUnique(ids, `${field}.${key}`)
+  }
+  if (Object.prototype.hasOwnProperty.call(shot, 'recipe')) {
+    validateShotRecipe(shot.recipe, `${field}.recipe`)
   }
   stringValue(shot.createdAt, `${field}.createdAt`)
   stringValue(shot.updatedAt, `${field}.updatedAt`)
