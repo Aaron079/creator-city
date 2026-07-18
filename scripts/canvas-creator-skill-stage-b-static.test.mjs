@@ -156,6 +156,30 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     assert.doesNotMatch(compatibility, /setPendingAutoGenerateIds/)
   })
 
+  test('explicitly confirmed mixed batches dispatch image and video once and retain undispatched IDs', () => {
+    const queueEffect = namedBlock(
+      workspace,
+      'useEffect(() => {\n    if (pendingAutoGenerateIds.length === 0)',
+      'const assetResolveKey',
+    )
+    assert.match(queueEffect, /node\.kind\s*!==\s*['"]image['"]\s*&&\s*node\.kind\s*!==\s*['"]video['"]/)
+    assert.match(queueEffect, /handleRegenerateNodeFromPrompt\(node\)/)
+    assert.match(queueEffect, /dispatchedIds\.push\(nodeId\)/)
+    assert.match(queueEffect, /prev\.filter\(\(id\)\s*=>\s*!dispatchedIds\.includes\(id\)\)/)
+    assert.doesNotMatch(queueEffect, /prev\.filter\(\(id\)\s*=>\s*!found\.includes\(id\)\)/)
+  })
+
+  test('compatibility generation remains behind the panel second confirmation', () => {
+    assert.match(shotPanel, /generateAfterCreate\s*&&\s*outcome\.createdIds\.length\s*>\s*0/)
+    assert.match(shotPanel, /setIsConfirmingGenerate\(true\)/)
+    assert.match(shotPanel, /runCompatibilityCreate\(true\)/)
+    assert.match(workspace, /onAutoGenerateNodes=\{\(nodeIds\)\s*=>\s*setPendingAutoGenerateIds\(nodeIds\)\}/)
+    assert.doesNotMatch(
+      namedBlock(workspace, 'const handleCreateCompatibilityShotNode', 'useEffect(() => {'),
+      /handleRegenerateNodeFromPrompt|setPendingAutoGenerateIds/,
+    )
+  })
+
   test('panels receive metadata and close when their source disappears or stops being Text', () => {
     assert.match(workspace, /<NarrativeBeatAnalysisPanel\b/)
     assert.match(workspace, /activeCanvasModal\s*===\s*['"]narrative-beat-analysis['"]/)

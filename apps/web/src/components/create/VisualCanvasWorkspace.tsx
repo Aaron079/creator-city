@@ -5501,14 +5501,19 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     if (pendingAutoGenerateIds.length === 0) return
-    const found = pendingAutoGenerateIds.filter((id) => nodes.some((n) => n.id === id))
-    if (found.length === 0) return
-    setPendingAutoGenerateIds((prev) => prev.filter((id) => !found.includes(id)))
-    for (const nodeId of found) {
+    const dispatchedIds: string[] = []
+    for (const nodeId of pendingAutoGenerateIds) {
       const node = nodes.find((n) => n.id === nodeId)
-      if (node && node.kind === 'image') {
+      if (!node || (node.kind !== 'image' && node.kind !== 'video')) continue
+      try {
         handleRegenerateNodeFromPrompt(node)
+        dispatchedIds.push(nodeId)
+      } catch {
+        // Keep undispatched IDs queued; the node handler owns normal generation failures.
       }
+    }
+    if (dispatchedIds.length > 0) {
+      setPendingAutoGenerateIds((prev) => prev.filter((id) => !dispatchedIds.includes(id)))
     }
   }, [pendingAutoGenerateIds, nodes, handleRegenerateNodeFromPrompt])
 

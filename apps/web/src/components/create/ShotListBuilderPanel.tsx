@@ -59,7 +59,11 @@ export type CompatibilityShotNodeOptions = {
   parentNodeId?: string
   index?: number
   total?: number
-  metadataJson: CreatorSkillNodeMetadata
+  metadataJson: CreatorSkillNodeMetadata & {
+    duration: 5 | 10
+    outputKind: ShotOutputKind
+    shotId: string
+  }
 }
 
 export type ShotListBuilderPanelProps = {
@@ -565,8 +569,11 @@ function evidenceForShot(
 function compatibilityMetadata(
   result: CreatorSkillRunResult,
   shot: ShotReviewDraft,
-): CreatorSkillNodeMetadata {
+): CompatibilityShotNodeOptions['metadataJson'] {
   return {
+    duration: shot.duration,
+    outputKind: shot.outputKind,
+    shotId: shot.shotId,
     creatorSkill: {
       skillId: result.skillId,
       skillVersion: result.skillVersion,

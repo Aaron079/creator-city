@@ -214,6 +214,72 @@ describe('ShotListBuilderPanel Stage B boundaries', () => {
     assert.equal(outcome.applyLocked, false)
   })
 
+  test('compatibility metadata preserves reviewed kind, shot identity, and 5 or 10 second duration', async () => {
+    const current = state()
+    const [first, second] = current.review.drafts
+    assert.ok(first && second)
+    const edited = updateShotReviewDraft(
+      updateShotReviewDraft(current.review.drafts, first.shotId, {
+        outputKind: 'image',
+        duration: 5,
+      }),
+      second.shotId,
+      {
+        outputKind: 'video',
+        duration: 10,
+      },
+    )
+    const reviewed = setShotReviewDecision(
+      setShotReviewDecision(edited, first.shotId, 'approved'),
+      second.shotId,
+      'approved',
+    )
+    const calls: Array<{
+      kind: string
+      metadata: Record<string, unknown>
+      creatorSkill: Record<string, unknown>
+    }> = []
+
+    await createApprovedShotDrafts({
+      drafts: reviewed,
+      result: current.review.result,
+      sourceNodeId: SOURCE.id,
+      duplicateShotIds: [],
+      onCreateNode: (kind, options) => {
+        const metadata = options.metadataJson as unknown as Record<string, unknown>
+        calls.push({
+          kind,
+          metadata,
+          creatorSkill: metadata.creatorSkill as Record<string, unknown>,
+        })
+        return `node-${calls.length}`
+      },
+    })
+
+    assert.deepEqual(calls.map(({ kind, metadata, creatorSkill }) => ({
+      kind,
+      duration: metadata.duration,
+      outputKind: metadata.outputKind,
+      shotId: metadata.shotId,
+      runFingerprint: creatorSkill.runFingerprint,
+    })), [
+      {
+        kind: 'image',
+        duration: 5,
+        outputKind: 'image',
+        shotId: first.shotId,
+        runFingerprint: current.review.result.runFingerprint,
+      },
+      {
+        kind: 'video',
+        duration: 10,
+        outputKind: 'video',
+        shotId: second.shotId,
+        runFingerprint: current.review.result.runFingerprint,
+      },
+    ])
+  })
+
   test('a completed local create batch prevents an immediate duplicate create', async () => {
     const current = state()
     const first = current.review.drafts[0]!
