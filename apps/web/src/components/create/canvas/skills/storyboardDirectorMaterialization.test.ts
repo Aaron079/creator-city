@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  cloneAndValidateStoryboardState,
   readDirectorState,
   readLegacyDirectorState,
 } from '../../../../lib/storyboard/director'
@@ -25,6 +26,7 @@ import {
   approveSceneStage,
   approveShotStage,
   createStoryboardDirectorRecipe,
+  moveRecipeDraft,
   setRecipeDecision,
   updateRecipeDraft,
 } from '../../../../lib/storyboard/recipe/state-machine'
@@ -78,6 +80,7 @@ function decideAll(
 
 function completedRecipe(
   shotPatch?: (shot: StoryboardDirectorRecipe['shot']['drafts'][number], index: number) => Partial<ShotPlanDraft>,
+  reverseShotsWithinScenes = false,
 ) {
   const started = createStoryboardDirectorRecipe(context, source, ISO_TIME, runCreatorSkill)
   const sceneApproved = decideAll(started, 'scene-review')
@@ -109,6 +112,28 @@ function completedRecipe(
         patch,
         ISO_TIME,
       )
+    }
+  }
+  if (reverseShotsWithinScenes) {
+    const sceneIds = [...new Set(shotReview.shot.drafts.map((shot) => shot.sceneId))]
+    for (const sceneId of sceneIds) {
+      const desired = shotReview.shot.drafts
+        .filter((shot) => shot.sceneId === sceneId)
+        .map((shot) => shot.shotId)
+        .reverse()
+      const start = shotReview.shot.drafts.findIndex((shot) => shot.sceneId === sceneId)
+      for (let offset = 0; offset < desired.length; offset += 1) {
+        while (shotReview.shot.drafts[start + offset]?.shotId !== desired[offset]) {
+          const current = shotReview.shot.drafts.findIndex((shot) => shot.shotId === desired[offset])
+          shotReview = moveRecipeDraft(
+            shotReview,
+            'shot-review',
+            shotReview.shot.drafts[current]!.shotId,
+            -1,
+            ISO_TIME,
+          )
+        }
+      }
     }
   }
   return approveShotStage(decideAll(shotReview, 'shot-review'), ISO_TIME)
@@ -295,6 +320,60 @@ describe('Storyboard Director grouped materialization planning', () => {
     assert.equal(repeat.duplicates.length, first.create.length)
   })
 
+  test('rejects incomplete matching grouped metadata for every requested stage', () => {
+    const recipe = completedRecipe()
+    for (const kind of ['scene', 'beat', 'shot-plan'] as const) {
+      const first = planStoryboardDirectorGroupedNodes(recipe, [kind], [])
+      const plan = first.create[0]
+      assert.ok(plan)
+      const creatorSkill = (plan.metadataJson as {
+        creatorSkill: {
+          skillId: string
+          runFingerprint: string
+          resultId: string
+        }
+      }).creatorSkill
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{
+          metadataJson: {
+            creatorSkill: {
+              skillId: creatorSkill.skillId,
+              runFingerprint: creatorSkill.runFingerprint,
+              resultId: creatorSkill.resultId,
+            },
+          },
+        }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+    }
+  })
+
+  test('contains descriptor-trapped grouped metadata for every requested stage', () => {
+    const recipe = completedRecipe()
+    for (const kind of ['scene', 'beat', 'shot-plan'] as const) {
+      const first = planStoryboardDirectorGroupedNodes(recipe, [kind], [])
+      const plan = first.create[0]
+      assert.ok(plan)
+      let descriptorCalls = 0
+      const creatorSkill = new Proxy(
+        (plan.metadataJson as { creatorSkill: Record<string, unknown> }).creatorSkill,
+        {
+          getOwnPropertyDescriptor() {
+            descriptorCalls += 1
+            throw new Error('grouped metadata descriptor trap escaped')
+          },
+        },
+      )
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{
+          metadataJson: { creatorSkill },
+        }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+      assert.ok(descriptorCalls > 0)
+    }
+  })
+
   test('selects stage subsets and keeps scene, beat, shot-plan order stable', () => {
     const recipe = completedRecipe()
     const scenes = planStoryboardDirectorGroupedNodes(recipe, ['scene'], [])
@@ -367,6 +446,124 @@ describe('Storyboard Director shot-board synchronization', () => {
     const repeat = planStoryboardDirectorShotBoardSync(recipe, first.state, LATER_TIME)
     assert.equal(repeat.createdShotIds.length, 0)
     assert.deepEqual(repeat.state, first.state)
+    assert.doesNotThrow(() => cloneAndValidateStoryboardState(repeat.state))
+  })
+
+  test('normalizes current UI optional undefined fields before immediate sync', () => {
+    const recipe = completedRecipe()
+    const uiShot = {
+      ...manualShot('ui-manual'),
+      shotType: undefined,
+      durationSec: undefined,
+      mood: undefined,
+      cameraMovement: undefined,
+      directorNote: undefined,
+      characterIds: undefined,
+      sceneIds: undefined,
+      thumbnailUrl: undefined,
+      recipe: undefined,
+    } as unknown as ShotCard
+    const cloned = cloneAndValidateStoryboardState({
+      version: '2', shots: [uiShot], updatedAt: ISO_TIME,
+    })
+    for (const key of [
+      'shotType',
+      'durationSec',
+      'mood',
+      'cameraMovement',
+      'directorNote',
+      'characterIds',
+      'sceneIds',
+      'thumbnailUrl',
+      'recipe',
+    ]) {
+      assert.equal(Object.prototype.hasOwnProperty.call(cloned.shots[0], key), false)
+    }
+    const synced = planStoryboardDirectorShotBoardSync(recipe, {
+      version: '2', shots: [uiShot], updatedAt: ISO_TIME,
+    }, LATER_TIME)
+    assert.equal(synced.state.shots[0]?.id, 'ui-manual')
+    assert.doesNotThrow(() => cloneAndValidateStoryboardState(synced.state))
+  })
+
+  test('rejects deterministic Recipe card ID collisions without emitting duplicate IDs', () => {
+    const recipe = completedRecipe()
+    const shot = recipe.shot.drafts[0]
+    assert.ok(shot)
+    const collidingId = `recipe-${recipe.recipeId}-${shot.shotId}`
+    assert.throws(
+      () => planStoryboardDirectorShotBoardSync(recipe, {
+        version: '2', shots: [manualShot(collidingId)], updatedAt: ISO_TIME,
+      }, LATER_TIME),
+      /shot card ID conflict/i,
+    )
+    assert.throws(
+      () => planStoryboardDirectorShotBoardSync(recipe, {
+        version: '2', shots: [foreignRecipeShot(collidingId)], updatedAt: ISO_TIME,
+      }, LATER_TIME),
+      /shot card ID conflict/i,
+    )
+  })
+
+  test('preserves stale same-Recipe cards while reordering current cards by review order', () => {
+    const recipe = completedRecipe()
+    const first = planStoryboardDirectorShotBoardSync(recipe, {
+      version: '2', shots: [], updatedAt: ISO_TIME,
+    }, ISO_TIME)
+    const bound = first.state.shots.map((card, index) => ({
+      ...card,
+      id: `cloud-${index}`,
+      nodeIds: [`binding-${index}`],
+      thumbnailUrl: `/shot-${index}.png`,
+    }))
+    const stale: ShotCard = {
+      ...manualShot('stale-card', 'S03'),
+      index: 2,
+      recipe: {
+        recipeId: recipe.recipeId,
+        sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
+        sceneId: 'removed-scene',
+        shotId: 'removed-shot',
+      },
+    }
+    const arranged = [
+      manualShot('manual-1'),
+      bound[0]!,
+      stale,
+      foreignRecipeShot('foreign-1'),
+      ...bound.slice(1),
+    ].map((card, index) => ({ ...card, index }))
+    const reordered = completedRecipe(undefined, true)
+    assert.deepEqual(
+      analyzeStoryboardDirectorRecipe(reordered).filter((item) => item.severity === 'blocking'),
+      [],
+    )
+
+    const result = planStoryboardDirectorShotBoardSync(reordered, {
+      version: '2', shots: arranged, updatedAt: ISO_TIME,
+    }, LATER_TIME)
+    const currentIds = new Set(reordered.shot.drafts.map((shot) => shot.shotId))
+    const currentCards = result.state.shots.filter((card) => (
+      card.recipe?.recipeId === recipe.recipeId && currentIds.has(card.recipe.shotId)
+    ))
+    assert.deepEqual(
+      currentCards.map((card) => card.recipe?.shotId),
+      reordered.shot.drafts.map((shot) => shot.shotId),
+    )
+    const originalByShotId = new Map(bound.map((card) => [card.recipe!.shotId, card]))
+    for (const card of currentCards) {
+      const original = originalByShotId.get(card.recipe!.shotId)
+      assert.ok(original)
+      assert.equal(card.id, original.id)
+      assert.deepEqual(card.nodeIds, original.nodeIds)
+      assert.equal(card.thumbnailUrl, original.thumbnailUrl)
+    }
+    assert.equal(result.state.shots[0]?.id, 'manual-1')
+    assert.equal(result.state.shots[2]?.id, stale.id)
+    assert.equal(result.state.shots[3]?.id, 'foreign-1')
+    assert.deepEqual(result.state.shots[2], stale)
+    assert.equal(new Set(result.state.shots.map((card) => card.id)).size, result.state.shots.length)
+    assert.doesNotThrow(() => cloneAndValidateStoryboardState(result.state))
   })
 
   test('updates reviewed fields only for the same Recipe and shot identity', () => {
@@ -418,6 +615,98 @@ describe('Storyboard Director shot-board synchronization', () => {
       ...manualShot('manual-same-title', rebound.title),
       index: 1,
     })
+  })
+})
+
+describe('Storyboard state descriptor-only collection validation', () => {
+  test('clones valid proxied shots and node IDs without executing get traps', () => {
+    let getCalls = 0
+    const nodeIds = new Proxy(['node-1'], {
+      get() {
+        getCalls += 1
+        throw new Error('nodeIds get trap escaped')
+      },
+    })
+    const shots = new Proxy([{
+      ...manualShot('proxy-shot'),
+      nodeIds,
+    }], {
+      get() {
+        getCalls += 1
+        throw new Error('shots get trap escaped')
+      },
+    })
+    const cloned = cloneAndValidateStoryboardState({
+      version: '2', shots, updatedAt: ISO_TIME,
+    })
+    assert.deepEqual(cloned.shots[0]?.nodeIds, ['node-1'])
+    assert.equal(getCalls, 0)
+  })
+
+  test('rejects accessor, inherited, symbol, and descriptor-trapped arrays deterministically', () => {
+    let getterCalls = 0
+    const accessorShots = new Array<ShotCard>(1)
+    Object.defineProperty(accessorShots, '0', {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('shot accessor escaped')
+      },
+    })
+    assert.throws(
+      () => cloneAndValidateStoryboardState({
+        version: '2', shots: accessorShots, updatedAt: ISO_TIME,
+      }),
+      TypeError,
+    )
+
+    const inheritedNodeIds = new Array<string>(1)
+    Object.setPrototypeOf(inheritedNodeIds, Object.create(Array.prototype, {
+      0: {
+        get() {
+          getterCalls += 1
+          throw new Error('inherited node ID escaped')
+        },
+      },
+    }))
+    assert.throws(
+      () => cloneAndValidateStoryboardState({
+        version: '2',
+        shots: [{ ...manualShot('inherited-array'), nodeIds: inheritedNodeIds }],
+        updatedAt: ISO_TIME,
+      }),
+      TypeError,
+    )
+
+    const symbolNodeIds: string[] = []
+    Object.defineProperty(symbolNodeIds, Symbol('hostile'), {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('symbol accessor escaped')
+      },
+    })
+    assert.throws(
+      () => cloneAndValidateStoryboardState({
+        version: '2',
+        shots: [{ ...manualShot('symbol-array'), nodeIds: symbolNodeIds }],
+        updatedAt: ISO_TIME,
+      }),
+      TypeError,
+    )
+
+    const trappedShots = new Proxy([manualShot('descriptor-array')], {
+      getOwnPropertyDescriptor() {
+        throw new Error('shot descriptor trap escaped')
+      },
+    })
+    assert.throws(
+      () => cloneAndValidateStoryboardState({
+        version: '2', shots: trappedShots, updatedAt: ISO_TIME,
+      }),
+      TypeError,
+    )
+    assert.equal(getterCalls, 0)
   })
 })
 
@@ -700,6 +989,87 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
     assert.throws(() => recordStoryboardDirectorReceipts(recipe, [{
       ...valid, resultId: 'different-result',
     }], LATER_TIME), /receipt/i)
+  })
+
+  test('snapshots completed receipts without executing collection or element getters', () => {
+    const recipe = completedRecipe()
+    const plan = planStoryboardDirectorDraftNodes(recipe, []).create[0]
+    assert.ok(plan)
+    const valid = {
+      identity: plan.identity,
+      kind: 'draft-node' as const,
+      resultId: plan.resultId,
+      targetId: 'node-1',
+    }
+    let getterCalls = 0
+    const proxied = new Proxy([valid], {
+      get() {
+        getterCalls += 1
+        throw new Error('completed get trap escaped')
+      },
+    })
+    const recorded = recordStoryboardDirectorReceipts(recipe, proxied, LATER_TIME)
+    assert.deepEqual(recorded.receipts, [valid])
+    assert.equal(getterCalls, 0)
+
+    const accessor = new Array<typeof valid>(1)
+    Object.defineProperty(accessor, '0', {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('completed item getter escaped')
+      },
+    })
+    assert.throws(
+      () => recordStoryboardDirectorReceipts(recipe, accessor, LATER_TIME),
+      TypeError,
+    )
+    assert.equal(getterCalls, 0)
+  })
+
+  test('rejects sparse, oversized, inherited, and descriptor-trapped receipt collections', () => {
+    const recipe = completedRecipe()
+    const sparse = new Array<{
+      identity: string
+      kind: 'draft-node'
+      resultId: string
+      targetId: string
+    }>(1)
+    assert.throws(
+      () => recordStoryboardDirectorReceipts(recipe, sparse, LATER_TIME),
+      /completed/i,
+    )
+    assert.throws(
+      () => recordStoryboardDirectorReceipts(
+        recipe,
+        new Array(361) as typeof sparse,
+        LATER_TIME,
+      ),
+      /completed/i,
+    )
+
+    let inheritedLengthCalls = 0
+    const inherited = Object.create({
+      get length() {
+        inheritedLengthCalls += 1
+        throw new Error('inherited completed length escaped')
+      },
+    }) as typeof sparse
+    assert.throws(
+      () => recordStoryboardDirectorReceipts(recipe, inherited, LATER_TIME),
+      /completed/i,
+    )
+    assert.equal(inheritedLengthCalls, 0)
+
+    const trapped = new Proxy([], {
+      getOwnPropertyDescriptor() {
+        throw new Error('completed descriptor trap escaped')
+      },
+    }) as typeof sparse
+    assert.throws(
+      () => recordStoryboardDirectorReceipts(recipe, trapped, LATER_TIME),
+      (error) => error instanceof TypeError && /completed/i.test(error.message),
+    )
   })
 })
 

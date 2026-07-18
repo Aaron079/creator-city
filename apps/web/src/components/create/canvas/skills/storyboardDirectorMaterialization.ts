@@ -2,6 +2,7 @@ import type {
   NarrativeBeatMapPayload,
   ShotPlanPayload,
 } from '../../../../lib/skills'
+import { cloneCreatorSkillArtifact } from '../../../../lib/skills/artifacts'
 import { cloneAndValidateStoryboardState } from '../../../../lib/storyboard/director'
 import {
   createRecipeMaterializationIdentity,
@@ -42,6 +43,7 @@ const MATERIALIZATION_KINDS = [
 const MAX_EXISTING_NODES = 10_000
 const MAX_METADATA_ITEMS = 120
 const MAX_GROUPED_KINDS = 3
+const MAX_MATERIALIZATION_RECEIPTS = 360
 
 type GroupedKind = 'scene' | 'beat' | 'shot-plan'
 type ExistingNode = { metadataJson?: unknown; title?: string; prompt?: string }
@@ -417,6 +419,142 @@ function shotMaterializationInput(
   }
 }
 
+type GroupedNodePlan = {
+  resultId: string
+  metadataJson: Record<string, unknown>
+}
+
+const GROUPED_CREATOR_SKILL_KEYS = [
+  'skillId',
+  'skillVersion',
+  'runFingerprint',
+  'sourceNodeIds',
+  'sourceArtifactIds',
+  'resultType',
+  'resultId',
+  'reviewStatus',
+  'evidence',
+  'approvedArtifact',
+] as const
+
+function strictGroupedMetadataMatches(metadata: unknown, plan: GroupedNodePlan) {
+  if (!exactOwnKeys(metadata, ['creatorSkill'])) return false
+  const creatorSkill = ownValue(metadata, 'creatorSkill')
+  const expectedSkill = ownValue(plan.metadataJson, 'creatorSkill')
+  if (!exactOwnKeys(creatorSkill, GROUPED_CREATOR_SKILL_KEYS)
+    || !exactOwnKeys(expectedSkill, GROUPED_CREATOR_SKILL_KEYS)) return false
+  for (const key of [
+    'skillId',
+    'skillVersion',
+    'runFingerprint',
+    'resultType',
+    'resultId',
+    'reviewStatus',
+  ] as const) {
+    if (ownValue(creatorSkill, key) !== ownValue(expectedSkill, key)) return false
+  }
+  if (!sameScalarRecordArray(
+    ownValue(creatorSkill, 'sourceNodeIds'),
+    ownValue(expectedSkill, 'sourceNodeIds'),
+    'grouped metadata creatorSkill.sourceNodeIds',
+  ) || !sameScalarRecordArray(
+    ownValue(creatorSkill, 'sourceArtifactIds'),
+    ownValue(expectedSkill, 'sourceArtifactIds'),
+    'grouped metadata creatorSkill.sourceArtifactIds',
+  ) || !sameScalarRecordArray(
+    ownValue(creatorSkill, 'evidence'),
+    ownValue(expectedSkill, 'evidence'),
+    'grouped metadata creatorSkill.evidence',
+  )) return false
+  try {
+    const artifact = cloneCreatorSkillArtifact(ownValue(creatorSkill, 'approvedArtifact'))
+    const expectedArtifact = cloneCreatorSkillArtifact(ownValue(expectedSkill, 'approvedArtifact'))
+    return JSON.stringify(artifact) === JSON.stringify(expectedArtifact)
+  } catch {
+    return false
+  }
+}
+
+function snapshotGroupedExistingMetadata(
+  nodes: ExistingNode[],
+  expectedPlans: GroupedNodePlan[],
+) {
+  const expectedByRun = new Map<string, Map<string, GroupedNodePlan>>()
+  for (const plan of expectedPlans) {
+    const creatorSkill = ownValue(plan.metadataJson, 'creatorSkill')
+    const skillId = requiredId(
+      ownValue(creatorSkill, 'skillId'),
+      'expected grouped metadata skillId',
+    )
+    const runFingerprint = requiredId(
+      ownValue(creatorSkill, 'runFingerprint'),
+      'expected grouped metadata runFingerprint',
+    )
+    const key = `${skillId}\n${runFingerprint}`
+    const byResult = expectedByRun.get(key) ?? new Map<string, GroupedNodePlan>()
+    byResult.set(plan.resultId, plan)
+    expectedByRun.set(key, byResult)
+  }
+  const snapshots: ExistingNode[] = []
+  for (let index = 0; index < nodes.length; index += 1) {
+    const metadata = ownData(nodes[index], 'metadataJson')
+    if (metadata.status === 'absent') {
+      snapshots.push({})
+      continue
+    }
+    if (metadata.status !== 'value' || !isPlainRecord(metadata.value)) {
+      fail(`existingNodes[${index}] grouped metadata is unreadable`)
+    }
+    const creatorSkill = ownData(metadata.value, 'creatorSkill')
+    if (creatorSkill.status === 'absent') {
+      snapshots.push({ metadataJson: {} })
+      continue
+    }
+    if (creatorSkill.status !== 'value' || !isPlainRecord(creatorSkill.value)) {
+      fail(`existingNodes[${index}] grouped metadata creatorSkill is unreadable`)
+    }
+    const skillId = ownData(creatorSkill.value, 'skillId')
+    const runFingerprint = ownData(creatorSkill.value, 'runFingerprint')
+    const resultId = ownData(creatorSkill.value, 'resultId')
+    if (skillId.status === 'invalid'
+      || runFingerprint.status === 'invalid'
+      || resultId.status === 'invalid') {
+      fail(`existingNodes[${index}] grouped metadata identity is unreadable`)
+    }
+    const skillValue = skillId.status === 'value' && typeof skillId.value === 'string'
+      ? skillId.value
+      : undefined
+    const runValue = runFingerprint.status === 'value' && typeof runFingerprint.value === 'string'
+      ? runFingerprint.value
+      : undefined
+    const resultValue = resultId.status === 'value' && typeof resultId.value === 'string'
+      ? resultId.value
+      : undefined
+    if (skillValue !== undefined && runValue !== undefined) {
+      const candidates = expectedByRun.get(`${skillValue}\n${runValue}`)
+      if (candidates) {
+        if (resultValue === undefined) {
+          fail(`existingNodes[${index}] matching grouped metadata resultId is malformed`)
+        }
+        const plan = candidates.get(resultValue)
+        if (plan && !strictGroupedMetadataMatches(metadata.value, plan)) {
+          fail(`existingNodes[${index}] matching grouped metadata is incomplete or conflicting`)
+        }
+      }
+    }
+    snapshots.push({
+      metadataJson: {
+        creatorSkill: {
+          ...(skillValue !== undefined ? { skillId: skillValue } : {}),
+          ...(runValue !== undefined ? { runFingerprint: runValue } : {}),
+          ...(resultValue !== undefined ? { resultId: resultValue } : {}),
+        },
+      },
+    })
+  }
+  return snapshots
+}
+
 export function planStoryboardDirectorGroupedNodes(
   recipe: StoryboardDirectorRecipe,
   kinds: GroupedKind[],
@@ -425,14 +563,28 @@ export function planStoryboardDirectorGroupedNodes(
   const requestedKinds = snapshotDenseArray<GroupedKind>(kinds, 'kinds', MAX_GROUPED_KINDS)
   const nodes = snapshotExistingNodes<ExistingNode>(existingNodes, 'existingNodes')
   assertRecipeReadyForRequestedKinds(recipe, requestedKinds)
+  const expectedScene = requestedKinds.includes('scene')
+    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, []))
+    : { create: [], duplicates: [] }
+  const expectedBeat = requestedKinds.includes('beat')
+    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, []))
+    : { create: [], duplicates: [] }
+  const expectedShot = requestedKinds.includes('shot-plan')
+    ? planShotPlanMaterialization(shotMaterializationInput(recipe, []))
+    : { create: [], duplicates: [] }
+  const groupedNodes = snapshotGroupedExistingMetadata(nodes, [
+    ...expectedScene.create,
+    ...expectedBeat.create,
+    ...expectedShot.create,
+  ])
   const scene = requestedKinds.includes('scene')
-    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, nodes))
+    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, groupedNodes))
     : { create: [], duplicates: [] }
   const beat = requestedKinds.includes('beat')
-    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, nodes))
+    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, groupedNodes))
     : { create: [], duplicates: [] }
   const shot = requestedKinds.includes('shot-plan')
-    ? planShotPlanMaterialization(shotMaterializationInput(recipe, nodes))
+    ? planShotPlanMaterialization(shotMaterializationInput(recipe, groupedNodes))
     : { create: [], duplicates: [] }
   return {
     create: [...scene.create, ...beat.create, ...shot.create],
@@ -500,6 +652,7 @@ export function planStoryboardDirectorShotBoardSync(
   assertShotMaterializationReady(recipe)
   const current = cloneAndValidateStoryboardState(currentState)
   const cards = current.shots.slice()
+  const cardIds = new Set(cards.map((card) => card.id))
   const sameRecipeIndexes = new Map<string, number>()
   for (let index = 0; index < cards.length; index += 1) {
     const provenance = cards[index]!.recipe
@@ -512,11 +665,17 @@ export function planStoryboardDirectorShotBoardSync(
 
   const createdShotIds: string[] = []
   const updatedShotIds: string[] = []
+  const reviewedShots = approvedShots(recipe)
   let changed = current.version !== '2'
-  for (const shot of approvedShots(recipe)) {
+  for (const shot of reviewedShots) {
     const existingIndex = sameRecipeIndexes.get(shot.shotId)
     if (existingIndex === undefined) {
-      cards.push(recipeShotCard(recipe, shot, cards.length, now))
+      const planned = recipeShotCard(recipe, shot, cards.length, now)
+      if (cardIds.has(planned.id)) {
+        fail(`Storyboard shot card ID conflict: ${planned.id}`)
+      }
+      cards.push(planned)
+      cardIds.add(planned.id)
       sameRecipeIndexes.set(shot.shotId, cards.length - 1)
       createdShotIds.push(shot.shotId)
       changed = true
@@ -538,6 +697,25 @@ export function planStoryboardDirectorShotBoardSync(
     changed = true
   }
 
+  const reviewedShotIds = new Set(reviewedShots.map((shot) => shot.shotId))
+  const existingCurrentSlots: number[] = []
+  for (let index = 0; index < current.shots.length; index += 1) {
+    const provenance = current.shots[index]!.recipe
+    if (provenance?.recipeId === recipe.recipeId && reviewedShotIds.has(provenance.shotId)) {
+      existingCurrentSlots.push(index)
+    }
+  }
+  const reviewedExistingCards = reviewedShots.flatMap((shot) => {
+    const index = sameRecipeIndexes.get(shot.shotId)
+    return index !== undefined && index < current.shots.length ? [cards[index]!] : []
+  })
+  for (let index = 0; index < existingCurrentSlots.length; index += 1) {
+    const slot = existingCurrentSlots[index]!
+    const card = reviewedExistingCards[index]!
+    if (cards[slot] !== card) changed = true
+    cards[slot] = card
+  }
+
   const reindexed = cards.map((card, index) => {
     const title = card.recipe?.recipeId === recipe.recipeId
       ? `S${String(index + 1).padStart(2, '0')}`
@@ -546,12 +724,13 @@ export function planStoryboardDirectorShotBoardSync(
     changed = true
     return { ...card, index, title }
   })
+  const state = cloneAndValidateStoryboardState({
+    version: '2',
+    shots: reindexed,
+    updatedAt: changed ? now : current.updatedAt,
+  })
   return {
-    state: {
-      version: '2',
-      shots: reindexed,
-      updatedAt: changed ? now : current.updatedAt,
-    },
+    state,
     createdShotIds,
     updatedShotIds,
   }
@@ -862,6 +1041,16 @@ export function recordStoryboardDirectorReceipts(
   now: string,
 ) {
   const expected = expectedReceiptClaims(recipe)
+  const existingReceipts = snapshotDenseArray<unknown>(
+    recipe.receipts,
+    'recipe.receipts',
+    MAX_MATERIALIZATION_RECEIPTS,
+  )
+  const completedItems = snapshotDenseArray<unknown>(
+    completed,
+    'completed',
+    MAX_MATERIALIZATION_RECEIPTS,
+  )
   const receipts: StoryboardDirectorMaterializationReceipt[] = []
   const byIdentity = new Map<string, StoryboardDirectorMaterializationReceipt>()
   const validate = (receipt: StoryboardDirectorMaterializationReceipt) => {
@@ -870,8 +1059,8 @@ export function recordStoryboardDirectorReceipts(
       fail('receipt claim does not match a deterministic materialization plan')
     }
   }
-  for (let index = 0; index < recipe.receipts.length; index += 1) {
-    const receipt = snapshotReceipt(recipe.receipts[index], `recipe.receipts[${index}]`)
+  for (let index = 0; index < existingReceipts.length; index += 1) {
+    const receipt = snapshotReceipt(existingReceipts[index], `recipe.receipts[${index}]`)
     validate(receipt)
     const existing = byIdentity.get(receipt.identity)
     if (existing && existing.targetId !== receipt.targetId) fail('receipt conflict')
@@ -881,8 +1070,8 @@ export function recordStoryboardDirectorReceipts(
   }
 
   let changed = false
-  for (let index = 0; index < completed.length; index += 1) {
-    const item = snapshotReceipt(completed[index], `completed[${index}]`)
+  for (let index = 0; index < completedItems.length; index += 1) {
+    const item = snapshotReceipt(completedItems[index], `completed[${index}]`)
     validate(item)
     const existing = byIdentity.get(item.identity)
     if (existing && existing.targetId !== item.targetId) fail('receipt conflict')

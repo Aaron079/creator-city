@@ -17,8 +17,9 @@ function fail(message: string): never {
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (!value || typeof value !== 'object') return false
   try {
+    if (Array.isArray(value)) return false
     const prototype = Object.getPrototypeOf(value)
     return prototype === Object.prototype || prototype === null
   } catch {
@@ -75,35 +76,78 @@ function requiredId(value: Record<string, unknown>, key: string) {
 
 function optionalString(value: Record<string, unknown>, key: string) {
   const property = ownData(value, key)
-  if (property.status === 'absent') return undefined
+  if (property.status === 'absent'
+    || (property.status === 'value' && property.value === undefined)) return undefined
   if (property.status !== 'value' || typeof property.value !== 'string') {
     return fail(`${key} must be a string`)
   }
   return property.value
 }
 
-function stringArray(value: unknown, field: string) {
-  if (!Array.isArray(value) || value.length > MAX_SHOTS) fail(`${field} must be an array`)
+function denseArray<T>(value: unknown, field: string, maximum: number): T[] {
+  try {
+    if (!Array.isArray(value)) fail(`${field} must be an array`)
+  } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith(field)) throw error
+    return fail(`${field} must be a readable array`)
+  }
+  let lengthDescriptor: PropertyDescriptor | undefined
   let keys: PropertyKey[]
   try {
+    lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
     keys = Reflect.ownKeys(value)
   } catch {
-    return fail(`${field} is unreadable`)
+    return fail(`${field} array descriptors are unreadable`)
   }
-  if (keys.length !== value.length + 1) fail(`${field} must be dense`)
+  if (!lengthDescriptor || !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value')) {
+    fail(`${field}.length must be an own data property`)
+  }
+  const length = lengthDescriptor.value
+  if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
+    fail(`${field} exceeds its bounded dense-array limit`)
+  }
+  for (const key of keys) {
+    if (key === 'length') continue
+    if (typeof key !== 'string' || !/^(0|[1-9][0-9]*)$/u.test(key)) {
+      fail(`${field} must not contain extra or symbol properties`)
+    }
+    const index = Number(key)
+    if (!Number.isSafeInteger(index) || index >= length) {
+      fail(`${field} contains an out-of-range indexed property`)
+    }
+  }
+  const result = new Array<T>(length)
+  for (let index = 0; index < length; index += 1) {
+    let descriptor: PropertyDescriptor | undefined
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    } catch {
+      return fail(`${field}[${index}] descriptor is unreadable`)
+    }
+    if (!descriptor
+      || !descriptor.enumerable
+      || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      fail(`${field} must be dense with own enumerable data elements`)
+    }
+    result[index] = descriptor.value as T
+  }
+  return result
+}
+
+function stringArray(value: unknown, field: string) {
+  const values = denseArray<unknown>(value, field, MAX_SHOTS)
   const result: string[] = []
   const seen = new Set<string>()
-  for (let index = 0; index < value.length; index += 1) {
-    const property = ownData(value, String(index))
-    if (property.status !== 'value'
-      || typeof property.value !== 'string'
-      || !property.value
-      || property.value !== property.value.trim()
-      || seen.has(property.value)) {
+  for (let index = 0; index < values.length; index += 1) {
+    const item = values[index]
+    if (typeof item !== 'string'
+      || !item
+      || item !== item.trim()
+      || seen.has(item)) {
       fail(`${field} must contain unique identifiers`)
     }
-    seen.add(property.value)
-    result.push(property.value)
+    seen.add(item)
+    result.push(item)
   }
   return result
 }
@@ -149,7 +193,8 @@ function cloneShotCard(value: unknown): ShotCard {
   }
   const durationProperty = ownData(value, 'durationSec')
   let durationSec: number | undefined
-  if (durationProperty.status !== 'absent') {
+  if (durationProperty.status !== 'absent'
+    && !(durationProperty.status === 'value' && durationProperty.value === undefined)) {
     if (durationProperty.status !== 'value'
       || typeof durationProperty.value !== 'number'
       || !Number.isFinite(durationProperty.value)
@@ -184,14 +229,16 @@ function cloneShotCard(value: unknown): ShotCard {
   if (mood !== undefined) result.mood = mood
   if (cameraMovement !== undefined) result.cameraMovement = cameraMovement
   if (directorNote !== undefined) result.directorNote = directorNote
-  if (characterIdsProperty.status === 'value') {
+  if (characterIdsProperty.status === 'value' && characterIdsProperty.value !== undefined) {
     result.characterIds = stringArray(characterIdsProperty.value, 'shot.characterIds')
   }
-  if (sceneIdsProperty.status === 'value') {
+  if (sceneIdsProperty.status === 'value' && sceneIdsProperty.value !== undefined) {
     result.sceneIds = stringArray(sceneIdsProperty.value, 'shot.sceneIds')
   }
   if (thumbnailUrl !== undefined) result.thumbnailUrl = thumbnailUrl
-  if (recipeProperty.status === 'value') result.recipe = recipeProvenance(recipeProperty.value)
+  if (recipeProperty.status === 'value' && recipeProperty.value !== undefined) {
+    result.recipe = recipeProvenance(recipeProperty.value)
+  }
   return result
 }
 
@@ -199,26 +246,14 @@ export function cloneAndValidateStoryboardState(value: unknown): StoryboardState
   if (!isPlainRecord(value)) fail('Storyboard state must be a plain object')
   exactKeys(value, ['version', 'shots', 'updatedAt'])
   const shotsProperty = ownData(value, 'shots')
-  if (shotsProperty.status !== 'value'
-    || !Array.isArray(shotsProperty.value)
-    || shotsProperty.value.length > MAX_SHOTS) {
+  if (shotsProperty.status !== 'value') {
     fail('Storyboard state shots are invalid')
   }
-  let keys: PropertyKey[]
-  try {
-    keys = Reflect.ownKeys(shotsProperty.value)
-  } catch {
-    return fail('Storyboard state shots are unreadable')
-  }
-  if (keys.length !== shotsProperty.value.length + 1) {
-    fail('Storyboard state shots must be dense')
-  }
-  const shots = new Array<ShotCard>(shotsProperty.value.length)
+  const values = denseArray<unknown>(shotsProperty.value, 'Storyboard state shots', MAX_SHOTS)
+  const shots = new Array<ShotCard>(values.length)
   const shotIds = new Set<string>()
   for (let index = 0; index < shots.length; index += 1) {
-    const property = ownData(shotsProperty.value, String(index))
-    if (property.status !== 'value') fail('Storyboard state shots must be dense data')
-    const shot = cloneShotCard(property.value)
+    const shot = cloneShotCard(values[index])
     if (shotIds.has(shot.id)) fail('Storyboard state shot IDs must be unique')
     shotIds.add(shot.id)
     shots[index] = shot
