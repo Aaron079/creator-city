@@ -12,6 +12,10 @@ import {
 } from '../executable-registry'
 import { createCreatorSkillFingerprint } from '../fingerprint'
 import { runCreatorSkillFromRegistry } from '../runtime'
+import {
+  parseNarrativeBeats,
+  type NarrativeSourceScene,
+} from './parser'
 import type {
   CreatorExecutableSkill,
   CreatorSkillArtifact,
@@ -120,6 +124,15 @@ function runExecutableBoundary(input: CreatorSkillRunInput) {
     input,
   )
   return skill.run(input, fingerprint)
+}
+
+function runRawExecutableBoundary(input: CreatorSkillRunInput) {
+  const skill = getExecutableCreatorSkillFromRegistry(
+    registry(),
+    'narrative-beat-analysis',
+  )
+  assert.ok(skill)
+  return skill.run(input, 'csf1_boundary_test')
 }
 
 function payloadOf(result: CreatorSkillRunResult) {
@@ -528,6 +541,28 @@ describe('narrative beat inputs', () => {
     }
   })
 
+  test('blocks malformed top-level Artifact and provenance identities', () => {
+    const valid = approvedSceneTwoArtifact()
+    const malformed: CreatorSkillArtifact[] = [
+      { ...valid, artifactId: '' },
+      { ...valid, artifactId: ' approved-scene-breakdown-002 ' },
+      { ...valid, sourceNodeIds: [''] },
+      { ...valid, sourceNodeIds: [' original-script-node '] },
+      { ...valid, sourceArtifactIds: [''] },
+      { ...valid, sourceArtifactIds: [' scene-breakdown-001 '] },
+      { ...valid, sourceArtifactIds: ['scene-breakdown-002', 'scene-breakdown-001'] },
+      { ...valid, sourceArtifactIds: ['scene-breakdown-001', 'scene-breakdown-001'] },
+    ]
+
+    for (const artifact of malformed) {
+      const result = runRawExecutableBoundary({
+        sourceNodes: [],
+        artifacts: [artifact],
+      })
+      assertBlockedWithoutOutput(result, 'NARRATIVE_SCENE_ARTIFACT_INVALID')
+    }
+  })
+
   test('rejects conflicting source content and ranges', () => {
     const mismatchedContent = sceneBreakdownArtifact(source, {
       scenes: [{
@@ -589,6 +624,39 @@ describe('narrative beat inputs', () => {
       runExecutableBoundary({ sourceNodes: [], artifacts: [shortArtifact] }),
       'NARRATIVE_SOURCE_TOO_SHORT',
     )
+  })
+
+  test('preserves Unicode code-point minimum semantics', () => {
+    assertBlockedWithoutOutput(
+      runText('😀 😀 😀 😀 😀 😀 😀'),
+      'NARRATIVE_SOURCE_TOO_SHORT',
+    )
+    assert.equal(runText('😀 😀 😀 😀 😀 😀 😀 😀').status, 'needs-review')
+  })
+
+  test('stops minimum-length iteration after eight non-whitespace code points', () => {
+    const originalIterator = String.prototype[Symbol.iterator]
+    let reads = 0
+    String.prototype[Symbol.iterator] = function iterator() {
+      const source = originalIterator.call(this)
+      return {
+        next() {
+          reads += 1
+          if (reads > 8) throw new Error('minimum-length scan exceeded eight code points')
+          return source.next()
+        },
+      } as StringIterator<string>
+    }
+
+    try {
+      const result = runRawExecutableBoundary({
+        sourceNodes: [textNode('EXT.LAB-DAY')],
+      })
+      assert.equal(result.status, 'ready')
+      assert.equal(reads, 8)
+    } finally {
+      String.prototype[Symbol.iterator] = originalIterator
+    }
   })
 })
 
@@ -662,6 +730,32 @@ describe('narrative beat output contract', () => {
     const sentences = Array.from({ length: 120 }, () => 'Maya opens the door.').join(' ')
     const source = `INT. HALL - DAY\n${sentences}`
     assertBlockedWithoutOutput(runText(source), 'NARRATIVE_BEAT_LIMIT_EXCEEDED')
+  })
+
+  test('stops sentence scanning as soon as beat 121 is detected', () => {
+    const scene: NarrativeSourceScene = {
+      sceneId: 'scene-001',
+      order: 1,
+      heading: '',
+      sourceText: 'Maya opens.'.repeat(10_000),
+      lineStart: 1,
+      lineEnd: 1,
+    }
+    const originalSlice = String.prototype.slice
+    let slices = 0
+    String.prototype.slice = function slice(start?: number, end?: number) {
+      slices += 1
+      if (slices > 130) throw new Error('sentence scan continued beyond the hard limit')
+      return originalSlice.call(this, start, end)
+    }
+
+    try {
+      const result = parseNarrativeBeats([scene], 'text-1')
+      assert.equal(result.limitExceeded, true)
+      assert.ok(slices <= 130)
+    } finally {
+      String.prototype.slice = originalSlice
+    }
   })
 
   test('is deeply deterministic without clock, randomness, or network access', () => {

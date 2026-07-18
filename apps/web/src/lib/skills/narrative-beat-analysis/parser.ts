@@ -9,7 +9,19 @@ import type {
 
 const MAX_SCENES = 40
 const MAX_BEATS = 120
-const SENTENCE_END = /[.!?。！？]+(?:["'’”〉》」】])?/gu
+const SENTENCE_END_CHARACTERS = new Set(['.', '!', '?', '。', '！', '？'])
+const SENTENCE_CLOSING_CHARACTERS = new Set([
+  '"',
+  "'",
+  '’',
+  '”',
+  '〉',
+  '》',
+  '」',
+  '】',
+])
+const WHITESPACE_CHARACTER = /\s/u
+const NON_WHITESPACE_CHARACTER = /\S/u
 
 const TURN_CHINESE = ['但是', '然而', '却', '突然', '不料', '反而']
 const GOAL_CHINESE = ['想要', '必须', '决定', '试图', '希望', '目标']
@@ -81,6 +93,33 @@ function isDenseArray(value: unknown): value is unknown[] {
   return true
 }
 
+function hasExpectedLineCount(sourceText: string, expected: number) {
+  let count = 1
+  let newlineOffset = sourceText.indexOf('\n')
+  while (newlineOffset !== -1) {
+    count += 1
+    if (count > expected) return false
+    newlineOffset = sourceText.indexOf('\n', newlineOffset + 1)
+  }
+  return count === expected
+}
+
+function containsHeadingLine(sourceText: string, heading: string) {
+  let lineOffset = 0
+  while (lineOffset <= sourceText.length) {
+    const newlineOffset = sourceText.indexOf('\n', lineOffset)
+    const lineEnd = newlineOffset === -1 ? sourceText.length : newlineOffset
+    const line = trimSourceRange(sourceText, lineOffset, lineEnd)
+    if (line.end - line.start === heading.length
+      && sourceText.startsWith(heading, line.start)) {
+      return true
+    }
+    if (newlineOffset === -1) return false
+    lineOffset = newlineOffset + 1
+  }
+  return false
+}
+
 function readScene(value: unknown): NarrativeSourceScene | null {
   if (!isPlainRecord(value)
     || !hasExactFields(value, SCENE_REQUIRED_FIELDS, SCENE_OPTIONAL_FIELDS)) {
@@ -96,7 +135,7 @@ function readScene(value: unknown): NarrativeSourceScene | null {
     || !value.characters.every((character) => typeof character === 'string' && character.trim())
     || typeof value.actionSummary !== 'string'
     || typeof value.sourceText !== 'string'
-    || !value.sourceText.trim()
+    || !NON_WHITESPACE_CHARACTER.test(value.sourceText)
     || value.sourceText.includes('\r')
     || !Number.isInteger(value.lineStart)
     || !Number.isInteger(value.lineEnd)
@@ -111,9 +150,8 @@ function readScene(value: unknown): NarrativeSourceScene | null {
   const lineStart = value.lineStart as number
   const lineEnd = value.lineEnd as number
   const sourceText = value.sourceText
-  if (sourceText.split('\n').length !== lineEnd - lineStart + 1) return null
-  if (value.heading
-    && !sourceText.split('\n').some((line) => line.trim() === value.heading)) {
+  if (!hasExpectedLineCount(sourceText, lineEnd - lineStart + 1)) return null
+  if (value.heading && !containsHeadingLine(sourceText, value.heading)) {
     return null
   }
 
@@ -263,38 +301,86 @@ function classifyBeat(
   }
 }
 
-function splitLineAtSentenceBoundaries(line: string) {
-  const source = line.trim()
-  if (!source) return []
-
-  const units: string[] = []
-  let start = 0
-  for (const match of source.matchAll(SENTENCE_END)) {
-    const end = match.index + match[0].length
-    const unit = source.slice(start, end).trim()
-    if (unit) units.push(unit)
-    start = end
-  }
-  const remainder = source.slice(start).trim()
-  if (remainder) units.push(remainder)
-  return units
+function isWhitespace(value: string, index: number) {
+  return WHITESPACE_CHARACTER.test(value[index]!)
 }
 
-function sourceUnits(scene: NarrativeSourceScene) {
-  const units: Array<{ sourceText: string; line: number }> = []
-  const lines = scene.sourceText.split('\n')
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const texts = scene.heading && trimmed === scene.heading
-      ? [trimmed]
-      : splitLineAtSentenceBoundaries(line)
-    for (const sourceText of texts) {
-      units.push({ sourceText, line: scene.lineStart + index })
-    }
+function trimSourceRange(sourceText: string, start: number, end: number) {
+  let trimmedStart = start
+  let trimmedEnd = end
+  while (trimmedStart < trimmedEnd && isWhitespace(sourceText, trimmedStart)) {
+    trimmedStart += 1
   }
-  return units
+  while (trimmedEnd > trimmedStart && isWhitespace(sourceText, trimmedEnd - 1)) {
+    trimmedEnd -= 1
+  }
+  return { start: trimmedStart, end: trimmedEnd }
+}
+
+function* sourceUnits(scene: NarrativeSourceScene) {
+  const sourceText = scene.sourceText
+  let lineOffset = 0
+  let lineIndex = 0
+
+  while (lineOffset <= sourceText.length) {
+    const newlineOffset = sourceText.indexOf('\n', lineOffset)
+    const lineEnd = newlineOffset === -1 ? sourceText.length : newlineOffset
+    const trimmedLine = trimSourceRange(sourceText, lineOffset, lineEnd)
+
+    if (trimmedLine.start < trimmedLine.end) {
+      const line = scene.lineStart + lineIndex
+      const isHeading = Boolean(scene.heading)
+        && trimmedLine.end - trimmedLine.start === scene.heading.length
+        && sourceText.startsWith(scene.heading, trimmedLine.start)
+      if (isHeading) {
+        yield {
+          sourceText: sourceText.slice(trimmedLine.start, trimmedLine.end),
+          line,
+        }
+      } else {
+        let unitStart = trimmedLine.start
+        let cursor = unitStart
+        while (cursor < trimmedLine.end) {
+          if (!SENTENCE_END_CHARACTERS.has(sourceText[cursor]!)) {
+            cursor += 1
+            continue
+          }
+
+          let sentenceEnd = cursor + 1
+          while (sentenceEnd < trimmedLine.end
+            && SENTENCE_END_CHARACTERS.has(sourceText[sentenceEnd]!)) {
+            sentenceEnd += 1
+          }
+          if (sentenceEnd < trimmedLine.end
+            && SENTENCE_CLOSING_CHARACTERS.has(sourceText[sentenceEnd]!)) {
+            sentenceEnd += 1
+          }
+
+          const unitRange = trimSourceRange(sourceText, unitStart, sentenceEnd)
+          if (unitRange.start < unitRange.end) {
+            yield {
+              sourceText: sourceText.slice(unitRange.start, unitRange.end),
+              line,
+            }
+          }
+          unitStart = sentenceEnd
+          cursor = sentenceEnd
+        }
+
+        const remainder = trimSourceRange(sourceText, unitStart, trimmedLine.end)
+        if (remainder.start < remainder.end) {
+          yield {
+            sourceText: sourceText.slice(remainder.start, remainder.end),
+            line,
+          }
+        }
+      }
+    }
+
+    if (newlineOffset === -1) break
+    lineOffset = newlineOffset + 1
+    lineIndex += 1
+  }
 }
 
 export function parseNarrativeBeats(
@@ -311,14 +397,13 @@ export function parseNarrativeBeats(
   let totalBeats = 0
 
   for (const scene of scenes) {
-    const units = sourceUnits(scene)
-    totalBeats += units.length
-    if (totalBeats > MAX_BEATS) {
-      return { payload: { scenes: [] }, evidence: [], warnings: [], limitExceeded: true }
-    }
-
-    const beats = units.map((unit, index): NarrativeBeatDraft => {
-      const order = index + 1
+    const beats: NarrativeBeatDraft[] = []
+    for (const unit of sourceUnits(scene)) {
+      totalBeats += 1
+      if (totalBeats > MAX_BEATS) {
+        return { payload: { scenes: [] }, evidence: [], warnings: [], limitExceeded: true }
+      }
+      const order = beats.length + 1
       const classification = classifyBeat(unit.sourceText, scene, order)
       const beat: NarrativeBeatDraft = {
         beatId: `${scene.sceneId}-beat-${String(order).padStart(3, '0')}`,
@@ -350,8 +435,8 @@ export function parseNarrativeBeats(
           sourceNodeId,
         })
       }
-      return beat
-    })
+      beats.push(beat)
+    }
 
     payloadScenes.push({
       sceneId: scene.sceneId,

@@ -12,6 +12,9 @@ import {
   scenesMatchSource,
 } from './parser'
 
+const MIN_SOURCE_CHARACTERS = 8
+const WHITESPACE_CODE_POINT = /\s/u
+
 export type {
   NarrativeBeatDraft,
   NarrativeBeatMapPayload,
@@ -48,20 +51,66 @@ function blockedResult(
   }
 }
 
-function validateSceneArtifact(artifact: CreatorSkillArtifact | undefined) {
-  if (!artifact
-    || artifact.artifactType !== 'scene-breakdown'
-    || artifact.artifactVersion !== 1
-    || artifact.sourceNodeIds.length !== 1
-    || !artifact.sourceNodeIds[0]
-    || !Array.isArray(artifact.sourceArtifactIds)) {
-    return null
+function isCanonicalIdentifier(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value === value.trim()
+}
+
+function isCanonicalIdentifierArray(value: unknown) {
+  if (!Array.isArray(value)) return false
+  let previous: string | undefined
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) return false
+    const identifier = value[index]
+    if (!isCanonicalIdentifier(identifier)
+      || (previous !== undefined && previous >= identifier)) {
+      return false
+    }
+    previous = identifier
   }
-  const payload = readSceneBreakdownPayload(artifact.payload)
-  if (!payload.valid) return null
-  return {
-    sourceNodeId: artifact.sourceNodeIds[0],
-    scenes: payload.scenes,
+  return true
+}
+
+function hasMinimumSourceCharacters(sourceTexts: Iterable<string>) {
+  let count = 0
+  for (const sourceText of sourceTexts) {
+    for (const codePoint of sourceText) {
+      if (WHITESPACE_CODE_POINT.test(codePoint)) continue
+      count += 1
+      if (count >= MIN_SOURCE_CHARACTERS) return true
+    }
+  }
+  return false
+}
+
+function* artifactSourceTexts(
+  scenes: readonly { sourceText: string }[],
+): Iterable<string> {
+  for (let index = 0; index < scenes.length; index += 1) {
+    yield scenes[index]!.sourceText
+  }
+}
+
+function validateSceneArtifact(artifact: CreatorSkillArtifact | undefined) {
+  try {
+    if (!artifact
+      || !isCanonicalIdentifier(artifact.artifactId)
+      || artifact.artifactType !== 'scene-breakdown'
+      || artifact.artifactVersion !== 1
+      || !isCanonicalIdentifierArray(artifact.sourceNodeIds)
+      || artifact.sourceNodeIds.length !== 1
+      || !isCanonicalIdentifierArray(artifact.sourceArtifactIds)) {
+      return null
+    }
+    const payload = readSceneBreakdownPayload(artifact.payload)
+    if (!payload.valid) return null
+    return {
+      sourceNodeId: artifact.sourceNodeIds[0]!,
+      scenes: payload.scenes,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -95,7 +144,7 @@ export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
       )
     }
     if (effectiveSource !== null
-      && Array.from(effectiveSource.replace(/\s/gu, '')).length < 8) {
+      && !hasMinimumSourceCharacters([effectiveSource])) {
       return blockedResult(
         runFingerprint,
         'NARRATIVE_SOURCE_TOO_SHORT',
@@ -113,12 +162,7 @@ export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
       )
     }
     if (!sourceNode && validatedArtifact
-      && Array.from(
-        validatedArtifact.scenes
-          .map((scene) => scene.sourceText)
-          .join('')
-          .replace(/\s/gu, ''),
-      ).length < 8) {
+      && !hasMinimumSourceCharacters(artifactSourceTexts(validatedArtifact.scenes))) {
       return blockedResult(
         runFingerprint,
         'NARRATIVE_SOURCE_TOO_SHORT',
