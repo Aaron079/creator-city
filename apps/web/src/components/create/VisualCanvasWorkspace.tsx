@@ -5413,6 +5413,7 @@ export function VisualCanvasWorkspace({
           while (polls < 12) {
             await delay(5000, generationController.signal)
             const statusResult = await pollImageGenerationTask(selectedProviderId, generationJobId, generationController.signal)
+            if (generationAbortContext(generationController.signal) !== null) return
             result = {
               ...statusResult,
               generationJobId,
@@ -5463,6 +5464,7 @@ export function VisualCanvasWorkspace({
           while (polls < 12) {
             await delay(5000, generationController.signal)
             const statusResult = await pollVideoGenerationTask(selectedProviderId, generationJobId, generationController.signal)
+            if (generationAbortContext(generationController.signal) !== null) return
             result = {
               ...statusResult,
               generationJobId,
@@ -7315,6 +7317,7 @@ export function VisualCanvasWorkspace({
         while (polls < 12) {
           await delay(5000, generationController?.signal)
           const statusResult = await pollImageGenerationTask(generationProviderId, generationJobId, generationController?.signal)
+          if (generationController && generationAbortContext(generationController.signal) !== null) return
           result = {
             ...statusResult,
             generationJobId,
@@ -7367,6 +7370,7 @@ export function VisualCanvasWorkspace({
         while (videoPolls < MAX_VIDEO_GENERATION_POLLS && !generationController?.signal.aborted) {
           await delay(5000, generationController?.signal)
           const statusResult = await pollVideoGenerationTask(generationProviderId, generationJobId, generationController?.signal)
+          if (generationController && generationAbortContext(generationController.signal) !== null) return
           videoPolls += 1
           if (statusResult.success && isActiveGenerationStatus(statusResult.status)) {
             const elapsedMs = Date.now() - videoStartMs
@@ -7454,6 +7458,7 @@ export function VisualCanvasWorkspace({
         while (polls < maxPolls && result.jobId) {
           await delay(5000, generationController?.signal)
           const jobResult = await pollGenerationJob(result.jobId, generationController?.signal)
+          if (generationController && generationAbortContext(generationController.signal) !== null) return
           polls += 1
           if (isActiveGenerationStatus(jobResult.status)) {
             handleNodePatch(nodeSnapshot.id, { resultPreview: jobResult.result?.text?.slice(0, 200) ?? queuingPreview })

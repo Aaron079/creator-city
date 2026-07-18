@@ -268,6 +268,40 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     assert.ok(leaveEffect.indexOf('window.clearTimeout(saveTimerRef.current)') < leaveEffect.indexOf('scheduleCanvasSave(0)'))
   })
 
+  test('poll results are abort-gated before video, image, or generic job processing', () => {
+    const regeneration = namedBlock(
+      workspace,
+      'const handleRegenerateNodeFromPrompt',
+      'useEffect(() => {\n    const queuedIds = pendingAutoGenerateIdsRef.current',
+    )
+    const dialogGeneration = namedBlock(
+      workspace,
+      'const handleNodeDialogGenerate',
+      'const handlePromptChange',
+    )
+
+    assert.match(
+      regeneration,
+      /const\s+statusResult\s*=\s*await\s+pollImageGenerationTask\([^\n]+\)\s*\n\s*if\s*\(generationAbortContext\(generationController\.signal\)\s*!==\s*null\)\s*return\s*\n\s*result\s*=/,
+    )
+    assert.match(
+      regeneration,
+      /const\s+statusResult\s*=\s*await\s+pollVideoGenerationTask\([^\n]+\)\s*\n\s*if\s*\(generationAbortContext\(generationController\.signal\)\s*!==\s*null\)\s*return\s*\n\s*result\s*=/,
+    )
+    assert.match(
+      dialogGeneration,
+      /const\s+statusResult\s*=\s*await\s+pollImageGenerationTask\([^\n]+\)\s*\n\s*if\s*\(generationController\s*&&\s*generationAbortContext\(generationController\.signal\)\s*!==\s*null\)\s*return\s*\n\s*result\s*=/,
+    )
+    assert.match(
+      dialogGeneration,
+      /const\s+statusResult\s*=\s*await\s+pollVideoGenerationTask\([^\n]+\)\s*\n\s*if\s*\(generationController\s*&&\s*generationAbortContext\(generationController\.signal\)\s*!==\s*null\)\s*return\s*\n\s*videoPolls\s*\+=\s*1/,
+    )
+    assert.match(
+      dialogGeneration,
+      /const\s+jobResult\s*=\s*await\s+pollGenerationJob\([^\n]+\)\s*\n\s*if\s*\(generationController\s*&&\s*generationAbortContext\(generationController\.signal\)\s*!==\s*null\)\s*return\s*\n\s*polls\s*\+=\s*1/,
+    )
+  })
+
   test('compatibility generation remains behind the panel second confirmation', () => {
     assert.match(shotPanel, /generateAfterCreate\s*&&\s*outcome\.createdIds\.length\s*>\s*0/)
     assert.match(shotPanel, /setIsConfirmingGenerate\(true\)/)
