@@ -112,6 +112,71 @@ function malformedResult(
   }
 }
 
+type ReviewResultStage = 'scene' | 'beat' | 'shot'
+type ResultMutation = (result: CreatorSkillRunResult) => CreatorSkillRunResult
+
+function mutatedRunner(
+  targetSkillId: string,
+  mutate: ResultMutation,
+): typeof runCreatorSkill {
+  return (skillId, input, version) => {
+    const result = runCreatorSkill(skillId, input, version)
+    return skillId === targetSkillId
+      ? mutate(structuredClone(result))
+      : result
+  }
+}
+
+function recipeWithMutatedResult(stage: ReviewResultStage, mutate: ResultMutation) {
+  if (stage === 'scene') {
+    return createStoryboardDirectorRecipe(
+      context,
+      source,
+      ISO_TIME,
+      mutatedRunner('script-segmentation', mutate),
+    )
+  }
+  if (stage === 'beat') {
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME)
+    return approveSceneStage(
+      decideAll(started, 'scene-review', 'approved'),
+      ISO_TIME,
+      mutatedRunner('narrative-beat-analysis', mutate),
+    )
+  }
+  return approveBeatStage(
+    approvedBeatRecipe(runCreatorSkill),
+    ISO_TIME,
+    mutatedRunner('shot-planning', mutate),
+  )
+}
+
+function assertMalformedStageBlocked(
+  recipe: StoryboardDirectorRecipe,
+  stage: ReviewResultStage,
+) {
+  const review = stage === 'scene' ? recipe.scene : stage === 'beat' ? recipe.beat : recipe.shot
+  assert.equal(review.status, 'blocked')
+  assert.deepEqual(review.drafts, [])
+  if (stage === 'scene') {
+    assert.throws(() => approveSceneStage(recipe, ISO_TIME), /blocked/i)
+  } else if (stage === 'beat') {
+    assert.throws(() => approveBeatStage(recipe, ISO_TIME), /blocked/i)
+  } else {
+    assert.throws(() => approveShotStage(recipe, ISO_TIME), /blocked/i)
+  }
+}
+
+function mutateArtifact(
+  result: CreatorSkillRunResult,
+  mutate: (artifact: CreatorSkillRunResult['artifacts'][number]) => void,
+) {
+  const artifact = result.artifacts[0]
+  assert.ok(artifact)
+  mutate(artifact)
+  return result
+}
+
 beforeEach(() => {
   calls.length = 0
 })
@@ -546,6 +611,139 @@ describe('blocked and malformed Skill results', () => {
     assert.ok(next.scene.approvedArtifact)
     assert.equal(next.beat.status, 'blocked')
     assert.equal(next.activeStage, 'beat-review')
+  })
+
+  test('wrong Skill identity, version, status, source identity, fingerprint, and lineage block every stage', () => {
+    const expectedSkill = {
+      scene: 'script-segmentation',
+      beat: 'narrative-beat-analysis',
+      shot: 'shot-planning',
+    } as const
+    const mutations: Array<[string, ResultMutation]> = [
+      ['skill identity', (result) => ({ ...result, skillId: 'other-skill' })],
+      ['skill version', (result) => ({ ...result, skillVersion: '9.9.9' })],
+      ['run fingerprint', (result) => ({ ...result, runFingerprint: 'csf1_deadbeef' })],
+      ['invalid status', (result) => ({
+        ...result,
+        status: 'running' as CreatorSkillRunResult['status'],
+      })],
+      ['status invariant', (result) => ({
+        ...result,
+        blockers: [{ code: 'ILLEGAL_BLOCKER', message: 'Nonblocked result has a blocker.' }],
+      })],
+      ['source identity', (result) => mutateArtifact(
+        result,
+        (artifact) => { artifact.sourceNodeIds = ['other-source'] },
+      )],
+      ['input lineage', (result) => mutateArtifact(
+        result,
+        (artifact) => {
+          artifact.sourceArtifactIds = result.skillId === 'script-segmentation'
+            ? ['unexpected-upstream']
+            : []
+        },
+      )],
+    ]
+
+    for (const stage of ['scene', 'beat', 'shot'] as const) {
+      for (const [label, mutate] of mutations) {
+        const recipe = recipeWithMutatedResult(stage, mutate)
+        assert.equal(
+          recipe[stage].result?.skillId === expectedSkill[stage] || label === 'skill identity',
+          true,
+        )
+        assertMalformedStageBlocked(recipe, stage)
+      }
+    }
+  })
+
+  test('duplicate scene IDs and orders, malformed ranges/evidence, and extraneous fields block scenes', () => {
+    const mutations: ResultMutation[] = [
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as SceneBreakdownPayload
+        payload.scenes[1]!.sceneId = payload.scenes[0]!.sceneId
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as SceneBreakdownPayload
+        payload.scenes[1]!.order = payload.scenes[0]!.order
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as SceneBreakdownPayload
+        payload.scenes[1]!.lineStart = payload.scenes[0]!.lineEnd
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as SceneBreakdownPayload
+        payload.scenes[0]!.sourceText = 'Changed source evidence.'
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as SceneBreakdownPayload
+        ;(payload.scenes[0] as unknown as Record<string, unknown>).unexpected = true
+      }),
+    ]
+
+    for (const mutate of mutations) {
+      assertMalformedStageBlocked(recipeWithMutatedResult('scene', mutate), 'scene')
+    }
+  })
+
+  test('duplicate beat IDs and orders, malformed relationships/ranges, and extraneous fields block beats', () => {
+    const mutations: ResultMutation[] = [
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        payload.scenes[0]!.beats[1]!.beatId = payload.scenes[0]!.beats[0]!.beatId
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        payload.scenes[0]!.beats[1]!.order = payload.scenes[0]!.beats[0]!.order
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        payload.scenes[0]!.beats[0]!.sceneId = payload.scenes[1]!.sceneId
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        payload.scenes[0]!.beats[0]!.lineStart = 999
+        payload.scenes[0]!.beats[0]!.lineEnd = 999
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        ;(payload.scenes[0]!.beats[0] as unknown as Record<string, unknown>).unexpected = true
+      }),
+    ]
+
+    for (const mutate of mutations) {
+      assertMalformedStageBlocked(recipeWithMutatedResult('beat', mutate), 'beat')
+    }
+  })
+
+  test('duplicate shot IDs and orders, malformed relationships/ranges, and extraneous fields block shots', () => {
+    const mutations: ResultMutation[] = [
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as ShotPlanPayload
+        payload.scenes[0]!.shots[1]!.shotId = payload.scenes[0]!.shots[0]!.shotId
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as ShotPlanPayload
+        payload.scenes[0]!.shots[1]!.order = payload.scenes[0]!.shots[0]!.order
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as ShotPlanPayload
+        payload.scenes[0]!.shots[0]!.beatId = 'missing-beat'
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as ShotPlanPayload
+        payload.scenes[0]!.shots[0]!.lineStart = 999
+        payload.scenes[0]!.shots[0]!.lineEnd = 999
+      }),
+      (result) => mutateArtifact(result, (artifact) => {
+        const payload = artifact.payload as ShotPlanPayload
+        ;(payload.scenes[0]!.shots[0] as unknown as Record<string, unknown>).unexpected = true
+      }),
+    ]
+
+    for (const mutate of mutations) {
+      assertMalformedStageBlocked(recipeWithMutatedResult('shot', mutate), 'shot')
+    }
   })
 })
 
