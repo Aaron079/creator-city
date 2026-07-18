@@ -1,4 +1,4 @@
-import { createCreatorSkillFingerprint } from '../../skills'
+import { createCreatorSkillFingerprint, runCreatorSkill } from '../../skills'
 import { createRecipeMaterializationIdentity, createStoryboardDirectorRecipeIdentity } from './identity'
 import type {
   RecipeReviewItem,
@@ -8,9 +8,14 @@ import type {
 import type {
   CreatorSkillArtifact,
   CreatorSkillEvidence,
+  CreatorSkillRunInput,
+  CreatorSkillRunResult,
   NarrativeBeatDraft,
+  NarrativeBeatMapPayload,
+  SceneBreakdownPayload,
   ScriptSceneDraft,
   ShotPlanDraft,
+  ShotPlanPayload,
 } from '../../skills'
 
 export type StoryboardDirectorSummary = {
@@ -52,6 +57,7 @@ type FindingValue = Omit<StoryboardDirectorFinding, 'findingId'>
 type ApprovedScene = RecipeReviewItem<ScriptSceneDraft>
 type ApprovedBeat = RecipeReviewItem<NarrativeBeatDraft>
 type ApprovedShot = RecipeReviewItem<ShotPlanDraft>
+type LinkedApprovedShot = ApprovedShot & { beatId: string }
 
 function finding(
   recipe: StoryboardDirectorRecipe,
@@ -78,7 +84,9 @@ function finding(
 }
 
 function normalizedWords(value: string) {
-  return new Set(value.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+  // NFKC makes compatibility and canonically equivalent tokens compare the same;
+  // toLowerCase is deliberately locale-independent for browser-stable findings.
+  return new Set(value.normalize('NFKC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean))
 }
 
 function overlapRatio(left: string, right: string) {
@@ -94,43 +102,243 @@ function compareText(left: string, right: string) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function byOrderAndId<T extends { order: number }>(id: (value: T) => string) {
-  return (left: T, right: T) => left.order - right.order || compareText(id(left), id(right))
-}
-
 function approvedSceneDrafts(recipe: StoryboardDirectorRecipe): ApprovedScene[] {
   return recipe.scene.drafts
     .filter((item) => item.decision === 'approved')
-    .slice()
-    .sort(byOrderAndId((item) => item.sceneId))
 }
 
 function approvedBeatDrafts(recipe: StoryboardDirectorRecipe): ApprovedBeat[] {
-  const sceneOrder = new Map(approvedSceneDrafts(recipe).map((item, index) => [item.sceneId, index]))
   return recipe.beat.drafts
     .filter((item) => item.decision === 'approved')
-    .slice()
-    .sort((left, right) => (
-      (sceneOrder.get(left.sceneId) ?? Number.MAX_SAFE_INTEGER)
-      - (sceneOrder.get(right.sceneId) ?? Number.MAX_SAFE_INTEGER)
-      || compareText(left.sceneId, right.sceneId)
-      || left.order - right.order
-      || compareText(left.beatId, right.beatId)
-    ))
 }
 
 function approvedShotDrafts(recipe: StoryboardDirectorRecipe): ApprovedShot[] {
-  const sceneOrder = new Map(approvedSceneDrafts(recipe).map((item, index) => [item.sceneId, index]))
   return recipe.shot.drafts
     .filter((item) => item.decision === 'approved')
-    .slice()
-    .sort((left, right) => (
-      (sceneOrder.get(left.sceneId) ?? Number.MAX_SAFE_INTEGER)
-      - (sceneOrder.get(right.sceneId) ?? Number.MAX_SAFE_INTEGER)
-      || compareText(left.sceneId, right.sceneId)
-      || left.order - right.order
-      || compareText(left.shotId, right.shotId)
+}
+
+function hasRequiredText(value: string) {
+  return value.normalize('NFKC').replace(/[\p{White_Space}\p{Cf}]+/gu, '').length > 0
+}
+
+function sameCanonicalValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => sameCanonicalValue(item, right[index]))
+  }
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord).sort(compareText)
+  const rightKeys = Object.keys(rightRecord).sort(compareText)
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => (
+      key === rightKeys[index]
+      && sameCanonicalValue(leftRecord[key], rightRecord[key])
     ))
+}
+
+function withoutDecision<T extends { decision: unknown }>(value: T) {
+  const { decision, ...draft } = value
+  void decision
+  return draft
+}
+
+function expectedApprovedArtifact(
+  resultArtifact: CreatorSkillArtifact,
+  artifactType: string,
+  payload: unknown,
+): CreatorSkillArtifact {
+  return {
+    artifactId: `${artifactType}-${resultArtifact.artifactId}-recipe-approved`,
+    artifactType,
+    artifactVersion: 1,
+    sourceNodeIds: resultArtifact.sourceNodeIds.slice(),
+    sourceArtifactIds: [resultArtifact.artifactId],
+    payload,
+  }
+}
+
+function sceneCheckpointExpectation(
+  recipe: StoryboardDirectorRecipe,
+  resultArtifact: CreatorSkillArtifact<SceneBreakdownPayload>,
+) {
+  return expectedApprovedArtifact(resultArtifact, 'scene-breakdown', {
+    format: resultArtifact.payload.format,
+    scenes: approvedSceneDrafts(recipe).map((item) => ({
+      ...withoutDecision(item),
+      characters: item.characters.slice(),
+    })),
+  })
+}
+
+function sceneHandoffExpectation(
+  recipe: StoryboardDirectorRecipe,
+  resultArtifact: CreatorSkillArtifact<SceneBreakdownPayload>,
+) {
+  const reviewed = new Map(approvedSceneDrafts(recipe).map((item) => [item.sceneId, item]))
+  const checkpoint = sceneCheckpointExpectation(recipe, resultArtifact)
+  return {
+    ...checkpoint,
+    payload: {
+      format: resultArtifact.payload.format,
+      scenes: resultArtifact.payload.scenes
+        .filter((item) => reviewed.has(item.sceneId))
+        .map((item) => {
+          const review = reviewed.get(item.sceneId)!
+          return {
+            sceneId: item.sceneId,
+            order: item.order,
+            heading: item.heading,
+            ...(review.location !== undefined ? { location: review.location } : {}),
+            ...(review.timeOfDay !== undefined ? { timeOfDay: review.timeOfDay } : {}),
+            characters: review.characters.slice(),
+            actionSummary: review.actionSummary,
+            sourceText: item.sourceText,
+            lineStart: item.lineStart,
+            lineEnd: item.lineEnd,
+            reviewStatus: 'pending' as const,
+          }
+        }),
+    },
+  }
+}
+
+function beatCheckpointExpectation(
+  recipe: StoryboardDirectorRecipe,
+  resultArtifact: CreatorSkillArtifact<NarrativeBeatMapPayload>,
+) {
+  const resultScenes = new Map(resultArtifact.payload.scenes.map((item) => [item.sceneId, item]))
+  const scenes: NarrativeBeatMapPayload['scenes'] = []
+  const byScene = new Map<string, NarrativeBeatMapPayload['scenes'][number]>()
+  for (const item of approvedBeatDrafts(recipe)) {
+    const sourceScene = resultScenes.get(item.sceneId)
+    if (!sourceScene) return null
+    let scene = byScene.get(item.sceneId)
+    if (!scene) {
+      scene = {
+        sceneId: sourceScene.sceneId,
+        order: sourceScene.order,
+        heading: sourceScene.heading,
+        beats: [],
+      }
+      byScene.set(item.sceneId, scene)
+      scenes.push(scene)
+    }
+    scene.beats.push(withoutDecision(item))
+  }
+  return expectedApprovedArtifact(resultArtifact, 'narrative-beat-map', { scenes })
+}
+
+function shotCheckpointExpectation(
+  recipe: StoryboardDirectorRecipe,
+  resultArtifact: CreatorSkillArtifact<ShotPlanPayload>,
+) {
+  const resultScenes = new Map(resultArtifact.payload.scenes.map((item) => [item.sceneId, item]))
+  const scenes: ShotPlanPayload['scenes'] = []
+  const byScene = new Map<string, ShotPlanPayload['scenes'][number]>()
+  for (const item of approvedShotDrafts(recipe)) {
+    const sourceScene = resultScenes.get(item.sceneId)
+    if (!sourceScene) return null
+    let scene = byScene.get(item.sceneId)
+    if (!scene) {
+      scene = {
+        sceneId: sourceScene.sceneId,
+        order: sourceScene.order,
+        heading: sourceScene.heading,
+        shots: [],
+      }
+      byScene.set(item.sceneId, scene)
+      scenes.push(scene)
+    }
+    scene.shots.push(withoutDecision(item))
+  }
+  return expectedApprovedArtifact(resultArtifact, 'shot-plan', { scenes })
+}
+
+function currentResultMatches(
+  actual: CreatorSkillRunResult | null,
+  skillId: string,
+  input: CreatorSkillRunInput,
+) {
+  if (!actual || actual.status === 'blocked' || actual.blockers.length > 0) return false
+  const expected = runCreatorSkill(skillId, input)
+  const { evidence: actualEvidence, ...actualContract } = actual
+  const { evidence: expectedEvidence, ...expectedContract } = expected
+  if (!sameCanonicalValue(actualContract, expectedContract)
+    || actualEvidence.length !== expectedEvidence.length) return false
+  const ids = new Set<string>()
+  return actualEvidence.every((item, index) => {
+    const target = expectedEvidence[index]
+    if (!target || ids.has(item.evidenceId)) return false
+    ids.add(item.evidenceId)
+    return item.evidenceId === target.evidenceId
+      && item.sourceNodeId === target.sourceNodeId
+      && item.lineStart === target.lineStart
+      && item.lineEnd === target.lineEnd
+      && item.excerpt === target.excerpt
+      && hasRequiredText(item.ruleId)
+      && hasRequiredText(item.explanation)
+  })
+}
+
+function semanticStageMismatch(recipe: StoryboardDirectorRecipe) {
+  try {
+    const projectContext = { projectId: recipe.projectId, workflowId: recipe.workflowId }
+    const sceneInput: CreatorSkillRunInput = {
+      sourceNodes: [recipe.sourceNode],
+      projectContext,
+    }
+    if (!currentResultMatches(recipe.scene.result, 'script-segmentation', sceneInput)) return true
+    const sceneResultArtifact = recipe.scene.result!.artifacts[0] as CreatorSkillArtifact<SceneBreakdownPayload>
+    const sceneCheckpoint = sceneCheckpointExpectation(recipe, sceneResultArtifact)
+    if (!sameCanonicalValue(recipe.scene.approvedArtifact, sceneCheckpoint)) return true
+
+    const sceneHandoff = sceneHandoffExpectation(recipe, sceneResultArtifact)
+    const beatInput: CreatorSkillRunInput = {
+      sourceNodes: [],
+      artifacts: [sceneHandoff],
+      projectContext,
+    }
+    if (!currentResultMatches(recipe.beat.result, 'narrative-beat-analysis', beatInput)) return true
+    const beatResultArtifact = recipe.beat.result!.artifacts[0] as CreatorSkillArtifact<NarrativeBeatMapPayload>
+    const beatCheckpoint = beatCheckpointExpectation(recipe, beatResultArtifact)
+    if (!beatCheckpoint || !sameCanonicalValue(recipe.beat.approvedArtifact, beatCheckpoint)) return true
+
+    const shotInput: CreatorSkillRunInput = {
+      sourceNodes: [],
+      artifacts: [beatCheckpoint],
+      projectContext,
+      options: recipe.shot.options,
+    }
+    if (!currentResultMatches(recipe.shot.result, 'shot-planning', shotInput)) return true
+    const shotResultArtifact = recipe.shot.result!.artifacts[0] as CreatorSkillArtifact<ShotPlanPayload>
+    const shotCheckpoint = shotCheckpointExpectation(recipe, shotResultArtifact)
+    return !shotCheckpoint || !sameCanonicalValue(recipe.shot.approvedArtifact, shotCheckpoint)
+  } catch {
+    return true
+  }
+}
+
+function relationshipIndex(recipe: StoryboardDirectorRecipe) {
+  const scenes = approvedSceneDrafts(recipe)
+  const beats = approvedBeatDrafts(recipe)
+  const shots = approvedShotDrafts(recipe)
+  const sceneIds = new Set(scenes.map((item) => item.sceneId))
+  const beatById = new Map(beats.map((item) => [item.beatId, item]))
+  const validBeatIds = new Set(
+    beats.filter((item) => sceneIds.has(item.sceneId)).map((item) => item.beatId),
+  )
+  const validShots = shots.filter((item): item is LinkedApprovedShot => {
+    if (!item.beatId || !sceneIds.has(item.sceneId) || !validBeatIds.has(item.beatId)) return false
+    return beatById.get(item.beatId)?.sceneId === item.sceneId
+  })
+  return { scenes, beats, shots, sceneIds, beatById, validBeatIds, validShots }
 }
 
 function canonicalEvidence(items: CreatorSkillEvidence[]) {
@@ -209,13 +417,22 @@ function sourceIsStale(recipe: StoryboardDirectorRecipe) {
 }
 
 function lineageMismatch(recipe: StoryboardDirectorRecipe) {
+  const relationships = relationshipIndex(recipe)
   const sceneResult = resultArtifact(recipe, 'scene')
   const beatResult = resultArtifact(recipe, 'beat')
   const shotResult = resultArtifact(recipe, 'shot')
   const sceneApproved = recipe.scene.approvedArtifact
   const beatApproved = recipe.beat.approvedArtifact
   const shotApproved = recipe.shot.approvedArtifact
-  if (!sceneResult || !beatResult || !shotResult
+  if (semanticStageMismatch(recipe)
+    || relationships.beats.some((beat) => !relationships.sceneIds.has(beat.sceneId))
+    || relationships.shots.some((shot) => (
+      !shot.beatId
+      || !relationships.sceneIds.has(shot.sceneId)
+      || !relationships.validBeatIds.has(shot.beatId)
+      || relationships.beatById.get(shot.beatId)?.sceneId !== shot.sceneId
+    ))
+    || !sceneResult || !beatResult || !shotResult
     || !currentArtifact(sceneResult, 'scene-breakdown')
     || !currentArtifact(sceneApproved, 'scene-breakdown')
     || !currentArtifact(beatResult, 'narrative-beat-map')
@@ -230,9 +447,10 @@ function lineageMismatch(recipe: StoryboardDirectorRecipe) {
 }
 
 function reviewItemsUnresolved(recipe: StoryboardDirectorRecipe) {
-  return [recipe.scene, recipe.beat, recipe.shot].some((stage) => (
-    stage.status !== 'approved' || stage.drafts.some((item) => item.decision === 'pending')
-  ))
+  return recipe.findings.some((item) => item.severity === 'blocking')
+    || [recipe.scene, recipe.beat, recipe.shot].some((stage) => (
+      stage.status !== 'approved' || stage.drafts.some((item) => item.decision === 'pending')
+    ))
 }
 
 function receiptConflict(recipe: StoryboardDirectorRecipe) {
@@ -280,20 +498,17 @@ function itemFinding(
 }
 
 function blockingFindings(recipe: StoryboardDirectorRecipe) {
-  const scenes = approvedSceneDrafts(recipe)
-  const beats = approvedBeatDrafts(recipe)
-  const shots = approvedShotDrafts(recipe)
-  const sceneIds = new Set(scenes.map((item) => item.sceneId))
-  const beatIds = new Set(beats.map((item) => item.beatId))
+  const relationships = relationshipIndex(recipe)
+  const { scenes, beats, shots, sceneIds, beatById, validBeatIds, validShots } = relationships
   const beatsByScene = new Map<string, ApprovedBeat[]>()
   const shotsByBeat = new Map<string, ApprovedShot[]>()
   for (const beat of beats) {
+    if (!validBeatIds.has(beat.beatId)) continue
     const entries = beatsByScene.get(beat.sceneId) ?? []
     entries.push(beat)
     beatsByScene.set(beat.sceneId, entries)
   }
-  for (const shot of shots) {
-    if (!shot.beatId) continue
+  for (const shot of validShots) {
     const entries = shotsByBeat.get(shot.beatId) ?? []
     entries.push(shot)
     shotsByBeat.set(shot.beatId, entries)
@@ -349,21 +564,23 @@ function blockingFindings(recipe: StoryboardDirectorRecipe) {
       shot,
       ids,
     ))
-    if (!shot.beatId || !beatIds.has(shot.beatId)) add('SHOT_BEAT_REFERENCE_MISSING', itemFinding(
+    if (!shot.beatId
+      || !validBeatIds.has(shot.beatId)
+      || beatById.get(shot.beatId)?.sceneId !== shot.sceneId) add('SHOT_BEAT_REFERENCE_MISSING', itemFinding(
       'blocking',
       'SHOT_BEAT_REFERENCE_MISSING',
       `Approved shot ${shot.shotId} references a missing approved beat.`,
       shot,
       ids,
     ))
-    if (!shot.subject.trim()) add('SHOT_SUBJECT_MISSING', itemFinding(
+    if (!hasRequiredText(shot.subject)) add('SHOT_SUBJECT_MISSING', itemFinding(
       'blocking',
       'SHOT_SUBJECT_MISSING',
       `Approved shot ${shot.shotId} has no reviewed subject.`,
       shot,
       ids,
     ))
-    if (!shot.action.trim()) add('SHOT_ACTION_MISSING', itemFinding(
+    if (!hasRequiredText(shot.action)) add('SHOT_ACTION_MISSING', itemFinding(
       'blocking',
       'SHOT_ACTION_MISSING',
       `Approved shot ${shot.shotId} has no reviewed action.`,
@@ -386,9 +603,9 @@ function blockingFindings(recipe: StoryboardDirectorRecipe) {
 }
 
 function evidenceHasRule(items: CreatorSkillEvidence[], rule: string) {
-  const expected = rule.toLocaleLowerCase().replace(/_/gu, '-')
+  const expected = rule.normalize('NFKC').toLowerCase().replace(/_/gu, '-')
   return items.some((item) => (
-    item.ruleId.toLocaleLowerCase().replace(/_/gu, '-') === expected
+    item.ruleId.normalize('NFKC').toLowerCase().replace(/_/gu, '-') === expected
   ))
 }
 
@@ -401,9 +618,7 @@ function looseName(value: string) {
 }
 
 function advisoryFindings(recipe: StoryboardDirectorRecipe) {
-  const scenes = approvedSceneDrafts(recipe)
-  const beats = approvedBeatDrafts(recipe)
-  const shots = approvedShotDrafts(recipe)
+  const { scenes, beats, validShots: shots } = relationshipIndex(recipe)
   const shotsByScene = new Map<string, ApprovedShot[]>()
   const shotsByBeat = new Map<string, ApprovedShot[]>()
   for (const shot of shots) {
@@ -592,14 +807,17 @@ export function summarizeStoryboardDirectorRecipe(
   recipe: StoryboardDirectorRecipe,
 ): StoryboardDirectorSummary {
   const findings = analyzeStoryboardDirectorRecipe(recipe)
-  const approvedBeats = approvedBeatDrafts(recipe)
-  const approvedShots = approvedShotDrafts(recipe)
-  const covered = new Set(approvedShots.map((shot) => shot.beatId).filter(Boolean))
+  const relationships = relationshipIndex(recipe)
+  const approvedBeats = relationships.beats
+  const approvedShots = relationships.shots
+  const covered = new Set(relationships.validShots.map((shot) => shot.beatId))
   return {
     approvedScenes: approvedSceneDrafts(recipe).length,
     approvedBeats: approvedBeats.length,
     approvedShots: approvedShots.length,
-    coveredBeats: approvedBeats.filter((beat) => covered.has(beat.beatId)).length,
+    coveredBeats: approvedBeats.filter((beat) => (
+      relationships.validBeatIds.has(beat.beatId) && covered.has(beat.beatId)
+    )).length,
     blockingCount: findings.filter((item) => item.severity === 'blocking').length,
     advisoryCount: findings.filter((item) => item.severity === 'advisory').length,
     sourceFresh: !findings.some((item) => item.code === 'RECIPE_SOURCE_STALE'),

@@ -5,16 +5,13 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import type {
-  CreatorSkillArtifact,
   CreatorSkillEvidence,
-  CreatorSkillRunResult,
   NarrativeBeatDraft,
   ScriptSceneDraft,
   ShotPlanDraft,
 } from '../../skills'
 import {
   createRecipeMaterializationIdentity,
-  createStoryboardDirectorRecipeIdentity,
 } from './identity'
 import type { RecipeReviewItem, StoryboardDirectorRecipe } from './types'
 import {
@@ -22,6 +19,15 @@ import {
   isStoryboardRecipeMaterializationReady,
   summarizeStoryboardDirectorRecipe,
 } from './intelligence'
+import {
+  approveBeatStage,
+  approveSceneStage,
+  approveShotStage,
+  createStoryboardDirectorRecipe,
+  moveRecipeDraft,
+  setRecipeDecision,
+  updateRecipeDraft,
+} from './state-machine'
 
 const context = { projectId: 'project-1', workflowId: 'workflow-1' }
 const source = {
@@ -36,50 +42,6 @@ const source = {
     'The city falls quiet.',
     'Mara looks back at the lab.',
   ].join('\n'),
-}
-
-function scene(
-  sceneId: string,
-  order: number,
-  overrides: Partial<RecipeReviewItem<ScriptSceneDraft>> = {},
-): RecipeReviewItem<ScriptSceneDraft> {
-  return {
-    sceneId,
-    order,
-    heading: order === 1 ? 'INT. LAB - NIGHT' : 'EXT. ROOF - DAWN',
-    location: order === 1 ? 'LAB' : 'ROOF',
-    timeOfDay: order === 1 ? 'NIGHT' : 'DAWN',
-    characters: order === 1 ? ['Jose', 'Mara'] : ['Mara'],
-    actionSummary: order === 1 ? 'Jose opens the case.' : 'Mara stops the alarm.',
-    sourceText: source.prompt.split('\n')[order === 1 ? 1 : 3]!,
-    lineStart: order === 1 ? 2 : 4,
-    lineEnd: order === 1 ? 2 : 4,
-    reviewStatus: 'pending',
-    decision: 'approved',
-    ...overrides,
-  }
-}
-
-function beat(
-  beatId: string,
-  sceneId: string,
-  order: number,
-  overrides: Partial<RecipeReviewItem<NarrativeBeatDraft>> = {},
-): RecipeReviewItem<NarrativeBeatDraft> {
-  const inFirstScene = sceneId === 'scene-001'
-  return {
-    beatId,
-    sceneId,
-    order,
-    type: 'action',
-    sourceText: source.prompt.split('\n')[inFirstScene ? 1 : 3]!,
-    summary: `Beat ${beatId}`,
-    lineStart: inFirstScene ? 2 : 4,
-    lineEnd: inFirstScene ? 2 : 4,
-    reviewStatus: 'pending',
-    decision: 'approved',
-    ...overrides,
-  }
 }
 
 function shot(
@@ -127,154 +89,36 @@ function evidence(
   }
 }
 
-function artifact(
-  artifactId: string,
-  artifactType: string,
-  sourceArtifactIds: string[],
-): CreatorSkillArtifact {
-  return {
-    artifactId,
-    artifactType,
-    artifactVersion: 1,
-    sourceNodeIds: [source.id],
-    sourceArtifactIds,
-    payload: {},
-  }
-}
-
-function result(
-  skillId: string,
-  output: CreatorSkillArtifact,
-  evidenceItems: CreatorSkillEvidence[] = [],
-): CreatorSkillRunResult {
-  return {
-    skillId,
-    skillVersion: '1.0.0',
-    runFingerprint: `${skillId}-run`,
-    status: 'ready',
-    artifacts: [output],
-    evidence: evidenceItems,
-    warnings: [],
-    blockers: [],
-  }
-}
-
 function approvedRecipe(overrides: Partial<StoryboardDirectorRecipe> = {}): StoryboardDirectorRecipe {
-  const identity = createStoryboardDirectorRecipeIdentity(context, source)
-  const sceneResultArtifact = artifact('scene-result-artifact', 'scene-breakdown', [])
-  const sceneApprovedArtifact = artifact(
-    'scene-approved-artifact',
-    'scene-breakdown',
-    [sceneResultArtifact.artifactId],
-  )
-  const beatResultArtifact = artifact(
-    'beat-result-artifact',
-    'narrative-beat-map',
-    [sceneApprovedArtifact.artifactId],
-  )
-  const beatApprovedArtifact = artifact(
-    'beat-approved-artifact',
-    'narrative-beat-map',
-    [beatResultArtifact.artifactId],
-  )
-  const shotResultArtifact = artifact(
-    'shot-result-artifact',
-    'shot-plan',
-    [beatApprovedArtifact.artifactId],
-  )
-  const shotApprovedArtifact = artifact(
-    'shot-approved-artifact',
-    'shot-plan',
-    [shotResultArtifact.artifactId],
-  )
-  const shots = [
-    shot('shot-001', 'scene-001', 'scene-001-beat-001', 1, { suggestedShotSize: 'wide' }),
-    shot('shot-002', 'scene-001', 'scene-001-beat-002', 2, { suggestedShotSize: 'medium' }),
-    shot('shot-003', 'scene-001', 'scene-001-beat-003', 3, { suggestedShotSize: 'close' }),
-    shot('shot-004', 'scene-002', 'scene-002-beat-001', 1, { suggestedShotSize: 'medium' }),
-    shot('shot-005', 'scene-002', 'scene-002-beat-002', 2, { suggestedShotSize: 'close' }),
-    shot('shot-006', 'scene-001', 'scene-001-beat-003', 4, { suggestedShotSize: 'full' }),
-  ]
-  const shotEvidence = shots.map((item) => evidence(
-    `${item.shotId}-evidence`,
-    item.lineStart,
-    item.shotId === 'shot-003' ? 'VISUAL_RESPONSE' : 'shot-source',
-  ))
-  return {
-    schemaVersion: 1,
-    recipeId: identity.recipeId,
-    projectId: context.projectId,
-    workflowId: context.workflowId,
-    sourceNode: { ...source },
-    sourceFingerprint: identity.sourceFingerprint,
-    activeStage: 'shot-review',
-    scene: {
-      status: 'approved',
-      generation: 1,
-      sourceFingerprint: identity.sourceFingerprint,
-      result: result('script-segmentation', sceneResultArtifact),
-      drafts: [scene('scene-001', 1), scene('scene-002', 2)],
-      approvedArtifact: sceneApprovedArtifact,
-      staleResult: null,
-    },
-    beat: {
-      status: 'approved',
-      generation: 1,
-      sourceFingerprint: identity.sourceFingerprint,
-      result: result('narrative-beat-analysis', beatResultArtifact),
-      drafts: [
-        beat('scene-001-beat-001', 'scene-001', 1, { type: 'setup' }),
-        beat('scene-001-beat-002', 'scene-001', 2),
-        beat('scene-001-beat-003', 'scene-001', 3, { type: 'reaction' }),
-        beat('scene-002-beat-001', 'scene-002', 1, { type: 'setup' }),
-        beat('scene-002-beat-002', 'scene-002', 2, { type: 'closure' }),
-      ],
-      approvedArtifact: beatApprovedArtifact,
-      staleResult: null,
-    },
-    shot: {
-      status: 'approved',
-      generation: 1,
-      sourceFingerprint: identity.sourceFingerprint,
-      result: result('shot-planning', shotResultArtifact, shotEvidence),
-      drafts: shots,
-      approvedArtifact: shotApprovedArtifact,
-      staleResult: null,
-      options: {
-        requestedShotCount: 6,
-        outputMode: 'mixed',
-        pacing: 'standard',
-        shotSizeStrategy: 'auto',
-        userInstruction: '',
-      },
-    },
-    findings: [],
-    storyboard: { version: '2', shots: [], updatedAt: '2026-07-19T01:00:00.000Z' },
-    receipts: [],
-    legacyImportStatus: 'not-offered',
-    audit: {
-      createdAt: '2026-07-19T01:00:00.000Z',
-      updatedAt: '2026-07-19T01:00:00.000Z',
-    },
-    ...overrides,
-  }
+  return { ...canonicalRecipe(), ...overrides }
 }
 
 function recipeWithCoverageGaps() {
-  const recipe = approvedRecipe()
-  return {
-    ...recipe,
-    beat: {
-      ...recipe.beat,
-      drafts: recipe.beat.drafts.filter((item) => item.sceneId === 'scene-001'),
-    },
-    shot: {
-      ...recipe.shot,
-      drafts: recipe.shot.drafts.filter((item) => (
-        item.sceneId === 'scene-001' && item.beatId !== 'scene-001-beat-002'
-      )),
-    },
+  let recipe = createStoryboardDirectorRecipe(context, canonicalSource, ISO_TIME)
+  recipe = approveSceneStage(decideEveryDraft(recipe, 'scene-review'), ISO_TIME)
+  for (const item of recipe.beat.drafts) {
+    recipe = setRecipeDecision(
+      recipe,
+      'beat-review',
+      item.beatId,
+      item.sceneId === 'scene-001' ? 'approved' : 'rejected',
+      ISO_TIME,
+    )
   }
+  recipe = approveBeatStage(recipe, ISO_TIME)
+  for (const item of recipe.shot.drafts) {
+    if (!item.subject.trim()) {
+      recipe = updateRecipeDraft(recipe, 'shot-review', item.shotId, { subject: 'Jose' }, ISO_TIME)
+    }
+    recipe = setRecipeDecision(
+      recipe,
+      'shot-review',
+      item.shotId,
+      item.beatId === 'scene-001-beat-002' ? 'rejected' : 'approved',
+      ISO_TIME,
+    )
+  }
+  return approveShotStage(recipe, ISO_TIME)
 }
 
 function corruptLineageRecipe() {
@@ -309,56 +153,166 @@ function corruptLineageRecipe() {
 }
 
 function advisoryFixture() {
-  const recipe = approvedRecipe()
-  const advisoryShots = [
-    shot('shot-a', 'scene-001', 'scene-001-beat-001', 1, {
-      objective: 'Follow Jose opening the sealed case now',
-      subject: 'Mara',
-      action: 'Jose opens the sealed case very slowly',
-    }),
-    shot('shot-b', 'scene-001', 'scene-001-beat-002', 2, {
-      objective: 'Follow Jose opening the sealed case closely',
-      subject: 'Mara',
-      action: 'Jose opens the sealed case very carefully',
-    }),
-    shot('shot-c', 'scene-001', 'scene-001-beat-003', 3, {
-      objective: 'Hold on the alarm panel',
-      subject: 'Mara',
-      action: 'A runner keeps moving through the long corridor',
-      outputKind: 'image',
-    }),
-    shot('shot-d', 'scene-001', 'scene-001-beat-003', 4, {
-      objective: 'Reveal the final choice',
-      subject: 'Jose',
-      action: 'The case locks shut',
-      duration: 10,
-    }),
-  ]
-  return {
+  const recipe = canonicalRecipe({
+    pacing: 'fast_social',
+    scenePatch: (item) => item.sceneId === 'scene-001'
+      ? { characters: ['José', 'Mara'] }
+      : {},
+    shotPatch: (item) => {
+      if (item.shotId === 'scene-001-shot-001') return { subject: 'Jose' }
+      if (item.shotId === 'scene-001-shot-002') return { subject: 'Mara' }
+      if (item.sceneId !== 'scene-002') return {}
+      const suffix = item.shotId.split('-').at(-1)
+      if (suffix === '001' || suffix === '002') return {
+        objective: 'Follow Mara opening the sealed case now',
+        subject: 'Mara',
+        action: 'Mara opens the sealed case very slowly',
+        suggestedShotSize: 'medium',
+      }
+      if (suffix === '003') return {
+        objective: 'Hold on the alarm panel',
+        subject: 'Mara',
+        action: 'A runner keeps moving through the long corridor',
+        suggestedShotSize: 'medium',
+        outputKind: 'image',
+      }
+      return {
+        objective: 'Reveal the final choice',
+        subject: 'Mara',
+        action: 'The antenna locks shut',
+        suggestedShotSize: 'medium',
+        duration: 10,
+      }
+    },
+  })
+  recipe.shot.result!.evidence = recipe.shot.result!.evidence.map((item) => (
+    item.evidenceId === 'shot-plan-evidence-002-003'
+      ? { ...item, ruleId: 'SUSTAINED_MOVEMENT' }
+      : item
+  ))
+  return recipe
+}
+
+const ISO_TIME = '2026-07-19T01:00:00.000Z'
+const canonicalSource = {
+  id: 'source-1',
+  kind: 'text' as const,
+  title: 'Pilot',
+  prompt: [
+    'INT. LAB - NIGHT',
+    'Jose opens the sealed case.',
+    'EXT. ROOF - DAWN',
+    'Mara runs to the antenna, then smiles.',
+    'The city falls quiet.',
+  ].join('\n'),
+}
+
+function decideEveryDraft(
+  recipe: StoryboardDirectorRecipe,
+  stageId: 'scene-review' | 'beat-review' | 'shot-review',
+) {
+  const drafts = stageId === 'scene-review'
+    ? recipe.scene.drafts
+    : stageId === 'beat-review'
+      ? recipe.beat.drafts
+      : recipe.shot.drafts
+  return drafts.reduce((next, item) => setRecipeDecision(
+    next,
+    stageId,
+    stageId === 'scene-review'
+      ? item.sceneId
+      : stageId === 'beat-review'
+        ? (item as RecipeReviewItem<NarrativeBeatDraft>).beatId
+        : (item as RecipeReviewItem<ShotPlanDraft>).shotId,
+    'approved',
+    ISO_TIME,
+  ), recipe)
+}
+
+function canonicalRecipe(options: {
+  pacing?: 'standard' | 'fast_social' | 'slow_cinematic'
+  scenePatch?: (scene: RecipeReviewItem<ScriptSceneDraft>) => Partial<ScriptSceneDraft>
+  beatPatch?: (beat: RecipeReviewItem<NarrativeBeatDraft>) => Partial<NarrativeBeatDraft>
+  shotPatch?: (
+    shot: RecipeReviewItem<ShotPlanDraft>,
+    index: number,
+  ) => Partial<ShotPlanDraft>
+} = {}) {
+  let recipe = createStoryboardDirectorRecipe(context, canonicalSource, ISO_TIME)
+  for (const item of recipe.scene.drafts) {
+    recipe = updateRecipeDraft(recipe, 'scene-review', item.sceneId, {
+      characters: item.sceneId === 'scene-001' ? ['Jose'] : ['Mara'],
+      ...options.scenePatch?.(item),
+    }, ISO_TIME)
+  }
+  recipe = approveSceneStage(decideEveryDraft(recipe, 'scene-review'), ISO_TIME)
+  for (const item of recipe.beat.drafts) {
+    const patch = options.beatPatch?.(item)
+    if (patch && Object.keys(patch).length > 0) {
+      recipe = updateRecipeDraft(recipe, 'beat-review', item.beatId, patch, ISO_TIME)
+    }
+  }
+  recipe = decideEveryDraft(recipe, 'beat-review')
+  recipe = {
     ...recipe,
-    scene: {
-      ...recipe.scene,
-      drafts: [scene('scene-001', 1, { characters: ['José', 'Mara'] })],
-    },
-    beat: {
-      ...recipe.beat,
-      drafts: recipe.beat.drafts.filter((item) => item.sceneId === 'scene-001'),
-    },
     shot: {
       ...recipe.shot,
-      options: { ...recipe.shot.options, pacing: 'fast_social' as const },
-      drafts: advisoryShots,
-      result: {
-        ...recipe.shot.result!,
-        evidence: [
-          evidence('shot-a-evidence', 2),
-          evidence('shot-b-evidence', 2),
-          evidence('shot-c-evidence', 2, 'SUSTAINED_MOVEMENT'),
-          evidence('shot-d-evidence', 2),
-        ],
+      options: {
+        ...recipe.shot.options,
+        requestedShotCount: 6,
+        pacing: options.pacing ?? 'standard',
       },
     },
   }
+  recipe = approveBeatStage(recipe, ISO_TIME)
+  for (const [index, item] of recipe.shot.drafts.entries()) {
+    const patch: Partial<ShotPlanDraft> = {
+      ...(!item.subject.trim()
+        ? { subject: item.sceneId === 'scene-001' ? 'Jose' : 'Mara' }
+        : {}),
+      ...(item.shotId === 'scene-001-shot-001' ? { suggestedShotSize: 'wide' as const } : {}),
+      ...options.shotPatch?.(item, index),
+    }
+    if (Object.keys(patch).length > 0) {
+      recipe = updateRecipeDraft(recipe, 'shot-review', item.shotId, patch, ISO_TIME)
+    }
+  }
+  return approveShotStage(decideEveryDraft(recipe, 'shot-review'), ISO_TIME)
+}
+
+function orderIntegrationRecipe() {
+  const orderSource = {
+    ...canonicalSource,
+    prompt: [
+      'INT. LAB - NIGHT',
+      'Jose opens the case.',
+      'Mara closes the door.',
+      'Jose watches the monitor.',
+      'Mara turns off the alarm.',
+    ].join('\n'),
+  }
+  let recipe = createStoryboardDirectorRecipe(context, orderSource, ISO_TIME)
+  recipe = approveSceneStage(decideEveryDraft(recipe, 'scene-review'), ISO_TIME)
+  recipe = decideEveryDraft(recipe, 'beat-review')
+  recipe = {
+    ...recipe,
+    shot: {
+      ...recipe.shot,
+      options: { ...recipe.shot.options, pacing: 'slow_cinematic' },
+    },
+  }
+  recipe = approveBeatStage(recipe, ISO_TIME)
+  for (const [index, item] of recipe.shot.drafts.entries()) {
+    const breaker = index === 2
+    recipe = updateRecipeDraft(recipe, 'shot-review', item.shotId, {
+      objective: breaker ? 'Break the visual sequence' : 'Hold on the repeated action',
+      subject: 'Mara',
+      action: breaker ? 'A distinct interruption occurs' : 'The repeated action continues',
+      suggestedShotSize: breaker ? 'wide' : 'medium',
+      duration: breaker ? 10 : 5,
+    }, ISO_TIME)
+  }
+  return decideEveryDraft(recipe, 'shot-review')
 }
 
 describe('Storyboard Director intelligence', () => {
@@ -437,7 +391,6 @@ describe('Storyboard Director intelligence', () => {
     second.storyboard = { ...second.storyboard, updatedAt: '2099-01-03T00:00:00.000Z' }
     second.shot = {
       ...second.shot,
-      drafts: second.shot.drafts.slice().reverse(),
       result: {
         ...second.shot.result!,
         evidence: [
@@ -446,8 +399,6 @@ describe('Storyboard Director intelligence', () => {
         ].reverse(),
       },
     }
-    second.scene = { ...second.scene, drafts: second.scene.drafts.slice().reverse() }
-    second.beat = { ...second.beat, drafts: second.beat.drafts.slice().reverse() }
     assert.deepEqual(
       analyzeStoryboardDirectorRecipe(second),
       analyzeStoryboardDirectorRecipe(first),
@@ -459,7 +410,7 @@ describe('Storyboard Director intelligence', () => {
     const duplicate = recipe.shot.result!.evidence[0]!
     recipe.shot = {
       ...recipe.shot,
-      drafts: recipe.shot.drafts.map((item) => item.shotId === 'shot-001'
+      drafts: recipe.shot.drafts.map((item) => item.shotId === 'scene-001-shot-001'
         ? { ...item, subject: '' }
         : item),
       result: {
@@ -471,12 +422,7 @@ describe('Storyboard Director intelligence', () => {
       (item) => item.code === 'SHOT_SUBJECT_MISSING',
     )
     assert.equal(subjectFindings.length, 1)
-    assert.deepEqual(subjectFindings[0]?.evidenceIds, [
-      'shot-001-evidence',
-      'shot-002-evidence',
-      'shot-003-evidence',
-      'shot-006-evidence',
-    ])
+    assert.deepEqual(subjectFindings[0]?.evidenceIds, ['shot-plan-evidence-001-001'])
   })
 
   test('does not satisfy shot evidence from an upstream stage sharing the same source range', () => {
@@ -497,7 +443,7 @@ describe('Storyboard Director intelligence', () => {
     }
     assert.deepEqual(analyzeStoryboardDirectorRecipe(recipe).filter(
       (item) => item.code === 'SHOT_EVIDENCE_MISSING',
-    ).map((item) => item.shotId), ['shot-001', 'shot-002', 'shot-003', 'shot-006'])
+    ).map((item) => item.shotId), ['scene-001-shot-002'])
   })
 
   test('allows advisory-only findings but never lets them override a blocker', () => {
@@ -505,7 +451,7 @@ describe('Storyboard Director intelligence', () => {
     const blocked = advisoryFixture()
     blocked.shot = {
       ...blocked.shot,
-      drafts: blocked.shot.drafts.map((item) => item.shotId === 'shot-a'
+      drafts: blocked.shot.drafts.map((item) => item.shotId === 'scene-001-shot-001'
         ? { ...item, action: '' }
         : item),
     }
@@ -518,13 +464,13 @@ describe('Storyboard Director intelligence', () => {
       const recipe = approvedRecipe()
       recipe.beat = {
         ...recipe.beat,
-        drafts: recipe.beat.drafts.map((item) => item.beatId === 'scene-001-beat-003'
+        drafts: recipe.beat.drafts.map((item) => item.beatId === 'scene-001-beat-002'
           ? { ...item, type }
           : item),
       }
       recipe.shot = {
         ...recipe.shot,
-        drafts: recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-003'),
+        drafts: recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-002'),
       }
       const first = analyzeStoryboardDirectorRecipe(recipe).filter(
         (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
@@ -534,25 +480,26 @@ describe('Storyboard Director intelligence', () => {
         (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
       )
       assert.equal(first.length, 1)
-      assert.equal(first[0]?.beatId, 'scene-001-beat-003')
+      assert.equal(first[0]?.beatId, 'scene-001-beat-002')
       assert.ok(first[0]?.findingId.startsWith('sdrf1_'))
       assert.equal(second[0]?.findingId, first[0]?.findingId)
     }
   })
 
   test('does not advise when approved shots are linked regardless of evidence markers', () => {
-    for (const { keepMultiple, preserveMarker } of [
-      { keepMultiple: false, preserveMarker: false },
-      { keepMultiple: true, preserveMarker: true },
+    for (const { beatId, preserveMarker } of [
+      { beatId: 'scene-001-beat-002', preserveMarker: false },
+      { beatId: 'scene-002-beat-002', preserveMarker: true },
     ]) {
       const recipe = approvedRecipe()
+      recipe.beat = {
+        ...recipe.beat,
+        drafts: recipe.beat.drafts.map((item) => item.beatId === beatId
+          ? { ...item, type: 'reaction' as const }
+          : item),
+      }
       recipe.shot = {
         ...recipe.shot,
-        drafts: recipe.shot.drafts.filter((item) => (
-          item.beatId !== 'scene-001-beat-003'
-          || keepMultiple
-          || item.shotId === 'shot-003'
-        )),
         result: {
           ...recipe.shot.result!,
           evidence: preserveMarker
@@ -573,14 +520,20 @@ describe('Storyboard Director intelligence', () => {
     for (const decision of ['rejected', 'pending'] as const) {
       const recipe = approvedRecipe()
       const unapproved = {
-        ...recipe.shot.drafts.find((item) => item.shotId === 'shot-003')!,
+        ...recipe.shot.drafts.find((item) => item.shotId === 'scene-001-shot-002')!,
         shotId: `shot-${decision}`,
         decision,
+      }
+      recipe.beat = {
+        ...recipe.beat,
+        drafts: recipe.beat.drafts.map((item) => item.beatId === 'scene-001-beat-002'
+          ? { ...item, type: 'reaction' as const }
+          : item),
       }
       recipe.shot = {
         ...recipe.shot,
         drafts: [
-          ...recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-003'),
+          ...recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-002'),
           unapproved,
         ],
       }
@@ -588,7 +541,7 @@ describe('Storyboard Director intelligence', () => {
         (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
       )
       assert.equal(findings.length, 1)
-      assert.equal(findings[0]?.beatId, 'scene-001-beat-003')
+      assert.equal(findings[0]?.beatId, 'scene-001-beat-002')
     }
   })
 
@@ -607,6 +560,29 @@ describe('Storyboard Director intelligence', () => {
     assert.equal(findings.length, 1)
     assert.equal(isStoryboardRecipeMaterializationReady(pending), false)
     assert.equal(summarizeStoryboardDirectorRecipe(pending).ready, false)
+
+    const persistedBlocker = approvedRecipe()
+    persistedBlocker.findings = [{
+      findingId: 'source-node-missing',
+      severity: 'blocking',
+      code: 'SOURCE_NODE_MISSING',
+      message: 'The source node is missing.',
+      evidenceIds: [],
+    }]
+    assert.equal(analyzeStoryboardDirectorRecipe(persistedBlocker).filter(
+      (item) => item.code === 'REVIEW_ITEMS_UNRESOLVED',
+    ).length, 1)
+    assert.equal(isStoryboardRecipeMaterializationReady(persistedBlocker), false)
+
+    const persistedAdvisory = approvedRecipe()
+    persistedAdvisory.findings = [{
+      findingId: 'continuity-advisory',
+      severity: 'advisory',
+      code: 'CASE_CONTINUITY',
+      message: 'Keep the case orientation consistent.',
+      evidenceIds: [],
+    }]
+    assert.equal(isStoryboardRecipeMaterializationReady(persistedAdvisory), true)
   })
 
   test('blocks malformed and duplicate current materialization receipts', () => {
@@ -685,43 +661,34 @@ describe('Storyboard Director intelligence', () => {
   })
 
   test('applies exact fast and slow pacing duration thresholds', () => {
-    const fast = approvedRecipe()
-    fast.shot = {
-      ...fast.shot,
-      options: { ...fast.shot.options, pacing: 'fast_social' },
-    }
+    const fast = canonicalRecipe({ pacing: 'fast_social' })
     assert.equal(analyzeStoryboardDirectorRecipe(fast).some(
       (item) => item.code === 'PACING_DURATION_MISMATCH',
     ), false)
-    fast.shot = {
-      ...fast.shot,
-      drafts: fast.shot.drafts.map((item, index) => index === 0
-        ? { ...item, duration: 10 as const }
-        : item),
-    }
-    assert.equal(analyzeStoryboardDirectorRecipe(fast).filter(
+    const fastAtBoundary = canonicalRecipe({
+      pacing: 'fast_social',
+      shotPatch: (_item, index) => index === 0 ? { duration: 10 } : {},
+    })
+    assert.equal(analyzeStoryboardDirectorRecipe(fastAtBoundary).filter(
       (item) => item.code === 'PACING_DURATION_MISMATCH',
     ).length, 1)
 
-    const slow = approvedRecipe()
-    slow.shot = {
-      ...slow.shot,
-      options: { ...slow.shot.options, pacing: 'slow_cinematic' },
-      drafts: slow.shot.drafts.map((item, index) => ({
-        ...item,
-        duration: (index < 2 ? 5 : 10) as 5 | 10,
-      })),
-    }
+    const slow = canonicalRecipe({
+      pacing: 'slow_cinematic',
+      shotPatch: (item) => item.sceneId === 'scene-002'
+        ? { duration: item.shotId === 'scene-002-shot-003' ? 5 : 10 }
+        : {},
+    })
     assert.equal(analyzeStoryboardDirectorRecipe(slow).some(
       (item) => item.code === 'PACING_DURATION_MISMATCH',
     ), false)
-    slow.shot = {
-      ...slow.shot,
-      drafts: slow.shot.drafts.map((item, index) => index === 2
-        ? { ...item, duration: 5 as const }
-        : item),
-    }
-    assert.equal(analyzeStoryboardDirectorRecipe(slow).filter(
+    const slowAtBoundary = canonicalRecipe({
+      pacing: 'slow_cinematic',
+      shotPatch: (item) => item.sceneId === 'scene-002'
+        ? { duration: item.shotId === 'scene-002-shot-004' ? 10 : 5 }
+        : {},
+    })
+    assert.equal(analyzeStoryboardDirectorRecipe(slowAtBoundary).filter(
       (item) => item.code === 'PACING_DURATION_MISMATCH',
     ).length, 1)
   })
@@ -730,23 +697,216 @@ describe('Storyboard Director intelligence', () => {
     const recipe = approvedRecipe()
     recipe.scene = {
       ...recipe.scene,
-      drafts: recipe.scene.drafts.map((item) => item.sceneId === 'scene-001'
-        ? { ...item, characters: ['Élodie', '李雷'] }
-        : item),
+      drafts: recipe.scene.drafts.map((item) => ({
+        ...item,
+        characters: item.sceneId === 'scene-001' ? ['Élodie'] : ['李雷'],
+      })),
     }
     recipe.shot = {
       ...recipe.shot,
       drafts: recipe.shot.drafts.map((item, index) => {
-        if (item.sceneId !== 'scene-001') return item
         if (index === 0) return { ...item, subject: 'E\u0301LODIE' }
-        if (index === 1) return { ...item, subject: '李雷' }
-        return { ...item, subject: 'Elodie' }
+        if (index === 1) return { ...item, subject: 'Elodie' }
+        if (index === 2) return { ...item, subject: '李雷' }
+        return item
       }),
     }
     const naming = analyzeStoryboardDirectorRecipe(recipe).filter(
       (item) => item.code === 'CHARACTER_NAME_INCONSISTENT',
     )
-    assert.deepEqual(naming.map((item) => item.shotId), ['shot-003', 'shot-006'])
+    assert.deepEqual(naming.map((item) => item.shotId), ['scene-001-shot-002'])
     assert.ok(naming.every((item) => !/replace|rename|use instead/iu.test(item.message)))
+  })
+
+  test('blocks two-scene shots whose existing beat references are swapped across scenes', () => {
+    const recipe = canonicalRecipe()
+    recipe.shot = {
+      ...recipe.shot,
+      drafts: recipe.shot.drafts.map((item) => {
+        if (item.beatId === 'scene-001-beat-002') {
+          return { ...item, beatId: 'scene-002-beat-002' }
+        }
+        if (item.beatId === 'scene-002-beat-002') {
+          return { ...item, beatId: 'scene-001-beat-002' }
+        }
+        return item
+      }),
+    }
+    const findings = analyzeStoryboardDirectorRecipe(recipe)
+    assert.equal(findings.filter(
+      (item) => item.code === 'SHOT_BEAT_REFERENCE_MISSING',
+    ).length, 3)
+    assert.ok(findings.some((item) => item.code === 'ARTIFACT_LINEAGE_MISMATCH'))
+    assert.equal(summarizeStoryboardDirectorRecipe(recipe).coveredBeats, 3)
+    assert.equal(isStoryboardRecipeMaterializationReady(recipe), false)
+  })
+
+  test('blocks two-scene beats whose approved scene ownership is swapped', () => {
+    const recipe = canonicalRecipe()
+    recipe.beat = {
+      ...recipe.beat,
+      drafts: recipe.beat.drafts.map((item) => {
+        if (item.beatId === 'scene-001-beat-001') return { ...item, sceneId: 'scene-002' }
+        if (item.beatId === 'scene-002-beat-001') return { ...item, sceneId: 'scene-001' }
+        return item
+      }),
+    }
+    const findings = analyzeStoryboardDirectorRecipe(recipe)
+    assert.ok(findings.some((item) => item.code === 'ARTIFACT_LINEAGE_MISMATCH'))
+    assert.equal(findings.filter(
+      (item) => item.code === 'SHOT_BEAT_REFERENCE_MISSING',
+    ).length, 2)
+    assert.equal(summarizeStoryboardDirectorRecipe(recipe).coveredBeats, 3)
+    assert.equal(isStoryboardRecipeMaterializationReady(recipe), false)
+  })
+
+  test('rejects semantically invalid retained stage results and payloads', () => {
+    const probes: Array<{
+      name: string
+      mutate: (recipe: StoryboardDirectorRecipe) => void
+    }> = [
+      {
+        name: 'blocked status with retained output',
+        mutate: (recipe) => { recipe.shot.result!.status = 'blocked' },
+      },
+      {
+        name: 'ready status with a blocker',
+        mutate: (recipe) => {
+          recipe.shot.result!.blockers = [{ code: 'BLOCKED', message: 'Blocked output.' }]
+        },
+      },
+      {
+        name: 'needs-review status without a warning',
+        mutate: (recipe) => {
+          recipe.shot.result!.status = 'needs-review'
+          recipe.shot.result!.warnings = []
+        },
+      },
+      {
+        name: 'wrong skill',
+        mutate: (recipe) => { recipe.shot.result!.skillId = 'script-segmentation' },
+      },
+      {
+        name: 'wrong version',
+        mutate: (recipe) => { recipe.shot.result!.skillVersion = '9.9.9' },
+      },
+      {
+        name: 'wrong fingerprint',
+        mutate: (recipe) => { recipe.shot.result!.runFingerprint = 'csf1_wrong' },
+      },
+      {
+        name: 'wrong source lineage',
+        mutate: (recipe) => {
+          recipe.shot.result!.artifacts[0]!.sourceArtifactIds = ['wrong-beat-artifact']
+        },
+      },
+      {
+        name: 'malformed payload',
+        mutate: (recipe) => { recipe.shot.result!.artifacts[0]!.payload = { scenes: [] } },
+      },
+    ]
+    for (const probe of probes) {
+      const recipe = canonicalRecipe()
+      probe.mutate(recipe)
+      const findings = analyzeStoryboardDirectorRecipe(recipe)
+      assert.ok(
+        findings.some((item) => item.code === 'ARTIFACT_LINEAGE_MISMATCH'),
+        probe.name,
+      )
+      assert.equal(isStoryboardRecipeMaterializationReady(recipe), false, probe.name)
+    }
+  })
+
+  test('treats Unicode whitespace and format controls as missing required shot text', () => {
+    const invisible = '\u200B\u2060\u00A0\t\n'
+    const subjectMissing = canonicalRecipe({
+      shotPatch: (_item, index) => index === 1 ? { subject: invisible } : {},
+    })
+    const actionMissing = canonicalRecipe({
+      shotPatch: (_item, index) => index === 1 ? { action: invisible } : {},
+    })
+    const meaningful = canonicalRecipe({
+      shotPatch: (_item, index) => index === 1
+        ? { subject: '李雷', action: '走向门口' }
+        : {},
+    })
+    assert.equal(analyzeStoryboardDirectorRecipe(subjectMissing).filter(
+      (item) => item.code === 'SHOT_SUBJECT_MISSING',
+    ).length, 1)
+    assert.equal(analyzeStoryboardDirectorRecipe(actionMissing).filter(
+      (item) => item.code === 'SHOT_ACTION_MISSING',
+    ).length, 1)
+    assert.equal(analyzeStoryboardDirectorRecipe(meaningful).some(
+      (item) => item.code === 'SHOT_SUBJECT_MISSING' || item.code === 'SHOT_ACTION_MISSING',
+    ), false)
+  })
+
+  test('uses reviewed moveRecipeDraft order for adjacency, repetition, and slow pacing', () => {
+    const before = orderIntegrationRecipe()
+    const beforeFindings = analyzeStoryboardDirectorRecipe(before)
+    const beforeDuplicates = beforeFindings.filter(
+      (item) => item.code === 'ADJACENT_SHOT_DUPLICATE',
+    ).length
+    assert.equal(beforeFindings.some((item) => item.code === 'SHOT_SIZE_REPETITION'), false)
+    assert.equal(beforeFindings.some((item) => item.code === 'PACING_DURATION_MISMATCH'), false)
+
+    let after = moveRecipeDraft(
+      before,
+      'shot-review',
+      'scene-001-shot-003',
+      1,
+      ISO_TIME,
+    )
+    after = moveRecipeDraft(after, 'shot-review', 'scene-001-shot-003', 1, ISO_TIME)
+    const afterFindings = analyzeStoryboardDirectorRecipe(after)
+    assert.ok(afterFindings.filter(
+      (item) => item.code === 'ADJACENT_SHOT_DUPLICATE',
+    ).length > beforeDuplicates)
+    assert.equal(afterFindings.filter(
+      (item) => item.code === 'SHOT_SIZE_REPETITION',
+    ).length, 1)
+    assert.equal(afterFindings.filter(
+      (item) => item.code === 'PACING_DURATION_MISMATCH',
+    ).length, 1)
+  })
+
+  test('normalizes Turkish I tokens without locale APIs', () => {
+    const recipe = canonicalRecipe({
+      shotPatch: (_item, index) => index < 2
+        ? {
+          objective: index === 0 ? 'I alpha beta' : 'i alpha beta',
+          action: 'panel',
+          suggestedShotSize: 'medium',
+        }
+        : {},
+    })
+    const original = String.prototype.toLocaleLowerCase
+    String.prototype.toLocaleLowerCase = function toTurkishLocaleLowerCase() {
+      return original.call(this, 'tr')
+    }
+    try {
+      assert.ok(analyzeStoryboardDirectorRecipe(recipe).some((item) => (
+        item.code === 'ADJACENT_SHOT_DUPLICATE'
+        && item.shotId === 'scene-001-shot-002'
+      )))
+    } finally {
+      String.prototype.toLocaleLowerCase = original
+    }
+  })
+
+  test('normalizes canonically equivalent NFC and NFD tokens with NFKC', () => {
+    const recipe = canonicalRecipe({
+      shotPatch: (_item, index) => index < 2
+        ? {
+          objective: index === 0 ? 'Café alpha beta' : 'Cafe\u0301 alpha beta',
+          action: 'panel',
+          suggestedShotSize: 'medium',
+        }
+        : {},
+    })
+    assert.ok(analyzeStoryboardDirectorRecipe(recipe).some((item) => (
+      item.code === 'ADJACENT_SHOT_DUPLICATE'
+      && item.shotId === 'scene-001-shot-002'
+    )))
   })
 })
