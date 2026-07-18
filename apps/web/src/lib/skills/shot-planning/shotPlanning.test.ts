@@ -222,6 +222,32 @@ describe('shot-planning manifest and options', () => {
       shotSizeStrategy: 'auto',
       userInstruction: '',
     })
+    assert.deepEqual(normalize({ requestedShotCount: '12' }), {
+      requestedShotCount: 12,
+      outputMode: 'mixed',
+      pacing: 'standard',
+      shotSizeStrategy: 'auto',
+      userInstruction: '',
+    })
+    let coercionCalls = 0
+    const hostileCount = {
+      valueOf() {
+        coercionCalls += 1
+        throw new Error('must not coerce arbitrary option objects')
+      },
+      toString() {
+        coercionCalls += 1
+        return '9'
+      },
+    }
+    for (const requestedShotCount of [hostileCount, BigInt(9), true, Symbol('count')]) {
+      assert.equal(
+        (normalize({ requestedShotCount }) as { requestedShotCount: number })
+          .requestedShotCount,
+        5,
+      )
+    }
+    assert.equal(coercionCalls, 0)
     assert.deepEqual(normalize(
       Object.assign(new Date(), { requestedShotCount: 9 }) as unknown as Record<string, unknown>,
     ), {
@@ -595,6 +621,48 @@ describe('independent input contracts', () => {
     assertBlocked(conflict, 'SHOT_SOURCE_CONFLICT')
   })
 
+  test('preserves meaningful token boundaries when matching narrative evidence', () => {
+    const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: 'Maya is now here.',
+      summary: 'Maya is now here.',
+    }
+
+    const collision = run({
+      sourceNodes: [textNode('Maya is nowhere.')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+    assertBlocked(collision, 'SHOT_SOURCE_CONFLICT')
+
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: 'now',
+      summary: 'now',
+    }
+    const partialToken = run({
+      sourceNodes: [textNode('Maya is nowhere today.')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+    assertBlocked(partialToken, 'SHOT_SOURCE_CONFLICT')
+
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: 'Maya is now here.',
+      summary: 'Maya is now here.',
+    }
+    const whitespaceOnly = run({
+      sourceNodes: [textNode('  Maya   is now\r\n here.  ')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+    assert.notEqual(whitespaceOnly.status, 'blocked')
+  })
+
   test('blocks malformed, mixed, missing, and conflicting inputs', () => {
     assertBlocked(run({ sourceNodes: [] }), 'SHOT_SOURCE_COUNT_INVALID')
     assertBlocked(run({
@@ -648,6 +716,43 @@ describe('independent input contracts', () => {
     for (const artifact of cases) {
       assertBlocked(run({ sourceNodes: [], artifacts: [artifact] }), 'SHOT_ARTIFACT_INVALID')
     }
+
+    const endpointOverlap = narrativeArtifact(2) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    endpointOverlap.payload.scenes[0]!.beats[0] = {
+      ...endpointOverlap.payload.scenes[0]!.beats[0],
+      lineStart: 20,
+      lineEnd: 21,
+    }
+    endpointOverlap.payload.scenes[0]!.beats[1] = {
+      ...endpointOverlap.payload.scenes[0]!.beats[1],
+      lineStart: 21,
+      lineEnd: 22,
+    }
+    assertBlocked(
+      run({ sourceNodes: [], artifacts: [endpointOverlap] }),
+      'SHOT_ARTIFACT_INVALID',
+    )
+
+    const sameSourceLine = narrativeArtifact(2) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    sameSourceLine.payload.scenes[0]!.beats[0] = {
+      ...sameSourceLine.payload.scenes[0]!.beats[0],
+      lineStart: 20,
+      lineEnd: 20,
+    }
+    sameSourceLine.payload.scenes[0]!.beats[1] = {
+      ...sameSourceLine.payload.scenes[0]!.beats[1],
+      lineStart: 20,
+      lineEnd: 20,
+    }
+    assert.notEqual(
+      run({ sourceNodes: [], artifacts: [sameSourceLine] }).status,
+      'blocked',
+      'multiple sentence beats may share one exact source-line range',
+    )
   })
 
   test('returns controlled blockers for malformed direct Text source fields', () => {
@@ -694,6 +799,85 @@ describe('independent input contracts', () => {
     const result = runRaw({ sourceNodes: [hostile] })
     assertBlocked(result, 'SHOT_SOURCE_INVALID')
     assert.equal(result.runFingerprint, 'csf1_boundary_test')
+  })
+
+  test('contains hostile outer input and collection access at the executable boundary', () => {
+    const validInput: CreatorSkillRunInput = {
+      sourceNodes: [textNode('Maya opens the panel.')],
+    }
+    const outerProxy = new Proxy(validInput, {
+      getOwnPropertyDescriptor(current, key) {
+        return Reflect.getOwnPropertyDescriptor(current, key)
+      },
+      getPrototypeOf(current) {
+        return Reflect.getPrototypeOf(current)
+      },
+      get() {
+        throw new Error('must contain hostile outer input get trap')
+      },
+    })
+
+    const sourceGetter = {} as CreatorSkillRunInput
+    Object.defineProperty(sourceGetter, 'sourceNodes', {
+      get() {
+        throw new Error('must contain sourceNodes getter')
+      },
+      enumerable: true,
+    })
+    const artifactGetter = { sourceNodes: [] } as unknown as CreatorSkillRunInput
+    Object.defineProperty(artifactGetter, 'artifacts', {
+      get() {
+        throw new Error('must contain artifacts getter')
+      },
+      enumerable: true,
+    })
+    const optionTarget = { requestedShotCount: 1 }
+    const hostileOptions = new Proxy(optionTarget, {
+      getOwnPropertyDescriptor(current, key) {
+        return Reflect.getOwnPropertyDescriptor(current, key)
+      },
+      getPrototypeOf(current) {
+        return Reflect.getPrototypeOf(current)
+      },
+      get() {
+        throw new Error('must contain hostile options get trap')
+      },
+    })
+
+    assertBlocked(runRaw(outerProxy), 'SHOT_SOURCE_INVALID')
+    assertBlocked(runRaw(sourceGetter), 'SHOT_SOURCE_INVALID')
+    assertBlocked(runRaw(artifactGetter), 'SHOT_ARTIFACT_INVALID')
+    assertBlocked(runRaw({
+      sourceNodes: [textNode('Maya opens the panel.')],
+      options: hostileOptions,
+    }), 'SHOT_SOURCE_INVALID')
+  })
+
+  test('contains sparse and throwing sourceNodes and artifacts slots', () => {
+    const sparseSources = new Array<CreatorSkillSourceNode>(1)
+    const sparseArtifacts = new Array<CreatorSkillArtifact>(1)
+    const throwingSources = new Array<CreatorSkillSourceNode>(1)
+    const throwingArtifacts = new Array<CreatorSkillArtifact>(1)
+    Object.defineProperty(throwingSources, '0', {
+      get() {
+        throw new Error('must contain source slot')
+      },
+      enumerable: true,
+    })
+    Object.defineProperty(throwingArtifacts, '0', {
+      get() {
+        throw new Error('must contain artifact slot')
+      },
+      enumerable: true,
+    })
+
+    assertBlocked(runRaw({ sourceNodes: sparseSources }), 'SHOT_SOURCE_INVALID')
+    assertBlocked(runRaw({ sourceNodes: [], artifacts: sparseArtifacts }), 'SHOT_ARTIFACT_INVALID')
+    assertBlocked(runRaw({ sourceNodes: throwingSources }), 'SHOT_SOURCE_INVALID')
+    assertBlocked(
+      runRaw({ sourceNodes: [], artifacts: throwingArtifacts }),
+      'SHOT_ARTIFACT_INVALID',
+    )
   })
 })
 

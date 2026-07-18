@@ -95,6 +95,140 @@ function ownDataDescriptor(value: object, key: string) {
   }
 }
 
+type RunInputSnapshot = {
+  sourceNodes: unknown[]
+  artifacts: unknown[]
+  options?: Record<string, unknown>
+}
+
+type RunInputSnapshotResult =
+  | { valid: true; snapshot: RunInputSnapshot }
+  | {
+    valid: false
+    code: 'SHOT_SOURCE_INVALID' | 'SHOT_ARTIFACT_INVALID'
+    message: string
+  }
+
+function invalidRunInput(
+  code: 'SHOT_SOURCE_INVALID' | 'SHOT_ARTIFACT_INVALID',
+  message: string,
+): RunInputSnapshotResult {
+  return { valid: false, code, message }
+}
+
+function snapshotDenseCollection(value: unknown): unknown[] | null {
+  try {
+    if (!Array.isArray(value)) return null
+    const lengthField = ownDataDescriptor(value, 'length')
+    if (!lengthField
+      || !('value' in lengthField)
+      || !Number.isSafeInteger(lengthField.value)
+      || lengthField.value < 0
+      || !Object.is(value.length, lengthField.value)) {
+      return null
+    }
+
+    const snapshot = new Array<unknown>(lengthField.value)
+    for (let index = 0; index < lengthField.value; index += 1) {
+      const itemField = ownDataDescriptor(value, String(index))
+      if (!itemField || !('value' in itemField)) return null
+      const item = value[index]
+      if (!Object.is(item, itemField.value)) return null
+      snapshot[index] = itemField.value
+    }
+    return snapshot
+  } catch {
+    return null
+  }
+}
+
+const SHOT_OPTION_FIELDS = [
+  'requestedShotCount',
+  'outputMode',
+  'pacing',
+  'shotSizeStrategy',
+  'userInstruction',
+] as const
+
+function snapshotShotOptions(value: unknown): Record<string, unknown> | null {
+  if (!isPlainRecord(value)) return null
+  const snapshot: Record<string, unknown> = {}
+  try {
+    for (const key of SHOT_OPTION_FIELDS) {
+      const field = ownDataDescriptor(value, key)
+      if (field !== undefined && !('value' in field)) return null
+      const directValue = value[key]
+      if (!Object.is(directValue, field?.value)) return null
+      if (field) snapshot[key] = field.value
+    }
+    return snapshot
+  } catch {
+    return null
+  }
+}
+
+function snapshotRunInput(value: unknown): RunInputSnapshotResult {
+  if (!isPlainRecord(value)) {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The Skill run input is invalid.')
+  }
+
+  const sourceNodesField = ownDataDescriptor(value, 'sourceNodes')
+  const artifactsField = ownDataDescriptor(value, 'artifacts')
+  const optionsField = ownDataDescriptor(value, 'options')
+  const projectContextField = ownDataDescriptor(value, 'projectContext')
+  if (!sourceNodesField || !('value' in sourceNodesField)) {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The sourceNodes collection is invalid.')
+  }
+  if (artifactsField !== undefined && !('value' in artifactsField)) {
+    return invalidRunInput('SHOT_ARTIFACT_INVALID', 'The artifacts collection is invalid.')
+  }
+  if ((optionsField !== undefined && !('value' in optionsField))
+    || (projectContextField !== undefined && !('value' in projectContextField))) {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The Skill run input fields are invalid.')
+  }
+
+  try {
+    if (!Object.is(value.sourceNodes, sourceNodesField.value)) {
+      return invalidRunInput('SHOT_SOURCE_INVALID', 'The sourceNodes collection is unstable.')
+    }
+    if (!Object.is(value.artifacts, artifactsField?.value)) {
+      return invalidRunInput('SHOT_ARTIFACT_INVALID', 'The artifacts collection is unstable.')
+    }
+    if (!Object.is(value.options, optionsField?.value)
+      || !Object.is(value.projectContext, projectContextField?.value)) {
+      return invalidRunInput('SHOT_SOURCE_INVALID', 'The Skill run input fields are unstable.')
+    }
+  } catch {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The Skill run input could not be read safely.')
+  }
+
+  const sourceNodes = snapshotDenseCollection(sourceNodesField.value)
+  if (!sourceNodes) {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The sourceNodes collection is invalid.')
+  }
+  const artifactValue = artifactsField?.value
+  const artifacts = artifactValue === undefined
+    ? []
+    : snapshotDenseCollection(artifactValue)
+  if (!artifacts) {
+    return invalidRunInput('SHOT_ARTIFACT_INVALID', 'The artifacts collection is invalid.')
+  }
+  const options = optionsField?.value
+  const optionSnapshot = options === undefined ? undefined : snapshotShotOptions(options)
+  if (optionSnapshot === null) {
+    return invalidRunInput('SHOT_SOURCE_INVALID', 'The Skill options are invalid.')
+  }
+
+  return {
+    valid: true,
+    snapshot: {
+      sourceNodes,
+      artifacts,
+      ...(optionSnapshot !== undefined ? { options: optionSnapshot } : {}),
+    },
+  }
+}
+
 function snapshotCanonicalTextSourceNode(
   value: unknown,
 ): CreatorSkillSourceNode | null {
@@ -273,7 +407,7 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
         const beat = beats[index]!
         if (index > 0 && (
           beat.lineStart < previousLineStart
-          || (beat.lineStart < previousLineEnd
+          || (beat.lineStart <= previousLineEnd
             && !(beat.lineStart === previousLineStart
               && beat.lineEnd === previousLineEnd))
         )) {
@@ -326,7 +460,27 @@ function parseScenesToUnits(scenes: readonly NarrativeSourceScene[], sourceNodeI
 }
 
 function canonicalText(value: string) {
-  return value.replace(/\r\n/g, '\n').replace(/\s/gu, '')
+  return value
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .replace(/\s+/gu, ' ')
+}
+
+function isAsciiTokenCharacter(value: string | undefined) {
+  return value !== undefined && /[A-Za-z0-9_]/u.test(value)
+}
+
+function findEvidenceOffset(source: string, excerpt: string, searchOffset: number) {
+  let matchOffset = source.indexOf(excerpt, searchOffset)
+  while (matchOffset !== -1) {
+    const startsInsideToken = isAsciiTokenCharacter(excerpt[0])
+      && isAsciiTokenCharacter(source[matchOffset - 1])
+    const endsInsideToken = isAsciiTokenCharacter(excerpt[excerpt.length - 1])
+      && isAsciiTokenCharacter(source[matchOffset + excerpt.length])
+    if (!startsInsideToken && !endsInsideToken) return matchOffset
+    matchOffset = source.indexOf(excerpt, matchOffset + 1)
+  }
+  return -1
 }
 
 function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: string) {
@@ -335,7 +489,7 @@ function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: stri
   for (const scene of payload.scenes) {
     for (const beat of scene.beats) {
       const excerpt = canonicalText(beat.sourceText)
-      const matchOffset = normalizedSource.indexOf(excerpt, searchOffset)
+      const matchOffset = findEvidenceOffset(normalizedSource, excerpt, searchOffset)
       if (matchOffset === -1) return false
       searchOffset = matchOffset + excerpt.length
     }
@@ -356,10 +510,18 @@ function hasMinimumSource(sourceText: string) {
 export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
   manifest: SHOT_PLANNING_MANIFEST,
   run(input, runFingerprint) {
-    const artifacts = input.artifacts ?? []
-    if (input.sourceNodes.length > 1
+    const runInput = snapshotRunInput(input)
+    if (!runInput.valid) {
+      return blockedResult(
+        runFingerprint,
+        runInput.code,
+        runInput.message,
+      )
+    }
+    const { sourceNodes, artifacts, options } = runInput.snapshot
+    if (sourceNodes.length > 1
       || artifacts.length > 1
-      || (input.sourceNodes.length === 0 && artifacts.length === 0)) {
+      || (sourceNodes.length === 0 && artifacts.length === 0)) {
       return blockedResult(
         runFingerprint,
         'SHOT_SOURCE_COUNT_INVALID',
@@ -367,11 +529,11 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
       )
     }
 
-    const sourceValue = input.sourceNodes[0]
+    const sourceValue = sourceNodes[0]
     const sourceNode = sourceValue
       ? snapshotCanonicalTextSourceNode(sourceValue)
       : null
-    if (input.sourceNodes.length === 1 && !sourceNode) {
+    if (sourceNodes.length === 1 && !sourceNode) {
       return blockedResult(
         runFingerprint,
         'SHOT_SOURCE_INVALID',
@@ -393,7 +555,7 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
       )
     }
 
-    const artifact = artifacts[0]
+    const artifact = artifacts[0] as CreatorSkillArtifact | undefined
     const canonicalArtifact = readCanonicalArtifact(artifact)
     if (artifact && (!canonicalArtifact
       || canonicalArtifact.artifactVersion !== 1
@@ -488,8 +650,8 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
     }
 
     const sourceNodeId = sourceNode?.id ?? canonicalArtifact!.sourceNodeIds[0]!
-    const options = normalizeShotPlanningOptions(input.options)
-    const assembled = assembleShotPlan(units, sourceNodeId, options)
+    const normalizedOptions = normalizeShotPlanningOptions(options)
+    const assembled = assembleShotPlan(units, sourceNodeId, normalizedOptions)
     if (assembled.limitExceeded) {
       return blockedResult(
         runFingerprint,

@@ -54,13 +54,11 @@ export function normalizeShotPlanningOptions(
 ): ShotPlanningOptions {
   const options = isPlainRecord(value) ? value : undefined
   const requestedValue = options ? readPlainValue(options, 'requestedShotCount') : undefined
-  const requestedCandidate = requestedValue ?? 5
-  let requested = 5
-  try {
-    requested = Number(requestedCandidate)
-  } catch {
-    requested = 5
-  }
+  const requested = requestedValue === null || requestedValue === undefined
+    ? 5
+    : typeof requestedValue === 'number' || typeof requestedValue === 'string'
+      ? Number(requestedValue)
+      : Number.NaN
   const outputMode = options ? readPlainValue(options, 'outputMode') : undefined
   const pacing = options ? readPlainValue(options, 'pacing') : undefined
   const strategy = options ? readPlainValue(options, 'shotSizeStrategy') : undefined
