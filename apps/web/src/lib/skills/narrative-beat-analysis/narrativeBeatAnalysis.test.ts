@@ -145,6 +145,7 @@ function sceneBreakdownArtifact(
     sourceNodeId?: string
     artifactId?: string
     artifactVersion?: number
+    sourceArtifactIds?: string[]
     scenes?: ScriptSceneDraft[]
   } = {},
 ): CreatorSkillArtifact<SceneBreakdownPayload> {
@@ -167,11 +168,37 @@ function sceneBreakdownArtifact(
     artifactType: 'scene-breakdown',
     artifactVersion: options.artifactVersion ?? 1,
     sourceNodeIds: [sourceNodeId],
-    sourceArtifactIds: [],
+    sourceArtifactIds: options.sourceArtifactIds ?? [],
     payload: {
       format: 'headed-script',
       scenes: options.scenes ?? [defaultScene],
     },
+  })
+}
+
+function approvedSceneTwoArtifact() {
+  const source = [
+    'EXT. ROOFTOP - NIGHT',
+    'Maya wants to repair the antenna.',
+    'However, the power suddenly fades.',
+  ].join('\n')
+  return sceneBreakdownArtifact(source, {
+    sourceNodeId: 'original-script-node',
+    artifactId: 'approved-scene-breakdown-002',
+    sourceArtifactIds: ['scene-breakdown-001'],
+    scenes: [{
+      sceneId: 'scene-002',
+      order: 2,
+      heading: 'EXT. ROOFTOP - NIGHT',
+      location: 'ROOFTOP',
+      timeOfDay: 'NIGHT',
+      characters: ['MAYA'],
+      actionSummary: 'Maya wants to repair the antenna.',
+      sourceText: source,
+      lineStart: 14,
+      lineEnd: 16,
+      reviewStatus: 'pending',
+    }],
   })
 }
 
@@ -366,6 +393,30 @@ describe('narrative beat inputs', () => {
     assert.ok(result.evidence.every((evidence) => evidence.sourceNodeId === 'approved-text-7'))
   })
 
+  test('accepts the exact approved single-scene Artifact provenance and identity', () => {
+    const artifact = approvedSceneTwoArtifact()
+    const result = runExecutableBoundary({ sourceNodes: [], artifacts: [artifact] })
+
+    assert.equal(result.status, 'ready')
+    assert.deepEqual(artifact.sourceArtifactIds, ['scene-breakdown-001'])
+    assert.deepEqual(payloadOf(result).scenes.map((scene) => ({
+      sceneId: scene.sceneId,
+      order: scene.order,
+      beatIds: scene.beats.map((beat) => beat.beatId),
+    })), [{
+      sceneId: 'scene-002',
+      order: 2,
+      beatIds: [
+        'scene-002-beat-001',
+        'scene-002-beat-002',
+        'scene-002-beat-003',
+      ],
+    }])
+    assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
+      'approved-scene-breakdown-002',
+    ])
+  })
+
   test('accepts one Text node with its matching scene-breakdown Artifact', () => {
     const artifact = sceneBreakdownArtifact(source)
     const result = run({
@@ -376,6 +427,46 @@ describe('narrative beat inputs', () => {
     assert.equal(result.status, 'ready')
     assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, ['scene-breakdown-001'])
     assert.deepEqual(allBeats(result).map((beat) => beat.type), ['setup', 'goal', 'turn'])
+  })
+
+  test('accepts a materialized scene Text with different identity and absolute Artifact lines', () => {
+    const artifact = approvedSceneTwoArtifact()
+    const sceneText = artifact.payload.scenes[0]!.sourceText
+    const result = run({
+      sourceNodes: [textNode(sceneText, { id: 'materialized-scene-node' })],
+      artifacts: [artifact],
+    })
+
+    assert.equal(result.status, 'ready')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['materialized-scene-node'])
+    assert.deepEqual(allBeats(result).map((beat) => beat.lineStart), [14, 15, 16])
+    assert.ok(result.evidence.every((item) => (
+      item.sourceNodeId === 'materialized-scene-node'
+    )))
+  })
+
+  test('rejects materialized scene content conflicts and invalid absolute ranges', () => {
+    const artifact = approvedSceneTwoArtifact()
+    const sceneText = artifact.payload.scenes[0]!.sourceText
+    const conflicting = run({
+      sourceNodes: [textNode(sceneText.replace('Maya', 'Nora'), {
+        id: 'materialized-scene-node',
+      })],
+      artifacts: [artifact],
+    })
+    assertBlockedWithoutOutput(conflicting, 'NARRATIVE_SOURCE_CONFLICT')
+
+    const invalidRange = {
+      ...artifact,
+      payload: {
+        ...artifact.payload,
+        scenes: [{ ...artifact.payload.scenes[0]!, lineEnd: 17 }],
+      },
+    }
+    assertBlockedWithoutOutput(
+      runExecutableBoundary({ sourceNodes: [], artifacts: [invalidRange] }),
+      'NARRATIVE_SCENE_ARTIFACT_INVALID',
+    )
   })
 
   test('rejects multiple nodes, multiple artifacts, and missing inputs', () => {
@@ -437,21 +528,11 @@ describe('narrative beat inputs', () => {
     }
   })
 
-  test('rejects conflicting source identity, content, and ranges', () => {
-    const mismatchedIdentity = sceneBreakdownArtifact(source, {
-      sourceNodeId: 'another-text',
-    })
+  test('rejects conflicting source content and ranges', () => {
     const mismatchedContent = sceneBreakdownArtifact(source, {
       scenes: [{
         ...(sceneBreakdownArtifact(source).payload.scenes[0]!),
         sourceText: source.replace('Maya', 'Nora'),
-      }],
-    })
-    const mismatchedRange = sceneBreakdownArtifact(source, {
-      scenes: [{
-        ...(sceneBreakdownArtifact(source).payload.scenes[0]!),
-        lineStart: 2,
-        lineEnd: 4,
       }],
     })
     const incompleteCoverage = sceneBreakdownArtifact(source, {
@@ -463,9 +544,7 @@ describe('narrative beat inputs', () => {
     })
 
     for (const artifact of [
-      mismatchedIdentity,
       mismatchedContent,
-      mismatchedRange,
       incompleteCoverage,
     ]) {
       assertBlockedWithoutOutput(run({

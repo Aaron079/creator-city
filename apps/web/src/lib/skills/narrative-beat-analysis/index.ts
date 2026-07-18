@@ -54,7 +54,7 @@ function validateSceneArtifact(artifact: CreatorSkillArtifact | undefined) {
     || artifact.artifactVersion !== 1
     || artifact.sourceNodeIds.length !== 1
     || !artifact.sourceNodeIds[0]
-    || artifact.sourceArtifactIds.length !== 0) {
+    || !Array.isArray(artifact.sourceArtifactIds)) {
     return null
   }
   const payload = readSceneBreakdownPayload(artifact.payload)
@@ -127,8 +127,7 @@ export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
     }
 
     if (sourceNode && validatedArtifact
-      && (validatedArtifact.sourceNodeId !== sourceNode.id
-        || !scenesMatchSource(validatedArtifact.scenes, effectiveSource!))) {
+      && !scenesMatchSource(validatedArtifact.scenes, effectiveSource!)) {
       return blockedResult(
         runFingerprint,
         'NARRATIVE_SOURCE_CONFLICT',

@@ -81,15 +81,16 @@ function isDenseArray(value: unknown): value is unknown[] {
   return true
 }
 
-function readScene(value: unknown, index: number): NarrativeSourceScene | null {
+function readScene(value: unknown): NarrativeSourceScene | null {
   if (!isPlainRecord(value)
     || !hasExactFields(value, SCENE_REQUIRED_FIELDS, SCENE_OPTIONAL_FIELDS)) {
     return null
   }
-  const expectedOrder = index + 1
-  const expectedSceneId = `scene-${String(expectedOrder).padStart(3, '0')}`
+  const order = value.order
+  const expectedSceneId = `scene-${String(order).padStart(3, '0')}`
   if (value.sceneId !== expectedSceneId
-    || value.order !== expectedOrder
+    || !Number.isSafeInteger(order)
+    || (order as number) < 1
     || typeof value.heading !== 'string'
     || !isDenseArray(value.characters)
     || !value.characters.every((character) => typeof character === 'string' && character.trim())
@@ -118,7 +119,7 @@ function readScene(value: unknown, index: number): NarrativeSourceScene | null {
 
   return {
     sceneId: value.sceneId,
-    order: expectedOrder,
+    order: order as number,
     heading: value.heading,
     sourceText,
     lineStart,
@@ -138,13 +139,19 @@ export function readSceneBreakdownPayload(value: unknown): SceneBreakdownReadRes
 
     const scenes: NarrativeSourceScene[] = []
     let previousLineEnd = 0
+    let previousOrder = 0
     for (let index = 0; index < value.scenes.length; index += 1) {
-      const scene = readScene(value.scenes[index], index)
-      if (!scene || scene.lineStart <= previousLineEnd) return { valid: false }
+      const scene = readScene(value.scenes[index])
+      if (!scene
+        || scene.order <= previousOrder
+        || scene.lineStart <= previousLineEnd) {
+        return { valid: false }
+      }
       if (value.format === 'headed-script' ? !scene.heading : Boolean(scene.heading)) {
         return { valid: false }
       }
       scenes.push(scene)
+      previousOrder = scene.order
       previousLineEnd = scene.lineEnd
     }
     return { valid: true, scenes }
@@ -173,6 +180,9 @@ export function scenesMatchSource(
   sourceText: string,
 ) {
   const lines = normalizeScriptSource(sourceText).split('\n')
+  if (scenes.length === 1 && normalizeScriptSource(sourceText) === scenes[0]!.sourceText) {
+    return true
+  }
   const coveredLines = new Set<number>()
   for (const scene of scenes) {
     if (scene.lineEnd > lines.length
