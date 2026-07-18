@@ -443,6 +443,35 @@ describe('Storyboard Director Recipe progression', () => {
     )
   })
 
+  test('finalized shot approval rejects generic edit and reorder mutations', () => {
+    const completed = completedRecipe(runCreatorSkill)
+    const firstShot = completed.shot.drafts[0]!
+    const secondShot = completed.shot.drafts[1]!
+
+    assert.throws(
+      () => updateRecipeDraft(
+        completed,
+        'shot-review',
+        firstShot.shotId,
+        { objective: 'Attempted final edit' },
+        LATER_TIME,
+      ),
+      /finalized|approved|reviewable/i,
+    )
+    assert.throws(
+      () => moveRecipeDraft(
+        completed,
+        'shot-review',
+        secondShot.shotId,
+        -1,
+        LATER_TIME,
+      ),
+      /finalized|approved|reviewable/i,
+    )
+    assert.equal(completed.shot.status, 'approved')
+    assert.ok(completed.shot.approvedArtifact)
+  })
+
   test('scene truncation is blocked at 41 while the exact 40-scene boundary remains reviewable', () => {
     const boundary = createStoryboardDirectorRecipe(
       context,
@@ -460,6 +489,25 @@ describe('Storyboard Director Recipe progression', () => {
     assert.equal(truncated.scene.status, 'blocked')
     assert.deepEqual(truncated.scene.drafts, [])
     assert.throws(() => approveSceneStage(truncated, ISO_TIME), /blocked/i)
+  })
+
+  test('canonical source coverage blocks a runner that suppresses the 41-scene limit warning', () => {
+    const suppressingRunner: typeof runCreatorSkill = (skillId, input, version) => {
+      const result = runCreatorSkill(skillId, input, version)
+      if (skillId !== 'script-segmentation') return result
+      assert.ok(result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED'))
+      return { ...result, status: 'ready', warnings: [] }
+    }
+    const recipe = createStoryboardDirectorRecipe(
+      context,
+      { ...source, prompt: paragraphScript(41) },
+      ISO_TIME,
+      suppressingRunner,
+    )
+
+    assert.equal(recipe.scene.status, 'blocked')
+    assert.deepEqual(recipe.scene.drafts, [])
+    assert.throws(() => approveSceneStage(recipe, ISO_TIME), /blocked/i)
   })
 
   test('source changes block every materialization path without transferring decisions', () => {
@@ -823,6 +871,67 @@ describe('review checkpoints and immutable evidence', () => {
 })
 
 describe('blocked and malformed Skill results', () => {
+  test('runner input mutation cannot alter retained checkpoints, options, identity, or persistence', () => {
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME)
+    const recipeId = started.recipeId
+    const mutatingNarrativeRunner: typeof runCreatorSkill = (skillId, input, version) => {
+      const pristine = structuredClone(input)
+      if (skillId === 'narrative-beat-analysis') {
+        const artifact = input.artifacts?.[0]
+        assert.ok(artifact)
+        artifact.sourceArtifactIds.push('runner-mutated-lineage')
+        const payload = artifact.payload as SceneBreakdownPayload
+        payload.scenes[0]!.actionSummary = 'Runner-mutated scene checkpoint'
+      }
+      return runCreatorSkill(skillId, pristine, version)
+    }
+    const beatReview = approveSceneStage(
+      decideAll(started, 'scene-review', 'approved'),
+      ISO_TIME,
+      mutatingNarrativeRunner,
+    )
+    const sceneCheckpoint = beatReview.scene.approvedArtifact
+    assert.ok(sceneCheckpoint)
+    assert.equal(beatReview.beat.status, 'needs-review')
+    assert.deepEqual(sceneCheckpoint.sourceArtifactIds, ['scene-breakdown-001'])
+    assert.notEqual(
+      (sceneCheckpoint.payload as SceneBreakdownPayload).scenes[0]?.actionSummary,
+      'Runner-mutated scene checkpoint',
+    )
+
+    const originalOptions = structuredClone(beatReview.shot.options)
+    const mutatingShotRunner: typeof runCreatorSkill = (skillId, input, version) => {
+      const pristine = structuredClone(input)
+      if (skillId === 'shot-planning') {
+        const artifact = input.artifacts?.[0]
+        assert.ok(artifact)
+        artifact.sourceArtifactIds.push('runner-mutated-lineage')
+        const payload = artifact.payload as NarrativeBeatMapPayload
+        payload.scenes[0]!.beats[0]!.summary = 'Runner-mutated beat checkpoint'
+        assert.ok(input.options)
+        input.options.requestedShotCount = 120
+        input.options.userInstruction = 'Runner mutation'
+      }
+      return runCreatorSkill(skillId, pristine, version)
+    }
+    const shotReview = approveBeatStage(
+      decideAll(beatReview, 'beat-review', 'approved'),
+      ISO_TIME,
+      mutatingShotRunner,
+    )
+    const beatCheckpoint = shotReview.beat.approvedArtifact
+    assert.ok(beatCheckpoint)
+    assert.equal(shotReview.shot.status, 'needs-review')
+    assert.deepEqual(beatCheckpoint.sourceArtifactIds, ['narrative-beat-map-001'])
+    assert.notEqual(
+      (beatCheckpoint.payload as NarrativeBeatMapPayload).scenes[0]?.beats[0]?.summary,
+      'Runner-mutated beat checkpoint',
+    )
+    assert.deepEqual(shotReview.shot.options, originalOptions)
+    assert.equal(shotReview.recipeId, recipeId)
+    assert.doesNotThrow(() => storyboardDirectorRecipeMetadata(shotReview))
+  })
+
   test('validated runner results are owned snapshots and are rechecked before approval', () => {
     let captured: CreatorSkillRunResult | undefined
     const capturingRunner: typeof runCreatorSkill = (skillId, input, version) => {

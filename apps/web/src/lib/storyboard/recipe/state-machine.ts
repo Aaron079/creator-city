@@ -739,12 +739,139 @@ type ValidatedResult<T> = {
   payload: T
 }
 
+function cloneCanonicalValue<T>(
+  value: T,
+  field = 'value',
+  ancestors = new WeakSet<object>(),
+): T {
+  try {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new TypeError(`${field} must be finite`)
+      return value
+    }
+    if (typeof value !== 'object') {
+      throw new TypeError(`${field} must contain canonical JSON values`)
+    }
+    const objectValue = value as object
+    if (ancestors.has(objectValue)) throw new TypeError(`${field} must not contain cycles`)
+    const prototype = Object.getPrototypeOf(objectValue)
+    const isArray = Array.isArray(value)
+    if (!isArray && prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`${field} must be a plain object`)
+    }
+    ancestors.add(objectValue)
+    try {
+      if (isArray) {
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(objectValue, 'length')
+        const length = lengthDescriptor && 'value' in lengthDescriptor
+          ? lengthDescriptor.value
+          : undefined
+        if (!Number.isSafeInteger(length) || length < 0
+          || Reflect.ownKeys(objectValue).length !== length + 1) {
+          throw new TypeError(`${field} must be a dense array without extra properties`)
+        }
+        const clone = new Array<unknown>(length)
+        for (let index = 0; index < length; index += 1) {
+          const descriptor = Object.getOwnPropertyDescriptor(objectValue, String(index))
+          if (!descriptor?.enumerable || !('value' in descriptor)) {
+            throw new TypeError(`${field}[${index}] must be an enumerable data property`)
+          }
+          clone[index] = cloneCanonicalValue(
+            descriptor.value,
+            `${field}[${index}]`,
+            ancestors,
+          )
+        }
+        return clone as T
+      }
+      const clone: Record<string, unknown> = {}
+      for (const key of Reflect.ownKeys(objectValue)) {
+        if (typeof key !== 'string') throw new TypeError(`${field} must not contain symbol keys`)
+        const descriptor = Object.getOwnPropertyDescriptor(objectValue, key)
+        if (!descriptor?.enumerable || !('value' in descriptor)) {
+          throw new TypeError(`${field}.${key} must be an enumerable data property`)
+        }
+        Object.defineProperty(clone, key, {
+          value: cloneCanonicalValue(descriptor.value, `${field}.${key}`, ancestors),
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        })
+      }
+      return clone as T
+    } finally {
+      ancestors.delete(objectValue)
+    }
+  } catch (error) {
+    if (error instanceof TypeError) throw error
+    throw new TypeError(`${field} could not be cloned safely`)
+  }
+}
+
 function cloneRunResult(result: CreatorSkillRunResult) {
   try {
-    return structuredClone(result) as CreatorSkillRunResult
+    return cloneCanonicalValue(result, 'result')
   } catch {
     return null
   }
+}
+
+function runWithOwnedInput(
+  runner: StoryboardRecipeSkillRunner,
+  skillId: string,
+  input: CreatorSkillRunInput,
+) {
+  const expectedInput = cloneCanonicalValue(input, `${skillId}.expectedInput`)
+  const runnerInput = cloneCanonicalValue(expectedInput, `${skillId}.runnerInput`)
+  return {
+    expectedInput,
+    result: runner(skillId, runnerInput),
+  }
+}
+
+function sameScenePayload(
+  actual: SceneBreakdownPayload,
+  expected: SceneBreakdownPayload,
+) {
+  if (actual.format !== expected.format || actual.scenes.length !== expected.scenes.length) {
+    return false
+  }
+  return actual.scenes.every((scene, index) => {
+    const expectedScene = expected.scenes[index]
+    if (!expectedScene) return false
+    return scene.sceneId === expectedScene.sceneId
+      && scene.order === expectedScene.order
+      && scene.heading === expectedScene.heading
+      && scene.location === expectedScene.location
+      && scene.timeOfDay === expectedScene.timeOfDay
+      && sameStrings(scene.characters, expectedScene.characters)
+      && scene.actionSummary === expectedScene.actionSummary
+      && scene.sourceText === expectedScene.sourceText
+      && scene.lineStart === expectedScene.lineStart
+      && scene.lineEnd === expectedScene.lineEnd
+      && scene.reviewStatus === expectedScene.reviewStatus
+  })
+}
+
+function canonicalSceneExpectation(
+  input: CreatorSkillRunInput,
+  sourceText: string,
+  sourceNodeId: string,
+) {
+  const canonicalInput = cloneCanonicalValue(input, 'script-segmentation.coverageInput')
+  const result = runCreatorSkill('script-segmentation', canonicalInput)
+  if (result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED')) return null
+  const artifact = requireExpectedArtifact(result, expectedRunContract(
+    SCRIPT_SEGMENTATION_MANIFEST.id,
+    SCRIPT_SEGMENTATION_MANIFEST.version,
+    canonicalInput,
+    'scene-breakdown-001',
+    'scene-breakdown',
+    sourceNodeId,
+    [],
+  ))
+  return artifact ? readScenePayload(artifact.payload, sourceText) : null
 }
 
 function validateSceneResult(
@@ -763,12 +890,11 @@ function validateSceneResult(
       sourceNodeId,
       [],
     ))
-    if (!artifact
-      || result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED')) {
-      return null
-    }
+    if (!artifact) return null
     const payload = readScenePayload(artifact.payload, sourceText)
-    if (!payload || !resultEvidenceMatches(
+    const expectedPayload = canonicalSceneExpectation(input, sourceText, sourceNodeId)
+    if (!payload || !expectedPayload || !sameScenePayload(payload, expectedPayload)
+      || !resultEvidenceMatches(
       result,
       payload.scenes.map((scene) => ({
         evidenceId: `scene-evidence-${String(scene.order).padStart(3, '0')}`,
@@ -948,7 +1074,7 @@ export function createStoryboardDirectorRecipe(
     sourceNodes: [sourceNode],
     projectContext,
   }
-  const sceneResult = runner('script-segmentation', sceneInput)
+  const sceneRun = runWithOwnedInput(runner, 'script-segmentation', sceneInput)
   return {
     schemaVersion: STORYBOARD_DIRECTOR_RECIPE_VERSION,
     recipeId: identity.recipeId,
@@ -958,8 +1084,8 @@ export function createStoryboardDirectorRecipe(
     sourceFingerprint: identity.sourceFingerprint,
     activeStage: 'scene-review',
     scene: stageFromSceneResult(
-      sceneResult,
-      sceneInput,
+      sceneRun.result,
+      sceneRun.expectedInput,
       sourceNode.prompt,
       sourceNode.id,
       identity.sourceFingerprint,
@@ -1000,6 +1126,9 @@ function assertReviewMutationAllowed(
 ) {
   assertRecipeSourceCurrent(recipe)
   const stage = stageForReviewId(recipe, stageId)
+  if (stageId === 'shot-review' && stage.status === 'approved') {
+    throw new TypeError('Approved shot stage is finalized and not reviewable')
+  }
   if (stage.status === 'approved') {
     if (operation === 'decision') {
       throw new TypeError('Approved Recipe stage decisions are finalized')
@@ -1537,11 +1666,13 @@ export function approveSceneStage(
     artifacts: [handoffArtifact],
     projectContext: projectContextForRecipe(recipe),
   }
-  const result = runner('narrative-beat-analysis', input)
+  const run = runWithOwnedInput(runner, 'narrative-beat-analysis', input)
+  const expectedArtifact = run.expectedInput.artifacts?.[0]
+  if (!expectedArtifact) throw new TypeError('Narrative handoff snapshot is missing')
   const beat = stageFromBeatResult(
-    result,
-    input,
-    handoffArtifact,
+    run.result,
+    run.expectedInput,
+    expectedArtifact,
     recipe.sourceFingerprint,
     replacementGeneration(recipe.beat),
     recipe.beat.result ?? recipe.beat.staleResult,
@@ -1568,11 +1699,13 @@ export function approveBeatStage(
     projectContext: projectContextForRecipe(recipe),
     options: recipe.shot.options,
   }
-  const result = runner('shot-planning', input)
+  const run = runWithOwnedInput(runner, 'shot-planning', input)
+  const expectedArtifact = run.expectedInput.artifacts?.[0]
+  if (!expectedArtifact) throw new TypeError('Shot handoff snapshot is missing')
   const shot = stageFromShotResult(
-    result,
-    input,
-    approvedArtifact,
+    run.result,
+    run.expectedInput,
+    expectedArtifact,
     recipe.sourceFingerprint,
     replacementGeneration(recipe.shot),
     recipe.shot.result ?? recipe.shot.staleResult,
@@ -1627,13 +1760,13 @@ export function rerunRecipeStage(
       sourceNodes: [recipe.sourceNode],
       projectContext: projectContextForRecipe(recipe),
     }
-    const result = runner('script-segmentation', input)
+    const run = runWithOwnedInput(runner, 'script-segmentation', input)
     const next = invalidateRecipeAfter(recipe, stageId, now)
     return {
       ...next,
       scene: stageFromSceneResult(
-        result,
-        input,
+        run.result,
+        run.expectedInput,
         recipe.sourceNode.prompt,
         recipe.sourceNode.id,
         recipe.sourceFingerprint,
@@ -1653,14 +1786,16 @@ export function rerunRecipeStage(
       artifacts: [handoffArtifact],
       projectContext: projectContextForRecipe(recipe),
     }
-    const result = runner('narrative-beat-analysis', input)
+    const run = runWithOwnedInput(runner, 'narrative-beat-analysis', input)
+    const expectedArtifact = run.expectedInput.artifacts?.[0]
+    if (!expectedArtifact) throw new TypeError('Narrative handoff snapshot is missing')
     const next = invalidateRecipeAfter(recipe, stageId, now)
     return {
       ...next,
       beat: stageFromBeatResult(
-        result,
-        input,
-        handoffArtifact,
+        run.result,
+        run.expectedInput,
+        expectedArtifact,
         recipe.sourceFingerprint,
         recipe.beat.generation + 1,
         recipe.beat.result ?? recipe.beat.staleResult,
@@ -1677,11 +1812,13 @@ export function rerunRecipeStage(
     projectContext: projectContextForRecipe(recipe),
     options: recipe.shot.options,
   }
-  const result = runner('shot-planning', input)
+  const run = runWithOwnedInput(runner, 'shot-planning', input)
+  const expectedArtifact = run.expectedInput.artifacts?.[0]
+  if (!expectedArtifact) throw new TypeError('Shot handoff snapshot is missing')
   const shot = stageFromShotResult(
-    result,
-    input,
-    recipe.beat.approvedArtifact,
+    run.result,
+    run.expectedInput,
+    expectedArtifact,
     recipe.sourceFingerprint,
     recipe.shot.generation + 1,
     recipe.shot.result ?? recipe.shot.staleResult,
