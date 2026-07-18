@@ -3,7 +3,6 @@ import {
   deriveNarrativeSourceScenes,
   parseNarrativeBeats,
   readSceneBreakdownPayload,
-  scenesMatchSource,
   type NarrativeSourceScene,
 } from '../narrative-beat-analysis/parser'
 import type {
@@ -426,6 +425,15 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
       sceneOrders.add(sceneValue.order as number)
     }
     scenes.sort((left, right) => left.order - right.order)
+    let previousSceneLineEnd = 0
+    for (const scene of scenes) {
+      const firstBeat = scene.beats[0]!
+      const finalBeat = scene.beats[scene.beats.length - 1]!
+      if (firstBeat.lineStart <= previousSceneLineEnd) {
+        return { valid: false, limitExceeded: false }
+      }
+      previousSceneLineEnd = finalBeat.lineEnd
+    }
     return { valid: true, payload: { scenes } }
   } catch {
     return { valid: false, limitExceeded: false }
@@ -606,6 +614,87 @@ function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: stri
   return targetIndex === targets.length
 }
 
+function normalizedLineEndingsEqual(source: string, expected: string) {
+  let sourceOffset = 0
+  let expectedOffset = 0
+  while (sourceOffset < source.length && expectedOffset < expected.length) {
+    const sourceCharacter = source[sourceOffset]!
+    if (sourceCharacter === '\r' && source[sourceOffset + 1] === '\n') {
+      if (expected[expectedOffset] !== '\n') return false
+      sourceOffset += 2
+      expectedOffset += 1
+      continue
+    }
+    if (sourceCharacter !== expected[expectedOffset]) return false
+    sourceOffset += 1
+    expectedOffset += 1
+  }
+  return sourceOffset === source.length && expectedOffset === expected.length
+}
+
+function sceneBreakdownMatchesText(
+  scenes: readonly NarrativeSourceScene[],
+  sourceText: string,
+) {
+  if (scenes.length === 1
+    && normalizedLineEndingsEqual(sourceText, scenes[0]!.sourceText)) {
+    return true
+  }
+
+  let sceneIndex = 0
+  let expectedLineOffset = 0
+  let sourceLineOffset = 0
+  let lineNumber = 1
+  while (sourceLineOffset <= sourceText.length) {
+    const scene = scenes[sceneIndex]
+    const covered = scene !== undefined
+      && lineNumber >= scene.lineStart
+      && lineNumber <= scene.lineEnd
+    let expectedLineEnd = 0
+    let expectedCharacterOffset = expectedLineOffset
+    if (covered) {
+      const newlineOffset = scene.sourceText.indexOf('\n', expectedLineOffset)
+      expectedLineEnd = newlineOffset === -1 ? scene.sourceText.length : newlineOffset
+    }
+
+    let cursor = sourceLineOffset
+    while (cursor < sourceText.length) {
+      const character = sourceText[cursor]!
+      if (character === '\n'
+        || (character === '\r' && sourceText[cursor + 1] === '\n')) {
+        break
+      }
+      if (covered) {
+        if (expectedCharacterOffset >= expectedLineEnd
+          || scene.sourceText[expectedCharacterOffset] !== character) {
+          return false
+        }
+        expectedCharacterOffset += 1
+      } else if (!/\s/u.test(character)) {
+        return false
+      }
+      cursor += 1
+    }
+
+    if (covered) {
+      if (expectedCharacterOffset !== expectedLineEnd) return false
+      if (lineNumber === scene.lineEnd) {
+        if (expectedLineEnd !== scene.sourceText.length) return false
+        sceneIndex += 1
+        expectedLineOffset = 0
+      } else {
+        if (expectedLineEnd === scene.sourceText.length) return false
+        expectedLineOffset = expectedLineEnd + 1
+      }
+    }
+
+    if (cursor === sourceText.length) break
+    sourceLineOffset = sourceText[cursor] === '\r' ? cursor + 2 : cursor + 1
+    lineNumber += 1
+  }
+  return sceneIndex === scenes.length
+}
+
 function hasMinimumSource(sourceText: string) {
   let count = 0
   let index = 0
@@ -722,7 +811,8 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
         )
       }
       units = parsed.units
-      artifactMatches = sourceText === null || scenesMatchSource(read.scenes, sourceText)
+      artifactMatches = sourceText === null
+        || sceneBreakdownMatchesText(read.scenes, sourceText)
     } else if (canonicalArtifact?.artifactType === 'narrative-beat-map') {
       const read = readNarrativeBeatMap(canonicalArtifact.payload)
       if (!read.valid) {

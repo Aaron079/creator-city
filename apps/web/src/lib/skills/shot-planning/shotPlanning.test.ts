@@ -670,6 +670,21 @@ describe('independent input contracts', () => {
     assertBlocked(conflict, 'SHOT_SOURCE_CONFLICT')
   })
 
+  test('preserves scene-breakdown absolute lines across CRLF and blank gaps', () => {
+    const artifact = sceneBreakdownArtifact()
+    const sceneSource = (artifact.payload as { scenes: Array<{ sourceText: string }> })
+      .scenes[0]!.sourceText
+    const materialized = `${'\t\r\n'.repeat(13)}${sceneSource.replace(/\n/g, '\r\n')}`
+    const result = run({
+      sourceNodes: [textNode(materialized, { id: 'absolute-materialized-node' })],
+      artifacts: [artifact],
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['absolute-materialized-node'])
+    assert.equal(allShots(result)[0]?.lineStart, 14)
+  })
+
   test('preserves meaningful token boundaries when matching narrative evidence', () => {
     const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
       scenes: Array<{ beats: Array<Record<string, unknown>> }>
@@ -880,6 +895,61 @@ describe('independent input contracts', () => {
     )
   })
 
+  test('blocks globally reversed and overlapping provenance after scene ordering', () => {
+    const artifactWithSceneRanges = (
+      firstRange: [number, number],
+      secondRange: [number, number],
+    ) => {
+      const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+        scenes: Array<Record<string, unknown>>
+      }>
+      artifact.payload.scenes = [
+        {
+          sceneId: 'scene-002',
+          order: 2,
+          heading: 'SECOND',
+          beats: [{
+            beatId: 'scene-002-beat-001',
+            sceneId: 'scene-002',
+            order: 1,
+            type: 'action',
+            sourceText: 'Leo closes the panel.',
+            summary: 'Leo closes the panel.',
+            lineStart: secondRange[0],
+            lineEnd: secondRange[1],
+            reviewStatus: 'pending',
+          }],
+        },
+        {
+          sceneId: 'scene-001',
+          order: 1,
+          heading: 'FIRST',
+          beats: [{
+            beatId: 'scene-001-beat-001',
+            sceneId: 'scene-001',
+            order: 1,
+            type: 'action',
+            sourceText: 'Maya opens the panel.',
+            summary: 'Maya opens the panel.',
+            lineStart: firstRange[0],
+            lineEnd: firstRange[1],
+            reviewStatus: 'pending',
+          }],
+        },
+      ]
+      return artifact
+    }
+
+    assertBlocked(run({
+      sourceNodes: [],
+      artifacts: [artifactWithSceneRanges([20, 20], [10, 10])],
+    }), 'SHOT_ARTIFACT_INVALID')
+    assertBlocked(run({
+      sourceNodes: [],
+      artifacts: [artifactWithSceneRanges([20, 21], [21, 22])],
+    }), 'SHOT_ARTIFACT_INVALID')
+  })
+
   test('returns controlled blockers for malformed direct Text source fields', () => {
     const valid = textNode('Maya opens the panel.')
     const accessorResultText = { ...valid }
@@ -1048,6 +1118,19 @@ describe('limits and determinism', () => {
     }))
 
     assert.notEqual(guarded.result.status, 'blocked')
+    assert.deepEqual(guarded.calls, { replace: 0, split: 0, iterator: 0 })
+  })
+
+  test('rejects a 20 MiB scene-breakdown mismatch without materializing its tail', () => {
+    const source = `X${'unreachable-tail'.repeat(1_400_000)}`
+    assert.ok(source.length > 20 * 1024 * 1024)
+    const guarded = withoutWholeSourceMaterialization(source, () => runRaw({
+      sourceNodes: [textNode(source)],
+      artifacts: [sceneBreakdownArtifact()],
+      options: { requestedShotCount: 1 },
+    }))
+
+    assertBlocked(guarded.result, 'SHOT_SOURCE_CONFLICT')
     assert.deepEqual(guarded.calls, { replace: 0, split: 0, iterator: 0 })
   })
 
