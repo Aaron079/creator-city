@@ -2,7 +2,6 @@ import type {
   NarrativeBeatMapPayload,
   ShotPlanPayload,
 } from '../../../../lib/skills'
-import { cloneCreatorSkillArtifact } from '../../../../lib/skills/artifacts'
 import { cloneAndValidateStoryboardState } from '../../../../lib/storyboard/director'
 import {
   createRecipeMaterializationIdentity,
@@ -15,9 +14,10 @@ import {
   storyboardDirectorRecipeMetadata,
   readStoryboardDirectorRecipe,
 } from '../../../../lib/storyboard/recipe/persistence'
-import type {
-  StoryboardDirectorMaterializationReceipt,
-  StoryboardDirectorRecipe,
+import {
+  STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  type StoryboardDirectorMaterializationReceipt,
+  type StoryboardDirectorRecipe,
 } from '../../../../lib/storyboard/recipe/types'
 import type { ShotCard, StoryboardState } from '../../../../lib/storyboard/types'
 import {
@@ -43,7 +43,8 @@ const MATERIALIZATION_KINDS = [
 const MAX_EXISTING_NODES = 10_000
 const MAX_METADATA_ITEMS = 120
 const MAX_GROUPED_KINDS = 3
-const MAX_MATERIALIZATION_RECEIPTS = 360
+const MAX_GROUPED_ARTIFACT_DEPTH = 16
+const MAX_GROUPED_ARTIFACT_NODES = 10_000
 
 type GroupedKind = 'scene' | 'beat' | 'shot-plan'
 type ExistingNode = { metadataJson?: unknown; title?: string; prompt?: string }
@@ -437,6 +438,121 @@ const GROUPED_CREATOR_SKILL_KEYS = [
   'approvedArtifact',
 ] as const
 
+type ExpectedComparisonState = {
+  nodes: number
+  ancestors: WeakSet<object>
+}
+
+function expectedArrayValues(
+  value: unknown,
+  expectedLength: number,
+): unknown[] | null {
+  try {
+    if (!Array.isArray(value)) return null
+  } catch {
+    return null
+  }
+  let lengthDescriptor: PropertyDescriptor | undefined
+  try {
+    lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
+  } catch {
+    return null
+  }
+  if (!lengthDescriptor
+    || !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value')
+    || lengthDescriptor.value !== expectedLength) return null
+  let keys: PropertyKey[]
+  try {
+    keys = Reflect.ownKeys(value)
+  } catch {
+    return null
+  }
+  if (keys.length !== expectedLength + 1) return null
+  const result = new Array<unknown>(expectedLength)
+  for (let index = 0; index < expectedLength; index += 1) {
+    let descriptor: PropertyDescriptor | undefined
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    } catch {
+      return null
+    }
+    if (!descriptor
+      || !descriptor.enumerable
+      || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return null
+    result[index] = descriptor.value
+  }
+  return result
+}
+
+function expectedValueMatches(
+  value: unknown,
+  expected: unknown,
+  state: ExpectedComparisonState,
+  depth = 0,
+): boolean {
+  state.nodes += 1
+  if (state.nodes > MAX_GROUPED_ARTIFACT_NODES || depth > MAX_GROUPED_ARTIFACT_DEPTH) {
+    return false
+  }
+  if (expected === null
+    || typeof expected === 'boolean'
+    || typeof expected === 'number') return value === expected
+  if (typeof expected === 'string') {
+    return typeof value === 'string'
+      && value.length === expected.length
+      && value === expected
+  }
+  if (!expected || typeof expected !== 'object'
+    || !value || typeof value !== 'object') return false
+  if (state.ancestors.has(value)) return false
+  state.ancestors.add(value)
+  try {
+    if (Array.isArray(expected)) {
+      const values = expectedArrayValues(value, expected.length)
+      if (!values) return false
+      for (let index = 0; index < expected.length; index += 1) {
+        if (!expectedValueMatches(values[index], expected[index], state, depth + 1)) {
+          return false
+        }
+      }
+      return true
+    }
+    if (!isPlainRecord(expected) || !isPlainRecord(value)) return false
+    let expectedKeys: PropertyKey[]
+    let actualKeys: PropertyKey[]
+    try {
+      expectedKeys = Reflect.ownKeys(expected)
+      actualKeys = Reflect.ownKeys(value)
+    } catch {
+      return false
+    }
+    if (actualKeys.length !== expectedKeys.length
+      || actualKeys.some((key) => typeof key !== 'string' || !expectedKeys.includes(key))) {
+      return false
+    }
+    for (const key of expectedKeys) {
+      if (typeof key !== 'string') return false
+      const actual = ownData(value, key)
+      const expectedProperty = ownData(expected, key)
+      if (actual.status !== 'value'
+        || expectedProperty.status !== 'value'
+        || !expectedValueMatches(actual.value, expectedProperty.value, state, depth + 1)) {
+        return false
+      }
+    }
+    return true
+  } finally {
+    state.ancestors.delete(value)
+  }
+}
+
+function expectedArtifactMatches(value: unknown, expected: unknown) {
+  return expectedValueMatches(value, expected, {
+    nodes: 0,
+    ancestors: new WeakSet<object>(),
+  })
+}
+
 function strictGroupedMetadataMatches(metadata: unknown, plan: GroupedNodePlan) {
   if (!exactOwnKeys(metadata, ['creatorSkill'])) return false
   const creatorSkill = ownValue(metadata, 'creatorSkill')
@@ -466,13 +582,10 @@ function strictGroupedMetadataMatches(metadata: unknown, plan: GroupedNodePlan) 
     ownValue(expectedSkill, 'evidence'),
     'grouped metadata creatorSkill.evidence',
   )) return false
-  try {
-    const artifact = cloneCreatorSkillArtifact(ownValue(creatorSkill, 'approvedArtifact'))
-    const expectedArtifact = cloneCreatorSkillArtifact(ownValue(expectedSkill, 'approvedArtifact'))
-    return JSON.stringify(artifact) === JSON.stringify(expectedArtifact)
-  } catch {
-    return false
-  }
+  return expectedArtifactMatches(
+    ownValue(creatorSkill, 'approvedArtifact'),
+    ownValue(expectedSkill, 'approvedArtifact'),
+  )
 }
 
 function snapshotGroupedExistingMetadata(
@@ -698,20 +811,21 @@ export function planStoryboardDirectorShotBoardSync(
   }
 
   const reviewedShotIds = new Set(reviewedShots.map((shot) => shot.shotId))
-  const existingCurrentSlots: number[] = []
-  for (let index = 0; index < current.shots.length; index += 1) {
-    const provenance = current.shots[index]!.recipe
+  const currentSlots: number[] = []
+  for (let index = 0; index < cards.length; index += 1) {
+    const provenance = cards[index]!.recipe
     if (provenance?.recipeId === recipe.recipeId && reviewedShotIds.has(provenance.shotId)) {
-      existingCurrentSlots.push(index)
+      currentSlots.push(index)
     }
   }
-  const reviewedExistingCards = reviewedShots.flatMap((shot) => {
+  const reviewedCards = reviewedShots.map((shot) => {
     const index = sameRecipeIndexes.get(shot.shotId)
-    return index !== undefined && index < current.shots.length ? [cards[index]!] : []
+    if (index === undefined) fail('Storyboard shot board is missing a planned Recipe card')
+    return cards[index]!
   })
-  for (let index = 0; index < existingCurrentSlots.length; index += 1) {
-    const slot = existingCurrentSlots[index]!
-    const card = reviewedExistingCards[index]!
+  for (let index = 0; index < currentSlots.length; index += 1) {
+    const slot = currentSlots[index]!
+    const card = reviewedCards[index]!
     if (cards[slot] !== card) changed = true
     cards[slot] = card
   }
@@ -1044,12 +1158,12 @@ export function recordStoryboardDirectorReceipts(
   const existingReceipts = snapshotDenseArray<unknown>(
     recipe.receipts,
     'recipe.receipts',
-    MAX_MATERIALIZATION_RECEIPTS,
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   )
   const completedItems = snapshotDenseArray<unknown>(
     completed,
     'completed',
-    MAX_MATERIALIZATION_RECEIPTS,
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   )
   const receipts: StoryboardDirectorMaterializationReceipt[] = []
   const byIdentity = new Map<string, StoryboardDirectorMaterializationReceipt>()

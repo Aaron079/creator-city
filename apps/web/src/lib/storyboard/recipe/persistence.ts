@@ -6,6 +6,7 @@ import type {
 } from '../../skills'
 import { createStoryboardDirectorRecipeIdentity } from './identity'
 import {
+  STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   STORYBOARD_DIRECTOR_RECIPE_VERSION,
   type StoryboardDirectorRecipe,
   type StoryboardDirectorStageStatus,
@@ -682,7 +683,11 @@ function validateRecipe(value: unknown): asserts value is StoryboardDirectorReci
   assertUnique(findingIds, 'storyboardDirectorRecipe.findings')
   validateStoryboard(recipe.storyboard, 'storyboardDirectorRecipe.storyboard')
 
-  const receipts = arrayValue(recipe.receipts, 'storyboardDirectorRecipe.receipts')
+  const receipts = arrayValue(
+    recipe.receipts,
+    'storyboardDirectorRecipe.receipts',
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  )
   const receiptIds: string[] = []
   for (let index = 0; index < receipts.length; index += 1) {
     receiptIds.push(validateReceipt(receipts[index], `storyboardDirectorRecipe.receipts[${index}]`))

@@ -10,6 +10,7 @@ import {
   createStoryboardDirectorRecipeIdentity,
   readStoryboardDirectorRecipe,
   storyboardDirectorRecipeMetadata,
+  STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   type RecipeReviewItem,
   type StoryboardDirectorRecipe,
 } from '../index'
@@ -421,6 +422,48 @@ describe('Storyboard Director Recipe persistence', () => {
     recipe.beat.drafts = Array.from({ length: 120 }, (_, index) => beatDraft(index + 1))
     recipe.shot.drafts = Array.from({ length: 120 }, (_, index) => shotDraft(index + 1))
     assert.equal(readStoryboardDirectorRecipe(metadataWith(recipe)).status, 'valid')
+  })
+
+  test('round-trips the exact receipt limit and rejects one more', () => {
+    const recipe = validRecipeFixture()
+    recipe.receipts = Array.from(
+      { length: STORYBOARD_DIRECTOR_MAX_RECEIPTS },
+      (_, index) => ({
+        identity: createRecipeMaterializationIdentity(
+          recipe.recipeId,
+          'shot-card',
+          `artifact-${index}`,
+          `result-${index}`,
+        ),
+        kind: 'shot-card' as const,
+        resultId: `result-${index}`,
+        targetId: `target-${index}`,
+      }),
+    )
+    const metadata = storyboardDirectorRecipeMetadata(recipe)
+    const read = readStoryboardDirectorRecipe(metadata)
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.equal(read.recipe.receipts.length, STORYBOARD_DIRECTOR_MAX_RECEIPTS)
+      assert.deepEqual(read.recipe.receipts, recipe.receipts)
+    }
+
+    const overflow: StoryboardDirectorRecipe = {
+      ...recipe,
+      receipts: [...recipe.receipts, {
+        identity: createRecipeMaterializationIdentity(
+          recipe.recipeId,
+          'shot-card',
+          'artifact-overflow',
+          'result-overflow',
+        ),
+        kind: 'shot-card',
+        resultId: 'result-overflow',
+        targetId: 'target-overflow',
+      }],
+    }
+    assert.throws(() => storyboardDirectorRecipeMetadata(overflow), /receipt|limit/i)
+    assert.equal(readStoryboardDirectorRecipe(metadataWith(overflow)).status, 'invalid')
   })
 
   test('rejects nonfinite numbers', () => {

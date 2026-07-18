@@ -374,6 +374,111 @@ describe('Storyboard Director grouped materialization planning', () => {
     }
   })
 
+  test('bounds hostile grouped approved Artifact metadata before payload traversal', () => {
+    const recipe = completedRecipe()
+    for (const kind of ['scene', 'beat', 'shot-plan'] as const) {
+      const first = planStoryboardDirectorGroupedNodes(recipe, [kind], [])
+      const plan = first.create[0]
+      assert.ok(plan)
+      const freshMetadata = () => structuredClone(plan.metadataJson) as {
+        creatorSkill: {
+          approvedArtifact: {
+            payload: Record<string, unknown>
+          }
+        }
+      }
+
+      let lateOwnKeysCalls = 0
+      const oversized = freshMetadata()
+      const oversizedScenes: unknown[] = Array.from({ length: 121 }, () => null)
+      oversizedScenes[120] = new Proxy({}, {
+        ownKeys() {
+          lateOwnKeysCalls += 1
+          throw new Error('oversized Artifact ownKeys trap reached')
+        },
+      })
+      oversized.creatorSkill.approvedArtifact.payload.scenes = oversizedScenes
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{
+          metadataJson: oversized,
+        }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+      assert.equal(lateOwnKeysCalls, 0)
+
+      const accessor = freshMetadata()
+      let accessorCalls = 0
+      Object.defineProperty(accessor.creatorSkill.approvedArtifact.payload, 'scenes', {
+        enumerable: true,
+        configurable: true,
+        get() {
+          accessorCalls += 1
+          throw new Error('Artifact scenes accessor escaped')
+        },
+      })
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{ metadataJson: accessor }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+      assert.equal(accessorCalls, 0)
+
+      const oversizedString = freshMetadata()
+      const stringScenes = oversizedString.creatorSkill.approvedArtifact.payload.scenes as Array<{
+        heading?: string
+      }>
+      assert.ok(stringScenes[0])
+      stringScenes[0]!.heading = 'x'.repeat(1_000_000)
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{
+          metadataJson: oversizedString,
+        }]),
+        /grouped metadata/i,
+      )
+
+      const deep = freshMetadata()
+      const leaf = new Proxy({}, {
+        ownKeys() {
+          lateOwnKeysCalls += 1
+          throw new Error('deep Artifact ownKeys trap reached')
+        },
+      })
+      let nested: Record<string, unknown> = leaf
+      for (let depth = 0; depth < 64; depth += 1) nested = { next: nested }
+      deep.creatorSkill.approvedArtifact.payload = nested
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{ metadataJson: deep }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+      assert.equal(lateOwnKeysCalls, 0)
+
+      const trapped = freshMetadata()
+      let descriptorCalls = 0
+      trapped.creatorSkill.approvedArtifact.payload = new Proxy(
+        trapped.creatorSkill.approvedArtifact.payload,
+        {
+          getOwnPropertyDescriptor() {
+            descriptorCalls += 1
+            throw new Error('Artifact descriptor trap escaped')
+          },
+        },
+      )
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{ metadataJson: trapped }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+      assert.ok(descriptorCalls > 0)
+
+      const cyclic = freshMetadata()
+      const cycle: Record<string, unknown> = {}
+      cycle.self = cycle
+      cyclic.creatorSkill.approvedArtifact.payload = cycle
+      assert.throws(
+        () => planStoryboardDirectorGroupedNodes(recipe, [kind], [{ metadataJson: cyclic }]),
+        (error) => error instanceof TypeError && /grouped metadata/i.test(error.message),
+      )
+    }
+  })
+
   test('selects stage subsets and keeps scene, beat, shot-plan order stable', () => {
     const recipe = completedRecipe()
     const scenes = planStoryboardDirectorGroupedNodes(recipe, ['scene'], [])
@@ -564,6 +669,73 @@ describe('Storyboard Director shot-board synchronization', () => {
     assert.deepEqual(result.state.shots[2], stale)
     assert.equal(new Set(result.state.shots.map((card) => card.id)).size, result.state.shots.length)
     assert.doesNotThrow(() => cloneAndValidateStoryboardState(result.state))
+  })
+
+  test('orders mixed existing and new Recipe cards across all current-card slots', () => {
+    const recipe = completedRecipe()
+    const initial = planStoryboardDirectorShotBoardSync(recipe, {
+      version: '2', shots: [], updatedAt: ISO_TIME,
+    }, ISO_TIME)
+    const shotA = recipe.shot.drafts[0]
+    const shotB = recipe.shot.drafts[1]
+    assert.ok(shotA)
+    assert.ok(shotB)
+    const existingB = initial.state.shots.find((card) => card.recipe?.shotId === shotB.shotId)
+    assert.ok(existingB)
+    const boundB: ShotCard = {
+      ...existingB,
+      id: 'existing-card-b',
+      nodeIds: ['bound-b'],
+      thumbnailUrl: '/b.png',
+      createdAt: '2026-07-18T20:00:00.000Z',
+    }
+    const stale: ShotCard = {
+      ...manualShot('stale-card', 'Stale Recipe'),
+      index: 2,
+      recipe: {
+        recipeId: recipe.recipeId,
+        sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
+        sceneId: 'removed-scene',
+        shotId: 'removed-shot',
+      },
+    }
+    const current = [
+      manualShot('manual-1'),
+      foreignRecipeShot('foreign-1'),
+      stale,
+      boundB,
+    ].map((card, index) => ({ ...card, index }))
+
+    const first = planStoryboardDirectorShotBoardSync(recipe, {
+      version: '2', shots: current, updatedAt: ISO_TIME,
+    }, LATER_TIME)
+    assert.deepEqual(first.state.shots.slice(0, 3).map((card) => card.id), [
+      'manual-1',
+      'foreign-1',
+      'stale-card',
+    ])
+    const currentCards = first.state.shots.filter((card) => (
+      card.recipe?.recipeId === recipe.recipeId && card.recipe.shotId !== 'removed-shot'
+    ))
+    assert.deepEqual(
+      currentCards.map((card) => card.recipe?.shotId),
+      recipe.shot.drafts.map((shot) => shot.shotId),
+    )
+    assert.equal(currentCards[0]?.recipe?.shotId, shotA.shotId)
+    const retainedB = currentCards.find((card) => card.recipe?.shotId === shotB.shotId)
+    assert.ok(retainedB)
+    assert.equal(retainedB.id, boundB.id)
+    assert.deepEqual(retainedB.nodeIds, boundB.nodeIds)
+    assert.equal(retainedB.thumbnailUrl, boundB.thumbnailUrl)
+    assert.equal(retainedB.createdAt, boundB.createdAt)
+    assert.doesNotThrow(() => cloneAndValidateStoryboardState(first.state))
+
+    const repeat = planStoryboardDirectorShotBoardSync(recipe, first.state, LATER_TIME)
+    assert.deepEqual(repeat, {
+      state: first.state,
+      createdShotIds: [],
+      updatedShotIds: [],
+    })
   })
 
   test('updates reviewed fields only for the same Recipe and shot identity', () => {

@@ -12,6 +12,7 @@ import type { StoryboardState } from '../types'
 
 export const STORYBOARD_DIRECTOR_RECIPE_VERSION = 1 as const
 export const STORYBOARD_DIRECTOR_RECIPE_SKILL_VERSION = '1.0.0' as const
+export const STORYBOARD_DIRECTOR_MAX_RECEIPTS = 360
 
 export type StoryboardDirectorStageId =
   | 'source'
