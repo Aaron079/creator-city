@@ -12,6 +12,7 @@ import {
 } from '../executable-registry'
 import { createCreatorSkillFingerprint } from '../fingerprint'
 import { runCreatorSkillFromRegistry } from '../runtime'
+import { runCreatorSkill } from '../runtime'
 import {
   parseNarrativeBeats,
   type NarrativeSourceScene,
@@ -19,10 +20,15 @@ import {
 import type {
   CreatorExecutableSkill,
   CreatorSkillArtifact,
+  CreatorSkillEvidence,
   CreatorSkillRunInput,
   CreatorSkillRunResult,
   CreatorSkillSourceNode,
 } from '../types'
+import {
+  planScriptSceneMaterialization,
+  type ApprovedSceneDraft,
+} from '../../../components/create/canvas/skills/scriptSegmentationMaterialization'
 
 type NarrativeBeatType =
   | 'setup'
@@ -456,6 +462,161 @@ describe('narrative beat inputs', () => {
     assert.ok(result.evidence.every((item) => (
       item.sourceNodeId === 'materialized-scene-node'
     )))
+  })
+
+  test('accepts the exact body-only Text for one canonical headed scene', () => {
+    const artifact = approvedSceneTwoArtifact()
+    const body = artifact.payload.scenes[0]!.sourceText.split('\n').slice(1).join('\r\n')
+    const result = run({
+      sourceNodes: [textNode(`  ${body.replace(' ', '   ')}  `, {
+        id: 'materialized-scene-node',
+      })],
+      artifacts: [artifact],
+    })
+
+    assert.equal(result.status, 'ready')
+    assert.deepEqual(allBeats(result).map((beat) => ({
+      sourceText: beat.sourceText,
+      lineStart: beat.lineStart,
+    })), [{
+      sourceText: 'EXT. ROOFTOP - NIGHT',
+      lineStart: 14,
+    }, {
+      sourceText: 'Maya wants to repair the antenna.',
+      lineStart: 15,
+    }, {
+      sourceText: 'However, the power suddenly fades.',
+      lineStart: 16,
+    }])
+    assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
+      'approved-scene-breakdown-002',
+    ])
+    assert.ok(result.evidence.every((item) => (
+      item.sourceNodeId === 'materialized-scene-node'
+      && item.lineStart >= 14
+    )))
+  })
+
+  test('keeps body-only pairing exact and single-scene only', () => {
+    const artifact = approvedSceneTwoArtifact()
+    const canonicalBody = artifact.payload.scenes[0]!.sourceText.split('\n').slice(1).join('\n')
+    const changedCases = [
+      canonicalBody.replace('wants to', 'does not want to'),
+      `INT. CHANGED - DAY\n${canonicalBody}`,
+      canonicalBody.split('\n')[0]!,
+      `prefix ${canonicalBody}`,
+    ]
+    for (const changed of changedCases) {
+      assertBlockedWithoutOutput(run({
+        sourceNodes: [textNode(changed, { id: 'materialized-scene-node' })],
+        artifacts: [artifact],
+      }), 'NARRATIVE_SOURCE_CONFLICT')
+    }
+
+    const secondSource = 'INT. STATION - DAY\nThe doors close behind Maya.'
+    const multiScene = sceneBreakdownArtifact(
+      `${artifact.payload.scenes[0]!.sourceText}\n${secondSource}`,
+      {
+        sourceNodeId: 'original-script-node',
+        scenes: [
+          structuredClone(artifact.payload.scenes[0]!),
+          {
+            sceneId: 'scene-003',
+            order: 3,
+            heading: 'INT. STATION - DAY',
+            characters: ['MAYA'],
+            actionSummary: 'The doors close behind Maya.',
+            sourceText: secondSource,
+            lineStart: 17,
+            lineEnd: 18,
+            reviewStatus: 'pending',
+          },
+        ],
+      },
+    )
+    assertBlockedWithoutOutput(run({
+      sourceNodes: [textNode(canonicalBody, { id: 'materialized-scene-node' })],
+      artifacts: [multiScene],
+    }), 'NARRATIVE_SOURCE_CONFLICT')
+  })
+
+  test('runs Stage A body-only materialization with its canonical Artifact through public runtime', () => {
+    const canonicalSource = [
+      'EXT. ROOFTOP - NIGHT',
+      'Maya wants to repair the antenna.',
+      'However, the power suddenly fades.',
+    ].join('\n')
+    const sourceScene: ScriptSceneDraft = {
+      sceneId: 'scene-002',
+      order: 2,
+      heading: 'EXT. ROOFTOP - NIGHT',
+      characters: ['MAYA'],
+      actionSummary: 'Maya wants to repair the antenna.',
+      sourceText: canonicalSource,
+      lineStart: 14,
+      lineEnd: 16,
+      reviewStatus: 'pending',
+    }
+    const sourceArtifact = sceneBreakdownArtifact(canonicalSource, {
+      sourceNodeId: 'original-script-node',
+      artifactId: 'scene-breakdown-001',
+      scenes: [sourceScene],
+    })
+    const boundaryEvidence: CreatorSkillEvidence = {
+      evidenceId: 'scene-evidence-002',
+      ruleId: 'HEADED_SCENE_BOUNDARY',
+      sourceNodeId: 'original-script-node',
+      lineStart: 14,
+      lineEnd: 16,
+      excerpt: canonicalSource,
+      explanation: 'Canonical scene boundary.',
+    }
+    const bodyOnly = [
+      'Maya wants to repair the antenna.',
+      'However, the power suddenly fades.',
+    ].join('\n')
+    const approval: ApprovedSceneDraft = {
+      ...structuredClone(sourceScene),
+      heading: 'EXT. RADIO TOWER - DAWN',
+      sourceText: bodyOnly,
+      reviewStatus: 'approved',
+    }
+    const materialized = planScriptSceneMaterialization({
+      sourceNodeId: 'original-script-node',
+      result: {
+        skillId: 'script-segmentation',
+        skillVersion: '1.0.0',
+        runFingerprint: 'csf1_12ab34cd',
+        status: 'ready',
+        artifacts: [sourceArtifact],
+        evidence: [boundaryEvidence],
+        warnings: [],
+        blockers: [],
+      },
+      approvalContext: {
+        runFingerprint: 'csf1_12ab34cd',
+        sourceArtifactId: sourceArtifact.artifactId,
+      },
+      approvedScenes: [approval],
+      existingNodes: [],
+    }).create[0]!
+    const approvedArtifact = materialized.metadataJson.creatorSkill.approvedArtifact
+
+    assert.equal(materialized.prompt, bodyOnly)
+    assert.equal(
+      (approvedArtifact.payload as SceneBreakdownPayload).scenes[0]!.sourceText,
+      `EXT. RADIO TOWER - DAWN\n${bodyOnly}`,
+    )
+
+    const result = runCreatorSkill('narrative-beat-analysis', {
+      sourceNodes: [textNode(materialized.prompt, { id: 'materialized-scene-node' })],
+      artifacts: [approvedArtifact],
+    })
+
+    assert.equal(result.status, 'ready')
+    assert.deepEqual(allBeats(result).map((beat) => beat.lineStart), [14, 15, 16])
+    assert.equal(allBeats(result)[0]!.sourceText, 'EXT. RADIO TOWER - DAWN')
+    assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [approvedArtifact.artifactId])
   })
 
   test('rejects materialized scene content conflicts and invalid absolute ranges', () => {

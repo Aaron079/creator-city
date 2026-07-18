@@ -114,6 +114,29 @@ function validateSceneArtifact(artifact: CreatorSkillArtifact | undefined) {
   }
 }
 
+function canonicalPairingText(value: string) {
+  return value
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .replace(/\s+/gu, ' ')
+}
+
+function singleHeadedSceneBodyMatchesSource(
+  scenes: readonly { heading: string; sourceText: string }[],
+  sourceText: string,
+) {
+  if (scenes.length !== 1) return false
+  const scene = scenes[0]!
+  if (!scene.heading) return false
+  const headingLineEnd = scene.sourceText.indexOf('\n')
+  if (headingLineEnd === -1
+    || scene.sourceText.slice(0, headingLineEnd) !== scene.heading) {
+    return false
+  }
+  const canonicalBody = scene.sourceText.slice(headingLineEnd + 1)
+  return canonicalPairingText(sourceText) === canonicalPairingText(canonicalBody)
+}
+
 export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
   manifest: NARRATIVE_BEAT_ANALYSIS_MANIFEST,
   run(input, runFingerprint) {
@@ -171,7 +194,8 @@ export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
     }
 
     if (sourceNode && validatedArtifact
-      && !scenesMatchSource(validatedArtifact.scenes, effectiveSource!)) {
+      && !scenesMatchSource(validatedArtifact.scenes, effectiveSource!)
+      && !singleHeadedSceneBodyMatchesSource(validatedArtifact.scenes, effectiveSource!)) {
       return blockedResult(
         runFingerprint,
         'NARRATIVE_SOURCE_CONFLICT',
