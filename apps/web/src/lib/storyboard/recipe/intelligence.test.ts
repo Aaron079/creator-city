@@ -841,6 +841,34 @@ describe('Storyboard Director intelligence', () => {
     ), false)
   })
 
+  test('uses Unicode-aware required text for explicit scene locations', () => {
+    const fixture = (location: string) => canonicalRecipe({
+      scenePatch: (item) => item.sceneId === 'scene-001' ? { location } : {},
+      beatPatch: (item) => item.sceneId === 'scene-001' && item.type === 'setup'
+        ? { type: 'action' }
+        : {},
+      shotPatch: (item) => item.sceneId === 'scene-001'
+        ? { suggestedShotSize: 'medium' }
+        : {},
+    })
+    const absent = fixture('')
+    const formatOnly = fixture('\u200B\u2060\u00A0\t\n')
+    const meaningful = fixture('摄影棚')
+    const establishingForFirstScene = (recipe: StoryboardDirectorRecipe) => (
+      analyzeStoryboardDirectorRecipe(recipe).filter((item) => (
+        item.code === 'SCENE_ESTABLISHING_SHOT_MISSING'
+        && item.sceneId === 'scene-001'
+      ))
+    )
+
+    assert.equal(establishingForFirstScene(formatOnly).length, 0)
+    assert.equal(
+      summarizeStoryboardDirectorRecipe(formatOnly).advisoryCount,
+      summarizeStoryboardDirectorRecipe(absent).advisoryCount,
+    )
+    assert.equal(establishingForFirstScene(meaningful).length, 1)
+  })
+
   test('uses reviewed moveRecipeDraft order for adjacency, repetition, and slow pacing', () => {
     const before = orderIntegrationRecipe()
     const beforeFindings = analyzeStoryboardDirectorRecipe(before)

@@ -640,7 +640,7 @@ function advisoryFindings(recipe: StoryboardDirectorRecipe) {
 
   for (const scene of scenes) {
     const sceneBeats = beats.filter((beat) => beat.sceneId === scene.sceneId)
-    const hasSetupEvidence = Boolean(scene.location?.trim())
+    const hasSetupEvidence = scene.location !== undefined && hasRequiredText(scene.location)
       || sceneBeats.some((beat) => beat.type === 'setup')
     const sceneShots = shotsByScene.get(scene.sceneId) ?? []
     if (hasSetupEvidence && !sceneShots.some(
