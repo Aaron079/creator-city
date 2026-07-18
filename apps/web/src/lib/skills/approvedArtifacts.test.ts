@@ -72,8 +72,7 @@ describe('readApprovedCreatorSkillArtifact', () => {
 
   test('does not invoke a self-returning prototype trap for a missing own field', () => {
     let prototypeReads = 0
-    let metadata: object
-    metadata = new Proxy({}, {
+    const metadata: object = new Proxy({}, {
       getPrototypeOf() {
         prototypeReads += 1
         if (prototypeReads > 2) throw new Error('bounded self-returning prototype trap')
