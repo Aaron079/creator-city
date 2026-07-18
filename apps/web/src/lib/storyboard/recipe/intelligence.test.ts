@@ -392,7 +392,6 @@ describe('Storyboard Director intelligence', () => {
     const findings = analyzeStoryboardDirectorRecipe(advisoryFixture())
     assert.deepEqual(findings.map((item) => item.code), [
       'SCENE_ESTABLISHING_SHOT_MISSING',
-      'REACTION_VISUAL_RESPONSE_MISSING',
       'ADJACENT_SHOT_DUPLICATE',
       'SHOT_SIZE_REPETITION',
       'OUTPUT_KIND_MOTION_MISMATCH',
@@ -514,19 +513,83 @@ describe('Storyboard Director intelligence', () => {
     assert.equal(isStoryboardRecipeMaterializationReady(blocked), false)
   })
 
-  test('reports reaction quality separately when the same beat lacks blocking coverage', () => {
-    const recipe = approvedRecipe()
-    recipe.shot = {
-      ...recipe.shot,
-      drafts: recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-003'),
+  test('reports exactly one stable advisory for an approved reaction or turn with zero linked shots', () => {
+    for (const type of ['reaction', 'turn'] as const) {
+      const recipe = approvedRecipe()
+      recipe.beat = {
+        ...recipe.beat,
+        drafts: recipe.beat.drafts.map((item) => item.beatId === 'scene-001-beat-003'
+          ? { ...item, type }
+          : item),
+      }
+      recipe.shot = {
+        ...recipe.shot,
+        drafts: recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-003'),
+      }
+      const first = analyzeStoryboardDirectorRecipe(recipe).filter(
+        (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
+      )
+      recipe.audit = { ...recipe.audit, updatedAt: '2099-01-01T00:00:00.000Z' }
+      const second = analyzeStoryboardDirectorRecipe(recipe).filter(
+        (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
+      )
+      assert.equal(first.length, 1)
+      assert.equal(first[0]?.beatId, 'scene-001-beat-003')
+      assert.ok(first[0]?.findingId.startsWith('sdrf1_'))
+      assert.equal(second[0]?.findingId, first[0]?.findingId)
     }
-    const codes = analyzeStoryboardDirectorRecipe(recipe).filter(
-      (item) => item.beatId === 'scene-001-beat-003',
-    ).map((item) => item.code)
-    assert.deepEqual(codes, [
-      'BEAT_WITHOUT_APPROVED_SHOT',
-      'REACTION_VISUAL_RESPONSE_MISSING',
-    ])
+  })
+
+  test('does not advise when approved shots are linked regardless of evidence markers', () => {
+    for (const { keepMultiple, preserveMarker } of [
+      { keepMultiple: false, preserveMarker: false },
+      { keepMultiple: true, preserveMarker: true },
+    ]) {
+      const recipe = approvedRecipe()
+      recipe.shot = {
+        ...recipe.shot,
+        drafts: recipe.shot.drafts.filter((item) => (
+          item.beatId !== 'scene-001-beat-003'
+          || keepMultiple
+          || item.shotId === 'shot-003'
+        )),
+        result: {
+          ...recipe.shot.result!,
+          evidence: preserveMarker
+            ? recipe.shot.result!.evidence
+            : recipe.shot.result!.evidence.map((item) => ({
+              ...item,
+              ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+            })),
+        },
+      }
+      assert.equal(analyzeStoryboardDirectorRecipe(recipe).some(
+        (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
+      ), false)
+    }
+  })
+
+  test('does not count rejected or pending shots as linked reaction coverage', () => {
+    for (const decision of ['rejected', 'pending'] as const) {
+      const recipe = approvedRecipe()
+      const unapproved = {
+        ...recipe.shot.drafts.find((item) => item.shotId === 'shot-003')!,
+        shotId: `shot-${decision}`,
+        decision,
+      }
+      recipe.shot = {
+        ...recipe.shot,
+        drafts: [
+          ...recipe.shot.drafts.filter((item) => item.beatId !== 'scene-001-beat-003'),
+          unapproved,
+        ],
+      }
+      const findings = analyzeStoryboardDirectorRecipe(recipe).filter(
+        (item) => item.code === 'REACTION_VISUAL_RESPONSE_MISSING',
+      )
+      assert.equal(findings.length, 1)
+      assert.equal(findings[0]?.beatId, 'scene-001-beat-003')
+    }
   })
 
   test('blocks unresolved decisions and non-final stage statuses', () => {

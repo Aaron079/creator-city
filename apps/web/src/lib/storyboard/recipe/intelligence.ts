@@ -442,14 +442,11 @@ function advisoryFindings(recipe: StoryboardDirectorRecipe) {
   for (const beat of beats) {
     if (beat.type !== 'reaction' && beat.type !== 'turn') continue
     const linked = shotsByBeat.get(beat.beatId) ?? []
-    if (linked.some((shot) => evidenceHasRule(
-      evidenceForRange(recipe, shot.lineStart, shot.lineEnd, 'shot'),
-      'visual-response',
-    ))) continue
+    if (linked.length > 0) continue
     add('REACTION_VISUAL_RESPONSE_MISSING', itemFinding(
       'advisory',
       'REACTION_VISUAL_RESPONSE_MISSING',
-      `Reaction or turn beat ${beat.beatId} has no explicit visual-response shot evidence.`,
+      `Reaction or turn beat ${beat.beatId} has no linked approved shot.`,
       beat,
       evidenceIds(evidenceForRange(recipe, beat.lineStart, beat.lineEnd, 'beat')),
     ))
