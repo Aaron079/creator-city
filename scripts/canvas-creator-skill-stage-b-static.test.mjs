@@ -14,6 +14,10 @@ const toolbar = readFileSync(new URL(
   '../apps/web/src/components/create/AssetAgentToolbar.tsx',
   import.meta.url,
 ), 'utf8')
+const canvasCss = readFileSync(new URL(
+  '../apps/web/src/components/create/canvas.module.css',
+  import.meta.url,
+), 'utf8')
 const workspace = readFileSync(new URL(
   '../apps/web/src/components/create/VisualCanvasWorkspace.tsx',
   import.meta.url,
@@ -96,6 +100,14 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     assert.match(toolbar, /onOpenShotListBuilder\?\s*:\s*\(\)\s*=>\s*void/)
     assert.match(toolbar, /case\s+['"]narrative-beat-analysis['"]\s*:\s*onOpenNarrativeBeatAnalysis\?\.\(\)/)
     assert.match(toolbar, /case\s+['"]shot-list-builder['"]\s*:\s*onOpenShotListBuilder\?\.\(\)/)
+  })
+
+  test('keeps the expanded node tool menu inside the viewport', () => {
+    assert.match(toolbar, /resolveToolbarMenuPlacement/)
+    assert.match(toolbar, /data-menu-placement=\{menuPlacement\}/)
+    assert.match(toolbar, /getBoundingClientRect\(\)/)
+    assert.match(toolbar, /window\.innerHeight/)
+    assert.match(canvasCss, /asset-agent-toolbar\[data-menu-placement="up"\][\s\S]*?bottom:\s*calc\(100% \+ 8px\)/)
   })
 
   test('narrative opening freezes a complete Text source snapshot', () => {

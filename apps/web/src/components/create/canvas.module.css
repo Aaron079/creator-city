@@ -8094,6 +8094,11 @@
   min-width: 210px;
 }
 
+.scope :global(.asset-agent-toolbar[data-menu-placement="up"] .ntb-menu) {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
 .scope :global(.ntb-menu-section-title) {
   font-size: 9px;
   font-weight: 700;

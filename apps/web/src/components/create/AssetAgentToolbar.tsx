@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, type CSSProperties } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, type CSSProperties } from 'react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { NodeToolCenter } from '@/components/create/canvas/node-tools/NodeToolCenter'
 
@@ -65,6 +65,21 @@ function stopEvent(e: React.MouseEvent | React.PointerEvent) {
 }
 
 type OpenMenu = 'tools' | 'assets' | null
+type MenuPlacement = 'up' | 'down'
+
+export function resolveToolbarMenuPlacement({
+  spaceAbove,
+  spaceBelow,
+  menuHeight,
+}: {
+  spaceAbove: number
+  spaceBelow: number
+  menuHeight: number
+}): MenuPlacement {
+  if (spaceBelow >= menuHeight) return 'down'
+  if (spaceAbove >= menuHeight) return 'up'
+  return spaceAbove > spaceBelow ? 'up' : 'down'
+}
 
 export function AssetAgentToolbar({
   nodeKind,
@@ -96,6 +111,7 @@ export function AssetAgentToolbar({
   assetTransformCaps = {},
 }: AssetAgentToolbarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
+  const [menuPlacement, setMenuPlacement] = useState<MenuPlacement>('down')
   const toolbarRef = useRef<HTMLDivElement>(null)
 
   const closeAll = useCallback(() => setOpenMenu(null), [])
@@ -106,6 +122,29 @@ export function AssetAgentToolbar({
 
   // Close menus when selected node changes
   useEffect(() => { setOpenMenu(null) }, [nodeId])
+
+  useLayoutEffect(() => {
+    if (!openMenu) return
+
+    const updatePlacement = () => {
+      const toolbar = toolbarRef.current
+      const menu = toolbar?.querySelector<HTMLElement>('.ntb-menu')
+      if (!toolbar || !menu) return
+
+      const toolbarRect = toolbar.getBoundingClientRect()
+      const menuHeight = menu.getBoundingClientRect().height
+      const viewportGutter = 12
+      setMenuPlacement(resolveToolbarMenuPlacement({
+        spaceAbove: Math.max(0, toolbarRect.top - viewportGutter),
+        spaceBelow: Math.max(0, window.innerHeight - toolbarRect.bottom - viewportGutter),
+        menuHeight,
+      }))
+    }
+
+    updatePlacement()
+    window.addEventListener('resize', updatePlacement)
+    return () => window.removeEventListener('resize', updatePlacement)
+  }, [assetTransformCaps.removeBackground, assetTransformCaps.upscale, hasMediaResult, nodeKind, openMenu])
 
   // Close on outside click
   useEffect(() => {
@@ -178,6 +217,7 @@ export function AssetAgentToolbar({
       ref={toolbarRef}
       className="asset-agent-toolbar"
       data-no-node-drag="true"
+      data-menu-placement={menuPlacement}
       onPointerDown={stopEvent}
       onMouseDown={stopEvent}
       onClick={stopEvent}
