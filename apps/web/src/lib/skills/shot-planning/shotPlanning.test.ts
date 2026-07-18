@@ -663,6 +663,82 @@ describe('independent input contracts', () => {
     assert.notEqual(whitespaceOnly.status, 'blocked')
   })
 
+  test('rejects a Chinese source unit hidden inside a changed negated unit', () => {
+    const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: '离开',
+      summary: '离开',
+    }
+
+    const result = run({
+      sourceNodes: [textNode('他决定不离开这里。')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+
+    assertBlocked(result, 'SHOT_SOURCE_CONFLICT')
+  })
+
+  test('rejects an accented source unit hidden inside a changed plural unit', () => {
+    const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: 'résumé',
+      summary: 'résumé',
+    }
+
+    const result = run({
+      sourceNodes: [textNode('résumés are stored here.')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+
+    assertBlocked(result, 'SHOT_SOURCE_CONFLICT')
+  })
+
+  test('accepts an approved reviewed subset when its exact normalized unit appears', () => {
+    const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: '她转身离开。',
+      summary: '她转身离开。',
+    }
+
+    const result = run({
+      sourceNodes: [textNode('灯光亮起。\n她转身离开。\n门随即关闭。')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+
+    assert.notEqual(result.status, 'blocked')
+  })
+
+  test('accepts benign whitespace and CRLF differences in an exact source unit', () => {
+    const artifact = narrativeArtifact(1) as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    artifact.payload.scenes[0]!.beats[0] = {
+      ...artifact.payload.scenes[0]!.beats[0],
+      sourceText: 'Maya opens the panel.',
+      summary: 'Maya opens the panel.',
+    }
+
+    const result = run({
+      sourceNodes: [textNode('  Maya   opens\r\n the panel.  ')],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    })
+
+    assert.notEqual(result.status, 'blocked')
+  })
+
   test('blocks malformed, mixed, missing, and conflicting inputs', () => {
     assertBlocked(run({ sourceNodes: [] }), 'SHOT_SOURCE_COUNT_INVALID')
     assertBlocked(run({

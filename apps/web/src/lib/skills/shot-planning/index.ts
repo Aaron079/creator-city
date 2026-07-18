@@ -462,36 +462,109 @@ function parseScenesToUnits(scenes: readonly NarrativeSourceScene[], sourceNodeI
 function canonicalText(value: string) {
   return value
     .replace(/\r\n?/g, '\n')
+    .normalize('NFC')
     .trim()
     .replace(/\s+/gu, ' ')
 }
 
-function isAsciiTokenCharacter(value: string | undefined) {
-  return value !== undefined && /[A-Za-z0-9_]/u.test(value)
+const SOURCE_UNIT_END_CHARACTERS = new Set(['.', '!', '?', '。', '！', '？'])
+const SOURCE_UNIT_CLOSING_CHARACTERS = new Set([
+  '"',
+  "'",
+  '’',
+  '”',
+  '〉',
+  '》',
+  '」',
+  '】',
+])
+
+type NormalizedSourceUnit = {
+  text: string
+  start: number
+  end: number
 }
 
-function findEvidenceOffset(source: string, excerpt: string, searchOffset: number) {
-  let matchOffset = source.indexOf(excerpt, searchOffset)
-  while (matchOffset !== -1) {
-    const startsInsideToken = isAsciiTokenCharacter(excerpt[0])
-      && isAsciiTokenCharacter(source[matchOffset - 1])
-    const endsInsideToken = isAsciiTokenCharacter(excerpt[excerpt.length - 1])
-      && isAsciiTokenCharacter(source[matchOffset + excerpt.length])
-    if (!startsInsideToken && !endsInsideToken) return matchOffset
-    matchOffset = source.indexOf(excerpt, matchOffset + 1)
+function appendSentenceUnits(
+  source: string,
+  absoluteOffset: number,
+  units: NormalizedSourceUnit[],
+) {
+  let unitStart = 0
+  let cursor = 0
+  while (cursor < source.length) {
+    if (!SOURCE_UNIT_END_CHARACTERS.has(source[cursor]!)) {
+      cursor += 1
+      continue
+    }
+
+    let unitEnd = cursor + 1
+    while (unitEnd < source.length
+      && SOURCE_UNIT_END_CHARACTERS.has(source[unitEnd]!)) {
+      unitEnd += 1
+    }
+    if (unitEnd < source.length
+      && SOURCE_UNIT_CLOSING_CHARACTERS.has(source[unitEnd]!)) {
+      unitEnd += 1
+    }
+    const text = canonicalText(source.slice(unitStart, unitEnd))
+    if (text) {
+      units.push({
+        text,
+        start: absoluteOffset + unitStart,
+        end: absoluteOffset + unitEnd,
+      })
+    }
+    unitStart = unitEnd
+    cursor = unitEnd
   }
-  return -1
+
+  const remainder = canonicalText(source.slice(unitStart))
+  if (remainder) {
+    units.push({
+      text: remainder,
+      start: absoluteOffset + unitStart,
+      end: absoluteOffset + source.length,
+    })
+  }
+}
+
+function normalizedSourceUnits(sourceText: string) {
+  const source = sourceText.replace(/\r\n?/g, '\n')
+  const units: NormalizedSourceUnit[] = []
+  appendSentenceUnits(source, 0, units)
+
+  let lineStart = 0
+  while (lineStart <= source.length) {
+    const newlineOffset = source.indexOf('\n', lineStart)
+    const lineEnd = newlineOffset === -1 ? source.length : newlineOffset
+    appendSentenceUnits(source.slice(lineStart, lineEnd), lineStart, units)
+    if (newlineOffset === -1) break
+    lineStart = newlineOffset + 1
+  }
+
+  const seen = new Set<string>()
+  return units
+    .sort((left, right) => left.start - right.start || left.end - right.end)
+    .filter((unit) => {
+      const key = `${unit.start}:${unit.end}:${unit.text}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 }
 
 function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: string) {
-  const normalizedSource = canonicalText(sourceText)
+  const sourceUnits = normalizedSourceUnits(sourceText)
   let searchOffset = 0
   for (const scene of payload.scenes) {
     for (const beat of scene.beats) {
       const excerpt = canonicalText(beat.sourceText)
-      const matchOffset = findEvidenceOffset(normalizedSource, excerpt, searchOffset)
-      if (matchOffset === -1) return false
-      searchOffset = matchOffset + excerpt.length
+      const match = sourceUnits.find((unit) => (
+        unit.start >= searchOffset && unit.text === excerpt
+      ))
+      if (!match) return false
+      searchOffset = match.end
     }
   }
   return true
