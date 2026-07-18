@@ -86,6 +86,59 @@ describe('ShotListBuilderPanel Stage B boundaries', () => {
     )
   })
 
+  test('materialized Narrative Beats carrier uses canonical Artifact text for handoff', () => {
+    const narrative = runCreatorSkill('narrative-beat-analysis', {
+      sourceNodes: [SOURCE],
+    })
+    const approvedArtifact = narrative.artifacts[0]!
+    const scene = (approvedArtifact.payload as {
+      scenes: Array<{
+        order: number
+        heading: string
+        beats: Array<{ type: string; summary: string; sourceText: string }>
+      }>
+    }).scenes[0]!
+    const carrierPrompt = [
+      `Scene: ${scene.heading || `Scene ${scene.order}`}`,
+      ...scene.beats.flatMap((beat, index) => [
+        '',
+        `Beat ${index + 1}`,
+        `Type: ${beat.type}`,
+        `Summary: ${beat.summary}`,
+        `Source: ${beat.sourceText}`,
+      ]),
+    ].join('\n')
+    const carrier = {
+      ...SOURCE,
+      id: 'narrative-carrier',
+      title: 'Scene 1 · Narrative Beats',
+      prompt: carrierPrompt,
+      metadataJson: { creatorSkill: { approvedArtifact } },
+    }
+    const current = createShotListPanelState(carrier, carrier.prompt, OPTIONS)
+
+    assert.equal(current.review.approvedArtifactStatus, 'valid')
+    assert.notEqual(current.review.result.status, 'blocked')
+    assert.deepEqual(
+      current.review.result.artifacts[0]?.sourceArtifactIds,
+      [approvedArtifact.artifactId],
+    )
+    assert.deepEqual(
+      current.review.result.artifacts[0]?.sourceNodeIds,
+      [carrier.id],
+    )
+
+    const tamperedPrompt = carrierPrompt.replace('Summary: ', 'Summary: changed ')
+    const tampered = createShotListPanelState({
+      ...carrier,
+      prompt: tamperedPrompt,
+    }, tamperedPrompt, OPTIONS)
+    assert.equal(tampered.review.result.status, 'blocked')
+    assert.ok(tampered.review.result.blockers.some(
+      (blocker) => blocker.code === 'SHOT_SOURCE_CONFLICT',
+    ))
+  })
+
   test('edited source draft runs Text-only without a stale approved Artifact', () => {
     const narrative = runCreatorSkill('narrative-beat-analysis', {
       sourceNodes: [SOURCE],

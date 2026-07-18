@@ -615,6 +615,38 @@ function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: stri
   return targetIndex === targets.length
 }
 
+function narrativeMaterializationMatchesText(
+  payload: NarrativeBeatMapPayload,
+  sourceText: string,
+) {
+  if (payload.scenes.length !== 1) return false
+  const scene = payload.scenes[0]!
+  let offset = 0
+
+  const consume = (value: string) => {
+    if (!sourceText.startsWith(value, offset)) return false
+    offset += value.length
+    return true
+  }
+
+  if (!consume('Scene: ')
+    || !consume(scene.heading || `Scene ${scene.order}`)) return false
+
+  for (let index = 0; index < scene.beats.length; index += 1) {
+    const beat = scene.beats[index]!
+    if (!consume('\n\nBeat ')
+      || !consume(String(index + 1))
+      || !consume('\nType: ')
+      || !consume(beat.type)
+      || !consume('\nSummary: ')
+      || !consume(beat.summary)
+      || !consume('\nSource: ')
+      || !consume(beat.sourceText)) return false
+  }
+
+  return offset === sourceText.length
+}
+
 function normalizedLineEndingsEqual(source: string, expected: string) {
   let sourceOffset = 0
   let expectedOffset = 0
@@ -826,7 +858,9 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
         )
       }
       units = unitsFromNarrative(read.payload)
-      artifactMatches = sourceText === null || narrativeMatchesText(read.payload, sourceText)
+      artifactMatches = sourceText === null
+        || narrativeMatchesText(read.payload, sourceText)
+        || narrativeMaterializationMatchesText(read.payload, sourceText)
     } else if (sourceText !== null) {
       const derived = deriveNarrativeSourceScenes(sourceText)
       if (derived.sceneLimitExceeded) {
