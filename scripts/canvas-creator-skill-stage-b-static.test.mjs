@@ -180,12 +180,13 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
       'const duplicateNode = useCallback',
     )
     const pendingCleanup = deletion.indexOf('setPendingAutoGenerateIds')
-    const abort = deletion.indexOf('generationController?.abort()')
+    const abort = deletion.indexOf("context: 'deleted'")
     const controllerDelete = deletion.indexOf('generationAbortControllersRef.current.delete(nodeId)')
     const activeDelete = deletion.indexOf('activeGenerationNodeIdsRef.current.delete(nodeId)')
     const nodeRemoval = deletion.indexOf('commitNodes(')
     assert.match(deletion, /prev\.filter\(\(id\)\s*=>\s*id\s*!==\s*nodeId\)/)
     assert.match(deletion, /generationAbortControllersRef\.current\.get\(nodeId\)/)
+    assert.match(deletion, /generationController\?\.abort\(\{[\s\S]*?context:\s*['"]deleted['"][\s\S]*?nodeId[\s\S]*?\}\s+satisfies\s+GenerationAbortReason\)/)
     assert.ok(pendingCleanup >= 0 && pendingCleanup < nodeRemoval)
     assert.ok(abort >= 0 && abort < nodeRemoval)
     assert.ok(controllerDelete >= 0 && controllerDelete < nodeRemoval)
@@ -215,10 +216,10 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     assert.ok(synchronousQueueClear >= 0 && synchronousQueueClear < modalReset)
     assert.ok(queueClear >= 0 && queueClear < modalReset)
     assert.ok(controllerCleanup >= 0 && controllerCleanup < modalReset)
-    assert.match(clearRequests, /generationAbortControllersRef\.current\.forEach\(\(controller\)\s*=>\s*controller\.abort\(\)\)/)
+    assert.match(clearRequests, /generationAbortControllersRef\.current\.forEach\(\(controller,\s*nodeId\)\s*=>\s*controller\.abort\(\{[\s\S]*?context[\s\S]*?canvasIdentity[\s\S]*?nodeId[\s\S]*?\}\s+satisfies\s+GenerationAbortReason\)\)/)
     assert.match(clearRequests, /generationAbortControllersRef\.current\.clear\(\)/)
     assert.match(clearRequests, /activeGenerationNodeIdsRef\.current\.clear\(\)/)
-    assert.match(unmount, /generationAbortControllersRef\.current\.forEach\(\(controller\)\s*=>\s*controller\.abort\(\)\)/)
+    assert.match(unmount, /generationAbortControllersRef\.current\.forEach\(\(controller,\s*nodeId\)\s*=>\s*controller\.abort\(\{[\s\S]*?context:\s*['"]stale['"][\s\S]*?nodeId[\s\S]*?\}\s+satisfies\s+GenerationAbortReason\)\)/)
     assert.match(unmount, /generationAbortControllersRef\.current\.clear\(\)/)
     assert.match(unmount, /activeGenerationNodeIdsRef\.current\.clear\(\)/)
     assert.match(unmount, /pendingAutoGenerateIdsRef\.current\s*=\s*\[\]/)
@@ -232,8 +233,39 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     )
     assert.match(
       regeneration,
-      /finally\s*\{[\s\S]*?finishNodeGeneration\(node\.id, generationController\)[\s\S]*?if\s*\(!generationController\.signal\.aborted\)\s*\{\s*clearRegenerationLoading\(\)\s*\}/,
+      /finally\s*\{[\s\S]*?const\s+abortContext\s*=\s*generationAbortContext\(generationController\.signal\)[\s\S]*?finishNodeGeneration\(node\.id, generationController\)[\s\S]*?if\s*\(abortContext\s*===\s*null\)\s*\{\s*clearRegenerationLoading\(\)\s*\}/,
     )
+    assert.doesNotMatch(regeneration, /if\s*\(!generationController\.signal\.aborted\)/)
+  })
+
+  test('visibility abort is retryable in the current canvas while stale boundaries stay write-silent', () => {
+    const clearRequests = namedBlock(
+      workspace,
+      'const clearGenerationTimersAndRequests',
+      'const beginNodeGeneration',
+    )
+    const leaveEffect = namedBlock(
+      workspace,
+      '// Flush pending save on page leave / tab hide / component unmount',
+      '// One-shot DB recovery',
+    )
+    assert.match(clearRequests, /context:\s*GenerationAbortContext\s*=\s*['"]stale['"]/)
+    assert.match(clearRequests, /const\s+activeNodeIds\s*=\s*new Set\(generationAbortControllersRef\.current\.keys\(\)\)/)
+    assert.match(clearRequests, /context\s*===\s*['"]background['"][\s\S]*?generationCanvasIdentityRef\.current\s*===\s*expectedCanvasIdentity/)
+    assert.match(clearRequests, /commitNodes\(\(current\)\s*=>\s*cancelBackgroundGenerationNodes\(current,\s*activeNodeIds\)\)/)
+    assert.match(workspace, /function\s+cancelBackgroundGenerationNodes[\s\S]*?status:\s*['"]cancelled['"][\s\S]*?stoppedGenerationMetadata\(node\.metadataJson,\s*['"]background['"]\)/)
+    const stoppedMetadata = namedBlock(
+      workspace,
+      'function stoppedGenerationMetadata',
+      'function cancelBackgroundGenerationNodes',
+    )
+    assert.match(stoppedMetadata, /reason\s*===\s*['"]background['"][\s\S]*?generation_cancelled_by_user/)
+    assert.doesNotMatch(stoppedMetadata, /generation_cancelled_on_background/)
+    assert.match(leaveEffect, /if\s*\(context\s*===\s*['"]background['"]\)[\s\S]*?clearGenerationTimersAndRequests\(\s*['"]background['"],\s*canvasIdentity\s*\)/)
+    assert.match(leaveEffect, /onVisibilityChange[\s\S]*?flushBeforeLeave\(\s*['"]background['"]\s*\)/)
+    assert.match(leaveEffect, /clearGenerationTimersAndRequests\(\s*['"]stale['"],\s*canvasIdentity\s*\)/)
+    assert.match(leaveEffect, /flushLocalSnapshot\(\)[\s\S]*?scheduleCanvasSave\(0\)/)
+    assert.ok(leaveEffect.indexOf('window.clearTimeout(saveTimerRef.current)') < leaveEffect.indexOf('scheduleCanvasSave(0)'))
   })
 
   test('compatibility generation remains behind the panel second confirmation', () => {

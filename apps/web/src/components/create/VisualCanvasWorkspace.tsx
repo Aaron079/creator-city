@@ -387,28 +387,68 @@ function nodeHasMediaResult(node: VisualCanvasNode): boolean {
 
 const ACTIVE_GENERATION_STATUSES = new Set(['generating', 'running', 'queued', 'pending', 'processing'])
 
+type GenerationAbortContext = 'background' | 'stale' | 'deleted' | 'manual'
+
+type GenerationAbortReason = {
+  context: GenerationAbortContext
+  canvasIdentity: string
+  nodeId: string
+}
+
 function isActiveGenerationStatus(status?: string | null) {
   return ACTIVE_GENERATION_STATUSES.has(status ?? '')
 }
 
-function stoppedGenerationMetadata(metadataJson: unknown, reason: 'reload' | 'cancelled') {
+function generationCanvasIdentity(projectId: string, workflowId: string) {
+  return `${projectId}\u0000${workflowId}`
+}
+
+function generationAbortContext(signal: AbortSignal): GenerationAbortContext | null {
+  if (!signal.aborted) return null
+  const reason = signal.reason as Partial<GenerationAbortReason> | undefined
+  if (reason?.context === 'background' || reason?.context === 'stale' || reason?.context === 'deleted' || reason?.context === 'manual') {
+    return reason.context
+  }
+  return 'stale'
+}
+
+function stoppedGenerationMetadata(metadataJson: unknown, reason: 'reload' | 'cancelled' | 'background') {
   const metadata = metadataRecord(metadataJson)
   const message = reason === 'reload'
     ? 'Generation was stopped after reload to prevent token drain.'
-    : 'Generation cancelled by user.'
-  const errorCode = reason === 'reload' ? 'generation_stopped_on_reload' : 'generation_cancelled_by_user'
+    : reason === 'background'
+      ? 'Generation was cancelled when the tab moved to the background. Retry to continue.'
+      : 'Generation cancelled by user.'
+  const errorCode = reason === 'reload'
+    ? 'generation_stopped_on_reload'
+    : 'generation_cancelled_by_user'
   const priorTrace = Array.isArray(metadata.stageTrace) ? metadata.stageTrace : []
   return {
     ...metadata,
     errorCode,
-    errorStage: reason === 'reload' ? 'client_reload' : 'client_cancelled',
+    errorStage: reason === 'reload' ? 'client_reload' : reason === 'background' ? 'client_visibility' : 'client_cancelled',
     errorMessage: message,
     message,
     loading: false,
     isRegenerating: false,
     regenerating: false,
-    stageTrace: [...priorTrace, reason === 'reload' ? 'client_reload_stop' : 'client_stop_all_generations'],
+    stageTrace: [...priorTrace, reason === 'reload' ? 'client_reload_stop' : reason === 'background' ? 'client_visibility_stop' : 'client_stop_all_generations'],
   }
+}
+
+function cancelBackgroundGenerationNodes(nodes: VisualCanvasNode[], activeNodeIds: Set<string>) {
+  let changed = false
+  const next = nodes.map((node) => {
+    if (!activeNodeIds.has(node.id) || !isActiveGenerationStatus(node.status)) return node
+    changed = true
+    return {
+      ...node,
+      status: 'cancelled' as const,
+      errorMessage: 'Generation was cancelled when the tab moved to the background. Retry to continue.',
+      metadataJson: stoppedGenerationMetadata(node.metadataJson, 'background'),
+    }
+  })
+  return changed ? next : nodes
 }
 
 type CanvasAssetResolveResult = {
@@ -2596,6 +2636,7 @@ export function VisualCanvasWorkspace({
   const saveAbortRef = useRef<AbortController | null>(null)
   const generationAbortControllersRef = useRef<Map<string, AbortController>>(new Map())
   const activeGenerationNodeIdsRef = useRef<Set<string>>(new Set())
+  const generationCanvasIdentityRef = useRef('')
   const isSwitchingProjectRef = useRef(false)
   const skipNextAutosaveRef = useRef(false)
   const hasUnsyncedLocalChangesRef = useRef(false)
@@ -2647,6 +2688,8 @@ export function VisualCanvasWorkspace({
     startClientY: number
   } | null>(null)
 
+  generationCanvasIdentityRef.current = generationCanvasIdentity(projectId, workflowId)
+
   useEffect(() => {
     const timers = timersRef.current
     return () => {
@@ -2654,7 +2697,12 @@ export function VisualCanvasWorkspace({
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
       if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current)
       pendingAutoGenerateIdsRef.current = []
-      generationAbortControllersRef.current.forEach((controller) => controller.abort())
+      const canvasIdentity = generationCanvasIdentityRef.current
+      generationAbortControllersRef.current.forEach((controller, nodeId) => controller.abort({
+        context: 'stale',
+        canvasIdentity,
+        nodeId,
+      } satisfies GenerationAbortReason))
       generationAbortControllersRef.current.clear()
       activeGenerationNodeIdsRef.current.clear()
     }
@@ -2925,13 +2973,24 @@ export function VisualCanvasWorkspace({
     setEdges(resolved)
   }, [])
 
-  const clearGenerationTimersAndRequests = useCallback(() => {
+  const clearGenerationTimersAndRequests = useCallback((
+    context: GenerationAbortContext = 'stale',
+    expectedCanvasIdentity = generationCanvasIdentityRef.current,
+  ) => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer))
     timersRef.current.length = 0
-    generationAbortControllersRef.current.forEach((controller) => controller.abort())
+    const activeNodeIds = new Set(generationAbortControllersRef.current.keys())
+    generationAbortControllersRef.current.forEach((controller, nodeId) => controller.abort({
+      context,
+      canvasIdentity: expectedCanvasIdentity,
+      nodeId,
+    } satisfies GenerationAbortReason))
     generationAbortControllersRef.current.clear()
     activeGenerationNodeIdsRef.current.clear()
-  }, [])
+    if (context === 'background' && generationCanvasIdentityRef.current === expectedCanvasIdentity) {
+      commitNodes((current) => cancelBackgroundGenerationNodes(current, activeNodeIds))
+    }
+  }, [commitNodes])
 
   const beginNodeGeneration = useCallback((nodeId: string) => {
     if (activeGenerationNodeIdsRef.current.has(nodeId)) return null
@@ -3826,31 +3885,38 @@ export function VisualCanvasWorkspace({
   // Flush pending save on page leave / tab hide / component unmount
   useEffect(() => {
     if (!projectId || !workflowId) return
+    const canvasIdentity = generationCanvasIdentity(projectId, workflowId)
 
-    function flushBeforeLeave() {
-      if (hasUnsyncedLocalChangesRef.current) flushLocalSnapshot()
-      clearGenerationTimersAndRequests()
+    function flushBeforeLeave(context: 'background' | 'stale') {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
+      if (context === 'background') {
+        clearGenerationTimersAndRequests('background', canvasIdentity)
+        flushLocalSnapshot()
+        scheduleCanvasSave(0)
+      } else {
+        if (hasUnsyncedLocalChangesRef.current) flushLocalSnapshot()
+        clearGenerationTimersAndRequests('stale', canvasIdentity)
+      }
     }
 
-    const onPageHide = () => flushBeforeLeave()
-    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flushBeforeLeave() }
-    const onBeforeUnload = () => flushBeforeLeave()
+    const onPageHide = () => flushBeforeLeave('stale')
+    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flushBeforeLeave('background') }
+    const onBeforeUnload = () => flushBeforeLeave('stale')
 
     window.addEventListener('pagehide', onPageHide)
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('beforeunload', onBeforeUnload)
 
     return () => {
-      flushBeforeLeave()
+      flushBeforeLeave('stale')
       window.removeEventListener('pagehide', onPageHide)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
-  }, [clearGenerationTimersAndRequests, flushLocalSnapshot, projectId, workflowId])
+  }, [clearGenerationTimersAndRequests, flushLocalSnapshot, projectId, scheduleCanvasSave, workflowId])
 
   // One-shot DB recovery: after canvas loads, for each node flagged reloadRecoveryPending=true,
   // check if a READY Asset already exists in the DB (cn-executor may have written Asset but
@@ -4051,7 +4117,11 @@ export function VisualCanvasWorkspace({
     pendingAutoGenerateIdsRef.current = pendingAutoGenerateIdsRef.current.filter((id) => id !== nodeId)
     setPendingAutoGenerateIds((prev) => prev.filter((id) => id !== nodeId))
     const generationController = generationAbortControllersRef.current.get(nodeId)
-    generationController?.abort()
+    generationController?.abort({
+      context: 'deleted',
+      canvasIdentity: generationCanvasIdentityRef.current,
+      nodeId,
+    } satisfies GenerationAbortReason)
     generationAbortControllersRef.current.delete(nodeId)
     activeGenerationNodeIdsRef.current.delete(nodeId)
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
@@ -5504,8 +5574,9 @@ export function VisualCanvasWorkspace({
           message: error instanceof Error ? error.message : '节点卡片重新生成失败。',
         }, selectedProviderId)
       } finally {
+        const abortContext = generationAbortContext(generationController.signal)
         finishNodeGeneration(node.id, generationController)
-        if (!generationController.signal.aborted) {
+        if (abortContext === null) {
           clearRegenerationLoading()
         }
       }
@@ -8609,7 +8680,7 @@ export function VisualCanvasWorkspace({
     && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
 
   const handleStopAllGenerations = useCallback(() => {
-    clearGenerationTimersAndRequests()
+    clearGenerationTimersAndRequests('manual')
     commitNodes((current) => current.map((node) => {
       if (!isActiveGenerationStatus(node.status)) return node
       return {
