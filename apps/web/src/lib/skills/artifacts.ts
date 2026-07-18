@@ -107,6 +107,27 @@ function assertExactArtifactKeys(value: object) {
   }
 }
 
+function sortedOwnStringKeys(value: object, field: string): string[] {
+  const ownKeys = Reflect.ownKeys(value)
+  const keys = new Array<string>(ownKeys.length)
+  for (let index = 0; index < ownKeys.length; index += 1) {
+    const key = ownKeys[index]
+    if (typeof key !== 'string') failClone(`${field} must not contain symbol keys`)
+    keys[index] = key
+  }
+
+  for (let index = 1; index < keys.length; index += 1) {
+    const key = keys[index]!
+    let insertionIndex = index
+    while (insertionIndex > 0 && keys[insertionIndex - 1]! > key) {
+      keys[insertionIndex] = keys[insertionIndex - 1]!
+      insertionIndex -= 1
+    }
+    keys[insertionIndex] = key
+  }
+  return keys
+}
+
 function cloneCanonicalSourceIdentifiers(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) failClone(`${field} must be an array`)
 
@@ -173,10 +194,9 @@ function cloneJsonData(value: unknown, ancestors: WeakSet<object>, field: string
 
     if (!isPlainObject(value)) failClone(`${field} must contain only plain objects`)
     const result: Record<string, unknown> = {}
-    const keys = Reflect.ownKeys(value)
+    const keys = sortedOwnStringKeys(value, field)
     for (let index = 0; index < keys.length; index += 1) {
-      const key = keys[index]
-      if (typeof key !== 'string') failClone(`${field} must not contain symbol keys`)
+      const key = keys[index]!
       const item = ownEnumerableDataValue(value, key, `${field}.${key}`)
       Object.defineProperty(result, key, {
         value: cloneJsonData(item, ancestors, `${field}.${key}`),
@@ -255,7 +275,10 @@ export function cloneCreatorSkillArtifact(value: unknown): CreatorSkillArtifact 
 
 export function isCreatorSkillArtifact(value: unknown): value is CreatorSkillArtifact {
   try {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !isPlainObject(value)) {
+      return false
+    }
+    assertExactArtifactKeys(value)
 
     const artifact = value as Record<string, unknown>
     return isTrimmedIdentifier(artifact.artifactId)
@@ -265,7 +288,6 @@ export function isCreatorSkillArtifact(value: unknown): value is CreatorSkillArt
       && artifact.artifactVersion > 0
       && isCanonicalIdentifierArray(artifact.sourceNodeIds)
       && isCanonicalIdentifierArray(artifact.sourceArtifactIds)
-      && Object.prototype.hasOwnProperty.call(artifact, 'payload')
       && artifact.payload !== undefined
   } catch {
     return false

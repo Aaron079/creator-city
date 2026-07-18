@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { cloneCreatorSkillArtifact } from './artifacts'
+import { cloneCreatorSkillArtifact, isCreatorSkillArtifact } from './artifacts'
 import { readApprovedCreatorSkillArtifact } from './approved-artifacts'
 
 function createArtifact() {
@@ -60,16 +60,64 @@ describe('readApprovedCreatorSkillArtifact', () => {
     assertInvalid(metadataWith({ ...createArtifact(), sourceNodeIds: ['node-b', 'node-a'] }))
   })
 
-  test('returns invalid for inherited creatorSkill and approvedArtifact fields', () => {
+  test('ignores an inherited creatorSkill field without traversing prototypes', () => {
     const inheritedCreatorSkill = Object.create({
       creatorSkill: { approvedArtifact: createArtifact() },
     })
-    const inheritedApprovedArtifact = {
-      creatorSkill: Object.create({ approvedArtifact: createArtifact() }),
+
+    assert.deepEqual(readApprovedCreatorSkillArtifact(inheritedCreatorSkill), {
+      status: 'absent',
+    })
+  })
+
+  test('does not invoke a self-returning prototype trap for a missing own field', () => {
+    let prototypeReads = 0
+    let metadata: object
+    metadata = new Proxy({}, {
+      getPrototypeOf() {
+        prototypeReads += 1
+        if (prototypeReads > 2) throw new Error('bounded self-returning prototype trap')
+        return metadata
+      },
+    })
+
+    assert.deepEqual(readApprovedCreatorSkillArtifact(metadata), { status: 'absent' })
+    assert.equal(prototypeReads, 0)
+  })
+
+  test('validates metadata containers as guarded plain records', () => {
+    class MetadataRecord {
+      creatorSkill = { approvedArtifact: createArtifact() }
     }
 
-    assertInvalid(inheritedCreatorSkill)
-    assertInvalid(inheritedApprovedArtifact)
+    const arrayMetadata: unknown[] & { creatorSkill?: unknown } = []
+    arrayMetadata.creatorSkill = { approvedArtifact: createArtifact() }
+    const nullPrototypeMetadata = Object.create(null) as Record<string, unknown>
+    const nullPrototypeCreatorSkill = Object.create(null) as Record<string, unknown>
+    nullPrototypeCreatorSkill.approvedArtifact = createArtifact()
+    nullPrototypeMetadata.creatorSkill = nullPrototypeCreatorSkill
+
+    assertInvalid(arrayMetadata)
+    assertInvalid(new MetadataRecord())
+    assert.equal(readApprovedCreatorSkillArtifact(nullPrototypeMetadata).status, 'valid')
+  })
+
+  test('contains metadata descriptor and prototype trap failures as invalid', () => {
+    const descriptorFailure = new Proxy({}, {
+      getOwnPropertyDescriptor() {
+        throw new Error('descriptor trap')
+      },
+    })
+    const prototypeFailure = new Proxy({
+      creatorSkill: { approvedArtifact: createArtifact() },
+    }, {
+      getPrototypeOf() {
+        throw new Error('prototype trap')
+      },
+    })
+
+    assertInvalid(descriptorFailure)
+    assertInvalid(prototypeFailure)
   })
 
   test('returns invalid without invoking accessor-backed fields', () => {
@@ -237,6 +285,47 @@ describe('cloneCreatorSkillArtifact', () => {
         () => cloneCreatorSkillArtifact({ ...createArtifact(), payload }),
         TypeError,
       )
+    }
+  })
+
+  test('sorts nested payload object keys for deterministic serialization', () => {
+    const left = cloneCreatorSkillArtifact({
+      ...createArtifact(),
+      payload: {
+        zebra: { yellow: 2, alpha: 1 },
+        alpha: [{ delta: 4, beta: 2 }],
+      },
+    })
+    const right = cloneCreatorSkillArtifact({
+      ...createArtifact(),
+      payload: {
+        alpha: [{ beta: 2, delta: 4 }],
+        zebra: { alpha: 1, yellow: 2 },
+      },
+    })
+
+    assert.equal(JSON.stringify(left), JSON.stringify(right))
+    assert.deepEqual(Object.keys(left.payload as object), ['alpha', 'zebra'])
+    assert.deepEqual(Object.keys((left.payload as { zebra: object }).zebra), ['alpha', 'yellow'])
+    assert.deepEqual(
+      Object.keys((left.payload as { alpha: object[] }).alpha[0]!),
+      ['beta', 'delta'],
+    )
+  })
+
+  test('shares the exact canonical six-field rule with the artifact predicate', () => {
+    const exact = createArtifact()
+    const extraString = { ...createArtifact(), extra: true }
+    const extraSymbol = createArtifact() as ReturnType<typeof createArtifact> & {
+      [key: symbol]: boolean
+    }
+    extraSymbol[Symbol('extra')] = true
+
+    assert.equal(isCreatorSkillArtifact(exact), true)
+    assert.doesNotThrow(() => cloneCreatorSkillArtifact(exact))
+    for (const artifact of [extraString, extraSymbol]) {
+      assert.equal(isCreatorSkillArtifact(artifact), false)
+      assert.throws(() => cloneCreatorSkillArtifact(artifact), TypeError)
     }
   })
 })

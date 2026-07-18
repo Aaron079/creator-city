@@ -18,24 +18,14 @@ function invalidApprovedArtifact(): ApprovedArtifactReadResult {
 
 type PropertyReadResult =
   | { status: 'absent' }
-  | { status: 'inherited-or-accessor' }
+  | { status: 'accessor' }
   | { status: 'value'; value: unknown }
 
 function readOwnDataProperty(value: object, key: PropertyKey): PropertyReadResult {
   const descriptor = Object.getOwnPropertyDescriptor(value, key)
-  if (descriptor) {
-    if (!('value' in descriptor)) return { status: 'inherited-or-accessor' }
-    return { status: 'value', value: descriptor.value }
-  }
-
-  let prototype = Object.getPrototypeOf(value)
-  while (prototype !== null) {
-    if (Object.getOwnPropertyDescriptor(prototype, key)) {
-      return { status: 'inherited-or-accessor' }
-    }
-    prototype = Object.getPrototypeOf(prototype)
-  }
-  return { status: 'absent' }
+  if (!descriptor) return { status: 'absent' }
+  if (!('value' in descriptor)) return { status: 'accessor' }
+  return { status: 'value', value: descriptor.value }
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -52,7 +42,9 @@ export function readApprovedCreatorSkillArtifact(
   try {
     const creatorSkill = readOwnDataProperty(metadataJson, 'creatorSkill')
     if (creatorSkill.status === 'absent') return { status: 'absent' }
-    if (creatorSkill.status !== 'value' || !isPlainRecord(creatorSkill.value)) {
+    if (creatorSkill.status !== 'value'
+      || !isPlainRecord(metadataJson)
+      || !isPlainRecord(creatorSkill.value)) {
       return invalidApprovedArtifact()
     }
 
