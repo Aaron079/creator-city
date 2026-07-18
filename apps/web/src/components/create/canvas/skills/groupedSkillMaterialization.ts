@@ -15,6 +15,11 @@ import type {
 } from '../../../../lib/skills/shot-planning/types'
 
 const RUN_FINGERPRINT = /^csf1_[0-9a-f]{8}$/
+const MAX_SCENES = 40
+const MAX_ITEMS = 120
+const MAX_ARTIFACTS = 40
+const MAX_SOURCE_IDENTIFIERS = 120
+const MAX_EXISTING_NODES = 10_000
 
 type ApprovalContext = {
   runFingerprint: string
@@ -222,21 +227,28 @@ function optionalString(record: object, key: PropertyKey, field: string): Option
   return { present: true, value: descriptor.value as string | undefined }
 }
 
-function denseArray<T>(value: unknown, field: string): T[] {
+function boundedArrayLength(value: unknown, field: string, maxLength: number) {
   if (!Array.isArray(value)) fail(`${field} must be an array`)
   const length = ownData(value, 'length', `${field}.length`)
   if (!Number.isSafeInteger(length) || (length as number) < 0) {
     fail(`${field}.length is invalid`)
   }
+  if ((length as number) > maxLength) fail(`${field} exceeds its hard limit`)
+  return length as number
+}
+
+function denseArray<T>(value: unknown, field: string, maxLength: number): T[] {
+  const length = boundedArrayLength(value, field, maxLength)
+  const array = value as unknown[]
   const result = new Array<T>(length as number)
   for (let index = 0; index < result.length; index += 1) {
-    result[index] = ownData(value, index, `${field}[${index}]`) as T
+    result[index] = ownData(array, index, `${field}[${index}]`) as T
   }
   return result
 }
 
 function identifierArray(value: unknown, field: string) {
-  const values = denseArray<unknown>(value, field)
+  const values = denseArray<unknown>(value, field, MAX_SOURCE_IDENTIFIERS)
   const result = new Array<string>(values.length)
   let previous: string | undefined
   for (let index = 0; index < values.length; index += 1) {
@@ -323,7 +335,11 @@ function snapshotBeat(value: unknown, status: 'pending' | 'approved'): BeatSnaps
 function snapshotNarrativeScene(value: unknown, status: 'pending' | 'approved') {
   const scene = requireRecord(value, 'narrative scene')
   const sceneId = identifier(scene, 'sceneId', 'scene.sceneId')
-  const beats = denseArray<unknown>(ownData(scene, 'beats', 'scene.beats'), 'scene.beats')
+  const beats = denseArray<unknown>(
+    ownData(scene, 'beats', 'scene.beats'),
+    'scene.beats',
+    MAX_ITEMS,
+  )
     .map((beat) => snapshotBeat(beat, status))
   const ids = new Set<string>()
   const orders = new Set<number>()
@@ -345,6 +361,21 @@ function snapshotNarrativeScene(value: unknown, status: 'pending' | 'approved') 
 
 function snapshotShot(value: unknown, status: 'pending' | 'approved'): ShotSnapshot {
   const shot = requireRecord(value, 'shot')
+  const sceneId = identifier(shot, 'sceneId', 'shot.sceneId')
+  const beatId = optionalString(shot, 'beatId', 'shot.beatId')
+  if (beatId.present) {
+    if (beatId.value === undefined) {
+      fail('shot.beatId must be defined when present')
+    }
+    const prefix = `${sceneId}-beat-`
+    const suffix = beatId.value.slice(prefix.length)
+    if (beatId.value !== beatId.value.trim()
+      || !beatId.value.startsWith(prefix)
+      || !/^[0-9]{3}$/u.test(suffix)
+      || Number(suffix) < 1) {
+      fail('shot.beatId is not a canonical scene beat identity')
+    }
+  }
   const lineStart = positiveInteger(shot, 'lineStart', 'shot.lineStart')
   const lineEnd = positiveInteger(shot, 'lineEnd', 'shot.lineEnd')
   if (lineEnd < lineStart) fail('shot line range is invalid')
@@ -354,8 +385,8 @@ function snapshotShot(value: unknown, status: 'pending' | 'approved'): ShotSnaps
   if (duration !== 5 && duration !== 10) fail('shot.duration is invalid')
   return {
     shotId: identifier(shot, 'shotId', 'shot.shotId'),
-    sceneId: identifier(shot, 'sceneId', 'shot.sceneId'),
-    beatId: optionalString(shot, 'beatId', 'shot.beatId'),
+    sceneId,
+    beatId,
     order: positiveInteger(shot, 'order', 'shot.order'),
     objective: stringValue(shot, 'objective', 'shot.objective'),
     subject: stringValue(shot, 'subject', 'shot.subject'),
@@ -376,7 +407,11 @@ function snapshotShot(value: unknown, status: 'pending' | 'approved'): ShotSnaps
 function snapshotShotScene(value: unknown, status: 'pending' | 'approved') {
   const scene = requireRecord(value, 'shot scene')
   const sceneId = identifier(scene, 'sceneId', 'scene.sceneId')
-  const shots = denseArray<unknown>(ownData(scene, 'shots', 'scene.shots'), 'scene.shots')
+  const shots = denseArray<unknown>(
+    ownData(scene, 'shots', 'scene.shots'),
+    'scene.shots',
+    MAX_ITEMS,
+  )
     .map((shot) => snapshotShot(shot, status))
   const ids = new Set<string>()
   const orders = new Set<number>()
@@ -402,7 +437,7 @@ function snapshotArtifact<TScene>(
   sceneKey: 'beats' | 'shots',
   sceneSnapshot: (value: unknown, status: 'pending') => TScene,
 ): ArtifactSnapshot<TScene> {
-  const artifacts = denseArray<unknown>(artifactsValue, 'result.artifacts')
+  const artifacts = denseArray<unknown>(artifactsValue, 'result.artifacts', MAX_ARTIFACTS)
   let found: ArtifactSnapshot<TScene> | undefined
   for (let index = 0; index < artifacts.length; index += 1) {
     const candidate = artifacts[index]
@@ -425,9 +460,23 @@ function snapshotArtifact<TScene>(
     const scenesValue = denseArray<unknown>(
       ownData(payload, 'scenes', 'Artifact.payload.scenes'),
       'Artifact.payload.scenes',
+      MAX_SCENES,
     )
     if (scenesValue.length === 0) fail('Artifact scenes must be nonempty')
-    const scenes = scenesValue.map((scene) => sceneSnapshot(scene, 'pending'))
+    let totalItems = 0
+    for (let sceneIndex = 0; sceneIndex < scenesValue.length; sceneIndex += 1) {
+      const scene = requireRecord(scenesValue[sceneIndex], `Artifact scene ${sceneIndex}`)
+      const itemCount = boundedArrayLength(
+        ownData(scene, sceneKey, `Artifact scene ${sceneKey}`),
+        `Artifact scene ${sceneKey}`,
+        MAX_ITEMS - totalItems,
+      )
+      totalItems += itemCount
+    }
+    const scenes = new Array<TScene>(scenesValue.length)
+    for (let sceneIndex = 0; sceneIndex < scenesValue.length; sceneIndex += 1) {
+      scenes[sceneIndex] = sceneSnapshot(scenesValue[sceneIndex], 'pending')
+    }
     const sceneIds = new Set<string>()
     const sceneOrders = new Set<number>()
     for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex += 1) {
@@ -546,7 +595,7 @@ function validateIdentity(
 }
 
 function evidenceById(value: unknown, sourceNodeIds: string[]) {
-  const values = denseArray<unknown>(value, 'result.evidence')
+  const values = denseArray<unknown>(value, 'result.evidence', MAX_ITEMS)
   const result = new Map<string, CreatorSkillEvidence>()
   const allowedSources = new Set(sourceNodeIds)
   for (let index = 0; index < values.length; index += 1) {
@@ -620,7 +669,7 @@ function requireItemEvidence(
 }
 
 function existingDuplicateIds(value: unknown, skillId: string, fingerprint: string) {
-  const nodes = denseArray<unknown>(value, 'existingNodes')
+  const nodes = denseArray<unknown>(value, 'existingNodes', MAX_EXISTING_NODES)
   const result = new Set<string>()
   for (let index = 0; index < nodes.length; index += 1) {
     const metadata = tryOwnData(nodes[index], 'metadataJson')
@@ -632,6 +681,29 @@ function existingDuplicateIds(value: unknown, skillId: string, fingerprint: stri
       const resultId = tryOwnData(creatorSkill, 'resultId')
       if (typeof resultId === 'string') result.add(resultId)
     }
+  }
+  return result
+}
+
+function snapshotApprovedScenes<TScene>(
+  value: unknown,
+  itemKey: 'beats' | 'shots',
+  sceneSnapshot: (scene: unknown, status: 'approved') => TScene,
+) {
+  const values = denseArray<unknown>(value, 'approvedScenes', MAX_SCENES)
+  let totalItems = 0
+  for (let sceneIndex = 0; sceneIndex < values.length; sceneIndex += 1) {
+    const scene = requireRecord(values[sceneIndex], `approvedScenes[${sceneIndex}]`)
+    const itemCount = boundedArrayLength(
+      ownData(scene, itemKey, `approvedScenes[${sceneIndex}].${itemKey}`),
+      `approvedScenes[${sceneIndex}].${itemKey}`,
+      MAX_ITEMS - totalItems,
+    )
+    totalItems += itemCount
+  }
+  const result = new Array<TScene>(values.length)
+  for (let sceneIndex = 0; sceneIndex < values.length; sceneIndex += 1) {
+    result[sceneIndex] = sceneSnapshot(values[sceneIndex], 'approved')
   }
   return result
 }
@@ -764,10 +836,11 @@ function planNarrative(inputValue: NarrativeBeatMaterializationInput) {
   validateIdentity(result, context, artifact.artifactId, 'narrative-beat-analysis')
   const evidence = evidenceById(result.evidence, artifact.sourceNodeIds)
   validateNarrativeEvidence(artifact.scenes, evidence)
-  const approvals = denseArray<unknown>(
+  const approvals = snapshotApprovedScenes(
     ownData(input, 'approvedScenes', 'input.approvedScenes'),
-    'approvedScenes',
-  ).map((scene) => snapshotNarrativeScene(scene, 'approved'))
+    'beats',
+    snapshotNarrativeScene,
+  )
   const existing = existingDuplicateIds(
     ownData(input, 'existingNodes', 'input.existingNodes'),
     result.skillId,
@@ -853,10 +926,11 @@ function planShots(inputValue: ShotPlanMaterializationInput) {
   validateIdentity(result, context, artifact.artifactId, 'shot-planning')
   const evidence = evidenceById(result.evidence, artifact.sourceNodeIds)
   validateShotEvidence(artifact.scenes, evidence)
-  const approvals = denseArray<unknown>(
+  const approvals = snapshotApprovedScenes(
     ownData(input, 'approvedScenes', 'input.approvedScenes'),
-    'approvedScenes',
-  ).map((scene) => snapshotShotScene(scene, 'approved'))
+    'shots',
+    snapshotShotScene,
+  )
   const existing = existingDuplicateIds(
     ownData(input, 'existingNodes', 'input.existingNodes'),
     result.skillId,

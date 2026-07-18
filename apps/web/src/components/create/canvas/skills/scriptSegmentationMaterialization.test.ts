@@ -234,6 +234,20 @@ describe('planScriptSceneMaterialization output', () => {
     assert.deepEqual(artifact.sourceArtifactIds, [SOURCE_ARTIFACT_ID])
   })
 
+  test('rejects CR and multiline approved headings before Artifact persistence', () => {
+    const invalidHeadings = [
+      'EXT. ROOF\rNIGHT',
+      'EXT. ROOF\nNIGHT',
+      'EXT. ROOF\r\nNIGHT',
+    ]
+
+    for (const heading of invalidHeadings) {
+      assert.throws(() => plan({
+        approvedScenes: [approve(FIRST_SCENE, { heading })],
+      }), TypeError)
+    }
+  })
+
   test('uses a Chinese scene-order title when the edited heading is blank', () => {
     const planned = plan({
       approvedScenes: [approve(SECOND_SCENE, { heading: ' \t ' })],

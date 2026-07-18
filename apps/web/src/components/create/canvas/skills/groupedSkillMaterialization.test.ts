@@ -285,6 +285,118 @@ function syncShotEvidence(result: CreatorSkillRunResult) {
   })))
 }
 
+function narrativeResultWithShape(
+  sceneCount: number,
+  beatsPerScene: number,
+): CreatorSkillRunResult {
+  let line = 1
+  const scenes = Array.from({ length: sceneCount }, (_, sceneIndex) => {
+    const order = sceneIndex + 1
+    const sceneId = `scene-${String(order).padStart(3, '0')}`
+    const beats = Array.from({ length: beatsPerScene }, (_, beatIndex) => {
+      const beatOrder = beatIndex + 1
+      const sourceText = `Action ${order}.${beatOrder}.`
+      const beat = {
+        beatId: `${sceneId}-beat-${String(beatOrder).padStart(3, '0')}`,
+        sceneId,
+        order: beatOrder,
+        type: 'action' as const,
+        sourceText,
+        summary: sourceText,
+        lineStart: line,
+        lineEnd: line,
+        reviewStatus: 'pending' as const,
+      }
+      line += 1
+      return beat
+    })
+    return { sceneId, order, heading: `Scene ${order}`, beats }
+  })
+  return {
+    skillId: 'narrative-beat-analysis',
+    skillVersion: '1.0.0',
+    runFingerprint: RUN_FINGERPRINT,
+    status: 'ready',
+    artifacts: [{
+      artifactId: NARRATIVE_ARTIFACT_ID,
+      artifactType: 'narrative-beat-map',
+      artifactVersion: 1,
+      sourceNodeIds: [SOURCE_NODE_ID],
+      sourceArtifactIds: ['scene-breakdown-001'],
+      payload: { scenes },
+    }],
+    evidence: scenes.flatMap((scene) => scene.beats.map((beat) => evidence(
+      `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
+      'NARRATIVE_BEAT',
+      beat.lineStart,
+      beat.sourceText,
+    ))),
+    warnings: [],
+    blockers: [],
+  }
+}
+
+function approvedNarrativeScenesFromResult(
+  result: CreatorSkillRunResult,
+): ApprovedNarrativeBeatScene[] {
+  const payload = result.artifacts[0]!.payload as {
+    scenes: Array<ApprovedNarrativeBeatScene>
+  }
+  return payload.scenes.map((scene) => ({
+    ...structuredClone(scene),
+    beats: scene.beats.map((beat) => ({
+      ...structuredClone(beat),
+      reviewStatus: 'approved' as const,
+    })),
+  }))
+}
+
+function shotResultWithCount(shotCount: number): CreatorSkillRunResult {
+  const sceneId = 'scene-001'
+  const shots = Array.from({ length: shotCount }, (_, index) => {
+    const order = index + 1
+    const sourceText = `Shot source ${order}.`
+    return {
+      shotId: `${sceneId}-shot-${String(order).padStart(3, '0')}`,
+      sceneId,
+      beatId: `${sceneId}-beat-${String(order).padStart(3, '0')}`,
+      order,
+      objective: `Objective ${order}`,
+      subject: 'Maya',
+      action: `acts ${order}`,
+      suggestedShotSize: 'medium' as const,
+      sourceText,
+      lineStart: order,
+      lineEnd: order,
+      outputKind: 'image' as const,
+      duration: 5 as const,
+      reviewStatus: 'pending' as const,
+    }
+  })
+  return {
+    skillId: 'shot-planning',
+    skillVersion: '1.0.0',
+    runFingerprint: RUN_FINGERPRINT,
+    status: 'ready',
+    artifacts: [{
+      artifactId: SHOT_ARTIFACT_ID,
+      artifactType: 'shot-plan',
+      artifactVersion: 1,
+      sourceNodeIds: [SOURCE_NODE_ID],
+      sourceArtifactIds: [NARRATIVE_ARTIFACT_ID],
+      payload: { scenes: [{ sceneId, order: 1, heading: 'Scene 1', shots }] },
+    }],
+    evidence: shots.map((shot) => evidence(
+      `shot-plan-evidence-001-${String(shot.order).padStart(3, '0')}`,
+      'SHOT_PRIMARY_SOURCE_UNIT',
+      shot.lineStart,
+      shot.sourceText,
+    )),
+    warnings: [],
+    blockers: [],
+  }
+}
+
 function deepFreeze(value: unknown, seen = new Set<object>()): void {
   if (!value || typeof value !== 'object' || seen.has(value)) return
   seen.add(value)
@@ -548,6 +660,104 @@ describe('grouped materialization validation and purity', () => {
       result,
       approvedScenes: [approvedShotSceneFromResult(result, [1, 0])],
     }), TypeError)
+  })
+
+  test('validates optional shot beat identity when present', () => {
+    const invalidBeatIds = [
+      '',
+      ' scene-001-beat-001 ',
+      'scene-002-beat-001',
+      'scene-001-beat-1',
+      'scene-001-beat-000',
+    ]
+    for (const beatId of invalidBeatIds) {
+      const result = shotResult()
+      const payload = result.artifacts[0]!.payload as { scenes: typeof SHOT_SCENES }
+      payload.scenes[0]!.shots[0]!.beatId = beatId
+      assert.throws(() => shotPlan({
+        result,
+        approvedScenes: [approvedShotSceneFromResult(result)],
+      }), TypeError)
+    }
+
+    const undefinedBeat = shotResult()
+    const undefinedBeatPayload = undefinedBeat.artifacts[0]!.payload as {
+      scenes: Array<{ shots: Array<{ beatId?: string }> }>
+    }
+    undefinedBeatPayload.scenes[0]!.shots[0]!.beatId = undefined
+    assert.throws(() => shotPlan({
+      result: undefinedBeat,
+      approvedScenes: [approvedShotSceneFromResult(undefinedBeat)],
+    }), TypeError)
+
+    const withoutBeat = shotResult()
+    const withoutBeatPayload = withoutBeat.artifacts[0]!.payload as {
+      scenes: typeof SHOT_SCENES
+    }
+    const shotWithoutBeat = withoutBeatPayload.scenes[0]!.shots[0]! as {
+      beatId?: string
+    }
+    delete shotWithoutBeat.beatId
+    assert.equal(shotPlan({
+      result: withoutBeat,
+      approvedScenes: [approvedShotSceneFromResult(withoutBeat)],
+    }).create.length, 1)
+  })
+
+  test('rejects scene, item, and evidence collections beyond hard limits', () => {
+    const fortyOneScenes = narrativeResultWithShape(41, 1)
+    const oneHundredTwentyOneBeats = narrativeResultWithShape(1, 121)
+    const oneHundredTwentyOneShots = shotResultWithCount(121)
+
+    assert.throws(() => narrativePlan({
+      result: fortyOneScenes,
+      approvedScenes: [],
+    }), /limit/i)
+    assert.throws(() => narrativePlan({
+      result: oneHundredTwentyOneBeats,
+      approvedScenes: [],
+    }), /limit/i)
+    assert.throws(() => shotPlan({
+      result: oneHundredTwentyOneShots,
+      approvedScenes: [],
+    }), /limit/i)
+
+    const oversizedEvidence = narrativeResult()
+    oversizedEvidence.evidence.length = 1_000_000
+    assert.throws(() => narrativePlan({
+      result: oversizedEvidence,
+      approvedScenes: [],
+    }), /limit/i)
+
+    const hostileSceneLength = narrativeResult()
+    const hostilePayload = hostileSceneLength.artifacts[0]!.payload as {
+      scenes: typeof NARRATIVE_SCENES
+    }
+    hostilePayload.scenes.length = 1_000_000
+    assert.throws(() => narrativePlan({
+      result: hostileSceneLength,
+      approvedScenes: [],
+    }), /limit/i)
+  })
+
+  test('preserves valid 40-scene and 120-item boundaries', () => {
+    const narrative = narrativeResultWithShape(40, 3)
+    const shots = shotResultWithCount(120)
+
+    const narrativePlanned = narrativePlan({
+      result: narrative,
+      approvedScenes: approvedNarrativeScenesFromResult(narrative),
+    })
+    const shotPlanned = shotPlan({
+      result: shots,
+      approvedScenes: [approvedShotSceneFromResult(shots)],
+    })
+
+    assert.equal(narrativePlanned.create.length, 40)
+    assert.equal(shotPlanned.create.length, 1)
+    const approvedShots = shotPlanned.create[0]!.metadataJson.creatorSkill
+      .approvedArtifact.payload as { scenes: Array<{ shots: unknown[] }> }
+    assert.equal(approvedShots.scenes[0]!.shots.length, 120)
   })
 
   test('allows exact shared source ranges while preserving reviewed payload order', () => {

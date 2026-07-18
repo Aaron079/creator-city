@@ -215,7 +215,7 @@ export const NARRATIVE_BEAT_ANALYSIS_SKILL: CreatorExecutableSkill = {
     }
 
     const scenes = validatedArtifact?.scenes ?? derived?.scenes ?? []
-    const sourceNodeId = sourceNode?.id ?? validatedArtifact!.sourceNodeId
+    const sourceNodeId = validatedArtifact?.sourceNodeId ?? sourceNode!.id
     const parsed = parseNarrativeBeats(scenes, sourceNodeId)
     if (parsed.limitExceeded) {
       return blockedResult(

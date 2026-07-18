@@ -457,15 +457,20 @@ describe('narrative beat inputs', () => {
     })
 
     assert.equal(result.status, 'ready')
-    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['materialized-scene-node'])
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
     assert.deepEqual(allBeats(result).map((beat) => beat.lineStart), [14, 15, 16])
     assert.ok(result.evidence.every((item) => (
-      item.sourceNodeId === 'materialized-scene-node'
+      item.sourceNodeId === 'original-script-node'
     )))
   })
 
   test('accepts the exact body-only Text for one canonical headed scene', () => {
     const artifact = approvedSceneTwoArtifact()
+    artifact.payload.scenes[0]!.sourceText = [
+      'EXT. ROOFTOP - NIGHT',
+      'Indigo silence.',
+      'However, the power suddenly fades.',
+    ].join('\n')
     const body = artifact.payload.scenes[0]!.sourceText.split('\n').slice(1).join('\r\n')
     const result = run({
       sourceNodes: [textNode(`  ${body.replace(' ', '   ')}  `, {
@@ -474,7 +479,7 @@ describe('narrative beat inputs', () => {
       artifacts: [artifact],
     })
 
-    assert.equal(result.status, 'ready')
+    assert.equal(result.status, 'needs-review')
     assert.deepEqual(allBeats(result).map((beat) => ({
       sourceText: beat.sourceText,
       lineStart: beat.lineStart,
@@ -482,7 +487,7 @@ describe('narrative beat inputs', () => {
       sourceText: 'EXT. ROOFTOP - NIGHT',
       lineStart: 14,
     }, {
-      sourceText: 'Maya wants to repair the antenna.',
+      sourceText: 'Indigo silence.',
       lineStart: 15,
     }, {
       sourceText: 'However, the power suddenly fades.',
@@ -491,10 +496,31 @@ describe('narrative beat inputs', () => {
     assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
       'approved-scene-breakdown-002',
     ])
-    assert.ok(result.evidence.every((item) => (
-      item.sourceNodeId === 'materialized-scene-node'
-      && item.lineStart >= 14
-    )))
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
+    assert.deepEqual(result.evidence.map((item) => ({
+      sourceNodeId: item.sourceNodeId,
+      lineStart: item.lineStart,
+      lineEnd: item.lineEnd,
+      excerpt: item.excerpt,
+    })), [{
+      sourceNodeId: 'original-script-node',
+      lineStart: 14,
+      lineEnd: 14,
+      excerpt: 'EXT. ROOFTOP - NIGHT',
+    }, {
+      sourceNodeId: 'original-script-node',
+      lineStart: 15,
+      lineEnd: 15,
+      excerpt: 'Indigo silence.',
+    }, {
+      sourceNodeId: 'original-script-node',
+      lineStart: 16,
+      lineEnd: 16,
+      excerpt: 'However, the power suddenly fades.',
+    }])
+    assert.deepEqual(result.warnings.map((warning) => warning.sourceNodeId), [
+      'original-script-node',
+    ])
   })
 
   test('keeps body-only pairing exact and single-scene only', () => {
@@ -616,6 +642,8 @@ describe('narrative beat inputs', () => {
     assert.equal(result.status, 'ready')
     assert.deepEqual(allBeats(result).map((beat) => beat.lineStart), [14, 15, 16])
     assert.equal(allBeats(result)[0]!.sourceText, 'EXT. RADIO TOWER - DAWN')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
+    assert.ok(result.evidence.every((item) => item.sourceNodeId === 'original-script-node'))
     assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [approvedArtifact.artifactId])
   })
 

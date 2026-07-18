@@ -4,6 +4,7 @@ import type {
   CreatorSkillNodeMetadata as SharedCreatorSkillNodeMetadata,
   CreatorSkillRunResult,
 } from '../../../../lib/skills/types'
+import { readSceneBreakdownPayload } from '../../../../lib/skills/narrative-beat-analysis/parser'
 import type { ScriptSceneDraft } from '../../../../lib/skills/script-segmentation/types'
 
 const SKILL_ID = 'script-segmentation'
@@ -577,33 +578,38 @@ function planMaterialization(inputValue: MaterializationInput): MaterializationR
     if (!evidence) fail('approved scene is missing canonical evidence')
     const approvedSourceText = normalizeArtifactSourceText(approved.sourceText)
     const approvedHeading = approved.heading.trim()
+    if (/[\r\n]/u.test(approvedHeading)) fail('approved heading must be a single line')
     const canonicalSourceText = approvedHeading
       && !containsTrimmedLine(approvedSourceText, approvedHeading)
       ? `${approvedHeading}\n${approvedSourceText}`
       : approvedSourceText
     const preservesHeadedFormat = Boolean(approvedHeading)
+    const approvedPayload = {
+      format: preservesHeadedFormat ? 'headed-script' as const : 'paragraph-fallback' as const,
+      scenes: [{
+        sceneId: artifactScene.sceneId,
+        order: artifactScene.order,
+        heading: preservesHeadedFormat ? approvedHeading : '',
+        ...(approved.location.value !== undefined ? { location: approved.location.value } : {}),
+        ...(approved.timeOfDay.value !== undefined ? { timeOfDay: approved.timeOfDay.value } : {}),
+        characters: approved.characters.slice(),
+        actionSummary: artifactScene.actionSummary,
+        sourceText: canonicalSourceText,
+        lineStart: artifactScene.lineStart,
+        lineEnd: artifactScene.lineStart + lineCount(canonicalSourceText) - 1,
+        reviewStatus: 'pending' as const,
+      }],
+    }
+    if (!readSceneBreakdownPayload(approvedPayload).valid) {
+      fail('approved scene Artifact payload is not canonical')
+    }
     const approvedArtifact: CreatorSkillArtifact = {
       artifactId: `scene-breakdown-${artifactScene.sceneId}-approved`,
       artifactType: 'scene-breakdown',
       artifactVersion: 1,
       sourceNodeIds: [input.sourceNodeId],
       sourceArtifactIds: [artifact.artifactId],
-      payload: {
-        format: preservesHeadedFormat ? 'headed-script' : 'paragraph-fallback',
-        scenes: [{
-          sceneId: artifactScene.sceneId,
-          order: artifactScene.order,
-          heading: preservesHeadedFormat ? approvedHeading : '',
-          ...(approved.location.value !== undefined ? { location: approved.location.value } : {}),
-          ...(approved.timeOfDay.value !== undefined ? { timeOfDay: approved.timeOfDay.value } : {}),
-          characters: approved.characters.slice(),
-          actionSummary: artifactScene.actionSummary,
-          sourceText: canonicalSourceText,
-          lineStart: artifactScene.lineStart,
-          lineEnd: artifactScene.lineStart + lineCount(canonicalSourceText) - 1,
-          reviewStatus: 'pending',
-        }],
-      },
+      payload: approvedPayload,
     }
     create.push({
       resultId: artifactScene.sceneId,
