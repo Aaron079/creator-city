@@ -1,0 +1,429 @@
+/**
+ * Unit tests for Storyboard Director Recipe identity and metadata persistence.
+ * Run: cd apps/web && node_modules/.bin/tsx --test src/lib/storyboard/recipe/recipePersistence.test.ts
+ */
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import {
+  createRecipeMaterializationIdentity,
+  createStoryboardDirectorRecipeIdentity,
+  readStoryboardDirectorRecipe,
+  storyboardDirectorRecipeMetadata,
+  type RecipeReviewItem,
+  type StoryboardDirectorRecipe,
+} from '../index'
+import type {
+  NarrativeBeatDraft,
+  ScriptSceneDraft,
+  ShotPlanDraft,
+} from '../../skills'
+
+const context = { projectId: 'project-1', workflowId: 'workflow-1' }
+const source = {
+  id: 'source-1',
+  kind: 'text' as const,
+  title: 'Pilot',
+  prompt: 'INT. LAB - NIGHT\nMara opens the sealed case.',
+}
+
+function sceneDraft(index = 1): RecipeReviewItem<ScriptSceneDraft> {
+  return {
+    sceneId: `scene-${index}`,
+    order: index,
+    heading: 'INT. LAB - NIGHT',
+    location: 'LAB',
+    timeOfDay: 'NIGHT',
+    characters: ['Mara'],
+    actionSummary: 'Mara opens the sealed case.',
+    sourceText: source.prompt,
+    lineStart: 1,
+    lineEnd: 2,
+    reviewStatus: 'pending',
+    decision: 'approved',
+  }
+}
+
+function beatDraft(index = 1): RecipeReviewItem<NarrativeBeatDraft> {
+  return {
+    beatId: `beat-${index}`,
+    sceneId: 'scene-1',
+    order: index,
+    type: 'action',
+    sourceText: 'Mara opens the sealed case.',
+    summary: 'Mara opens the case.',
+    lineStart: 2,
+    lineEnd: 2,
+    reviewStatus: 'pending',
+    decision: 'approved',
+  }
+}
+
+function shotDraft(index = 1): RecipeReviewItem<ShotPlanDraft> {
+  return {
+    shotId: `shot-${index}`,
+    sceneId: 'scene-1',
+    beatId: 'beat-1',
+    order: index,
+    objective: 'Reveal the case.',
+    subject: 'Mara and the sealed case',
+    action: 'Mara opens the case.',
+    suggestedShotSize: 'medium',
+    sourceText: 'Mara opens the sealed case.',
+    lineStart: 2,
+    lineEnd: 2,
+    outputKind: 'image',
+    duration: 5,
+    reviewStatus: 'pending',
+    decision: 'approved',
+  }
+}
+
+function validRecipeFixture(): StoryboardDirectorRecipe {
+  const identity = createStoryboardDirectorRecipeIdentity(context, source)
+  return {
+    schemaVersion: 1,
+    recipeId: identity.recipeId,
+    projectId: context.projectId,
+    workflowId: context.workflowId,
+    sourceNode: { ...source },
+    sourceFingerprint: identity.sourceFingerprint,
+    activeStage: 'shot-review',
+    scene: {
+      status: 'approved',
+      generation: 1,
+      sourceFingerprint: identity.sourceFingerprint,
+      result: null,
+      drafts: [sceneDraft()],
+      approvedArtifact: null,
+      staleResult: null,
+    },
+    beat: {
+      status: 'approved',
+      generation: 1,
+      sourceFingerprint: identity.sourceFingerprint,
+      result: null,
+      drafts: [beatDraft()],
+      approvedArtifact: null,
+      staleResult: null,
+    },
+    shot: {
+      status: 'needs-review',
+      generation: 1,
+      sourceFingerprint: identity.sourceFingerprint,
+      result: null,
+      drafts: [shotDraft()],
+      approvedArtifact: null,
+      staleResult: null,
+      options: {
+        requestedShotCount: 1,
+        outputMode: 'image',
+        pacing: 'standard',
+        shotSizeStrategy: 'auto',
+        userInstruction: 'Keep the reveal restrained.',
+      },
+    },
+    findings: [{
+      findingId: 'finding-1',
+      severity: 'advisory',
+      code: 'CASE_CONTINUITY',
+      message: 'Keep the case orientation consistent.',
+      sceneId: 'scene-1',
+      evidenceIds: ['evidence-1'],
+    }],
+    storyboard: {
+      version: '1',
+      shots: [{
+        id: 'card-1',
+        index: 0,
+        title: 'S01',
+        shotType: 'medium',
+        durationSec: 5,
+        characterIds: ['character-mara'],
+        sceneIds: ['scene-1'],
+        nodeIds: ['source-1'],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+    receipts: [{
+      identity: createRecipeMaterializationIdentity(
+        identity.recipeId,
+        'shot-card',
+        'shot-1',
+        'result-1',
+      ),
+      kind: 'shot-card',
+      resultId: 'result-1',
+      targetId: 'card-1',
+    }],
+    legacyImportStatus: 'not-offered',
+    audit: {
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+  }
+}
+
+function metadataWith(recipe: unknown): unknown {
+  return { storyboardDirectorRecipe: recipe }
+}
+
+function unsupportedVersionFixture() {
+  return metadataWith({ ...validRecipeFixture(), schemaVersion: 2 })
+}
+
+function assertInvalid(recipe: unknown) {
+  const result = readStoryboardDirectorRecipe(metadataWith(recipe))
+  assert.equal(result.status, 'invalid')
+  if (result.status === 'invalid') {
+    assert.equal(result.issue.code, 'STORYBOARD_RECIPE_INVALID')
+    assert.ok(result.issue.message.length > 0)
+  }
+}
+
+describe('Storyboard Director Recipe identity', () => {
+  test('is deterministic and ignores title and metadata audit time', () => {
+    const first = createStoryboardDirectorRecipeIdentity(context, source)
+    const second = createStoryboardDirectorRecipeIdentity(context, {
+      ...source,
+      title: 'Renamed only',
+      metadataJson: { updatedAt: '2099-01-01T00:00:00.000Z' },
+    })
+    assert.equal(first.recipeId, second.recipeId)
+    assert.equal(first.sourceFingerprint, second.sourceFingerprint)
+    assert.match(first.recipeId, /^sdr1_[0-9a-f]{8}$/)
+  })
+
+  test('changes with project, workflow, source node, or effective source text', () => {
+    const base = createStoryboardDirectorRecipeIdentity(context, source)
+    assert.notEqual(
+      createStoryboardDirectorRecipeIdentity({ ...context, projectId: 'project-2' }, source).recipeId,
+      base.recipeId,
+    )
+    assert.notEqual(
+      createStoryboardDirectorRecipeIdentity({ ...context, workflowId: 'workflow-2' }, source).recipeId,
+      base.recipeId,
+    )
+    assert.notEqual(
+      createStoryboardDirectorRecipeIdentity(context, { ...source, id: 'source-2' }).recipeId,
+      base.recipeId,
+    )
+    assert.notEqual(
+      createStoryboardDirectorRecipeIdentity(context, {
+        ...source,
+        prompt: `${source.prompt}\nA siren starts.`,
+      }).recipeId,
+      base.recipeId,
+    )
+  })
+
+  test('uses trimmed result text when present and rejects unusable sources', () => {
+    const fromResult = createStoryboardDirectorRecipeIdentity(context, {
+      ...source,
+      prompt: 'ignored prompt',
+      resultText: `  ${source.prompt}  `,
+    })
+    const fromPrompt = createStoryboardDirectorRecipeIdentity(context, source)
+    assert.deepEqual(fromResult, fromPrompt)
+
+    assert.throws(
+      () => createStoryboardDirectorRecipeIdentity(context, { ...source, kind: 'image' }),
+      TypeError,
+    )
+    assert.throws(
+      () => createStoryboardDirectorRecipeIdentity(context, { ...source, prompt: '   ' }),
+      TypeError,
+    )
+    assert.throws(
+      () => createStoryboardDirectorRecipeIdentity({ ...context, projectId: ' ' }, source),
+      TypeError,
+    )
+  })
+
+  test('creates deterministic materialization identities from every identity input', () => {
+    const first = createRecipeMaterializationIdentity('recipe-1', 'scene', 'scene-1', 'result-1')
+    assert.equal(
+      createRecipeMaterializationIdentity('recipe-1', 'scene', 'scene-1', 'result-1'),
+      first,
+    )
+    assert.match(first, /^sdrm1_[0-9a-f]{8}$/)
+    assert.notEqual(
+      createRecipeMaterializationIdentity('recipe-1', 'beat', 'scene-1', 'result-1'),
+      first,
+    )
+    assert.notEqual(
+      createRecipeMaterializationIdentity('recipe-1', 'scene', 'scene-2', 'result-1'),
+      first,
+    )
+    assert.notEqual(
+      createRecipeMaterializationIdentity('recipe-1', 'scene', 'scene-1', 'result-2'),
+      first,
+    )
+  })
+})
+
+describe('Storyboard Director Recipe persistence', () => {
+  test('round-trips valid owned metadata without sharing references', () => {
+    const recipe = validRecipeFixture()
+    const metadata = storyboardDirectorRecipeMetadata(recipe)
+    const stored = metadata.storyboardDirectorRecipe
+    const read = readStoryboardDirectorRecipe(metadata)
+    assert.equal(read.status, 'valid')
+    if (read.status !== 'valid') return
+
+    assert.notEqual(stored, recipe)
+    assert.notEqual(read.recipe, stored)
+    assert.deepEqual(read.recipe, recipe)
+    assert.notEqual(read.recipe.sourceNode, recipe.sourceNode)
+    assert.notEqual(read.recipe.scene.drafts, recipe.scene.drafts)
+    assert.notEqual(read.recipe.scene.drafts[0], recipe.scene.drafts[0])
+    assert.notEqual(read.recipe.storyboard.shots[0], recipe.storyboard.shots[0])
+    assert.notEqual(read.recipe.findings[0]?.evidenceIds, recipe.findings[0]?.evidenceIds)
+  })
+
+  test('distinguishes absent, invalid, unsupported, and oversized metadata', () => {
+    assert.deepEqual(readStoryboardDirectorRecipe(undefined), { status: 'absent' })
+    assert.equal(readStoryboardDirectorRecipe({ storyboardDirectorRecipe: {} }).status, 'invalid')
+    const unsupported = readStoryboardDirectorRecipe(unsupportedVersionFixture())
+    assert.equal(unsupported.status, 'unsupported')
+    if (unsupported.status === 'unsupported') {
+      assert.equal(unsupported.issue.code, 'STORYBOARD_RECIPE_VERSION_UNSUPPORTED')
+    }
+  })
+
+  test('does not execute accessors or accept inherited top-level metadata', () => {
+    const inherited = Object.create({ storyboardDirectorRecipe: validRecipeFixture() })
+    assert.deepEqual(readStoryboardDirectorRecipe(inherited), { status: 'absent' })
+
+    let reads = 0
+    const metadata = Object.create(null)
+    Object.defineProperty(metadata, 'storyboardDirectorRecipe', {
+      get() {
+        reads += 1
+        throw new Error('must not execute')
+      },
+    })
+    assert.equal(readStoryboardDirectorRecipe(metadata).status, 'invalid')
+    assert.equal(reads, 0)
+  })
+
+  test('rejects nested accessors and inherited nested fields without reading them', () => {
+    let reads = 0
+    const accessorRecipe = validRecipeFixture()
+    Object.defineProperty(accessorRecipe.sourceNode, 'title', {
+      enumerable: true,
+      get() {
+        reads += 1
+        throw new Error('nested getter must not execute')
+      },
+    })
+    assertInvalid(accessorRecipe)
+    assert.equal(reads, 0)
+
+    const inheritedSource = Object.create({ id: source.id }) as typeof source
+    Object.assign(inheritedSource, source)
+    delete (inheritedSource as { id?: string }).id
+    assertInvalid({ ...validRecipeFixture(), sourceNode: inheritedSource })
+  })
+
+  test('rejects sparse arrays', () => {
+    const recipe = validRecipeFixture()
+    const sparseDrafts = new Array<RecipeReviewItem<ScriptSceneDraft>>(2)
+    sparseDrafts[1] = sceneDraft(2)
+    recipe.scene.drafts = sparseDrafts
+    assertInvalid(recipe)
+
+    const sparseCharacters = new Array<string>(2)
+    sparseCharacters[1] = 'Mara'
+    assertInvalid({
+      ...validRecipeFixture(),
+      scene: {
+        ...validRecipeFixture().scene,
+        drafts: [{ ...sceneDraft(), characters: sparseCharacters }],
+      },
+    })
+  })
+
+  test('rejects duplicate scene, beat, and shot IDs', () => {
+    const duplicateScenes = validRecipeFixture()
+    duplicateScenes.scene.drafts = [sceneDraft(), { ...sceneDraft(), order: 2 }]
+    assertInvalid(duplicateScenes)
+
+    const duplicateBeats = validRecipeFixture()
+    duplicateBeats.beat.drafts = [beatDraft(), { ...beatDraft(), order: 2 }]
+    assertInvalid(duplicateBeats)
+
+    const duplicateShots = validRecipeFixture()
+    duplicateShots.shot.drafts = [shotDraft(), { ...shotDraft(), order: 2 }]
+    assertInvalid(duplicateShots)
+  })
+
+  test('rejects more than 40 scenes', () => {
+    const recipe = validRecipeFixture()
+    recipe.scene.drafts = Array.from({ length: 41 }, (_, index) => sceneDraft(index + 1))
+    assertInvalid(recipe)
+  })
+
+  test('rejects more than 120 beats', () => {
+    const recipe = validRecipeFixture()
+    recipe.beat.drafts = Array.from({ length: 121 }, (_, index) => beatDraft(index + 1))
+    assertInvalid(recipe)
+  })
+
+  test('rejects more than 120 shots', () => {
+    const recipe = validRecipeFixture()
+    recipe.shot.drafts = Array.from({ length: 121 }, (_, index) => shotDraft(index + 1))
+    assertInvalid(recipe)
+  })
+
+  test('accepts the exact scene, beat, and shot limits', () => {
+    const recipe = validRecipeFixture()
+    recipe.scene.drafts = Array.from({ length: 40 }, (_, index) => sceneDraft(index + 1))
+    recipe.beat.drafts = Array.from({ length: 120 }, (_, index) => beatDraft(index + 1))
+    recipe.shot.drafts = Array.from({ length: 120 }, (_, index) => shotDraft(index + 1))
+    assert.equal(readStoryboardDirectorRecipe(metadataWith(recipe)).status, 'valid')
+  })
+
+  test('rejects nonfinite numbers', () => {
+    assertInvalid({
+      ...validRecipeFixture(),
+      scene: { ...validRecipeFixture().scene, generation: Number.NaN },
+    })
+    assertInvalid({
+      ...validRecipeFixture(),
+      storyboard: {
+        ...validRecipeFixture().storyboard,
+        shots: [{
+          ...validRecipeFixture().storyboard.shots[0]!,
+          durationSec: Number.POSITIVE_INFINITY,
+        }],
+      },
+    })
+  })
+
+  test('rejects persisted identity that conflicts with the source snapshot', () => {
+    assertInvalid({ ...validRecipeFixture(), recipeId: 'sdr1_00000000' })
+    assertInvalid({ ...validRecipeFixture(), sourceFingerprint: 'csf1_00000000' })
+
+    const changedSource = validRecipeFixture()
+    changedSource.sourceNode.prompt = `${source.prompt}\nA siren starts.`
+    assertInvalid(changedSource)
+  })
+
+  test('isolates metadata and read results from later caller mutation', () => {
+    const recipe = validRecipeFixture()
+    const metadata = storyboardDirectorRecipeMetadata(recipe)
+    recipe.sourceNode.prompt = 'changed after write'
+    recipe.scene.drafts[0]!.characters[0] = 'Changed'
+
+    const read = readStoryboardDirectorRecipe(metadata)
+    assert.equal(read.status, 'valid')
+    if (read.status !== 'valid') return
+    assert.equal(read.recipe.sourceNode.prompt, source.prompt)
+    assert.deepEqual(read.recipe.scene.drafts[0]!.characters, ['Mara'])
+
+    metadata.storyboardDirectorRecipe.scene.drafts[0]!.characters[0] = 'changed after read'
+    assert.deepEqual(read.recipe.scene.drafts[0]!.characters, ['Mara'])
+  })
+})
