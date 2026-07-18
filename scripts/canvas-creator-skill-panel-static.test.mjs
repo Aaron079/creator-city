@@ -13,9 +13,14 @@ const segmentationUrl = new URL(
   '../apps/web/src/components/create/canvas/skills/ScriptSegmentationPanel.tsx',
   import.meta.url,
 )
+const narrativeUrl = new URL(
+  '../apps/web/src/components/create/canvas/skills/NarrativeBeatAnalysisPanel.tsx',
+  import.meta.url,
+)
 
 const panel = readFileSync(panelUrl, 'utf8')
 const segmentation = readFileSync(segmentationUrl, 'utf8')
+const narrative = readFileSync(narrativeUrl, 'utf8')
 const webRoot = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const tsx = resolve(webRoot, 'node_modules/.bin/tsx')
 
@@ -246,11 +251,255 @@ describe('Creator Skill review panel static boundary', () => {
   })
 
   test('review panels remain independent of remote generation and legacy skills', () => {
-    const source = `${panel}\n${segmentation}`
+    const source = `${panel}\n${segmentation}\n${narrative}`
     assert.doesNotMatch(source, /fetch\s*\(/)
     assert.doesNotMatch(source, /\/api\/generate\//i)
     assert.doesNotMatch(source, /\bProvider\b/)
     assert.doesNotMatch(source, /billing|credits|wallet|payment|recharge|checkout/i)
     assert.doesNotMatch(source, /@\/lib\/ai\/skills|apps\/web\/src\/lib\/ai\/skills/)
+  })
+
+  test('narrative review state starts pending and edits decisions and order immutably', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        createNarrativeBeatPanelState,
+        moveNarrativeBeatDraft,
+        removeNarrativeBeatDraft,
+        setNarrativeBeatDecision,
+        updateNarrativeBeatDraft,
+      } from './src/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
+
+      const source = {
+        id: 'source-1',
+        kind: 'text',
+        title: 'Scene',
+        prompt: 'Maya enters the room. She wants the sealed letter. The lights fail.',
+      }
+      const initial = createNarrativeBeatPanelState(source)
+      assert.ok(initial.review.drafts.length >= 2)
+      assert.ok(initial.review.drafts.every((beat) => beat.decision === 'pending'))
+      assert.deepEqual(initial.removedBeatIds, [])
+
+      const firstId = initial.review.drafts[0].beatId
+      const secondId = initial.review.drafts[1].beatId
+      const edited = updateNarrativeBeatDraft(
+        initial.review.drafts,
+        firstId,
+        { summary: 'Maya crosses the threshold.', type: 'action' },
+      )
+      assert.notEqual(edited, initial.review.drafts)
+      assert.notEqual(edited[0], initial.review.drafts[0])
+      assert.equal(initial.review.drafts[0].summary === 'Maya crosses the threshold.', false)
+      assert.equal(edited[0].summary, 'Maya crosses the threshold.')
+      assert.equal(edited[0].type, 'action')
+
+      const approved = setNarrativeBeatDecision(edited, firstId, 'approved')
+      const rejected = setNarrativeBeatDecision(approved, secondId, 'rejected')
+      assert.equal(approved[0].decision, 'approved')
+      assert.equal(rejected[1].decision, 'rejected')
+      assert.equal(edited[0].decision, 'pending')
+
+      const moved = moveNarrativeBeatDraft(rejected, secondId, -1)
+      assert.notEqual(moved, rejected)
+      assert.equal(moved[0].beatId, secondId)
+      assert.equal(rejected[0].beatId, firstId)
+      assert.equal(moveNarrativeBeatDraft(moved, secondId, -1), moved)
+
+      const removed = removeNarrativeBeatDraft(initial, firstId)
+      assert.notEqual(removed, initial)
+      assert.equal(removed.review.drafts.some((beat) => beat.beatId === firstId), false)
+      assert.deepEqual(removed.removedBeatIds, [firstId])
+      assert.equal(removed.review.drafts.some((beat) => beat.decision === 'rejected'), false)
+      assert.equal(initial.removedBeatIds.length, 0)
+    `)
+  })
+
+  test('narrative source reset preserves equal dirty reviews and resets changed effective text', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        createNarrativeBeatPanelState,
+        canApplyNarrativeBeatReview,
+        getNarrativeBeatSourceIdentity,
+        resetNarrativeBeatPanelStateForSource,
+        setNarrativeBeatDecision,
+      } from './src/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
+
+      const source = {
+        id: 'source-1',
+        kind: 'text',
+        title: 'Scene',
+        prompt: 'Maya enters the room. She wants the sealed letter. The lights fail.',
+      }
+      const state = createNarrativeBeatPanelState(source)
+      const firstId = state.review.drafts[0].beatId
+      const dirty = {
+        ...state,
+        review: {
+          ...state.review,
+          drafts: setNarrativeBeatDecision(state.review.drafts, firstId, 'approved'),
+        },
+        duplicateSceneIds: ['scene-001'],
+        applyError: 'old error',
+        applyLocked: true,
+      }
+      const equal = { ...source, title: 'Renamed', metadataJson: { rerender: true } }
+      assert.equal(getNarrativeBeatSourceIdentity(equal), getNarrativeBeatSourceIdentity(source))
+      assert.equal(resetNarrativeBeatPanelStateForSource(dirty, equal), dirty)
+
+      const applicable = {
+        ...state,
+        review: {
+          ...state.review,
+          drafts: setNarrativeBeatDecision(state.review.drafts, firstId, 'approved'),
+        },
+      }
+      assert.equal(canApplyNarrativeBeatReview(applicable, source), true)
+      assert.equal(canApplyNarrativeBeatReview(applicable, {
+        ...source,
+        prompt: source.prompt + ' Maya turns back.',
+      }), false)
+
+      for (const changed of [
+        { ...source, id: 'source-2' },
+        { ...source, prompt: source.prompt + ' Maya turns back.' },
+        { ...source, resultText: source.prompt + ' The door opens.' },
+      ]) {
+        const reset = resetNarrativeBeatPanelStateForSource(dirty, changed)
+        assert.notEqual(reset, dirty)
+        assert.ok(reset.review.drafts.every((beat) => beat.decision === 'pending'))
+        assert.deepEqual(reset.removedBeatIds, [])
+        assert.deepEqual(reset.duplicateSceneIds, [])
+        assert.equal(reset.applyError, '')
+        assert.equal(reset.applyLocked, false)
+      }
+    `)
+
+    assert.match(narrative, /sourceIsCurrent/)
+    assert.match(narrative, /canApplyNarrativeBeatReview/)
+  })
+
+  test('narrative Artifact handling falls back only when absent and blocks invalid metadata', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        createNarrativeBeatPanelState,
+      } from './src/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
+      import { runCreatorSkill } from './src/lib/skills'
+
+      const base = {
+        id: 'source-1',
+        kind: 'text',
+        title: 'Scene',
+        prompt: 'Maya enters the room. She wants the sealed letter. The lights fail.',
+      }
+      const fallback = createNarrativeBeatPanelState(base)
+      assert.equal(fallback.review.approvedArtifactStatus, 'absent')
+      assert.ok(fallback.review.result.artifacts.length > 0)
+
+      const invalid = createNarrativeBeatPanelState({
+        ...base,
+        metadataJson: { creatorSkill: { approvedArtifact: { artifactId: '' } } },
+      })
+      assert.equal(invalid.review.approvedArtifactStatus, 'invalid')
+      assert.equal(invalid.review.displayResult.status, 'blocked')
+      assert.ok(invalid.review.displayResult.blockers.some(
+        (blocker) => blocker.code === 'APPROVED_ARTIFACT_INVALID',
+      ))
+      assert.equal(invalid.review.result.artifacts.length, 0)
+      assert.equal(invalid.review.drafts.length, 0)
+
+      const segmented = runCreatorSkill('script-segmentation', {
+        sourceNodes: [base],
+      })
+      const approvedArtifact = segmented.artifacts[0]
+      const valid = createNarrativeBeatPanelState({
+        ...base,
+        metadataJson: { creatorSkill: { approvedArtifact } },
+      })
+      assert.equal(valid.review.approvedArtifactStatus, 'valid')
+      assert.notEqual(valid.review.result.status, 'blocked')
+      assert.deepEqual(
+        valid.review.result.artifacts[0].sourceArtifactIds,
+        [approvedArtifact.artifactId],
+      )
+    `)
+
+    assert.match(narrative, /readApprovedCreatorSkillArtifact/)
+    assert.match(
+      narrative,
+      /runCreatorSkill\(\s*['"]narrative-beat-analysis['"]\s*,\s*\{\s*sourceNodes:\s*\[[^\]]+\][\s\S]{0,220}artifacts:\s*\[approvedSceneArtifact\]/,
+    )
+    assert.match(narrative, /APPROVED_ARTIFACT_INVALID/)
+  })
+
+  test('narrative materialization keeps only approvals and callback failures lock the batch', () => {
+    assertTsxEvaluation(`
+      import assert from 'node:assert/strict'
+      import {
+        applyNarrativeBeatPlans,
+        approvedNarrativeBeatScenes,
+        createNarrativeBeatPanelState,
+        NARRATIVE_BEAT_PARTIAL_APPLY_ERROR,
+        setNarrativeBeatDecision,
+      } from './src/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
+
+      const state = createNarrativeBeatPanelState({
+        id: 'source-1',
+        kind: 'text',
+        title: 'Scene',
+        prompt: 'Maya enters the room. She wants the sealed letter. The lights fail.',
+      })
+      const [first, second] = state.review.drafts
+      const decided = setNarrativeBeatDecision(
+        setNarrativeBeatDecision(state.review.drafts, first.beatId, 'approved'),
+        second.beatId,
+        'rejected',
+      )
+      const scenes = approvedNarrativeBeatScenes(decided, state.review.artifact)
+      assert.equal(scenes.length, 1)
+      assert.deepEqual(scenes[0].beats.map((beat) => beat.beatId), [first.beatId])
+      assert.equal(decided.find((beat) => beat.beatId === second.beatId).decision, 'rejected')
+
+      let calls = 0
+      assert.deepEqual(applyNarrativeBeatPlans([], () => { calls += 1 }), {
+        error: '',
+        applyLocked: false,
+      })
+      assert.equal(calls, 0)
+      const failed = applyNarrativeBeatPlans([{ resultId: 'scene-001' }], () => {
+        calls += 1
+        throw new Error('partial')
+      })
+      assert.equal(calls, 1)
+      assert.equal(failed.applyLocked, true)
+      assert.equal(failed.error, NARRATIVE_BEAT_PARTIAL_APPLY_ERROR)
+      assert.match(failed.error, /部分/)
+      assert.match(failed.error, /检查/)
+      assert.doesNotMatch(failed.error, /重新运行|重跑/)
+    `)
+  })
+
+  test('narrative panel exposes grouped review controls and truthful feedback', () => {
+    assert.match(narrative, /CreatorSkillRunPanel/)
+    assert.match(narrative, /NARRATIVE_BEAT_ANALYSIS_MANIFEST/)
+    assert.match(narrative, /data-testid=["']narrative-beat-scene-list["']/)
+    assert.match(narrative, /data-testid=["']narrative-beat-decision["']/)
+    assert.match(narrative, /data-testid=["']narrative-beat-duplicates["']/)
+    assert.match(narrative, /<select/)
+    assert.match(narrative, /<input/)
+    assert.match(narrative, /ArrowUp/)
+    assert.match(narrative, /ArrowDown/)
+    assert.match(narrative, /Trash2/)
+    for (const title of ['上移', '下移', '移除']) {
+      assert.match(narrative, new RegExp(`title=["']${title}["']`))
+    }
+    assert.match(narrative, /创建叙事节拍节点 \(\$\{approvedCount\}\)/)
+    assert.match(narrative, /planNarrativeBeatMaterialization\(\{/)
+    assert.match(narrative, /planned\.duplicates/)
+    assert.match(narrative, /decision\s*===\s*['"]approved['"]/)
+    assert.match(narrative, /lineStart/)
+    assert.match(narrative, /evidence\.excerpt/)
   })
 })
