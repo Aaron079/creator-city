@@ -159,21 +159,88 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
   test('explicitly confirmed mixed batches dispatch image and video once and retain undispatched IDs', () => {
     const queueEffect = namedBlock(
       workspace,
-      'useEffect(() => {\n    if (pendingAutoGenerateIds.length === 0)',
+      'useEffect(() => {\n    const queuedIds = pendingAutoGenerateIdsRef.current',
       'const assetResolveKey',
     )
     assert.match(queueEffect, /node\.kind\s*!==\s*['"]image['"]\s*&&\s*node\.kind\s*!==\s*['"]video['"]/)
     assert.match(queueEffect, /handleRegenerateNodeFromPrompt\(node\)/)
     assert.match(queueEffect, /dispatchedIds\.push\(nodeId\)/)
-    assert.match(queueEffect, /prev\.filter\(\(id\)\s*=>\s*!dispatchedIds\.includes\(id\)\)/)
+    assert.match(queueEffect, /discardedIds\.push\(nodeId\)/)
+    assert.match(queueEffect, /const\s+queuedIds\s*=\s*pendingAutoGenerateIdsRef\.current/)
+    assert.match(queueEffect, /for\s*\(const nodeId of queuedIds\)/)
+    assert.match(queueEffect, /latestNodesRef\.current\.find/)
+    assert.match(queueEffect, /prev\.filter\(\(id\)\s*=>\s*!dispatchedIds\.includes\(id\)\s*&&\s*!discardedIds\.includes\(id\)\)/)
     assert.doesNotMatch(queueEffect, /prev\.filter\(\(id\)\s*=>\s*!found\.includes\(id\)\)/)
+  })
+
+  test('deleting a node removes its pending dispatch and aborts its active request before removal', () => {
+    const deletion = namedBlock(
+      workspace,
+      'const deleteNode = useCallback',
+      'const duplicateNode = useCallback',
+    )
+    const pendingCleanup = deletion.indexOf('setPendingAutoGenerateIds')
+    const abort = deletion.indexOf('generationController?.abort()')
+    const controllerDelete = deletion.indexOf('generationAbortControllersRef.current.delete(nodeId)')
+    const activeDelete = deletion.indexOf('activeGenerationNodeIdsRef.current.delete(nodeId)')
+    const nodeRemoval = deletion.indexOf('commitNodes(')
+    assert.match(deletion, /prev\.filter\(\(id\)\s*=>\s*id\s*!==\s*nodeId\)/)
+    assert.match(deletion, /generationAbortControllersRef\.current\.get\(nodeId\)/)
+    assert.ok(pendingCleanup >= 0 && pendingCleanup < nodeRemoval)
+    assert.ok(abort >= 0 && abort < nodeRemoval)
+    assert.ok(controllerDelete >= 0 && controllerDelete < nodeRemoval)
+    assert.ok(activeDelete >= 0 && activeDelete < nodeRemoval)
+  })
+
+  test('project load and unmount boundaries cannot leak the Stage B queue or active requests', () => {
+    const load = namedBlock(
+      workspace,
+      'async function loadOrCreateProject()',
+      'try {',
+    )
+    const clearRequests = namedBlock(
+      workspace,
+      'const clearGenerationTimersAndRequests',
+      'const beginNodeGeneration',
+    )
+    const unmount = namedBlock(
+      workspace,
+      'useEffect(() => {\n    const timers = timersRef.current',
+      '// Fetch asset transform capabilities',
+    )
+    const queueClear = load.indexOf('setPendingAutoGenerateIds([])')
+    const synchronousQueueClear = load.indexOf('pendingAutoGenerateIdsRef.current = []')
+    const controllerCleanup = load.indexOf('clearGenerationTimersAndRequests()')
+    const modalReset = load.indexOf('resetCanvasModalStates()')
+    assert.ok(synchronousQueueClear >= 0 && synchronousQueueClear < modalReset)
+    assert.ok(queueClear >= 0 && queueClear < modalReset)
+    assert.ok(controllerCleanup >= 0 && controllerCleanup < modalReset)
+    assert.match(clearRequests, /generationAbortControllersRef\.current\.forEach\(\(controller\)\s*=>\s*controller\.abort\(\)\)/)
+    assert.match(clearRequests, /generationAbortControllersRef\.current\.clear\(\)/)
+    assert.match(clearRequests, /activeGenerationNodeIdsRef\.current\.clear\(\)/)
+    assert.match(unmount, /generationAbortControllersRef\.current\.forEach\(\(controller\)\s*=>\s*controller\.abort\(\)\)/)
+    assert.match(unmount, /generationAbortControllersRef\.current\.clear\(\)/)
+    assert.match(unmount, /activeGenerationNodeIdsRef\.current\.clear\(\)/)
+    assert.match(unmount, /pendingAutoGenerateIdsRef\.current\s*=\s*\[\]/)
+  })
+
+  test('an aborted outgoing generation cannot patch loading state into the next project', () => {
+    const regeneration = namedBlock(
+      workspace,
+      'const handleRegenerateNodeFromPrompt',
+      'useEffect(() => {\n    const queuedIds = pendingAutoGenerateIdsRef.current',
+    )
+    assert.match(
+      regeneration,
+      /finally\s*\{[\s\S]*?finishNodeGeneration\(node\.id, generationController\)[\s\S]*?if\s*\(!generationController\.signal\.aborted\)\s*\{\s*clearRegenerationLoading\(\)\s*\}/,
+    )
   })
 
   test('compatibility generation remains behind the panel second confirmation', () => {
     assert.match(shotPanel, /generateAfterCreate\s*&&\s*outcome\.createdIds\.length\s*>\s*0/)
     assert.match(shotPanel, /setIsConfirmingGenerate\(true\)/)
     assert.match(shotPanel, /runCompatibilityCreate\(true\)/)
-    assert.match(workspace, /onAutoGenerateNodes=\{\(nodeIds\)\s*=>\s*setPendingAutoGenerateIds\(nodeIds\)\}/)
+    assert.match(workspace, /onAutoGenerateNodes=\{\(nodeIds\)\s*=>\s*\{[\s\S]*?pendingAutoGenerateIdsRef\.current\s*=\s*nodeIds[\s\S]*?setPendingAutoGenerateIds\(nodeIds\)[\s\S]*?\}\}/)
     assert.doesNotMatch(
       namedBlock(workspace, 'const handleCreateCompatibilityShotNode', 'useEffect(() => {'),
       /handleRegenerateNodeFromPrompt|setPendingAutoGenerateIds/,
@@ -186,7 +253,7 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
     assert.match(workspace, /narrativeBeatSource\?\.kind\s*===\s*['"]text['"]/)
     assert.match(workspace, /nodes\.find\(\(node\)\s*=>\s*node\.id\s*===\s*narrativeBeatSource\.id\)\?\.kind\s*===\s*['"]text['"]/)
     assert.match(workspace, /<ShotListBuilderPanel[\s\S]*?metadataJson:\s*node\.metadataJson[\s\S]*?onApplyShotPlans=\{handleApplyShotPlans\}/)
-    assert.match(workspace, /onAutoGenerateNodes=\{\(nodeIds\)\s*=>\s*setPendingAutoGenerateIds\(nodeIds\)\}/)
+    assert.match(workspace, /onAutoGenerateNodes=\{\(nodeIds\)\s*=>\s*\{[\s\S]*?pendingAutoGenerateIdsRef\.current\s*=\s*nodeIds[\s\S]*?setPendingAutoGenerateIds\(nodeIds\)[\s\S]*?\}\}/)
     assert.match(workspace, /resetCanvasModalStates[\s\S]{0,1800}setNarrativeBeatSource\(null\)/)
   })
 

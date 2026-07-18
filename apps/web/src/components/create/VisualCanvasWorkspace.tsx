@@ -2491,6 +2491,7 @@ export function VisualCanvasWorkspace({
   const [isSceneLightingOpen, setIsSceneLightingOpen] = useState(false)
   const [sceneLightingSettings, setSceneLightingSettings] = useState<SceneLightingSettings>(DEFAULT_SCENE_LIGHTING)
   const [pendingAutoGenerateIds, setPendingAutoGenerateIds] = useState<string[]>([])
+  const pendingAutoGenerateIdsRef = useRef<string[]>([])
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
@@ -2652,6 +2653,7 @@ export function VisualCanvasWorkspace({
       timers.forEach((timer) => window.clearTimeout(timer))
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
       if (saveRetryTimerRef.current) window.clearTimeout(saveRetryTimerRef.current)
+      pendingAutoGenerateIdsRef.current = []
       generationAbortControllersRef.current.forEach((controller) => controller.abort())
       generationAbortControllersRef.current.clear()
       activeGenerationNodeIdsRef.current.clear()
@@ -3569,6 +3571,9 @@ export function VisualCanvasWorkspace({
       const abortController = new AbortController()
       initAbortRef.current = abortController
 
+      pendingAutoGenerateIdsRef.current = []
+      setPendingAutoGenerateIds([])
+      clearGenerationTimersAndRequests()
       resetCanvasModalStates()
       setSaveStatus('opening')
       setSaveMessage('')
@@ -3804,7 +3809,7 @@ export function VisualCanvasWorkspace({
       cancelled = true
       initAbortRef.current?.abort()
     }
-  }, [applyCanvasSnapshot, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache])
+  }, [applyCanvasSnapshot, clearGenerationTimersAndRequests, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache])
 
   useEffect(() => {
     latestViewportRef.current = { zoom: canvasZoom, pan: canvasPan }
@@ -4043,6 +4048,12 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const deleteNode = useCallback((nodeId: string) => {
+    pendingAutoGenerateIdsRef.current = pendingAutoGenerateIdsRef.current.filter((id) => id !== nodeId)
+    setPendingAutoGenerateIds((prev) => prev.filter((id) => id !== nodeId))
+    const generationController = generationAbortControllersRef.current.get(nodeId)
+    generationController?.abort()
+    generationAbortControllersRef.current.delete(nodeId)
+    activeGenerationNodeIdsRef.current.delete(nodeId)
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
     const removedEdges = edges
       .filter((edge) => edge.fromNodeId === nodeId || edge.toNodeId === nodeId)
@@ -5494,17 +5505,24 @@ export function VisualCanvasWorkspace({
         }, selectedProviderId)
       } finally {
         finishNodeGeneration(node.id, generationController)
-        clearRegenerationLoading()
+        if (!generationController.signal.aborted) {
+          clearRegenerationLoading()
+        }
       }
     })()
   }, [beginNodeGeneration, cameraSettings, characterBible, commitNodes, finishNodeGeneration, flushLocalSnapshot, handleNodePatch, projectId, sceneBible, sceneLightingSettings, scheduleCanvasSave, showCanvasFeedback, styleBible, workflowId])
 
   useEffect(() => {
-    if (pendingAutoGenerateIds.length === 0) return
+    const queuedIds = pendingAutoGenerateIdsRef.current
+    if (queuedIds.length === 0) return
     const dispatchedIds: string[] = []
-    for (const nodeId of pendingAutoGenerateIds) {
-      const node = nodes.find((n) => n.id === nodeId)
-      if (!node || (node.kind !== 'image' && node.kind !== 'video')) continue
+    const discardedIds: string[] = []
+    for (const nodeId of queuedIds) {
+      const node = latestNodesRef.current.find((n) => n.id === nodeId)
+      if (!node || (node.kind !== 'image' && node.kind !== 'video')) {
+        discardedIds.push(nodeId)
+        continue
+      }
       try {
         handleRegenerateNodeFromPrompt(node)
         dispatchedIds.push(nodeId)
@@ -5512,10 +5530,14 @@ export function VisualCanvasWorkspace({
         // Keep undispatched IDs queued; the node handler owns normal generation failures.
       }
     }
-    if (dispatchedIds.length > 0) {
-      setPendingAutoGenerateIds((prev) => prev.filter((id) => !dispatchedIds.includes(id)))
+    if (dispatchedIds.length > 0 || discardedIds.length > 0) {
+      setPendingAutoGenerateIds((prev) => {
+        const next = prev.filter((id) => !dispatchedIds.includes(id) && !discardedIds.includes(id))
+        pendingAutoGenerateIdsRef.current = next
+        return next
+      })
     }
-  }, [pendingAutoGenerateIds, nodes, handleRegenerateNodeFromPrompt])
+  }, [pendingAutoGenerateIds, handleRegenerateNodeFromPrompt])
 
   const assetResolveKey = useMemo(() => nodes
     .filter((node) => node.kind === 'image' || node.kind === 'video')
@@ -9130,7 +9152,10 @@ export function VisualCanvasWorkspace({
           existingNodes={nodes.map((node) => ({ metadataJson: node.metadataJson }))}
           onApplyShotPlans={handleApplyShotPlans}
           onCreateNode={handleCreateCompatibilityShotNode}
-          onAutoGenerateNodes={(nodeIds) => setPendingAutoGenerateIds(nodeIds)}
+          onAutoGenerateNodes={(nodeIds) => {
+            pendingAutoGenerateIdsRef.current = nodeIds
+            setPendingAutoGenerateIds(nodeIds)
+          }}
           onClose={() => closeCanvasPanel()}
         />
       ) : null}
