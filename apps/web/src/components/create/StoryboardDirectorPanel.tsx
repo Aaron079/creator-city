@@ -1,9 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import type { ShotCard, StoryboardState } from '@/lib/storyboard/types'
-import { createShotCard, reindexShots } from '@/lib/storyboard/director'
+import {
+  createShotCard,
+  reindexShots,
+  type LegacyDirectorStateReadResult,
+} from '@/lib/storyboard/director'
+import type { StoryboardDirectorRecipe } from '@/lib/storyboard/recipe/types'
 import { StoryboardTimeline } from './StoryboardTimeline'
+import {
+  StoryboardDirectorRecipePanel,
+  type StoryboardDirectorRecipePanelProps,
+} from './StoryboardDirectorRecipePanel'
 
 const SHOT_TYPE_OPTIONS = [
   { value: '', label: '选择景别' },
@@ -47,14 +57,30 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 4,
 }
 
-interface StoryboardDirectorPanelProps {
+export type StoryboardDirectorPanelTab = 'recipe' | 'board'
+
+export interface StoryboardDirectorPanelProps {
   open: boolean
   state: StoryboardState
   activeShotId: string | null
+  recipe?: StoryboardDirectorRecipe | null
+  openedFromRecipe?: boolean
+  availableSources?: Array<{ id: string; title: string }>
+  availableRecipes?: Array<{ nodeId: string; recipeId: string; title: string; status: string }>
+  saveState?: 'local' | 'saving' | 'cloud' | 'failed'
+  legacyState?: LegacyDirectorStateReadResult
   projectId?: string
   canvasNodes?: Array<{ id: string; kind: string; title?: string; resultImageUrl?: string; resultVideoUrl?: string }>
   onStateChange: (state: StoryboardState) => void
   onActiveShotChange: (id: string | null) => void
+  onStartRecipe?: (sourceNodeId: string) => void
+  onOpenRecipe?: (controlNodeId: string) => void
+  onCommitRecipe?: (recipe: StoryboardDirectorRecipe) => void
+  onFocusSource?: (sourceNodeId: string) => void
+  onMaterializeGrouped?: StoryboardDirectorRecipePanelProps['onMaterializeGrouped']
+  onSyncShotBoard?: () => void
+  onCreateDraftNodes?: () => void
+  onImportLegacy?: () => void
   onClose: () => void
 }
 
@@ -65,6 +91,40 @@ function now() {
 function patchState(state: StoryboardState, shots: ShotCard[]): StoryboardState {
   return { ...state, shots, updatedAt: now() }
 }
+
+export function createStoryboardDirectorPanelState({
+  hasRecipe,
+  openedFromRecipe,
+}: {
+  hasRecipe: boolean
+  openedFromRecipe: boolean
+}) {
+  return { tab: hasRecipe && openedFromRecipe ? 'recipe' as const : 'board' as const }
+}
+
+export function selectStoryboardDirectorTab<T extends { tab: StoryboardDirectorPanelTab }>(
+  state: T,
+  tab: StoryboardDirectorPanelTab,
+): T {
+  return state.tab === tab ? state : { ...state, tab }
+}
+
+export function patchStoryboardDirectorShot(
+  state: StoryboardState,
+  shotId: string,
+  patch: Partial<ShotCard>,
+  updatedAt: string,
+): StoryboardState {
+  let changed = false
+  const shots = state.shots.map((shot) => {
+    if (shot.id !== shotId) return shot
+    changed = true
+    return { ...shot, ...patch, updatedAt }
+  })
+  return changed ? { ...state, shots, updatedAt } : state
+}
+
+const NOOP = () => {}
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -79,12 +139,41 @@ export function StoryboardDirectorPanel({
   open,
   state,
   activeShotId,
+  recipe = null,
+  openedFromRecipe = false,
+  availableSources = [],
+  availableRecipes = [],
+  saveState = 'local',
+  legacyState = { status: 'absent' },
   canvasNodes = [],
   onStateChange,
   onActiveShotChange,
+  onStartRecipe = NOOP,
+  onOpenRecipe = NOOP,
+  onCommitRecipe = NOOP,
+  onFocusSource = NOOP,
+  onMaterializeGrouped = NOOP,
+  onSyncShotBoard = NOOP,
+  onCreateDraftNodes = NOOP,
+  onImportLegacy = NOOP,
   onClose,
 }: StoryboardDirectorPanelProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [panelState, setPanelState] = useState(() => createStoryboardDirectorPanelState({
+    hasRecipe: Boolean(recipe),
+    openedFromRecipe,
+  }))
+  const wasOpen = useRef(false)
+
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setPanelState(createStoryboardDirectorPanelState({
+        hasRecipe: Boolean(recipe),
+        openedFromRecipe,
+      }))
+    }
+    wasOpen.current = open
+  }, [open, openedFromRecipe, recipe])
 
   if (!open) return null
 
@@ -92,8 +181,7 @@ export function StoryboardDirectorPanel({
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) ?? null : null
 
   const updateShot = (id: string, patch: Partial<ShotCard>) => {
-    const nextShots = shots.map((s) => s.id === id ? { ...s, ...patch, updatedAt: now() } : s)
-    onStateChange(patchState(state, nextShots))
+    onStateChange(patchStoryboardDirectorShot(state, id, patch, now()))
   }
 
   const handleAddShot = () => {
@@ -141,9 +229,9 @@ export function StoryboardDirectorPanel({
           margin: 16,
           display: 'flex',
           flexDirection: 'column',
-          width: 'min(960px, calc(100vw - 32px))',
+          width: 'min(1120px, calc(100vw - 32px))',
           maxHeight: '88vh',
-          borderRadius: 18,
+          borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.10)',
           background: 'rgba(10,12,16,0.97)',
           color: 'white',
@@ -163,60 +251,47 @@ export function StoryboardDirectorPanel({
         onWheel={(e) => e.stopPropagation()}
         onWheelCapture={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <header style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 18px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          flexShrink: 0,
-        }}>
-          <div>
-            <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'rgba(103,232,249,0.5)', marginBottom: 2 }}>
-              Storyboard Director
-            </p>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>分镜导演</h2>
+        <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+          <div className="min-w-[120px]">
+            <p className="mb-0.5 text-[9px] font-semibold uppercase text-cyan-200/45">Storyboard Director</p>
+            <h2 className="m-0 text-[15px] font-semibold text-white">分镜导演</h2>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="grid h-9 grid-cols-2 rounded-md border border-white/10 bg-white/[0.025] p-0.5" role="tablist" aria-label="分镜导演视图">
             <button
               type="button"
-              onClick={handleAddShot}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 8,
-                border: '1px solid rgba(103,232,249,0.3)',
-                background: 'rgba(103,232,249,0.1)',
-                color: 'rgba(103,232,249,0.9)',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
+              role="tab"
+              aria-selected={panelState.tab === 'recipe'}
+              data-testid="storyboard-director-tab-recipe"
+              onClick={() => setPanelState((current) => selectStoryboardDirectorTab(current, 'recipe'))}
+              className={`min-w-[76px] rounded px-3 text-[10px] font-semibold transition ${panelState.tab === 'recipe' ? 'bg-white/[0.11] text-white' : 'text-white/42 hover:text-white/70'}`}
             >
-              + 新建镜头
+              Recipe
             </button>
             <button
               type="button"
-              onClick={onClose}
-              aria-label="关闭分镜导演"
-              style={{
-                width: 30,
-                height: 30,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 8,
-                border: '1px solid rgba(255,255,255,0.10)',
-                background: 'rgba(255,255,255,0.04)',
-                color: 'rgba(255,255,255,0.6)',
-                cursor: 'pointer',
-                fontSize: 16,
-              }}
+              role="tab"
+              aria-selected={panelState.tab === 'board'}
+              data-testid="storyboard-director-tab-board"
+              onClick={() => setPanelState((current) => selectStoryboardDirectorTab(current, 'board'))}
+              className={`min-w-[76px] rounded px-3 text-[10px] font-semibold transition ${panelState.tab === 'board' ? 'bg-white/[0.11] text-white' : 'text-white/42 hover:text-white/70'}`}
             >
-              ×
+              镜头板
+            </button>
+          </div>
+          <div className="flex min-w-[120px] items-center justify-end gap-2">
+            {panelState.tab === 'board' ? (
+              <button type="button" onClick={handleAddShot} className="h-8 rounded-md border border-cyan-200/30 bg-cyan-200/[0.08] px-3 text-[11px] font-semibold text-cyan-100">
+                + 新建镜头
+              </button>
+            ) : null}
+            <button type="button" onClick={onClose} title="关闭分镜导演" aria-label="关闭分镜导演" className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white">
+              <X size={15} aria-hidden="true" />
             </button>
           </div>
         </header>
+
+        {panelState.tab === 'board' ? (
+          <>
 
         {/* Timeline */}
         <div style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
@@ -290,6 +365,20 @@ export function StoryboardDirectorPanel({
                     </button>
                   )}
                 </div>
+
+                {activeShot.recipe ? (
+                  <div className="flex min-h-9 flex-wrap items-center gap-2 border-y border-cyan-200/10 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setPanelState((current) => selectStoryboardDirectorTab(current, 'recipe'))}
+                      className="rounded-md border border-cyan-200/20 bg-cyan-200/[0.06] px-2 py-1 text-[9px] font-semibold text-cyan-100"
+                    >
+                      Recipe {activeShot.recipe.recipeId}
+                    </button>
+                    <span className="rounded border border-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">来源已保留</span>
+                    <span className="text-[9px] text-white/35">{activeShot.recipe.sceneId} · {activeShot.recipe.beatId ?? '无节拍'} · {activeShot.recipe.shotId}</span>
+                  </div>
+                ) : null}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <FieldRow label="景别">
@@ -386,6 +475,7 @@ export function StoryboardDirectorPanel({
                       <button
                         type="button"
                         title="移除绑定"
+                        aria-label="移除绑定"
                         onClick={() => {
                           const nodeIds = activeShot.nodeIds.filter((id) => id !== n.id)
                           const thumbnailUrl = n.id === canvasNodes.find((cn) => cn.id === activeShot.thumbnailUrl)?.id
@@ -396,9 +486,9 @@ export function StoryboardDirectorPanel({
                             : activeShot.thumbnailUrl
                           updateShot(activeShot.id, { nodeIds, thumbnailUrl })
                         }}
-                        style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
+                        style={{ color: 'rgba(255,255,255,0.3)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 2, flexShrink: 0, lineHeight: 1, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       >
-                        ×
+                        <X size={13} aria-hidden="true" />
                       </button>
                     </div>
                   ))
@@ -435,6 +525,24 @@ export function StoryboardDirectorPanel({
             绑定节点 {new Set(shots.flatMap((s) => s.nodeIds)).size}
           </span>
         </div>
+          </>
+        ) : (
+          <StoryboardDirectorRecipePanel
+            recipe={recipe}
+            availableSources={availableSources}
+            availableRecipes={availableRecipes}
+            saveState={saveState}
+            legacyState={legacyState}
+            onStartRecipe={onStartRecipe}
+            onOpenRecipe={onOpenRecipe}
+            onCommitRecipe={onCommitRecipe}
+            onFocusSource={onFocusSource}
+            onMaterializeGrouped={onMaterializeGrouped}
+            onSyncShotBoard={onSyncShotBoard}
+            onCreateDraftNodes={onCreateDraftNodes}
+            onImportLegacy={onImportLegacy}
+          />
+        )}
       </aside>
     </div>
   )
