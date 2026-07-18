@@ -460,18 +460,27 @@ describe('runCreatorSkill', () => {
 })
 
 describe('runCreatorSkillFromRegistry', () => {
-  test('accepts inherited Artifact provenance without allowing invented identities', () => {
-    const sourceArtifact = createCreatorSkillArtifact({
-      artifactId: 'script-1',
+  test('accepts inherited provenance only from the specifically linked input Artifact', () => {
+    const sourceArtifactA = createCreatorSkillArtifact({
+      artifactId: 'script-a',
       artifactType: 'script',
       artifactVersion: 1,
-      sourceNodeIds: ['inherited-node'],
+      sourceNodeIds: ['source-a'],
       payload: { scenes: ['Opening'] },
+    })
+    const sourceArtifactB = createCreatorSkillArtifact({
+      artifactId: 'outline-b',
+      artifactType: 'outline',
+      artifactVersion: 1,
+      sourceNodeIds: ['source-b'],
+      payload: { scenes: ['Closing'] },
     })
     const createArtifactOnlySkill = (
       sourceNodeId: string,
-      sourceArtifactId: string,
-    ) => createSkill({}, (_input, fingerprint) => ({
+      sourceArtifactIds: string[],
+    ) => createSkill({
+      acceptedArtifactTypes: ['script', 'outline'],
+    }, (_input, fingerprint) => ({
       skillId: 'test-skill',
       skillVersion: '1.0.0',
       runFingerprint: fingerprint,
@@ -481,7 +490,7 @@ describe('runCreatorSkillFromRegistry', () => {
         artifactType: 'scene-list',
         artifactVersion: 1,
         sourceNodeIds: [sourceNodeId],
-        sourceArtifactIds: [sourceArtifactId],
+        sourceArtifactIds,
         payload: { scenes: ['Opening'] },
       })],
       evidence: [{
@@ -501,24 +510,28 @@ describe('runCreatorSkillFromRegistry', () => {
       }],
       blockers: [],
     }))
-    const input = { sourceNodes: [], artifacts: [sourceArtifact] }
+    const input = {
+      sourceNodes: [],
+      artifacts: [sourceArtifactA, sourceArtifactB],
+    }
 
     const valid = runCreatorSkillFromRegistry(
       createCreatorExecutableSkillRegistry([
-        createArtifactOnlySkill('inherited-node', 'script-1'),
+        createArtifactOnlySkill('source-b', ['outline-b']),
       ]),
       'test-skill',
       input,
     )
     assert.equal(valid.status, 'needs-review')
-    assert.deepEqual(valid.artifacts[0]?.sourceNodeIds, ['inherited-node'])
-    assert.equal(valid.evidence[0]?.sourceNodeId, 'inherited-node')
-    assert.equal(valid.warnings[0]?.sourceNodeId, 'inherited-node')
+    assert.deepEqual(valid.artifacts[0]?.sourceNodeIds, ['source-b'])
+    assert.deepEqual(valid.artifacts[0]?.sourceArtifactIds, ['outline-b'])
+    assert.equal(valid.evidence[0]?.sourceNodeId, 'source-b')
+    assert.equal(valid.warnings[0]?.sourceNodeId, 'source-b')
 
     assertBlocked(
       runCreatorSkillFromRegistry(
         createCreatorExecutableSkillRegistry([
-          createArtifactOnlySkill('invented-node', 'script-1'),
+          createArtifactOnlySkill('invented-node', ['outline-b']),
         ]),
         'test-skill',
         input,
@@ -528,13 +541,120 @@ describe('runCreatorSkillFromRegistry', () => {
     assertBlocked(
       runCreatorSkillFromRegistry(
         createCreatorExecutableSkillRegistry([
-          createArtifactOnlySkill('inherited-node', 'invented-artifact'),
+          createArtifactOnlySkill('source-b', ['invented-artifact']),
         ]),
         'test-skill',
         input,
       ),
       'INVALID_SKILL_OUTPUT',
     )
+  })
+
+  test('rejects inherited provenance cross-wired to another input Artifact', () => {
+    const artifacts = [
+      createCreatorSkillArtifact({
+        artifactId: 'script-a',
+        artifactType: 'script',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        payload: {},
+      }),
+      createCreatorSkillArtifact({
+        artifactId: 'outline-b',
+        artifactType: 'outline',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-b'],
+        payload: {},
+      }),
+    ]
+    const skill = createSkill({
+      acceptedArtifactTypes: ['script', 'outline'],
+    }, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'scenes-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-b'],
+        sourceArtifactIds: ['script-a'],
+        payload: {},
+      })],
+    }))
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        { sourceNodes: [], artifacts },
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
+  test('rejects inherited source IDs when output omits source Artifact references', () => {
+    const sourceArtifact = createCreatorSkillArtifact({
+      artifactId: 'script-a',
+      artifactType: 'script',
+      artifactVersion: 1,
+      sourceNodeIds: ['source-a'],
+      payload: {},
+    })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      ...createResult('test-skill', '1.0.0', fingerprint),
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'scenes-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        sourceArtifactIds: [],
+        payload: {},
+      })],
+    }))
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        { sourceNodes: [], artifacts: [sourceArtifact] },
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
+  test('rejects duplicate input Artifact IDs across different types before execution', () => {
+    let executionCount = 0
+    const skill = createSkill({
+      acceptedArtifactTypes: ['script', 'outline'],
+    }, (_input, fingerprint) => {
+      executionCount += 1
+      return createResult('test-skill', '1.0.0', fingerprint)
+    })
+    const artifacts = [
+      createCreatorSkillArtifact({
+        artifactId: 'shared-id',
+        artifactType: 'script',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        payload: {},
+      }),
+      createCreatorSkillArtifact({
+        artifactId: 'shared-id',
+        artifactType: 'outline',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-b'],
+        payload: {},
+      }),
+    ]
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        { sourceNodes: [], artifacts },
+      ),
+      'INVALID_SKILL_ARTIFACT',
+    )
+    assert.equal(executionCount, 0)
   })
 
   test('blocks unsupported source-node and Artifact inputs', () => {

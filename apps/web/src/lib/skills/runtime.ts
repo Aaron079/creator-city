@@ -268,6 +268,19 @@ function normalizeRunInput(value: CreatorSkillRunInput): CreatorSkillRunInput {
       compareStrings(left.artifactType, right.artifactType)
       || compareStrings(left.artifactId, right.artifactId)
     ))
+  if (artifacts) {
+    const artifactTypesById = new Map<string, string>()
+    for (let index = 0; index < artifacts.length; index += 1) {
+      const artifact = artifacts[index]!
+      const existingType = artifactTypesById.get(artifact.artifactId)
+      if (existingType !== undefined && existingType !== artifact.artifactType) {
+        throw new InvalidArtifactError(
+          'Artifact IDs must not be reused across different Artifact types',
+        )
+      }
+      artifactTypesById.set(artifact.artifactId, artifact.artifactType)
+    }
+  }
 
   return {
     sourceNodes,
@@ -431,8 +444,9 @@ type NormalizedExecutionResult = Pick<
 function normalizeExecutionResult(
   value: unknown,
   outputArtifactTypes: readonly string[],
-  sourceNodeIds: ReadonlySet<string>,
-  inputArtifactIds: ReadonlySet<string>,
+  directSourceNodeIds: ReadonlySet<string>,
+  validatedSourceNodeIds: ReadonlySet<string>,
+  inputArtifactProvenance: ReadonlyMap<string, ReadonlySet<string>>,
 ): NormalizedExecutionResult | null {
   if (!isPlainRecord(value)) return null
   const result = value as Partial<CreatorSkillRunResult>
@@ -457,10 +471,16 @@ function normalizeExecutionResult(
   const artifactIdsByType = new Map<string, Set<string>>()
   for (const artifact of artifacts) {
     if (!outputArtifactTypes.includes(artifact.artifactType)) return null
-    if (artifact.sourceNodeIds.some((sourceNodeId) => !sourceNodeIds.has(sourceNodeId))) {
-      return null
+    const allowedSourceNodeIds = new Set(directSourceNodeIds)
+    for (let index = 0; index < artifact.sourceArtifactIds.length; index += 1) {
+      const sourceArtifactId = artifact.sourceArtifactIds[index]!
+      const inheritedSourceNodeIds = inputArtifactProvenance.get(sourceArtifactId)
+      if (!inheritedSourceNodeIds) return null
+      for (const sourceNodeId of inheritedSourceNodeIds) {
+        allowedSourceNodeIds.add(sourceNodeId)
+      }
     }
-    if (artifact.sourceArtifactIds.some((artifactId) => !inputArtifactIds.has(artifactId))) {
+    if (artifact.sourceNodeIds.some((sourceNodeId) => !allowedSourceNodeIds.has(sourceNodeId))) {
       return null
     }
     const artifactIds = artifactIdsByType.get(artifact.artifactType) ?? new Set<string>()
@@ -470,21 +490,21 @@ function normalizeExecutionResult(
     outputArtifactIds.add(artifact.artifactId)
   }
 
-  const knownArtifactIds = new Set([...inputArtifactIds, ...outputArtifactIds])
+  const knownArtifactIds = new Set([...inputArtifactProvenance.keys(), ...outputArtifactIds])
   const evidence = transformDenseArray(
     resultEvidence,
     'result.evidence',
-    (entry) => normalizeEvidence(entry, sourceNodeIds),
+    (entry) => normalizeEvidence(entry, validatedSourceNodeIds),
   )
   const warnings = transformDenseArray(
     resultWarnings,
     'result.warnings',
-    (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
+    (entry) => normalizeIssue(entry, validatedSourceNodeIds, knownArtifactIds),
   )
   const blockers = transformDenseArray(
     resultBlockers,
     'result.blockers',
-    (entry) => normalizeIssue(entry, sourceNodeIds, knownArtifactIds),
+    (entry) => normalizeIssue(entry, validatedSourceNodeIds, knownArtifactIds),
   )
   if (status === 'blocked') {
     if (artifacts.length > 0 || blockers.length === 0) return null
@@ -594,19 +614,23 @@ export function runCreatorSkillFromRegistry(
     )
   }
 
-  const inputSourceNodeIds = new Set<string>()
+  const directSourceNodeIds = new Set<string>()
   for (let index = 0; index < normalizedInput.sourceNodes.length; index += 1) {
-    inputSourceNodeIds.add(normalizedInput.sourceNodes[index]!.id)
+    directSourceNodeIds.add(normalizedInput.sourceNodes[index]!.id)
   }
-  const inputArtifactIds = new Set<string>()
+  const validatedSourceNodeIds = new Set(directSourceNodeIds)
+  const inputArtifactProvenance = new Map<string, Set<string>>()
   const normalizedArtifacts = normalizedInput.artifacts
   if (normalizedArtifacts) {
     for (let index = 0; index < normalizedArtifacts.length; index += 1) {
       const artifact = normalizedArtifacts[index]!
-      inputArtifactIds.add(artifact.artifactId)
+      const sourceNodeIds = inputArtifactProvenance.get(artifact.artifactId) ?? new Set<string>()
       for (let sourceIndex = 0; sourceIndex < artifact.sourceNodeIds.length; sourceIndex += 1) {
-        inputSourceNodeIds.add(artifact.sourceNodeIds[sourceIndex]!)
+        const sourceNodeId = artifact.sourceNodeIds[sourceIndex]!
+        sourceNodeIds.add(sourceNodeId)
+        validatedSourceNodeIds.add(sourceNodeId)
       }
+      inputArtifactProvenance.set(artifact.artifactId, sourceNodeIds)
     }
   }
 
@@ -627,8 +651,9 @@ export function runCreatorSkillFromRegistry(
     const normalizedExecution = normalizeExecutionResult(
       executionResult,
       outputArtifactTypes,
-      inputSourceNodeIds,
-      inputArtifactIds,
+      directSourceNodeIds,
+      validatedSourceNodeIds,
+      inputArtifactProvenance,
     )
     if (!normalizedExecution) {
       return blockedResult(
