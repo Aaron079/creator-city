@@ -177,6 +177,29 @@ function mutateArtifact(
   return result
 }
 
+function hostilePayload(trap: 'prototype' | 'descriptor' | 'property') {
+  if (trap === 'prototype') {
+    return new Proxy({}, {
+      getPrototypeOf() {
+        throw new Error('hostile payload prototype')
+      },
+    })
+  }
+  if (trap === 'descriptor') {
+    return new Proxy({}, {
+      getOwnPropertyDescriptor() {
+        throw new Error('hostile payload descriptor')
+      },
+    })
+  }
+  return new Proxy({ scenes: [] }, {
+    get(target, property, receiver) {
+      if (property === 'scenes') throw new Error('hostile payload property')
+      return Reflect.get(target, property, receiver)
+    },
+  })
+}
+
 beforeEach(() => {
   calls.length = 0
 })
@@ -193,6 +216,49 @@ describe('Storyboard Director Recipe progression', () => {
     assert.equal(recipe.shot.status, 'idle')
     assert.equal(recipe.audit.createdAt, ISO_TIME)
     assert.equal(recipe.audit.updatedAt, ISO_TIME)
+  })
+
+  test('creation canonicalizes whitespace in context and source fields before every run', () => {
+    const started = createStoryboardDirectorRecipe(
+      { projectId: '  project-1  ', workflowId: '  workflow-1  ' },
+      {
+        ...source,
+        id: '  source-1  ',
+        title: '  Pilot  ',
+        prompt: `  \n${source.prompt}\n  `,
+      },
+      ISO_TIME,
+      runner,
+    )
+
+    assert.equal(started.projectId, 'project-1')
+    assert.equal(started.workflowId, 'workflow-1')
+    assert.deepEqual(started.sourceNode, {
+      id: 'source-1',
+      kind: 'text',
+      title: 'Pilot',
+      prompt: source.prompt,
+    })
+    assert.equal(started.scene.status, 'needs-review')
+    assert.deepEqual(started.scene.result?.artifacts[0]?.sourceNodeIds, ['source-1'])
+
+    const beatReview = approveSceneStage(
+      decideAll(started, 'scene-review', 'approved'),
+      ISO_TIME,
+      runner,
+    )
+    assert.equal(beatReview.beat.status, 'needs-review')
+    const shotReview = approveBeatStage(
+      decideAll(beatReview, 'beat-review', 'approved'),
+      ISO_TIME,
+      runner,
+    )
+    assert.equal(shotReview.shot.status, 'needs-review')
+    assert.deepEqual(calls, [
+      'script-segmentation',
+      'narrative-beat-analysis',
+      'shot-planning',
+    ])
   })
 
   test('scene approval automatically runs narrative analysis with approved Artifact only', () => {
@@ -520,6 +586,22 @@ describe('review checkpoints and immutable evidence', () => {
 })
 
 describe('blocked and malformed Skill results', () => {
+  test('hostile Proxy payload traps block scene, beat, and shot review without escaping', () => {
+    const cases = [
+      ['scene', 'prototype'],
+      ['beat', 'descriptor'],
+      ['shot', 'property'],
+    ] as const
+
+    for (const [stage, trap] of cases) {
+      const recipe = recipeWithMutatedResult(stage, (result) => mutateArtifact(
+        result,
+        (artifact) => { artifact.payload = hostilePayload(trap) },
+      ))
+      assertMalformedStageBlocked(recipe, stage)
+    }
+  })
+
   test('malformed scene, beat, and shot Artifacts block their review stages', () => {
     const malformedSceneRunner: typeof runCreatorSkill = (skillId, input, version) => {
       const result = runCreatorSkill(skillId, input, version)

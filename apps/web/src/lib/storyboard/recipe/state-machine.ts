@@ -254,7 +254,7 @@ function readScene(value: unknown): ScriptSceneDraft | null {
   }
 }
 
-function readScenePayload(
+function readScenePayloadUnsafe(
   value: unknown,
   expectedSourceText?: string,
 ): SceneBreakdownPayload | null {
@@ -296,6 +296,17 @@ function readScenePayload(
   return { format: value.format, scenes }
 }
 
+function readScenePayload(
+  value: unknown,
+  expectedSourceText?: string,
+): SceneBreakdownPayload | null {
+  try {
+    return readScenePayloadUnsafe(value, expectedSourceText)
+  } catch {
+    return null
+  }
+}
+
 function readBeat(value: unknown): NarrativeBeatDraft | null {
   if (!isRecord(value)
     || !hasExactFields(value, BEAT_FIELDS, ['needsReviewReason'])
@@ -330,7 +341,7 @@ function readBeat(value: unknown): NarrativeBeatDraft | null {
   }
 }
 
-function readBeatPayload(
+function readBeatPayloadUnsafe(
   value: unknown,
   sourceArtifact?: CreatorSkillArtifact,
   preserveReviewedOrder = false,
@@ -430,6 +441,18 @@ function readBeatPayload(
   return { scenes }
 }
 
+function readBeatPayload(
+  value: unknown,
+  sourceArtifact?: CreatorSkillArtifact,
+  preserveReviewedOrder = false,
+): NarrativeBeatMapPayload | null {
+  try {
+    return readBeatPayloadUnsafe(value, sourceArtifact, preserveReviewedOrder)
+  } catch {
+    return null
+  }
+}
+
 function readShot(value: unknown): ShotPlanDraft | null {
   if (!isRecord(value)
     || !hasExactFields(value, SHOT_FIELDS, ['beatId', 'needsReviewReason'])
@@ -473,7 +496,7 @@ function readShot(value: unknown): ShotPlanDraft | null {
   }
 }
 
-function readShotPayload(
+function readShotPayloadUnsafe(
   value: unknown,
   sourceArtifact?: CreatorSkillArtifact,
 ): ShotPlanPayload | null {
@@ -563,6 +586,17 @@ function readShotPayload(
     return null
   }
   return { scenes }
+}
+
+function readShotPayload(
+  value: unknown,
+  sourceArtifact?: CreatorSkillArtifact,
+): ShotPlanPayload | null {
+  try {
+    return readShotPayloadUnsafe(value, sourceArtifact)
+  } catch {
+    return null
+  }
 }
 
 type ExpectedRunContract = {
@@ -707,25 +741,31 @@ function stageFromSceneResult(
   generation = 0,
   staleResult: CreatorSkillRunResult | null = null,
 ): StoryboardDirectorStage<RecipeReviewItem<ScriptSceneDraft>> {
-  const artifact = requireExpectedArtifact(result, expectedRunContract(
-    SCRIPT_SEGMENTATION_MANIFEST.id,
-    SCRIPT_SEGMENTATION_MANIFEST.version,
-    input,
-    'scene-breakdown-001',
-    'scene-breakdown',
-    sourceNodeId,
-    [],
-  ))
-  const payload = artifact ? readScenePayload(artifact.payload, sourceText) : null
-  const evidenceMatches = payload ? resultEvidenceMatches(
-    result,
-    payload.scenes.map((scene) => ({
-      evidenceId: `scene-evidence-${String(scene.order).padStart(3, '0')}`,
-      lineStart: scene.lineStart,
-      lineEnd: scene.lineEnd,
-      sourceText: scene.sourceText,
-    })),
-  ) : false
+  let payload: SceneBreakdownPayload | null = null
+  let evidenceMatches = false
+  try {
+    const artifact = requireExpectedArtifact(result, expectedRunContract(
+      SCRIPT_SEGMENTATION_MANIFEST.id,
+      SCRIPT_SEGMENTATION_MANIFEST.version,
+      input,
+      'scene-breakdown-001',
+      'scene-breakdown',
+      sourceNodeId,
+      [],
+    ))
+    payload = artifact ? readScenePayload(artifact.payload, sourceText) : null
+    evidenceMatches = payload ? resultEvidenceMatches(
+      result,
+      payload.scenes.map((scene) => ({
+        evidenceId: `scene-evidence-${String(scene.order).padStart(3, '0')}`,
+        lineStart: scene.lineStart,
+        lineEnd: scene.lineEnd,
+        sourceText: scene.sourceText,
+      })),
+    ) : false
+  } catch {
+    payload = null
+  }
   return {
     status: payload && evidenceMatches ? 'needs-review' : 'blocked',
     generation,
@@ -747,25 +787,31 @@ function stageFromBeatResult(
   generation = 0,
   staleResult: CreatorSkillRunResult | null = null,
 ): StoryboardDirectorStage<RecipeReviewItem<NarrativeBeatDraft>> {
-  const artifact = requireExpectedArtifact(result, expectedRunContract(
-    NARRATIVE_BEAT_ANALYSIS_MANIFEST.id,
-    NARRATIVE_BEAT_ANALYSIS_MANIFEST.version,
-    input,
-    'narrative-beat-map-001',
-    'narrative-beat-map',
-    sourceArtifact.sourceNodeIds[0]!,
-    [sourceArtifact.artifactId],
-  ))
-  const payload = artifact ? readBeatPayload(artifact.payload, sourceArtifact) : null
-  const evidenceMatches = payload ? resultEvidenceMatches(
-    result,
-    payload.scenes.flatMap((scene) => scene.beats.map((beat) => ({
-      evidenceId: `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
-      lineStart: beat.lineStart,
-      lineEnd: beat.lineEnd,
-      sourceText: beat.sourceText,
-    }))),
-  ) : false
+  let payload: NarrativeBeatMapPayload | null = null
+  let evidenceMatches = false
+  try {
+    const artifact = requireExpectedArtifact(result, expectedRunContract(
+      NARRATIVE_BEAT_ANALYSIS_MANIFEST.id,
+      NARRATIVE_BEAT_ANALYSIS_MANIFEST.version,
+      input,
+      'narrative-beat-map-001',
+      'narrative-beat-map',
+      sourceArtifact.sourceNodeIds[0]!,
+      [sourceArtifact.artifactId],
+    ))
+    payload = artifact ? readBeatPayload(artifact.payload, sourceArtifact) : null
+    evidenceMatches = payload ? resultEvidenceMatches(
+      result,
+      payload.scenes.flatMap((scene) => scene.beats.map((beat) => ({
+        evidenceId: `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
+        lineStart: beat.lineStart,
+        lineEnd: beat.lineEnd,
+        sourceText: beat.sourceText,
+      }))),
+    ) : false
+  } catch {
+    payload = null
+  }
   return {
     status: payload && evidenceMatches ? 'needs-review' : 'blocked',
     generation,
@@ -787,25 +833,31 @@ function stageFromShotResult(
   generation = 0,
   staleResult: CreatorSkillRunResult | null = null,
 ): StoryboardDirectorRecipe['shot'] {
-  const artifact = requireExpectedArtifact(result, expectedRunContract(
-    SHOT_PLANNING_MANIFEST.id,
-    SHOT_PLANNING_MANIFEST.version,
-    input,
-    'shot-plan-001',
-    'shot-plan',
-    sourceArtifact.sourceNodeIds[0]!,
-    [sourceArtifact.artifactId],
-  ))
-  const payload = artifact ? readShotPayload(artifact.payload, sourceArtifact) : null
-  const evidenceMatches = payload ? resultEvidenceMatches(
-    result,
-    payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({
-      evidenceId: `shot-plan-evidence-${String(scene.order).padStart(3, '0')}-${String(shot.order).padStart(3, '0')}`,
-      lineStart: shot.lineStart,
-      lineEnd: shot.lineEnd,
-      sourceText: shot.sourceText,
-    }))),
-  ) : false
+  let payload: ShotPlanPayload | null = null
+  let evidenceMatches = false
+  try {
+    const artifact = requireExpectedArtifact(result, expectedRunContract(
+      SHOT_PLANNING_MANIFEST.id,
+      SHOT_PLANNING_MANIFEST.version,
+      input,
+      'shot-plan-001',
+      'shot-plan',
+      sourceArtifact.sourceNodeIds[0]!,
+      [sourceArtifact.artifactId],
+    ))
+    payload = artifact ? readShotPayload(artifact.payload, sourceArtifact) : null
+    evidenceMatches = payload ? resultEvidenceMatches(
+      result,
+      payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({
+        evidenceId: `shot-plan-evidence-${String(scene.order).padStart(3, '0')}-${String(shot.order).padStart(3, '0')}`,
+        lineStart: shot.lineStart,
+        lineEnd: shot.lineEnd,
+        sourceText: shot.sourceText,
+      }))),
+    ) : false
+  } catch {
+    payload = null
+  }
   return {
     status: payload && evidenceMatches ? 'needs-review' : 'blocked',
     generation,
@@ -827,22 +879,26 @@ export function createStoryboardDirectorRecipe(
   runner: StoryboardRecipeSkillRunner = runCreatorSkill,
 ): StoryboardDirectorRecipe {
   const identity = createStoryboardDirectorRecipeIdentity(context, source)
+  const projectContext = {
+    projectId: context.projectId.trim(),
+    workflowId: context.workflowId.trim(),
+  }
   const sourceNode = {
-    id: source.id,
+    id: source.id.trim(),
     kind: 'text' as const,
-    title: source.title,
+    title: source.title.trim(),
     prompt: identity.sourceText,
   }
   const sceneInput: CreatorSkillRunInput = {
     sourceNodes: [sourceNode],
-    projectContext: context,
+    projectContext,
   }
   const sceneResult = runner('script-segmentation', sceneInput)
   return {
     schemaVersion: STORYBOARD_DIRECTOR_RECIPE_VERSION,
     recipeId: identity.recipeId,
-    projectId: context.projectId,
-    workflowId: context.workflowId,
+    projectId: projectContext.projectId,
+    workflowId: projectContext.workflowId,
     sourceNode,
     sourceFingerprint: identity.sourceFingerprint,
     activeStage: 'scene-review',
