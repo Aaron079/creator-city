@@ -115,17 +115,7 @@ function sortedOwnStringKeys(value: object, field: string): string[] {
     if (typeof key !== 'string') failClone(`${field} must not contain symbol keys`)
     keys[index] = key
   }
-
-  for (let index = 1; index < keys.length; index += 1) {
-    const key = keys[index]!
-    let insertionIndex = index
-    while (insertionIndex > 0 && keys[insertionIndex - 1]! > key) {
-      keys[insertionIndex] = keys[insertionIndex - 1]!
-      insertionIndex -= 1
-    }
-    keys[insertionIndex] = key
-  }
-  return keys
+  return keys.sort()
 }
 
 function cloneCanonicalSourceIdentifiers(value: unknown, field: string): string[] {

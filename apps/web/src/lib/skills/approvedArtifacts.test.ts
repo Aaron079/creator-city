@@ -313,6 +313,44 @@ describe('cloneCreatorSkillArtifact', () => {
     )
   })
 
+  test('uses native sorting for a large reverse-inserted payload without mutating it', () => {
+    const payload: Record<string, number> = {}
+    for (let index = 2047; index >= 0; index -= 1) {
+      payload[`key-${index.toString().padStart(4, '0')}`] = index
+    }
+    const inputKeys = Object.keys(payload)
+    const inputSnapshot = { ...payload }
+    const sortDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, 'sort')!
+    const originalSort = Array.prototype.sort
+    let nativeSortCalls = 0
+    let clonedPayload: Record<string, number> | undefined
+
+    Object.defineProperty(Array.prototype, 'sort', {
+      ...sortDescriptor,
+      value: function sort(
+        this: unknown[],
+        compareFn?: (left: unknown, right: unknown) => number,
+      ) {
+        nativeSortCalls += 1
+        return Reflect.apply(originalSort, this, compareFn ? [compareFn] : [])
+      },
+    })
+    try {
+      clonedPayload = cloneCreatorSkillArtifact({
+        ...createArtifact(),
+        payload,
+      }).payload as Record<string, number>
+    } finally {
+      Object.defineProperty(Array.prototype, 'sort', sortDescriptor)
+    }
+
+    assert.ok(clonedPayload)
+    assert.ok(nativeSortCalls > 0)
+    assert.deepEqual(Object.keys(clonedPayload), [...inputKeys].sort())
+    assert.deepEqual(Object.keys(payload), inputKeys)
+    assert.deepEqual(payload, inputSnapshot)
+  })
+
   test('shares the exact canonical six-field rule with the artifact predicate', () => {
     const exact = createArtifact()
     const extraString = { ...createArtifact(), extra: true }
