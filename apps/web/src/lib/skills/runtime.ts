@@ -407,7 +407,7 @@ function normalizeEvidence(
 function normalizeIssue(
   value: unknown,
   sourceNodeIds: ReadonlySet<string>,
-  artifactIds: ReadonlySet<string>,
+  artifactProvenance: ReadonlyMap<string, ReadonlySet<string>>,
 ): CreatorSkillIssue {
   const requiredFields = ['code', 'message'] as const
   const optionalFields = ['sourceNodeId', 'artifactId'] as const
@@ -419,19 +419,27 @@ function normalizeIssue(
     code: normalizeOutputString(value.code, 'issue.code'),
     message: preserveOutputText(value.message, 'issue.message'),
   }
+  let sourceNodeId: string | undefined
   if (Object.prototype.hasOwnProperty.call(value, 'sourceNodeId')) {
-    const sourceNodeId = normalizeOutputString(value.sourceNodeId, 'issue.sourceNodeId')
+    sourceNodeId = normalizeOutputString(value.sourceNodeId, 'issue.sourceNodeId')
     if (!sourceNodeIds.has(sourceNodeId)) {
       throw new TypeError('Issue sourceNodeId must reference an input source node')
     }
     issue.sourceNodeId = sourceNodeId
   }
+  let artifactId: string | undefined
   if (Object.prototype.hasOwnProperty.call(value, 'artifactId')) {
-    const artifactId = normalizeOutputString(value.artifactId, 'issue.artifactId')
-    if (!artifactIds.has(artifactId)) {
+    artifactId = normalizeOutputString(value.artifactId, 'issue.artifactId')
+    if (!artifactProvenance.has(artifactId)) {
       throw new TypeError('Issue artifactId must reference an input or output Artifact')
     }
     issue.artifactId = artifactId
+  }
+  if (sourceNodeId !== undefined && artifactId !== undefined) {
+    const artifactSourceNodeIds = artifactProvenance.get(artifactId)
+    if (!artifactSourceNodeIds?.has(sourceNodeId)) {
+      throw new TypeError('Issue sourceNodeId must belong to the referenced Artifact')
+    }
   }
   return issue
 }
@@ -468,9 +476,13 @@ function normalizeExecutionResult(
     normalizeArtifact,
   )
   const outputArtifactIds = new Set<string>()
-  const artifactIdsByType = new Map<string, Set<string>>()
+  const issueArtifactProvenance = new Map<string, Set<string>>()
+  for (const [artifactId, sourceNodeIds] of inputArtifactProvenance) {
+    issueArtifactProvenance.set(artifactId, new Set(sourceNodeIds))
+  }
   for (const artifact of artifacts) {
     if (!outputArtifactTypes.includes(artifact.artifactType)) return null
+    if (outputArtifactIds.has(artifact.artifactId)) return null
     const allowedSourceNodeIds = new Set(directSourceNodeIds)
     for (let index = 0; index < artifact.sourceArtifactIds.length; index += 1) {
       const sourceArtifactId = artifact.sourceArtifactIds[index]!
@@ -483,14 +495,15 @@ function normalizeExecutionResult(
     if (artifact.sourceNodeIds.some((sourceNodeId) => !allowedSourceNodeIds.has(sourceNodeId))) {
       return null
     }
-    const artifactIds = artifactIdsByType.get(artifact.artifactType) ?? new Set<string>()
-    if (artifactIds.has(artifact.artifactId)) return null
-    artifactIds.add(artifact.artifactId)
-    artifactIdsByType.set(artifact.artifactType, artifactIds)
     outputArtifactIds.add(artifact.artifactId)
+    const artifactSourceNodeIds = issueArtifactProvenance.get(artifact.artifactId)
+      ?? new Set<string>()
+    for (let index = 0; index < artifact.sourceNodeIds.length; index += 1) {
+      artifactSourceNodeIds.add(artifact.sourceNodeIds[index]!)
+    }
+    issueArtifactProvenance.set(artifact.artifactId, artifactSourceNodeIds)
   }
 
-  const knownArtifactIds = new Set([...inputArtifactProvenance.keys(), ...outputArtifactIds])
   const evidence = transformDenseArray(
     resultEvidence,
     'result.evidence',
@@ -499,12 +512,12 @@ function normalizeExecutionResult(
   const warnings = transformDenseArray(
     resultWarnings,
     'result.warnings',
-    (entry) => normalizeIssue(entry, validatedSourceNodeIds, knownArtifactIds),
+    (entry) => normalizeIssue(entry, validatedSourceNodeIds, issueArtifactProvenance),
   )
   const blockers = transformDenseArray(
     resultBlockers,
     'result.blockers',
-    (entry) => normalizeIssue(entry, validatedSourceNodeIds, knownArtifactIds),
+    (entry) => normalizeIssue(entry, validatedSourceNodeIds, issueArtifactProvenance),
   )
   if (status === 'blocked') {
     if (artifacts.length > 0 || blockers.length === 0) return null

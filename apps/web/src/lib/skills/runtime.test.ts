@@ -1111,6 +1111,196 @@ describe('runCreatorSkillFromRegistry', () => {
     assert.deepEqual(resultArtifact.sourceNodeIds, ['node-a', 'node-b'])
   })
 
+  test('rejects globally duplicate output Artifact IDs before issue normalization', () => {
+    let warningReadCount = 0
+    const warnings = new Proxy([{
+      code: 'DUPLICATE_OUTPUT',
+      message: 'This warning must not be normalized.',
+    }], {
+      get(target, property, receiver) {
+        if (property === '0') warningReadCount += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const skill = createSkill({
+      outputArtifactTypes: ['scene-list', 'shot-list'],
+    }, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'ready',
+      artifacts: [
+        createCreatorSkillArtifact({
+          artifactId: 'shared-output-id',
+          artifactType: 'scene-list',
+          artifactVersion: 1,
+          sourceNodeIds: ['node-a'],
+          payload: {},
+        }),
+        createCreatorSkillArtifact({
+          artifactId: 'shared-output-id',
+          artifactType: 'shot-list',
+          artifactVersion: 1,
+          sourceNodeIds: ['node-a'],
+          payload: {},
+        }),
+      ],
+      evidence: [],
+      warnings,
+      blockers: [],
+    }))
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        createInput(),
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+    assert.equal(warningReadCount, 0)
+  })
+
+  test('validates paired warnings against input and output Artifact provenance', () => {
+    const inputArtifacts = [
+      createCreatorSkillArtifact({
+        artifactId: 'script-a',
+        artifactType: 'script',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        payload: {},
+      }),
+      createCreatorSkillArtifact({
+        artifactId: 'outline-b',
+        artifactType: 'outline',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-b'],
+        payload: {},
+      }),
+    ]
+    const createWarningSkill = (warnings: CreatorSkillRunResult['warnings']) => createSkill({
+      acceptedArtifactTypes: ['script', 'outline'],
+    }, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'needs-review',
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'output-scene',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        sourceArtifactIds: ['script-a'],
+        payload: {},
+      })],
+      evidence: [],
+      warnings,
+      blockers: [],
+    }))
+    const input = { sourceNodes: [], artifacts: inputArtifacts }
+    const validWarnings: CreatorSkillRunResult['warnings'] = [
+      {
+        code: 'INPUT_REVIEW',
+        message: 'Review the input Artifact.',
+        artifactId: 'script-a',
+        sourceNodeId: 'source-a',
+      },
+      {
+        code: 'OUTPUT_REVIEW',
+        message: 'Review the output Artifact.',
+        artifactId: 'output-scene',
+        sourceNodeId: 'source-a',
+      },
+      {
+        code: 'ARTIFACT_ONLY',
+        message: 'Known Artifact without source pairing.',
+        artifactId: 'outline-b',
+      },
+      {
+        code: 'SOURCE_ONLY',
+        message: 'Known source without Artifact pairing.',
+        sourceNodeId: 'source-b',
+      },
+    ]
+
+    const valid = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([createWarningSkill(validWarnings)]),
+      'test-skill',
+      input,
+    )
+    assert.equal(valid.status, 'needs-review')
+    assert.deepEqual(valid.warnings, validWarnings)
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([createWarningSkill([{
+          code: 'CROSS_WIRED_WARNING',
+          message: 'Artifact A must not claim source B.',
+          artifactId: 'script-a',
+          sourceNodeId: 'source-b',
+        }])]),
+        'test-skill',
+        input,
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
+  test('validates paired blockers against input Artifact provenance', () => {
+    const inputArtifacts = [
+      createCreatorSkillArtifact({
+        artifactId: 'script-a',
+        artifactType: 'script',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-a'],
+        payload: {},
+      }),
+      createCreatorSkillArtifact({
+        artifactId: 'outline-b',
+        artifactType: 'outline',
+        artifactVersion: 1,
+        sourceNodeIds: ['source-b'],
+        payload: {},
+      }),
+    ]
+    const createBlockedSkill = (sourceNodeId: string) => createSkill({
+      acceptedArtifactTypes: ['script', 'outline'],
+    }, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'blocked',
+      artifacts: [],
+      evidence: [],
+      warnings: [],
+      blockers: [{
+        code: 'INPUT_BLOCKED',
+        message: 'The input Artifact needs attention.',
+        artifactId: 'script-a',
+        sourceNodeId,
+      }],
+    }))
+    const input = { sourceNodes: [], artifacts: inputArtifacts }
+
+    const valid = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([createBlockedSkill('source-a')]),
+      'test-skill',
+      input,
+    )
+    assert.equal(valid.status, 'blocked')
+    assert.equal(valid.blockers[0]?.artifactId, 'script-a')
+    assert.equal(valid.blockers[0]?.sourceNodeId, 'source-a')
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([createBlockedSkill('source-b')]),
+        'test-skill',
+        input,
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
   test('normalizes valid evidence and issues and rejects malformed entries', () => {
     const validEvidence = {
       evidenceId: 'evidence-1',
