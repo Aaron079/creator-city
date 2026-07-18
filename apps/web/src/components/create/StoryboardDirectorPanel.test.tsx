@@ -210,6 +210,7 @@ function renderedHarnessSource() {
   const recipePanelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorRecipePanel.tsx')
   const completed = JSON.stringify(completedRecipe())
   const sceneReview = JSON.stringify(decidedSceneRecipe())
+  const beatReview = JSON.stringify(approveSceneStage(decidedSceneRecipe(), ISO_TIME))
   return `
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
@@ -219,6 +220,7 @@ function renderedHarnessSource() {
     const FIXTURES = {
       completed: ${completed},
       sceneReview: ${sceneReview},
+      beatReview: ${beatReview},
     }
     let root = null
     let calls = []
@@ -246,9 +248,9 @@ function renderedHarnessSource() {
           renderRecipe()
         },
         onFocusSource() {},
-        onMaterializeGrouped() {},
-        onSyncShotBoard() {},
-        onCreateDraftNodes() {},
+        onMaterializeGrouped() { calls.push('materialize') },
+        onSyncShotBoard() { calls.push('sync') },
+        onCreateDraftNodes() { calls.push('draft-nodes') },
         onImportLegacy() {},
       }
     }
@@ -367,13 +369,13 @@ async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜�
 }
 
 type RenderedHarness = {
-  mountRecipe: (kind?: 'completed' | 'sceneReview') => void
+  mountRecipe: (kind?: 'completed' | 'sceneReview' | 'beatReview') => void
   mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
   calls: () => string[]
   recipe: () => StoryboardDirectorRecipe
 }
 
-async function mountRenderedRecipe(page: Page, kind: 'completed' | 'sceneReview' = 'completed') {
+async function mountRenderedRecipe(page: Page, kind: 'completed' | 'sceneReview' | 'beatReview' = 'completed') {
   await page.evaluate((fixture) => (
     window as unknown as { __directorHarness: RenderedHarness }
   ).__directorHarness.mountRecipe(fixture), kind)
@@ -500,7 +502,7 @@ describe('Storyboard Director panel state', () => {
       recipe: { ...shot.recipe, sourceArtifactId: 'old-artifact' },
     }, recipe), {
       synchronization: 'stale',
-      quality: 'clean',
+      quality: 'stale',
     })
     assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers(shot, null), {
       synchronization: 'unavailable',
@@ -550,7 +552,67 @@ describe('Storyboard Director panel state', () => {
         ...(advisoryDraft.beatId ? { beatId: advisoryDraft.beatId } : {}),
         shotId: advisoryDraft.shotId,
       },
-    }, advisory)?.quality, 'advisory')
+    }, advisory)?.quality, 'blocking')
+
+    const finding = (
+      severity: StoryboardDirectorFinding['severity'],
+      scope: Partial<Pick<StoryboardDirectorFinding, 'sceneId' | 'beatId' | 'shotId'>>,
+    ): StoryboardDirectorFinding => ({
+      findingId: `finding-${severity}-${Object.values(scope).join('-') || 'global'}`,
+      severity,
+      code: 'REVIEW_FINDING',
+      message: 'Review finding',
+      evidenceIds: [],
+      ...scope,
+    })
+    const provenance = shot.recipe!
+
+    for (const applicableFinding of [
+      finding('blocking', {}),
+      finding('advisory', { sceneId: provenance.sceneId }),
+      finding('advisory', { beatId: provenance.beatId }),
+      finding('advisory', { shotId: provenance.shotId }),
+    ]) {
+      const marked = { ...recipe, findings: [applicableFinding] }
+      assert.equal(
+        deriveStoryboardDirectorShotRecipeMarkers(shot, marked)?.quality,
+        applicableFinding.severity,
+      )
+    }
+    const foreignScope = {
+      ...recipe,
+      findings: [finding('advisory', { sceneId: 'foreign-scene' })],
+    }
+    assert.equal(deriveStoryboardDirectorShotRecipeMarkers(shot, foreignScope)?.quality, 'clean')
+
+    const invalidated = updateRecipeDraft(recipe, 'scene-review', recipe.scene.drafts[0]!.sceneId, {
+      heading: 'INT. INVALIDATED LAB - NIGHT',
+    }, ISO_TIME)
+    assert.equal(invalidated.shot.status, 'stale')
+    assert.equal(
+      invalidated.shot.approvedArtifact?.artifactId,
+      recipe.shot.approvedArtifact?.artifactId,
+    )
+    assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers(shot, invalidated), {
+      synchronization: 'stale',
+      quality: 'blocking',
+    })
+
+    for (const status of ['needs-review', 'blocked', 'idle'] as const) {
+      const nonFinal = { ...recipe, shot: { ...recipe.shot, status } }
+      const markers = deriveStoryboardDirectorShotRecipeMarkers(shot, nonFinal)
+      assert.equal(markers?.synchronization, 'stale')
+      assert.notEqual(markers?.quality, 'clean')
+    }
+    const sourceInvalidated = invalidateRecipeAfter(recipe, 'source', ISO_TIME)
+    assert.equal(
+      deriveStoryboardDirectorShotRecipeMarkers(shot, sourceInvalidated)?.synchronization,
+      'stale',
+    )
+    assert.notEqual(
+      deriveStoryboardDirectorShotRecipeMarkers(shot, sourceInvalidated)?.quality,
+      'clean',
+    )
   })
 })
 
@@ -724,6 +786,102 @@ describe('Storyboard Director rendered interactions', () => {
       await page.getByRole('button', { name: '确认修改' }).click()
       await heading.blur()
       assert.deepEqual(await renderedCalls(page), ['commit'])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('pending edit exclusively locks fields, reorder, and stage actions until cancel or confirm', async () => {
+    const page = await renderPage()
+    const initial = completedRecipe()
+    const initialOrder = initial.scene.drafts.map((item) => item.sceneId)
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '场景')
+      const heading = page.getByLabel('场景标题').first()
+      const actionSummary = page.getByLabel('场景动作摘要').first()
+      const originalHeading = await heading.inputValue()
+      const originalAction = await actionSummary.inputValue()
+      const rerun = page.getByRole('button', { name: '重新运行当前阶段' })
+      const materialize = page.getByRole('button', { name: '落地审核结果' })
+      const sync = page.getByRole('button', { name: '同步镜头板' })
+      const createDrafts = page.getByRole('button', { name: '创建草稿节点' })
+      for (const action of [rerun, materialize, sync, createDrafts]) {
+        assert.equal(await action.isEnabled(), true)
+      }
+
+      await heading.fill('First pending heading')
+      await heading.blur()
+      await page.getByRole('button', { name: '确认修改' }).waitFor()
+
+      assert.equal(await actionSummary.isDisabled(), true)
+      assert.equal(await page.getByTitle('下移').first().isDisabled(), true)
+      for (const action of [rerun, materialize, sync, createDrafts]) {
+        assert.equal(await action.isDisabled(), true)
+        await action.evaluate((button) => (button as HTMLButtonElement).click())
+      }
+      await actionSummary.evaluate((field) => {
+        const input = field as HTMLTextAreaElement
+        input.value = 'Second request must not win'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new FocusEvent('blur', { bubbles: true }))
+      })
+      await page.getByTitle('下移').first().evaluate((button) => (
+        button as HTMLButtonElement
+      ).click())
+      assert.equal(await page.getByRole('button', { name: '确认修改' }).count(), 1)
+      assert.deepEqual(await renderedCalls(page), [])
+
+      await page.getByRole('button', { name: '取消' }).click()
+      await page.waitForFunction((expected) => (
+        (document.querySelector('[aria-label="场景标题"]') as HTMLInputElement | null)?.value === expected
+      ), originalHeading)
+      assert.equal(await actionSummary.inputValue(), originalAction)
+      assert.equal(await actionSummary.isEnabled(), true)
+      assert.equal(await page.getByTitle('下移').first().isEnabled(), true)
+      for (const action of [rerun, materialize, sync, createDrafts]) {
+        assert.equal(await action.isEnabled(), true)
+      }
+
+      await heading.fill('Confirmed first request')
+      await heading.blur()
+      await page.getByRole('button', { name: '确认修改' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      const committed = await renderedRecipe(page)
+      assert.equal(committed.scene.drafts[0]?.heading, 'Confirmed first request')
+      assert.equal(committed.scene.drafts[0]?.actionSummary, originalAction)
+      assert.deepEqual(committed.scene.drafts.map((item) => item.sceneId), initialOrder)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('pending approved edit survives cross-stage batch and decision attempts', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page, 'beatReview')
+      await selectReviewStage(page, '场景')
+      const heading = page.getByLabel('场景标题').first()
+      await heading.fill('Only pending scene edit')
+      await heading.blur()
+      await page.getByRole('button', { name: '确认修改' }).waitFor()
+
+      await selectReviewStage(page, '节拍')
+      const batchApprove = page.getByRole('button', { name: '批量批准' })
+      const decideApprove = page.getByTitle('批准').first()
+      const moveDown = page.getByTitle('下移').first()
+      assert.equal(await batchApprove.isDisabled(), true)
+      assert.equal(await decideApprove.isDisabled(), true)
+      assert.equal(await moveDown.isDisabled(), true)
+      await batchApprove.evaluate((button) => (button as HTMLButtonElement).click())
+      await decideApprove.evaluate((button) => (button as HTMLButtonElement).click())
+      await moveDown.evaluate((button) => (button as HTMLButtonElement).click())
+      assert.deepEqual(await renderedCalls(page), [])
+      assert.equal(await page.getByRole('button', { name: '确认修改' }).count(), 1)
+
+      await page.getByRole('button', { name: '确认修改' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      assert.equal((await renderedRecipe(page)).scene.drafts[0]?.heading, 'Only pending scene edit')
     } finally {
       await page.close()
     }

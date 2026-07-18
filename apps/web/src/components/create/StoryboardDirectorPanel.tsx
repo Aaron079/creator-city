@@ -9,7 +9,10 @@ import {
   type LegacyDirectorStateReadResult,
 } from '@/lib/storyboard/director'
 import { analyzeStoryboardDirectorRecipe } from '@/lib/storyboard/recipe/intelligence'
-import type { StoryboardDirectorRecipe } from '@/lib/storyboard/recipe/types'
+import type {
+  StoryboardDirectorFinding,
+  StoryboardDirectorRecipe,
+} from '@/lib/storyboard/recipe/types'
 import { StoryboardTimeline } from './StoryboardTimeline'
 import {
   StoryboardDirectorRecipePanel,
@@ -126,7 +129,17 @@ export function findStoryboardDirectorRecipeControl(
 
 export type StoryboardDirectorShotRecipeMarkers = {
   synchronization: 'synchronized' | 'stale' | 'unavailable'
-  quality: 'blocking' | 'advisory' | 'clean' | 'unavailable'
+  quality: 'blocking' | 'advisory' | 'stale' | 'clean' | 'unavailable'
+}
+
+function findingAppliesToShot(
+  finding: StoryboardDirectorFinding,
+  provenance: NonNullable<ShotCard['recipe']>,
+) {
+  if (finding.sceneId && finding.sceneId !== provenance.sceneId) return false
+  if (finding.beatId && finding.beatId !== provenance.beatId) return false
+  if (finding.shotId && finding.shotId !== provenance.shotId) return false
+  return true
 }
 
 export function deriveStoryboardDirectorShotRecipeMarkers(
@@ -145,18 +158,25 @@ export function deriveStoryboardDirectorShotRecipeMarkers(
     && draft.sceneId === provenance.sceneId
     && draft.beatId === provenance.beatId
   ))
-  const synchronization = approvedDraft
+  const analyzedFindings = analyzeStoryboardDirectorRecipe(recipe)
+  const synchronization = recipe.shot.status === 'approved'
+    && approvedDraft
     && recipe.shot.approvedArtifact?.artifactId === provenance.sourceArtifactId
     ? 'synchronized'
     : 'stale'
-  const findings = analyzeStoryboardDirectorRecipe(recipe).filter((finding) => (
-    finding.shotId === provenance.shotId
+  const findings = [...recipe.findings, ...analyzedFindings].filter((finding) => (
+    findingAppliesToShot(finding, provenance)
   ))
   const quality = findings.some((finding) => finding.severity === 'blocking')
     ? 'blocking'
     : findings.some((finding) => finding.severity === 'advisory')
       ? 'advisory'
-      : 'clean'
+      : synchronization === 'stale'
+        || recipe.scene.status !== 'approved'
+        || recipe.beat.status !== 'approved'
+        || recipe.shot.status !== 'approved'
+        ? 'stale'
+        : 'clean'
   return { synchronization, quality }
 }
 

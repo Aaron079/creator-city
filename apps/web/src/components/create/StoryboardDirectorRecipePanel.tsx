@@ -465,14 +465,17 @@ function RecipeReviewEditor({
   recipe,
   selectedStage,
   onCommit,
+  onPendingActionChange,
 }: {
   recipe: StoryboardDirectorRecipe
   selectedStage: StoryboardDirectorStageId
   onCommit: (recipe: StoryboardDirectorRecipe) => void
+  onPendingActionChange: (pending: boolean) => void
 }) {
   const [filter, setFilter] = useState<ReviewFilter>('pending')
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const pendingActionRef = useRef<PendingAction | null>(null)
   const [draftResetVersion, setDraftResetVersion] = useState(0)
   const sourceFresh = summarizeStoryboardDirectorRecipe(recipe).sourceFresh
   const activeReviewStage = selectedStage === 'source' ? null : selectedStage
@@ -491,22 +494,37 @@ function RecipeReviewEditor({
   }, [expandedSceneId, sceneIds])
 
   const commitMutation = (next: StoryboardDirectorRecipe) => {
+    if (pendingActionRef.current) return false
     if (next === recipe) return false
     onCommit(next)
     return true
   }
+  const requestPendingAction = (action: PendingAction) => {
+    if (pendingActionRef.current) return false
+    pendingActionRef.current = action
+    setPendingAction(action)
+    onPendingActionChange(true)
+    return true
+  }
+  const clearPendingAction = () => {
+    pendingActionRef.current = null
+    setPendingAction(null)
+    onPendingActionChange(false)
+  }
   const commitEdit = (stageId: ReviewStageId, itemId: string, patch: Record<string, unknown>) => {
+    if (pendingActionRef.current) return false
     if ((stageId === 'scene-review' || stageId === 'beat-review')
       && recipe[stageId === 'scene-review' ? 'scene' : 'beat'].status === 'approved') {
-      setPendingAction({ kind: 'edit', stageId, itemId, patch })
+      requestPendingAction({ kind: 'edit', stageId, itemId, patch })
       return false
     }
     return commitMutation(updateRecipeDraft(recipe, stageId, itemId, patch, new Date().toISOString()))
   }
   const commitMove = (stageId: ReviewStageId, itemId: string, direction: -1 | 1) => {
+    if (pendingActionRef.current) return
     if ((stageId === 'scene-review' || stageId === 'beat-review')
       && recipe[stageId === 'scene-review' ? 'scene' : 'beat'].status === 'approved') {
-      setPendingAction({ kind: 'move', stageId, itemId, direction })
+      requestPendingAction({ kind: 'move', stageId, itemId, direction })
       return
     }
     commitMutation(moveRecipeDraft(recipe, stageId, itemId, direction, new Date().toISOString()))
@@ -520,6 +538,8 @@ function RecipeReviewEditor({
     stage.status === 'needs-review'
     || ((activeReviewStage === 'scene-review' || activeReviewStage === 'beat-review') && stage.status === 'approved')
   ))
+  const interactionLocked = pendingAction !== null
+  const fieldsDisabled = !stageEditable || interactionLocked
 
   if (selectedStage === 'source') {
     return (
@@ -563,8 +583,8 @@ function RecipeReviewEditor({
                 </button>
                 {expanded && stage.status === 'needs-review' && sourceFresh ? (
                   <div className="flex flex-none gap-1">
-                    <button type="button" title="批量批准" aria-label="批量批准" onClick={() => commitMutation(batchDecideRecipeScene(recipe, sceneId, 'approved', new Date().toISOString()))} className="flex h-8 items-center gap-1 rounded-md border border-emerald-300/20 px-2 text-[9px] font-semibold text-emerald-200 hover:bg-emerald-300/[0.08]"><Check size={13} aria-hidden="true" />批量批准</button>
-                    <button type="button" title="批量拒绝" aria-label="批量拒绝" onClick={() => commitMutation(batchDecideRecipeScene(recipe, sceneId, 'rejected', new Date().toISOString()))} className="flex h-8 items-center gap-1 rounded-md border border-rose-300/20 px-2 text-[9px] font-semibold text-rose-200 hover:bg-rose-300/[0.08]"><X size={13} aria-hidden="true" />批量拒绝</button>
+                    <button type="button" title="批量批准" aria-label="批量批准" disabled={interactionLocked} onClick={() => commitMutation(batchDecideRecipeScene(recipe, sceneId, 'approved', new Date().toISOString()))} className="flex h-8 items-center gap-1 rounded-md border border-emerald-300/20 px-2 text-[9px] font-semibold text-emerald-200 hover:bg-emerald-300/[0.08] disabled:cursor-not-allowed disabled:opacity-30"><Check size={13} aria-hidden="true" />批量批准</button>
+                    <button type="button" title="批量拒绝" aria-label="批量拒绝" disabled={interactionLocked} onClick={() => commitMutation(batchDecideRecipeScene(recipe, sceneId, 'rejected', new Date().toISOString()))} className="flex h-8 items-center gap-1 rounded-md border border-rose-300/20 px-2 text-[9px] font-semibold text-rose-200 hover:bg-rose-300/[0.08] disabled:cursor-not-allowed disabled:opacity-30"><X size={13} aria-hidden="true" />批量拒绝</button>
                   </div>
                 ) : null}
               </div>
@@ -596,32 +616,32 @@ function RecipeReviewEditor({
 
                             {sceneItem ? (
                               <>
-                                <DraftTextField value={sceneItem.heading} label="场景标题" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { heading: value })} />
+                                <DraftTextField value={sceneItem.heading} label="场景标题" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { heading: value })} />
                                 <div className="grid gap-2 sm:grid-cols-2">
-                                  <DraftTextField value={sceneItem.location ?? ''} label="场景地点" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { location: value || undefined })} />
-                                  <DraftTextField value={sceneItem.timeOfDay ?? ''} label="场景时间" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { timeOfDay: value || undefined })} />
+                                  <DraftTextField value={sceneItem.location ?? ''} label="场景地点" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { location: value || undefined })} />
+                                  <DraftTextField value={sceneItem.timeOfDay ?? ''} label="场景时间" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { timeOfDay: value || undefined })} />
                                 </div>
-                                <DraftTextField value={sceneItem.characters.join(', ')} label="场景角色" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, {
+                                <DraftTextField value={sceneItem.characters.join(', ')} label="场景角色" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, {
                                   characters: Array.from(new Set(value.split(/[,，]/).map((entry) => entry.trim()).filter(Boolean))),
                                 })} />
-                                <DraftTextField value={sceneItem.actionSummary} label="场景动作摘要" multiline disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { actionSummary: value })} />
+                                <DraftTextField value={sceneItem.actionSummary} label="场景动作摘要" multiline disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('scene-review', itemId, { actionSummary: value })} />
                               </>
                             ) : beatItem ? (
                               <>
-                                <DraftSelectField value={beatItem.type} label="节拍类型" options={BEAT_TYPES} disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('beat-review', itemId, { type: value })} />
-                                <DraftTextField value={beatItem.summary} label="节拍摘要" multiline disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('beat-review', itemId, { summary: value })} />
+                                <DraftSelectField value={beatItem.type} label="节拍类型" options={BEAT_TYPES} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('beat-review', itemId, { type: value })} />
+                                <DraftTextField value={beatItem.summary} label="节拍摘要" multiline disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('beat-review', itemId, { summary: value })} />
                               </>
                             ) : shotItem ? (
                               <div className="space-y-2">
                                 <div className="grid gap-2 sm:grid-cols-2">
-                                  <DraftTextField value={shotItem.objective} label="镜头目标" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { objective: value })} />
-                                  <DraftTextField value={shotItem.subject} label="镜头主体" disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { subject: value })} />
+                                  <DraftTextField value={shotItem.objective} label="镜头目标" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { objective: value })} />
+                                  <DraftTextField value={shotItem.subject} label="镜头主体" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { subject: value })} />
                                 </div>
-                                <DraftTextField value={shotItem.action} label="镜头动作" multiline disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { action: value })} />
+                                <DraftTextField value={shotItem.action} label="镜头动作" multiline disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { action: value })} />
                                 <div className="grid grid-cols-3 gap-2">
-                                  <DraftSelectField value={shotItem.suggestedShotSize} label="镜头景别" options={SHOT_SIZES} disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { suggestedShotSize: value })} />
-                                  <DraftSelectField value={shotItem.outputKind} label="输出类型" options={OUTPUT_KINDS} disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { outputKind: value })} />
-                                  <DraftSelectField value={String(shotItem.duration)} label="镜头时长" options={[["5", "5 秒"], ["10", "10 秒"]]} disabled={!stageEditable} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { duration: Number(value) })} />
+                                  <DraftSelectField value={shotItem.suggestedShotSize} label="镜头景别" options={SHOT_SIZES} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { suggestedShotSize: value })} />
+                                  <DraftSelectField value={shotItem.outputKind} label="输出类型" options={OUTPUT_KINDS} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { outputKind: value })} />
+                                  <DraftSelectField value={String(shotItem.duration)} label="镜头时长" options={[["5", "5 秒"], ["10", "10 秒"]]} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { duration: Number(value) })} />
                                 </div>
                               </div>
                             ) : null}
@@ -630,8 +650,8 @@ function RecipeReviewEditor({
                           </div>
                           <DecisionControls
                             decision={item.decision}
-                            moveDisabled={!stageEditable}
-                            decisionDisabled={!stageEditable || stage.status === 'approved'}
+                            moveDisabled={fieldsDisabled}
+                            decisionDisabled={fieldsDisabled || stage.status === 'approved'}
                             onDecision={(decision) => commitMutation(setRecipeDecision(recipe, activeReviewStage, itemId, decision, new Date().toISOString()))}
                             onMove={(direction) => commitMove(activeReviewStage, itemId, direction)}
                           />
@@ -653,12 +673,12 @@ function RecipeReviewEditor({
             此修改将使 {changeImpactForStage(recipe, pendingAction.stageId).beatCount} 个节拍和 {changeImpactForStage(recipe, pendingAction.stageId).shotCount} 个镜头失效。
           </p>
           <button type="button" onClick={() => {
-            setPendingAction(null)
+            clearPendingAction()
             setDraftResetVersion((current) => current + 1)
           }} className="h-8 rounded-md border border-white/10 px-3 text-[10px] text-white/55">取消</button>
           <button type="button" onClick={() => {
             const action = pendingAction
-            setPendingAction(null)
+            clearPendingAction()
             if (action.kind === 'edit') {
               commitMutation(updateRecipeDraft(recipe, action.stageId, action.itemId, action.patch, new Date().toISOString()))
               return
@@ -769,8 +789,22 @@ export function StoryboardDirectorRecipePanel({
   const [regionState, setRegionState] = useState<{ region: RecipeWorkspaceRegion }>({ region: 'review' })
   const [selectedStage, setSelectedStage] = useState<StoryboardDirectorStageId>(recipe?.activeStage ?? 'source')
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null)
+  const [reviewActionPending, setReviewActionPending] = useState(false)
+  const reviewActionPendingRef = useRef(false)
 
   useEffect(() => setSelectedStage(recipe?.activeStage ?? 'source'), [recipe?.recipeId, recipe?.activeStage])
+  useEffect(() => {
+    reviewActionPendingRef.current = false
+    setReviewActionPending(false)
+  }, [recipe?.recipeId])
+
+  const handlePendingActionChange = (pending: boolean) => {
+    reviewActionPendingRef.current = pending
+    setReviewActionPending(pending)
+  }
+  const runUnlockedAction = (action: () => void) => {
+    if (!reviewActionPendingRef.current) action()
+  }
 
   if (!recipe) {
     return (
@@ -827,22 +861,22 @@ export function StoryboardDirectorRecipePanel({
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_300px]">
         <div className={`${regionState.region === 'stages' ? 'block' : 'hidden'} min-h-0 lg:block`}><StageNavigation recipe={recipe} selectedStage={selectedStage} onSelect={(stage) => { setSelectedStage(stage); setRegionState({ region: 'review' }) }} /></div>
-        <div className={`${regionState.region === 'review' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeReviewEditor recipe={recipe} selectedStage={selectedStage} onCommit={onCommitRecipe} /></div>
+        <div className={`${regionState.region === 'review' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeReviewEditor recipe={recipe} selectedStage={selectedStage} onCommit={onCommitRecipe} onPendingActionChange={handlePendingActionChange} /></div>
         <div className={`${regionState.region === 'evidence' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeEvidenceInspector recipe={recipe} selectedFindingId={selectedFindingId} onSelectFinding={setSelectedFindingId} /></div>
       </div>
 
       {summary.sourceFresh ? (
         <div className="flex flex-none flex-wrap items-center gap-2 border-t border-white/[0.08] px-4 py-3">
-          <button type="button" title="重新运行当前阶段" aria-label="重新运行当前阶段" disabled={!actions.rerunStage} onClick={() => {
+          <button type="button" title="重新运行当前阶段" aria-label="重新运行当前阶段" disabled={!actions.rerunStage || reviewActionPending} onClick={() => runUnlockedAction(() => {
             if (recipe.activeStage === 'source') return
             onCommitRecipe(rerunRecipeStage(recipe, recipe.activeStage, new Date().toISOString()))
-          }} className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 text-white/48 hover:bg-white/[0.06] disabled:opacity-25"><RefreshCw size={14} aria-hidden="true" /></button>
-          <button type="button" title="批准当前阶段" aria-label="批准当前阶段" disabled={!actions.approveStage} onClick={() => onCommitRecipe(approveActiveRecipeStage(recipe, new Date().toISOString()))} className="flex h-8 items-center gap-1 rounded-md border border-emerald-300/25 bg-emerald-300/[0.07] px-3 text-[10px] font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-30"><Check size={13} aria-hidden="true" />批准当前阶段</button>
+          })} className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 text-white/48 hover:bg-white/[0.06] disabled:opacity-25"><RefreshCw size={14} aria-hidden="true" /></button>
+          <button type="button" title="批准当前阶段" aria-label="批准当前阶段" disabled={!actions.approveStage || reviewActionPending} onClick={() => runUnlockedAction(() => onCommitRecipe(approveActiveRecipeStage(recipe, new Date().toISOString())))} className="flex h-8 items-center gap-1 rounded-md border border-emerald-300/25 bg-emerald-300/[0.07] px-3 text-[10px] font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-30"><Check size={13} aria-hidden="true" />批准当前阶段</button>
           <div className="mx-1 h-5 w-px bg-white/10" />
-          <button type="button" disabled={!actions.materializeGrouped} onClick={() => onMaterializeGrouped(['scene', 'beat', 'shot-plan'])} className="h-8 rounded-md border border-cyan-200/25 bg-cyan-200/[0.07] px-3 text-[10px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-30">落地审核结果</button>
-          <button type="button" disabled={!actions.syncShotBoard} onClick={onSyncShotBoard} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">同步镜头板</button>
-          <button type="button" disabled={!actions.createDraftNodes} onClick={onCreateDraftNodes} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">创建草稿节点</button>
-          {legacyState.status === 'valid' && legacyState.state.shots.length > 0 ? <button type="button" disabled={!legacyEnabled} onClick={onImportLegacy} className="ml-auto h-8 rounded-md border border-white/10 px-3 text-[10px] text-white/45 disabled:cursor-not-allowed disabled:opacity-30">导入旧版</button> : null}
+          <button type="button" disabled={!actions.materializeGrouped || reviewActionPending} onClick={() => runUnlockedAction(() => onMaterializeGrouped(['scene', 'beat', 'shot-plan']))} className="h-8 rounded-md border border-cyan-200/25 bg-cyan-200/[0.07] px-3 text-[10px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-30">落地审核结果</button>
+          <button type="button" disabled={!actions.syncShotBoard || reviewActionPending} onClick={() => runUnlockedAction(onSyncShotBoard)} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">同步镜头板</button>
+          <button type="button" disabled={!actions.createDraftNodes || reviewActionPending} onClick={() => runUnlockedAction(onCreateDraftNodes)} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">创建草稿节点</button>
+          {legacyState.status === 'valid' && legacyState.state.shots.length > 0 ? <button type="button" disabled={!legacyEnabled || reviewActionPending} onClick={() => runUnlockedAction(onImportLegacy)} className="ml-auto h-8 rounded-md border border-white/10 px-3 text-[10px] text-white/45 disabled:cursor-not-allowed disabled:opacity-30">导入旧版</button> : null}
         </div>
       ) : null}
     </div>
