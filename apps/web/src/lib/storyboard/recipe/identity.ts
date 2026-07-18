@@ -48,7 +48,7 @@ export function createRecipeMaterializationIdentity(
       id: recipeId,
       kind: 'text',
       title: '',
-      prompt: `${kind}\n${artifactId}\n${resultId}`,
+      prompt: JSON.stringify([kind, artifactId, resultId]),
     }],
   }).replace(/^csf1_/, 'sdrm1_')
 }

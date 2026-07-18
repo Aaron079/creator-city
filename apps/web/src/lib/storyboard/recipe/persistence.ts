@@ -98,12 +98,10 @@ function cloneJsonValue(
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index]
       if (typeof key !== 'string') fail(`${field} must not contain symbol keys`)
+      const item = ownEnumerableData(value, key, `${field}.${key}`)
+      if (item === undefined) continue
       Object.defineProperty(clone, key, {
-        value: cloneJsonValue(
-          ownEnumerableData(value, key, `${field}.${key}`),
-          ancestors,
-          `${field}.${key}`,
-        ),
+        value: cloneJsonValue(item, ancestors, `${field}.${key}`),
         enumerable: true,
         configurable: true,
         writable: true,

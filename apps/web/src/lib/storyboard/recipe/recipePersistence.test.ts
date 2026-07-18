@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  addNodeToShot,
   createRecipeMaterializationIdentity,
   createStoryboardDirectorRecipeIdentity,
   readStoryboardDirectorRecipe,
@@ -261,6 +262,23 @@ describe('Storyboard Director Recipe identity', () => {
       first,
     )
   })
+
+  test('does not collide when materialization identifiers contain newlines', () => {
+    const first = createRecipeMaterializationIdentity(
+      'recipe-1',
+      'scene',
+      'artifact-a\nsegment',
+      'result-z',
+    )
+    const second = createRecipeMaterializationIdentity(
+      'recipe-1',
+      'scene',
+      'artifact-a',
+      'segment\nresult-z',
+    )
+
+    assert.notEqual(first, second)
+  })
 })
 
 describe('Storyboard Director Recipe persistence', () => {
@@ -345,6 +363,26 @@ describe('Storyboard Director Recipe persistence', () => {
     })
   })
 
+  test('continues rejecting undefined array entries', () => {
+    const recipe = validRecipeFixture()
+    recipe.scene.drafts[0]!.characters = [undefined as unknown as string]
+    assertInvalid(recipe)
+  })
+
+  test('continues rejecting symbol-keyed nested objects', () => {
+    const recipe = validRecipeFixture()
+    recipe.sourceNode.metadataJson = { [Symbol('hidden')]: true }
+    assertInvalid(recipe)
+  })
+
+  test('continues rejecting cyclic nested objects', () => {
+    const cycle: Record<string, unknown> = {}
+    cycle.self = cycle
+    const recipe = validRecipeFixture()
+    recipe.sourceNode.metadataJson = cycle
+    assertInvalid(recipe)
+  })
+
   test('rejects duplicate scene, beat, and shot IDs', () => {
     const duplicateScenes = validRecipeFixture()
     duplicateScenes.scene.drafts = [sceneDraft(), { ...sceneDraft(), order: 2 }]
@@ -425,5 +463,33 @@ describe('Storyboard Director Recipe persistence', () => {
 
     metadata.storyboardDirectorRecipe.scene.drafts[0]!.characters[0] = 'changed after read'
     assert.deepEqual(read.recipe.scene.drafts[0]!.characters, ['Mara'])
+  })
+
+  test('omits cleared optional object fields from Director-produced storyboard state', () => {
+    const recipe = validRecipeFixture()
+    const directorShot = addNodeToShot({
+      id: 'card-director',
+      index: 0,
+      title: 'S01',
+      nodeIds: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }, source.id)
+    directorShot.directorNote = undefined
+    directorShot.characterIds = undefined
+    recipe.storyboard = {
+      version: '1',
+      shots: [directorShot],
+      updatedAt: directorShot.updatedAt,
+    }
+
+    const metadata = storyboardDirectorRecipeMetadata(recipe)
+    const storedShot = metadata.storyboardDirectorRecipe.storyboard.shots[0]!
+    assert.equal(Object.hasOwn(storedShot, 'thumbnailUrl'), false)
+    assert.equal(Object.hasOwn(storedShot, 'directorNote'), false)
+    assert.equal(Object.hasOwn(storedShot, 'characterIds'), false)
+
+    const read = readStoryboardDirectorRecipe(metadata)
+    assert.equal(read.status, 'valid')
   })
 })
