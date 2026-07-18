@@ -3,13 +3,20 @@
  * Run: cd apps/web && node_modules/.bin/tsx --test src/components/create/StoryboardDirectorPanel.test.tsx
  */
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { after, before, describe, test } from 'node:test'
+import { chromium, type Browser, type Page } from '@playwright/test'
 import { runCreatorSkill, type CreatorSkillReviewStatus } from '../../lib/skills'
 import type { StoryboardState } from '../../lib/storyboard/types'
+import { analyzeStoryboardDirectorRecipe } from '../../lib/storyboard/recipe/intelligence'
 import {
   approveBeatStage,
   approveSceneStage,
   approveShotStage,
+  changeImpactForStage,
   createStoryboardDirectorRecipe,
   invalidateRecipeAfter,
   setRecipeDecision,
@@ -22,6 +29,8 @@ import type {
 } from '../../lib/storyboard/recipe/types'
 import {
   createStoryboardDirectorPanelState,
+  deriveStoryboardDirectorShotRecipeMarkers,
+  findStoryboardDirectorRecipeControl,
   patchStoryboardDirectorShot,
   selectStoryboardDirectorTab,
 } from './StoryboardDirectorPanel'
@@ -172,6 +181,230 @@ function healthyOrderedFindings(): StoryboardDirectorFinding[] {
   }))
 }
 
+let renderedBrowser: Browser | null = null
+let renderedBundlePath = ''
+let renderedTempDirectory = ''
+const renderedPageErrors = new WeakMap<Page, string[]>()
+
+async function findEsbuildBinary() {
+  const pnpmDirectory = path.resolve(process.cwd(), '../..', 'node_modules/.pnpm')
+  const entries = (await readdir(pnpmDirectory)).filter((entry) => entry.startsWith('tsx@')).sort()
+  for (const entry of entries) {
+    const candidate = path.join(
+      pnpmDirectory,
+      entry,
+      'node_modules/esbuild/bin/esbuild',
+    )
+    try {
+      await readdir(path.dirname(candidate))
+      return candidate
+    } catch {
+      // Keep looking for the tsx installation that owns esbuild.
+    }
+  }
+  throw new Error('Unable to locate the existing tsx esbuild binary')
+}
+
+function renderedHarnessSource() {
+  const panelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorPanel.tsx')
+  const recipePanelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorRecipePanel.tsx')
+  const completed = JSON.stringify(completedRecipe())
+  const sceneReview = JSON.stringify(decidedSceneRecipe())
+  return `
+    import * as React from 'react'
+    import { createRoot } from 'react-dom/client'
+    import { StoryboardDirectorPanel } from ${JSON.stringify(panelPath)}
+    import { StoryboardDirectorRecipePanel } from ${JSON.stringify(recipePanelPath)}
+
+    const FIXTURES = {
+      completed: ${completed},
+      sceneReview: ${sceneReview},
+    }
+    let root = null
+    let calls = []
+    let currentRecipe = null
+
+    function resetRoot() {
+      if (root) root.unmount()
+      document.getElementById('root').replaceChildren()
+      root = createRoot(document.getElementById('root'))
+      calls = []
+    }
+
+    function recipeProps() {
+      return {
+        recipe: currentRecipe,
+        availableSources: [],
+        availableRecipes: [],
+        saveState: 'cloud',
+        legacyState: { status: 'absent' },
+        onStartRecipe() {},
+        onOpenRecipe() {},
+        onCommitRecipe(next) {
+          calls.push('commit')
+          currentRecipe = next
+          renderRecipe()
+        },
+        onFocusSource() {},
+        onMaterializeGrouped() {},
+        onSyncShotBoard() {},
+        onCreateDraftNodes() {},
+        onImportLegacy() {},
+      }
+    }
+
+    function renderRecipe() {
+      root.render(React.createElement(StoryboardDirectorRecipePanel, recipeProps()))
+    }
+
+    function mountRecipe(kind = 'completed') {
+      resetRoot()
+      currentRecipe = structuredClone(FIXTURES[kind])
+      renderRecipe()
+    }
+
+    function mountBoard(mode = 'matching') {
+      resetRoot()
+      currentRecipe = structuredClone(FIXTURES.completed)
+      const draft = currentRecipe.shot.drafts[0]
+      if (mode === 'blocking') draft.subject = ''
+      const provenance = mode === 'manual' ? undefined : {
+        recipeId: mode === 'unavailable' ? 'foreign-recipe' : currentRecipe.recipeId,
+        sourceArtifactId: mode === 'stale'
+          ? 'old-shot-artifact'
+          : currentRecipe.shot.approvedArtifact.artifactId,
+        sceneId: draft.sceneId,
+        ...(draft.beatId ? { beatId: draft.beatId } : {}),
+        shotId: draft.shotId,
+      }
+      const shot = {
+        id: 'shot-card-1',
+        index: 0,
+        title: 'S01',
+        nodeIds: [],
+        createdAt: '2026-07-19T01:00:00.000Z',
+        updatedAt: '2026-07-19T01:00:00.000Z',
+        ...(provenance ? { recipe: provenance } : {}),
+      }
+      const matching = mode === 'unavailable' || mode === 'manual' ? [] : [{
+        nodeId: 'control-node-1',
+        recipeId: currentRecipe.recipeId,
+        title: 'Pilot Recipe',
+        status: 'approved',
+      }]
+      root.render(React.createElement(StoryboardDirectorPanel, {
+        open: true,
+        state: { version: '1', shots: [shot], updatedAt: shot.updatedAt },
+        activeShotId: shot.id,
+        recipe: mode === 'unavailable' ? null : currentRecipe,
+        availableRecipes: matching,
+        onStateChange() {},
+        onActiveShotChange() {},
+        onOpenRecipe(nodeId) {
+          const selected = document.querySelector('[data-testid="storyboard-director-tab-board"]')
+            ?.getAttribute('aria-selected') === 'true' ? 'board' : 'recipe'
+          calls.push('open:' + nodeId + ':' + selected)
+        },
+        onClose() {},
+      }))
+    }
+
+    window.__directorHarness = {
+      mountRecipe,
+      mountBoard,
+      calls: () => calls.slice(),
+      recipe: () => structuredClone(currentRecipe),
+    }
+  `
+}
+
+before(async () => {
+  renderedTempDirectory = await mkdtemp(path.join(tmpdir(), 'storyboard-director-render-'))
+  const entryPath = path.join(renderedTempDirectory, 'entry.tsx')
+  renderedBundlePath = path.join(renderedTempDirectory, 'bundle.js')
+  await writeFile(entryPath, renderedHarnessSource(), 'utf8')
+  const build = spawnSync(await findEsbuildBinary(), [
+    entryPath,
+    '--bundle',
+    '--platform=browser',
+    '--format=iife',
+    '--jsx=automatic',
+    `--outfile=${renderedBundlePath}`,
+    `--tsconfig=${path.resolve(process.cwd(), 'tsconfig.json')}`,
+    '--define:process.env.NODE_ENV="test"',
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+  assert.equal(build.status, 0, build.stderr || build.stdout)
+  renderedBrowser = await chromium.launch({ headless: true })
+})
+
+after(async () => {
+  await renderedBrowser?.close()
+  if (renderedTempDirectory) await rm(renderedTempDirectory, { recursive: true, force: true })
+})
+
+async function renderPage() {
+  assert.ok(renderedBrowser)
+  const page = await renderedBrowser.newPage({ viewport: { width: 1280, height: 900 } })
+  page.setDefaultTimeout(5_000)
+  const errors: string[] = []
+  renderedPageErrors.set(page, errors)
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>')
+  await page.addScriptTag({ path: renderedBundlePath })
+  return page
+}
+
+async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜头') {
+  const navigation = page.getByRole('navigation', { name: 'Recipe 阶段' })
+  await navigation.getByRole('button', { name: new RegExp(label) }).click()
+  await page.getByRole('button', { name: '全部' }).click()
+}
+
+type RenderedHarness = {
+  mountRecipe: (kind?: 'completed' | 'sceneReview') => void
+  mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
+  calls: () => string[]
+  recipe: () => StoryboardDirectorRecipe
+}
+
+async function mountRenderedRecipe(page: Page, kind: 'completed' | 'sceneReview' = 'completed') {
+  await page.evaluate((fixture) => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.mountRecipe(fixture), kind)
+  await page.waitForTimeout(50)
+  if (await page.locator('#root').evaluate((element) => element.childElementCount) === 0) {
+    throw new Error(`Rendered Recipe root is empty: ${(renderedPageErrors.get(page) ?? []).join(' | ')}`)
+  }
+}
+
+async function mountRenderedBoard(
+  page: Page,
+  mode: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual',
+) {
+  await page.evaluate((value) => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.mountBoard(value), mode)
+  await page.waitForTimeout(50)
+}
+
+async function renderedCalls(page: Page) {
+  return page.evaluate(() => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.calls())
+}
+
+async function renderedRecipe(page: Page) {
+  return page.evaluate(() => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.recipe())
+}
+
 describe('Storyboard Director panel state', () => {
   test('opening from a Recipe selects the Recipe tab and global opening preserves board', () => {
     assert.equal(createStoryboardDirectorPanelState({ hasRecipe: true, openedFromRecipe: true }).tab, 'recipe')
@@ -222,6 +455,102 @@ describe('Storyboard Director panel state', () => {
     assert.equal(next.shots[0]?.mood, 'Tense')
     assert.deepEqual(next.shots[0]?.recipe, shotBoard.shots[0]?.recipe)
     assert.notEqual(next.shots[0]?.recipe, undefined)
+  })
+
+  test('matches Recipe control nodes and derives real shot provenance markers', () => {
+    const recipe = completedRecipe()
+    const availableRecipes = [{
+      nodeId: 'control-node-1',
+      recipeId: recipe.recipeId,
+      title: 'Pilot Recipe',
+      status: 'approved',
+    }]
+    const cleanDraft = recipe.shot.drafts.find((draft) => (
+      draft.decision === 'approved'
+      && !analyzeStoryboardDirectorRecipe(recipe).some((finding) => finding.shotId === draft.shotId)
+    ))
+    assert.ok(cleanDraft)
+    const shot = {
+      id: 'card-1',
+      index: 0,
+      title: 'S01',
+      nodeIds: [],
+      createdAt: ISO_TIME,
+      updatedAt: ISO_TIME,
+      recipe: {
+        recipeId: recipe.recipeId,
+        sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
+        sceneId: cleanDraft.sceneId,
+        ...(cleanDraft.beatId ? { beatId: cleanDraft.beatId } : {}),
+        shotId: cleanDraft.shotId,
+      },
+    }
+
+    assert.equal(
+      findStoryboardDirectorRecipeControl(availableRecipes, recipe.recipeId)?.nodeId,
+      'control-node-1',
+    )
+    assert.equal(findStoryboardDirectorRecipeControl(availableRecipes, 'foreign'), null)
+    assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers(shot, recipe), {
+      synchronization: 'synchronized',
+      quality: 'clean',
+    })
+    assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers({
+      ...shot,
+      recipe: { ...shot.recipe, sourceArtifactId: 'old-artifact' },
+    }, recipe), {
+      synchronization: 'stale',
+      quality: 'clean',
+    })
+    assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers(shot, null), {
+      synchronization: 'unavailable',
+      quality: 'unavailable',
+    })
+
+    const blocking = {
+      ...recipe,
+      shot: {
+        ...recipe.shot,
+        drafts: recipe.shot.drafts.map((draft) => draft.shotId === cleanDraft.shotId
+          ? { ...draft, subject: '' }
+          : draft),
+      },
+    }
+    assert.equal(
+      deriveStoryboardDirectorShotRecipeMarkers(shot, blocking)?.quality,
+      'blocking',
+    )
+
+    const sameSceneDrafts = recipe.shot.drafts.filter((draft) => (
+      draft.decision === 'approved' && draft.sceneId === recipe.shot.drafts[0]?.sceneId
+    ))
+    assert.ok(sameSceneDrafts.length >= 2)
+    const previousDraft = sameSceneDrafts[0]!
+    const advisoryDraft = sameSceneDrafts[1]!
+    const advisory = {
+      ...recipe,
+      shot: {
+        ...recipe.shot,
+        drafts: recipe.shot.drafts.map((draft) => draft.shotId === advisoryDraft.shotId
+          ? {
+              ...draft,
+              objective: previousDraft.objective,
+              action: previousDraft.action,
+              suggestedShotSize: previousDraft.suggestedShotSize,
+            }
+          : draft),
+      },
+    }
+    assert.equal(deriveStoryboardDirectorShotRecipeMarkers({
+      ...shot,
+      recipe: {
+        recipeId: recipe.recipeId,
+        sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
+        sceneId: advisoryDraft.sceneId,
+        ...(advisoryDraft.beatId ? { beatId: advisoryDraft.beatId } : {}),
+        shotId: advisoryDraft.shotId,
+      },
+    }, advisory)?.quality, 'advisory')
   })
 })
 
@@ -345,7 +674,179 @@ describe('Storyboard Director Recipe actions', () => {
     const blur = finishRecipeFieldDraft(enter.state, 'blur')
 
     assert.equal(enter.commitValue, 'Changed')
+    assert.equal(enter.state.committedValue, 'Original')
     assert.equal(blur.commitValue, null)
     assert.equal(blur.state.skipNextBlur, false)
+  })
+})
+
+describe('Storyboard Director rendered interactions', () => {
+  test('approved edit cancel resets the draft and re-edit confirm commits once', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '场景')
+      const heading = page.getByLabel('场景标题').first()
+      const original = await heading.inputValue()
+
+      await heading.fill('Cancelled heading')
+      await heading.blur()
+      await page.getByText(/此修改将使 \d+ 个节拍和 \d+ 个镜头失效/).waitFor()
+      assert.deepEqual(await renderedCalls(page), [])
+      await page.getByRole('button', { name: '取消' }).click()
+      await page.waitForFunction((expected) => (
+        (document.querySelector('[aria-label="场景标题"]') as HTMLInputElement | null)?.value === expected
+      ), original)
+      assert.equal(await heading.inputValue(), original)
+
+      await heading.fill('Confirmed heading')
+      await heading.blur()
+      await page.getByText(/此修改将使 \d+ 个节拍和 \d+ 个镜头失效/).waitFor()
+      await page.getByRole('button', { name: '确认修改' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      assert.equal((await renderedRecipe(page)).scene.drafts[0]?.heading, 'Confirmed heading')
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('approved edit Enter and its following blur open one action and commit once', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '场景')
+      const heading = page.getByLabel('场景标题').first()
+      await heading.fill('Enter heading')
+      await heading.press('Enter')
+
+      assert.equal(await page.getByRole('button', { name: '确认修改' }).count(), 1)
+      assert.deepEqual(await renderedCalls(page), [])
+      await page.getByRole('button', { name: '确认修改' }).click()
+      await heading.blur()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('approved scene reorder previews impact, cancels without change, and confirms once', async () => {
+    const page = await renderPage()
+    const recipe = completedRecipe()
+    const impact = changeImpactForStage(recipe, 'scene-review')
+    const initialOrder = recipe.scene.drafts.map((item) => item.sceneId)
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '场景')
+      const moveDown = page.getByTitle('下移').first()
+      assert.equal(await moveDown.isEnabled(), true)
+      await moveDown.click()
+      await page.getByText(`此修改将使 ${impact.beatCount} 个节拍和 ${impact.shotCount} 个镜头失效。`).waitFor()
+      assert.deepEqual(await renderedCalls(page), [])
+      await page.getByRole('button', { name: '取消' }).click()
+      assert.deepEqual((await renderedRecipe(page)).scene.drafts.map((item) => item.sceneId), initialOrder)
+
+      await moveDown.click()
+      await page.getByRole('button', { name: '确认调整' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      assert.deepEqual(
+        (await renderedRecipe(page)).scene.drafts.map((item) => item.sceneId),
+        initialOrder.slice().reverse(),
+      )
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('approved beat reorder is reviewable while final shot reorder remains locked', async () => {
+    const page = await renderPage()
+    const recipe = completedRecipe()
+    const impact = changeImpactForStage(recipe, 'beat-review')
+    const initialOrder = recipe.beat.drafts.map((item) => item.beatId)
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '节拍')
+      const beatMoveDown = page.getByTitle('下移').first()
+      assert.equal(await beatMoveDown.isEnabled(), true)
+      await beatMoveDown.click()
+      await page.getByText(`此修改将使 ${impact.beatCount} 个节拍和 ${impact.shotCount} 个镜头失效。`).waitFor()
+      await page.getByRole('button', { name: '取消' }).click()
+      assert.deepEqual(await renderedCalls(page), [])
+      assert.deepEqual(
+        (await renderedRecipe(page)).beat.drafts.map((item) => item.beatId),
+        initialOrder,
+      )
+
+      await beatMoveDown.click()
+      await page.getByRole('button', { name: '确认调整' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      assert.notDeepEqual(
+        (await renderedRecipe(page)).beat.drafts.map((item) => item.beatId),
+        initialOrder,
+      )
+
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '镜头')
+      assert.equal(await page.getByTitle('下移').first().isDisabled(), true)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('matching provenance opens its control node before selecting Recipe', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'blocking')
+      assert.equal(await page.getByText('已同步').count(), 1)
+      assert.equal(await page.getByText('阻塞').count(), 1)
+      const provenance = page.getByRole('button', { name: /Recipe sdr1_/ })
+      assert.equal(await provenance.isEnabled(), true)
+      await provenance.click()
+      assert.deepEqual(await renderedCalls(page), ['open:control-node-1:board'])
+      assert.equal(
+        await page.getByTestId('storyboard-director-tab-recipe').getAttribute('aria-selected'),
+        'true',
+      )
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('stale, unavailable, and manual shots render truthful provenance states', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'stale')
+      assert.equal(await page.getByText('已过期').count(), 1)
+      assert.equal(await page.getByText('来源已保留').count(), 0)
+
+      await mountRenderedBoard(page, 'unavailable')
+      const unavailable = page.getByRole('button', { name: 'Recipe 不可用' })
+      assert.equal(await unavailable.isDisabled(), true)
+      await unavailable.click({ force: true })
+      assert.deepEqual(await renderedCalls(page), [])
+
+      await mountRenderedBoard(page, 'manual')
+      assert.equal(await page.getByText(/Recipe sdr1_/).count(), 0)
+      assert.equal(await page.getByText('Recipe 不可用').count(), 0)
+      assert.equal(await page.locator('input[placeholder^="例: 紧张"]').isEnabled(), true)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('batch and stage approval controls use labeled stable Lucide buttons', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page, 'sceneReview')
+      const batchApprove = page.getByRole('button', { name: '批量批准' })
+      const batchReject = page.getByRole('button', { name: '批量拒绝' })
+      const approveStage = page.getByRole('button', { name: '批准当前阶段' })
+      for (const control of [batchApprove, batchReject, approveStage]) {
+        assert.equal(await control.locator('svg').count(), 1)
+        assert.ok((await control.getAttribute('title'))?.length)
+        assert.match(await control.getAttribute('class') ?? '', /h-8/)
+      }
+    } finally {
+      await page.close()
+    }
   })
 })

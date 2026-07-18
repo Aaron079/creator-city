@@ -8,6 +8,7 @@ import {
   reindexShots,
   type LegacyDirectorStateReadResult,
 } from '@/lib/storyboard/director'
+import { analyzeStoryboardDirectorRecipe } from '@/lib/storyboard/recipe/intelligence'
 import type { StoryboardDirectorRecipe } from '@/lib/storyboard/recipe/types'
 import { StoryboardTimeline } from './StoryboardTimeline'
 import {
@@ -109,6 +110,56 @@ export function selectStoryboardDirectorTab<T extends { tab: StoryboardDirectorP
   return state.tab === tab ? state : { ...state, tab }
 }
 
+export type StoryboardDirectorRecipeControl = {
+  nodeId: string
+  recipeId: string
+  title: string
+  status: string
+}
+
+export function findStoryboardDirectorRecipeControl(
+  availableRecipes: StoryboardDirectorRecipeControl[],
+  recipeId: string,
+) {
+  return availableRecipes.find((candidate) => candidate.recipeId === recipeId) ?? null
+}
+
+export type StoryboardDirectorShotRecipeMarkers = {
+  synchronization: 'synchronized' | 'stale' | 'unavailable'
+  quality: 'blocking' | 'advisory' | 'clean' | 'unavailable'
+}
+
+export function deriveStoryboardDirectorShotRecipeMarkers(
+  shot: ShotCard,
+  recipe: StoryboardDirectorRecipe | null,
+): StoryboardDirectorShotRecipeMarkers | null {
+  const provenance = shot.recipe
+  if (!provenance) return null
+  if (!recipe || recipe.recipeId !== provenance.recipeId) {
+    return { synchronization: 'unavailable', quality: 'unavailable' }
+  }
+
+  const approvedDraft = recipe.shot.drafts.find((draft) => (
+    draft.decision === 'approved'
+    && draft.shotId === provenance.shotId
+    && draft.sceneId === provenance.sceneId
+    && draft.beatId === provenance.beatId
+  ))
+  const synchronization = approvedDraft
+    && recipe.shot.approvedArtifact?.artifactId === provenance.sourceArtifactId
+    ? 'synchronized'
+    : 'stale'
+  const findings = analyzeStoryboardDirectorRecipe(recipe).filter((finding) => (
+    finding.shotId === provenance.shotId
+  ))
+  const quality = findings.some((finding) => finding.severity === 'blocking')
+    ? 'blocking'
+    : findings.some((finding) => finding.severity === 'advisory')
+      ? 'advisory'
+      : 'clean'
+  return { synchronization, quality }
+}
+
 export function patchStoryboardDirectorShot(
   state: StoryboardState,
   shotId: string,
@@ -205,6 +256,12 @@ export function StoryboardDirectorPanel({
   const boundNodes = activeShot
     ? canvasNodes.filter((n) => activeShot.nodeIds.includes(n.id))
     : []
+  const activeRecipeControl = activeShot?.recipe
+    ? findStoryboardDirectorRecipeControl(availableRecipes, activeShot.recipe.recipeId)
+    : null
+  const activeRecipeMarkers = activeShot
+    ? deriveStoryboardDirectorShotRecipeMarkers(activeShot, recipe)
+    : null
 
   return (
     <div
@@ -370,12 +427,28 @@ export function StoryboardDirectorPanel({
                   <div className="flex min-h-9 flex-wrap items-center gap-2 border-y border-cyan-200/10 py-2">
                     <button
                       type="button"
-                      onClick={() => setPanelState((current) => selectStoryboardDirectorTab(current, 'recipe'))}
-                      className="rounded-md border border-cyan-200/20 bg-cyan-200/[0.06] px-2 py-1 text-[9px] font-semibold text-cyan-100"
+                      disabled={!activeRecipeControl}
+                      onClick={() => {
+                        if (!activeRecipeControl) return
+                        onOpenRecipe(activeRecipeControl.nodeId)
+                        setPanelState((current) => selectStoryboardDirectorTab(current, 'recipe'))
+                      }}
+                      className="h-7 rounded-md border border-cyan-200/20 bg-cyan-200/[0.06] px-2 text-[9px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
                     >
-                      Recipe {activeShot.recipe.recipeId}
+                      {activeRecipeControl ? `Recipe ${activeShot.recipe.recipeId}` : 'Recipe 不可用'}
                     </button>
-                    <span className="rounded border border-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">来源已保留</span>
+                    {activeRecipeMarkers?.synchronization === 'synchronized' ? (
+                      <span className="rounded border border-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">已同步</span>
+                    ) : activeRecipeMarkers?.synchronization === 'stale' ? (
+                      <span className="rounded border border-amber-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">已过期</span>
+                    ) : null}
+                    {activeRecipeMarkers?.quality === 'blocking' ? (
+                      <span className="rounded border border-rose-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-rose-200">阻塞</span>
+                    ) : activeRecipeMarkers?.quality === 'advisory' ? (
+                      <span className="rounded border border-amber-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">建议</span>
+                    ) : activeRecipeMarkers?.quality === 'clean' ? (
+                      <span className="rounded border border-emerald-300/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200">检查通过</span>
+                    ) : null}
                     <span className="text-[9px] text-white/35">{activeShot.recipe.sceneId} · {activeShot.recipe.beatId ?? '无节拍'} · {activeShot.recipe.shotId}</span>
                   </div>
                 ) : null}
