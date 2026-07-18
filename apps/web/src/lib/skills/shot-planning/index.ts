@@ -15,6 +15,7 @@ import type {
   CreatorSkillArtifact,
   CreatorSkillManifest,
   CreatorSkillRunResult,
+  CreatorSkillSourceNode,
 } from '../types'
 import {
   assembleShotPlan,
@@ -94,8 +95,10 @@ function ownDataDescriptor(value: object, key: string) {
   }
 }
 
-function isCanonicalTextSourceNode(value: unknown) {
-  if (!isPlainRecord(value)) return false
+function snapshotCanonicalTextSourceNode(
+  value: unknown,
+): CreatorSkillSourceNode | null {
+  if (!isPlainRecord(value)) return null
   const idField = ownDataDescriptor(value, 'id')
   const kindField = ownDataDescriptor(value, 'kind')
   const titleField = ownDataDescriptor(value, 'title')
@@ -106,20 +109,43 @@ function isCanonicalTextSourceNode(value: unknown) {
     || !titleField || !('value' in titleField)
     || !promptField || !('value' in promptField)
     || (resultTextField !== undefined && !('value' in resultTextField))) {
-    return false
+    return null
   }
   const id = idField.value
   const kind = kindField.value
   const title = titleField.value
   const prompt = promptField.value
   const resultText = resultTextField?.value
-  return typeof id === 'string'
-    && id.length > 0
-    && id === id.trim()
-    && kind === 'text'
-    && typeof title === 'string'
-    && typeof prompt === 'string'
-    && (resultText === undefined || typeof resultText === 'string')
+  if (typeof id !== 'string'
+    || id.length === 0
+    || id !== id.trim()
+    || kind !== 'text'
+    || typeof title !== 'string'
+    || typeof prompt !== 'string'
+    || (resultText !== undefined && typeof resultText !== 'string')) {
+    return null
+  }
+
+  try {
+    const source = value as Record<string, unknown>
+    if (!Object.is(source.id, id)
+      || !Object.is(source.kind, kind)
+      || !Object.is(source.title, title)
+      || !Object.is(source.prompt, prompt)
+      || !Object.is(source.resultText, resultText)) {
+      return null
+    }
+  } catch {
+    return null
+  }
+
+  return {
+    id,
+    kind: 'text',
+    title,
+    prompt,
+    ...(resultText !== undefined ? { resultText } : {}),
+  }
 }
 
 function isDenseArray(value: unknown): value is unknown[] {
@@ -341,8 +367,11 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
       )
     }
 
-    const sourceNode = input.sourceNodes[0]
-    if (sourceNode && !isCanonicalTextSourceNode(sourceNode)) {
+    const sourceValue = input.sourceNodes[0]
+    const sourceNode = sourceValue
+      ? snapshotCanonicalTextSourceNode(sourceValue)
+      : null
+    if (input.sourceNodes.length === 1 && !sourceNode) {
       return blockedResult(
         runFingerprint,
         'SHOT_SOURCE_INVALID',

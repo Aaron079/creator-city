@@ -254,7 +254,40 @@ describe('evidence-backed shot assembly', () => {
       'scene-002-beat-002',
       'scene-002-beat-003',
     ])
-    assert.equal(result.evidence.length, 3)
+    assert.deepEqual(result.evidence.map((item) => ({
+      evidenceId: item.evidenceId,
+      ruleId: item.ruleId,
+      sourceNodeId: item.sourceNodeId,
+      lineStart: item.lineStart,
+      lineEnd: item.lineEnd,
+      excerpt: item.excerpt,
+    })), [
+      {
+        evidenceId: 'shot-plan-evidence-002-001',
+        ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+        sourceNodeId: 'original-script-node',
+        lineStart: 20,
+        lineEnd: 20,
+        excerpt: 'Maya opens panel 1.',
+      },
+      {
+        evidenceId: 'shot-plan-evidence-002-002',
+        ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+        sourceNodeId: 'original-script-node',
+        lineStart: 21,
+        lineEnd: 21,
+        excerpt: 'Leo gasps at signal 2.',
+      },
+      {
+        evidenceId: 'shot-plan-evidence-002-003',
+        ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+        sourceNodeId: 'original-script-node',
+        lineStart: 22,
+        lineEnd: 22,
+        excerpt: 'Maya opens panel 3.',
+      },
+    ])
+    assert.ok(result.evidence.every((item) => item.explanation.trim()))
     assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
       'approved-narrative-beat-map-002',
     ])
@@ -271,7 +304,70 @@ describe('evidence-backed shot assembly', () => {
     assert.equal(shots[0]?.sourceText, shots[1]?.sourceText)
     assert.equal(shots[0]?.lineStart, shots[1]?.lineStart)
     assert.match(shots[1]?.objective ?? '', /gasps|reaction/iu)
-    assert.equal(result.evidence.length, 2)
+    assert.deepEqual(result.evidence.map((item) => ({
+      evidenceId: item.evidenceId,
+      ruleId: item.ruleId,
+      sourceNodeId: item.sourceNodeId,
+      lineStart: item.lineStart,
+      lineEnd: item.lineEnd,
+      excerpt: item.excerpt,
+    })), [
+      {
+        evidenceId: 'shot-plan-evidence-001-001',
+        ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+        sourceNodeId: 'text-1',
+        lineStart: 1,
+        lineEnd: 1,
+        excerpt: 'Maya opens the door, and Leo gasps in reaction.',
+      },
+      {
+        evidenceId: 'shot-plan-evidence-001-002',
+        ruleId: 'SHOT_EXPLICIT_SUPPLEMENTAL_CLAUSE',
+        sourceNodeId: 'text-1',
+        lineStart: 1,
+        lineEnd: 1,
+        excerpt: 'Maya opens the door, and Leo gasps in reaction.',
+      },
+    ])
+    assert.ok(result.evidence.every((item) => item.explanation.trim()))
+  })
+
+  test('adds evidence-backed supplemental shots for explicit turn and spatial clauses', () => {
+    const fixtures = [
+      'Maya opens the door, but Leo closes it.',
+      'Maya crosses the street.',
+    ]
+
+    for (const source of fixtures) {
+      const result = runText(source, { requestedShotCount: 2 })
+      assert.equal(allShots(result).length, 2)
+      assert.deepEqual(result.evidence.map((item) => ({
+        evidenceId: item.evidenceId,
+        ruleId: item.ruleId,
+        sourceNodeId: item.sourceNodeId,
+        lineStart: item.lineStart,
+        lineEnd: item.lineEnd,
+        excerpt: item.excerpt,
+      })), [
+        {
+          evidenceId: 'shot-plan-evidence-001-001',
+          ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+          sourceNodeId: 'text-1',
+          lineStart: 1,
+          lineEnd: 1,
+          excerpt: source,
+        },
+        {
+          evidenceId: 'shot-plan-evidence-001-002',
+          ruleId: 'SHOT_EXPLICIT_SUPPLEMENTAL_CLAUSE',
+          sourceNodeId: 'text-1',
+          lineStart: 1,
+          lineEnd: 1,
+          excerpt: source,
+        },
+      ])
+      assert.ok(result.evidence.every((item) => item.explanation.trim()))
+    }
   })
 
   test('does not add a supplemental shot without reaction, turn, or spatial evidence', () => {
@@ -280,6 +376,21 @@ describe('evidence-backed shot assembly', () => {
     assert.deepEqual(result.warnings.map((warning) => warning.code), [
       'SHOT_COUNT_TARGET_UNDERSUPPLIED',
     ])
+    assert.deepEqual(result.evidence.map((item) => ({
+      evidenceId: item.evidenceId,
+      ruleId: item.ruleId,
+      sourceNodeId: item.sourceNodeId,
+      lineStart: item.lineStart,
+      lineEnd: item.lineEnd,
+      excerpt: item.excerpt,
+    })), [{
+      evidenceId: 'shot-plan-evidence-001-001',
+      ruleId: 'SHOT_PRIMARY_SOURCE_UNIT',
+      sourceNodeId: 'text-1',
+      lineStart: 1,
+      lineEnd: 1,
+      excerpt: 'Maya opens the door.',
+    }])
   })
 
   test('preserves every primary beat when requested count is lower', () => {
@@ -564,6 +675,25 @@ describe('independent input contracts', () => {
       })
       assertBlocked(result, 'SHOT_SOURCE_INVALID')
     }
+  })
+
+  test('contains a Proxy Text node whose data descriptors hide a throwing get trap', () => {
+    const target = textNode('Maya opens the panel.')
+    const hostile = new Proxy(target, {
+      getOwnPropertyDescriptor(current, key) {
+        return Reflect.getOwnPropertyDescriptor(current, key)
+      },
+      getPrototypeOf(current) {
+        return Reflect.getPrototypeOf(current)
+      },
+      get() {
+        throw new Error('must contain hostile source get trap')
+      },
+    })
+
+    const result = runRaw({ sourceNodes: [hostile] })
+    assertBlocked(result, 'SHOT_SOURCE_INVALID')
+    assert.equal(result.runFingerprint, 'csf1_boundary_test')
   })
 })
 
