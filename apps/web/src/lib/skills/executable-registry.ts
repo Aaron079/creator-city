@@ -1,4 +1,6 @@
+import { NARRATIVE_BEAT_ANALYSIS_SKILL } from './narrative-beat-analysis'
 import { SCRIPT_SEGMENTATION_SKILL } from './script-segmentation'
+import { SHOT_PLANNING_SKILL } from './shot-planning'
 import type {
   CreatorExecutableSkill,
   CreatorSkillCategory,
@@ -247,6 +249,8 @@ export function getExecutableCreatorSkillFromRegistry(
 
 export const CREATOR_EXECUTABLE_SKILL_REGISTRY = createCreatorExecutableSkillRegistry([
   SCRIPT_SEGMENTATION_SKILL,
+  NARRATIVE_BEAT_ANALYSIS_SKILL,
+  SHOT_PLANNING_SKILL,
 ])
 
 export function getExecutableCreatorSkill(

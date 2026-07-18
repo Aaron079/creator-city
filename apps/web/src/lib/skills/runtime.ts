@@ -602,7 +602,11 @@ export function runCreatorSkillFromRegistry(
   const normalizedArtifacts = normalizedInput.artifacts
   if (normalizedArtifacts) {
     for (let index = 0; index < normalizedArtifacts.length; index += 1) {
-      inputArtifactIds.add(normalizedArtifacts[index]!.artifactId)
+      const artifact = normalizedArtifacts[index]!
+      inputArtifactIds.add(artifact.artifactId)
+      for (let sourceIndex = 0; sourceIndex < artifact.sourceNodeIds.length; sourceIndex += 1) {
+        inputSourceNodeIds.add(artifact.sourceNodeIds[sourceIndex]!)
+      }
     }
   }
 

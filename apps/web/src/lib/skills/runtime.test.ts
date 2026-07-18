@@ -72,6 +72,64 @@ function createInput(): CreatorSkillRunInput {
   }
 }
 
+function createSceneBreakdownArtifact() {
+  const sourceText = [
+    'EXT. ROOFTOP - NIGHT',
+    'Maya opens the antenna box.',
+    'Leo gasps and steps back.',
+  ].join('\n')
+  return createCreatorSkillArtifact({
+    artifactId: 'approved-scene-breakdown-002',
+    artifactType: 'scene-breakdown',
+    artifactVersion: 1,
+    sourceNodeIds: ['original-script-node'],
+    payload: {
+      format: 'headed-script',
+      scenes: [{
+        sceneId: 'scene-002',
+        order: 2,
+        heading: 'EXT. ROOFTOP - NIGHT',
+        location: 'ROOFTOP',
+        timeOfDay: 'NIGHT',
+        characters: ['MAYA', 'LEO'],
+        actionSummary: 'Maya opens the antenna box.',
+        sourceText,
+        lineStart: 14,
+        lineEnd: 16,
+        reviewStatus: 'pending',
+      }],
+    },
+  })
+}
+
+function createNarrativeBeatArtifact() {
+  return createCreatorSkillArtifact({
+    artifactId: 'approved-narrative-beat-map-002',
+    artifactType: 'narrative-beat-map',
+    artifactVersion: 1,
+    sourceNodeIds: ['original-script-node'],
+    sourceArtifactIds: ['approved-scene-breakdown-002'],
+    payload: {
+      scenes: [{
+        sceneId: 'scene-002',
+        order: 2,
+        heading: 'EXT. ROOFTOP - NIGHT',
+        beats: [{
+          beatId: 'scene-002-beat-001',
+          sceneId: 'scene-002',
+          order: 1,
+          type: 'action',
+          sourceText: 'Maya opens the antenna box.',
+          summary: 'Maya opens the antenna box.',
+          lineStart: 15,
+          lineEnd: 15,
+          reviewStatus: 'pending',
+        }],
+      }],
+    },
+  })
+}
+
 function createOwnProtoRecord(value: unknown): Record<string, unknown> {
   const record: Record<string, unknown> = {}
   Object.defineProperty(record, '__proto__', {
@@ -209,13 +267,17 @@ describe('createCreatorExecutableSkillRegistry', () => {
     )
   })
 
-  test('keeps only the built-in script Skill separate from the legacy prompt registry', () => {
+  test('registers the three built-in executable Skills in dependency order', () => {
     const builtIn = getExecutableCreatorSkill('script-segmentation')
 
-    assert.equal(CREATOR_EXECUTABLE_SKILL_REGISTRY.size, 1)
+    assert.equal(CREATOR_EXECUTABLE_SKILL_REGISTRY.size, 3)
     assert.deepEqual(
       Array.from(CREATOR_EXECUTABLE_SKILL_REGISTRY.keys()),
-      ['script-segmentation@1.0.0'],
+      [
+        'script-segmentation@1.0.0',
+        'narrative-beat-analysis@1.0.0',
+        'shot-planning@1.0.0',
+      ],
     )
     assert.equal(builtIn?.manifest.id, 'script-segmentation')
     assert.equal(builtIn?.manifest.version, '1.0.0')
@@ -336,11 +398,153 @@ describe('runCreatorSkill', () => {
     assert.equal(result.artifacts[0]?.artifactType, 'scene-breakdown')
     assert.equal(result.artifacts[0]?.sourceNodeIds[0], 'direct-script')
   })
+
+  test('runs narrative analysis from an approved Artifact without direct source nodes', () => {
+    const result = runCreatorSkill('narrative-beat-analysis', {
+      sourceNodes: [],
+      artifacts: [createSceneBreakdownArtifact()],
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.equal(result.artifacts[0]?.artifactType, 'narrative-beat-map')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
+    assert.deepEqual(
+      result.artifacts[0]?.sourceArtifactIds,
+      ['approved-scene-breakdown-002'],
+    )
+    assert.ok(result.evidence.length > 0)
+    assert.ok(result.evidence.every((entry) => entry.sourceNodeId === 'original-script-node'))
+  })
+
+  test('runs shot planning from an approved Artifact without direct source nodes', () => {
+    const result = runCreatorSkill('shot-planning', {
+      sourceNodes: [],
+      artifacts: [createNarrativeBeatArtifact()],
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.equal(result.artifacts[0]?.artifactType, 'shot-plan')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
+    assert.deepEqual(
+      result.artifacts[0]?.sourceArtifactIds,
+      ['approved-narrative-beat-map-002'],
+    )
+    assert.ok(result.evidence.length > 0)
+    assert.ok(result.evidence.every((entry) => entry.sourceNodeId === 'original-script-node'))
+  })
+
+  test('blocks unsupported Stage B Artifact types before built-in execution', () => {
+    const unsupportedArtifact = createCreatorSkillArtifact({
+      artifactId: 'unsupported-001',
+      artifactType: 'shot-plan',
+      artifactVersion: 1,
+      sourceNodeIds: ['original-script-node'],
+      payload: {},
+    })
+
+    assertBlocked(
+      runCreatorSkill('narrative-beat-analysis', {
+        sourceNodes: [],
+        artifacts: [unsupportedArtifact],
+      }),
+      'UNSUPPORTED_SKILL_INPUT',
+    )
+    assertBlocked(
+      runCreatorSkill('shot-planning', {
+        sourceNodes: [],
+        artifacts: [unsupportedArtifact],
+      }),
+      'UNSUPPORTED_SKILL_INPUT',
+    )
+  })
 })
 
 describe('runCreatorSkillFromRegistry', () => {
+  test('accepts inherited Artifact provenance without allowing invented identities', () => {
+    const sourceArtifact = createCreatorSkillArtifact({
+      artifactId: 'script-1',
+      artifactType: 'script',
+      artifactVersion: 1,
+      sourceNodeIds: ['inherited-node'],
+      payload: { scenes: ['Opening'] },
+    })
+    const createArtifactOnlySkill = (
+      sourceNodeId: string,
+      sourceArtifactId: string,
+    ) => createSkill({}, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'needs-review',
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'scenes-1',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: [sourceNodeId],
+        sourceArtifactIds: [sourceArtifactId],
+        payload: { scenes: ['Opening'] },
+      })],
+      evidence: [{
+        evidenceId: 'evidence-1',
+        ruleId: 'inherited-source',
+        sourceNodeId,
+        lineStart: 1,
+        lineEnd: 1,
+        excerpt: 'Opening',
+        explanation: 'Inherited from the approved input Artifact.',
+      }],
+      warnings: [{
+        code: 'REVIEW_SCENE',
+        message: 'Review the inherited scene.',
+        sourceNodeId,
+        artifactId: 'scenes-1',
+      }],
+      blockers: [],
+    }))
+    const input = { sourceNodes: [], artifacts: [sourceArtifact] }
+
+    const valid = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([
+        createArtifactOnlySkill('inherited-node', 'script-1'),
+      ]),
+      'test-skill',
+      input,
+    )
+    assert.equal(valid.status, 'needs-review')
+    assert.deepEqual(valid.artifacts[0]?.sourceNodeIds, ['inherited-node'])
+    assert.equal(valid.evidence[0]?.sourceNodeId, 'inherited-node')
+    assert.equal(valid.warnings[0]?.sourceNodeId, 'inherited-node')
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([
+          createArtifactOnlySkill('invented-node', 'script-1'),
+        ]),
+        'test-skill',
+        input,
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([
+          createArtifactOnlySkill('inherited-node', 'invented-artifact'),
+        ]),
+        'test-skill',
+        input,
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+  })
+
   test('blocks unsupported source-node and Artifact inputs', () => {
-    const registry = createCreatorExecutableSkillRegistry([createSkill()])
+    let executionCount = 0
+    const registry = createCreatorExecutableSkillRegistry([
+      createSkill({}, (_input, fingerprint) => {
+        executionCount += 1
+        return createResult('test-skill', '1.0.0', fingerprint)
+      }),
+    ])
     const unsupportedNode = createInput()
     unsupportedNode.sourceNodes[0] = {
       ...unsupportedNode.sourceNodes[0]!,
@@ -365,6 +569,7 @@ describe('runCreatorSkillFromRegistry', () => {
       runCreatorSkillFromRegistry(registry, 'test-skill', unsupportedArtifact),
       'UNSUPPORTED_SKILL_INPUT',
     )
+    assert.equal(executionCount, 0)
   })
 
   test('requires at least one accepted node kind or Artifact type', () => {

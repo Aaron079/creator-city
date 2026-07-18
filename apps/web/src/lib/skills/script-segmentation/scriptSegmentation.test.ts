@@ -66,7 +66,7 @@ function assertBlockedWithoutOutput(result: CreatorSkillRunResult) {
 }
 
 describe('script-segmentation manifest', () => {
-  test('is registered as the only independently executable Creator Skill', () => {
+  test('is registered as an independently executable Creator Skill', () => {
     const skill = getExecutableCreatorSkill('script-segmentation')
 
     assert.deepEqual(skill?.manifest, {
