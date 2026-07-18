@@ -399,11 +399,11 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
         beatIds.add(beatValue.beatId as string)
         beatOrders.add(beatValue.order as number)
       }
-      beats.sort((left, right) => left.order - right.order)
+      const beatsByOriginalOrder = beats.slice().sort((left, right) => left.order - right.order)
       let previousLineStart = 0
       let previousLineEnd = 0
-      for (let index = 0; index < beats.length; index += 1) {
-        const beat = beats[index]!
+      for (let index = 0; index < beatsByOriginalOrder.length; index += 1) {
+        const beat = beatsByOriginalOrder[index]!
         if (index > 0 && (
           beat.lineStart < previousLineStart
           || (beat.lineStart <= previousLineEnd
@@ -427,8 +427,9 @@ function readNarrativeBeatMap(value: unknown): NarrativeReadResult {
     scenes.sort((left, right) => left.order - right.order)
     let previousSceneLineEnd = 0
     for (const scene of scenes) {
-      const firstBeat = scene.beats[0]!
-      const finalBeat = scene.beats[scene.beats.length - 1]!
+      const beatsByOriginalOrder = scene.beats.slice().sort((left, right) => left.order - right.order)
+      const firstBeat = beatsByOriginalOrder[0]!
+      const finalBeat = beatsByOriginalOrder[beatsByOriginalOrder.length - 1]!
       if (firstBeat.lineStart <= previousSceneLineEnd) {
         return { valid: false, limitExceeded: false }
       }

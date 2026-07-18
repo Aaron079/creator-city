@@ -14,6 +14,10 @@ import type {
   CreatorSkillRunResult,
   CreatorSkillSourceNode,
 } from '../types'
+import {
+  planNarrativeBeatMaterialization,
+  type ApprovedNarrativeBeatScene,
+} from '../../../components/create/canvas/skills/groupedSkillMaterialization'
 
 type PlannedShotSize = 'wide' | 'full' | 'medium' | 'close' | 'extreme-close'
 type ShotPlanDraft = {
@@ -626,7 +630,7 @@ describe('independent input contracts', () => {
     assert.deepEqual(paired.artifacts[0]?.sourceNodeIds, ['materialized-scene-node'])
   })
 
-  test('accepts reviewed beat reordering and plans by preserved original order', () => {
+  test('accepts reviewed beat reordering and plans by reviewed array order', () => {
     const artifact = narrativeArtifact() as CreatorSkillArtifact<{
       scenes: Array<{ beats: Array<Record<string, unknown>> }>
     }>
@@ -641,14 +645,80 @@ describe('independent input contracts', () => {
 
     assert.notEqual(result.status, 'blocked')
     assert.deepEqual(allShots(result).map((shot) => shot.beatId), [
-      'scene-002-beat-001',
       'scene-002-beat-003',
+      'scene-002-beat-001',
     ])
     assert.deepEqual(
       artifact.payload.scenes[0]!.beats.map((beat) => beat.order),
       [3, 1],
       'planning must not mutate or rewrite the reviewed Artifact',
     )
+  })
+
+  test('plans a grouped approved narrative Artifact in its reviewed array order', () => {
+    const artifact = narrativeArtifact()
+    const scene = (artifact.payload as {
+      scenes: Array<ApprovedNarrativeBeatScene>
+    }).scenes[0]!
+    const reviewedScene: ApprovedNarrativeBeatScene = {
+      ...structuredClone(scene),
+      beats: [scene.beats[2]!, scene.beats[0]!].map((beat) => ({
+        ...structuredClone(beat),
+        reviewStatus: 'approved' as const,
+      })),
+    }
+    const analyzedResult: CreatorSkillRunResult = {
+      skillId: 'narrative-beat-analysis',
+      skillVersion: '1.0.0',
+      runFingerprint: 'csf1_12ab34cd',
+      status: 'ready',
+      artifacts: [artifact],
+      evidence: scene.beats.map((beat) => ({
+        evidenceId: `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
+        ruleId: 'NARRATIVE_BEAT',
+        sourceNodeId: 'original-script-node',
+        lineStart: beat.lineStart,
+        lineEnd: beat.lineEnd,
+        excerpt: beat.sourceText,
+        explanation: `Evidence for ${beat.beatId}`,
+      })),
+      warnings: [],
+      blockers: [],
+    }
+    const before = structuredClone({ artifact, reviewedScene })
+    const grouped = planNarrativeBeatMaterialization({
+      result: analyzedResult,
+      approvalContext: {
+        runFingerprint: analyzedResult.runFingerprint,
+        sourceArtifactId: artifact.artifactId,
+      },
+      approvedScenes: [reviewedScene],
+      existingNodes: [],
+    })
+    const approvedArtifact = grouped.create[0]!.metadataJson.creatorSkill.approvedArtifact
+
+    assert.deepEqual(
+      (approvedArtifact.payload as {
+        scenes: Array<{ beats: Array<{ beatId: string; order: number }> }>
+      }).scenes[0]!.beats.map((beat) => [beat.beatId, beat.order]),
+      [
+        ['scene-002-beat-003', 3],
+        ['scene-002-beat-001', 1],
+      ],
+    )
+
+    const result = run({
+      sourceNodes: [],
+      artifacts: [approvedArtifact],
+      options: { requestedShotCount: 2 },
+    })
+
+    assert.notEqual(result.status, 'blocked')
+    assert.deepEqual(allShots(result).map((shot) => shot.beatId), [
+      'scene-002-beat-003',
+      'scene-002-beat-001',
+    ])
+    assert.deepEqual({ artifact, reviewedScene }, before)
   })
 
   test('accepts a materialized matching Text plus Artifact and rejects conflict', () => {

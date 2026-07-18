@@ -8,7 +8,9 @@ import type {
   CreatorSkillEvidence,
   CreatorSkillRunResult,
 } from '../../../../lib/skills'
+import { cloneCreatorSkillArtifact } from '../../../../lib/skills'
 import type { ScriptSceneDraft } from '../../../../lib/skills/script-segmentation'
+import { readSceneBreakdownPayload } from '../../../../lib/skills/narrative-beat-analysis/parser'
 import {
   planScriptSceneMaterialization,
   type ApprovedSceneDraft,
@@ -204,6 +206,30 @@ describe('planScriptSceneMaterialization output', () => {
     assert.equal(planned.create[0]!.prompt, editedText)
   })
 
+  test('keeps edited scene Artifacts valid for downstream handoff', () => {
+    const editedText = 'Wind tears the map.\nMaya does not move.\nA siren sounds.'
+    const planned = plan({
+      approvedScenes: [approve(FIRST_SCENE, {
+        heading: 'EXT. RADIO TOWER - DAWN',
+        sourceText: editedText,
+      })],
+    })
+    const artifact = planned.create[0]!.metadataJson.creatorSkill.approvedArtifact
+    const payload = artifact.payload as {
+      format: string
+      scenes: Array<{ heading: string; sourceText: string; lineStart: number; lineEnd: number }>
+    }
+
+    assert.deepEqual(readSceneBreakdownPayload(artifact.payload).valid, true)
+    assert.equal(payload.format, 'paragraph-fallback')
+    assert.equal(payload.scenes[0]!.heading, '')
+    assert.equal(payload.scenes[0]!.sourceText, editedText)
+    assert.deepEqual(
+      [payload.scenes[0]!.lineStart, payload.scenes[0]!.lineEnd],
+      [1, 3],
+    )
+  })
+
   test('uses a Chinese scene-order title when the edited heading is blank', () => {
     const planned = plan({
       approvedScenes: [approve(SECOND_SCENE, { heading: ' \t ' })],
@@ -231,6 +257,27 @@ describe('planScriptSceneMaterialization output', () => {
           resultId: 'scene-001',
           reviewStatus: 'approved',
           evidence: expectedEvidence,
+          approvedArtifact: {
+            artifactId: 'scene-breakdown-scene-001-approved',
+            artifactType: 'scene-breakdown',
+            artifactVersion: 1,
+            sourceNodeIds: [SOURCE_NODE_ID],
+            sourceArtifactIds: [SOURCE_ARTIFACT_ID],
+            payload: {
+              format: 'headed-script',
+              scenes: [{
+                sceneId: 'scene-001',
+                order: 1,
+                heading: 'EXT. ROOFTOP - NIGHT',
+                characters: [],
+                actionSummary: FIRST_SCENE.sourceText,
+                sourceText: FIRST_SCENE.sourceText,
+                lineStart: 1,
+                lineEnd: 2,
+                reviewStatus: 'pending',
+              }],
+            },
+          },
         },
       },
       evidence: expectedEvidence,
@@ -440,6 +487,14 @@ describe('planScriptSceneMaterialization validation', () => {
       fromUndefinedArtifact.create.map(({ resultId }) => resultId),
       ['scene-001'],
     )
+    const approvedArtifact = fromUndefinedApproval.create[0]!
+      .metadataJson.creatorSkill.approvedArtifact
+    const approvedScene = (approvedArtifact.payload as {
+      scenes: Array<Record<string, unknown>>
+    }).scenes[0]!
+    assert.doesNotThrow(() => cloneCreatorSkillArtifact(approvedArtifact))
+    assert.equal(Object.prototype.hasOwnProperty.call(approvedScene, 'location'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(approvedScene, 'timeOfDay'), false)
   })
 
   test('rejects inherited required values in results, Artifacts, scenes, and approvals', () => {

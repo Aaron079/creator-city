@@ -1,5 +1,7 @@
 import type {
+  CreatorSkillArtifact,
   CreatorSkillEvidence,
+  CreatorSkillNodeMetadata as SharedCreatorSkillNodeMetadata,
   CreatorSkillRunResult,
 } from '../../../../lib/skills/types'
 import type { ScriptSceneDraft } from '../../../../lib/skills/script-segmentation/types'
@@ -22,17 +24,9 @@ export type ScriptSceneApprovalContext = {
   sourceArtifactId: string
 }
 
-export type CreatorSkillNodeMetadata = {
-  creatorSkill: {
-    skillId: string
-    skillVersion: string
-    runFingerprint: string
-    sourceNodeIds: string[]
-    sourceArtifactIds: string[]
-    resultType: string
-    resultId: string
-    reviewStatus: 'approved'
-    evidence: CreatorSkillEvidence[]
+export type CreatorSkillNodeMetadata = SharedCreatorSkillNodeMetadata & {
+  creatorSkill: SharedCreatorSkillNodeMetadata['creatorSkill'] & {
+    approvedArtifact: CreatorSkillArtifact
   }
 }
 
@@ -482,6 +476,32 @@ function cloneEvidence(value: CreatorSkillEvidence): CreatorSkillEvidence {
   }
 }
 
+function normalizeArtifactSourceText(value: string) {
+  return value.replace(/\r\n?/g, '\n')
+}
+
+function lineCount(value: string) {
+  let count = 1
+  let offset = value.indexOf('\n')
+  while (offset !== -1) {
+    count += 1
+    offset = value.indexOf('\n', offset + 1)
+  }
+  return count
+}
+
+function containsTrimmedLine(sourceText: string, expected: string) {
+  let offset = 0
+  while (offset <= sourceText.length) {
+    const newline = sourceText.indexOf('\n', offset)
+    const end = newline === -1 ? sourceText.length : newline
+    if (sourceText.slice(offset, end).trim() === expected) return true
+    if (newline === -1) return false
+    offset = newline + 1
+  }
+  return false
+}
+
 function duplicateResultIds(existingNodesValue: unknown, runFingerprint: string) {
   const nodes = snapshotDenseArray<unknown>(existingNodesValue, 'existingNodes')
   const duplicates = new Set<string>()
@@ -555,6 +575,34 @@ function planMaterialization(inputValue: MaterializationInput): MaterializationR
 
     const evidence = evidenceBySceneId.get(artifactScene.sceneId)
     if (!evidence) fail('approved scene is missing canonical evidence')
+    const approvedSourceText = normalizeArtifactSourceText(approved.sourceText)
+    const approvedHeading = approved.heading.trim()
+    const preservesHeadedFormat = artifact.payload.format === 'headed-script'
+      && Boolean(approvedHeading)
+      && containsTrimmedLine(approvedSourceText, approvedHeading)
+    const approvedArtifact: CreatorSkillArtifact = {
+      artifactId: `scene-breakdown-${artifactScene.sceneId}-approved`,
+      artifactType: 'scene-breakdown',
+      artifactVersion: 1,
+      sourceNodeIds: [input.sourceNodeId],
+      sourceArtifactIds: [artifact.artifactId],
+      payload: {
+        format: preservesHeadedFormat ? 'headed-script' : 'paragraph-fallback',
+        scenes: [{
+          sceneId: artifactScene.sceneId,
+          order: artifactScene.order,
+          heading: preservesHeadedFormat ? approvedHeading : '',
+          ...(approved.location.value !== undefined ? { location: approved.location.value } : {}),
+          ...(approved.timeOfDay.value !== undefined ? { timeOfDay: approved.timeOfDay.value } : {}),
+          characters: approved.characters.slice(),
+          actionSummary: artifactScene.actionSummary,
+          sourceText: approvedSourceText,
+          lineStart: artifactScene.lineStart,
+          lineEnd: artifactScene.lineStart + lineCount(approvedSourceText) - 1,
+          reviewStatus: 'pending',
+        }],
+      },
+    }
     create.push({
       resultId: artifactScene.sceneId,
       title: approved.heading.trim() || `场景 ${artifactScene.order}`,
@@ -570,6 +618,7 @@ function planMaterialization(inputValue: MaterializationInput): MaterializationR
           resultId: artifactScene.sceneId,
           reviewStatus: 'approved',
           evidence: [cloneEvidence(evidence)],
+          approvedArtifact,
         },
       },
       evidence: [cloneEvidence(evidence)],
