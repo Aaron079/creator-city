@@ -17,10 +17,15 @@ const narrativeUrl = new URL(
   '../apps/web/src/components/create/canvas/skills/NarrativeBeatAnalysisPanel.tsx',
   import.meta.url,
 )
+const shotListUrl = new URL(
+  '../apps/web/src/components/create/ShotListBuilderPanel.tsx',
+  import.meta.url,
+)
 
 const panel = readFileSync(panelUrl, 'utf8')
 const segmentation = readFileSync(segmentationUrl, 'utf8')
 const narrative = readFileSync(narrativeUrl, 'utf8')
+const shotList = readFileSync(shotListUrl, 'utf8')
 const webRoot = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const tsx = resolve(webRoot, 'node_modules/.bin/tsx')
 
@@ -33,6 +38,31 @@ function assertTsxEvaluation(code) {
 }
 
 describe('Creator Skill review panel static boundary', () => {
+  test('Shot List Builder uses the public Skill runtime without the legacy parser', () => {
+    assert.match(shotList, /runCreatorSkill\(\s*['"]shot-planning['"]/)
+    assert.match(shotList, /CreatorSkillRunPanel/)
+    assert.doesNotMatch(shotList, /\bparseShotList\b/)
+    assert.doesNotMatch(shotList, /\bFILLER_POOL\b/)
+  })
+
+  test('Shot List analysis has no network, Provider, or payment side effects', () => {
+    for (const forbidden of [
+      /\bfetch\s*\(/,
+      /\/api\/generate\//,
+      /\bProvider\b/,
+      /\bBilling\b/,
+      /\bCredits?\b/,
+      /\bWallet\b/,
+      /\bPayment\b/,
+      /\bRecharge\b/,
+    ]) {
+      assert.doesNotMatch(shotList, forbidden)
+    }
+    assert.match(shotList, /创建已批准分镜节点/)
+    assert.match(shotList, /生成已批准镜头/)
+    assert.match(shotList, /可能消耗 API 配额或平台积分/)
+  })
+
   test('generic shell exposes the required review contract and stable controls', () => {
     assert.match(panel, /manifest:\s*CreatorSkillManifest/)
     assert.match(panel, /result:\s*CreatorSkillRunResult/)

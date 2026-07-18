@@ -1,603 +1,1259 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { RefreshCw, Check, RotateCcw, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
 import {
-  parseShotList,
-  buildShotListReport,
-  SHOT_SIZE_LABELS,
-  DEFAULT_SHOT_OPTIONS,
-} from '@/lib/canvas/shot-list'
-import type { ShotDraft, ShotSize, ShotKind, ShotListOptions } from '@/lib/canvas/shot-list'
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  FileSearch,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 import { VisualTagPicker } from '@/components/toolkit/VisualTagPicker'
 import type { VisualTagOption } from '@/components/toolkit/VisualTagPicker'
-import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
+import {
+  readApprovedCreatorSkillArtifact,
+  runCreatorSkill,
+  SHOT_PLANNING_MANIFEST,
+  type CreatorSkillArtifact,
+  type CreatorSkillEvidence,
+  type CreatorSkillNodeMetadata,
+  type CreatorSkillReviewStatus,
+  type CreatorSkillRunResult,
+  type CreatorSkillSourceNode,
+  type PlannedShotSize,
+  type ShotOutputKind,
+  type ShotPlanDraft,
+  type ShotPlanningOptions,
+  type ShotPlanPayload,
+} from '@/lib/skills'
+import {
+  buildShotListReport,
+  DEFAULT_SHOT_OPTIONS,
+  SHOT_SIZE_LABELS,
+  type ShotDraft,
+  type ShotListOptions,
+} from '@/lib/canvas/shot-list'
+import { CreatorSkillRunPanel } from './canvas/skills/CreatorSkillRunPanel'
+import {
+  planShotPlanMaterialization,
+  type ApprovedShotPlanScene,
+  type GroupedSkillNodePlan,
+} from './canvas/skills/groupedSkillMaterialization'
 
-interface SourceNode {
+export type ShotListSourceNode = {
   id: string
   title?: string
   kind: string
   prompt?: string
   resultText?: string
+  metadataJson?: unknown
 }
 
-interface ShotListBuilderPanelProps {
-  nodes: SourceNode[]
+export type CompatibilityShotNodeOptions = {
+  title?: string
+  prompt?: string
+  parentNodeId?: string
+  index?: number
+  total?: number
+  metadataJson: CreatorSkillNodeMetadata
+}
+
+export type ShotListBuilderPanelProps = {
+  nodes: ShotListSourceNode[]
   initialNodeId?: string
-  onCreateNode: (kind: VisualCanvasNodeKind, options: { title?: string; prompt?: string; parentNodeId?: string; index?: number; total?: number }) => string
-  onAutoGenerateNodes?: (nodeIds: string[]) => void
+  existingNodes?: Array<{ metadataJson?: unknown }>
+  onApplyShotPlans?: (plans: GroupedSkillNodePlan[]) => void | Promise<void>
+  onCreateNode: (
+    kind: VisualCanvasNodeKind,
+    options: CompatibilityShotNodeOptions,
+  ) => string | Promise<string>
+  onAutoGenerateNodes?: (nodeIds: string[]) => void | Promise<void>
   onClose: () => void
 }
 
-const OUTPUT_MODE_OPTIONS: VisualTagOption<ShotListOptions['outputMode']>[] = [
+export type ShotReviewDraft = ShotPlanDraft & {
+  decision: CreatorSkillReviewStatus
+}
+
+type ShotPlanArtifact = CreatorSkillArtifact<ShotPlanPayload>
+
+type ShotReview = {
+  sourceIdentity: string
+  sourceNodeId: string
+  approvedArtifactStatus: 'absent' | 'valid' | 'valid-unused-edited' | 'invalid'
+  result: CreatorSkillRunResult
+  displayResult: CreatorSkillRunResult
+  artifact: ShotPlanArtifact | null
+  drafts: ShotReviewDraft[]
+}
+
+export type ShotListPanelState = {
+  review: ShotReview
+  removedShotIds: string[]
+  duplicateSceneIds: string[]
+  duplicateShotIds: string[]
+  materializedShotIds: string[]
+  applyError: string
+  applyLocked: boolean
+  createdCount: number | null
+}
+
+export type ApprovedShotDraftCreationOutcome = {
+  createdIds: string[]
+  createdShotIds: string[]
+  duplicateShotIds: string[]
+  error: string
+  applyLocked: boolean
+}
+
+const OUTPUT_MODE_OPTIONS: VisualTagOption<ShotPlanningOptions['outputMode']>[] = [
   { value: 'image', label: '纯图片', icon: '🖼' },
   { value: 'mixed', label: '图+视频', icon: '🎬' },
   { value: 'video', label: '纯视频', icon: '📹' },
 ]
 
-const PACING_OPTIONS: VisualTagOption<ShotListOptions['pacing']>[] = [
+const PACING_OPTIONS: VisualTagOption<ShotPlanningOptions['pacing']>[] = [
   { value: 'slow_cinematic', label: '慢', sublabel: '电影感', icon: '🐢' },
   { value: 'standard', label: '标准', icon: '⚡' },
   { value: 'fast_social', label: '快', sublabel: '短视频', icon: '🚀' },
 ]
 
-const STRATEGY_OPTIONS: VisualTagOption<ShotListOptions['shotSizeStrategy']>[] = [
+const STRATEGY_OPTIONS: VisualTagOption<ShotPlanningOptions['shotSizeStrategy']>[] = [
   { value: 'auto', label: '自动', icon: '🎯' },
   { value: 'wide_to_close', label: '全→特', icon: '📐' },
   { value: 'close_heavy', label: '特写重', icon: '🔍' },
   { value: 'wide_heavy', label: '全景重', icon: '🌅' },
 ]
 
-const SHOT_SIZE_VISUAL_OPTIONS: VisualTagOption<ShotSize>[] = [
+const SHOT_SIZE_OPTIONS: VisualTagOption<PlannedShotSize>[] = [
   { value: 'wide', label: '全景' },
+  { value: 'full', label: '全身' },
   { value: 'medium', label: '中景' },
   { value: 'close', label: '近景' },
   { value: 'extreme-close', label: '特写' },
 ]
 
+const REVIEW_DECISIONS: Array<{
+  value: CreatorSkillReviewStatus
+  label: string
+}> = [
+  { value: 'pending', label: '待定' },
+  { value: 'approved', label: '批准' },
+  { value: 'rejected', label: '拒绝' },
+]
+
 const COUNT_PRESETS = [3, 5, 8] as const
 type CountPreset = typeof COUNT_PRESETS[number]
 
-function getNodeText(node: SourceNode): string {
-  return (node.resultText ?? node.prompt ?? '').trim()
+export const SHOT_PLAN_PLANNING_ERROR = '无法规划当前镜头节点，请检查审核内容后再试。'
+export const SHOT_PLAN_PARTIAL_APPLY_ERROR = '节点创建过程中发生错误，部分节点可能已创建。请检查画布中的实际结果；当前审核批次已锁定。'
+
+const txClass = 'w-full resize-none rounded-md border border-white/10 bg-[#181b20] px-3 py-2 text-[11px] leading-relaxed text-white/78 placeholder:text-white/25 outline-none focus:border-cyan-200/35'
+const selClass = 'h-8 w-full rounded-md border border-white/10 bg-[#181b20] px-2 text-[11px] text-white/78 outline-none focus:border-cyan-200/35'
+
+function getNodeText(node: ShotListSourceNode): string {
+  return (node.resultText?.trim() ? node.resultText : node.prompt ?? '').trim()
 }
 
-function getNodeLabel(node: SourceNode): string {
-  const kind = node.kind === 'text' ? '文本' : node.kind === 'image' ? '图片' : '视频'
-  return node.title ?? `${kind}节点`
+function getNodeLabel(node: ShotListSourceNode): string {
+  return node.title?.trim() || '文本节点'
 }
 
-// Shared class constants — explicit dark bg prevents browser system-theme override
-const txClass = 'w-full resize-none rounded-lg border border-white/10 bg-[#1a1d26] px-3 py-2 text-[12px] leading-relaxed text-slate-100 placeholder:text-slate-500 outline-none focus:border-white/25'
-const txSmClass = 'w-full resize-none rounded-lg border border-white/8 bg-[#1a1d26] px-3 py-1.5 text-[11px] leading-relaxed text-slate-200/75 placeholder:text-slate-500 outline-none focus:border-white/18'
-const selClass = 'w-full rounded-lg border border-white/10 bg-[#1a1d26] px-2 py-1.5 text-[11px] text-slate-100 outline-none focus:border-white/25'
+function sourceSnapshot(
+  sourceNode: ShotListSourceNode,
+  sourceDraftText: string,
+): CreatorSkillSourceNode {
+  return {
+    id: sourceNode.id,
+    kind: 'text',
+    title: sourceNode.title ?? '文本节点',
+    prompt: sourceDraftText,
+  }
+}
+
+function invalidApprovedArtifactResult(sourceNodeId: string): CreatorSkillRunResult {
+  return {
+    skillId: SHOT_PLANNING_MANIFEST.id,
+    skillVersion: SHOT_PLANNING_MANIFEST.version,
+    runFingerprint: 'csf1_00000000',
+    status: 'blocked',
+    artifacts: [],
+    evidence: [],
+    warnings: [],
+    blockers: [{
+      code: 'APPROVED_ARTIFACT_INVALID',
+      message: '已批准的 Creator Skill Artifact 无法安全读取。',
+      sourceNodeId,
+    }],
+  }
+}
+
+function isShotPlanDraft(value: unknown): value is ShotPlanDraft {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const shot = value as Partial<ShotPlanDraft>
+  return typeof shot.shotId === 'string'
+    && shot.shotId.trim().length > 0
+    && typeof shot.sceneId === 'string'
+    && shot.sceneId.trim().length > 0
+    && Number.isInteger(shot.order)
+    && (shot.order ?? 0) > 0
+    && typeof shot.objective === 'string'
+    && typeof shot.subject === 'string'
+    && typeof shot.action === 'string'
+    && SHOT_SIZE_OPTIONS.some(({ value }) => value === shot.suggestedShotSize)
+    && typeof shot.sourceText === 'string'
+    && Number.isInteger(shot.lineStart)
+    && (shot.lineStart ?? 0) > 0
+    && Number.isInteger(shot.lineEnd)
+    && (shot.lineEnd ?? 0) >= (shot.lineStart ?? 0)
+    && (shot.outputKind === 'image' || shot.outputKind === 'video')
+    && (shot.duration === 5 || shot.duration === 10)
+    && shot.reviewStatus === 'pending'
+    && (shot.beatId === undefined || typeof shot.beatId === 'string')
+    && (shot.needsReviewReason === undefined
+      || typeof shot.needsReviewReason === 'string')
+}
+
+function isShotPlanArtifact(
+  artifact: CreatorSkillArtifact,
+): artifact is ShotPlanArtifact {
+  if (artifact.artifactType !== 'shot-plan'
+    || artifact.artifactVersion !== 1
+    || !artifact.payload
+    || typeof artifact.payload !== 'object'
+    || Array.isArray(artifact.payload)) {
+    return false
+  }
+  const payload = artifact.payload as Partial<ShotPlanPayload>
+  return Array.isArray(payload.scenes)
+    && payload.scenes.length > 0
+    && payload.scenes.every((scene) => (
+      Boolean(scene)
+      && typeof scene.sceneId === 'string'
+      && Number.isInteger(scene.order)
+      && scene.order > 0
+      && typeof scene.heading === 'string'
+      && Array.isArray(scene.shots)
+      && scene.shots.every(isShotPlanDraft)
+    ))
+}
+
+function narrowShotPlan(result: CreatorSkillRunResult): ShotPlanArtifact | null {
+  const artifacts = result.artifacts.filter(isShotPlanArtifact)
+  return artifacts.length === 1 ? artifacts[0]! : null
+}
+
+function resultForDisplay(
+  result: CreatorSkillRunResult,
+  artifact: ShotPlanArtifact | null,
+): CreatorSkillRunResult {
+  if (artifact || result.status === 'blocked') return result
+  return {
+    ...result,
+    status: 'blocked',
+    blockers: [
+      ...result.blockers,
+      {
+        code: 'SHOT_PLAN_INVALID',
+        message: '镜头规划结果无法安全读取，请重新运行。',
+      },
+    ],
+  }
+}
+
+export function getShotListSourceIdentity(
+  sourceNode: ShotListSourceNode,
+  sourceDraftText: string,
+  options: ShotPlanningOptions,
+) {
+  const approvedArtifact = readApprovedCreatorSkillArtifact(
+    sourceNode.metadataJson,
+  )
+  const artifactIdentity = approvedArtifact.status === 'valid'
+    ? JSON.stringify(approvedArtifact.artifact)
+    : approvedArtifact.status
+  return JSON.stringify([
+    sourceNode.id,
+    sourceNode.kind,
+    sourceDraftText,
+    options,
+    artifactIdentity,
+  ])
+}
+
+export function runShotListReview(
+  sourceNode: ShotListSourceNode,
+  sourceDraftText: string,
+  options: ShotPlanningOptions,
+): ShotReview {
+  const approvedArtifact = readApprovedCreatorSkillArtifact(
+    sourceNode.metadataJson,
+  )
+  const sourceIdentity = getShotListSourceIdentity(
+    sourceNode,
+    sourceDraftText,
+    options,
+  )
+  if (approvedArtifact.status === 'invalid') {
+    const blocked = invalidApprovedArtifactResult(sourceNode.id)
+    return {
+      sourceIdentity,
+      sourceNodeId: sourceNode.id,
+      approvedArtifactStatus: 'invalid',
+      result: blocked,
+      displayResult: blocked,
+      artifact: null,
+      drafts: [],
+    }
+  }
+
+  const originalText = getNodeText(sourceNode)
+  const draftMatchesSource = sourceDraftText.trim() === originalText
+  const approvedSourceArtifact = approvedArtifact.status === 'valid'
+    && draftMatchesSource
+    ? approvedArtifact.artifact
+    : null
+  const inputSource = sourceSnapshot(sourceNode, sourceDraftText)
+  const result = approvedSourceArtifact
+    ? runCreatorSkill('shot-planning', {
+      sourceNodes: [inputSource],
+      artifacts: [approvedSourceArtifact],
+      options,
+    })
+    : runCreatorSkill('shot-planning', {
+      sourceNodes: [inputSource],
+      options,
+    })
+  const artifact = narrowShotPlan(result)
+  const drafts = artifact
+    ? artifact.payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({
+      ...shot,
+      decision: 'pending' as const,
+    })))
+    : []
+
+  return {
+    sourceIdentity,
+    sourceNodeId: sourceNode.id,
+    approvedArtifactStatus: approvedArtifact.status === 'valid'
+      ? (draftMatchesSource ? 'valid' : 'valid-unused-edited')
+      : 'absent',
+    result,
+    displayResult: resultForDisplay(result, artifact),
+    artifact,
+    drafts,
+  }
+}
+
+export function createShotListPanelState(
+  sourceNode: ShotListSourceNode,
+  sourceDraftText: string,
+  options: ShotPlanningOptions,
+): ShotListPanelState {
+  return {
+    review: runShotListReview(sourceNode, sourceDraftText, options),
+    removedShotIds: [],
+    duplicateSceneIds: [],
+    duplicateShotIds: [],
+    materializedShotIds: [],
+    applyError: '',
+    applyLocked: false,
+    createdCount: null,
+  }
+}
+
+export function rerunShotListPanelState(
+  sourceNode: ShotListSourceNode,
+  sourceDraftText: string,
+  options: ShotPlanningOptions,
+) {
+  return createShotListPanelState(sourceNode, sourceDraftText, options)
+}
+
+export function updateShotReviewDraft(
+  drafts: ShotReviewDraft[],
+  shotId: string,
+  patch: Partial<Pick<
+    ShotReviewDraft,
+    'objective' | 'subject' | 'action' | 'suggestedShotSize' | 'outputKind' | 'duration'
+  >>,
+) {
+  let changed = false
+  const next = drafts.map((shot) => {
+    if (shot.shotId !== shotId) return shot
+    const updated = { ...shot, ...patch }
+    if (updated.objective === shot.objective
+      && updated.subject === shot.subject
+      && updated.action === shot.action
+      && updated.suggestedShotSize === shot.suggestedShotSize
+      && updated.outputKind === shot.outputKind
+      && updated.duration === shot.duration) {
+      return shot
+    }
+    changed = true
+    return updated
+  })
+  return changed ? next : drafts
+}
+
+export function setShotReviewDecision(
+  drafts: ShotReviewDraft[],
+  shotId: string,
+  decision: CreatorSkillReviewStatus,
+) {
+  let changed = false
+  const next = drafts.map((shot) => {
+    if (shot.shotId !== shotId || shot.decision === decision) return shot
+    changed = true
+    return { ...shot, decision }
+  })
+  return changed ? next : drafts
+}
+
+export function moveShotReviewDraft(
+  drafts: ShotReviewDraft[],
+  shotId: string,
+  direction: -1 | 1,
+) {
+  const index = drafts.findIndex((shot) => shot.shotId === shotId)
+  if (index === -1) return drafts
+  const target = index + direction
+  if (target < 0 || target >= drafts.length) return drafts
+  if (drafts[target]!.sceneId !== drafts[index]!.sceneId) return drafts
+  const next = drafts.slice()
+  const current = next[index]!
+  next[index] = next[target]!
+  next[target] = current
+  return next
+}
+
+export function removeShotReviewDraft(
+  drafts: ShotReviewDraft[],
+  shotId: string,
+) {
+  if (!drafts.some((shot) => shot.shotId === shotId)) return drafts
+  return drafts.filter((shot) => shot.shotId !== shotId)
+}
+
+export function approvedShotPlanScenes(
+  drafts: ShotReviewDraft[],
+  artifact: ShotPlanArtifact | null,
+): ApprovedShotPlanScene[] {
+  if (!artifact) return []
+  return artifact.payload.scenes.flatMap((scene) => {
+    const shots = drafts
+      .filter((shot) => (
+        shot.sceneId === scene.sceneId
+        && shot.decision === 'approved'
+      ))
+      .map((shot) => ({
+        shotId: shot.shotId,
+        sceneId: shot.sceneId,
+        ...(shot.beatId !== undefined ? { beatId: shot.beatId } : {}),
+        order: shot.order,
+        objective: shot.objective,
+        subject: shot.subject,
+        action: shot.action,
+        suggestedShotSize: shot.suggestedShotSize,
+        sourceText: shot.sourceText,
+        lineStart: shot.lineStart,
+        lineEnd: shot.lineEnd,
+        outputKind: shot.outputKind,
+        duration: shot.duration,
+        reviewStatus: 'approved' as const,
+        ...(shot.needsReviewReason !== undefined
+          ? { needsReviewReason: shot.needsReviewReason }
+          : {}),
+      }))
+    return shots.length > 0
+      ? [{
+        sceneId: scene.sceneId,
+        order: scene.order,
+        heading: scene.heading,
+        shots,
+      }]
+      : []
+  })
+}
+
+function ownData(value: unknown, key: string): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    return descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+      ? descriptor.value
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function existingCompatibilityShotIds(
+  nodes: Array<{ metadataJson?: unknown }>,
+  result: CreatorSkillRunResult,
+) {
+  const ids = new Set<string>()
+  for (const node of nodes) {
+    const creatorSkill = ownData(node.metadataJson, 'creatorSkill')
+    if (ownData(creatorSkill, 'skillId') !== result.skillId
+      || ownData(creatorSkill, 'runFingerprint') !== result.runFingerprint) {
+      continue
+    }
+    const resultId = ownData(creatorSkill, 'resultId')
+    if (typeof resultId === 'string' && resultId.trim()) ids.add(resultId)
+  }
+  return [...ids]
+}
+
+function evidenceForShot(
+  evidence: CreatorSkillEvidence[],
+  shot: ShotReviewDraft,
+) {
+  return evidence.filter((item) => (
+    item.lineStart === shot.lineStart
+    && item.lineEnd === shot.lineEnd
+    && item.excerpt === shot.sourceText
+  ))
+}
+
+function compatibilityMetadata(
+  result: CreatorSkillRunResult,
+  shot: ShotReviewDraft,
+): CreatorSkillNodeMetadata {
+  return {
+    creatorSkill: {
+      skillId: result.skillId,
+      skillVersion: result.skillVersion,
+      runFingerprint: result.runFingerprint,
+      sourceNodeIds: [result.artifacts[0]?.sourceNodeIds[0] ?? ''],
+      sourceArtifactIds: result.artifacts[0]
+        ? [result.artifacts[0].artifactId]
+        : [],
+      resultType: 'shot-draft',
+      resultId: shot.shotId,
+      reviewStatus: 'approved',
+      evidence: evidenceForShot(result.evidence, shot),
+    },
+  }
+}
+
+function compatibilityPrompt(shot: ShotReviewDraft) {
+  const details = [
+    shot.subject.trim() ? `主体：${shot.subject.trim()}` : '',
+    shot.action.trim() ? `行动：${shot.action.trim()}` : '',
+    `景别：${SHOT_SIZE_LABELS[shot.suggestedShotSize]}`,
+  ].filter(Boolean)
+  return `${shot.objective.trim() || shot.sourceText}\n\n[${details.join(' · ')}]`
+}
+
+export async function createApprovedShotDrafts({
+  drafts,
+  result,
+  sourceNodeId,
+  duplicateShotIds,
+  onCreateNode,
+}: {
+  drafts: ShotReviewDraft[]
+  result: CreatorSkillRunResult
+  sourceNodeId: string
+  duplicateShotIds: string[]
+  onCreateNode: ShotListBuilderPanelProps['onCreateNode']
+}): Promise<ApprovedShotDraftCreationOutcome> {
+  const approved = drafts.filter((shot) => shot.decision === 'approved')
+  const duplicateSet = new Set(duplicateShotIds)
+  const skipped = approved
+    .filter((shot) => duplicateSet.has(shot.shotId))
+    .map((shot) => shot.shotId)
+  const toCreate = approved.filter((shot) => !duplicateSet.has(shot.shotId))
+  const createdIds: string[] = []
+  const createdShotIds: string[] = []
+  try {
+    for (let index = 0; index < toCreate.length; index += 1) {
+      const shot = toCreate[index]!
+      const kindLabel = shot.outputKind === 'video'
+        ? `视频 ${shot.duration}s`
+        : '图片'
+      const nodeId = await onCreateNode(shot.outputKind, {
+        title: `镜头 · ${SHOT_SIZE_LABELS[shot.suggestedShotSize]} · ${kindLabel}`,
+        prompt: compatibilityPrompt(shot),
+        parentNodeId: sourceNodeId || undefined,
+        index,
+        total: toCreate.length,
+        metadataJson: compatibilityMetadata(result, shot),
+      })
+      if (nodeId) {
+        if (!createdIds.includes(nodeId)) createdIds.push(nodeId)
+        createdShotIds.push(shot.shotId)
+      }
+    }
+    return {
+      createdIds,
+      createdShotIds,
+      duplicateShotIds: skipped,
+      error: '',
+      applyLocked: false,
+    }
+  } catch {
+    return {
+      createdIds,
+      createdShotIds,
+      duplicateShotIds: skipped,
+      error: SHOT_PLAN_PARTIAL_APPLY_ERROR,
+      applyLocked: true,
+    }
+  }
+}
+
+function compatibilityReportDrafts(drafts: ShotReviewDraft[]): ShotDraft[] {
+  return drafts
+    .filter((shot) => shot.decision === 'approved')
+    .map((shot) => ({
+      id: shot.shotId,
+      kind: shot.outputKind,
+      shotSize: shot.suggestedShotSize,
+      description: shot.objective,
+      cinematicNote: [shot.subject, shot.action].filter(Boolean).join(' · '),
+      duration: shot.duration,
+      selected: true,
+    }))
+}
+
+function decisionClass(decision: CreatorSkillReviewStatus, selected: boolean) {
+  if (!selected) return 'text-white/42 hover:bg-white/[0.06] hover:text-white/72'
+  if (decision === 'approved') return 'bg-emerald-300/12 text-emerald-200'
+  if (decision === 'rejected') return 'bg-rose-300/12 text-rose-200'
+  return 'bg-white/[0.09] text-white/78'
+}
+
+function lineLabel(shot: ShotReviewDraft) {
+  return shot.lineStart === shot.lineEnd
+    ? `第 ${shot.lineStart} 行`
+    : `第 ${shot.lineStart}-${shot.lineEnd} 行`
+}
+
+function temporarySource(): ShotListSourceNode {
+  return {
+    id: 'shot-list-draft-source',
+    kind: 'text',
+    title: '临时文本',
+    prompt: '',
+  }
+}
 
 export function ShotListBuilderPanel({
   nodes,
   initialNodeId,
+  existingNodes = nodes,
+  onApplyShotPlans,
   onCreateNode,
   onAutoGenerateNodes,
   onClose,
 }: ShotListBuilderPanelProps) {
-  // All nodes are usable as source (any with text content)
-  const textNodes = nodes.filter((n) => getNodeText(n).length > 0)
-
-  const firstId = initialNodeId && textNodes.find((n) => n.id === initialNodeId)
+  const textNodes = nodes.filter((node) => (
+    node.kind === 'text' && getNodeText(node).length > 0
+  ))
+  const firstId = initialNodeId && textNodes.some((node) => node.id === initialNodeId)
     ? initialNodeId
     : textNodes[0]?.id ?? ''
+  const firstNode = textNodes.find((node) => node.id === firstId) ?? temporarySource()
+  const firstText = getNodeText(firstNode)
 
-  const firstNodeText = textNodes.find((n) => n.id === firstId)
-    ? getNodeText(textNodes.find((n) => n.id === firstId)!)
-    : ''
-
-  // ── Source state ──────────────────────────────────────────
   const [selectedNodeId, setSelectedNodeId] = useState(firstId)
-  // Editable source text — initialized from node, but fully user-owned after that
-  const [sourceDraftText, setSourceDraftText] = useState(firstNodeText)
-
-  const selectedNode = textNodes.find((n) => n.id === selectedNodeId)
-
-  const handleNodeChange = (nodeId: string) => {
-    setSelectedNodeId(nodeId)
-    // Update the editable text to this node's content — user can still edit before reparting
-    const node = textNodes.find((n) => n.id === nodeId)
-    setSourceDraftText(node ? getNodeText(node) : '')
-    setReparseError(null)
-  }
-
-  const handleRestoreNodeText = () => {
-    const node = textNodes.find((n) => n.id === selectedNodeId)
-    setSourceDraftText(node ? getNodeText(node) : '')
-    setReparseError(null)
-  }
-
-  const handleClearSourceText = () => {
-    setSourceDraftText('')
-    setReparseError(null)
-  }
-
-  // ── Split controls ────────────────────────────────────────
+  const [sourceDraftText, setSourceDraftText] = useState(firstText)
   const [countPreset, setCountPreset] = useState<CountPreset | 'custom'>(5)
   const [customCountStr, setCustomCountStr] = useState('6')
-  const [outputMode, setOutputMode] = useState<ShotListOptions['outputMode']>('mixed')
-  const [pacing, setPacing] = useState<ShotListOptions['pacing']>('standard')
-  const [strategy, setStrategy] = useState<ShotListOptions['shotSizeStrategy']>('auto')
+  const [outputMode, setOutputMode] = useState<ShotPlanningOptions['outputMode']>('mixed')
+  const [pacing, setPacing] = useState<ShotPlanningOptions['pacing']>('standard')
+  const [strategy, setStrategy] = useState<ShotPlanningOptions['shotSizeStrategy']>('auto')
   const [instruction, setInstruction] = useState('')
+  const [copyDone, setCopyDone] = useState(false)
+  const [isConfirmingGenerate, setIsConfirmingGenerate] = useState(false)
+  const [isOperating, setIsOperating] = useState(false)
+  const operationInFlightRef = useRef(false)
 
-  const effectiveCount: number = countPreset === 'custom'
-    ? Math.min(12, Math.max(1, parseInt(customCountStr, 10) || 5))
+  const effectiveCount = countPreset === 'custom'
+    ? Math.min(120, Math.max(1, Number.parseInt(customCountStr, 10) || 5))
     : countPreset
-
-  const buildOpts = useCallback((): ShotListOptions => ({
-    shotCount: effectiveCount,
+  const options: ShotPlanningOptions = {
+    requestedShotCount: effectiveCount,
     outputMode,
     pacing,
     shotSizeStrategy: strategy,
     userInstruction: instruction,
-  }), [effectiveCount, outputMode, pacing, strategy, instruction])
-
-  // ── Shot list state ───────────────────────────────────────
-  const [shots, setShots] = useState<ShotDraft[]>(() =>
-    firstNodeText ? parseShotList(firstNodeText, DEFAULT_SHOT_OPTIONS) : []
+  }
+  const selectedNode = textNodes.find((node) => node.id === selectedNodeId)
+    ?? temporarySource()
+  const [panelState, setPanelState] = useState(() => (
+    createShotListPanelState(firstNode, firstText, options)
+  ))
+  const { review, duplicateSceneIds, duplicateShotIds, applyError } = panelState
+  const { result, displayResult, artifact, drafts } = review
+  const currentIdentity = getShotListSourceIdentity(
+    selectedNode,
+    sourceDraftText,
+    options,
   )
-  const [reparseError, setReparseError] = useState<string | null>(null)
-  const [copyDone, setCopyDone] = useState(false)
-  const [createdCount, setCreatedCount] = useState<number | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
-  const [isConfirmingGenerate, setIsConfirmingGenerate] = useState(false)
+  const sourceIsCurrent = review.sourceIdentity === currentIdentity
+  const approvedCount = drafts.filter((shot) => shot.decision === 'approved').length
+  const canApply = sourceIsCurrent
+    && result.status !== 'blocked'
+    && artifact !== null
+    && approvedCount > 0
+    && !panelState.applyLocked
+    && !isOperating
+    && Boolean(onApplyShotPlans)
 
-  // ── Actions ───────────────────────────────────────────────
-  const handleReparse = () => {
-    if (!sourceDraftText.trim()) {
-      setReparseError('请先输入或粘贴要拆分的文本。')
+  const replaceDrafts = (
+    transform: (current: ShotReviewDraft[]) => ShotReviewDraft[],
+  ) => {
+    setPanelState((current) => ({
+      ...current,
+      applyError: current.applyLocked ? current.applyError : '',
+      review: {
+        ...current.review,
+        drafts: transform(current.review.drafts),
+      },
+    }))
+  }
+
+  const rerun = (node = selectedNode, text = sourceDraftText) => {
+    setIsConfirmingGenerate(false)
+    setPanelState(rerunShotListPanelState(node, text, options))
+  }
+
+  const handleNodeChange = (nodeId: string) => {
+    const node = textNodes.find((item) => item.id === nodeId) ?? temporarySource()
+    const text = getNodeText(node)
+    setSelectedNodeId(nodeId)
+    setSourceDraftText(text)
+    setIsConfirmingGenerate(false)
+    setPanelState(createShotListPanelState(node, text, options))
+  }
+
+  const handleGroupedApply = async () => {
+    if (!canApply || !artifact || !onApplyShotPlans || operationInFlightRef.current) return
+    let planned: ReturnType<typeof planShotPlanMaterialization>
+    try {
+      planned = planShotPlanMaterialization({
+        result,
+        approvalContext: {
+          runFingerprint: result.runFingerprint,
+          sourceArtifactId: artifact.artifactId,
+        },
+        approvedScenes: approvedShotPlanScenes(drafts, artifact),
+        existingNodes,
+      })
+    } catch {
+      setPanelState((current) => ({
+        ...current,
+        duplicateSceneIds: [],
+        applyError: SHOT_PLAN_PLANNING_ERROR,
+        applyLocked: false,
+      }))
       return
     }
-    setReparseError(null)
-    setShots(parseShotList(sourceDraftText, buildOpts()))
-    setCreatedCount(null)
+    operationInFlightRef.current = true
+    setIsOperating(true)
+    try {
+      if (planned.create.length > 0) await onApplyShotPlans(planned.create)
+      setPanelState((current) => ({
+        ...current,
+        duplicateSceneIds: [...planned.duplicates],
+        applyError: '',
+      }))
+    } catch {
+      setPanelState((current) => ({
+        ...current,
+        duplicateSceneIds: [...planned.duplicates],
+        applyError: SHOT_PLAN_PARTIAL_APPLY_ERROR,
+        applyLocked: true,
+      }))
+    } finally {
+      operationInFlightRef.current = false
+      setIsOperating(false)
+    }
   }
 
-  const patchShot = (id: string, patch: Partial<ShotDraft>) => {
-    setShots((prev) => prev.map((s) => s.id === id ? { ...s, ...patch } : s))
-  }
-
-  const toggleAll = (selected: boolean) => {
-    setShots((prev) => prev.map((s) => ({ ...s, selected })))
+  const runCompatibilityCreate = async (generateAfterCreate: boolean) => {
+    if (!sourceIsCurrent
+      || approvedCount === 0
+      || panelState.applyLocked
+      || operationInFlightRef.current) return
+    operationInFlightRef.current = true
+    setIsOperating(true)
+    setIsConfirmingGenerate(false)
+    const knownDuplicates = [
+      ...new Set([
+        ...existingCompatibilityShotIds(existingNodes, result),
+        ...panelState.materializedShotIds,
+      ]),
+    ]
+    const outcome = await createApprovedShotDrafts({
+      drafts,
+      result,
+      sourceNodeId: selectedNode.id === 'shot-list-draft-source'
+        ? ''
+        : selectedNode.id,
+      duplicateShotIds: knownDuplicates,
+      onCreateNode,
+    })
+    let callbackError = ''
+    let callbackLocked = outcome.applyLocked
+    if (!outcome.error
+      && generateAfterCreate
+      && outcome.createdIds.length > 0
+      && onAutoGenerateNodes) {
+      try {
+        await onAutoGenerateNodes(outcome.createdIds)
+      } catch {
+        callbackError = SHOT_PLAN_PARTIAL_APPLY_ERROR
+        callbackLocked = true
+      }
+    }
+    setPanelState((current) => ({
+      ...current,
+      duplicateShotIds: outcome.duplicateShotIds,
+      materializedShotIds: [
+        ...new Set([
+          ...current.materializedShotIds,
+          ...outcome.createdShotIds,
+        ]),
+      ],
+      createdCount: outcome.createdIds.length,
+      applyError: outcome.error || callbackError,
+      applyLocked: callbackLocked,
+    }))
+    operationInFlightRef.current = false
+    setIsOperating(false)
   }
 
   const handleCopy = () => {
-    const title = selectedNode ? getNodeLabel(selectedNode) : '未知来源'
-    const report = buildShotListReport(shots, title, buildOpts(), sourceDraftText)
+    const reportOptions: ShotListOptions = {
+      ...DEFAULT_SHOT_OPTIONS,
+      shotCount: effectiveCount,
+      outputMode,
+      pacing,
+      shotSizeStrategy: strategy,
+      userInstruction: instruction,
+    }
+    const report = buildShotListReport(
+      compatibilityReportDrafts(drafts),
+      getNodeLabel(selectedNode),
+      reportOptions,
+      sourceDraftText,
+    )
     void navigator.clipboard.writeText(report).then(() => {
       setCopyDone(true)
-      setTimeout(() => setCopyDone(false), 2000)
+      window.setTimeout(() => setCopyDone(false), 2000)
     })
   }
-
-  // Safe create — no Provider call, no credits consumed
-  const handleCreate = () => {
-    const toCreate = shots.filter((s) => s.selected)
-    if (toCreate.length === 0 || isCreating) return
-    setIsCreating(true)
-    toCreate.forEach((shot, index) => {
-      const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
-      const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
-      const title = `镜头 · ${sizeLabel} · ${kindLabel}`
-      const prompt = `${shot.description}\n\n[${shot.cinematicNote}]`
-      onCreateNode(shot.kind as VisualCanvasNodeKind, {
-        title,
-        prompt,
-        parentNodeId: selectedNodeId || undefined,
-        index,
-        total: toCreate.length,
-      })
-    })
-    setCreatedCount(toCreate.length)
-    setIsCreating(false)
-  }
-
-  // Explicit generate — creates nodes AND triggers Provider. Requires user confirmation.
-  const handleCreateAndGenerate = () => {
-    const toCreate = shots.filter((s) => s.selected)
-    if (toCreate.length === 0) return
-    const createdIds: string[] = []
-    toCreate.forEach((shot, index) => {
-      const kindLabel = shot.kind === 'video' ? `视频 ${shot.duration}s` : '图片'
-      const sizeLabel = SHOT_SIZE_LABELS[shot.shotSize]
-      const title = `镜头 · ${sizeLabel} · ${kindLabel}`
-      const prompt = `${shot.description}\n\n[${shot.cinematicNote}]`
-      const nodeId = onCreateNode(shot.kind as VisualCanvasNodeKind, {
-        title,
-        prompt,
-        parentNodeId: selectedNodeId || undefined,
-        index,
-        total: toCreate.length,
-      })
-      if (nodeId) createdIds.push(nodeId)
-    })
-    setCreatedCount(toCreate.length)
-    if (createdIds.length > 0) onAutoGenerateNodes?.(createdIds)
-  }
-
-  const handleRequestGenerate = () => {
-    if (selectedCount === 0) return
-    setIsConfirmingGenerate(true)
-  }
-
-  const handleConfirmGenerate = () => {
-    setIsConfirmingGenerate(false)
-    handleCreateAndGenerate()
-  }
-
-  const selectedCount = shots.filter((s) => s.selected).length
-
-  const totalDurationSec = shots.reduce((sum, s) => sum + (s.kind === 'video' ? (s.duration || 0) : 0), 0)
-  const durationStr = totalDurationSec > 0
-    ? `总时长 ${String(Math.floor(totalDurationSec / 60)).padStart(2, '0')}:${String(totalDurationSec % 60).padStart(2, '0')}`
-    : null
-  const shotSummary = shots.length > 0
-    ? [shots.length + ' 个镜头', durationStr].filter(Boolean).join(' · ')
-    : undefined
 
   return (
-    <div
-      className="fixed inset-0 z-[1199] flex items-center justify-center bg-black/25"
-      data-no-node-drag="true"
-      onPointerDown={(e) => { e.stopPropagation(); onClose() }}
-      onClick={(e) => e.stopPropagation()}
-      onWheel={(e) => e.stopPropagation()}
-      onWheelCapture={(e) => e.stopPropagation()}
+    <CreatorSkillRunPanel
+      manifest={SHOT_PLANNING_MANIFEST}
+      result={displayResult}
+      canApply={canApply}
+      applyLabel={`创建镜头规划节点 (${approvedCount})`}
+      onRerun={() => rerun()}
+      onApply={() => { void handleGroupedApply() }}
+      onClose={onClose}
     >
-      <DirectorToolPanelFrame
-        icon="🎞"
-        title="分镜表"
-        titleEn="SHOT LIST"
-        accentColor="violet"
-        count={shots.length}
-        summary={shotSummary}
-        primaryLabel={selectedCount > 0 ? `创建分镜节点 (${selectedCount})` : '请选择镜头'}
-        primaryDisabled={selectedCount === 0 || isCreating}
-        onPrimary={handleCreate}
-        secondaryLabel={onAutoGenerateNodes
-          ? (selectedCount > 0 ? `生成所选镜头 (${selectedCount})` : '生成所选镜头')
-          : undefined}
-        secondaryDisabled={selectedCount === 0 || isConfirmingGenerate}
-        onSecondary={onAutoGenerateNodes ? handleRequestGenerate : undefined}
-        onClear={shots.length > 0 ? handleCopy : undefined}
-        clearLabel={copyDone ? '已复制' : '复制分镜清单'}
-        onClose={onClose}
-        ariaLabel="分镜表 / Shot List"
-      >
       <div className="space-y-4">
-
-        {/* ── A. 来源节点选择 ── */}
-        <div className="mb-3">
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-white/30">
-            A. 来源节点选择
-          </label>
-          {textNodes.length === 0 ? (
-            <p className="rounded-lg border border-white/8 bg-white/3 px-3 py-3 text-[12px] text-white/40">
-              画布中没有可用节点。请先创建文本节点并输入内容，或直接在下方粘贴文本。
-            </p>
-          ) : (
+        <section aria-labelledby="shot-source-heading" className="space-y-3">
+          <h3 id="shot-source-heading" className="text-[11px] font-semibold text-white/72">
+            来源与规划设置
+          </h3>
+          {textNodes.length > 0 ? (
             <select
               value={selectedNodeId}
-              onChange={(e) => handleNodeChange(e.target.value)}
+              onChange={(event) => handleNodeChange(event.target.value)}
               className={selClass}
+              aria-label="来源节点"
             >
-              {textNodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {getNodeLabel(n)}
-                  {getNodeText(n).length > 0 ? ` — ${getNodeText(n).slice(0, 38)}…` : ''}
+              {textNodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {getNodeLabel(node)} — {getNodeText(node).slice(0, 38)}
                 </option>
               ))}
             </select>
+          ) : (
+            <p className="border-y border-white/[0.08] py-2 text-[11px] text-white/42">
+              当前没有可用文本节点，可在下方输入临时文本进行规划。
+            </p>
           )}
-        </div>
 
-        {/* ── B. 分镜文本输入（可编辑） ── */}
-        <div className="mb-4">
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
-              B. 分镜文本输入
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleRestoreNodeText}
-                disabled={!selectedNode}
-                className="flex items-center gap-1 text-[10px] text-white/35 transition hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
-                title="恢复为来源节点文本"
-              >
-                <RotateCcw size={11} strokeWidth={2.2} />
-                使用来源节点文本
-              </button>
-              <button
-                type="button"
-                onClick={handleClearSourceText}
-                className="flex items-center gap-1 text-[10px] text-white/35 transition hover:text-white/70"
-                title="清空"
-              >
-                <Trash2 size={11} strokeWidth={2.2} />
-                清空
-              </button>
+          <div>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <label htmlFor="shot-list-source-draft" className="text-[10px] text-white/42">
+                分镜文本
+              </label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  title="恢复来源文本"
+                  onClick={() => setSourceDraftText(getNodeText(selectedNode))}
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-[10px] text-white/42 hover:bg-white/[0.06] hover:text-white/72"
+                >
+                  <RotateCcw size={12} aria-hidden="true" />
+                  恢复
+                </button>
+                <button
+                  type="button"
+                  title="清空"
+                  onClick={() => setSourceDraftText('')}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-white/42 hover:bg-rose-300/[0.08] hover:text-rose-200"
+                >
+                  <Trash2 size={12} aria-hidden="true" />
+                </button>
+              </div>
             </div>
+            <textarea
+              id="shot-list-source-draft"
+              value={sourceDraftText}
+              onChange={(event) => setSourceDraftText(event.target.value)}
+              rows={5}
+              className={txClass}
+              placeholder="粘贴剧本、故事梗概或镜头需求"
+            />
+            <p className="mt-1 text-[9px] text-white/28">
+              草稿编辑仅影响本次规划，不会修改来源节点。编辑后请重新运行。
+            </p>
           </div>
 
-          <textarea
-            value={sourceDraftText}
-            onChange={(e) => { setSourceDraftText(e.target.value); setReparseError(null) }}
-            rows={7}
-            placeholder="在这里粘贴剧本、故事梗概、广告脚本、短视频文案，或直接写你希望拆分的分镜内容……"
-            className={txClass}
-            style={{ minHeight: '160px' }}
-          />
-
-          <p className="mt-1.5 text-[10px] text-white/25">
-            这里的修改只用于本次分镜拆分，不会改动原节点。点击「按要求重新拆分」后生效。
-          </p>
-        </div>
-
-        {/* ── 分镜拆分要求 ── */}
-        <div className="mb-4 rounded-xl border border-white/8 bg-white/2 px-4 py-3">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
-            分镜拆分要求
-          </p>
-
-          <div className="mb-3 grid grid-cols-2 gap-3">
-            {/* Shot count */}
+          <div className="grid gap-3 border-y border-white/[0.08] py-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-[10px] text-white/40">分镜数量</label>
+              <span className="mb-1.5 block text-[10px] text-white/42">目标数量</span>
               <div className="flex items-center gap-1">
-                {COUNT_PRESETS.map((n) => (
+                {COUNT_PRESETS.map((count) => (
                   <button
-                    key={n}
+                    key={count}
                     type="button"
-                    onClick={() => setCountPreset(n)}
-                    className={`rounded px-2.5 py-1 text-[11px] font-medium transition ${
-                      countPreset === n
-                        ? 'bg-indigo-500/30 text-indigo-200'
-                        : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80'
-                    }`}
+                    onClick={() => setCountPreset(count)}
+                    className={`h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold ${countPreset === count ? 'bg-cyan-200/12 text-cyan-100' : 'bg-white/[0.04] text-white/42 hover:bg-white/[0.08]'}`}
                   >
-                    {n}
+                    {count}
                   </button>
                 ))}
                 <input
                   type="number"
                   min={1}
-                  max={12}
+                  max={120}
                   value={countPreset === 'custom' ? customCountStr : ''}
                   placeholder="自定"
                   onFocus={() => setCountPreset('custom')}
-                  onChange={(e) => { setCountPreset('custom'); setCustomCountStr(e.target.value) }}
-                  className={`w-14 rounded border px-1.5 py-1 text-center text-[11px] font-medium outline-none transition ${
-                    countPreset === 'custom'
-                      ? 'border-indigo-400/40 bg-indigo-500/20 text-indigo-200 placeholder:text-indigo-400/50'
-                      : 'border-white/10 bg-white/5 text-white/50 placeholder:text-white/25'
-                  }`}
+                  onChange={(event) => {
+                    setCountPreset('custom')
+                    setCustomCountStr(event.target.value)
+                  }}
+                  className="h-7 w-16 rounded-md border border-white/10 bg-[#181b20] px-1 text-center text-[10px] text-white/72 outline-none focus:border-cyan-200/35"
                 />
               </div>
             </div>
-
-            {/* Output mode */}
             <div>
-              <label className="mb-1.5 block text-[10px] text-white/40">输出类型</label>
-              <VisualTagPicker
-                options={OUTPUT_MODE_OPTIONS}
-                value={outputMode}
-                onChange={setOutputMode}
-              />
+              <span className="mb-1.5 block text-[10px] text-white/42">输出类型</span>
+              <VisualTagPicker options={OUTPUT_MODE_OPTIONS} value={outputMode} onChange={setOutputMode} />
             </div>
+            <div>
+              <span className="mb-1.5 block text-[10px] text-white/42">节奏</span>
+              <VisualTagPicker options={PACING_OPTIONS} value={pacing} onChange={setPacing} />
+            </div>
+            <div>
+              <span className="mb-1.5 block text-[10px] text-white/42">景别策略</span>
+              <VisualTagPicker options={STRATEGY_OPTIONS} value={strategy} onChange={setStrategy} />
+            </div>
+            <label className="sm:col-span-2 text-[10px] text-white/42">
+              补充要求
+              <textarea
+                value={instruction}
+                onChange={(event) => setInstruction(event.target.value)}
+                rows={2}
+                className={`mt-1.5 ${txClass}`}
+                placeholder="仅用于选择与呈现，不会补写来源中不存在的情节"
+              />
+            </label>
           </div>
+        </section>
 
-          {/* Pacing */}
-          <div className="mb-3">
-            <label className="mb-1.5 block text-[10px] text-white/40">节奏</label>
-            <VisualTagPicker
-              options={PACING_OPTIONS}
-              value={pacing}
-              onChange={setPacing}
-            />
+        {!sourceIsCurrent ? (
+          <p role="alert" className="border-y border-amber-300/15 bg-amber-300/[0.05] px-2.5 py-2 text-[11px] leading-5 text-amber-100/80">
+            来源或规划设置已变化，请重新运行后再创建节点。
+          </p>
+        ) : null}
+
+        {duplicateSceneIds.length > 0 ? (
+          <div role="status" data-testid="shot-plan-duplicates" className="flex items-start gap-2 border-y border-amber-300/15 bg-amber-300/[0.05] px-2.5 py-2 text-[11px] leading-5 text-amber-100/80">
+            <AlertTriangle size={13} className="mt-0.5 flex-none" aria-hidden="true" />
+            <p>已存在并跳过镜头规划：{duplicateSceneIds.join('、')}</p>
           </div>
+        ) : null}
 
-          {/* Shot size strategy */}
-          <div className="mb-3">
-            <label className="mb-1.5 block text-[10px] text-white/40">景别策略</label>
-            <VisualTagPicker
-              options={STRATEGY_OPTIONS}
-              value={strategy}
-              onChange={setStrategy}
-            />
-          </div>
+        {applyError ? (
+          <p role="alert" className="border-y border-rose-300/15 bg-rose-300/[0.05] px-2.5 py-2 text-[11px] leading-5 text-rose-100/80">
+            {applyError}
+          </p>
+        ) : null}
 
-          {/* User instruction */}
-          <div className="mb-3">
-            <label className="mb-1.5 block text-[10px] text-white/40">补充要求（可选）</label>
-            <textarea
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              rows={2}
-              placeholder="例如：拆成 6 个镜头，前两镜是废墟环境，中间突出孩子堆城堡，最后用女人笑声做悬念。"
-              className={txClass}
-            />
-          </div>
-
-          {reparseError ? (
-            <p className="mb-2 text-center text-[11px] text-amber-400/80">{reparseError}</p>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={handleReparse}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2 text-[12px] font-semibold text-indigo-300 transition hover:bg-indigo-500/20"
-          >
-            <RefreshCw size={13} strokeWidth={2.2} />
-            按要求重新拆分
-          </button>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[11px] font-semibold text-white/72">镜头审核</h3>
+          <span className="text-[10px] text-white/35">
+            {approvedCount}/{drafts.length} 已批准
+            {panelState.removedShotIds.length > 0
+              ? ` · ${panelState.removedShotIds.length} 已移除`
+              : ''}
+          </span>
         </div>
 
-        {/* ── Shot list ── */}
-        {shots.length > 0 ? (
-          <>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                分镜清单（{shots.length} 镜）
-              </span>
-              <div className="flex gap-3">
+        {artifact ? (
+          <div data-testid="shot-plan-scene-list" className="divide-y divide-white/[0.1] border-y border-white/[0.1]">
+            {artifact.payload.scenes.map((scene) => {
+              const sceneDrafts = drafts.filter((shot) => shot.sceneId === scene.sceneId)
+              return (
+                <section key={scene.sceneId} className="py-3 first:pt-2 last:pb-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h4 className="text-[11px] font-semibold text-white/74">
+                      场景 {scene.order}{scene.heading ? ` · ${scene.heading}` : ''}
+                    </h4>
+                    <span className="text-[9px] text-white/30">{sceneDrafts.length} 个镜头</span>
+                  </div>
+                  <ol className="mt-2 divide-y divide-white/[0.07]">
+                    {sceneDrafts.map((shot, index) => {
+                      const evidence = evidenceForShot(result.evidence, shot)
+                      return (
+                        <li key={shot.shotId} className="py-3 first:pt-1 last:pb-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold text-white/52">
+                              镜头 {index + 1} · {lineLabel(shot)}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                title="上移"
+                                aria-label={`上移镜头 ${index + 1}`}
+                                disabled={index === 0}
+                                onClick={() => replaceDrafts((current) => moveShotReviewDraft(current, shot.shotId, -1))}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-white/42 hover:bg-white/[0.07] hover:text-white/78 disabled:opacity-25"
+                              >
+                                <ArrowUp size={13} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                title="下移"
+                                aria-label={`下移镜头 ${index + 1}`}
+                                disabled={index === sceneDrafts.length - 1}
+                                onClick={() => replaceDrafts((current) => moveShotReviewDraft(current, shot.shotId, 1))}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-white/42 hover:bg-white/[0.07] hover:text-white/78 disabled:opacity-25"
+                              >
+                                <ArrowDown size={13} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                title="移除"
+                                aria-label={`移除镜头 ${index + 1}`}
+                                onClick={() => {
+                                  setPanelState((current) => ({
+                                    ...current,
+                                    removedShotIds: current.removedShotIds.includes(shot.shotId)
+                                      ? current.removedShotIds
+                                      : [...current.removedShotIds, shot.shotId],
+                                    review: {
+                                      ...current.review,
+                                      drafts: removeShotReviewDraft(current.review.drafts, shot.shotId),
+                                    },
+                                  }))
+                                }}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-white/42 hover:bg-rose-300/[0.08] hover:text-rose-200"
+                              >
+                                <Trash2 size={13} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div data-testid="shot-plan-decision" role="group" aria-label={`镜头 ${index + 1} 审核状态`} className="mt-2 inline-grid grid-cols-3 overflow-hidden rounded-md border border-white/10 bg-[#181b20]">
+                            {REVIEW_DECISIONS.map((decision) => (
+                              <button
+                                key={decision.value}
+                                type="button"
+                                aria-pressed={shot.decision === decision.value}
+                                onClick={() => replaceDrafts((current) => setShotReviewDecision(current, shot.shotId, decision.value))}
+                                className={`min-h-7 border-r border-white/[0.08] px-2 text-[10px] font-medium last:border-r-0 ${decisionClass(decision.value, shot.decision === decision.value)}`}
+                              >
+                                {decision.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            <label className="text-[9px] text-white/38 sm:col-span-2">
+                              镜头目标
+                              <input
+                                value={shot.objective}
+                                onChange={(event) => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { objective: event.target.value }))}
+                                className={`${selClass} mt-1`}
+                              />
+                            </label>
+                            <label className="text-[9px] text-white/38">
+                              主体
+                              <input
+                                value={shot.subject}
+                                onChange={(event) => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { subject: event.target.value }))}
+                                className={`${selClass} mt-1`}
+                              />
+                            </label>
+                            <label className="text-[9px] text-white/38">
+                              行动
+                              <input
+                                value={shot.action}
+                                onChange={(event) => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { action: event.target.value }))}
+                                className={`${selClass} mt-1`}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+                            <div>
+                              <span className="mb-1 block text-[9px] text-white/38">景别</span>
+                              <VisualTagPicker
+                                size="sm"
+                                options={SHOT_SIZE_OPTIONS}
+                                value={shot.suggestedShotSize}
+                                onChange={(value) => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { suggestedShotSize: value }))}
+                              />
+                            </div>
+                            <div className="inline-grid grid-cols-2 overflow-hidden rounded-md border border-white/10">
+                              {(['image', 'video'] as ShotOutputKind[]).map((kind) => (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  aria-pressed={shot.outputKind === kind}
+                                  onClick={() => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { outputKind: kind }))}
+                                  className={`h-7 px-2 text-[10px] ${shot.outputKind === kind ? 'bg-white/[0.1] text-white/82' : 'text-white/38'}`}
+                                >
+                                  {kind === 'image' ? '图片' : '视频'}
+                                </button>
+                              ))}
+                            </div>
+                            {shot.outputKind === 'video' ? (
+                              <div className="inline-grid grid-cols-2 overflow-hidden rounded-md border border-white/10">
+                                {([5, 10] as const).map((duration) => (
+                                  <button
+                                    key={duration}
+                                    type="button"
+                                    aria-pressed={shot.duration === duration}
+                                    onClick={() => replaceDrafts((current) => updateShotReviewDraft(current, shot.shotId, { duration }))}
+                                    className={`h-7 px-2 text-[10px] ${shot.duration === duration ? 'bg-white/[0.1] text-white/82' : 'text-white/38'}`}
+                                  >
+                                    {duration}s
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <details className="mt-2">
+                            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-medium text-white/38 hover:text-white/62">
+                              <FileSearch size={12} aria-hidden="true" />
+                              来源与证据 ({evidence.length})
+                            </summary>
+                            <blockquote className="mt-2 whitespace-pre-wrap break-words border-l border-cyan-200/25 pl-3 text-[11px] leading-5 text-white/58">
+                              {shot.sourceText}
+                            </blockquote>
+                            {shot.needsReviewReason ? (
+                              <p className="mt-1.5 text-[10px] text-amber-100/65">{shot.needsReviewReason}</p>
+                            ) : null}
+                          </details>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </section>
+              )
+            })}
+          </div>
+        ) : null}
+
+        <section aria-labelledby="shot-compatibility-heading" className="w-full border-t border-white/[0.1] pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="shot-compatibility-heading" className="text-[11px] font-semibold text-white/72">
+              兼容草案动作
+            </h3>
+            <button
+              type="button"
+              title="复制已批准分镜清单"
+              disabled={approvedCount === 0}
+              onClick={handleCopy}
+              className="flex h-7 items-center gap-1 rounded-md px-2 text-[10px] text-white/42 hover:bg-white/[0.06] hover:text-white/72 disabled:opacity-30"
+            >
+              <Copy size={12} aria-hidden="true" />
+              {copyDone ? '已复制' : '复制清单'}
+            </button>
+          </div>
+          <div className="mt-2 grid w-full gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={!sourceIsCurrent || approvedCount === 0 || isOperating || panelState.applyLocked}
+              onClick={() => { void runCompatibilityCreate(false) }}
+              className="min-h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold text-white/68 hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              创建已批准分镜节点
+            </button>
+            {onAutoGenerateNodes ? (
+              <button
+                type="button"
+                disabled={!sourceIsCurrent || approvedCount === 0 || isOperating || panelState.applyLocked}
+                onClick={() => setIsConfirmingGenerate(true)}
+                className="min-h-9 w-full rounded-md border border-violet-300/20 bg-violet-300/[0.08] px-3 text-[11px] font-semibold text-violet-100/78 hover:bg-violet-300/[0.13] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                生成已批准镜头
+              </button>
+            ) : null}
+          </div>
+
+          {duplicateShotIds.length > 0 ? (
+            <p role="status" className="mt-2 text-[10px] leading-4 text-amber-100/65">
+              已存在并跳过 {duplicateShotIds.length} 个镜头：{duplicateShotIds.join('、')}
+            </p>
+          ) : null}
+          {panelState.createdCount !== null ? (
+            <p role="status" className="mt-2 text-[10px] text-emerald-200/70">
+              本次实际创建 {panelState.createdCount} 个草案节点
+            </p>
+          ) : null}
+
+          {isConfirmingGenerate ? (
+            <div className="mt-3 border-y border-violet-300/15 bg-violet-300/[0.05] px-3 py-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-violet-100/82">
+                <Sparkles size={13} aria-hidden="true" />
+                二次确认生成已批准镜头
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-violet-100/55">
+                将调用当前生成服务，可能消耗 API 配额或平台积分。只会提交本次实际新建且未重复的节点。
+              </p>
+              <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => toggleAll(true)}
-                  className="text-[11px] text-white/35 transition hover:text-white/70"
+                  disabled={isOperating}
+                  onClick={() => { void runCompatibilityCreate(true) }}
+                  className="h-8 rounded-md border border-violet-300/25 bg-violet-300/[0.12] px-3 text-[10px] font-semibold text-violet-100/82 hover:bg-violet-300/[0.18] disabled:opacity-35"
                 >
-                  全选
+                  确认生成
                 </button>
                 <button
                   type="button"
-                  onClick={() => toggleAll(false)}
-                  className="text-[11px] text-white/35 transition hover:text-white/70"
+                  disabled={isOperating}
+                  onClick={() => setIsConfirmingGenerate(false)}
+                  className="h-8 rounded-md border border-white/10 bg-white/[0.04] px-3 text-[10px] font-semibold text-white/55 hover:bg-white/[0.08] disabled:opacity-35"
                 >
-                  全不选
+                  取消
                 </button>
               </div>
             </div>
-
-            <div className="space-y-3">
-              {shots.map((shot, i) => (
-                <div
-                  key={shot.id}
-                  className={`rounded-xl border px-4 py-3 transition ${
-                    shot.selected
-                      ? 'border-white/14 bg-white/5'
-                      : 'border-white/6 bg-white/2 opacity-50'
-                  }`}
-                >
-                  {/* Shot header row */}
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => patchShot(shot.id, { selected: !shot.selected })}
-                      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition ${
-                        shot.selected
-                          ? 'border-indigo-400/60 bg-indigo-500/20 text-indigo-300'
-                          : 'border-white/20 bg-transparent text-transparent'
-                      }`}
-                      aria-label={shot.selected ? '取消选择' : '选择'}
-                    >
-                      <Check size={10} strokeWidth={3} />
-                    </button>
-
-                    <span className="text-[10px] font-semibold text-white/40">镜头 {i + 1}</span>
-
-                    {/* Kind toggle */}
-                    <div className="ml-auto flex overflow-hidden rounded-md border border-white/10">
-                      {(['image', 'video'] as ShotKind[]).map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => patchShot(shot.id, { kind: k })}
-                          className={`px-2 py-0.5 text-[10px] transition ${
-                            shot.kind === k
-                              ? 'bg-white/12 text-white/90'
-                              : 'text-white/35 hover:text-white/60'
-                          }`}
-                        >
-                          {k === 'image' ? '图片' : '视频'}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Duration — video only */}
-                    {shot.kind === 'video' ? (
-                      <div className="flex overflow-hidden rounded-md border border-white/10">
-                        {([5, 10] as const).map((d) => (
-                          <button
-                            key={d}
-                            type="button"
-                            onClick={() => patchShot(shot.id, { duration: d })}
-                            className={`px-2 py-0.5 text-[10px] transition ${
-                              shot.duration === d
-                                ? 'bg-white/12 text-white/90'
-                                : 'text-white/35 hover:text-white/60'
-                            }`}
-                          >
-                            {d}s
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Shot size visual picker */}
-                  <div className="mb-2">
-                    <VisualTagPicker
-                      size="sm"
-                      options={SHOT_SIZE_VISUAL_OPTIONS}
-                      value={shot.shotSize}
-                      onChange={(v) => patchShot(shot.id, { shotSize: v })}
-                    />
-                  </div>
-
-                  {/* Description */}
-                  <textarea
-                    value={shot.description}
-                    onChange={(e) => patchShot(shot.id, { description: e.target.value })}
-                    rows={2}
-                    placeholder="画面描述"
-                    className={`mb-2 ${txClass}`}
-                  />
-
-                  {/* Cinematic note */}
-                  <textarea
-                    value={shot.cinematicNote}
-                    onChange={(e) => patchShot(shot.id, { cinematicNote: e.target.value })}
-                    rows={1}
-                    placeholder="镜头语言"
-                    className={txSmClass}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="rounded-lg border border-white/8 bg-white/3 px-3 py-3 text-center text-[12px] text-white/40">
-            {sourceDraftText.trim()
-              ? '点击「按要求重新拆分」生成分镜清单。'
-              : '请先在上方输入或粘贴文本，再点击「按要求重新拆分」。'}
-          </p>
-        )}
-        {isConfirmingGenerate ? (
-          <div className="mt-4 rounded-lg border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3">
-            <p className="text-[12px] font-semibold text-violet-200/85">确认生成 {selectedCount} 个镜头</p>
-            <p className="mt-1 text-[11px] text-violet-200/50">
-              将调用当前 Provider，可能消耗 API 配额或平台积分。
-            </p>
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={handleConfirmGenerate}
-                className="rounded-md border border-violet-500/35 bg-violet-500/20 px-3 py-1.5 text-[11px] font-semibold text-violet-200/90 transition hover:bg-violet-500/30"
-              >
-                确认生成
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsConfirmingGenerate(false)}
-                className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/55 transition hover:bg-white/[0.08]"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {createdCount !== null ? (
-          <p className="mt-3 text-center text-[11px] text-emerald-400/80">
-            已创建 {createdCount} 个草案节点
-          </p>
-        ) : null}
+          ) : null}
+        </section>
       </div>
-      </DirectorToolPanelFrame>
-    </div>
+    </CreatorSkillRunPanel>
   )
 }
