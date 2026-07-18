@@ -88,6 +88,21 @@ export type CreatorSkillEvidence = {
   explanation: string
 }
 
+export type CreatorSkillNodeMetadata = {
+  creatorSkill: {
+    skillId: string
+    skillVersion: string
+    runFingerprint: string
+    sourceNodeIds: string[]
+    sourceArtifactIds: string[]
+    resultType: string
+    resultId: string
+    reviewStatus: Extract<CreatorSkillReviewStatus, 'approved'>
+    evidence: CreatorSkillEvidence[]
+    approvedArtifact?: CreatorSkillArtifact
+  }
+}
+
 export type CreatorSkillIssue = {
   code: string
   message: string

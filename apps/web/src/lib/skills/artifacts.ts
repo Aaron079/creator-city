@@ -64,6 +64,133 @@ function isCanonicalIdentifierArray(value: unknown): value is string[] {
   }
 }
 
+const ARTIFACT_FIELDS = [
+  'artifactId',
+  'artifactType',
+  'artifactVersion',
+  'sourceNodeIds',
+  'sourceArtifactIds',
+  'payload',
+] as const
+
+function failClone(message: string): never {
+  throw new TypeError(message)
+}
+
+function isPlainObject(value: object) {
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function ownEnumerableDataValue(
+  value: object,
+  key: PropertyKey,
+  field: string,
+): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key)
+  if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) {
+    return failClone(`${field} must be an own enumerable data property`)
+  }
+  return descriptor.value
+}
+
+function assertExactArtifactKeys(value: object) {
+  const keys = Reflect.ownKeys(value)
+  if (keys.length !== ARTIFACT_FIELDS.length) {
+    failClone('artifact must contain exactly the canonical fields')
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    if (typeof key !== 'string' || !ARTIFACT_FIELDS.includes(key as typeof ARTIFACT_FIELDS[number])) {
+      failClone('artifact must contain exactly the canonical fields')
+    }
+  }
+}
+
+function cloneCanonicalSourceIdentifiers(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) failClone(`${field} must be an array`)
+
+  const keys = Reflect.ownKeys(value)
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
+  if (!lengthDescriptor || !('value' in lengthDescriptor)) {
+    failClone(`${field}.length must be an own data property`)
+  }
+  const arrayLength = lengthDescriptor.value
+  if (!Number.isSafeInteger(arrayLength) || arrayLength < 0) {
+    failClone(`${field}.length must be valid`)
+  }
+  if (keys.length !== arrayLength + 1) {
+    failClone(`${field} must be a dense array without extra properties`)
+  }
+
+  const result = new Array<string>(arrayLength)
+  let previous: string | undefined
+  for (let index = 0; index < arrayLength; index += 1) {
+    const id = ownEnumerableDataValue(value, String(index), `${field}[${index}]`)
+    if (!isTrimmedIdentifier(id)) {
+      failClone(`${field} must contain trimmed non-empty strings`)
+    }
+    if (previous !== undefined && previous >= id) {
+      failClone(`${field} must be sorted and unique`)
+    }
+    result[index] = id
+    previous = id
+  }
+  return result
+}
+
+function cloneJsonData(value: unknown, ancestors: WeakSet<object>, field: string): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) failClone(`${field} must contain only finite numbers`)
+    return value
+  }
+  if (typeof value !== 'object') {
+    failClone(`${field} must contain only JSON-compatible values`)
+  }
+  if (ancestors.has(value)) failClone(`${field} must not contain cycles`)
+
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
+      if (!lengthDescriptor || !('value' in lengthDescriptor)) {
+        failClone(`${field}.length must be an own data property`)
+      }
+      const length = lengthDescriptor.value
+      const keys = Reflect.ownKeys(value)
+      if (!Number.isSafeInteger(length) || length < 0 || keys.length !== length + 1) {
+        failClone(`${field} must be a dense array without extra properties`)
+      }
+
+      const result = new Array<unknown>(length)
+      for (let index = 0; index < length; index += 1) {
+        const item = ownEnumerableDataValue(value, String(index), `${field}[${index}]`)
+        result[index] = cloneJsonData(item, ancestors, `${field}[${index}]`)
+      }
+      return result
+    }
+
+    if (!isPlainObject(value)) failClone(`${field} must contain only plain objects`)
+    const result: Record<string, unknown> = {}
+    const keys = Reflect.ownKeys(value)
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index]
+      if (typeof key !== 'string') failClone(`${field} must not contain symbol keys`)
+      const item = ownEnumerableDataValue(value, key, `${field}.${key}`)
+      Object.defineProperty(result, key, {
+        value: cloneJsonData(item, ancestors, `${field}.${key}`),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      })
+    }
+    return result
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
 export function createCreatorSkillArtifact<T>(
   input: CreatorSkillArtifactInput<T>,
 ): CreatorSkillArtifact<T> {
@@ -81,6 +208,48 @@ export function createCreatorSkillArtifact<T>(
     sourceNodeIds: normalizeSourceIdentifiers(input.sourceNodeIds, 'sourceNodeIds'),
     sourceArtifactIds: normalizeSourceIdentifiers(input.sourceArtifactIds ?? [], 'sourceArtifactIds'),
     payload: input.payload,
+  }
+}
+
+export function cloneCreatorSkillArtifact(value: unknown): CreatorSkillArtifact {
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !isPlainObject(value)) {
+      failClone('artifact must be a plain object')
+    }
+    assertExactArtifactKeys(value)
+
+    const artifactId = ownEnumerableDataValue(value, 'artifactId', 'artifactId')
+    const artifactType = ownEnumerableDataValue(value, 'artifactType', 'artifactType')
+    const artifactVersion = ownEnumerableDataValue(value, 'artifactVersion', 'artifactVersion')
+    const sourceNodeIds = ownEnumerableDataValue(value, 'sourceNodeIds', 'sourceNodeIds')
+    const sourceArtifactIds = ownEnumerableDataValue(
+      value,
+      'sourceArtifactIds',
+      'sourceArtifactIds',
+    )
+    const payload = ownEnumerableDataValue(value, 'payload', 'payload')
+
+    if (!isTrimmedIdentifier(artifactId)) failClone('artifactId must be a trimmed non-empty string')
+    if (!isTrimmedIdentifier(artifactType)) failClone('artifactType must be a trimmed non-empty string')
+    if (typeof artifactVersion !== 'number'
+      || !Number.isInteger(artifactVersion)
+      || artifactVersion <= 0) {
+      failClone('artifactVersion must be a positive integer')
+    }
+
+    const ancestors = new WeakSet<object>()
+    ancestors.add(value)
+    return {
+      artifactId,
+      artifactType,
+      artifactVersion,
+      sourceNodeIds: cloneCanonicalSourceIdentifiers(sourceNodeIds, 'sourceNodeIds'),
+      sourceArtifactIds: cloneCanonicalSourceIdentifiers(sourceArtifactIds, 'sourceArtifactIds'),
+      payload: cloneJsonData(payload, ancestors, 'payload'),
+    }
+  } catch (error) {
+    if (error instanceof TypeError) throw error
+    throw new TypeError('Creator Skill artifact could not be cloned')
   }
 }
 
