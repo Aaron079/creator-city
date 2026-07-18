@@ -21,6 +21,7 @@ export type CanvasModalId =
   | 'camera-lexicon'
   | 'prompt-booster'
   | 'script-segmentation'
+  | 'narrative-beat-analysis'
   | 'character-bible'
   | 'scene-bible'
   | 'shot-list-builder'

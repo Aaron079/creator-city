@@ -49,6 +49,8 @@ export interface AssetAgentToolbarProps {
   onOpenCameraLexicon?: () => void
   onOpenPromptBooster?: () => void
   onOpenScriptSegmentation?: () => void
+  onOpenNarrativeBeatAnalysis?: () => void
+  onOpenShotListBuilder?: () => void
   onOpenRemoveBackground?: () => void
   onOpenHdReconstruction?: () => void
   onOpenStoryboardGridSplit?: () => void
@@ -85,6 +87,8 @@ export function AssetAgentToolbar({
   onOpenCameraLexicon,
   onOpenPromptBooster,
   onOpenScriptSegmentation,
+  onOpenNarrativeBeatAnalysis,
+  onOpenShotListBuilder,
   onOpenRemoveBackground,
   onOpenHdReconstruction,
   onOpenStoryboardGridSplit,
@@ -152,6 +156,8 @@ export function AssetAgentToolbar({
       case 'scene-lighting':     onOpenSceneLighting?.(); break
       case 'prompt-booster':     onOpenPromptBooster?.(); break
       case 'script-segmentation': onOpenScriptSegmentation?.(); break
+      case 'narrative-beat-analysis': onOpenNarrativeBeatAnalysis?.(); break
+      case 'shot-list-builder': onOpenShotListBuilder?.(); break
       case 'look-package':       onOpenLookPackage?.(); break
       case 'variant-planner':    onOpenVariantPlanner?.(); break
       case 'remove-background':  onOpenRemoveBackground?.(); break

@@ -24,7 +24,7 @@ import { CharacterLockPanel } from '@/components/create/CharacterLockPanel'
 import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { isComparableNode } from '@/lib/canvas/compare-utils'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
-import { ShotListBuilderPanel } from '@/components/create/ShotListBuilderPanel'
+import { ShotListBuilderPanel, type CompatibilityShotNodeOptions } from '@/components/create/ShotListBuilderPanel'
 import { ShotSequencerPanel } from '@/components/create/ShotSequencerPanel'
 import {
   parseShotSequenceFromWorkflowMetadata,
@@ -43,6 +43,8 @@ import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
 import { ScriptSegmentationPanel } from '@/components/create/canvas/skills/ScriptSegmentationPanel'
 import type { SceneNodeMaterializationPlan } from '@/components/create/canvas/skills/scriptSegmentationMaterialization'
+import { NarrativeBeatAnalysisPanel } from '@/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
+import type { GroupedSkillNodePlan } from '@/components/create/canvas/skills/groupedSkillMaterialization'
 import {
   StoryboardGridSplitPanel,
   type StoryboardGridSessionSummary,
@@ -2501,6 +2503,8 @@ export function VisualCanvasWorkspace({
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
   const [lockedNodeToolContext, setLockedNodeToolContext] = useState<NodeToolContext | null>(null)
   const [scriptSegmentationSource, setScriptSegmentationSource] = useState<CreatorSkillSourceNode | null>(null)
+  const [narrativeBeatSource, setNarrativeBeatSource] = useState<CreatorSkillSourceNode | null>(null)
+  const [shotListSourceId, setShotListSourceId] = useState<string | null>(null)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
   const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('user_provider_account')
@@ -2838,6 +2842,8 @@ export function VisualCanvasWorkspace({
     setEditingNodeId(null)
     setLockedNodeToolContext(null)
     setScriptSegmentationSource(null)
+    setNarrativeBeatSource(null)
+    setShotListSourceId(null)
     setActiveCanvasModal(null)
   }, [])
 
@@ -2863,6 +2869,7 @@ export function VisualCanvasWorkspace({
       case 'camera-control':     setIsCameraControlOpen(true); break
       case 'scene-lighting':     setIsSceneLightingOpen(true); break
       case 'prompt-booster':     setIsPromptBoosterOpen(true); break
+      case 'narrative-beat-analysis': break
       case 'batch-rewriter':     setIsBatchRewriterOpen(true); break
       case 'look-package':       setIsLookPackageOpen(true); break
       case 'color-grade':        setIsColorGradePaletteOpen(true); break
@@ -4812,6 +4819,207 @@ export function VisualCanvasWorkspace({
     const currentSource = nodes.find((node) => node.id === scriptSegmentationSource.id)
     if (!currentSource || currentSource.kind !== 'text') closeCanvasPanel()
   }, [activeCanvasModal, closeCanvasPanel, nodes, scriptSegmentationSource])
+
+  const openNarrativeBeatAnalysis = useCallback((node: VisualCanvasNode) => {
+    if (node.kind !== 'text') return
+    const sourceSnapshot: CreatorSkillSourceNode = Object.freeze({
+      id: node.id,
+      kind: 'text',
+      title: node.title,
+      prompt: node.prompt ?? '',
+      resultText: typeof node.resultText === 'string' ? node.resultText : undefined,
+      metadataJson: node.metadataJson,
+    })
+    openNodeScopedTool('narrative-beat-analysis', node)
+    setNarrativeBeatSource(sourceSnapshot)
+  }, [openNodeScopedTool])
+
+  const openShotListBuilderForNode = useCallback((node: VisualCanvasNode) => {
+    if (node.kind !== 'text') return
+    openCanvasPanel('shot-list-builder')
+    setShotListSourceId(node.id)
+  }, [openCanvasPanel])
+
+  const handleApplyNarrativeBeatPlans = useCallback((plans: GroupedSkillNodePlan[]) => {
+    if (plans.length === 0) return
+    const analyzedSource = narrativeBeatSource
+    if (!analyzedSource) return
+    const currentSource = latestNodesRef.current.find((node) => node.id === analyzedSource.id)
+    const analyzedSourceText = analyzedSource.resultText?.trim()
+      ? analyzedSource.resultText
+      : analyzedSource.prompt
+    const currentSourceText = currentSource?.resultText?.trim()
+      ? currentSource.resultText
+      : currentSource?.prompt
+
+    if (
+      !currentSource
+      || currentSource.kind !== 'text'
+      || currentSourceText !== analyzedSourceText
+    ) {
+      closeCanvasPanel()
+      showCanvasFeedback('源文本已变化，请重新运行叙事节拍分析。')
+      return
+    }
+
+    const textNodeSize = getNodeSize('text')
+    const occupancy = [...latestNodesRef.current]
+    plans.forEach((plan, index) => {
+      const position = resolveNonOverlappingPosition({
+        x: currentSource.x + currentSource.width + 240,
+        y: currentSource.y + index * (textNodeSize.height + 64),
+        width: textNodeSize.width,
+        height: textNodeSize.height,
+      }, occupancy)
+      const createdNode = createNode('text', {
+        title: plan.title,
+        prompt: plan.prompt,
+        parentNodeId: analyzedSource.id,
+        metadataJson: plan.metadataJson,
+        edgeLabel: '叙事节拍',
+        edgeToolId: 'narrative-beat-analysis',
+        edgeToolIcon: '◆',
+        position,
+      })
+      occupancy.push(createdNode)
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback(`已创建 ${plans.length} 个叙事节拍节点。`)
+  }, [closeCanvasPanel, createNode, flushLocalSnapshot, narrativeBeatSource, scheduleCanvasSave, showCanvasFeedback])
+
+  const handleApplyShotPlans = useCallback((plans: GroupedSkillNodePlan[]) => {
+    if (plans.length === 0) return
+    const sourceNodeIds = plans.map((plan) => {
+      const creatorSkill = metadataRecord(metadataRecord(plan.metadataJson).creatorSkill)
+      const ids = creatorSkill.sourceNodeIds
+      return Array.isArray(ids) && typeof ids[0] === 'string' ? ids[0] : ''
+    })
+    const analyzedSourceId = sourceNodeIds[0] ?? ''
+    const currentSource = latestNodesRef.current.find((node) => node.id === analyzedSourceId)
+    const currentSourceText = currentSource?.resultText?.trim()
+      ? currentSource.resultText
+      : currentSource?.prompt ?? ''
+    const sourceLines = currentSourceText.replace(/\r\n?/g, '\n').split('\n')
+    const shotPlansMatchCurrentSource = Boolean(analyzedSourceId)
+      && sourceNodeIds.every((sourceNodeId) => sourceNodeId === analyzedSourceId)
+      && plans.every((plan) => {
+        const creatorSkill = metadataRecord(metadataRecord(plan.metadataJson).creatorSkill)
+        const evidence = creatorSkill.evidence
+        return Array.isArray(evidence) && evidence.length > 0 && evidence.every((item) => {
+          const entry = metadataRecord(item)
+          const lineStart = entry.lineStart
+          const lineEnd = entry.lineEnd
+          const excerpt = entry.excerpt
+          if (!Number.isInteger(lineStart) || !Number.isInteger(lineEnd)
+            || typeof excerpt !== 'string' || !excerpt.trim()) return false
+          const sourceExcerpt = sourceLines.slice(
+            Number(lineStart) - 1,
+            Number(lineEnd),
+          ).join('\n')
+          return sourceExcerpt.includes(excerpt.trim())
+        })
+      })
+
+    if (
+      !currentSource
+      || currentSource.kind !== 'text'
+      || !shotPlansMatchCurrentSource
+    ) {
+      closeCanvasPanel()
+      showCanvasFeedback('源文本已变化，请重新运行分镜规划。')
+      return
+    }
+
+    const textNodeSize = getNodeSize('text')
+    const occupancy = [...latestNodesRef.current]
+    plans.forEach((plan, index) => {
+      const position = resolveNonOverlappingPosition({
+        x: currentSource.x + currentSource.width + 240,
+        y: currentSource.y + index * (textNodeSize.height + 64),
+        width: textNodeSize.width,
+        height: textNodeSize.height,
+      }, occupancy)
+      const createdNode = createNode('text', {
+        title: plan.title,
+        prompt: plan.prompt,
+        parentNodeId: analyzedSourceId,
+        metadataJson: plan.metadataJson,
+        edgeLabel: '镜头规划',
+        edgeToolId: 'shot-planning',
+        edgeToolIcon: '◇',
+        position,
+      })
+      occupancy.push(createdNode)
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback(`已创建 ${plans.length} 个镜头规划节点。`)
+  }, [closeCanvasPanel, createNode, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
+
+  const handleCreateCompatibilityShotNode = useCallback((
+    kind: VisualCanvasNodeKind,
+    options: CompatibilityShotNodeOptions,
+  ) => {
+    if (kind !== 'image' && kind !== 'video') return ''
+    const creatorSkill = metadataRecord(metadataRecord(options.metadataJson).creatorSkill)
+    const skillId = creatorSkill.skillId
+    const runFingerprint = creatorSkill.runFingerprint
+    const resultId = creatorSkill.resultId
+    if (typeof skillId !== 'string' || !skillId
+      || typeof runFingerprint !== 'string' || !runFingerprint
+      || typeof resultId !== 'string' || !resultId) return ''
+
+    const duplicateExists = latestNodesRef.current.some((node) => {
+      const existingCreatorSkill = metadataRecord(metadataRecord(node.metadataJson).creatorSkill)
+      return existingCreatorSkill.skillId === skillId
+        && existingCreatorSkill.runFingerprint === runFingerprint
+        && existingCreatorSkill.resultId === resultId
+    })
+    if (duplicateExists) return ''
+
+    const { index = 0, total = 1, parentNodeId, ...rest } = options
+    const parentNode = parentNodeId
+      ? latestNodesRef.current.find((node) => node.id === parentNodeId)
+      : null
+    const viewportRect = viewportRef.current?.getBoundingClientRect()
+    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+    let baseX: number
+    let baseY: number
+    if (parentNode) {
+      baseX = parentNode.x + parentNode.width + 240
+      baseY = parentNode.y - Math.floor(total / 2) * 340
+    } else if (viewportRect) {
+      baseX = (viewportRect.width / 2 - surfaceOffset.left - canvasPan.x) / canvasZoom + 200
+      baseY = (viewportRect.height * 0.42 - surfaceOffset.top - canvasPan.y) / canvasZoom - Math.floor(total / 2) * 340
+    } else {
+      baseX = 600
+      baseY = 200 - Math.floor(total / 2) * 340
+    }
+    const maxRowsPerColumn = 5
+    const column = Math.floor(index / maxRowsPerColumn)
+    const row = index % maxRowsPerColumn
+    const nodeSize = getNodeSize(kind)
+    const position = resolveNonOverlappingPosition({
+      x: baseX + column * 460,
+      y: baseY + row * 340,
+      width: nodeSize.width,
+      height: nodeSize.height,
+    }, latestNodesRef.current)
+    const createdNode = createNode(kind, { ...rest, parentNodeId, position })
+    return createdNode.id
+  }, [canvasPan.x, canvasPan.y, canvasZoom, createNode])
+
+  useEffect(() => {
+    if (activeCanvasModal === 'narrative-beat-analysis' && narrativeBeatSource) {
+      const currentSource = nodes.find((node) => node.id === narrativeBeatSource.id)
+      if (!currentSource || currentSource.kind !== 'text') closeCanvasPanel()
+    }
+    if (activeCanvasModal === 'shot-list-builder' && shotListSourceId) {
+      const currentSource = nodes.find((node) => node.id === shotListSourceId)
+      if (!currentSource || currentSource.kind !== 'text') closeCanvasPanel()
+    }
+  }, [activeCanvasModal, closeCanvasPanel, narrativeBeatSource, nodes, shotListSourceId])
 
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
@@ -8724,6 +8932,17 @@ export function VisualCanvasWorkspace({
         />
       ) : null}
 
+      {activeCanvasModal === 'narrative-beat-analysis'
+        && narrativeBeatSource?.kind === 'text'
+        && nodes.find((node) => node.id === narrativeBeatSource.id)?.kind === 'text' ? (
+        <NarrativeBeatAnalysisPanel
+          sourceNode={narrativeBeatSource}
+          existingNodes={nodes.map((node) => ({ metadataJson: node.metadataJson }))}
+          onApply={handleApplyNarrativeBeatPlans}
+          onClose={closeCanvasPanel}
+        />
+      ) : null}
+
       {/* Camera Lexicon panel — triggered from left dock or workflow context menu */}
       {isLexiconOpen && saveStatus !== 'opening' ? (
         (() => {
@@ -8894,35 +9113,18 @@ export function VisualCanvasWorkspace({
 
       {isShotListBuilderOpen && saveStatus !== 'opening' ? (
         <ShotListBuilderPanel
-          nodes={nodes}
-          initialNodeId={activeNodeId ?? undefined}
-          onCreateNode={(kind, options) => {
-            const { index = 0, total = 1, parentNodeId, ...rest } = options
-            const parentNode = parentNodeId ? nodes.find((n) => n.id === parentNodeId) : null
-            const viewportRect = viewportRef.current?.getBoundingClientRect()
-            const surfaceOffset = getSurfaceOffset(surfaceRef.current)
-            let baseX: number
-            let baseY: number
-            if (parentNode) {
-              baseX = parentNode.x + parentNode.width + 240
-              baseY = parentNode.y - Math.floor(total / 2) * 340
-            } else if (viewportRect) {
-              baseX = (viewportRect.width / 2 - surfaceOffset.left - canvasPan.x) / canvasZoom + 200
-              baseY = (viewportRect.height * 0.42 - surfaceOffset.top - canvasPan.y) / canvasZoom - Math.floor(total / 2) * 340
-            } else {
-              baseX = 600
-              baseY = 200 - Math.floor(total / 2) * 340
-            }
-            const maxRowsPerColumn = 5
-            const column = Math.floor(index / maxRowsPerColumn)
-            const row = index % maxRowsPerColumn
-            const position = {
-              x: baseX + column * 460,
-              y: baseY + row * 340,
-            }
-            const created = createNode(kind, { ...rest, parentNodeId, position })
-            return created.id
-          }}
+          nodes={nodes.map((node) => ({
+            id: node.id,
+            title: node.title,
+            kind: node.kind,
+            prompt: node.prompt,
+            resultText: node.resultText,
+            metadataJson: node.metadataJson,
+          }))}
+          initialNodeId={shotListSourceId ?? activeNodeId ?? undefined}
+          existingNodes={nodes.map((node) => ({ metadataJson: node.metadataJson }))}
+          onApplyShotPlans={handleApplyShotPlans}
+          onCreateNode={handleCreateCompatibilityShotNode}
           onAutoGenerateNodes={(nodeIds) => setPendingAutoGenerateIds(nodeIds)}
           onClose={() => closeCanvasPanel()}
         />
@@ -9919,6 +10121,16 @@ export function VisualCanvasWorkspace({
             onOpenScriptSegmentation={
               activeNode.kind === 'text'
                 ? () => openScriptSegmentation(activeNode)
+                : undefined
+            }
+            onOpenNarrativeBeatAnalysis={
+              activeNode.kind === 'text'
+                ? () => openNarrativeBeatAnalysis(activeNode)
+                : undefined
+            }
+            onOpenShotListBuilder={
+              activeNode.kind === 'text'
+                ? () => openShotListBuilderForNode(activeNode)
                 : undefined
             }
             onOpenRemoveBackground={
