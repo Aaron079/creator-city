@@ -6,9 +6,13 @@ import { describe, test } from 'node:test'
 import { runCreatorSkill } from '../../lib/skills'
 import {
   approvedShotPlanScenes,
+  buildShotReviewReport,
+  canCopyShotReview,
   createApprovedShotDrafts,
+  createShotOperationToken,
   createShotListPanelState,
   getShotListSourceIdentity,
+  isShotOperationTokenCurrent,
   moveShotReviewDraft,
   removeShotReviewDraft,
   rerunShotListPanelState,
@@ -306,5 +310,78 @@ describe('ShotListBuilderPanel Stage B boundaries', () => {
       }),
       base,
     )
+  })
+
+  test('source identity changes when the live selected node text changes externally', () => {
+    const current = state()
+    const externallyChanged = {
+      ...SOURCE,
+      prompt: `${SOURCE.prompt} External update.`,
+    }
+
+    assert.notEqual(
+      getShotListSourceIdentity(externallyChanged, SOURCE.prompt, OPTIONS),
+      current.review.sourceIdentity,
+    )
+  })
+
+  test('deferred operation completion is rejected after source, settings, rerun, or operation changes', async () => {
+    const current = state()
+    const token = createShotOperationToken(current.review, 1, 7)
+    let context = {
+      sourceIdentity: current.review.sourceIdentity,
+      runFingerprint: current.review.result.runFingerprint,
+      reviewGeneration: 1,
+      operationId: 7,
+    }
+    let resolveDeferred!: (value: string) => void
+    const deferred = new Promise<string>((resolve) => {
+      resolveDeferred = resolve
+    })
+    const committed = deferred.then((value) => (
+      isShotOperationTokenCurrent(token, context) ? value : null
+    ))
+
+    context = { ...context, reviewGeneration: 2 }
+    resolveDeferred('old completion')
+    assert.equal(await committed, null)
+
+    for (const staleContext of [
+      { ...context, reviewGeneration: 1, sourceIdentity: `${context.sourceIdentity}:edited` },
+      { ...context, reviewGeneration: 1, runFingerprint: 'csf1_deadbeef' },
+      { ...context, reviewGeneration: 1, operationId: 8 },
+    ]) {
+      assert.equal(isShotOperationTokenCurrent(token, staleContext), false)
+    }
+    assert.equal(isShotOperationTokenCurrent(token, {
+      ...context,
+      reviewGeneration: 1,
+    }), true)
+  })
+
+  test('copy is stale-gated and reports only the analyzed review snapshot', () => {
+    const current = state()
+    const first = current.review.drafts[0]!
+    const review = {
+      ...current.review,
+      drafts: setShotReviewDecision(
+        current.review.drafts,
+        first.shotId,
+        'approved',
+      ),
+    }
+    assert.equal(
+      canCopyShotReview(review, review.sourceIdentity),
+      true,
+    )
+    assert.equal(
+      canCopyShotReview(review, `${review.sourceIdentity}:stale`),
+      false,
+    )
+
+    const report = buildShotReviewReport(review)
+    assert.match(report, new RegExp(SOURCE.prompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.doesNotMatch(report, /unmatched current draft/i)
+    assert.match(report, /图片\+视频混合 · 标准叙事 · 自动景别/)
   })
 })

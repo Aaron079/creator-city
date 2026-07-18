@@ -63,6 +63,20 @@ describe('Creator Skill review panel static boundary', () => {
     assert.match(shotList, /可能消耗 API 配额或平台积分/)
   })
 
+  test('Shot List guards live source, async completions, and snapshot reports', () => {
+    assert.match(
+      shotList,
+      /getShotListSourceIdentity[\s\S]{0,900}?getNodeText\(sourceNode\)/,
+    )
+    assert.match(shotList, /createShotOperationToken/)
+    assert.match(shotList, /isShotOperationTokenCurrent/)
+    assert.match(shotList, /operationIsCurrent\(token\)/)
+    assert.match(shotList, /reviewGenerationRef/)
+    assert.match(shotList, /activeOperationIdsRef/)
+    assert.match(shotList, /disabled=\{!canCopyShotReview\(review, currentIdentity\)\}/)
+    assert.match(shotList, /buildShotReviewReport\(review\)/)
+  })
+
   test('generic shell exposes the required review contract and stable controls', () => {
     assert.match(panel, /manifest:\s*CreatorSkillManifest/)
     assert.match(panel, /result:\s*CreatorSkillRunResult/)

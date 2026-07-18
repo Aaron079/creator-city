@@ -81,9 +81,12 @@ export type ShotReviewDraft = ShotPlanDraft & {
 
 type ShotPlanArtifact = CreatorSkillArtifact<ShotPlanPayload>
 
-type ShotReview = {
+export type ShotReview = {
   sourceIdentity: string
   sourceNodeId: string
+  sourceTitle: string
+  sourceText: string
+  options: ShotPlanningOptions
   approvedArtifactStatus: 'absent' | 'valid' | 'valid-unused-edited' | 'invalid'
   result: CreatorSkillRunResult
   displayResult: CreatorSkillRunResult
@@ -109,6 +112,15 @@ export type ApprovedShotDraftCreationOutcome = {
   error: string
   applyLocked: boolean
 }
+
+export type ShotOperationToken = {
+  sourceIdentity: string
+  runFingerprint: string
+  reviewGeneration: number
+  operationId: number
+}
+
+export type ShotOperationContext = ShotOperationToken
 
 const OUTPUT_MODE_OPTIONS: VisualTagOption<ShotPlanningOptions['outputMode']>[] = [
   { value: 'image', label: '纯图片', icon: '🖼' },
@@ -279,6 +291,7 @@ export function getShotListSourceIdentity(
   return JSON.stringify([
     sourceNode.id,
     sourceNode.kind,
+    getNodeText(sourceNode),
     sourceDraftText,
     options,
     artifactIdentity,
@@ -303,6 +316,9 @@ export function runShotListReview(
     return {
       sourceIdentity,
       sourceNodeId: sourceNode.id,
+      sourceTitle: getNodeLabel(sourceNode),
+      sourceText: sourceDraftText,
+      options: { ...options },
       approvedArtifactStatus: 'invalid',
       result: blocked,
       displayResult: blocked,
@@ -339,6 +355,9 @@ export function runShotListReview(
   return {
     sourceIdentity,
     sourceNodeId: sourceNode.id,
+    sourceTitle: getNodeLabel(sourceNode),
+    sourceText: sourceDraftText,
+    options: { ...options },
     approvedArtifactStatus: approvedArtifact.status === 'valid'
       ? (draftMatchesSource ? 'valid' : 'valid-unused-edited')
       : 'absent',
@@ -372,6 +391,29 @@ export function rerunShotListPanelState(
   options: ShotPlanningOptions,
 ) {
   return createShotListPanelState(sourceNode, sourceDraftText, options)
+}
+
+export function createShotOperationToken(
+  review: ShotReview,
+  reviewGeneration: number,
+  operationId: number,
+): ShotOperationToken {
+  return {
+    sourceIdentity: review.sourceIdentity,
+    runFingerprint: review.result.runFingerprint,
+    reviewGeneration,
+    operationId,
+  }
+}
+
+export function isShotOperationTokenCurrent(
+  token: ShotOperationToken,
+  context: ShotOperationContext,
+) {
+  return token.sourceIdentity === context.sourceIdentity
+    && token.runFingerprint === context.runFingerprint
+    && token.reviewGeneration === context.reviewGeneration
+    && token.operationId === context.operationId
 }
 
 export function updateShotReviewDraft(
@@ -622,6 +664,31 @@ function compatibilityReportDrafts(drafts: ShotReviewDraft[]): ShotDraft[] {
     }))
 }
 
+export function canCopyShotReview(
+  review: ShotReview,
+  currentSourceIdentity: string,
+) {
+  return review.sourceIdentity === currentSourceIdentity
+    && review.drafts.some((shot) => shot.decision === 'approved')
+}
+
+export function buildShotReviewReport(review: ShotReview) {
+  const reportOptions: ShotListOptions = {
+    ...DEFAULT_SHOT_OPTIONS,
+    shotCount: review.options.requestedShotCount,
+    outputMode: review.options.outputMode,
+    pacing: review.options.pacing,
+    shotSizeStrategy: review.options.shotSizeStrategy,
+    userInstruction: review.options.userInstruction,
+  }
+  return buildShotListReport(
+    compatibilityReportDrafts(review.drafts),
+    review.sourceTitle,
+    reportOptions,
+    review.sourceText,
+  )
+}
+
 function decisionClass(decision: CreatorSkillReviewStatus, selected: boolean) {
   if (!selected) return 'text-white/42 hover:bg-white/[0.06] hover:text-white/72'
   if (decision === 'approved') return 'bg-emerald-300/12 text-emerald-200'
@@ -673,7 +740,10 @@ export function ShotListBuilderPanel({
   const [copyDone, setCopyDone] = useState(false)
   const [isConfirmingGenerate, setIsConfirmingGenerate] = useState(false)
   const [isOperating, setIsOperating] = useState(false)
-  const operationInFlightRef = useRef(false)
+  const reviewGenerationRef = useRef(1)
+  const nextOperationIdRef = useRef(0)
+  const activeOperationIdsRef = useRef(new Set<number>())
+  const currentOperationRef = useRef<ShotOperationToken | null>(null)
 
   const effectiveCount = countPreset === 'custom'
     ? Math.min(120, Math.max(1, Number.parseInt(customCountStr, 10) || 5))
@@ -699,6 +769,14 @@ export function ShotListBuilderPanel({
   )
   const sourceIsCurrent = review.sourceIdentity === currentIdentity
   const approvedCount = drafts.filter((shot) => shot.decision === 'approved').length
+  const liveOperationContextRef = useRef({
+    sourceIdentity: currentIdentity,
+    runFingerprint: result.runFingerprint,
+  })
+  liveOperationContextRef.current = {
+    sourceIdentity: currentIdentity,
+    runFingerprint: result.runFingerprint,
+  }
   const canApply = sourceIsCurrent
     && result.status !== 'blocked'
     && artifact !== null
@@ -707,9 +785,54 @@ export function ShotListBuilderPanel({
     && !isOperating
     && Boolean(onApplyShotPlans)
 
+  const invalidateOperationContext = () => {
+    reviewGenerationRef.current += 1
+    currentOperationRef.current = null
+    setIsConfirmingGenerate(false)
+    setCopyDone(false)
+  }
+
+  const beginOperation = () => {
+    if (activeOperationIdsRef.current.size > 0) return null
+    const operationId = nextOperationIdRef.current + 1
+    nextOperationIdRef.current = operationId
+    const token = createShotOperationToken(
+      review,
+      reviewGenerationRef.current,
+      operationId,
+    )
+    activeOperationIdsRef.current.add(operationId)
+    currentOperationRef.current = token
+    setIsOperating(true)
+    return token
+  }
+
+  const operationIsCurrent = (token: ShotOperationToken) => (
+    isShotOperationTokenCurrent(token, {
+      ...liveOperationContextRef.current,
+      reviewGeneration: reviewGenerationRef.current,
+      operationId: currentOperationRef.current?.operationId ?? -1,
+    })
+  )
+
+  const finishOperation = (token: ShotOperationToken) => {
+    activeOperationIdsRef.current.delete(token.operationId)
+    if (currentOperationRef.current?.operationId === token.operationId) {
+      currentOperationRef.current = null
+    }
+    if (activeOperationIdsRef.current.size === 0) setIsOperating(false)
+  }
+
+  const updateSourceDraft = (next: string) => {
+    if (next === sourceDraftText) return
+    invalidateOperationContext()
+    setSourceDraftText(next)
+  }
+
   const replaceDrafts = (
     transform: (current: ShotReviewDraft[]) => ShotReviewDraft[],
   ) => {
+    invalidateOperationContext()
     setPanelState((current) => ({
       ...current,
       applyError: current.applyLocked ? current.applyError : '',
@@ -721,21 +844,21 @@ export function ShotListBuilderPanel({
   }
 
   const rerun = (node = selectedNode, text = sourceDraftText) => {
-    setIsConfirmingGenerate(false)
+    invalidateOperationContext()
     setPanelState(rerunShotListPanelState(node, text, options))
   }
 
   const handleNodeChange = (nodeId: string) => {
     const node = textNodes.find((item) => item.id === nodeId) ?? temporarySource()
     const text = getNodeText(node)
+    invalidateOperationContext()
     setSelectedNodeId(nodeId)
     setSourceDraftText(text)
-    setIsConfirmingGenerate(false)
     setPanelState(createShotListPanelState(node, text, options))
   }
 
   const handleGroupedApply = async () => {
-    if (!canApply || !artifact || !onApplyShotPlans || operationInFlightRef.current) return
+    if (!canApply || !artifact || !onApplyShotPlans) return
     let planned: ReturnType<typeof planShotPlanMaterialization>
     try {
       planned = planShotPlanMaterialization({
@@ -756,35 +879,37 @@ export function ShotListBuilderPanel({
       }))
       return
     }
-    operationInFlightRef.current = true
-    setIsOperating(true)
+    const token = beginOperation()
+    if (!token) return
     try {
       if (planned.create.length > 0) await onApplyShotPlans(planned.create)
-      setPanelState((current) => ({
-        ...current,
-        duplicateSceneIds: [...planned.duplicates],
-        applyError: '',
-      }))
+      if (operationIsCurrent(token)) {
+        setPanelState((current) => ({
+          ...current,
+          duplicateSceneIds: [...planned.duplicates],
+          applyError: '',
+        }))
+      }
     } catch {
-      setPanelState((current) => ({
-        ...current,
-        duplicateSceneIds: [...planned.duplicates],
-        applyError: SHOT_PLAN_PARTIAL_APPLY_ERROR,
-        applyLocked: true,
-      }))
+      if (operationIsCurrent(token)) {
+        setPanelState((current) => ({
+          ...current,
+          duplicateSceneIds: [...planned.duplicates],
+          applyError: SHOT_PLAN_PARTIAL_APPLY_ERROR,
+          applyLocked: true,
+        }))
+      }
     } finally {
-      operationInFlightRef.current = false
-      setIsOperating(false)
+      finishOperation(token)
     }
   }
 
   const runCompatibilityCreate = async (generateAfterCreate: boolean) => {
     if (!sourceIsCurrent
       || approvedCount === 0
-      || panelState.applyLocked
-      || operationInFlightRef.current) return
-    operationInFlightRef.current = true
-    setIsOperating(true)
+      || panelState.applyLocked) return
+    const token = beginOperation()
+    if (!token) return
     setIsConfirmingGenerate(false)
     const knownDuplicates = [
       ...new Set([
@@ -792,63 +917,59 @@ export function ShotListBuilderPanel({
         ...panelState.materializedShotIds,
       ]),
     ]
-    const outcome = await createApprovedShotDrafts({
-      drafts,
-      result,
-      sourceNodeId: selectedNode.id === 'shot-list-draft-source'
-        ? ''
-        : selectedNode.id,
-      duplicateShotIds: knownDuplicates,
-      onCreateNode,
-    })
-    let callbackError = ''
-    let callbackLocked = outcome.applyLocked
-    if (!outcome.error
-      && generateAfterCreate
-      && outcome.createdIds.length > 0
-      && onAutoGenerateNodes) {
-      try {
-        await onAutoGenerateNodes(outcome.createdIds)
-      } catch {
-        callbackError = SHOT_PLAN_PARTIAL_APPLY_ERROR
-        callbackLocked = true
+    try {
+      const outcome = await createApprovedShotDrafts({
+        drafts,
+        result,
+        sourceNodeId: selectedNode.id === 'shot-list-draft-source'
+          ? ''
+          : selectedNode.id,
+        duplicateShotIds: knownDuplicates,
+        onCreateNode,
+      })
+      let callbackError = ''
+      let callbackLocked = outcome.applyLocked
+      if (operationIsCurrent(token)
+        && !outcome.error
+        && generateAfterCreate
+        && outcome.createdIds.length > 0
+        && onAutoGenerateNodes) {
+        try {
+          await onAutoGenerateNodes(outcome.createdIds)
+        } catch {
+          callbackError = SHOT_PLAN_PARTIAL_APPLY_ERROR
+          callbackLocked = true
+        }
       }
+      if (operationIsCurrent(token)) {
+        setPanelState((current) => ({
+          ...current,
+          duplicateShotIds: outcome.duplicateShotIds,
+          materializedShotIds: [
+            ...new Set([
+              ...current.materializedShotIds,
+              ...outcome.createdShotIds,
+            ]),
+          ],
+          createdCount: outcome.createdIds.length,
+          applyError: outcome.error || callbackError,
+          applyLocked: callbackLocked,
+        }))
+      }
+    } finally {
+      finishOperation(token)
     }
-    setPanelState((current) => ({
-      ...current,
-      duplicateShotIds: outcome.duplicateShotIds,
-      materializedShotIds: [
-        ...new Set([
-          ...current.materializedShotIds,
-          ...outcome.createdShotIds,
-        ]),
-      ],
-      createdCount: outcome.createdIds.length,
-      applyError: outcome.error || callbackError,
-      applyLocked: callbackLocked,
-    }))
-    operationInFlightRef.current = false
-    setIsOperating(false)
   }
 
   const handleCopy = () => {
-    const reportOptions: ShotListOptions = {
-      ...DEFAULT_SHOT_OPTIONS,
-      shotCount: effectiveCount,
-      outputMode,
-      pacing,
-      shotSizeStrategy: strategy,
-      userInstruction: instruction,
-    }
-    const report = buildShotListReport(
-      compatibilityReportDrafts(drafts),
-      getNodeLabel(selectedNode),
-      reportOptions,
-      sourceDraftText,
-    )
+    if (!canCopyShotReview(review, currentIdentity)) return
+    const reportIdentity = review.sourceIdentity
+    const report = buildShotReviewReport(review)
     void navigator.clipboard.writeText(report).then(() => {
-      setCopyDone(true)
-      window.setTimeout(() => setCopyDone(false), 2000)
+      if (liveOperationContextRef.current.sourceIdentity === reportIdentity) {
+        setCopyDone(true)
+        window.setTimeout(() => setCopyDone(false), 2000)
+      }
     })
   }
 
@@ -895,7 +1016,7 @@ export function ShotListBuilderPanel({
                 <button
                   type="button"
                   title="恢复来源文本"
-                  onClick={() => setSourceDraftText(getNodeText(selectedNode))}
+                  onClick={() => updateSourceDraft(getNodeText(selectedNode))}
                   className="flex h-7 items-center gap-1 rounded-md px-2 text-[10px] text-white/42 hover:bg-white/[0.06] hover:text-white/72"
                 >
                   <RotateCcw size={12} aria-hidden="true" />
@@ -904,7 +1025,7 @@ export function ShotListBuilderPanel({
                 <button
                   type="button"
                   title="清空"
-                  onClick={() => setSourceDraftText('')}
+                  onClick={() => updateSourceDraft('')}
                   className="flex h-7 w-7 items-center justify-center rounded-md text-white/42 hover:bg-rose-300/[0.08] hover:text-rose-200"
                 >
                   <Trash2 size={12} aria-hidden="true" />
@@ -914,7 +1035,7 @@ export function ShotListBuilderPanel({
             <textarea
               id="shot-list-source-draft"
               value={sourceDraftText}
-              onChange={(event) => setSourceDraftText(event.target.value)}
+              onChange={(event) => updateSourceDraft(event.target.value)}
               rows={5}
               className={txClass}
               placeholder="粘贴剧本、故事梗概或镜头需求"
@@ -932,7 +1053,11 @@ export function ShotListBuilderPanel({
                   <button
                     key={count}
                     type="button"
-                    onClick={() => setCountPreset(count)}
+                    onClick={() => {
+                      if (countPreset === count) return
+                      invalidateOperationContext()
+                      setCountPreset(count)
+                    }}
                     className={`h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold ${countPreset === count ? 'bg-cyan-200/12 text-cyan-100' : 'bg-white/[0.04] text-white/42 hover:bg-white/[0.08]'}`}
                   >
                     {count}
@@ -944,8 +1069,16 @@ export function ShotListBuilderPanel({
                   max={120}
                   value={countPreset === 'custom' ? customCountStr : ''}
                   placeholder="自定"
-                  onFocus={() => setCountPreset('custom')}
+                  onFocus={() => {
+                    if (countPreset === 'custom') return
+                    invalidateOperationContext()
+                    setCountPreset('custom')
+                  }}
                   onChange={(event) => {
+                    if (countPreset !== 'custom'
+                      || customCountStr !== event.target.value) {
+                      invalidateOperationContext()
+                    }
                     setCountPreset('custom')
                     setCustomCountStr(event.target.value)
                   }}
@@ -955,21 +1088,49 @@ export function ShotListBuilderPanel({
             </div>
             <div>
               <span className="mb-1.5 block text-[10px] text-white/42">输出类型</span>
-              <VisualTagPicker options={OUTPUT_MODE_OPTIONS} value={outputMode} onChange={setOutputMode} />
+              <VisualTagPicker
+                options={OUTPUT_MODE_OPTIONS}
+                value={outputMode}
+                onChange={(value) => {
+                  if (value === outputMode) return
+                  invalidateOperationContext()
+                  setOutputMode(value)
+                }}
+              />
             </div>
             <div>
               <span className="mb-1.5 block text-[10px] text-white/42">节奏</span>
-              <VisualTagPicker options={PACING_OPTIONS} value={pacing} onChange={setPacing} />
+              <VisualTagPicker
+                options={PACING_OPTIONS}
+                value={pacing}
+                onChange={(value) => {
+                  if (value === pacing) return
+                  invalidateOperationContext()
+                  setPacing(value)
+                }}
+              />
             </div>
             <div>
               <span className="mb-1.5 block text-[10px] text-white/42">景别策略</span>
-              <VisualTagPicker options={STRATEGY_OPTIONS} value={strategy} onChange={setStrategy} />
+              <VisualTagPicker
+                options={STRATEGY_OPTIONS}
+                value={strategy}
+                onChange={(value) => {
+                  if (value === strategy) return
+                  invalidateOperationContext()
+                  setStrategy(value)
+                }}
+              />
             </div>
             <label className="sm:col-span-2 text-[10px] text-white/42">
               补充要求
               <textarea
                 value={instruction}
-                onChange={(event) => setInstruction(event.target.value)}
+                onChange={(event) => {
+                  if (event.target.value === instruction) return
+                  invalidateOperationContext()
+                  setInstruction(event.target.value)
+                }}
                 rows={2}
                 className={`mt-1.5 ${txClass}`}
                 placeholder="仅用于选择与呈现，不会补写来源中不存在的情节"
@@ -1054,6 +1215,7 @@ export function ShotListBuilderPanel({
                                 title="移除"
                                 aria-label={`移除镜头 ${index + 1}`}
                                 onClick={() => {
+                                  invalidateOperationContext()
                                   setPanelState((current) => ({
                                     ...current,
                                     removedShotIds: current.removedShotIds.includes(shot.shotId)
@@ -1183,7 +1345,7 @@ export function ShotListBuilderPanel({
             <button
               type="button"
               title="复制已批准分镜清单"
-              disabled={approvedCount === 0}
+              disabled={!canCopyShotReview(review, currentIdentity)}
               onClick={handleCopy}
               className="flex h-7 items-center gap-1 rounded-md px-2 text-[10px] text-white/42 hover:bg-white/[0.06] hover:text-white/72 disabled:opacity-30"
             >
