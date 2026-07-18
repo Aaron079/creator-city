@@ -12,6 +12,7 @@ import {
   type SceneBreakdownPayload,
   type ShotPlanPayload,
 } from '../../skills'
+import { storyboardDirectorRecipeMetadata } from './persistence'
 import type { StoryboardDirectorRecipe, StoryboardDirectorStageId } from './types'
 import {
   approveBeatStage,
@@ -200,6 +201,13 @@ function hostilePayload(trap: 'prototype' | 'descriptor' | 'property') {
   })
 }
 
+function paragraphScript(sceneCount: number) {
+  return Array.from(
+    { length: sceneCount },
+    (_, index) => `Scene ${index + 1} contains enough explicit action for review.`,
+  ).join('\n\n')
+}
+
 beforeEach(() => {
   calls.length = 0
 })
@@ -336,6 +344,124 @@ describe('Storyboard Director Recipe progression', () => {
     assert.equal(edited.audit.updatedAt, LATER_TIME)
   })
 
+  test('stale downstream stages cannot be revived after an approved scene edit', () => {
+    const completed = completedRecipe(runner)
+    const edited = updateRecipeDraft(
+      completed,
+      'scene-review',
+      completed.scene.drafts[0]!.sceneId,
+      { actionSummary: 'Reviewed action' },
+      LATER_TIME,
+    )
+    const beat = edited.beat.drafts[0]!
+    const shot = edited.shot.drafts[0]!
+
+    assert.throws(
+      () => setRecipeDecision(edited, 'beat-review', beat.beatId, 'rejected', LATER_TIME),
+      /stale|reviewable/i,
+    )
+    assert.throws(
+      () => updateRecipeDraft(edited, 'shot-review', shot.shotId, { objective: 'Revived' }, LATER_TIME),
+      /stale|reviewable/i,
+    )
+    assert.throws(
+      () => moveRecipeDraft(edited, 'beat-review', beat.beatId, 1, LATER_TIME),
+      /stale|reviewable/i,
+    )
+    assert.equal(edited.activeStage, 'scene-review')
+    assert.equal(edited.beat.status, 'stale')
+    assert.equal(edited.shot.status, 'stale')
+    assert.equal(edited.beat.result, null)
+    assert.equal(edited.shot.result, null)
+  })
+
+  test('review mutations reject idle, blocked, finalized decisions, and missing upstream approval', () => {
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME)
+    assert.throws(
+      () => updateRecipeDraft(started, 'beat-review', 'missing-beat', { summary: 'No' }, ISO_TIME),
+      /idle|reviewable/i,
+    )
+
+    const blocked = createStoryboardDirectorRecipe(
+      context,
+      { ...source, prompt: 'Tiny' },
+      ISO_TIME,
+    )
+    assert.throws(
+      () => setRecipeDecision(blocked, 'scene-review', 'missing-scene', 'approved', ISO_TIME),
+      /blocked|reviewable/i,
+    )
+
+    const completed = completedRecipe(runCreatorSkill)
+    assert.throws(
+      () => setRecipeDecision(
+        completed,
+        'scene-review',
+        completed.scene.drafts[0]!.sceneId,
+        'rejected',
+        ISO_TIME,
+      ),
+      /approved|finalized|reviewable/i,
+    )
+
+    const beatReview = approveSceneStage(
+      decideAll(started, 'scene-review', 'approved'),
+      ISO_TIME,
+    )
+    const missingSceneApproval = {
+      ...beatReview,
+      scene: { ...beatReview.scene, approvedArtifact: null },
+    }
+    assert.throws(
+      () => updateRecipeDraft(
+        missingSceneApproval,
+        'beat-review',
+        beatReview.beat.drafts[0]!.beatId,
+        { summary: 'No upstream' },
+        ISO_TIME,
+      ),
+      /upstream|scene.*approval/i,
+    )
+
+    const shotReview = approveBeatStage(
+      decideAll(beatReview, 'beat-review', 'approved'),
+      ISO_TIME,
+    )
+    const missingBeatApproval = {
+      ...shotReview,
+      beat: { ...shotReview.beat, approvedArtifact: null },
+    }
+    assert.throws(
+      () => moveRecipeDraft(
+        missingBeatApproval,
+        'shot-review',
+        shotReview.shot.drafts[0]!.shotId,
+        1,
+        ISO_TIME,
+      ),
+      /upstream|beat.*approval/i,
+    )
+  })
+
+  test('scene truncation is blocked at 41 while the exact 40-scene boundary remains reviewable', () => {
+    const boundary = createStoryboardDirectorRecipe(
+      context,
+      { ...source, prompt: paragraphScript(40) },
+      ISO_TIME,
+    )
+    assert.equal(boundary.scene.status, 'needs-review')
+    assert.equal(boundary.scene.drafts.length, 40)
+
+    const truncated = createStoryboardDirectorRecipe(
+      context,
+      { ...source, prompt: paragraphScript(41) },
+      ISO_TIME,
+    )
+    assert.equal(truncated.scene.status, 'blocked')
+    assert.deepEqual(truncated.scene.drafts, [])
+    assert.throws(() => approveSceneStage(truncated, ISO_TIME), /blocked/i)
+  })
+
   test('source changes block every materialization path without transferring decisions', () => {
     const completed = completedRecipe(runner)
     const stale = markRecipeSourceFreshness(completed, {
@@ -384,6 +510,76 @@ describe('Storyboard Director Recipe progression', () => {
 })
 
 describe('review checkpoints and immutable evidence', () => {
+  test('edited scene headings stay in the checkpoint while canonical handoff reaches beat review', () => {
+    let handoffPayload: SceneBreakdownPayload | undefined
+    const handoffRunner: typeof runCreatorSkill = (skillId, input, version) => {
+      if (skillId === 'narrative-beat-analysis') {
+        handoffPayload = structuredClone(
+          input.artifacts?.[0]?.payload,
+        ) as SceneBreakdownPayload
+      }
+      return runCreatorSkill(skillId, input, version)
+    }
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME, handoffRunner)
+    const scene = started.scene.drafts[0]!
+    const edited = updateRecipeDraft(
+      started,
+      'scene-review',
+      scene.sceneId,
+      {
+        heading: 'INT. REVIEWED LAB - LATE NIGHT',
+        actionSummary: 'Reviewed semantic action.',
+        characters: ['Mara'],
+      },
+      ISO_TIME,
+    )
+    const beatReview = approveSceneStage(
+      decideAll(edited, 'scene-review', 'approved'),
+      ISO_TIME,
+      handoffRunner,
+    )
+    const checkpoint = beatReview.scene.approvedArtifact
+    assert.ok(checkpoint)
+    const checkpointPayload = checkpoint.payload as SceneBreakdownPayload
+    assert.equal(checkpointPayload.scenes[0]?.heading, 'INT. REVIEWED LAB - LATE NIGHT')
+    assert.equal(checkpointPayload.scenes[0]?.actionSummary, 'Reviewed semantic action.')
+    assert.equal(handoffPayload?.scenes[0]?.heading, 'INT. LAB - NIGHT')
+    assert.equal(handoffPayload?.scenes[0]?.actionSummary, 'Reviewed semantic action.')
+    assert.deepEqual(handoffPayload?.scenes[0]?.characters, ['Mara'])
+    assert.equal(beatReview.beat.status, 'needs-review')
+    assert.ok(beatReview.beat.drafts.length > 0)
+  })
+
+  test('reviewed scene order stays in the checkpoint while public handoff uses source order', () => {
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME)
+    const second = started.scene.drafts[1]!
+    const reordered = moveRecipeDraft(
+      started,
+      'scene-review',
+      second.sceneId,
+      -1,
+      ISO_TIME,
+    )
+    const beatReview = approveSceneStage(
+      decideAll(reordered, 'scene-review', 'approved'),
+      ISO_TIME,
+    )
+    const checkpoint = beatReview.scene.approvedArtifact
+    assert.ok(checkpoint)
+    const checkpointPayload = checkpoint.payload as SceneBreakdownPayload
+    const beatPayload = beatReview.beat.result?.artifacts[0]?.payload as NarrativeBeatMapPayload
+
+    assert.deepEqual(checkpointPayload.scenes.map((scene) => scene.sceneId), [
+      'scene-002',
+      'scene-001',
+    ])
+    assert.deepEqual(beatPayload.scenes.map((scene) => scene.sceneId), [
+      'scene-001',
+      'scene-002',
+    ])
+    assert.equal(beatReview.beat.status, 'needs-review')
+  })
+
   test('approved Artifacts omit rejected items and preserve reviewed order and edits', () => {
     const started = createStoryboardDirectorRecipe(context, source, ISO_TIME, runner)
     const originalArtifact = started.scene.result?.artifacts[0]
@@ -461,6 +657,47 @@ describe('review checkpoints and immutable evidence', () => {
         /editable|immutable/i,
       )
     }
+  })
+
+  test('character edits enforce canonical persistence bounds and valid edits persist', () => {
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME)
+    const sceneId = started.scene.drafts[0]!.sceneId
+    const sparse = new Array<string>(1)
+    const withExtraProperty = ['Mara'] as string[] & { extra?: boolean }
+    withExtraProperty.extra = true
+    const invalidCharacters: unknown[] = [
+      [''],
+      [' Mara '],
+      ['Mara', 'Mara'],
+      sparse,
+      withExtraProperty,
+      Array.from({ length: 121 }, (_, index) => `Character-${index}`),
+      ['X'.repeat(41)],
+      ['Mara', undefined],
+    ]
+
+    for (const characters of invalidCharacters) {
+      assert.throws(
+        () => updateRecipeDraft(
+          started,
+          'scene-review',
+          sceneId,
+          { characters },
+          ISO_TIME,
+        ),
+        /characters/i,
+      )
+    }
+
+    const updated = updateRecipeDraft(
+      started,
+      'scene-review',
+      sceneId,
+      { characters: ['Mara', 'Élodie'] },
+      ISO_TIME,
+    )
+    assert.deepEqual(updated.scene.drafts[0]?.characters, ['Mara', 'Élodie'])
+    assert.doesNotThrow(() => storyboardDirectorRecipeMetadata(updated))
   })
 
   test('beat and shot checkpoint payloads retain edits, canonical status, order, and lineage', () => {
@@ -586,6 +823,46 @@ describe('review checkpoints and immutable evidence', () => {
 })
 
 describe('blocked and malformed Skill results', () => {
+  test('validated runner results are owned snapshots and are rechecked before approval', () => {
+    let captured: CreatorSkillRunResult | undefined
+    const capturingRunner: typeof runCreatorSkill = (skillId, input, version) => {
+      const result = runCreatorSkill(skillId, input, version)
+      if (skillId === 'script-segmentation') captured = result
+      return result
+    }
+    const started = createStoryboardDirectorRecipe(context, source, ISO_TIME, capturingRunner)
+    assert.ok(captured)
+    assert.notEqual(started.scene.result, captured)
+    const storedArtifact = structuredClone(started.scene.result?.artifacts[0])
+    const storedEvidence = structuredClone(started.scene.result?.evidence[0])
+
+    const capturedPayload = captured.artifacts[0]!.payload as SceneBreakdownPayload
+    capturedPayload.scenes[0]!.heading = 'MUTATED AFTER RETURN'
+    captured.evidence[0]!.excerpt = 'mutated evidence'
+
+    assert.deepEqual(started.scene.result?.artifacts[0], storedArtifact)
+    assert.deepEqual(started.scene.result?.evidence[0], storedEvidence)
+    const beatReview = approveSceneStage(
+      decideAll(started, 'scene-review', 'approved'),
+      ISO_TIME,
+    )
+    assert.equal(beatReview.beat.status, 'needs-review')
+    const checkpoint = beatReview.scene.approvedArtifact
+    assert.ok(checkpoint)
+    assert.notEqual(
+      (checkpoint.payload as SceneBreakdownPayload).scenes[0]?.heading,
+      'MUTATED AFTER RETURN',
+    )
+
+    const drifted = structuredClone(started)
+    const driftedPayload = drifted.scene.result?.artifacts[0]?.payload as SceneBreakdownPayload
+    driftedPayload.scenes[0]!.heading = 'DRIFTED OWNED RESULT'
+    assert.throws(
+      () => approveSceneStage(decideAll(drifted, 'scene-review', 'approved'), ISO_TIME),
+      /malformed|contract|result/i,
+    )
+  })
+
   test('hostile Proxy payload traps block scene, beat, and shot review without escaping', () => {
     const cases = [
       ['scene', 'prototype'],

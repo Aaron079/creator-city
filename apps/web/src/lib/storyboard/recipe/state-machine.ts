@@ -85,6 +85,8 @@ const SHOT_SIZES = new Set<PlannedShotSize>([
 const SHOT_OUTPUT_KINDS = new Set<ShotOutputKind>(['image', 'video'])
 const MAX_SCENES = 40
 const MAX_REVIEW_ITEMS = 120
+const MAX_SCENE_CHARACTERS = 120
+const MAX_CHARACTER_CODE_POINTS = 40
 const NON_WHITESPACE = /\S/u
 
 const RESULT_FIELDS = [
@@ -732,17 +734,25 @@ function resultEvidenceMatches(
   })
 }
 
-function stageFromSceneResult(
+type ValidatedResult<T> = {
+  artifact: CreatorSkillArtifact
+  payload: T
+}
+
+function cloneRunResult(result: CreatorSkillRunResult) {
+  try {
+    return structuredClone(result) as CreatorSkillRunResult
+  } catch {
+    return null
+  }
+}
+
+function validateSceneResult(
   result: CreatorSkillRunResult,
   input: CreatorSkillRunInput,
   sourceText: string,
   sourceNodeId: string,
-  sourceFingerprint: string,
-  generation = 0,
-  staleResult: CreatorSkillRunResult | null = null,
-): StoryboardDirectorStage<RecipeReviewItem<ScriptSceneDraft>> {
-  let payload: SceneBreakdownPayload | null = null
-  let evidenceMatches = false
+): ValidatedResult<SceneBreakdownPayload> | null {
   try {
     const artifact = requireExpectedArtifact(result, expectedRunContract(
       SCRIPT_SEGMENTATION_MANIFEST.id,
@@ -753,8 +763,12 @@ function stageFromSceneResult(
       sourceNodeId,
       [],
     ))
-    payload = artifact ? readScenePayload(artifact.payload, sourceText) : null
-    evidenceMatches = payload ? resultEvidenceMatches(
+    if (!artifact
+      || result.warnings.some((warning) => warning.code === 'SCENE_LIMIT_REACHED')) {
+      return null
+    }
+    const payload = readScenePayload(artifact.payload, sourceText)
+    if (!payload || !resultEvidenceMatches(
       result,
       payload.scenes.map((scene) => ({
         evidenceId: `scene-evidence-${String(scene.order).padStart(3, '0')}`,
@@ -762,16 +776,101 @@ function stageFromSceneResult(
         lineEnd: scene.lineEnd,
         sourceText: scene.sourceText,
       })),
-    ) : false
+    )) {
+      return null
+    }
+    return { artifact, payload }
   } catch {
-    payload = null
+    return null
   }
+}
+
+function validateBeatResult(
+  result: CreatorSkillRunResult,
+  input: CreatorSkillRunInput,
+  sourceArtifact: CreatorSkillArtifact,
+): ValidatedResult<NarrativeBeatMapPayload> | null {
+  try {
+    const artifact = requireExpectedArtifact(result, expectedRunContract(
+      NARRATIVE_BEAT_ANALYSIS_MANIFEST.id,
+      NARRATIVE_BEAT_ANALYSIS_MANIFEST.version,
+      input,
+      'narrative-beat-map-001',
+      'narrative-beat-map',
+      sourceArtifact.sourceNodeIds[0]!,
+      [sourceArtifact.artifactId],
+    ))
+    const payload = artifact ? readBeatPayload(artifact.payload, sourceArtifact) : null
+    if (!artifact || !payload || !resultEvidenceMatches(
+      result,
+      payload.scenes.flatMap((scene) => scene.beats.map((beat) => ({
+        evidenceId: `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
+        lineStart: beat.lineStart,
+        lineEnd: beat.lineEnd,
+        sourceText: beat.sourceText,
+      }))),
+    )) {
+      return null
+    }
+    return { artifact, payload }
+  } catch {
+    return null
+  }
+}
+
+function validateShotResult(
+  result: CreatorSkillRunResult,
+  input: CreatorSkillRunInput,
+  sourceArtifact: CreatorSkillArtifact,
+): ValidatedResult<ShotPlanPayload> | null {
+  try {
+    const artifact = requireExpectedArtifact(result, expectedRunContract(
+      SHOT_PLANNING_MANIFEST.id,
+      SHOT_PLANNING_MANIFEST.version,
+      input,
+      'shot-plan-001',
+      'shot-plan',
+      sourceArtifact.sourceNodeIds[0]!,
+      [sourceArtifact.artifactId],
+    ))
+    const payload = artifact ? readShotPayload(artifact.payload, sourceArtifact) : null
+    if (!artifact || !payload || !resultEvidenceMatches(
+      result,
+      payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({
+        evidenceId: `shot-plan-evidence-${String(scene.order).padStart(3, '0')}-${String(shot.order).padStart(3, '0')}`,
+        lineStart: shot.lineStart,
+        lineEnd: shot.lineEnd,
+        sourceText: shot.sourceText,
+      }))),
+    )) {
+      return null
+    }
+    return { artifact, payload }
+  } catch {
+    return null
+  }
+}
+
+function stageFromSceneResult(
+  result: CreatorSkillRunResult,
+  input: CreatorSkillRunInput,
+  sourceText: string,
+  sourceNodeId: string,
+  sourceFingerprint: string,
+  generation = 0,
+  staleResult: CreatorSkillRunResult | null = null,
+): StoryboardDirectorStage<RecipeReviewItem<ScriptSceneDraft>> {
+  const ownedResult = cloneRunResult(result)
+  const validated = ownedResult
+    ? validateSceneResult(ownedResult, input, sourceText, sourceNodeId)
+    : null
+  const payload = validated?.payload ?? null
   return {
-    status: payload && evidenceMatches ? 'needs-review' : 'blocked',
+    status: payload ? 'needs-review' : 'blocked',
     generation,
     sourceFingerprint,
-    result,
-    drafts: payload && evidenceMatches
+    result: ownedResult,
+    drafts: payload
       ? payload.scenes.map((scene) => ({ ...scene, characters: scene.characters.slice(), decision: 'pending' }))
       : [],
     approvedArtifact: null,
@@ -787,37 +886,15 @@ function stageFromBeatResult(
   generation = 0,
   staleResult: CreatorSkillRunResult | null = null,
 ): StoryboardDirectorStage<RecipeReviewItem<NarrativeBeatDraft>> {
-  let payload: NarrativeBeatMapPayload | null = null
-  let evidenceMatches = false
-  try {
-    const artifact = requireExpectedArtifact(result, expectedRunContract(
-      NARRATIVE_BEAT_ANALYSIS_MANIFEST.id,
-      NARRATIVE_BEAT_ANALYSIS_MANIFEST.version,
-      input,
-      'narrative-beat-map-001',
-      'narrative-beat-map',
-      sourceArtifact.sourceNodeIds[0]!,
-      [sourceArtifact.artifactId],
-    ))
-    payload = artifact ? readBeatPayload(artifact.payload, sourceArtifact) : null
-    evidenceMatches = payload ? resultEvidenceMatches(
-      result,
-      payload.scenes.flatMap((scene) => scene.beats.map((beat) => ({
-        evidenceId: `narrative-beat-evidence-${String(scene.order).padStart(3, '0')}-${String(beat.order).padStart(3, '0')}`,
-        lineStart: beat.lineStart,
-        lineEnd: beat.lineEnd,
-        sourceText: beat.sourceText,
-      }))),
-    ) : false
-  } catch {
-    payload = null
-  }
+  const ownedResult = cloneRunResult(result)
+  const validated = ownedResult ? validateBeatResult(ownedResult, input, sourceArtifact) : null
+  const payload = validated?.payload ?? null
   return {
-    status: payload && evidenceMatches ? 'needs-review' : 'blocked',
+    status: payload ? 'needs-review' : 'blocked',
     generation,
     sourceFingerprint,
-    result,
-    drafts: payload && evidenceMatches
+    result: ownedResult,
+    drafts: payload
       ? payload.scenes.flatMap((scene) => scene.beats.map((beat) => ({ ...beat, decision: 'pending' })))
       : [],
     approvedArtifact: null,
@@ -833,37 +910,15 @@ function stageFromShotResult(
   generation = 0,
   staleResult: CreatorSkillRunResult | null = null,
 ): StoryboardDirectorRecipe['shot'] {
-  let payload: ShotPlanPayload | null = null
-  let evidenceMatches = false
-  try {
-    const artifact = requireExpectedArtifact(result, expectedRunContract(
-      SHOT_PLANNING_MANIFEST.id,
-      SHOT_PLANNING_MANIFEST.version,
-      input,
-      'shot-plan-001',
-      'shot-plan',
-      sourceArtifact.sourceNodeIds[0]!,
-      [sourceArtifact.artifactId],
-    ))
-    payload = artifact ? readShotPayload(artifact.payload, sourceArtifact) : null
-    evidenceMatches = payload ? resultEvidenceMatches(
-      result,
-      payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({
-        evidenceId: `shot-plan-evidence-${String(scene.order).padStart(3, '0')}-${String(shot.order).padStart(3, '0')}`,
-        lineStart: shot.lineStart,
-        lineEnd: shot.lineEnd,
-        sourceText: shot.sourceText,
-      }))),
-    ) : false
-  } catch {
-    payload = null
-  }
+  const ownedResult = cloneRunResult(result)
+  const validated = ownedResult ? validateShotResult(ownedResult, input, sourceArtifact) : null
+  const payload = validated?.payload ?? null
   return {
-    status: payload && evidenceMatches ? 'needs-review' : 'blocked',
+    status: payload ? 'needs-review' : 'blocked',
     generation,
     sourceFingerprint,
-    result,
-    drafts: payload && evidenceMatches
+    result: ownedResult,
+    drafts: payload
       ? payload.scenes.flatMap((scene) => scene.shots.map((shot) => ({ ...shot, decision: 'pending' })))
       : [],
     approvedArtifact: null,
@@ -935,6 +990,38 @@ function stageForId(recipe: StoryboardDirectorRecipe, stageId: StoryboardDirecto
 function assertRecipeSourceCurrent(recipe: StoryboardDirectorRecipe) {
   if (recipe.activeStage === 'source') {
     throw new TypeError('Recipe source is stale')
+  }
+}
+
+function assertReviewMutationAllowed(
+  recipe: StoryboardDirectorRecipe,
+  stageId: ReviewStageId,
+  operation: 'decision' | 'edit' | 'reorder',
+) {
+  assertRecipeSourceCurrent(recipe)
+  const stage = stageForReviewId(recipe, stageId)
+  if (stage.status === 'approved') {
+    if (operation === 'decision') {
+      throw new TypeError('Approved Recipe stage decisions are finalized')
+    }
+    if (!stage.approvedArtifact) {
+      throw new TypeError('Approved Recipe stage is not reviewable without its checkpoint')
+    }
+  } else if (stage.status !== 'needs-review') {
+    throw new TypeError(`Recipe stage is not reviewable while ${stage.status}`)
+  } else if (recipe.activeStage !== stageId) {
+    throw new TypeError('Recipe stage is not the current reviewable stage')
+  }
+  if (!stage.result || stage.sourceFingerprint !== recipe.sourceFingerprint) {
+    throw new TypeError('Recipe stage is not reviewable without a current result')
+  }
+  if (stageId === 'beat-review'
+    && (recipe.scene.status !== 'approved' || !recipe.scene.approvedArtifact)) {
+    throw new TypeError('Beat review requires the current approved scene checkpoint upstream')
+  }
+  if (stageId === 'shot-review'
+    && (recipe.beat.status !== 'approved' || !recipe.beat.approvedArtifact)) {
+    throw new TypeError('Shot review requires the current approved beat checkpoint upstream')
   }
 }
 
@@ -1053,7 +1140,7 @@ export function setRecipeDecision(
   decision: CreatorSkillReviewStatus,
   now: string,
 ): StoryboardDirectorRecipe {
-  assertRecipeSourceCurrent(recipe)
+  assertReviewMutationAllowed(recipe, stageId, 'decision')
   if (!['pending', 'approved', 'rejected'].includes(decision)) {
     throw new TypeError('Recipe decision is invalid')
   }
@@ -1072,13 +1159,41 @@ export function setRecipeDecision(
   return finishReviewChange(recipe, stageId, drafts, now)
 }
 
+function validateSceneCharacters(value: unknown) {
+  try {
+    if (!Array.isArray(value)
+      || !Number.isSafeInteger(value.length)
+      || value.length > MAX_SCENE_CHARACTERS
+      || Reflect.ownKeys(value).length !== value.length + 1) {
+      throw new TypeError('Scene characters must be a bounded dense array without extra properties')
+    }
+    const characters: string[] = []
+    const seen = new Set<string>()
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+      const character = descriptor && 'value' in descriptor ? descriptor.value : undefined
+      if (!descriptor?.enumerable
+        || typeof character !== 'string'
+        || !character
+        || character !== character.trim()
+        || Array.from(character).length > MAX_CHARACTER_CODE_POINTS
+        || seen.has(character)) {
+        throw new TypeError('Scene characters must contain unique trimmed bounded strings')
+      }
+      seen.add(character)
+      characters.push(character)
+    }
+    return characters
+  } catch (error) {
+    if (error instanceof TypeError && /Scene characters/.test(error.message)) throw error
+    throw new TypeError('Scene characters are invalid')
+  }
+}
+
 function validateEditableValue(stageId: ReviewStageId, field: string, value: unknown) {
   if (stageId === 'scene-review') {
     if (field === 'characters') {
-      if (!Array.isArray(value) || !value.every((character) => typeof character === 'string')) {
-        throw new TypeError('Scene characters must be an array of strings')
-      }
-      return value.slice()
+      return validateSceneCharacters(value)
     }
     if ((field === 'location' || field === 'timeOfDay') && value === undefined) return undefined
     if (typeof value !== 'string') throw new TypeError(`Scene ${field} must be a string`)
@@ -1117,7 +1232,7 @@ export function updateRecipeDraft(
   patch: Record<string, unknown>,
   now: string,
 ): StoryboardDirectorRecipe {
-  assertRecipeSourceCurrent(recipe)
+  assertReviewMutationAllowed(recipe, stageId, 'edit')
   if (!isRecord(patch)) throw new TypeError('Recipe patch must be an object')
   const keys = Object.keys(patch)
   for (const key of keys) {
@@ -1164,7 +1279,7 @@ export function moveRecipeDraft(
   direction: -1 | 1,
   now: string,
 ): StoryboardDirectorRecipe {
-  assertRecipeSourceCurrent(recipe)
+  assertReviewMutationAllowed(recipe, stageId, 'reorder')
   if (direction !== -1 && direction !== 1) throw new TypeError('Recipe move direction is invalid')
   const stage = stageForReviewId(recipe, stageId)
   const index = stage.drafts.findIndex(
@@ -1196,14 +1311,10 @@ function assertApprovable<T>(
   if (stage.status === 'blocked' || stage.result?.status === 'blocked') {
     throw new TypeError('Blocked Recipe stage cannot be approved')
   }
-  if (stage.status === 'stale'
+  if (stage.status !== 'needs-review'
     || stage.sourceFingerprint !== recipe.sourceFingerprint
     || !stage.result) {
-    throw new TypeError('Recipe stage source fingerprint is stale')
-  }
-  const artifact = stage.result.artifacts[0]
-  if (stage.result.artifacts.length !== 1 || !isCreatorSkillArtifact(artifact)) {
-    throw new TypeError('Recipe stage result is malformed or blocked')
+    throw new TypeError('Recipe stage is not current and reviewable')
   }
   if (stage.drafts.some((draft) => draft.decision === 'pending')) {
     throw new TypeError('Recipe stage has unresolved decisions')
@@ -1211,15 +1322,88 @@ function assertApprovable<T>(
   if (!stage.drafts.some((draft) => draft.decision === 'approved')) {
     throw new TypeError('Recipe stage requires at least one approved item')
   }
-  return artifact
+}
+
+function projectContextForRecipe(recipe: StoryboardDirectorRecipe) {
+  return { projectId: recipe.projectId, workflowId: recipe.workflowId }
+}
+
+function sceneInputForRecipe(recipe: StoryboardDirectorRecipe): CreatorSkillRunInput {
+  return {
+    sourceNodes: [recipe.sourceNode],
+    projectContext: projectContextForRecipe(recipe),
+  }
+}
+
+function requireCurrentSceneResult(recipe: StoryboardDirectorRecipe) {
+  const result = recipe.scene.result
+  const validated = result ? validateSceneResult(
+    result,
+    sceneInputForRecipe(recipe),
+    recipe.sourceNode.prompt,
+    recipe.sourceNode.id,
+  ) : null
+  if (!validated) throw new TypeError('Recipe scene result contract is malformed')
+  return validated
+}
+
+function sceneSkillHandoffArtifact(
+  recipe: StoryboardDirectorRecipe,
+  checkpoint: CreatorSkillArtifact,
+): CreatorSkillArtifact<SceneBreakdownPayload> {
+  const validated = requireCurrentSceneResult(recipe)
+  const expectedArtifactId = approvedArtifactId('scene-breakdown', validated.artifact.artifactId)
+  if (checkpoint.artifactId !== expectedArtifactId) {
+    throw new TypeError('Recipe scene checkpoint identity is malformed')
+  }
+  const approvedSceneIds = new Set(
+    recipe.scene.drafts
+      .filter((scene) => scene.decision === 'approved')
+      .map((scene) => scene.sceneId),
+  )
+  const reviewedScenes = new Map(
+    recipe.scene.drafts.map((scene) => [scene.sceneId, scene]),
+  )
+  const scenes = validated.payload.scenes
+    .filter((scene) => approvedSceneIds.has(scene.sceneId))
+    .map((scene) => {
+      const reviewed = reviewedScenes.get(scene.sceneId)
+      if (!reviewed) throw new TypeError('Recipe scene checkpoint selection is malformed')
+      return {
+        sceneId: scene.sceneId,
+        order: scene.order,
+        heading: scene.heading,
+        ...(reviewed.location !== undefined ? { location: reviewed.location } : {}),
+        ...(reviewed.timeOfDay !== undefined ? { timeOfDay: reviewed.timeOfDay } : {}),
+        characters: reviewed.characters.slice(),
+        actionSummary: reviewed.actionSummary,
+        sourceText: scene.sourceText,
+        lineStart: scene.lineStart,
+        lineEnd: scene.lineEnd,
+        reviewStatus: 'pending' as const,
+      }
+    })
+  if (scenes.length === 0 || scenes.length !== approvedSceneIds.size) {
+    throw new TypeError('Recipe scene checkpoint selection is malformed')
+  }
+  // The Recipe checkpoint retains reviewed display fields/order. The public Skill
+  // receives immutable source evidence in canonical order under the same stable ID.
+  return {
+    artifactId: expectedArtifactId,
+    artifactType: 'scene-breakdown',
+    artifactVersion: 1,
+    sourceNodeIds: validated.artifact.sourceNodeIds.slice(),
+    sourceArtifactIds: [validated.artifact.artifactId],
+    payload: { format: validated.payload.format, scenes },
+  }
 }
 
 function sceneCheckpoint(
   recipe: StoryboardDirectorRecipe,
 ): CreatorSkillArtifact<SceneBreakdownPayload> {
-  const sourceArtifact = assertApprovable(recipe, recipe.scene)
-  const sourcePayload = readScenePayload(sourceArtifact.payload)
-  if (!sourcePayload) throw new TypeError('Recipe scene result is malformed')
+  assertApprovable(recipe, recipe.scene)
+  const validated = requireCurrentSceneResult(recipe)
+  const sourceArtifact = validated.artifact
   const scenes = recipe.scene.drafts
     .filter((scene) => scene.decision === 'approved')
     .map(({ decision: _decision, ...scene }) => ({
@@ -1233,16 +1417,29 @@ function sceneCheckpoint(
     artifactVersion: 1,
     sourceNodeIds: sourceArtifact.sourceNodeIds.slice(),
     sourceArtifactIds: [sourceArtifact.artifactId],
-    payload: { format: sourcePayload.format, scenes },
+    payload: { format: validated.payload.format, scenes },
   }
 }
 
 function beatCheckpoint(
   recipe: StoryboardDirectorRecipe,
 ): CreatorSkillArtifact<NarrativeBeatMapPayload> {
-  const sourceArtifact = assertApprovable(recipe, recipe.beat)
-  const sourcePayload = readBeatPayload(sourceArtifact.payload)
-  if (!sourcePayload) throw new TypeError('Recipe beat result is malformed')
+  assertApprovable(recipe, recipe.beat)
+  if (!recipe.scene.approvedArtifact || recipe.scene.status !== 'approved') {
+    throw new TypeError('Beat approval requires the approved scene checkpoint upstream')
+  }
+  const sceneHandoff = sceneSkillHandoffArtifact(recipe, recipe.scene.approvedArtifact)
+  const input: CreatorSkillRunInput = {
+    sourceNodes: [],
+    artifacts: [sceneHandoff],
+    projectContext: projectContextForRecipe(recipe),
+  }
+  const validated = recipe.beat.result
+    ? validateBeatResult(recipe.beat.result, input, sceneHandoff)
+    : null
+  if (!validated) throw new TypeError('Recipe beat result contract is malformed')
+  const sourceArtifact = validated.artifact
+  const sourcePayload = validated.payload
   const sourceScenes = new Map(sourcePayload.scenes.map((scene) => [scene.sceneId, scene]))
   const scenes: NarrativeBeatMapPayload['scenes'] = []
   const byScene = new Map<string, NarrativeBeatMapPayload['scenes'][number]>()
@@ -1276,9 +1473,22 @@ function beatCheckpoint(
 function shotCheckpoint(
   recipe: StoryboardDirectorRecipe,
 ): CreatorSkillArtifact<ShotPlanPayload> {
-  const sourceArtifact = assertApprovable(recipe, recipe.shot)
-  const sourcePayload = readShotPayload(sourceArtifact.payload)
-  if (!sourcePayload) throw new TypeError('Recipe shot result is malformed')
+  assertApprovable(recipe, recipe.shot)
+  if (!recipe.beat.approvedArtifact || recipe.beat.status !== 'approved') {
+    throw new TypeError('Shot approval requires the approved beat checkpoint upstream')
+  }
+  const input: CreatorSkillRunInput = {
+    sourceNodes: [],
+    artifacts: [recipe.beat.approvedArtifact],
+    projectContext: projectContextForRecipe(recipe),
+    options: recipe.shot.options,
+  }
+  const validated = recipe.shot.result
+    ? validateShotResult(recipe.shot.result, input, recipe.beat.approvedArtifact)
+    : null
+  if (!validated) throw new TypeError('Recipe shot result contract is malformed')
+  const sourceArtifact = validated.artifact
+  const sourcePayload = validated.payload
   const sourceScenes = new Map(sourcePayload.scenes.map((scene) => [scene.sceneId, scene]))
   const scenes: ShotPlanPayload['scenes'] = []
   const byScene = new Map<string, ShotPlanPayload['scenes'][number]>()
@@ -1321,16 +1531,17 @@ export function approveSceneStage(
   runner: StoryboardRecipeSkillRunner = runCreatorSkill,
 ): StoryboardDirectorRecipe {
   const approvedArtifact = sceneCheckpoint(recipe)
+  const handoffArtifact = sceneSkillHandoffArtifact(recipe, approvedArtifact)
   const input: CreatorSkillRunInput = {
     sourceNodes: [],
-    artifacts: [approvedArtifact],
-    projectContext: { projectId: recipe.projectId, workflowId: recipe.workflowId },
+    artifacts: [handoffArtifact],
+    projectContext: projectContextForRecipe(recipe),
   }
   const result = runner('narrative-beat-analysis', input)
   const beat = stageFromBeatResult(
     result,
     input,
-    approvedArtifact,
+    handoffArtifact,
     recipe.sourceFingerprint,
     replacementGeneration(recipe.beat),
     recipe.beat.result ?? recipe.beat.staleResult,
@@ -1354,7 +1565,7 @@ export function approveBeatStage(
   const input: CreatorSkillRunInput = {
     sourceNodes: [],
     artifacts: [approvedArtifact],
-    projectContext: { projectId: recipe.projectId, workflowId: recipe.workflowId },
+    projectContext: projectContextForRecipe(recipe),
     options: recipe.shot.options,
   }
   const result = runner('shot-planning', input)
@@ -1414,7 +1625,7 @@ export function rerunRecipeStage(
   if (stageId === 'scene-review') {
     const input: CreatorSkillRunInput = {
       sourceNodes: [recipe.sourceNode],
-      projectContext: { projectId: recipe.projectId, workflowId: recipe.workflowId },
+      projectContext: projectContextForRecipe(recipe),
     }
     const result = runner('script-segmentation', input)
     const next = invalidateRecipeAfter(recipe, stageId, now)
@@ -1436,10 +1647,11 @@ export function rerunRecipeStage(
     if (!recipe.scene.approvedArtifact || recipe.scene.status !== 'approved') {
       throw new TypeError('Beat rerun requires the approved scene Artifact')
     }
+    const handoffArtifact = sceneSkillHandoffArtifact(recipe, recipe.scene.approvedArtifact)
     const input: CreatorSkillRunInput = {
       sourceNodes: [],
-      artifacts: [recipe.scene.approvedArtifact],
-      projectContext: { projectId: recipe.projectId, workflowId: recipe.workflowId },
+      artifacts: [handoffArtifact],
+      projectContext: projectContextForRecipe(recipe),
     }
     const result = runner('narrative-beat-analysis', input)
     const next = invalidateRecipeAfter(recipe, stageId, now)
@@ -1448,7 +1660,7 @@ export function rerunRecipeStage(
       beat: stageFromBeatResult(
         result,
         input,
-        recipe.scene.approvedArtifact,
+        handoffArtifact,
         recipe.sourceFingerprint,
         recipe.beat.generation + 1,
         recipe.beat.result ?? recipe.beat.staleResult,
@@ -1462,7 +1674,7 @@ export function rerunRecipeStage(
   const input: CreatorSkillRunInput = {
     sourceNodes: [],
     artifacts: [recipe.beat.approvedArtifact],
-    projectContext: { projectId: recipe.projectId, workflowId: recipe.workflowId },
+    projectContext: projectContextForRecipe(recipe),
     options: recipe.shot.options,
   }
   const result = runner('shot-planning', input)
