@@ -1,0 +1,475 @@
+/**
+ * Public contract tests for the deterministic shot-planning Skill.
+ * Run: cd apps/web && node_modules/.bin/tsx --test src/lib/skills/shot-planning/shotPlanning.test.ts
+ */
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import * as skillExports from '..'
+import { createCreatorSkillArtifact } from '../artifacts'
+import { createCreatorSkillFingerprint } from '../fingerprint'
+import type {
+  CreatorExecutableSkill,
+  CreatorSkillArtifact,
+  CreatorSkillRunInput,
+  CreatorSkillRunResult,
+  CreatorSkillSourceNode,
+} from '../types'
+
+type PlannedShotSize = 'wide' | 'full' | 'medium' | 'close' | 'extreme-close'
+type ShotPlanDraft = {
+  shotId: string
+  sceneId: string
+  beatId?: string
+  order: number
+  objective: string
+  subject: string
+  action: string
+  suggestedShotSize: PlannedShotSize
+  sourceText: string
+  lineStart: number
+  lineEnd: number
+  outputKind: 'image' | 'video'
+  duration: 5 | 10
+  reviewStatus: 'pending'
+  needsReviewReason?: string
+}
+type ShotPlanPayload = {
+  scenes: Array<{
+    sceneId: string
+    order: number
+    heading: string
+    shots: ShotPlanDraft[]
+  }>
+}
+
+const OLD_FILLERS = [
+  '建立场景环境，交代时间与地点',
+  '主体人物或物品进入画面，展示关键行动',
+  '关键情节展开，叙事推进',
+  '细节特写，强调关键物品或情感',
+  '人物情绪反应，内心世界呈现',
+  '场景过渡或环境切换',
+  '悬念或留白结尾，引发想象',
+]
+
+function shotSkill() {
+  const skill = (skillExports as Record<string, unknown>)
+    .SHOT_PLANNING_SKILL as CreatorExecutableSkill | undefined
+  assert.ok(skill, 'SHOT_PLANNING_SKILL must be publicly exported')
+  return skill
+}
+
+function textNode(
+  prompt: string,
+  overrides: Partial<CreatorSkillSourceNode> = {},
+): CreatorSkillSourceNode {
+  return {
+    id: 'text-1',
+    kind: 'text',
+    title: 'Shot source',
+    prompt,
+    ...overrides,
+  }
+}
+
+function run(input: CreatorSkillRunInput) {
+  const skill = shotSkill()
+  return skill.run(
+    input,
+    createCreatorSkillFingerprint(skill.manifest.id, skill.manifest.version, input),
+  )
+}
+
+function runText(source: string, options: Record<string, unknown> = {}) {
+  return run({ sourceNodes: [textNode(source)], options })
+}
+
+function payloadOf(result: CreatorSkillRunResult) {
+  assert.equal(result.artifacts.length, 1)
+  return result.artifacts[0]!.payload as ShotPlanPayload
+}
+
+function allShots(result: CreatorSkillRunResult) {
+  return payloadOf(result).scenes.flatMap((scene) => scene.shots)
+}
+
+function assertBlocked(result: CreatorSkillRunResult, code: string) {
+  assert.equal(result.status, 'blocked')
+  assert.deepEqual(result.artifacts, [])
+  assert.deepEqual(result.evidence, [])
+  assert.equal(result.blockers[0]?.code, code)
+}
+
+function sceneBreakdownArtifact(): CreatorSkillArtifact {
+  const sourceText = [
+    'EXT. ROOFTOP - NIGHT',
+    'Maya opens the antenna box.',
+    'Leo gasps and steps back.',
+  ].join('\n')
+  return createCreatorSkillArtifact({
+    artifactId: 'approved-scene-breakdown-002',
+    artifactType: 'scene-breakdown',
+    artifactVersion: 1,
+    sourceNodeIds: ['original-script-node'],
+    sourceArtifactIds: ['scene-breakdown-001'],
+    payload: {
+      format: 'headed-script',
+      scenes: [{
+        sceneId: 'scene-002',
+        order: 2,
+        heading: 'EXT. ROOFTOP - NIGHT',
+        location: 'ROOFTOP',
+        timeOfDay: 'NIGHT',
+        characters: ['MAYA', 'LEO'],
+        actionSummary: 'Maya opens the antenna box.',
+        sourceText,
+        lineStart: 14,
+        lineEnd: 16,
+        reviewStatus: 'pending',
+      }],
+    },
+  })
+}
+
+function narrativeArtifact(count = 3): CreatorSkillArtifact {
+  const beats = Array.from({ length: count }, (_, index) => ({
+    beatId: `scene-002-beat-${String(index + 1).padStart(3, '0')}`,
+    sceneId: 'scene-002',
+    order: index + 1,
+    type: index === 1 ? 'reaction' : 'action',
+    sourceText: index === 1
+      ? `Leo gasps at signal ${index + 1}.`
+      : `Maya opens panel ${index + 1}.`,
+    summary: index === 1
+      ? `Leo gasps at signal ${index + 1}.`
+      : `Maya opens panel ${index + 1}.`,
+    lineStart: 20 + index,
+    lineEnd: 20 + index,
+    reviewStatus: 'pending',
+  }))
+  return createCreatorSkillArtifact({
+    artifactId: 'approved-narrative-beat-map-002',
+    artifactType: 'narrative-beat-map',
+    artifactVersion: 1,
+    sourceNodeIds: ['original-script-node'],
+    sourceArtifactIds: ['narrative-beat-map-001'],
+    payload: {
+      scenes: [{
+        sceneId: 'scene-002',
+        order: 2,
+        heading: 'EXT. ROOFTOP - NIGHT',
+        beats,
+      }],
+    },
+  })
+}
+
+describe('shot-planning manifest and options', () => {
+  test('exports the exact independently callable manifest', () => {
+    assert.deepEqual(shotSkill().manifest, {
+      id: 'shot-planning',
+      version: '1.0.0',
+      name: '分镜清单生成器',
+      description: '根据明确叙事证据规划可审核镜头',
+      category: 'camera',
+      executionPolicy: 'deterministic-local',
+      acceptedNodeKinds: ['text'],
+      acceptedArtifactTypes: ['scene-breakdown', 'narrative-beat-map'],
+      outputArtifactTypes: ['shot-plan'],
+      independentlyCallable: true,
+    })
+  })
+
+  test('normalizes and clamps only plain option values', () => {
+    const normalize = (skillExports as Record<string, unknown>)
+      .normalizeShotPlanningOptions as ((value?: Record<string, unknown>) => unknown) | undefined
+    assert.ok(normalize)
+    assert.deepEqual(normalize({
+      requestedShotCount: 999,
+      outputMode: 'video',
+      pacing: 'fast_social',
+      shotSizeStrategy: 'close_heavy',
+      userInstruction: '  hold on expressions  ',
+    }), {
+      requestedShotCount: 120,
+      outputMode: 'video',
+      pacing: 'fast_social',
+      shotSizeStrategy: 'close_heavy',
+      userInstruction: 'hold on expressions',
+    })
+    assert.deepEqual(normalize({ requestedShotCount: 2.5, outputMode: 'bad' }), {
+      requestedShotCount: 5,
+      outputMode: 'mixed',
+      pacing: 'standard',
+      shotSizeStrategy: 'auto',
+      userInstruction: '',
+    })
+    assert.deepEqual(normalize({ requestedShotCount: Symbol('invalid') }), {
+      requestedShotCount: 5,
+      outputMode: 'mixed',
+      pacing: 'standard',
+      shotSizeStrategy: 'auto',
+      userInstruction: '',
+    })
+    assert.deepEqual(normalize(
+      Object.assign(new Date(), { requestedShotCount: 9 }) as unknown as Record<string, unknown>,
+    ), {
+      requestedShotCount: 5,
+      outputMode: 'mixed',
+      pacing: 'standard',
+      shotSizeStrategy: 'auto',
+      userInstruction: '',
+    })
+  })
+})
+
+describe('evidence-backed shot assembly', () => {
+  test('creates one primary shot per explicit beat with stable evidence and IDs', () => {
+    const result = run({
+      sourceNodes: [],
+      artifacts: [narrativeArtifact(3)],
+      options: { requestedShotCount: 3, outputMode: 'image' },
+    })
+    const shots = allShots(result)
+
+    assert.equal(result.status, 'ready')
+    assert.deepEqual(shots.map((shot) => shot.shotId), [
+      'scene-002-shot-001',
+      'scene-002-shot-002',
+      'scene-002-shot-003',
+    ])
+    assert.deepEqual(shots.map((shot) => shot.beatId), [
+      'scene-002-beat-001',
+      'scene-002-beat-002',
+      'scene-002-beat-003',
+    ])
+    assert.equal(result.evidence.length, 3)
+    assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
+      'approved-narrative-beat-map-002',
+    ])
+  })
+
+  test('adds one supplemental shot only for an explicit reaction clause', () => {
+    const result = runText(
+      'Maya opens the door, and Leo gasps in reaction.',
+      { requestedShotCount: 2 },
+    )
+    const shots = allShots(result)
+
+    assert.equal(shots.length, 2)
+    assert.equal(shots[0]?.sourceText, shots[1]?.sourceText)
+    assert.equal(shots[0]?.lineStart, shots[1]?.lineStart)
+    assert.match(shots[1]?.objective ?? '', /gasps|reaction/iu)
+    assert.equal(result.evidence.length, 2)
+  })
+
+  test('does not add a supplemental shot without reaction, turn, or spatial evidence', () => {
+    const result = runText('Maya opens the door.', { requestedShotCount: 8 })
+    assert.equal(allShots(result).length, 1)
+    assert.deepEqual(result.warnings.map((warning) => warning.code), [
+      'SHOT_COUNT_TARGET_UNDERSUPPLIED',
+    ])
+  })
+
+  test('preserves every primary beat when requested count is lower', () => {
+    const result = run({
+      sourceNodes: [],
+      artifacts: [narrativeArtifact(3)],
+      options: { requestedShotCount: 1 },
+    })
+    assert.equal(allShots(result).length, 3)
+    assert.deepEqual(result.warnings.map((warning) => warning.code), [
+      'SHOT_COUNT_TARGET_EXCEEDED',
+    ])
+  })
+
+  test('never emits legacy filler descriptions and flags unreliable extraction', () => {
+    const result = runText('Blue arithmetic beyond.', { requestedShotCount: 10 })
+    const shots = allShots(result)
+    assert.equal(result.status, 'needs-review')
+    assert.equal(shots.length, 1)
+    assert.equal(shots[0]?.subject, '')
+    assert.equal(shots[0]?.action, 'Blue arithmetic beyond.')
+    assert.ok(shots[0]?.needsReviewReason)
+    assert.ok(shots.every((shot) => !OLD_FILLERS.includes(shot.objective)))
+  })
+
+  test('uses exact cue priority and lets strategy change only shot size', () => {
+    const source = 'Extreme close on Maya as she runs through the room.'
+    const auto = allShots(runText(source, {
+      requestedShotCount: 1,
+      shotSizeStrategy: 'auto',
+    }))[0]!
+    const wide = allShots(runText(source, {
+      requestedShotCount: 1,
+      shotSizeStrategy: 'wide_heavy',
+    }))[0]!
+    assert.equal(auto.suggestedShotSize, 'extreme-close')
+    assert.equal(wide.suggestedShotSize, 'wide')
+    assert.deepEqual({
+      shotId: wide.shotId,
+      sceneId: wide.sceneId,
+      beatId: wide.beatId,
+      order: wide.order,
+      objective: wide.objective,
+      subject: wide.subject,
+      action: wide.action,
+      sourceText: wide.sourceText,
+      lineStart: wide.lineStart,
+      lineEnd: wide.lineEnd,
+      outputKind: wide.outputKind,
+      reviewStatus: wide.reviewStatus,
+      needsReviewReason: wide.needsReviewReason,
+    }, {
+      shotId: auto.shotId,
+      sceneId: auto.sceneId,
+      beatId: auto.beatId,
+      order: auto.order,
+      objective: auto.objective,
+      subject: auto.subject,
+      action: auto.action,
+      sourceText: auto.sourceText,
+      lineStart: auto.lineStart,
+      lineEnd: auto.lineEnd,
+      outputKind: auto.outputKind,
+      reviewStatus: auto.reviewStatus,
+      needsReviewReason: auto.needsReviewReason,
+    })
+
+    const choose = (skillExports as Record<string, unknown>)
+      .chooseShotSize as ((unit: { text: string }) => PlannedShotSize) | undefined
+    assert.ok(choose)
+    const unit = { sceneId: 'scene-001', sceneOrder: 1, heading: '', lineStart: 1, lineEnd: 1 }
+    assert.equal(choose({ ...unit, text: 'reaction in a room while she walks' }), 'close')
+    assert.equal(choose({ ...unit, text: 'room view while Maya walks' }), 'wide')
+    assert.equal(choose({ ...unit, text: 'Maya walks onward' }), 'full')
+    assert.equal(choose({ ...unit, text: 'Maya opens the panel' }), 'medium')
+  })
+
+  test('maps output mode and pacing without changing evidence content', () => {
+    const image = allShots(runText('Maya walks across the street.', {
+      requestedShotCount: 1,
+      outputMode: 'image',
+      pacing: 'slow_cinematic',
+    }))[0]!
+    const video = allShots(runText('Maya walks across the street.', {
+      requestedShotCount: 1,
+      outputMode: 'video',
+      pacing: 'fast_social',
+    }))[0]!
+    assert.equal(image.outputKind, 'image')
+    assert.equal(video.outputKind, 'video')
+    assert.equal(image.duration, 10)
+    assert.equal(video.duration, 5)
+    assert.equal(image.sourceText, video.sourceText)
+    assert.equal(image.action, video.action)
+  })
+})
+
+describe('independent input contracts', () => {
+  test('accepts direct Text independently', () => {
+    const result = runText('Maya opens the panel. Leo smiles.')
+    assert.notEqual(result.status, 'blocked')
+    assert.equal(result.artifacts[0]?.artifactId, 'shot-plan-001')
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['text-1'])
+  })
+
+  test('accepts approved scene-breakdown with preserved scene identity and ranges', () => {
+    const result = run({ sourceNodes: [], artifacts: [sceneBreakdownArtifact()] })
+    const scene = payloadOf(result).scenes[0]!
+    assert.equal(scene.sceneId, 'scene-002')
+    assert.equal(scene.order, 2)
+    assert.equal(scene.shots[0]?.lineStart, 14)
+    assert.deepEqual(result.artifacts[0]?.sourceNodeIds, ['original-script-node'])
+    assert.deepEqual(result.artifacts[0]?.sourceArtifactIds, [
+      'approved-scene-breakdown-002',
+    ])
+  })
+
+  test('accepts approved narrative-beat-map independently', () => {
+    const result = run({ sourceNodes: [], artifacts: [narrativeArtifact()] })
+    assert.notEqual(result.status, 'blocked')
+    assert.equal(payloadOf(result).scenes[0]?.sceneId, 'scene-002')
+    assert.equal(allShots(result)[0]?.lineStart, 20)
+  })
+
+  test('accepts a materialized matching Text plus Artifact and rejects conflict', () => {
+    const artifact = sceneBreakdownArtifact()
+    const source = (artifact.payload as { scenes: Array<{ sourceText: string }> })
+      .scenes[0]!.sourceText
+    const matching = run({
+      sourceNodes: [textNode(source, { id: 'materialized-node' })],
+      artifacts: [artifact],
+    })
+    assert.notEqual(matching.status, 'blocked')
+    assert.deepEqual(matching.artifacts[0]?.sourceNodeIds, ['materialized-node'])
+    assert.equal(allShots(matching)[0]?.lineStart, 14)
+
+    const conflict = run({
+      sourceNodes: [textNode(source.replace('Maya', 'Nora'))],
+      artifacts: [artifact],
+    })
+    assertBlocked(conflict, 'SHOT_SOURCE_CONFLICT')
+  })
+
+  test('blocks malformed, mixed, missing, and conflicting inputs', () => {
+    assertBlocked(run({ sourceNodes: [] }), 'SHOT_SOURCE_COUNT_INVALID')
+    assertBlocked(run({
+      sourceNodes: [textNode('Maya opens the door.')],
+      artifacts: [sceneBreakdownArtifact(), narrativeArtifact()],
+    }), 'SHOT_SOURCE_COUNT_INVALID')
+    assertBlocked(run({
+      sourceNodes: [],
+      artifacts: [{ ...narrativeArtifact(), artifactVersion: 2 }],
+    }), 'SHOT_ARTIFACT_INVALID')
+    assertBlocked(run({
+      sourceNodes: [],
+      artifacts: [{ ...sceneBreakdownArtifact(), artifactId: ' bad ' }],
+    }), 'SHOT_ARTIFACT_INVALID')
+
+    const reversedLines = narrativeArtifact() as CreatorSkillArtifact<{
+      scenes: Array<{ beats: Array<Record<string, unknown>> }>
+    }>
+    reversedLines.payload.scenes[0]!.beats[1] = {
+      ...reversedLines.payload.scenes[0]!.beats[1],
+      lineStart: 19,
+      lineEnd: 19,
+    }
+    assertBlocked(run({
+      sourceNodes: [],
+      artifacts: [reversedLines],
+    }), 'SHOT_ARTIFACT_INVALID')
+  })
+})
+
+describe('limits and determinism', () => {
+  test('allows 120 primary shots and blocks 121 without partial output', () => {
+    const atLimit = run({
+      sourceNodes: [],
+      artifacts: [narrativeArtifact(120)],
+      options: { requestedShotCount: 120 },
+    })
+    assert.equal(allShots(atLimit).length, 120)
+
+    const overLimit = run({
+      sourceNodes: [],
+      artifacts: [narrativeArtifact(121)],
+      options: { requestedShotCount: 120 },
+    })
+    assertBlocked(overLimit, 'SHOT_LIMIT_EXCEEDED')
+  })
+
+  test('returns deeply equal output for repeated normalized input', () => {
+    const input: CreatorSkillRunInput = {
+      sourceNodes: [textNode('Maya opens the door. Leo smiles.')],
+      options: {
+        requestedShotCount: '2',
+        outputMode: 'mixed',
+        pacing: 'standard',
+        shotSizeStrategy: 'wide_to_close',
+        userInstruction: '  Preserve the action.  ',
+      },
+    }
+    assert.deepEqual(run(input), run(structuredClone(input)))
+  })
+})
