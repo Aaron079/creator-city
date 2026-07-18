@@ -44,7 +44,11 @@ import { AnnotationPanel } from '@/components/create/AnnotationPanel'
 import { ScriptSegmentationPanel } from '@/components/create/canvas/skills/ScriptSegmentationPanel'
 import type { SceneNodeMaterializationPlan } from '@/components/create/canvas/skills/scriptSegmentationMaterialization'
 import { NarrativeBeatAnalysisPanel } from '@/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
-import type { GroupedSkillNodePlan } from '@/components/create/canvas/skills/groupedSkillMaterialization'
+import {
+  shotPlanApplyMatchesCurrentSource,
+  type GroupedSkillNodePlan,
+  type ShotPlanReviewedSource,
+} from '@/components/create/canvas/skills/groupedSkillMaterialization'
 import {
   StoryboardGridSplitPanel,
   type StoryboardGridSessionSummary,
@@ -4969,43 +4973,18 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback(`已创建 ${plans.length} 个叙事节拍节点。`)
   }, [closeCanvasPanel, createNode, flushLocalSnapshot, narrativeBeatSource, scheduleCanvasSave, showCanvasFeedback])
 
-  const handleApplyShotPlans = useCallback((plans: GroupedSkillNodePlan[]) => {
+  const handleApplyShotPlans = useCallback((
+    plans: GroupedSkillNodePlan[],
+    reviewedSource: ShotPlanReviewedSource,
+  ) => {
     if (plans.length === 0) return
-    const sourceNodeIds = plans.map((plan) => {
-      const creatorSkill = metadataRecord(metadataRecord(plan.metadataJson).creatorSkill)
-      const ids = creatorSkill.sourceNodeIds
-      return Array.isArray(ids) && typeof ids[0] === 'string' ? ids[0] : ''
-    })
-    const analyzedSourceId = sourceNodeIds[0] ?? ''
+    const analyzedSourceId = reviewedSource.sourceNodeId
     const currentSource = latestNodesRef.current.find((node) => node.id === analyzedSourceId)
-    const currentSourceText = currentSource?.resultText?.trim()
-      ? currentSource.resultText
-      : currentSource?.prompt ?? ''
-    const sourceLines = currentSourceText.replace(/\r\n?/g, '\n').split('\n')
-    const shotPlansMatchCurrentSource = Boolean(analyzedSourceId)
-      && sourceNodeIds.every((sourceNodeId) => sourceNodeId === analyzedSourceId)
-      && plans.every((plan) => {
-        const creatorSkill = metadataRecord(metadataRecord(plan.metadataJson).creatorSkill)
-        const evidence = creatorSkill.evidence
-        return Array.isArray(evidence) && evidence.length > 0 && evidence.every((item) => {
-          const entry = metadataRecord(item)
-          const lineStart = entry.lineStart
-          const lineEnd = entry.lineEnd
-          const excerpt = entry.excerpt
-          if (!Number.isInteger(lineStart) || !Number.isInteger(lineEnd)
-            || typeof excerpt !== 'string' || !excerpt.trim()) return false
-          const sourceExcerpt = sourceLines.slice(
-            Number(lineStart) - 1,
-            Number(lineEnd),
-          ).join('\n')
-          return sourceExcerpt.includes(excerpt.trim())
-        })
-      })
 
     if (
       !currentSource
       || currentSource.kind !== 'text'
-      || !shotPlansMatchCurrentSource
+      || !shotPlanApplyMatchesCurrentSource(plans, reviewedSource, currentSource)
     ) {
       closeCanvasPanel()
       showCanvasFeedback('源文本已变化，请重新运行分镜规划。')

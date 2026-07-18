@@ -13,6 +13,7 @@ import { cloneCreatorSkillArtifact } from '../../../../lib/skills'
 import {
   planNarrativeBeatMaterialization,
   planShotPlanMaterialization,
+  shotPlanApplyMatchesCurrentSource,
   type ApprovedNarrativeBeatScene,
   type ApprovedShotPlanScene,
 } from './groupedSkillMaterialization'
@@ -493,6 +494,38 @@ describe('grouped narrative beat materialization', () => {
 })
 
 describe('grouped shot-plan materialization', () => {
+  test('apply guard compares the live carrier with the reviewed source snapshot', () => {
+    const planned = shotPlan().create
+    const reviewedSource = {
+      sourceNodeId: SOURCE_NODE_ID,
+      sourceText: 'Scene: Scene 1\n\nBeat 1\nSource: Maya reaches the roof.',
+    }
+    const currentSource = {
+      id: SOURCE_NODE_ID,
+      kind: 'text',
+      prompt: reviewedSource.sourceText,
+    }
+
+    assert.equal(
+      shotPlanApplyMatchesCurrentSource(planned, reviewedSource, currentSource),
+      true,
+    )
+    assert.equal(
+      shotPlanApplyMatchesCurrentSource(planned, reviewedSource, {
+        ...currentSource,
+        prompt: `${reviewedSource.sourceText} changed`,
+      }),
+      false,
+    )
+    assert.equal(
+      shotPlanApplyMatchesCurrentSource(planned, {
+        ...reviewedSource,
+        sourceNodeId: 'different-node',
+      }, currentSource),
+      false,
+    )
+  })
+
   test('persists edited approved shots in reviewed order without changing identity or evidence', () => {
     const approved = approvedShotScene([1, 0])
     approved.shots[0] = {

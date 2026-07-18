@@ -67,6 +67,18 @@ export type GroupedMaterializationResult = {
   duplicates: string[]
 }
 
+export type ShotPlanReviewedSource = {
+  sourceNodeId: string
+  sourceText: string
+}
+
+type CurrentShotPlanSource = {
+  id: string
+  kind: string
+  prompt?: string
+  resultText?: string
+}
+
 export type NarrativeBeatMaterializationInput = {
   result: CreatorSkillRunResult
   approvalContext: ApprovalContext
@@ -1026,5 +1038,41 @@ export function planShotPlanMaterialization(
   } catch (error) {
     if (error instanceof TypeError) throw error
     throw new TypeError('shot materialization input could not be read')
+  }
+}
+
+export function shotPlanApplyMatchesCurrentSource(
+  plans: GroupedSkillNodePlan[],
+  reviewedSource: ShotPlanReviewedSource,
+  currentSource: CurrentShotPlanSource | null | undefined,
+) {
+  try {
+    if (!currentSource
+      || currentSource.kind !== 'text'
+      || !reviewedSource.sourceNodeId
+      || currentSource.id !== reviewedSource.sourceNodeId) return false
+
+    const currentText = currentSource.resultText?.trim()
+      ? currentSource.resultText
+      : currentSource.prompt ?? ''
+    if (currentText !== reviewedSource.sourceText || plans.length === 0) return false
+
+    return plans.every((plan) => {
+      const metadataJson = requireRecord(plan.metadataJson, 'plan.metadataJson')
+      const creatorSkill = requireRecord(
+        ownData(metadataJson, 'creatorSkill', 'plan.metadataJson.creatorSkill'),
+        'plan.metadataJson.creatorSkill',
+      )
+      const sourceNodeIds = identifierArray(
+        ownData(creatorSkill, 'sourceNodeIds', 'plan sourceNodeIds'),
+        'plan sourceNodeIds',
+      )
+      return sourceNodeIds.length > 0
+        && sourceNodeIds.every((sourceNodeId) => (
+          sourceNodeId === reviewedSource.sourceNodeId
+        ))
+    })
+  } catch {
+    return false
   }
 }

@@ -148,7 +148,7 @@ describe('Creator Skill Engine Stage B canvas wiring', () => {
       edgeLabel: '镜头规划',
       edgeToolId: 'shot-planning',
       edgeToolIcon: '◇',
-      sourceGuard: /!shotPlansMatchCurrentSource/,
+      sourceGuard: /!shotPlanApplyMatchesCurrentSource/,
     })
   })
 

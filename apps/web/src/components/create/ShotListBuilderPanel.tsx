@@ -42,6 +42,7 @@ import {
   planShotPlanMaterialization,
   type ApprovedShotPlanScene,
   type GroupedSkillNodePlan,
+  type ShotPlanReviewedSource,
 } from './canvas/skills/groupedSkillMaterialization'
 
 export type ShotListSourceNode = {
@@ -70,7 +71,10 @@ export type ShotListBuilderPanelProps = {
   nodes: ShotListSourceNode[]
   initialNodeId?: string
   existingNodes?: Array<{ metadataJson?: unknown }>
-  onApplyShotPlans?: (plans: GroupedSkillNodePlan[]) => void | Promise<void>
+  onApplyShotPlans?: (
+    plans: GroupedSkillNodePlan[],
+    reviewedSource: ShotPlanReviewedSource,
+  ) => void | Promise<void>
   onCreateNode: (
     kind: VisualCanvasNodeKind,
     options: CompatibilityShotNodeOptions,
@@ -889,7 +893,12 @@ export function ShotListBuilderPanel({
     const token = beginOperation()
     if (!token) return
     try {
-      if (planned.create.length > 0) await onApplyShotPlans(planned.create)
+      if (planned.create.length > 0) {
+        await onApplyShotPlans(planned.create, {
+          sourceNodeId: review.sourceNodeId,
+          sourceText: review.sourceText,
+        })
+      }
       if (operationIsCurrent(token)) {
         setPanelState((current) => ({
           ...current,
