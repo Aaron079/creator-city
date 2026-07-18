@@ -39,6 +39,9 @@ const MATERIALIZATION_KINDS = [
   'shot-card',
   'draft-node',
 ] as const
+const MAX_EXISTING_NODES = 10_000
+const MAX_METADATA_ITEMS = 120
+const MAX_GROUPED_KINDS = 3
 
 type GroupedKind = 'scene' | 'beat' | 'shot-plan'
 type ExistingNode = { metadataJson?: unknown; title?: string; prompt?: string }
@@ -54,8 +57,9 @@ function fail(message: string): never {
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (!value || typeof value !== 'object') return false
   try {
+    if (Array.isArray(value)) return false
     const prototype = Object.getPrototypeOf(value)
     return prototype === Object.prototype || prototype === null
   } catch {
@@ -67,7 +71,14 @@ function ownData(value: unknown, key: PropertyKey): SafeRead {
   if (!value || typeof value !== 'object') return { status: 'absent' }
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (!descriptor) return { status: 'absent' }
+    if (!descriptor) {
+      let prototype = Object.getPrototypeOf(value)
+      while (prototype) {
+        if (Object.getOwnPropertyDescriptor(prototype, key)) return { status: 'invalid' }
+        prototype = Object.getPrototypeOf(prototype)
+      }
+      return { status: 'absent' }
+    }
     if (!descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
       return { status: 'invalid' }
     }
@@ -80,6 +91,67 @@ function ownData(value: unknown, key: PropertyKey): SafeRead {
 function ownValue(value: unknown, key: PropertyKey) {
   const property = ownData(value, key)
   return property.status === 'value' ? property.value : undefined
+}
+
+function snapshotDenseArray<T>(
+  value: unknown,
+  field: string,
+  maxLength: number,
+): T[] {
+  try {
+    if (!Array.isArray(value)) fail(`${field} must be an array`)
+  } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith(field)) throw error
+    return fail(`${field} must be a readable array`)
+  }
+  let lengthDescriptor: PropertyDescriptor | undefined
+  let keys: PropertyKey[]
+  try {
+    lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
+    keys = Reflect.ownKeys(value)
+  } catch {
+    return fail(`${field} array descriptors are unreadable`)
+  }
+  if (!lengthDescriptor || !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value')) {
+    fail(`${field}.length must be an own data property`)
+  }
+  const length = lengthDescriptor.value
+  if (!Number.isSafeInteger(length) || length < 0 || length > maxLength) {
+    fail(`${field}.length exceeds its bounded dense-array limit`)
+  }
+  for (const key of keys) {
+    if (typeof key !== 'string' || key === 'length' || !/^(0|[1-9][0-9]*)$/u.test(key)) {
+      continue
+    }
+    const index = Number(key)
+    if (Number.isSafeInteger(index) && index >= length) {
+      fail(`${field} contains an out-of-range indexed property`)
+    }
+  }
+  const snapshot = new Array<T>(length)
+  for (let index = 0; index < length; index += 1) {
+    let descriptor: PropertyDescriptor | undefined
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    } catch {
+      return fail(`${field}[${index}] descriptor is unreadable`)
+    }
+    if (!descriptor
+      || !descriptor.enumerable
+      || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      fail(`${field} must be dense with own enumerable data elements`)
+    }
+    snapshot[index] = descriptor.value as T
+  }
+  return snapshot
+}
+
+function snapshotExistingNodes<T extends ExistingNode>(value: unknown, field: string): T[] {
+  const nodes = snapshotDenseArray<unknown>(value, field, MAX_EXISTING_NODES)
+  return nodes.map((node, index) => {
+    if (!isPlainRecord(node)) fail(`${field}[${index}] must be a plain object`)
+    return node as T
+  })
 }
 
 function exactOwnKeys(value: unknown, expected: readonly string[]) {
@@ -185,28 +257,37 @@ function controlNodePlan(recipe: StoryboardDirectorRecipe): StoryboardDirectorCo
 
 function findRecipeIdentityMatches(
   recipeId: string,
-  existingNodes: ExistingControlNode[],
+  snapshotNodes: ExistingControlNode[],
 ) {
   const valid: string[] = []
   const invalid: string[] = []
-  for (let index = 0; index < existingNodes.length; index += 1) {
-    const node = existingNodes[index]
+  for (let index = 0; index < snapshotNodes.length; index += 1) {
+    const node = snapshotNodes[index]
     const nodeId = ownValue(node, 'id')
-    if (typeof nodeId !== 'string' || !nodeId) continue
+    if (typeof nodeId !== 'string' || !nodeId || nodeId !== nodeId.trim()) {
+      fail(`existingNodes[${index}].id must be a trimmed nonempty string`)
+    }
     const metadata = ownData(node, 'metadataJson')
-    if (metadata.status !== 'value') continue
+    if (metadata.status === 'absent') continue
+    if (metadata.status !== 'value' || !isPlainRecord(metadata.value)) {
+      invalid.push(nodeId)
+      continue
+    }
     const stored = ownData(metadata.value, 'storyboardDirectorRecipe')
     if (stored.status === 'absent') continue
-    if (stored.status !== 'value') {
+    if (stored.status !== 'value' || !isPlainRecord(stored.value)) {
       invalid.push(nodeId)
       continue
     }
     const storedId = ownData(stored.value, 'recipeId')
-    if (storedId.status === 'invalid') {
+    if (storedId.status !== 'value'
+      || typeof storedId.value !== 'string'
+      || !storedId.value
+      || storedId.value !== storedId.value.trim()) {
       invalid.push(nodeId)
       continue
     }
-    if (storedId.status !== 'value' || storedId.value !== recipeId) continue
+    if (storedId.value !== recipeId) continue
     const read = readStoryboardDirectorRecipe(metadata.value)
     if (read.status === 'valid' && read.recipe.recipeId === recipeId) {
       valid.push(nodeId)
@@ -224,7 +305,8 @@ export function planStoryboardDirectorControlNode(
   | { status: 'create'; plan: StoryboardDirectorControlNodePlan }
   | { status: 'existing'; nodeId: string }
   | { status: 'conflict'; nodeIds: string[] } {
-  const matches = findRecipeIdentityMatches(recipe.recipeId, existingNodes)
+  const nodes = snapshotExistingNodes<ExistingControlNode>(existingNodes, 'existingNodes')
+  const matches = findRecipeIdentityMatches(recipe.recipeId, nodes)
   if (matches.invalid.length || matches.valid.length > 1) {
     return { status: 'conflict', nodeIds: [...matches.valid, ...matches.invalid] }
   }
@@ -340,15 +422,17 @@ export function planStoryboardDirectorGroupedNodes(
   kinds: GroupedKind[],
   existingNodes: ExistingNode[],
 ) {
-  assertRecipeReadyForRequestedKinds(recipe, kinds)
-  const scene = kinds.includes('scene')
-    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, existingNodes))
+  const requestedKinds = snapshotDenseArray<GroupedKind>(kinds, 'kinds', MAX_GROUPED_KINDS)
+  const nodes = snapshotExistingNodes<ExistingNode>(existingNodes, 'existingNodes')
+  assertRecipeReadyForRequestedKinds(recipe, requestedKinds)
+  const scene = requestedKinds.includes('scene')
+    ? planScriptSceneMaterialization(sceneMaterializationInput(recipe, nodes))
     : { create: [], duplicates: [] }
-  const beat = kinds.includes('beat')
-    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, existingNodes))
+  const beat = requestedKinds.includes('beat')
+    ? planNarrativeBeatMaterialization(beatMaterializationInput(recipe, nodes))
     : { create: [], duplicates: [] }
-  const shot = kinds.includes('shot-plan')
-    ? planShotPlanMaterialization(shotMaterializationInput(recipe, existingNodes))
+  const shot = requestedKinds.includes('shot-plan')
+    ? planShotPlanMaterialization(shotMaterializationInput(recipe, nodes))
     : { create: [], duplicates: [] }
   return {
     create: [...scene.create, ...beat.create, ...shot.create],
@@ -496,6 +580,8 @@ function draftNodePlan(
 ): StoryboardDirectorDraftNodePlan {
   const result = recipe.shot.result!
   const artifact = recipe.shot.approvedArtifact!
+  const resultArtifact = result.artifacts[0]
+  if (!resultArtifact) fail('Storyboard Director shot result Artifact is missing')
   const identity = createRecipeMaterializationIdentity(
     recipe.recipeId,
     'draft-node',
@@ -527,11 +613,11 @@ function draftNodePlan(
         duration: shot.duration,
       },
       creatorSkill: {
-        skillId: 'storyboard-director',
-        skillVersion: '1.0.0',
+        skillId: result.skillId,
+        skillVersion: result.skillVersion,
         runFingerprint: result.runFingerprint,
-        sourceNodeIds: artifact.sourceNodeIds.slice(),
-        sourceArtifactIds: [artifact.artifactId],
+        sourceNodeIds: resultArtifact.sourceNodeIds.slice(),
+        sourceArtifactIds: [resultArtifact.artifactId],
         resultType: 'shot-draft',
         resultId: shot.shotId,
         reviewStatus: 'approved',
@@ -602,20 +688,25 @@ function strictDraftMetadataMatches(
   return sameScalarRecordArray(
     ownValue(creatorSkill, 'sourceNodeIds'),
     ownValue(expectedSkill, 'sourceNodeIds'),
+    'metadata.creatorSkill.sourceNodeIds',
   ) && sameScalarRecordArray(
     ownValue(creatorSkill, 'sourceArtifactIds'),
     ownValue(expectedSkill, 'sourceArtifactIds'),
+    'metadata.creatorSkill.sourceArtifactIds',
   ) && sameScalarRecordArray(
     ownValue(creatorSkill, 'evidence'),
     ownValue(expectedSkill, 'evidence'),
+    'metadata.creatorSkill.evidence',
   )
 }
 
-function sameScalarRecordArray(left: unknown, right: unknown): boolean {
-  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
-  for (let index = 0; index < left.length; index += 1) {
-    const leftItem = ownValue(left, String(index))
-    const rightItem = ownValue(right, String(index))
+function sameScalarRecordArray(left: unknown, right: unknown, field: string): boolean {
+  const leftItems = snapshotDenseArray<unknown>(left, field, MAX_METADATA_ITEMS)
+  const rightItems = snapshotDenseArray<unknown>(right, `${field} expected`, MAX_METADATA_ITEMS)
+  if (leftItems.length !== rightItems.length) return false
+  for (let index = 0; index < leftItems.length; index += 1) {
+    const leftItem = leftItems[index]
+    const rightItem = rightItems[index]
     if (isPlainRecord(leftItem) || isPlainRecord(rightItem)) {
       if (!isPlainRecord(leftItem) || !isPlainRecord(rightItem)) return false
       let keys: PropertyKey[]
@@ -647,22 +738,36 @@ export function planStoryboardDirectorDraftNodes(
   const plans = approvedShots(recipe).map((shot) => draftNodePlan(recipe, shot))
   const byIdentity = new Map(plans.map((plan) => [plan.identity, plan]))
   const existing = new Set<string>()
-  for (const node of existingNodes) {
+  const nodes = snapshotExistingNodes<ExistingNode>(existingNodes, 'existingNodes')
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]!
     const metadata = ownData(node, 'metadataJson')
-    if (metadata.status !== 'value') continue
+    if (metadata.status === 'absent') continue
+    if (metadata.status !== 'value' || !isPlainRecord(metadata.value)) {
+      fail(`existingNodes[${index}].metadataJson is malformed`)
+    }
     const materialization = ownData(metadata.value, 'storyboardDirectorMaterialization')
-    if (materialization.status !== 'value') continue
+    if (materialization.status === 'absent') continue
+    if (materialization.status !== 'value' || !isPlainRecord(materialization.value)) {
+      fail(`existingNodes[${index}] Storyboard Director metadata is malformed`)
+    }
     const identity = ownData(materialization.value, 'identity')
-    if (identity.status !== 'value' || typeof identity.value !== 'string') continue
-    const plan = byIdentity.get(identity.value)
+    if (identity.status !== 'value' || typeof identity.value !== 'string') {
+      fail(`existingNodes[${index}] Storyboard Director identity is malformed`)
+    }
+    const identityValue = requiredId(
+      identity.value,
+      `existingNodes[${index}] Storyboard Director metadata identity`,
+    )
+    const plan = byIdentity.get(identityValue)
     if (!plan) continue
     if (!strictDraftMetadataMatches(metadata.value, plan)) {
       fail('matching Storyboard Director draft metadata is malformed')
     }
-    if (existing.has(identity.value)) {
+    if (existing.has(identityValue)) {
       fail('duplicate Storyboard Director draft materialization identity')
     }
-    existing.add(identity.value)
+    existing.add(identityValue)
   }
   return {
     create: plans.filter((plan) => !existing.has(plan.identity)),

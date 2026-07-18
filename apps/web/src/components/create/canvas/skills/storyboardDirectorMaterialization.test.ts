@@ -28,6 +28,7 @@ import {
   setRecipeDecision,
   updateRecipeDraft,
 } from '../../../../lib/storyboard/recipe/state-machine'
+import { existingCompatibilityShotIds } from '../../ShotListBuilderPanel'
 import {
   importLegacyShotBoard,
   planStoryboardDirectorControlNode,
@@ -230,6 +231,35 @@ describe('Storyboard Director control-node planning', () => {
     assert.equal(hostileResult.status, 'conflict')
   })
 
+  test('scans indexed control nodes without trusting their iterator or get trap', () => {
+    const recipe = completedRecipe()
+    const first = planStoryboardDirectorControlNode(recipe, [])
+    assert.equal(first.status, 'create')
+    if (first.status !== 'create') return
+    const nodes = [{ id: 'control-1', metadataJson: first.plan.metadataJson }]
+    Object.defineProperty(nodes, Symbol.iterator, {
+      configurable: true,
+      value: function* hiddenIterator() {},
+    })
+    assert.deepEqual(
+      planStoryboardDirectorControlNode(recipe, nodes),
+      { status: 'existing', nodeId: 'control-1' },
+    )
+
+    let getTrapCalls = 0
+    const proxied = new Proxy(nodes, {
+      get() {
+        getTrapCalls += 1
+        throw new Error('existingNodes get trap escaped')
+      },
+    })
+    assert.deepEqual(
+      planStoryboardDirectorControlNode(recipe, proxied),
+      { status: 'existing', nodeId: 'control-1' },
+    )
+    assert.equal(getTrapCalls, 0)
+  })
+
   test('formats a secret-free readiness summary for the visible Text node', () => {
     const recipe = completedRecipe()
     const summary = storyboardDirectorRecipeSummary(recipe)
@@ -392,7 +422,7 @@ describe('Storyboard Director shot-board synchronization', () => {
 })
 
 describe('Storyboard Director compatibility draft planning and receipts', () => {
-  test('creates stable image/video draft identities without a generation callback', () => {
+  test('uses actual shot-planning provenance and remains compatible with generic dedupe', () => {
     const recipe = completedRecipe()
     assert.equal(planStoryboardDirectorDraftNodes.length, 2)
     const first = planStoryboardDirectorDraftNodes(recipe, [])
@@ -404,10 +434,36 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
     )
 
     const firstMetadata = first.create[0]!.metadataJson as {
-      creatorSkill?: { skillId?: string }
+      creatorSkill?: {
+        skillId?: string
+        skillVersion?: string
+        runFingerprint?: string
+        sourceNodeIds?: string[]
+        sourceArtifactIds?: string[]
+        resultType?: string
+        resultId?: string
+      }
       storyboardDirectorMaterialization?: Record<string, unknown>
     }
-    assert.equal(firstMetadata.creatorSkill?.skillId, 'storyboard-director')
+    const result = recipe.shot.result
+    const resultArtifact = result?.artifacts[0]
+    assert.ok(result)
+    assert.ok(resultArtifact)
+    assert.deepEqual(firstMetadata.creatorSkill, {
+      skillId: result.skillId,
+      skillVersion: result.skillVersion,
+      runFingerprint: result.runFingerprint,
+      sourceNodeIds: resultArtifact.sourceNodeIds,
+      sourceArtifactIds: [resultArtifact.artifactId],
+      resultType: 'shot-draft',
+      resultId: first.create[0]!.resultId,
+      reviewStatus: 'approved',
+      evidence: result.evidence.filter((item) => (
+        item.lineStart === recipe.shot.drafts[0]!.lineStart
+        && item.lineEnd === recipe.shot.drafts[0]!.lineEnd
+        && item.excerpt === recipe.shot.drafts[0]!.sourceText
+      )),
+    })
     assert.deepEqual(firstMetadata.storyboardDirectorMaterialization, {
       recipeId: recipe.recipeId,
       shotId: first.create[0]!.resultId,
@@ -417,6 +473,10 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
       duration: recipe.shot.drafts[0]!.duration,
     })
     assert.equal(/provider|api[_-]?key|secret/i.test(JSON.stringify(firstMetadata)), false)
+    assert.deepEqual(
+      existingCompatibilityShotIds(first.create.map(planAsExistingNode), result),
+      first.create.map((plan) => plan.resultId),
+    )
 
     const repeat = planStoryboardDirectorDraftNodes(
       recipe,
@@ -431,6 +491,167 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
       prompt: first.create[0]!.prompt,
     }])
     assert.equal(titleOnly.create.length, first.create.length)
+  })
+
+  test('detects dense matching nodes without trusting iterators or get traps', () => {
+    const recipe = completedRecipe()
+    const first = planStoryboardDirectorDraftNodes(recipe, [])
+    const nodes = first.create.map(planAsExistingNode)
+    Object.defineProperty(nodes, Symbol.iterator, {
+      configurable: true,
+      value: function* hiddenIterator() {},
+    })
+    const hidden = planStoryboardDirectorDraftNodes(recipe, nodes)
+    assert.equal(hidden.create.length, 0)
+    assert.deepEqual(hidden.duplicates, first.create.map((plan) => plan.identity))
+
+    let collectionGetCalls = 0
+    const proxiedNodes = new Proxy(nodes, {
+      get() {
+        collectionGetCalls += 1
+        throw new Error('collection get trap escaped')
+      },
+    })
+    const proxied = planStoryboardDirectorDraftNodes(recipe, proxiedNodes)
+    assert.equal(proxied.create.length, 0)
+    assert.equal(collectionGetCalls, 0)
+
+    const metadata = structuredClone(first.create[0]!.metadataJson) as {
+      creatorSkill: { sourceNodeIds: string[] }
+    }
+    let metadataGetCalls = 0
+    metadata.creatorSkill.sourceNodeIds = new Proxy(
+      metadata.creatorSkill.sourceNodeIds,
+      {
+        get() {
+          metadataGetCalls += 1
+          throw new Error('metadata array get trap escaped')
+        },
+      },
+    )
+    const metadataResult = planStoryboardDirectorDraftNodes(recipe, [
+      { metadataJson: metadata },
+      ...first.create.slice(1).map(planAsExistingNode),
+    ])
+    assert.equal(metadataResult.create.length, 0)
+    assert.equal(metadataGetCalls, 0)
+  })
+
+  test('rejects sparse, oversized, inherited, accessor, and proxy collections fail closed', () => {
+    const recipe = completedRecipe()
+    const first = planStoryboardDirectorDraftNodes(recipe, [])
+    const matching = planAsExistingNode(first.create[0]!)
+
+    const sparse = new Array<ReturnType<typeof planAsExistingNode>>(2)
+    sparse[1] = matching
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, sparse),
+      /existingNodes/i,
+    )
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(
+        recipe,
+        new Array(10_001) as ReturnType<typeof planAsExistingNode>[],
+      ),
+      /existingNodes/i,
+    )
+
+    let indexAccessorCalls = 0
+    const accessor = new Array<ReturnType<typeof planAsExistingNode>>(1)
+    Object.defineProperty(accessor, '0', {
+      enumerable: true,
+      get() {
+        indexAccessorCalls += 1
+        throw new Error('index accessor escaped')
+      },
+    })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, accessor),
+      /existingNodes/i,
+    )
+    assert.equal(indexAccessorCalls, 0)
+
+    let inheritedLengthCalls = 0
+    const inheritedLength = Object.create({
+      get length() {
+        inheritedLengthCalls += 1
+        throw new Error('inherited length escaped')
+      },
+    }) as ReturnType<typeof planAsExistingNode>[]
+    Object.defineProperty(inheritedLength, '0', { enumerable: true, value: matching })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, inheritedLength),
+      /existingNodes/i,
+    )
+    assert.equal(inheritedLengthCalls, 0)
+
+    const descriptorTrap = new Proxy([matching], {
+      getOwnPropertyDescriptor() {
+        throw new Error('descriptor trap escaped')
+      },
+    })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, descriptorTrap),
+      (error) => error instanceof TypeError && /existingNodes/i.test(error.message),
+    )
+
+    const ownKeysTrap = new Proxy([matching], {
+      ownKeys() {
+        throw new Error('ownKeys trap escaped')
+      },
+    })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, ownKeysTrap),
+      (error) => error instanceof TypeError && /existingNodes/i.test(error.message),
+    )
+
+    const prototypeTrapNode = new Proxy(matching, {
+      getPrototypeOf() {
+        throw new Error('prototype trap escaped')
+      },
+    })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, [prototypeTrapNode]),
+      /existingNodes/i,
+    )
+  })
+
+  test('rejects accessor and descriptor-trapped Creator Skill metadata arrays', () => {
+    const recipe = completedRecipe()
+    const first = planStoryboardDirectorDraftNodes(recipe, [])
+    const accessorMetadata = structuredClone(first.create[0]!.metadataJson) as {
+      creatorSkill: { sourceArtifactIds: string[] }
+    }
+    let accessorCalls = 0
+    Object.defineProperty(accessorMetadata.creatorSkill.sourceArtifactIds, '0', {
+      enumerable: true,
+      configurable: true,
+      get() {
+        accessorCalls += 1
+        throw new Error('metadata index accessor escaped')
+      },
+    })
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, [{ metadataJson: accessorMetadata }]),
+      /metadata/i,
+    )
+    assert.equal(accessorCalls, 0)
+
+    const descriptorMetadata = structuredClone(first.create[0]!.metadataJson) as {
+      creatorSkill: { evidence: Array<Record<string, unknown>> }
+    }
+    descriptorMetadata.creatorSkill.evidence = new Proxy(
+      descriptorMetadata.creatorSkill.evidence,
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('metadata descriptor trap escaped')
+        },
+      },
+    )
+    assert.throws(
+      () => planStoryboardDirectorDraftNodes(recipe, [{ metadataJson: descriptorMetadata }]),
+      (error) => error instanceof TypeError && /metadata/i.test(error.message),
+    )
   })
 
   test('records only successful callback results and is idempotent', () => {
