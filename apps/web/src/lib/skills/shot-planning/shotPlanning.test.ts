@@ -84,6 +84,55 @@ function runRaw(input: CreatorSkillRunInput) {
   return shotSkill().run(input, 'csf1_boundary_test')
 }
 
+function withoutWholeSourceMaterialization<T>(source: string, callback: () => T) {
+  const replaceDescriptor = Object.getOwnPropertyDescriptor(String.prototype, 'replace')!
+  const splitDescriptor = Object.getOwnPropertyDescriptor(String.prototype, 'split')!
+  const iteratorDescriptor = Object.getOwnPropertyDescriptor(
+    String.prototype,
+    Symbol.iterator,
+  )!
+  const calls = { replace: 0, split: 0, iterator: 0 }
+
+  Object.defineProperty(String.prototype, 'replace', {
+    ...replaceDescriptor,
+    value(this: string, ...args: unknown[]) {
+      if (this.valueOf() === source) {
+        calls.replace += 1
+        throw new Error('must not normalize the entire guarded source')
+      }
+      return Reflect.apply(replaceDescriptor.value, this, args)
+    },
+  })
+  Object.defineProperty(String.prototype, 'split', {
+    ...splitDescriptor,
+    value(this: string, ...args: unknown[]) {
+      if (this.valueOf() === source) {
+        calls.split += 1
+        throw new Error('must not split the entire guarded source')
+      }
+      return Reflect.apply(splitDescriptor.value, this, args)
+    },
+  })
+  Object.defineProperty(String.prototype, Symbol.iterator, {
+    ...iteratorDescriptor,
+    value(this: string) {
+      if (this.valueOf() === source) {
+        calls.iterator += 1
+        throw new Error('must not consume the guarded source iterator')
+      }
+      return Reflect.apply(iteratorDescriptor.value, this, [])
+    },
+  })
+
+  try {
+    return { result: callback(), calls }
+  } finally {
+    Object.defineProperty(String.prototype, 'replace', replaceDescriptor)
+    Object.defineProperty(String.prototype, 'split', splitDescriptor)
+    Object.defineProperty(String.prototype, Symbol.iterator, iteratorDescriptor)
+  }
+}
+
 function runText(source: string, options: Record<string, unknown> = {}) {
   return run({ sourceNodes: [textNode(source)], options })
 }
@@ -972,6 +1021,34 @@ describe('limits and determinism', () => {
       options: { requestedShotCount: 120 },
     })
     assertBlocked(overLimit, 'SHOT_LIMIT_EXCEEDED')
+  })
+
+  test('stops direct Text scanning at unit 121 without materializing a large tail', () => {
+    const prefix = Array.from(
+      { length: 121 },
+      (_, index) => `Maya opens panel ${index + 1}.`,
+    ).join('\n')
+    const source = `${prefix}\n${'Unreachable tail line.\n'.repeat(5_000)}`
+    const guarded = withoutWholeSourceMaterialization(source, () => runRaw({
+      sourceNodes: [textNode(source)],
+      options: { requestedShotCount: 120 },
+    }))
+
+    assertBlocked(guarded.result, 'SHOT_LIMIT_EXCEEDED')
+    assert.deepEqual(guarded.calls, { replace: 0, split: 0, iterator: 0 })
+  })
+
+  test('stops paired Artifact scanning after the reviewed target unit matches', () => {
+    const artifact = narrativeArtifact(1)
+    const source = `Maya opens panel 1.\n${'Unreachable tail line.\n'.repeat(5_000)}`
+    const guarded = withoutWholeSourceMaterialization(source, () => runRaw({
+      sourceNodes: [textNode(source)],
+      artifacts: [artifact],
+      options: { requestedShotCount: 1 },
+    }))
+
+    assert.notEqual(guarded.result.status, 'blocked')
+    assert.deepEqual(guarded.calls, { replace: 0, split: 0, iterator: 0 })
   })
 
   test('returns deeply equal output for repeated normalized input', () => {

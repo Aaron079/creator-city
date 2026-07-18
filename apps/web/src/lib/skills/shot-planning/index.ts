@@ -462,7 +462,6 @@ function parseScenesToUnits(scenes: readonly NarrativeSourceScene[], sourceNodeI
 function canonicalText(value: string) {
   return value
     .replace(/\r\n?/g, '\n')
-    .normalize('NFC')
     .trim()
     .replace(/\s+/gu, ' ')
 }
@@ -479,100 +478,141 @@ const SOURCE_UNIT_CLOSING_CHARACTERS = new Set([
   '】',
 ])
 
-type NormalizedSourceUnit = {
-  text: string
-  start: number
-  end: number
+type SourceUnitVisitor = (start: number, end: number) => boolean
+
+function rangeHasNonWhitespace(source: string, start: number, end: number) {
+  for (let index = start; index < end; index += 1) {
+    if (!/\s/u.test(source[index]!)) return true
+  }
+  return false
 }
 
-function appendSentenceUnits(
+function normalizedRangeEquals(
   source: string,
-  absoluteOffset: number,
-  units: NormalizedSourceUnit[],
+  start: number,
+  end: number,
+  target: string,
 ) {
-  let unitStart = 0
-  let cursor = 0
-  while (cursor < source.length) {
-    if (!SOURCE_UNIT_END_CHARACTERS.has(source[cursor]!)) {
-      cursor += 1
+  let targetOffset = 0
+  let hasContent = false
+  let pendingWhitespace = false
+  for (let index = start; index < end; index += 1) {
+    const character = source[index]!
+    if (/\s/u.test(character)) {
+      if (hasContent) pendingWhitespace = true
       continue
     }
 
-    let unitEnd = cursor + 1
-    while (unitEnd < source.length
-      && SOURCE_UNIT_END_CHARACTERS.has(source[unitEnd]!)) {
-      unitEnd += 1
+    if (pendingWhitespace) {
+      if (target[targetOffset] !== ' ') return false
+      targetOffset += 1
+      pendingWhitespace = false
     }
-    if (unitEnd < source.length
-      && SOURCE_UNIT_CLOSING_CHARACTERS.has(source[unitEnd]!)) {
-      unitEnd += 1
-    }
-    const text = canonicalText(source.slice(unitStart, unitEnd))
-    if (text) {
-      units.push({
-        text,
-        start: absoluteOffset + unitStart,
-        end: absoluteOffset + unitEnd,
-      })
-    }
-    unitStart = unitEnd
-    cursor = unitEnd
+    if (target[targetOffset] !== character) return false
+    targetOffset += 1
+    hasContent = true
   }
-
-  const remainder = canonicalText(source.slice(unitStart))
-  if (remainder) {
-    units.push({
-      text: remainder,
-      start: absoluteOffset + unitStart,
-      end: absoluteOffset + source.length,
-    })
-  }
+  return hasContent && targetOffset === target.length
 }
 
-function normalizedSourceUnits(sourceText: string) {
-  const source = sourceText.replace(/\r\n?/g, '\n')
-  const units: NormalizedSourceUnit[] = []
-  appendSentenceUnits(source, 0, units)
+function scanSourceUnits(
+  source: string,
+  includeWrappedSentenceUnits: boolean,
+  visit: SourceUnitVisitor,
+) {
+  let lineUnitStart = 0
+  let sentenceUnitStart = 0
+  let sentenceHasLineBreak = false
 
-  let lineStart = 0
-  while (lineStart <= source.length) {
-    const newlineOffset = source.indexOf('\n', lineStart)
-    const lineEnd = newlineOffset === -1 ? source.length : newlineOffset
-    appendSentenceUnits(source.slice(lineStart, lineEnd), lineStart, units)
-    if (newlineOffset === -1) break
-    lineStart = newlineOffset + 1
+  const emit = (start: number, end: number) => (
+    !rangeHasNonWhitespace(source, start, end) || visit(start, end)
+  )
+
+  let cursor = 0
+  while (cursor < source.length) {
+    const character = source[cursor]!
+    if (SOURCE_UNIT_END_CHARACTERS.has(character)) {
+      let unitEnd = cursor + 1
+      while (unitEnd < source.length
+        && SOURCE_UNIT_END_CHARACTERS.has(source[unitEnd]!)) {
+        unitEnd += 1
+      }
+      if (unitEnd < source.length
+        && SOURCE_UNIT_CLOSING_CHARACTERS.has(source[unitEnd]!)) {
+        unitEnd += 1
+      }
+
+      if (includeWrappedSentenceUnits
+        && sentenceUnitStart !== lineUnitStart
+        && !emit(sentenceUnitStart, unitEnd)) {
+        return false
+      }
+      if (!emit(lineUnitStart, unitEnd)) return false
+      lineUnitStart = unitEnd
+      sentenceUnitStart = unitEnd
+      sentenceHasLineBreak = false
+      cursor = unitEnd
+      continue
+    }
+
+    if (character === '\n' || character === '\r') {
+      if (!emit(lineUnitStart, cursor)) return false
+      const newlineEnd = character === '\r' && source[cursor + 1] === '\n'
+        ? cursor + 2
+        : cursor + 1
+      lineUnitStart = newlineEnd
+      sentenceHasLineBreak = true
+      cursor = newlineEnd
+      continue
+    }
+    cursor += 1
   }
 
-  const seen = new Set<string>()
-  return units
-    .sort((left, right) => left.start - right.start || left.end - right.end)
-    .filter((unit) => {
-      const key = `${unit.start}:${unit.end}:${unit.text}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+  if (includeWrappedSentenceUnits
+    && sentenceHasLineBreak
+    && sentenceUnitStart !== lineUnitStart
+    && !emit(sentenceUnitStart, source.length)) {
+    return false
+  }
+  return emit(lineUnitStart, source.length)
+}
+
+function sourceUnitLimitExceeded(sourceText: string) {
+  let unitCount = 0
+  scanSourceUnits(sourceText, false, () => {
+    unitCount += 1
+    return unitCount <= MAX_SHOTS
+  })
+  return unitCount > MAX_SHOTS
 }
 
 function narrativeMatchesText(payload: NarrativeBeatMapPayload, sourceText: string) {
-  const sourceUnits = normalizedSourceUnits(sourceText)
-  let searchOffset = 0
+  const targets: string[] = []
   for (const scene of payload.scenes) {
-    for (const beat of scene.beats) {
-      const excerpt = canonicalText(beat.sourceText)
-      const match = sourceUnits.find((unit) => (
-        unit.start >= searchOffset && unit.text === excerpt
-      ))
-      if (!match) return false
-      searchOffset = match.end
-    }
+    for (const beat of scene.beats) targets.push(canonicalText(beat.sourceText))
   }
-  return true
+
+  let targetIndex = 0
+  let searchOffset = 0
+  scanSourceUnits(sourceText, true, (start, end) => {
+    if (start < searchOffset) return true
+    if (normalizedRangeEquals(sourceText, start, end, targets[targetIndex]!)) {
+      targetIndex += 1
+      searchOffset = end
+      if (targetIndex === targets.length) return false
+    }
+    return true
+  })
+  return targetIndex === targets.length
 }
 
 function hasMinimumSource(sourceText: string) {
   let count = 0
-  for (const character of sourceText) {
+  let index = 0
+  while (index < sourceText.length) {
+    const codePoint = sourceText.codePointAt(index)!
+    const character = String.fromCodePoint(codePoint)
+    index += codePoint > 0xFFFF ? 2 : 1
     if (/\s/u.test(character)) continue
     count += 1
     if (count >= MIN_SOURCE_CHARACTERS) return true
@@ -614,10 +654,12 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
       )
     }
     const sourceText = sourceNode
-      ? (sourceNode.resultText?.trim() ? sourceNode.resultText : sourceNode.prompt)
-        .replace(/\r\n/g, '\n')
+      ? (sourceNode.resultText
+        && rangeHasNonWhitespace(sourceNode.resultText, 0, sourceNode.resultText.length)
+        ? sourceNode.resultText
+        : sourceNode.prompt)
       : null
-    if (sourceText !== null && !sourceText.trim()) {
+    if (sourceText !== null && !rangeHasNonWhitespace(sourceText, 0, sourceText.length)) {
       return blockedResult(runFingerprint, 'SHOT_SOURCE_EMPTY', 'The Text source is empty.')
     }
     if (sourceText !== null && !hasMinimumSource(sourceText)) {
@@ -625,6 +667,13 @@ export const SHOT_PLANNING_SKILL: CreatorExecutableSkill = {
         runFingerprint,
         'SHOT_SOURCE_TOO_SHORT',
         'The Text source must contain at least 8 non-whitespace characters.',
+      )
+    }
+    if (sourceText !== null && artifacts.length === 0 && sourceUnitLimitExceeded(sourceText)) {
+      return blockedResult(
+        runFingerprint,
+        'SHOT_LIMIT_EXCEEDED',
+        'Shot planning supports at most 120 shots.',
       )
     }
 
