@@ -1161,6 +1161,167 @@ describe('runCreatorSkillFromRegistry', () => {
     assert.equal(warningReadCount, 0)
   })
 
+  test('rejects same-type input and output Artifact ID collisions before issues', () => {
+    let warningReadCount = 0
+    const warnings = new Proxy([{
+      code: 'COLLIDING_OUTPUT',
+      message: 'This warning must not be normalized.',
+    }], {
+      get(target, property, receiver) {
+        if (property === '0') warningReadCount += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const inputArtifact = createCreatorSkillArtifact({
+      artifactId: 'shared-artifact-id',
+      artifactType: 'scene-list',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      payload: {},
+    })
+    const skill = createSkill({
+      acceptedArtifactTypes: ['scene-list'],
+    }, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'ready',
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'shared-artifact-id',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['node-a'],
+        payload: {},
+      })],
+      evidence: [],
+      warnings,
+      blockers: [],
+    }))
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        {
+          sourceNodes: [{
+            id: 'node-a',
+            kind: 'text',
+            title: 'Direct source',
+            prompt: 'Opening scene.',
+          }],
+          artifacts: [inputArtifact],
+        },
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+    assert.equal(warningReadCount, 0)
+  })
+
+  test('rejects cross-type input and output Artifact ID collisions before issues', () => {
+    let warningReadCount = 0
+    const warnings = new Proxy([{
+      code: 'COLLIDING_OUTPUT',
+      message: 'This warning must not be normalized.',
+    }], {
+      get(target, property, receiver) {
+        if (property === '0') warningReadCount += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const inputArtifact = createCreatorSkillArtifact({
+      artifactId: 'shared-artifact-id',
+      artifactType: 'script',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      payload: {},
+    })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'ready',
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'shared-artifact-id',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['node-a'],
+        payload: {},
+      })],
+      evidence: [],
+      warnings,
+      blockers: [],
+    }))
+
+    assertBlocked(
+      runCreatorSkillFromRegistry(
+        createCreatorExecutableSkillRegistry([skill]),
+        'test-skill',
+        {
+          sourceNodes: [{
+            id: 'node-a',
+            kind: 'text',
+            title: 'Direct source',
+            prompt: 'Opening scene.',
+          }],
+          artifacts: [inputArtifact],
+        },
+      ),
+      'INVALID_SKILL_OUTPUT',
+    )
+    assert.equal(warningReadCount, 0)
+  })
+
+  test('accepts a distinct output Artifact ID and preserves issue provenance', () => {
+    const inputArtifact = createCreatorSkillArtifact({
+      artifactId: 'input-script',
+      artifactType: 'script',
+      artifactVersion: 1,
+      sourceNodeIds: ['node-a'],
+      payload: {},
+    })
+    const skill = createSkill({}, (_input, fingerprint) => ({
+      skillId: 'test-skill',
+      skillVersion: '1.0.0',
+      runFingerprint: fingerprint,
+      status: 'needs-review',
+      artifacts: [createCreatorSkillArtifact({
+        artifactId: 'output-scene',
+        artifactType: 'scene-list',
+        artifactVersion: 1,
+        sourceNodeIds: ['node-a'],
+        sourceArtifactIds: ['input-script'],
+        payload: {},
+      })],
+      evidence: [],
+      warnings: [{
+        code: 'OUTPUT_REVIEW',
+        message: 'Review the distinct output Artifact.',
+        artifactId: 'output-scene',
+        sourceNodeId: 'node-a',
+      }],
+      blockers: [],
+    }))
+
+    const result = runCreatorSkillFromRegistry(
+      createCreatorExecutableSkillRegistry([skill]),
+      'test-skill',
+      {
+        sourceNodes: [{
+          id: 'node-a',
+          kind: 'text',
+          title: 'Direct source',
+          prompt: 'Opening scene.',
+        }],
+        artifacts: [inputArtifact],
+      },
+    )
+
+    assert.equal(result.status, 'needs-review')
+    assert.equal(result.artifacts[0]?.artifactId, 'output-scene')
+    assert.equal(result.warnings[0]?.artifactId, 'output-scene')
+    assert.equal(result.warnings[0]?.sourceNodeId, 'node-a')
+  })
+
   test('validates paired warnings against input and output Artifact provenance', () => {
     const inputArtifacts = [
       createCreatorSkillArtifact({

@@ -482,7 +482,10 @@ function normalizeExecutionResult(
   }
   for (const artifact of artifacts) {
     if (!outputArtifactTypes.includes(artifact.artifactType)) return null
-    if (outputArtifactIds.has(artifact.artifactId)) return null
+    if (inputArtifactProvenance.has(artifact.artifactId)
+      || outputArtifactIds.has(artifact.artifactId)) {
+      return null
+    }
     const allowedSourceNodeIds = new Set(directSourceNodeIds)
     for (let index = 0; index < artifact.sourceArtifactIds.length; index += 1) {
       const sourceArtifactId = artifact.sourceArtifactIds[index]!
