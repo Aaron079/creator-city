@@ -4,7 +4,10 @@ import type {
   CreatorSkillRunResult,
   CreatorSkillSourceNode,
 } from '../../skills'
-import { createStoryboardDirectorRecipeIdentity } from './identity'
+import {
+  createStoryboardDirectorPartialBatchIdentity,
+  createStoryboardDirectorRecipeIdentity,
+} from './identity'
 import {
   STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   STORYBOARD_DIRECTOR_RECIPE_VERSION,
@@ -499,17 +502,61 @@ function validateSourceNode(value: unknown, field: string): CreatorSkillSourceNo
   return source as CreatorSkillSourceNode
 }
 
-function validateFinding(value: unknown, field: string) {
+function validatePartialBatch(value: unknown, field: string, recipeId: string) {
+  const batch = record(value, field, [
+    'batchId',
+    'operation',
+    'plannedCount',
+    'createdCount',
+    'uncreatedCount',
+    'plannedIdentities',
+    'successfulTargetIds',
+  ])
+  const batchId = identifier(batch.batchId, `${field}.batchId`)
+  const operation = enumValue(batch.operation, `${field}.operation`, [
+    'grouped-materialization',
+    'draft-node-creation',
+  ])
+  const plannedCount = positiveInteger(batch.plannedCount, `${field}.plannedCount`)
+  const createdCount = integer(batch.createdCount, `${field}.createdCount`)
+  const uncreatedCount = positiveInteger(batch.uncreatedCount, `${field}.uncreatedCount`)
+  const plannedIdentities = stringArray(
+    batch.plannedIdentities,
+    `${field}.plannedIdentities`,
+    true,
+  )
+  const successfulTargetIds = stringArray(
+    batch.successfulTargetIds,
+    `${field}.successfulTargetIds`,
+    true,
+  )
+  assertUnique(plannedIdentities, `${field}.plannedIdentities`)
+  assertUnique(successfulTargetIds, `${field}.successfulTargetIds`)
+  if (plannedIdentities.length !== plannedCount
+    || successfulTargetIds.length !== createdCount
+    || createdCount + uncreatedCount !== plannedCount) {
+    fail(`${field} counts do not match its identities`)
+  }
+  const expectedBatchId = createStoryboardDirectorPartialBatchIdentity(
+    recipeId,
+    operation,
+    plannedIdentities,
+  )
+  if (batchId !== expectedBatchId) fail(`${field}.batchId is invalid`)
+  return batchId
+}
+
+function validateFinding(value: unknown, field: string, recipeId: string) {
   const finding = record(value, field, [
     'findingId',
     'severity',
     'code',
     'message',
     'evidenceIds',
-  ], ['sceneId', 'beatId', 'shotId'])
+  ], ['sceneId', 'beatId', 'shotId', 'partialBatch'])
   const findingId = identifier(finding.findingId, `${field}.findingId`)
-  enumValue(finding.severity, `${field}.severity`, ['blocking', 'advisory'])
-  identifier(finding.code, `${field}.code`)
+  const severity = enumValue(finding.severity, `${field}.severity`, ['blocking', 'advisory'])
+  const code = identifier(finding.code, `${field}.code`)
   stringValue(finding.message, `${field}.message`)
   for (const key of ['sceneId', 'beatId', 'shotId'] as const) {
     if (Object.prototype.hasOwnProperty.call(finding, key)) {
@@ -518,6 +565,22 @@ function validateFinding(value: unknown, field: string) {
   }
   const evidenceIds = stringArray(finding.evidenceIds, `${field}.evidenceIds`, true)
   assertUnique(evidenceIds, `${field}.evidenceIds`)
+  const hasPartialBatch = Object.prototype.hasOwnProperty.call(finding, 'partialBatch')
+  if (code === 'PARTIAL_MATERIALIZATION_BATCH') {
+    if (!hasPartialBatch || severity !== 'blocking' || evidenceIds.length !== 0) {
+      fail(`${field} partial batch finding is invalid`)
+    }
+    const batchId = validatePartialBatch(
+      finding.partialBatch,
+      `${field}.partialBatch`,
+      recipeId,
+    )
+    if (findingId !== batchId.replace(/^sdrb1_/, 'sdrf1_')) {
+      fail(`${field}.findingId does not match its partial batch`)
+    }
+  } else if (hasPartialBatch) {
+    fail(`${field}.partialBatch is only valid for a partial batch finding`)
+  }
   return findingId
 }
 
@@ -678,7 +741,11 @@ function validateRecipe(value: unknown): asserts value is StoryboardDirectorReci
   const findings = arrayValue(recipe.findings, 'storyboardDirectorRecipe.findings')
   const findingIds: string[] = []
   for (let index = 0; index < findings.length; index += 1) {
-    findingIds.push(validateFinding(findings[index], `storyboardDirectorRecipe.findings[${index}]`))
+    findingIds.push(validateFinding(
+      findings[index],
+      `storyboardDirectorRecipe.findings[${index}]`,
+      recipeId,
+    ))
   }
   assertUnique(findingIds, 'storyboardDirectorRecipe.findings')
   validateStoryboard(recipe.storyboard, 'storyboardDirectorRecipe.storyboard')

@@ -42,6 +42,20 @@ export type StoryboardDirectorStage<T> = {
   staleResult: CreatorSkillRunResult | null
 }
 
+export type StoryboardDirectorPartialBatchOperation =
+  | 'grouped-materialization'
+  | 'draft-node-creation'
+
+export type StoryboardDirectorPartialBatch = {
+  batchId: string
+  operation: StoryboardDirectorPartialBatchOperation
+  plannedCount: number
+  createdCount: number
+  uncreatedCount: number
+  plannedIdentities: string[]
+  successfulTargetIds: string[]
+}
+
 export type StoryboardDirectorFinding = {
   findingId: string
   severity: 'blocking' | 'advisory'
@@ -50,6 +64,7 @@ export type StoryboardDirectorFinding = {
   sceneId?: string
   beatId?: string
   shotId?: string
+  partialBatch?: StoryboardDirectorPartialBatch
   evidenceIds: string[]
 }
 

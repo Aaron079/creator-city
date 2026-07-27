@@ -11,6 +11,7 @@ import {
 import { analyzeStoryboardDirectorRecipe } from '@/lib/storyboard/recipe/intelligence'
 import type {
   StoryboardDirectorFinding,
+  StoryboardDirectorPartialBatch,
   StoryboardDirectorRecipe,
 } from '@/lib/storyboard/recipe/types'
 import { StoryboardTimeline } from './StoryboardTimeline'
@@ -83,24 +84,27 @@ export interface StoryboardDirectorPanelProps {
   open: boolean
   state: StoryboardState
   activeShotId: string | null
-  recipe?: StoryboardDirectorRecipe | null
-  openedFromRecipe?: boolean
-  availableSources?: Array<{ id: string; title: string }>
-  availableRecipes?: Array<{ nodeId: string; recipeId: string; title: string; status: string }>
-  saveState?: 'local' | 'saving' | 'cloud' | 'failed'
-  legacyState?: LegacyDirectorStateReadResult
+  boardCommitMode: 'immediate' | 'buffered'
+  recipe: StoryboardDirectorRecipe | null
+  openedFromRecipe: boolean
+  availableSources: Array<{ id: string; title: string }>
+  availableRecipes: Array<{ nodeId: string; recipeId: string; title: string; status: string }>
+  saveState: 'local' | 'saving' | 'cloud' | 'failed'
+  legacyState: LegacyDirectorStateReadResult
+  emergencyPartialBatch: StoryboardDirectorPartialBatch | null
   projectId?: string
   canvasNodes?: Array<{ id: string; kind: string; title?: string; resultImageUrl?: string; resultVideoUrl?: string }>
   onStateChange: (state: StoryboardState) => void
   onActiveShotChange: (id: string | null) => void
-  onStartRecipe?: (sourceNodeId: string) => void
-  onOpenRecipe?: (controlNodeId: string) => void
-  onCommitRecipe?: (recipe: StoryboardDirectorRecipe) => void
-  onFocusSource?: (sourceNodeId: string) => void
-  onMaterializeGrouped?: StoryboardDirectorRecipePanelProps['onMaterializeGrouped']
-  onSyncShotBoard?: () => void
-  onCreateDraftNodes?: () => void
-  onImportLegacy?: () => void
+  onStartRecipe: (sourceNodeId: string) => void
+  onOpenRecipe: (controlNodeId: string) => void
+  onCommitRecipe: (recipe: StoryboardDirectorRecipe) => void
+  onFocusSource: (sourceNodeId: string) => void
+  onMaterializeGrouped: StoryboardDirectorRecipePanelProps['onMaterializeGrouped']
+  onSyncShotBoard: () => void
+  onCreateDraftNodes: () => void
+  onImportLegacy: () => void
+  onAcknowledgeEmergencyPartialBatch: (batchId: string) => void
   onClose: () => void
 }
 
@@ -229,8 +233,6 @@ export function patchStoryboardDirectorShot(
   return changed ? { ...state, shots, updatedAt } : state
 }
 
-const NOOP = () => {}
-
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -240,27 +242,100 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
   )
 }
 
+function BoardTextControl({
+  value,
+  mode,
+  ariaLabel,
+  placeholder,
+  multiline = false,
+  onCommit,
+}: {
+  value: string
+  mode: 'immediate' | 'buffered'
+  ariaLabel: string
+  placeholder: string
+  multiline?: boolean
+  onCommit: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const skipNextBlur = useRef(false)
+
+  useEffect(() => {
+    setDraft(value)
+    skipNextBlur.current = false
+  }, [value])
+
+  const handleChange = (next: string) => {
+    setDraft(next)
+    if (mode === 'immediate') onCommit(next)
+  }
+  const commitBuffered = () => {
+    if (mode !== 'buffered' || draft === value) return
+    onCommit(draft)
+  }
+  const handleBlur = () => {
+    if (skipNextBlur.current) {
+      skipNextBlur.current = false
+      return
+    }
+    commitBuffered()
+  }
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || mode !== 'buffered') return
+    event.preventDefault()
+    if (draft === value) return
+    skipNextBlur.current = true
+    onCommit(draft)
+  }
+  const props = {
+    'aria-label': ariaLabel,
+    placeholder,
+    value: draft,
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => handleChange(event.target.value),
+    onBlur: handleBlur,
+    onKeyDown: handleKeyDown,
+  }
+  return multiline ? (
+    <textarea
+      {...props}
+      rows={3}
+      style={{
+        ...inputStyle,
+        resize: 'vertical',
+        lineHeight: 1.6,
+        fontFamily: 'inherit',
+        minHeight: 64,
+      }}
+    />
+  ) : <input {...props} type="text" style={inputStyle} />
+}
+
 export function StoryboardDirectorPanel({
   open,
   state,
   activeShotId,
-  recipe = null,
-  openedFromRecipe = false,
-  availableSources = [],
-  availableRecipes = [],
-  saveState = 'local',
-  legacyState = { status: 'absent' },
+  boardCommitMode,
+  recipe,
+  openedFromRecipe,
+  availableSources,
+  availableRecipes,
+  saveState,
+  legacyState,
+  emergencyPartialBatch,
   canvasNodes = [],
   onStateChange,
   onActiveShotChange,
-  onStartRecipe = NOOP,
-  onOpenRecipe = NOOP,
-  onCommitRecipe = NOOP,
-  onFocusSource = NOOP,
-  onMaterializeGrouped = NOOP,
-  onSyncShotBoard = NOOP,
-  onCreateDraftNodes = NOOP,
-  onImportLegacy = NOOP,
+  onStartRecipe,
+  onOpenRecipe,
+  onCommitRecipe,
+  onFocusSource,
+  onMaterializeGrouped,
+  onSyncShotBoard,
+  onCreateDraftNodes,
+  onImportLegacy,
+  onAcknowledgeEmergencyPartialBatch,
   onClose,
 }: StoryboardDirectorPanelProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -575,8 +650,20 @@ export function StoryboardDirectorPanel({
                 ) : null}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <FieldRow label="镜头标题">
+                    <BoardTextControl
+                      key={`${activeShot.id}:title`}
+                      value={activeShot.title}
+                      mode={boardCommitMode}
+                      ariaLabel="镜头标题"
+                      placeholder="例: S01"
+                      onCommit={(value) => updateShot(activeShot.id, { title: value })}
+                    />
+                  </FieldRow>
+
                   <FieldRow label="景别">
                     <select
+                      aria-label="景别"
                       value={activeShot.shotType ?? ''}
                       onChange={(e) => updateShot(activeShot.id, { shotType: e.target.value || undefined })}
                       style={{ ...inputStyle, cursor: 'pointer' }}
@@ -589,6 +676,7 @@ export function StoryboardDirectorPanel({
 
                   <FieldRow label="时长 (秒)">
                     <input
+                      aria-label="时长 (秒)"
                       type="number"
                       min={0}
                       step={0.5}
@@ -603,17 +691,19 @@ export function StoryboardDirectorPanel({
                   </FieldRow>
 
                   <FieldRow label="情绪">
-                    <input
-                      type="text"
-                      placeholder="例: 紧张 / 孤独 / 宏大"
+                    <BoardTextControl
+                      key={`${activeShot.id}:mood`}
                       value={activeShot.mood ?? ''}
-                      onChange={(e) => updateShot(activeShot.id, { mood: e.target.value || undefined })}
-                      style={inputStyle}
+                      mode={boardCommitMode}
+                      ariaLabel="情绪"
+                      placeholder="例: 紧张 / 孤独 / 宏大"
+                      onCommit={(value) => updateShot(activeShot.id, { mood: value || undefined })}
                     />
                   </FieldRow>
 
                   <FieldRow label="运镜">
                     <select
+                      aria-label="运镜"
                       value={activeShot.cameraMovement ?? ''}
                       onChange={(e) => updateShot(activeShot.id, { cameraMovement: e.target.value || undefined })}
                       style={{ ...inputStyle, cursor: 'pointer' }}
@@ -626,18 +716,14 @@ export function StoryboardDirectorPanel({
                 </div>
 
                 <FieldRow label="导演备注">
-                  <textarea
-                    placeholder="镜头构图、情感要点、特别说明..."
+                  <BoardTextControl
+                    key={`${activeShot.id}:director-note`}
                     value={activeShot.directorNote ?? ''}
-                    onChange={(e) => updateShot(activeShot.id, { directorNote: e.target.value || undefined })}
-                    rows={3}
-                    style={{
-                      ...inputStyle,
-                      resize: 'vertical',
-                      lineHeight: 1.6,
-                      fontFamily: 'inherit',
-                      minHeight: 64,
-                    }}
+                    mode={boardCommitMode}
+                    ariaLabel="导演备注"
+                    placeholder="镜头构图、情感要点、特别说明..."
+                    multiline
+                    onCommit={(value) => updateShot(activeShot.id, { directorNote: value || undefined })}
                   />
                 </FieldRow>
               </div>
@@ -735,6 +821,7 @@ export function StoryboardDirectorPanel({
               availableRecipes={availableRecipes}
               saveState={saveState}
               legacyState={legacyState}
+              emergencyPartialBatch={emergencyPartialBatch}
               onStartRecipe={onStartRecipe}
               onOpenRecipe={onOpenRecipe}
               onCommitRecipe={onCommitRecipe}
@@ -743,6 +830,7 @@ export function StoryboardDirectorPanel({
               onSyncShotBoard={onSyncShotBoard}
               onCreateDraftNodes={onCreateDraftNodes}
               onImportLegacy={onImportLegacy}
+              onAcknowledgeEmergencyPartialBatch={onAcknowledgeEmergencyPartialBatch}
             />
           </div>
         )}

@@ -118,16 +118,23 @@ import {
   markRecipeSourceFreshness,
   markRecipeSourceMissing,
 } from '@/lib/storyboard/recipe/state-machine'
-import type { StoryboardDirectorRecipe } from '@/lib/storyboard/recipe/types'
+import type {
+  StoryboardDirectorPartialBatch,
+  StoryboardDirectorRecipe,
+} from '@/lib/storyboard/recipe/types'
 import {
+  attemptStoryboardDirectorRecipeCommit,
   importLegacyShotBoard,
   planStoryboardDirectorControlNode,
   planStoryboardDirectorDraftNodes,
   planStoryboardDirectorGroupedNodes,
   planStoryboardDirectorShotBoardSync,
+  recordStoryboardDirectorPartialBatch,
   recordStoryboardDirectorReceipts,
+  storyboardDirectorPartialBatchBlockers,
   storyboardDirectorRecipeSummary,
 } from '@/components/create/canvas/skills/storyboardDirectorMaterialization'
+import { completeLocalCanvasSaveSchedule } from '@/components/create/canvas/canvasSaveScheduling'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
@@ -2608,7 +2615,10 @@ export function VisualCanvasWorkspace({
   const [storyboardDirectorOpen, setStoryboardDirectorOpen] = useState(false)
   const [activeDirectorControlNodeId, setActiveDirectorControlNodeId] = useState('')
   const [storyboardDirectorOpenedFromRecipe, setStoryboardDirectorOpenedFromRecipe] = useState(false)
-  const [storyboardDirectorMaterializationLocked, setStoryboardDirectorMaterializationLocked] = useState(false)
+  const [emergencyDirectorPartialBatch, setEmergencyDirectorPartialBatch] = useState<{
+    recipeId: string
+    blocker: StoryboardDirectorPartialBatch
+  } | null>(null)
   const [p0MediaDebugOpen, setP0MediaDebugOpen] = useState(false)
   const [directorState, setDirectorState] = useState<StoryboardState>({ version: '1', shots: [], updatedAt: '' })
   const [directorActiveShotId, setDirectorActiveShotId] = useState<string | null>(null)
@@ -3552,13 +3562,19 @@ export function VisualCanvasWorkspace({
     setSaveMessage('继续使用服务器版本')
   }, [flushLocalSnapshot])
 
-  const scheduleCanvasSave = useCallback((_delay?: number) => {
+  const scheduleCanvasSave = useCallback((_delay?: number, options?: {
+    snapshot: 'flush' | 'already-flushed'
+  }) => {
     if (!projectId || !workflowId || !hasHydratedCanvasRef.current || isInitializingRef.current || isSwitchingProjectRef.current) return
     // Autosave is local-only — no automatic server PUT.
     // Cloud sync only happens when user clicks "保存到云端".
-    flushLocalSnapshot()
-    setSaveStatus('local-draft')
-    setSaveMessage('本地草稿已保存')
+    completeLocalCanvasSaveSchedule(options, {
+      flushSnapshot: flushLocalSnapshot,
+      markLocalDraft: () => {
+        setSaveStatus('local-draft')
+        setSaveMessage('本地草稿已保存')
+      },
+    })
   }, [projectId, workflowId, flushLocalSnapshot])
 
   const handleManualSave = useCallback(() => {
@@ -5193,9 +5209,8 @@ export function VisualCanvasWorkspace({
         })
         setActiveDirectorControlNodeId(controlNode.id)
         flushLocalSnapshot()
-        scheduleCanvasSave(0)
+        scheduleCanvasSave(0, { snapshot: 'already-flushed' })
       }
-      setStoryboardDirectorMaterializationLocked(false)
       setStoryboardDirectorOpenedFromRecipe(true)
       setStoryboardDirectorOpen(true)
     } catch {
@@ -5211,7 +5226,6 @@ export function VisualCanvasWorkspace({
       return
     }
     setActiveDirectorControlNodeId(controlNode.id)
-    setStoryboardDirectorMaterializationLocked(false)
     setStoryboardDirectorOpenedFromRecipe(true)
     setStoryboardDirectorOpen(true)
   }, [showCanvasFeedback])
@@ -5228,21 +5242,31 @@ export function VisualCanvasWorkspace({
       || nextRecipe.projectId !== projectId
       || nextRecipe.workflowId !== workflowId) {
       showCanvasFeedback('分镜导演上下文已变化，本次修改未保存。')
-      return
+      return false
     }
-    const liveSource = latestNodesRef.current.find((node) => node.id === nextRecipe.sourceNode.id)
-    const freshRecipe = liveSource?.kind === 'text'
-      ? markRecipeSourceFreshness(nextRecipe, creatorSkillSourceSnapshot(liveSource), new Date().toISOString())
-      : markRecipeSourceMissing(nextRecipe, new Date().toISOString())
-    handleNodePatch(controlNode.id, {
-      prompt: storyboardDirectorRecipeSummary(freshRecipe),
-      metadataJson: {
-        ...metadataRecord(controlNode.metadataJson),
-        ...storyboardDirectorRecipeMetadata(freshRecipe),
-      },
-    })
-    flushLocalSnapshot()
-    scheduleCanvasSave()
+    const persistLocalBatch = () => {
+      flushLocalSnapshot()
+      scheduleCanvasSave(0, { snapshot: 'already-flushed' })
+    }
+    try {
+      const liveSource = latestNodesRef.current.find((node) => node.id === nextRecipe.sourceNode.id)
+      const freshRecipe = liveSource?.kind === 'text'
+        ? markRecipeSourceFreshness(nextRecipe, creatorSkillSourceSnapshot(liveSource), new Date().toISOString())
+        : markRecipeSourceMissing(nextRecipe, new Date().toISOString())
+      handleNodePatch(controlNode.id, {
+        prompt: storyboardDirectorRecipeSummary(freshRecipe),
+        metadataJson: {
+          ...metadataRecord(controlNode.metadataJson),
+          ...storyboardDirectorRecipeMetadata(freshRecipe),
+        },
+      })
+      persistLocalBatch()
+      return true
+    } catch {
+      persistLocalBatch()
+      showCanvasFeedback('分镜导演 Recipe 保存失败，修改已保留在当前检查上下文。')
+      return false
+    }
   }, [activeDirectorControlNodeId, flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
 
   const currentStoryboardRecipeContext = useCallback((): LiveStoryboardRecipeContext | null => {
@@ -5264,10 +5288,9 @@ export function VisualCanvasWorkspace({
       && identity.sourceFingerprint === context.recipe.sourceFingerprint
   }, [projectId, workflowId])
 
-  const receiptFromCreatedPlan = useCallback((
+  const materializationClaimFromPlan = useCallback((
     recipe: StoryboardDirectorRecipe,
     plan: GroupedSkillNodePlan | SceneNodeMaterializationPlan,
-    targetId: string,
   ) => {
     const resultType = plan.metadataJson.creatorSkill.resultType
     const kind = resultType === 'shot-plan'
@@ -5284,20 +5307,32 @@ export function VisualCanvasWorkspace({
       ),
       kind,
       resultId: plan.resultId,
-      targetId,
     }
   }, [])
+
+  const receiptFromCreatedPlan = useCallback((
+    recipe: StoryboardDirectorRecipe,
+    plan: GroupedSkillNodePlan | SceneNodeMaterializationPlan,
+    targetId: string,
+  ) => ({
+    ...materializationClaimFromPlan(recipe, plan),
+    targetId,
+  }), [materializationClaimFromPlan])
 
   const handleMaterializeStoryboardDirectorRecipe = useCallback((
     kinds: Array<'scene' | 'beat' | 'shot-plan'>,
   ) => {
-    if (storyboardDirectorMaterializationLocked) {
-      showCanvasFeedback('上次落地仅部分完成，请先检查已创建节点。')
-      return
-    }
     const context = currentStoryboardRecipeContext()
     if (!context) {
       showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    const activeBlocker = storyboardDirectorPartialBatchBlockers(context.recipe)[0]
+      ?? (emergencyDirectorPartialBatch?.recipeId === context.recipe.recipeId
+        ? emergencyDirectorPartialBatch.blocker
+        : null)
+    if (activeBlocker) {
+      showCanvasFeedback(`上次批次已创建 ${activeBlocker.createdCount} 个，${activeBlocker.uncreatedCount} 个未创建。请先检查并确认。`)
       return
     }
     if (!isLiveStoryboardRecipeContext(context)) {
@@ -5340,18 +5375,33 @@ export function VisualCanvasWorkspace({
     } catch {
       failed = true
     } finally {
-      if (completed.length) {
-        handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+      if (failed) {
+        const partial = recordStoryboardDirectorPartialBatch(
           context.recipe,
+          'grouped-materialization',
+          plans.create.map((plan) => materializationClaimFromPlan(context.recipe, plan).identity),
           completed,
           new Date().toISOString(),
-        ))
-      }
-      if (failed) {
-        setStoryboardDirectorMaterializationLocked(true)
+        )
+        const persisted = attemptStoryboardDirectorRecipeCommit(
+          partial.recipe,
+          handleCommitStoryboardDirectorRecipe,
+        )
+        if (!persisted) {
+          setEmergencyDirectorPartialBatch({
+            recipeId: context.recipe.recipeId,
+            blocker: partial.blocker,
+          })
+        }
         showCanvasFeedback(`已创建 ${completed.length} 个节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
       } else {
-        setStoryboardDirectorMaterializationLocked(false)
+        if (completed.length) {
+          handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+            context.recipe,
+            completed,
+            new Date().toISOString(),
+          ))
+        }
         showCanvasFeedback(`已创建 ${completed.length} 个节点，跳过 ${plans.duplicates.length} 个重复项。`)
       }
     }
@@ -5360,15 +5410,24 @@ export function VisualCanvasWorkspace({
     currentStoryboardRecipeContext,
     handleCommitStoryboardDirectorRecipe,
     isLiveStoryboardRecipeContext,
+    emergencyDirectorPartialBatch,
+    materializationClaimFromPlan,
     receiptFromCreatedPlan,
     showCanvasFeedback,
-    storyboardDirectorMaterializationLocked,
   ])
 
   const handleSyncStoryboardDirectorShotBoard = useCallback(() => {
     const context = currentStoryboardRecipeContext()
     if (!context) {
       showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    const activeBlocker = storyboardDirectorPartialBatchBlockers(context.recipe)[0]
+      ?? (emergencyDirectorPartialBatch?.recipeId === context.recipe.recipeId
+        ? emergencyDirectorPartialBatch.blocker
+        : null)
+    if (activeBlocker) {
+      showCanvasFeedback(`上次批次已创建 ${activeBlocker.createdCount} 个，${activeBlocker.uncreatedCount} 个未创建。请先检查并确认。`)
       return
     }
     if (!isLiveStoryboardRecipeContext(context)) {
@@ -5392,19 +5451,24 @@ export function VisualCanvasWorkspace({
     }
   }, [
     currentStoryboardRecipeContext,
+    emergencyDirectorPartialBatch,
     handleCommitStoryboardDirectorRecipe,
     isLiveStoryboardRecipeContext,
     showCanvasFeedback,
   ])
 
   const handleCreateStoryboardDirectorDraftNodes = useCallback(() => {
-    if (storyboardDirectorMaterializationLocked) {
-      showCanvasFeedback('上次落地仅部分完成，请先检查已创建节点。')
-      return
-    }
     const context = currentStoryboardRecipeContext()
     if (!context) {
       showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    const activeBlocker = storyboardDirectorPartialBatchBlockers(context.recipe)[0]
+      ?? (emergencyDirectorPartialBatch?.recipeId === context.recipe.recipeId
+        ? emergencyDirectorPartialBatch.blocker
+        : null)
+    if (activeBlocker) {
+      showCanvasFeedback(`上次批次已创建 ${activeBlocker.createdCount} 个，${activeBlocker.uncreatedCount} 个未创建。请先检查并确认。`)
       return
     }
     if (!isLiveStoryboardRecipeContext(context)) {
@@ -5455,28 +5519,43 @@ export function VisualCanvasWorkspace({
     } catch {
       failed = true
     } finally {
-      if (completed.length) {
-        handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+      if (failed) {
+        const partial = recordStoryboardDirectorPartialBatch(
           context.recipe,
+          'draft-node-creation',
+          plans.create.map((plan) => plan.identity),
           completed,
           new Date().toISOString(),
-        ))
-      }
-      if (failed) {
-        setStoryboardDirectorMaterializationLocked(true)
+        )
+        const persisted = attemptStoryboardDirectorRecipeCommit(
+          partial.recipe,
+          handleCommitStoryboardDirectorRecipe,
+        )
+        if (!persisted) {
+          setEmergencyDirectorPartialBatch({
+            recipeId: context.recipe.recipeId,
+            blocker: partial.blocker,
+          })
+        }
         showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
       } else {
-        setStoryboardDirectorMaterializationLocked(false)
+        if (completed.length) {
+          handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+            context.recipe,
+            completed,
+            new Date().toISOString(),
+          ))
+        }
         showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，跳过 ${plans.duplicates.length} 个重复项。`)
       }
     }
   }, [
     createNode,
     currentStoryboardRecipeContext,
+    emergencyDirectorPartialBatch,
     handleCommitStoryboardDirectorRecipe,
     isLiveStoryboardRecipeContext,
     showCanvasFeedback,
-    storyboardDirectorMaterializationLocked,
   ])
 
   const handleImportLegacyStoryboardDirectorState = useCallback(() => {
@@ -5513,6 +5592,13 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback,
   ])
 
+  const handleAcknowledgeEmergencyDirectorPartialBatch = useCallback((batchId: string) => {
+    setEmergencyDirectorPartialBatch((current) => (
+      current?.blocker.batchId === batchId ? null : current
+    ))
+    showCanvasFeedback('已确认检查该批次；可以重新规划后续操作。')
+  }, [showCanvasFeedback])
+
   const focusStoryboardDirectorSource = useCallback((sourceNodeId: string) => {
     const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
     if (!sourceNode) return
@@ -5526,14 +5612,14 @@ export function VisualCanvasWorkspace({
     if (nodes.some((node) => node.id === activeDirectorControlNodeId)) return
     setActiveDirectorControlNodeId('')
     setStoryboardDirectorOpenedFromRecipe(false)
-    setStoryboardDirectorMaterializationLocked(false)
+    setEmergencyDirectorPartialBatch(null)
     setStoryboardDirectorOpen(false)
   }, [activeDirectorControlNodeId, nodes])
 
   useEffect(() => {
     setActiveDirectorControlNodeId('')
     setStoryboardDirectorOpenedFromRecipe(false)
-    setStoryboardDirectorMaterializationLocked(false)
+    setEmergencyDirectorPartialBatch(null)
     setStoryboardDirectorOpen(false)
   }, [projectId, workflowId])
 
@@ -5560,7 +5646,7 @@ export function VisualCanvasWorkspace({
       })
     }
     flushLocalSnapshot()
-    scheduleCanvasSave()
+    scheduleCanvasSave(0, { snapshot: 'already-flushed' })
   }, [flushLocalSnapshot, handleNodePatch, nodes, scheduleCanvasSave])
   // End Storyboard Director Recipe lifecycle
 
@@ -10758,11 +10844,18 @@ export function VisualCanvasWorkspace({
             state={effectiveDirectorState}
             activeShotId={directorActiveShotId}
             recipe={activeDirectorRecipe}
+            boardCommitMode={activeDirectorRecipe ? 'buffered' : 'immediate'}
             openedFromRecipe={storyboardDirectorOpenedFromRecipe}
             availableSources={availableDirectorSources}
             availableRecipes={availableDirectorRecipes}
             saveState={directorRecipeSaveState}
             legacyState={legacyDirectorState}
+            emergencyPartialBatch={
+              activeDirectorRecipe
+                && emergencyDirectorPartialBatch?.recipeId === activeDirectorRecipe.recipeId
+                ? emergencyDirectorPartialBatch.blocker
+                : null
+            }
             projectId={projectId}
             canvasNodes={nodes.map((n) => ({
               id: n.id,
@@ -10790,6 +10883,7 @@ export function VisualCanvasWorkspace({
             onSyncShotBoard={handleSyncStoryboardDirectorShotBoard}
             onCreateDraftNodes={handleCreateStoryboardDirectorDraftNodes}
             onImportLegacy={handleImportLegacyStoryboardDirectorState}
+            onAcknowledgeEmergencyPartialBatch={handleAcknowledgeEmergencyDirectorPartialBatch}
             onClose={() => setStoryboardDirectorOpen(false)}
           />
         </>

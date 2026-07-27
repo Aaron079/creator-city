@@ -12,6 +12,7 @@ import type {
 } from '../../skills'
 import {
   createRecipeMaterializationIdentity,
+  createStoryboardDirectorPartialBatchIdentity,
 } from './identity'
 import type { RecipeReviewItem, StoryboardDirectorRecipe } from './types'
 import {
@@ -316,6 +317,42 @@ function orderIntegrationRecipe() {
 }
 
 describe('Storyboard Director intelligence', () => {
+  test('retains a persisted partial-batch finding as a materialization blocker after reopen', () => {
+    const recipe = canonicalRecipe()
+    const plannedIdentities = ['sdrm1_plan-a', 'sdrm1_plan-b']
+    const batchId = createStoryboardDirectorPartialBatchIdentity(
+      recipe.recipeId,
+      'grouped-materialization',
+      plannedIdentities,
+    )
+    const reopened: StoryboardDirectorRecipe = {
+      ...recipe,
+      findings: [{
+        findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+        severity: 'blocking',
+        code: 'PARTIAL_MATERIALIZATION_BATCH',
+        message: 'Created 1 target; 1 target was not created.',
+        evidenceIds: [],
+        partialBatch: {
+          batchId,
+          operation: 'grouped-materialization',
+          plannedCount: 2,
+          createdCount: 1,
+          uncreatedCount: 1,
+          plannedIdentities,
+          successfulTargetIds: ['target-1'],
+        },
+      }],
+    }
+    const findings = analyzeStoryboardDirectorRecipe(reopened)
+    const blocker = findings.find((item) => item.code === 'PARTIAL_MATERIALIZATION_BATCH')
+    assert.ok(blocker)
+    assert.equal(blocker.findingId, reopened.findings[0]?.findingId)
+    assert.deepEqual(blocker.partialBatch, reopened.findings[0]?.partialBatch)
+    assert.equal(isStoryboardRecipeMaterializationReady(reopened), false)
+    assert.equal(summarizeStoryboardDirectorRecipe(reopened).ready, false)
+  })
+
   test('blocks uncovered scenes and beats with stable item identities', () => {
     const findings = analyzeStoryboardDirectorRecipe(recipeWithCoverageGaps())
     assert.deepEqual(findings.filter((item) => item.severity === 'blocking').map((item) => ({
@@ -605,6 +642,25 @@ describe('Storyboard Director intelligence', () => {
     )
     assert.equal(conflicts.length, 1)
     assert.equal(isStoryboardRecipeMaterializationReady(recipe), false)
+  })
+
+  test('blocks a recomputed grouped receipt for an unapproved result identity', () => {
+    const recipe = approvedRecipe()
+    const resultId = 'scene-not-approved'
+    recipe.receipts = [{
+      identity: createRecipeMaterializationIdentity(
+        recipe.recipeId,
+        'scene',
+        `scene-breakdown-${resultId}-approved`,
+        resultId,
+      ),
+      kind: 'scene',
+      resultId,
+      targetId: 'forged-target',
+    }]
+    assert.equal(analyzeStoryboardDirectorRecipe(recipe).some(
+      (item) => item.code === 'MATERIALIZATION_RECEIPT_CONFLICT',
+    ), true)
   })
 
   test('uses inclusive duplicate overlap boundaries, ignores empty text, and isolates scenes', () => {

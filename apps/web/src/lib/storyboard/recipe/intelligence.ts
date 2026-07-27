@@ -462,19 +462,29 @@ function receiptConflict(recipe: StoryboardDirectorRecipe) {
     const previousTarget = seen.get(receipt.identity)
     if (previousTarget !== undefined && previousTarget !== receipt.targetId) return true
     seen.set(receipt.identity, receipt.targetId)
-    const artifact = receipt.kind === 'scene'
-      ? recipe.scene.approvedArtifact
+    const artifactId = receipt.kind === 'scene'
+      ? `scene-breakdown-${receipt.resultId}-approved`
       : receipt.kind === 'beat'
-        ? recipe.beat.approvedArtifact
-        : recipe.shot.approvedArtifact
-    if (!artifact) return true
+        ? `narrative-beat-map-${receipt.resultId}-approved`
+        : receipt.kind === 'shot-plan'
+          ? `shot-plan-${receipt.resultId}-approved`
+          : recipe.shot.approvedArtifact?.artifactId
+    if (!artifactId) return true
     const expected = createRecipeMaterializationIdentity(
       recipe.recipeId,
       receipt.kind,
-      artifact.artifactId,
+      artifactId,
       receipt.resultId,
     )
     if (receipt.identity !== expected) return true
+    const resultIsApproved = receipt.kind === 'scene'
+      ? approvedSceneDrafts(recipe).some((item) => item.sceneId === receipt.resultId)
+      : receipt.kind === 'beat'
+        ? approvedBeatDrafts(recipe).some((item) => item.sceneId === receipt.resultId)
+        : receipt.kind === 'shot-plan'
+          ? approvedShotDrafts(recipe).some((item) => item.sceneId === receipt.resultId)
+          : approvedShotDrafts(recipe).some((item) => item.shotId === receipt.resultId)
+    if (!resultIsApproved) return true
   }
   return false
 }
@@ -781,13 +791,27 @@ function advisoryFindings(recipe: StoryboardDirectorRecipe) {
 export function analyzeStoryboardDirectorRecipe(recipe: StoryboardDirectorRecipe) {
   const values = [...blockingFindings(recipe), ...advisoryFindings(recipe)]
   const seen = new Set<string>()
-  const findings: StoryboardDirectorFinding[] = []
+  const findings = recipe.findings.filter((item) => (
+    item.code === 'PARTIAL_MATERIALIZATION_BATCH'
+    && item.severity === 'blocking'
+    && item.partialBatch
+  ))
+  for (const item of findings) {
+    seen.add([
+      item.code,
+      item.sceneId ?? '',
+      item.beatId ?? '',
+      item.shotId ?? '',
+      item.partialBatch?.batchId ?? '',
+    ].join('\u0000'))
+  }
   for (const value of values) {
     const key = [
       value.code,
       value.sceneId ?? '',
       value.beatId ?? '',
       value.shotId ?? '',
+      value.partialBatch?.batchId ?? '',
     ].join('\u0000')
     if (seen.has(key)) continue
     seen.add(key)

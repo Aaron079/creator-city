@@ -3,6 +3,7 @@ import type { CreatorSkillSourceNode } from '../../skills'
 import {
   STORYBOARD_DIRECTOR_RECIPE_SKILL_VERSION,
   type StoryboardDirectorMaterializationReceipt,
+  type StoryboardDirectorPartialBatchOperation,
 } from './types'
 
 function requireId(value: unknown, field: string) {
@@ -51,4 +52,29 @@ export function createRecipeMaterializationIdentity(
       prompt: JSON.stringify([kind, artifactId, resultId]),
     }],
   }).replace(/^csf1_/, 'sdrm1_')
+}
+
+export function createStoryboardDirectorPartialBatchIdentity(
+  recipeId: string,
+  operation: StoryboardDirectorPartialBatchOperation,
+  plannedIdentities: readonly string[],
+) {
+  const stableRecipeId = requireId(recipeId, 'recipeId')
+  if (operation !== 'grouped-materialization' && operation !== 'draft-node-creation') {
+    throw new TypeError('operation is invalid')
+  }
+  const identities = plannedIdentities.map((identity, index) => (
+    requireId(identity, `plannedIdentities[${index}]`)
+  )).sort()
+  if (new Set(identities).size !== identities.length) {
+    throw new TypeError('plannedIdentities must be unique')
+  }
+  return createCreatorSkillFingerprint('storyboard-director-partial-batch', '1.0.0', {
+    sourceNodes: [{
+      id: stableRecipeId,
+      kind: 'text',
+      title: '',
+      prompt: JSON.stringify([operation, identities]),
+    }],
+  }).replace(/^csf1_/, 'sdrb1_')
 }

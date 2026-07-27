@@ -22,7 +22,11 @@ import {
   setRecipeDecision,
   updateRecipeDraft,
 } from '../../lib/storyboard/recipe/state-machine'
-import { planStoryboardDirectorShotBoardSync } from './canvas/skills/storyboardDirectorMaterialization'
+import {
+  planStoryboardDirectorDraftNodes,
+  planStoryboardDirectorShotBoardSync,
+  recordStoryboardDirectorPartialBatch,
+} from './canvas/skills/storyboardDirectorMaterialization'
 import type {
   StoryboardDirectorFinding,
   StoryboardDirectorRecipe,
@@ -157,6 +161,25 @@ function completedRecipe() {
   return approveShotStage(decideAll(shotReview, 'shot-review', 'approved'), ISO_TIME)
 }
 
+function partialBatchRecipe() {
+  const recipe = completedRecipe()
+  const plans = planStoryboardDirectorDraftNodes(recipe, []).create
+  const first = plans[0]
+  assert.ok(first)
+  return recordStoryboardDirectorPartialBatch(
+    recipe,
+    'draft-node-creation',
+    plans.map((plan) => plan.identity),
+    [{
+      identity: first.identity,
+      kind: 'draft-node',
+      resultId: first.resultId,
+      targetId: 'created-draft-1',
+    }],
+    ISO_TIME,
+  ).recipe
+}
+
 function sceneRecipeWithWarning() {
   const recipe = approveSceneStage(decidedSceneRecipe(), ISO_TIME, runCreatorSkill)
   const warningIndex = recipe.beat.drafts.findIndex((item) => item.sceneId === recipe.beat.drafts[0]?.sceneId)
@@ -222,6 +245,7 @@ function renderedHarnessSource() {
   })
   const sceneReview = JSON.stringify(decidedSceneRecipe())
   const beatReview = JSON.stringify(approveSceneStage(decidedSceneRecipe(), ISO_TIME))
+  const partialBatch = JSON.stringify(partialBatchRecipe())
   return `
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
@@ -233,10 +257,12 @@ function renderedHarnessSource() {
       replacement: ${replacement},
       sceneReview: ${sceneReview},
       beatReview: ${beatReview},
+      partialBatch: ${partialBatch},
     }
     let root = null
     let calls = []
     let currentRecipe = null
+    let emergencyPartialBatch = null
     let detachedConfirm = null
     let livePanel = null
 
@@ -245,6 +271,7 @@ function renderedHarnessSource() {
       document.getElementById('root').replaceChildren()
       root = createRoot(document.getElementById('root'))
       calls = []
+      emergencyPartialBatch = null
       detachedConfirm = null
       livePanel = null
     }
@@ -256,6 +283,7 @@ function renderedHarnessSource() {
         availableRecipes: [],
         saveState: 'cloud',
         legacyState: { status: 'absent' },
+        emergencyPartialBatch,
         onStartRecipe() {},
         onOpenRecipe() {},
         onCommitRecipe(next) {
@@ -268,6 +296,11 @@ function renderedHarnessSource() {
         onSyncShotBoard() { calls.push('sync') },
         onCreateDraftNodes() { calls.push('draft-nodes') },
         onImportLegacy() {},
+        onAcknowledgeEmergencyPartialBatch(batchId) {
+          calls.push('emergency-ack:' + batchId)
+          emergencyPartialBatch = null
+          renderRecipe()
+        },
       }
     }
 
@@ -286,6 +319,17 @@ function renderedHarnessSource() {
         || Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '确认修改')
         || null
       currentRecipe = structuredClone(FIXTURES[kind])
+      renderRecipe()
+    }
+
+    function mountEmergencyRecipe() {
+      resetRoot()
+      currentRecipe = structuredClone(FIXTURES.completed)
+      emergencyPartialBatch = structuredClone(
+        FIXTURES.partialBatch.findings.find(
+          (finding) => finding.code === 'PARTIAL_MATERIALIZATION_BATCH',
+        ).partialBatch,
+      )
       renderRecipe()
     }
 
@@ -336,15 +380,29 @@ function renderedHarnessSource() {
         state: { version: '1', shots: [shot], updatedAt: shot.updatedAt },
         activeShotId: shot.id,
         recipe: mode === 'unavailable' ? null : currentRecipe,
+        boardCommitMode: mode === 'manual' ? 'immediate' : 'buffered',
+        openedFromRecipe: false,
+        availableSources: [],
         availableRecipes: matching,
-        onStateChange() {},
+        saveState: 'local',
+        legacyState: { status: 'absent' },
+        emergencyPartialBatch: null,
+        onStateChange() { calls.push('state-change') },
         onActiveShotChange() {},
+        onStartRecipe() {},
         onOpenRecipe(nodeId) {
           const selected = document.querySelector('[data-testid="storyboard-director-tab-board"]')
             ?.getAttribute('aria-selected') === 'true' ? 'board' : 'recipe'
           calls.push('open:' + nodeId + ':' + selected)
         },
+        onCommitRecipe() {},
+        onFocusSource() {},
+        onMaterializeGrouped() {},
+        onSyncShotBoard() {},
+        onCreateDraftNodes() {},
+        onImportLegacy() {},
         onClose() {},
+        onAcknowledgeEmergencyPartialBatch() {},
       }))
     }
 
@@ -368,12 +426,25 @@ function renderedHarnessSource() {
         },
         activeShotId: null,
         recipe,
+        boardCommitMode: recipe ? 'buffered' : 'immediate',
         openedFromRecipe: livePanel.openedFromRecipe,
+        availableSources: [],
         availableRecipes: control,
         saveState: livePanel.saveState,
+        legacyState: { status: 'absent' },
+        emergencyPartialBatch: null,
         onStateChange() {},
         onActiveShotChange() {},
+        onStartRecipe() {},
+        onOpenRecipe() {},
+        onCommitRecipe() {},
+        onFocusSource() {},
+        onMaterializeGrouped() {},
+        onSyncShotBoard() {},
+        onCreateDraftNodes() {},
+        onImportLegacy() {},
         onClose() {},
+        onAcknowledgeEmergencyPartialBatch() {},
       }))
     }
 
@@ -397,6 +468,7 @@ function renderedHarnessSource() {
 
     window.__directorHarness = {
       mountRecipe,
+      mountEmergencyRecipe,
       replaceRecipe,
       clickDetachedConfirm,
       mountBoard,
@@ -470,7 +542,8 @@ async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜�
 }
 
 type RenderedHarness = {
-  mountRecipe: (kind?: 'completed' | 'replacement' | 'sceneReview' | 'beatReview') => void
+  mountRecipe: (kind?: 'completed' | 'replacement' | 'sceneReview' | 'beatReview' | 'partialBatch') => void
+  mountEmergencyRecipe: () => void
   replaceRecipe: (kind?: 'completed' | 'replacement') => void
   clickDetachedConfirm: () => void
   mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
@@ -487,7 +560,10 @@ type RenderedHarness = {
   recipe: () => StoryboardDirectorRecipe
 }
 
-async function mountRenderedRecipe(page: Page, kind: 'completed' | 'sceneReview' | 'beatReview' = 'completed') {
+async function mountRenderedRecipe(
+  page: Page,
+  kind: 'completed' | 'sceneReview' | 'beatReview' | 'partialBatch' = 'completed',
+) {
   await page.evaluate((fixture) => (
     window as unknown as { __directorHarness: RenderedHarness }
   ).__directorHarness.mountRecipe(fixture), kind)
@@ -495,6 +571,13 @@ async function mountRenderedRecipe(page: Page, kind: 'completed' | 'sceneReview'
   if (await page.locator('#root').evaluate((element) => element.childElementCount) === 0) {
     throw new Error(`Rendered Recipe root is empty: ${(renderedPageErrors.get(page) ?? []).join(' | ')}`)
   }
+}
+
+async function mountRenderedEmergencyRecipe(page: Page) {
+  await page.evaluate(() => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.mountEmergencyRecipe())
+  await page.waitForTimeout(50)
 }
 
 async function mountRenderedBoard(
@@ -922,6 +1005,92 @@ describe('Storyboard Director Recipe actions', () => {
 })
 
 describe('Storyboard Director rendered interactions', () => {
+  test('Recipe board text buffers twenty characters until blur and Enter does not double commit', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'matching')
+      const title = page.getByLabel('镜头标题')
+      await title.press('End')
+      await title.pressSequentially('abcdefghijklmnopqrst')
+      assert.deepEqual(await renderedCalls(page), [])
+      await title.blur()
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+
+      await mountRenderedBoard(page, 'matching')
+      const note = page.getByPlaceholder('镜头构图、情感要点、特别说明...')
+      await note.press('End')
+      await note.pressSequentially('abcdefghijklmnopqrst')
+      assert.deepEqual(await renderedCalls(page), [])
+      await note.press('Enter')
+      await note.blur()
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('manual board text stays immediate while Recipe select and number changes commit once', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'manual')
+      const title = page.getByLabel('镜头标题')
+      await title.press('End')
+      await title.pressSequentially('abcdefghijklmnopqrst')
+      assert.equal((await renderedCalls(page)).length, 20)
+
+      await mountRenderedBoard(page, 'matching')
+      await page.getByLabel('景别').selectOption('CU')
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+
+      await mountRenderedBoard(page, 'matching')
+      await page.getByLabel('时长 (秒)').fill('8')
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('reopened partial batch remains locked until the visible targeted acknowledgment', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page, 'partialBatch')
+      await page.getByText(/已创建 1 个草稿节点/).waitFor()
+      for (const label of ['落地审核结果', '同步镜头板', '创建草稿节点']) {
+        assert.equal(await page.getByRole('button', { name: label }).isDisabled(), true)
+      }
+      assert.deepEqual(await renderedCalls(page), [])
+
+      await page.getByRole('button', { name: '确认已检查此批次' }).click()
+      assert.deepEqual(await renderedCalls(page), ['commit'])
+      assert.equal(
+        (await renderedRecipe(page)).findings.some(
+          (item) => item.code === 'PARTIAL_MATERIALIZATION_BATCH',
+        ),
+        false,
+      )
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('emergency partial lock disables apply until its explicit inspection acknowledgment', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedEmergencyRecipe(page)
+      await page.getByText(/已创建 1 个草稿节点/).waitFor()
+      for (const label of ['落地审核结果', '同步镜头板', '创建草稿节点']) {
+        assert.equal(await page.getByRole('button', { name: label }).isDisabled(), true)
+      }
+      await page.getByRole('button', { name: '确认已检查此批次' }).click()
+      const calls = await renderedCalls(page)
+      assert.equal(calls.length, 1)
+      assert.match(calls[0] ?? '', /^emergency-ack:sdrb1_/)
+      assert.equal(await page.getByRole('button', { name: '落地审核结果' }).isEnabled(), true)
+    } finally {
+      await page.close()
+    }
+  })
+
   test('approved edit cancel resets the draft and re-edit confirm commits once', async () => {
     const page = await renderPage()
     try {

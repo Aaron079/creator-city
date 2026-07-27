@@ -7,6 +7,7 @@ import { describe, test } from 'node:test'
 import {
   addNodeToShot,
   createRecipeMaterializationIdentity,
+  createStoryboardDirectorPartialBatchIdentity,
   createStoryboardDirectorRecipeIdentity,
   readStoryboardDirectorRecipe,
   storyboardDirectorRecipeMetadata,
@@ -299,6 +300,88 @@ describe('Storyboard Director Recipe persistence', () => {
     assert.notEqual(read.recipe.scene.drafts[0], recipe.scene.drafts[0])
     assert.notEqual(read.recipe.storyboard.shots[0], recipe.storyboard.shots[0])
     assert.notEqual(read.recipe.findings[0]?.evidenceIds, recipe.findings[0]?.evidenceIds)
+  })
+
+  test('strictly round-trips a deterministic partial-batch blocker', () => {
+    const recipe = validRecipeFixture()
+    const plannedIdentities = ['sdrm1_plan-a', 'sdrm1_plan-b', 'sdrm1_plan-c']
+    const batchId = createStoryboardDirectorPartialBatchIdentity(
+      recipe.recipeId,
+      'grouped-materialization',
+      plannedIdentities,
+    )
+    recipe.findings = [{
+      findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+      severity: 'blocking',
+      code: 'PARTIAL_MATERIALIZATION_BATCH',
+      message: 'Created 1 target; 2 targets were not created.',
+      evidenceIds: [],
+      partialBatch: {
+        batchId,
+        operation: 'grouped-materialization',
+        plannedCount: 3,
+        createdCount: 1,
+        uncreatedCount: 2,
+        plannedIdentities,
+        successfulTargetIds: ['target-1'],
+      },
+    }]
+    const read = readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(recipe))
+    assert.equal(read.status, 'valid')
+    if (read.status !== 'valid') return
+    assert.deepEqual(read.recipe.findings, recipe.findings)
+    assert.notEqual(read.recipe.findings[0]?.partialBatch, recipe.findings[0]?.partialBatch)
+    assert.notEqual(
+      read.recipe.findings[0]?.partialBatch?.plannedIdentities,
+      recipe.findings[0]?.partialBatch?.plannedIdentities,
+    )
+  })
+
+  test('rejects forged partial-batch identity, counts, targets, and shape', () => {
+    const recipe = validRecipeFixture()
+    const plannedIdentities = ['sdrm1_plan-a', 'sdrm1_plan-b']
+    const batchId = createStoryboardDirectorPartialBatchIdentity(
+      recipe.recipeId,
+      'draft-node-creation',
+      plannedIdentities,
+    )
+    const finding = {
+      findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+      severity: 'blocking' as const,
+      code: 'PARTIAL_MATERIALIZATION_BATCH',
+      message: 'Created 1 target; 1 target was not created.',
+      evidenceIds: [],
+      partialBatch: {
+        batchId,
+        operation: 'draft-node-creation' as const,
+        plannedCount: 2,
+        createdCount: 1,
+        uncreatedCount: 1,
+        plannedIdentities,
+        successfulTargetIds: ['target-1'],
+      },
+    }
+    const invalid = [
+      { ...finding, partialBatch: { ...finding.partialBatch, batchId: 'sdrb1_forged' } },
+      { ...finding, partialBatch: { ...finding.partialBatch, uncreatedCount: 0 } },
+      { ...finding, partialBatch: { ...finding.partialBatch, successfulTargetIds: [] } },
+      { ...finding, partialBatch: { ...finding.partialBatch, successfulTargetIds: ['target-1', 'target-1'] } },
+      { ...finding, code: 'OTHER_CODE' },
+      { ...finding, partialBatch: { ...finding.partialBatch, unexpected: true } },
+    ]
+    for (const candidate of invalid) {
+      assertInvalid({ ...recipe, findings: [candidate] })
+    }
+    assertInvalid({
+      ...recipe,
+      findings: [{
+        findingId: finding.findingId,
+        severity: 'blocking',
+        code: 'PARTIAL_MATERIALIZATION_BATCH',
+        message: finding.message,
+        evidenceIds: [],
+      }],
+    })
   })
 
   test('distinguishes absent, invalid, unsupported, and oversized metadata', () => {

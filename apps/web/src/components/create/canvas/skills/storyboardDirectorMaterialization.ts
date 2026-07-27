@@ -5,6 +5,7 @@ import type {
 import { cloneAndValidateStoryboardState } from '../../../../lib/storyboard/director'
 import {
   createRecipeMaterializationIdentity,
+  createStoryboardDirectorPartialBatchIdentity,
 } from '../../../../lib/storyboard/recipe/identity'
 import {
   analyzeStoryboardDirectorRecipe,
@@ -17,6 +18,8 @@ import {
 import {
   STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   type StoryboardDirectorMaterializationReceipt,
+  type StoryboardDirectorPartialBatch,
+  type StoryboardDirectorPartialBatchOperation,
   type StoryboardDirectorRecipe,
 } from '../../../../lib/storyboard/recipe/types'
 import type { ShotCard, StoryboardState } from '../../../../lib/storyboard/types'
@@ -1099,25 +1102,23 @@ function expectedReceiptClaims(recipe: StoryboardDirectorRecipe) {
     }
   }
   if (recipe.scene.approvedArtifact) {
-    add(
-      'scene',
-      recipe.scene.approvedArtifact.artifactId,
-      recipe.scene.drafts.filter((item) => item.decision === 'approved').map((item) => item.sceneId),
-    )
+    for (const item of recipe.scene.drafts.filter((draft) => draft.decision === 'approved')) {
+      add('scene', `scene-breakdown-${item.sceneId}-approved`, [item.sceneId])
+    }
   }
   if (recipe.beat.approvedArtifact) {
-    add(
-      'beat',
-      recipe.beat.approvedArtifact.artifactId,
-      uniqueApprovedSceneIds(recipe.beat.drafts),
-    )
+    for (const sceneId of uniqueApprovedSceneIds(recipe.beat.drafts)) {
+      add('beat', `narrative-beat-map-${sceneId}-approved`, [sceneId])
+    }
   }
   if (recipe.shot.approvedArtifact) {
     const shotSceneIds = uniqueApprovedSceneIds(recipe.shot.drafts)
     const shotIds = recipe.shot.drafts
       .filter((item) => item.decision === 'approved')
       .map((item) => item.shotId)
-    add('shot-plan', recipe.shot.approvedArtifact.artifactId, shotSceneIds)
+    for (const sceneId of shotSceneIds) {
+      add('shot-plan', `shot-plan-${sceneId}-approved`, [sceneId])
+    }
     add('shot-card', recipe.shot.approvedArtifact.artifactId, shotIds)
     add('draft-node', recipe.shot.approvedArtifact.artifactId, shotIds)
   }
@@ -1199,6 +1200,133 @@ export function recordStoryboardDirectorReceipts(
     ...recipe,
     receipts,
     audit: { ...recipe.audit, updatedAt: now },
+  }
+}
+
+export function storyboardDirectorPartialBatchBlockers(
+  recipe: StoryboardDirectorRecipe,
+): StoryboardDirectorPartialBatch[] {
+  return recipe.findings.flatMap((finding) => (
+    finding.code === 'PARTIAL_MATERIALIZATION_BATCH'
+      && finding.severity === 'blocking'
+      && finding.partialBatch
+      ? [{
+          ...finding.partialBatch,
+          plannedIdentities: [...finding.partialBatch.plannedIdentities],
+          successfulTargetIds: [...finding.partialBatch.successfulTargetIds],
+        }]
+      : []
+  ))
+}
+
+export function recordStoryboardDirectorPartialBatch(
+  recipe: StoryboardDirectorRecipe,
+  operation: StoryboardDirectorPartialBatchOperation,
+  plannedIdentities: string[],
+  completed: Array<{
+    identity: string
+    kind: StoryboardDirectorMaterializationReceipt['kind']
+    resultId: string
+    targetId: string
+  }>,
+  now: string,
+) {
+  const plannedItems = snapshotDenseArray<unknown>(
+    plannedIdentities,
+    'plannedIdentities',
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  ).map((value, index) => requiredId(value, `plannedIdentities[${index}]`)).sort()
+  if (plannedItems.length === 0 || new Set(plannedItems).size !== plannedItems.length) {
+    fail('plannedIdentities must contain unique deterministic identities')
+  }
+  const completedItems = snapshotDenseArray<unknown>(
+    completed,
+    'completed',
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  ).map((value, index) => snapshotReceipt(value, `completed[${index}]`))
+  const plannedSet = new Set(plannedItems)
+  const successfulTargetIds: string[] = []
+  const completedIdentities = new Set<string>()
+  for (const item of completedItems) {
+    if (!plannedSet.has(item.identity) || completedIdentities.has(item.identity)) {
+      fail('completed receipt does not belong to this partial batch')
+    }
+    completedIdentities.add(item.identity)
+    successfulTargetIds.push(item.targetId)
+  }
+  if (new Set(successfulTargetIds).size !== successfulTargetIds.length) {
+    fail('partial batch target IDs must be unique')
+  }
+  const uncreatedCount = plannedItems.length - completedItems.length
+  if (uncreatedCount <= 0) fail('partial batch must include an uncreated target')
+  const batchId = createStoryboardDirectorPartialBatchIdentity(
+    recipe.recipeId,
+    operation,
+    plannedItems,
+  )
+  const blocker: StoryboardDirectorPartialBatch = {
+    batchId,
+    operation,
+    plannedCount: plannedItems.length,
+    createdCount: completedItems.length,
+    uncreatedCount,
+    plannedIdentities: plannedItems,
+    successfulTargetIds,
+  }
+  const noun = operation === 'draft-node-creation' ? 'draft nodes' : 'nodes'
+  const blockedRecipe: StoryboardDirectorRecipe = {
+    ...recipe,
+    findings: [
+      ...recipe.findings.filter((finding) => finding.findingId !== batchId.replace(/^sdrb1_/, 'sdrf1_')),
+      {
+        findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+        severity: 'blocking',
+        code: 'PARTIAL_MATERIALIZATION_BATCH',
+        message: `Created ${completedItems.length} ${noun}; ${uncreatedCount} were not created. Inspect the successful targets before acknowledging this batch.`,
+        evidenceIds: [],
+        partialBatch: blocker,
+      },
+    ],
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+  let recordedRecipe = blockedRecipe
+  let receiptsRecorded = true
+  for (const item of completedItems) {
+    try {
+      recordedRecipe = recordStoryboardDirectorReceipts(recordedRecipe, [item], now)
+    } catch {
+      receiptsRecorded = false
+    }
+  }
+  return { recipe: recordedRecipe, blocker, receiptsRecorded }
+}
+
+export function acknowledgeStoryboardDirectorPartialBatch(
+  recipe: StoryboardDirectorRecipe,
+  batchId: string,
+  now: string,
+) {
+  const stableBatchId = requiredId(batchId, 'batchId')
+  const findings = recipe.findings.filter((finding) => (
+    finding.code !== 'PARTIAL_MATERIALIZATION_BATCH'
+    || finding.partialBatch?.batchId !== stableBatchId
+  ))
+  if (findings.length === recipe.findings.length) return recipe
+  return {
+    ...recipe,
+    findings,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+}
+
+export function attemptStoryboardDirectorRecipeCommit(
+  recipe: StoryboardDirectorRecipe,
+  commit: (nextRecipe: StoryboardDirectorRecipe) => boolean | void,
+) {
+  try {
+    return commit(recipe) !== false
+  } catch {
+    return false
   }
 }
 
