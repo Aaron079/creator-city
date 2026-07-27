@@ -84,3 +84,45 @@ export function completeEmergencyCanvasAcknowledgment({
   })
   return result.operationSucceeded && result.persistenceSucceeded
 }
+
+export type CanvasAutosaveSuppression<
+  Node,
+  Edge,
+> = {
+  nodes: readonly Node[]
+  edges: readonly Edge[]
+  zoom: number
+  panX: number
+  panY: number
+}
+
+export function createCanvasAutosaveSuppression<Node, Edge>(
+  nodes: readonly Node[],
+  edges: readonly Edge[],
+  viewport: { zoom: number; pan: { x: number; y: number } },
+): CanvasAutosaveSuppression<Node, Edge> {
+  return {
+    nodes,
+    edges,
+    zoom: viewport.zoom,
+    panX: viewport.pan.x,
+    panY: viewport.pan.y,
+  }
+}
+
+export function consumeCanvasAutosaveSuppression<Node, Edge>(
+  token: CanvasAutosaveSuppression<Node, Edge> | null,
+  nodes: readonly Node[],
+  edges: readonly Edge[],
+  viewport: { zoom: number; pan: { x: number; y: number } },
+) {
+  if (!token) return { suppress: false, next: null }
+  return {
+    suppress: token.nodes === nodes
+      && token.edges === edges
+      && token.zoom === viewport.zoom
+      && token.panX === viewport.pan.x
+      && token.panY === viewport.pan.y,
+    next: null,
+  }
+}

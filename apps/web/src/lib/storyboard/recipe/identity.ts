@@ -4,6 +4,7 @@ import {
   STORYBOARD_DIRECTOR_RECIPE_SKILL_VERSION,
   type StoryboardDirectorMaterializationReceipt,
   type StoryboardDirectorPartialBatchOperation,
+  type StoryboardDirectorRecipe,
 } from './types'
 
 function requireId(value: unknown, field: string) {
@@ -77,4 +78,18 @@ export function createStoryboardDirectorPartialBatchIdentity(
       prompt: JSON.stringify([operation, identities]),
     }],
   }).replace(/^csf1_/, 'sdrb1_')
+}
+
+export function createStoryboardDirectorRecipeRevision(
+  recipe: StoryboardDirectorRecipe,
+) {
+  return createCreatorSkillFingerprint('storyboard-director-recipe-revision', '1.0.0', {
+    sourceNodes: [{
+      id: requireId(recipe.recipeId, 'recipe.recipeId'),
+      kind: 'text',
+      title: '',
+      prompt: '',
+    }],
+    options: { recipe },
+  }).replace(/^csf1_/, 'sdrr1_')
 }

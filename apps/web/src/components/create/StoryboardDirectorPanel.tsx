@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { ShotCard, StoryboardState } from '@/lib/storyboard/types'
 import {
@@ -94,7 +94,7 @@ export interface StoryboardDirectorPanelProps {
   emergencyPartialBatch: StoryboardDirectorPartialBatch | null
   projectId?: string
   canvasNodes?: Array<{ id: string; kind: string; title?: string; resultImageUrl?: string; resultVideoUrl?: string }>
-  onStateChange: (state: StoryboardState) => void
+  onStateChange: (state: StoryboardState) => boolean | void
   onActiveShotChange: (id: string | null) => void
   onStartRecipe: (sourceNodeId: string) => void
   onOpenRecipe: (controlNodeId: string) => void
@@ -105,6 +105,9 @@ export interface StoryboardDirectorPanelProps {
   onCreateDraftNodes: () => void
   onImportLegacy: () => void
   onAcknowledgeEmergencyPartialBatch: (batchId: string) => void
+  registerDeferredBoardFlush: (
+    flush: () => boolean,
+  ) => () => void
   onClose: () => void
 }
 
@@ -243,49 +246,99 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 function BoardTextControl({
+  fieldId,
   value,
   mode,
   ariaLabel,
   placeholder,
   multiline = false,
+  registerDeferredCommit,
   onCommit,
 }: {
+  fieldId: string
   value: string
   mode: 'immediate' | 'buffered'
   ariaLabel: string
   placeholder: string
   multiline?: boolean
-  onCommit: (value: string) => void
+  registerDeferredCommit: (fieldId: string, flush: () => boolean) => () => void
+  onCommit: (value: string) => boolean | void
 }) {
   const [draft, setDraft] = useState(value)
   const skipNextBlur = useRef(false)
+  const draftRef = useRef(value)
+  const committedRef = useRef(value)
+  const dirtyRef = useRef(false)
+  const modeRef = useRef(mode)
+  const onCommitRef = useRef(onCommit)
+  const dirtyCommitRef = useRef(onCommit)
+  const flushRef = useRef<() => boolean>(() => true)
+  const skipNextRegisteredFlush = useRef(false)
+
+  modeRef.current = mode
+  onCommitRef.current = onCommit
 
   useEffect(() => {
-    setDraft(value)
+    if (!dirtyRef.current) {
+      draftRef.current = value
+      committedRef.current = value
+      setDraft(value)
+    }
     skipNextBlur.current = false
   }, [value])
 
   const handleChange = (next: string) => {
+    draftRef.current = next
     setDraft(next)
-    if (mode === 'immediate') onCommit(next)
+    if (mode === 'immediate') {
+      const committed = onCommitRef.current(next) !== false
+      if (committed) committedRef.current = next
+      dirtyRef.current = !committed
+      return
+    }
+    if (!dirtyRef.current) dirtyCommitRef.current = onCommitRef.current
+    dirtyRef.current = next !== committedRef.current
   }
   const commitBuffered = () => {
-    if (mode !== 'buffered' || draft === value) return
-    onCommit(draft)
+    if (modeRef.current !== 'buffered' || !dirtyRef.current) return true
+    const next = draftRef.current
+    if (dirtyCommitRef.current(next) === false) {
+      dirtyCommitRef.current = onCommitRef.current
+      return false
+    }
+    committedRef.current = next
+    dirtyRef.current = false
+    return true
   }
+  flushRef.current = commitBuffered
+
+  useEffect(() => registerDeferredCommit(
+    fieldId,
+    () => {
+      if (skipNextRegisteredFlush.current) {
+        skipNextRegisteredFlush.current = false
+        return false
+      }
+      return flushRef.current()
+    },
+  ), [fieldId, registerDeferredCommit])
+
+  useEffect(() => () => {
+    flushRef.current()
+  }, [])
+
   const handleBlur = () => {
     if (skipNextBlur.current) {
       skipNextBlur.current = false
       return
     }
-    commitBuffered()
+    if (!flushRef.current()) skipNextRegisteredFlush.current = true
   }
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || mode !== 'buffered') return
     event.preventDefault()
-    if (draft === value) return
-    skipNextBlur.current = true
-    onCommit(draft)
+    if (!dirtyRef.current) return
+    if (flushRef.current()) skipNextBlur.current = true
   }
   const props = {
     'aria-label': ariaLabel,
@@ -336,6 +389,7 @@ export function StoryboardDirectorPanel({
   onCreateDraftNodes,
   onImportLegacy,
   onAcknowledgeEmergencyPartialBatch,
+  registerDeferredBoardFlush,
   onClose,
 }: StoryboardDirectorPanelProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -353,6 +407,26 @@ export function StoryboardDirectorPanel({
     : null
   const previousRecipeIdentity = useRef(activeRecipeIdentity)
   const tabRefs = useRef<Partial<Record<StoryboardDirectorPanelTab, HTMLButtonElement | null>>>({})
+  const deferredBoardCommitsRef = useRef(new Map<string, () => boolean>())
+  const registerDeferredCommit = useCallback((fieldId: string, flush: () => boolean) => {
+    deferredBoardCommitsRef.current.set(fieldId, flush)
+    return () => {
+      if (deferredBoardCommitsRef.current.get(fieldId) === flush) {
+        deferredBoardCommitsRef.current.delete(fieldId)
+      }
+    }
+  }, [])
+  const flushDeferredBoardDrafts = useCallback(() => {
+    let committed = true
+    for (const flush of deferredBoardCommitsRef.current.values()) {
+      if (!flush()) committed = false
+    }
+    return committed
+  }, [])
+
+  useEffect(() => registerDeferredBoardFlush(
+    flushDeferredBoardDrafts,
+  ), [flushDeferredBoardDrafts, registerDeferredBoardFlush])
 
   useEffect(() => {
     const justOpened = open && !wasOpen.current
@@ -383,7 +457,11 @@ export function StoryboardDirectorPanel({
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) ?? null : null
 
   const updateShot = (id: string, patch: Partial<ShotCard>) => {
-    onStateChange(patchStoryboardDirectorShot(state, id, patch, now()))
+    return onStateChange(patchStoryboardDirectorShot(state, id, patch, now()))
+  }
+  const requestClose = () => {
+    if (!flushDeferredBoardDrafts()) return
+    onClose()
   }
 
   const handleAddShot = () => {
@@ -451,8 +529,11 @@ export function StoryboardDirectorPanel({
       role="presentation"
       data-no-node-drag="true"
       data-storyboard-director="true"
-      onPointerDown={(e) => { e.stopPropagation(); onClose() }}
-      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (e.target === e.currentTarget) requestClose()
+      }}
       onWheel={(e) => e.stopPropagation()}
       onWheelCapture={(e) => e.stopPropagation()}
     >
@@ -535,7 +616,7 @@ export function StoryboardDirectorPanel({
                 <Plus size={15} aria-hidden="true" />
               </button>
             ) : null}
-            <button type="button" onClick={onClose} title="关闭分镜导演" aria-label="关闭分镜导演" className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white">
+            <button type="button" onClick={requestClose} title="关闭分镜导演" aria-label="关闭分镜导演" className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.09] hover:text-white">
               <X size={15} aria-hidden="true" />
             </button>
           </div>
@@ -681,11 +762,13 @@ export function StoryboardDirectorPanel({
 
                   <FieldRow label="情绪">
                     <BoardTextControl
-                      key={`${activeShot.id}:mood`}
+                      key={`${activeRecipeIdentity ?? 'manual'}:${activeShot.id}:mood`}
+                      fieldId={`${activeRecipeIdentity ?? 'manual'}:${activeShot.id}:mood`}
                       value={activeShot.mood ?? ''}
                       mode={boardCommitMode}
                       ariaLabel="情绪"
                       placeholder="例: 紧张 / 孤独 / 宏大"
+                      registerDeferredCommit={registerDeferredCommit}
                       onCommit={(value) => updateShot(activeShot.id, { mood: value || undefined })}
                     />
                   </FieldRow>
@@ -706,12 +789,14 @@ export function StoryboardDirectorPanel({
 
                 <FieldRow label="导演备注">
                   <BoardTextControl
-                    key={`${activeShot.id}:director-note`}
+                    key={`${activeRecipeIdentity ?? 'manual'}:${activeShot.id}:director-note`}
+                    fieldId={`${activeRecipeIdentity ?? 'manual'}:${activeShot.id}:director-note`}
                     value={activeShot.directorNote ?? ''}
                     mode={boardCommitMode}
                     ariaLabel="导演备注"
                     placeholder="镜头构图、情感要点、特别说明..."
                     multiline
+                    registerDeferredCommit={registerDeferredCommit}
                     onCommit={(value) => updateShot(activeShot.id, { directorNote: value || undefined })}
                   />
                 </FieldRow>

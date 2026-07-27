@@ -1203,6 +1203,28 @@ export function recordStoryboardDirectorReceipts(
   }
 }
 
+export function removeStoryboardDirectorReceiptsForTarget(
+  recipe: StoryboardDirectorRecipe,
+  targetId: string,
+  now: string,
+) {
+  const stableTargetId = requiredId(targetId, 'targetId')
+  const removedReceipts = recipe.receipts.filter((receipt) => (
+    receipt.targetId === stableTargetId
+  ))
+  if (removedReceipts.length === 0) {
+    return { recipe, removedReceipts: [] as StoryboardDirectorMaterializationReceipt[] }
+  }
+  return {
+    recipe: {
+      ...recipe,
+      receipts: recipe.receipts.filter((receipt) => receipt.targetId !== stableTargetId),
+      audit: { ...recipe.audit, updatedAt: now },
+    },
+    removedReceipts: removedReceipts.map((receipt) => ({ ...receipt })),
+  }
+}
+
 export function storyboardDirectorPartialBatchBlockers(
   recipe: StoryboardDirectorRecipe,
 ): StoryboardDirectorPartialBatch[] {
@@ -1258,7 +1280,6 @@ export function recordStoryboardDirectorPartialBatch(
     fail('partial batch target IDs must be unique')
   }
   const uncreatedCount = plannedItems.length - completedItems.length
-  if (uncreatedCount <= 0) fail('partial batch must include an uncreated target')
   const batchId = createStoryboardDirectorPartialBatchIdentity(
     recipe.recipeId,
     operation,
@@ -1282,7 +1303,7 @@ export function recordStoryboardDirectorPartialBatch(
         findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
         severity: 'blocking',
         code: 'PARTIAL_MATERIALIZATION_BATCH',
-        message: `Created ${completedItems.length} ${noun}; ${uncreatedCount} were not created. Inspect the successful targets before acknowledging this batch.`,
+        message: `Created ${completedItems.length} ${noun}; ${uncreatedCount} were not created. Receipt persistence requires inspection before acknowledging this batch.`,
         evidenceIds: [],
         partialBatch: blocker,
       },

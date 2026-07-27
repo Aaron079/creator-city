@@ -3,6 +3,8 @@ import { describe, test } from 'node:test'
 import {
   completeEmergencyCanvasAcknowledgment,
   completeLocalCanvasSaveSchedule,
+  createCanvasAutosaveSuppression,
+  consumeCanvasAutosaveSuppression,
   runBoundedCanvasPersistence,
 } from './canvasSaveScheduling'
 
@@ -137,5 +139,81 @@ describe('canvas save scheduling', () => {
 
     assert.equal(acknowledged, false)
     assert.deepEqual({ flushes, schedules }, { flushes: 0, schedules: 0 })
+  })
+
+  test('suppresses only the exact explicitly persisted canvas revision at scale', () => {
+    for (const nodeCount of [20, 50, 100]) {
+      const nodes = Array.from({ length: nodeCount }, (_, index) => ({ id: `node-${index}` }))
+      const edges = [{ id: 'edge-1' }]
+      const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
+      const token = createCanvasAutosaveSuppression(nodes, edges, viewport)
+      const consumed = consumeCanvasAutosaveSuppression(token, nodes, edges, viewport)
+
+      assert.equal(consumed.suppress, true)
+      assert.equal(consumed.next, null)
+    }
+  })
+
+  test('performs one serialization, local write, and schedule end to end at scale', () => {
+    for (const nodeCount of [20, 50, 100]) {
+      const nodes = Array.from({ length: nodeCount }, (_, index) => ({ id: `node-${index}` }))
+      const edges = [{ id: 'edge-1' }]
+      const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
+      let serializations = 0
+      let localWrites = 0
+      let schedules = 0
+      const result = runBoundedCanvasPersistence({
+        operation: (markMutation) => {
+          markMutation()
+          return true
+        },
+        flushSnapshot: () => {
+          JSON.stringify({ nodes, edges, viewport })
+          serializations += 1
+          localWrites += 1
+        },
+        scheduleSave: () => { schedules += 1 },
+      })
+      const suppression = consumeCanvasAutosaveSuppression(
+        createCanvasAutosaveSuppression(nodes, edges, viewport),
+        nodes,
+        edges,
+        viewport,
+      )
+      if (!suppression.suppress) {
+        serializations += 1
+        localWrites += 1
+        schedules += 1
+      }
+
+      assert.equal(result.persistenceSucceeded, true)
+      assert.deepEqual(
+        { serializations, localWrites, schedules },
+        { serializations: 1, localWrites: 1, schedules: 1 },
+      )
+    }
+  })
+
+  test('never suppresses a later unrelated node, edge, or viewport mutation', () => {
+    const nodes = [{ id: 'node-1' }]
+    const edges = [{ id: 'edge-1' }]
+    const viewport = { zoom: 1, pan: { x: 0, y: 0 } }
+    const token = createCanvasAutosaveSuppression(nodes, edges, viewport)
+
+    assert.equal(
+      consumeCanvasAutosaveSuppression(token, [...nodes], edges, viewport).suppress,
+      false,
+    )
+    assert.equal(
+      consumeCanvasAutosaveSuppression(token, nodes, [...edges], viewport).suppress,
+      false,
+    )
+    assert.equal(
+      consumeCanvasAutosaveSuppression(token, nodes, edges, {
+        zoom: 1,
+        pan: { x: 1, y: 0 },
+      }).suppress,
+      false,
+    )
   })
 })

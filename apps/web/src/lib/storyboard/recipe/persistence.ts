@@ -519,7 +519,7 @@ function validatePartialBatch(value: unknown, field: string, recipeId: string) {
   ])
   const plannedCount = positiveInteger(batch.plannedCount, `${field}.plannedCount`)
   const createdCount = integer(batch.createdCount, `${field}.createdCount`)
-  const uncreatedCount = positiveInteger(batch.uncreatedCount, `${field}.uncreatedCount`)
+  const uncreatedCount = integer(batch.uncreatedCount, `${field}.uncreatedCount`)
   const plannedIdentities = stringArray(
     batch.plannedIdentities,
     `${field}.plannedIdentities`,

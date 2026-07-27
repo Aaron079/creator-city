@@ -265,6 +265,10 @@ function renderedHarnessSource() {
     let emergencyPartialBatch = null
     let detachedConfirm = null
     let livePanel = null
+    let boardMode = null
+    let currentBoardState = null
+    let boardCommitAllowed = true
+    let deferredBoardFlush = null
 
     function resetRoot() {
       if (root) root.unmount()
@@ -274,6 +278,10 @@ function renderedHarnessSource() {
       emergencyPartialBatch = null
       detachedConfirm = null
       livePanel = null
+      boardMode = null
+      currentBoardState = null
+      boardCommitAllowed = true
+      deferredBoardFlush = null
     }
 
     function recipeProps() {
@@ -337,8 +345,61 @@ function renderedHarnessSource() {
       detachedConfirm?.click()
     }
 
+    function renderBoard() {
+      const matching = boardMode === 'unavailable' || boardMode === 'manual' ? [] : [{
+        nodeId: boardMode === 'replacement' ? 'control-node-2' : 'control-node-1',
+        recipeId: currentRecipe.recipeId,
+        title: 'Pilot Recipe',
+        status: 'approved',
+      }]
+      root.render(React.createElement(StoryboardDirectorPanel, {
+        open: true,
+        state: currentBoardState,
+        activeShotId: currentBoardState.shots[0].id,
+        recipe: boardMode === 'unavailable' ? null : currentRecipe,
+        boardCommitMode: boardMode === 'manual' ? 'immediate' : 'buffered',
+        openedFromRecipe: false,
+        availableSources: [],
+        availableRecipes: matching,
+        saveState: 'local',
+        legacyState: { status: 'absent' },
+        emergencyPartialBatch: null,
+        onStateChange(next) {
+          if (!boardCommitAllowed) {
+            calls.push('state-change-failed')
+            return false
+          }
+          calls.push('state-change')
+          currentBoardState = next
+          return true
+        },
+        onActiveShotChange() {},
+        onStartRecipe() {},
+        onOpenRecipe(nodeId) {
+          const selected = document.querySelector('[data-testid="storyboard-director-tab-board"]')
+            ?.getAttribute('aria-selected') === 'true' ? 'board' : 'recipe'
+          calls.push('open:' + nodeId + ':' + selected)
+        },
+        onCommitRecipe() {},
+        onFocusSource() {},
+        onMaterializeGrouped() {},
+        onSyncShotBoard() {},
+        onCreateDraftNodes() {},
+        onImportLegacy() {},
+        onClose() { calls.push('close') },
+        onAcknowledgeEmergencyPartialBatch() {},
+        registerDeferredBoardFlush(flush) {
+          deferredBoardFlush = flush
+          return () => {
+            if (deferredBoardFlush === flush) deferredBoardFlush = null
+          }
+        },
+      }))
+    }
+
     function mountBoard(mode = 'matching') {
       resetRoot()
+      boardMode = mode
       currentRecipe = structuredClone(FIXTURES.completed)
       const draft = currentRecipe.shot.drafts[0]
       if (mode === 'blocking') draft.subject = ''
@@ -369,41 +430,23 @@ function renderedHarnessSource() {
         updatedAt: '2026-07-19T01:00:00.000Z',
         ...(provenance ? { recipe: provenance } : {}),
       }
-      const matching = mode === 'unavailable' || mode === 'manual' ? [] : [{
-        nodeId: 'control-node-1',
-        recipeId: currentRecipe.recipeId,
-        title: 'Pilot Recipe',
-        status: 'approved',
-      }]
-      root.render(React.createElement(StoryboardDirectorPanel, {
-        open: true,
-        state: { version: '1', shots: [shot], updatedAt: shot.updatedAt },
-        activeShotId: shot.id,
-        recipe: mode === 'unavailable' ? null : currentRecipe,
-        boardCommitMode: mode === 'manual' ? 'immediate' : 'buffered',
-        openedFromRecipe: false,
-        availableSources: [],
-        availableRecipes: matching,
-        saveState: 'local',
-        legacyState: { status: 'absent' },
-        emergencyPartialBatch: null,
-        onStateChange() { calls.push('state-change') },
-        onActiveShotChange() {},
-        onStartRecipe() {},
-        onOpenRecipe(nodeId) {
-          const selected = document.querySelector('[data-testid="storyboard-director-tab-board"]')
-            ?.getAttribute('aria-selected') === 'true' ? 'board' : 'recipe'
-          calls.push('open:' + nodeId + ':' + selected)
-        },
-        onCommitRecipe() {},
-        onFocusSource() {},
-        onMaterializeGrouped() {},
-        onSyncShotBoard() {},
-        onCreateDraftNodes() {},
-        onImportLegacy() {},
-        onClose() {},
-        onAcknowledgeEmergencyPartialBatch() {},
-      }))
+      currentBoardState = { version: '1', shots: [shot], updatedAt: shot.updatedAt }
+      renderBoard()
+    }
+
+    function switchBoardRecipe() {
+      currentRecipe = structuredClone(FIXTURES.replacement)
+      boardMode = 'replacement'
+      renderBoard()
+    }
+
+    function unmountBoard() {
+      root.unmount()
+      root = null
+    }
+
+    function failBoardCommit() {
+      boardCommitAllowed = false
     }
 
     function renderLivePanel() {
@@ -445,6 +488,7 @@ function renderedHarnessSource() {
         onImportLegacy() {},
         onClose() {},
         onAcknowledgeEmergencyPartialBatch() {},
+        registerDeferredBoardFlush() { return () => {} },
       }))
     }
 
@@ -472,10 +516,14 @@ function renderedHarnessSource() {
       replaceRecipe,
       clickDetachedConfirm,
       mountBoard,
+      switchBoardRecipe,
+      unmountBoard,
+      failBoardCommit,
       mountLivePanel,
       updateLivePanel,
       calls: () => calls.slice(),
       recipe: () => structuredClone(currentRecipe),
+      boardState: () => structuredClone(currentBoardState),
     }
   `
 }
@@ -547,6 +595,9 @@ type RenderedHarness = {
   replaceRecipe: (kind?: 'completed' | 'replacement') => void
   clickDetachedConfirm: () => void
   mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
+  switchBoardRecipe: () => void
+  unmountBoard: () => void
+  failBoardCommit: () => void
   mountLivePanel: () => void
   updateLivePanel: (patch: {
     open?: boolean
@@ -558,6 +609,7 @@ type RenderedHarness = {
   }) => void
   calls: () => string[]
   recipe: () => StoryboardDirectorRecipe
+  boardState: () => StoryboardState
 }
 
 async function mountRenderedRecipe(
@@ -617,6 +669,12 @@ async function renderedRecipe(page: Page) {
   return page.evaluate(() => (
     window as unknown as { __directorHarness: RenderedHarness }
   ).__directorHarness.recipe())
+}
+
+async function renderedBoardState(page: Page) {
+  return page.evaluate(() => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.boardState())
 }
 
 describe('Storyboard Director panel state', () => {
@@ -1047,6 +1105,81 @@ describe('Storyboard Director rendered interactions', () => {
       await mountRenderedBoard(page, 'matching')
       await page.getByLabel('时长 (秒)').fill('8')
       assert.deepEqual(await renderedCalls(page), ['state-change'])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('backdrop and Close flush dirty Recipe fields once before closing', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'matching')
+      const moodValue = 'quiet dread'
+      await page.getByLabel('情绪').fill(moodValue)
+      await page.locator('[role="presentation"][data-storyboard-director="true"]').click({
+        position: { x: 2, y: 2 },
+      })
+      assert.deepEqual(await renderedCalls(page), ['state-change', 'close'])
+      assert.equal((await renderedBoardState(page)).shots[0]?.mood, moodValue)
+
+      await mountRenderedBoard(page, 'matching')
+      const noteValue = 'Hold on the sealed case.'
+      await page.getByLabel('导演备注').fill(noteValue)
+      await page.getByRole('button', { name: '关闭分镜导演' }).click()
+      assert.deepEqual(await renderedCalls(page), ['state-change', 'close'])
+      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, noteValue)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('Recipe replacement flushes the dirty A field exactly once before B renders', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'matching')
+      const moodValue = 'revision A remains'
+      await page.getByLabel('情绪').fill(moodValue)
+      await page.evaluate(() => (
+        window as unknown as { __directorHarness: RenderedHarness }
+      ).__directorHarness.switchBoardRecipe())
+      await page.waitForTimeout(50)
+
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+      assert.equal((await renderedBoardState(page)).shots[0]?.mood, moodValue)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('unmount flushes a focused dirty Recipe field exactly once', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'matching')
+      const noteValue = 'Persist before project switch.'
+      await page.getByLabel('导演备注').fill(noteValue)
+      await page.evaluate(() => (
+        window as unknown as { __directorHarness: RenderedHarness }
+      ).__directorHarness.unmountBoard())
+
+      assert.deepEqual(await renderedCalls(page), ['state-change'])
+      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, noteValue)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('failed dirty-field commit prevents an explicit close', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedBoard(page, 'matching')
+      await page.getByLabel('情绪').fill('must not disappear')
+      await page.evaluate(() => (
+        window as unknown as { __directorHarness: RenderedHarness }
+      ).__directorHarness.failBoardCommit())
+      await page.getByRole('button', { name: '关闭分镜导演' }).click()
+
+      assert.deepEqual(await renderedCalls(page), ['state-change-failed'])
+      assert.equal(await page.getByRole('dialog', { name: 'Storyboard Director' }).count(), 1)
     } finally {
       await page.close()
     }

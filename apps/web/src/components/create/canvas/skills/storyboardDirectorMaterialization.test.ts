@@ -20,6 +20,10 @@ import {
 } from '../../../../lib/skills'
 import { createRecipeMaterializationIdentity } from '../../../../lib/storyboard/recipe/identity'
 import { analyzeStoryboardDirectorRecipe } from '../../../../lib/storyboard/recipe/intelligence'
+import {
+  readStoryboardDirectorRecipe,
+  storyboardDirectorRecipeMetadata,
+} from '../../../../lib/storyboard/recipe/persistence'
 import type { StoryboardDirectorRecipe } from '../../../../lib/storyboard/recipe/types'
 import {
   approveBeatStage,
@@ -41,6 +45,7 @@ import {
   planStoryboardDirectorShotBoardSync,
   recordStoryboardDirectorPartialBatch,
   recordStoryboardDirectorReceipts,
+  removeStoryboardDirectorReceiptsForTarget,
   storyboardDirectorPartialBatchBlockers,
   storyboardDirectorRecipeSummary,
 } from './storyboardDirectorMaterialization'
@@ -1138,6 +1143,70 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
     assert.deepEqual(repeat, recorded)
   })
 
+  test('removes only deleted grouped and draft targets so each can be recreated', () => {
+    const recipe = completedRecipe()
+    const groupedPlan = planStoryboardDirectorGroupedNodes(recipe, ['scene'], []).create[0]
+    const draftPlan = planStoryboardDirectorDraftNodes(recipe, []).create[0]
+    assert.ok(groupedPlan)
+    assert.ok(draftPlan)
+    const groupedReceipt = {
+      identity: createRecipeMaterializationIdentity(
+        recipe.recipeId,
+        'scene',
+        groupedPlan.metadataJson.creatorSkill.approvedArtifact.artifactId,
+        groupedPlan.resultId,
+      ),
+      kind: 'scene' as const,
+      resultId: groupedPlan.resultId,
+      targetId: 'grouped-target',
+    }
+    const draftReceipt = {
+      identity: draftPlan.identity,
+      kind: 'draft-node' as const,
+      resultId: draftPlan.resultId,
+      targetId: 'draft-target',
+    }
+    const recorded = recordStoryboardDirectorReceipts(
+      recipe,
+      [groupedReceipt, draftReceipt],
+      ISO_TIME,
+    )
+
+    const groupedRemoved = removeStoryboardDirectorReceiptsForTarget(
+      recorded,
+      'grouped-target',
+      LATER_TIME,
+    )
+    assert.deepEqual(groupedRemoved.removedReceipts, [groupedReceipt])
+    assert.deepEqual(groupedRemoved.recipe.receipts, [draftReceipt])
+    assert.equal(
+      planStoryboardDirectorGroupedNodes(groupedRemoved.recipe, ['scene'], []).create
+        .some((plan) => plan.resultId === groupedPlan.resultId),
+      true,
+    )
+
+    const draftRemoved = removeStoryboardDirectorReceiptsForTarget(
+      groupedRemoved.recipe,
+      'draft-target',
+      LATER_TIME,
+    )
+    assert.deepEqual(draftRemoved.removedReceipts, [draftReceipt])
+    assert.deepEqual(draftRemoved.recipe.receipts, [])
+    assert.equal(
+      planStoryboardDirectorDraftNodes(draftRemoved.recipe, []).create
+        .some((plan) => plan.resultId === draftPlan.resultId),
+      true,
+    )
+
+    const unrelated = removeStoryboardDirectorReceiptsForTarget(
+      recorded,
+      'manual-node',
+      LATER_TIME,
+    )
+    assert.equal(unrelated.recipe, recorded)
+    assert.deepEqual(unrelated.removedReceipts, [])
+  })
+
   test('persists exact grouped and draft partial batches with stable identity', () => {
     const recipe = completedRecipe()
     const groupedPlans = planStoryboardDirectorGroupedNodes(
@@ -1229,6 +1298,31 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
     assert.equal(draftBlocker.createdCount, 1)
     assert.equal(draftBlocker.uncreatedCount, draftPlans.length - 1)
     assert.notEqual(draftBlocker.batchId, groupedBlocker.batchId)
+  })
+
+  test('records a recovery blocker when every target was created but receipt commit failed', () => {
+    const recipe = completedRecipe()
+    const planned = planStoryboardDirectorDraftNodes(recipe, [])
+    const completed = planned.create.map((plan, index) => ({
+      identity: plan.identity,
+      kind: 'draft-node' as const,
+      resultId: plan.resultId,
+      targetId: `created-target-${index}`,
+    }))
+    const recovered = recordStoryboardDirectorPartialBatch(
+      recipe,
+      'draft-node-creation',
+      planned.create.map((plan) => plan.identity),
+      completed,
+      LATER_TIME,
+    )
+
+    assert.equal(recovered.blocker.createdCount, completed.length)
+    assert.equal(recovered.blocker.uncreatedCount, 0)
+    assert.deepEqual(recovered.blocker.successfulTargetIds, completed.map((item) => item.targetId))
+    assert.equal(readStoryboardDirectorRecipe(
+      storyboardDirectorRecipeMetadata(recovered.recipe),
+    ).status, 'valid')
   })
 
   test('keeps the partial blocker when receipt recording fails and acknowledgment clears only it', () => {

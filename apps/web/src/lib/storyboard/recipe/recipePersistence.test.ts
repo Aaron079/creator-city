@@ -9,6 +9,7 @@ import {
   createRecipeMaterializationIdentity,
   createStoryboardDirectorPartialBatchIdentity,
   createStoryboardDirectorRecipeIdentity,
+  createStoryboardDirectorRecipeRevision,
   readStoryboardDirectorRecipe,
   storyboardDirectorRecipeMetadata,
   STORYBOARD_DIRECTOR_MAX_RECEIPTS,
@@ -242,6 +243,30 @@ describe('Storyboard Director Recipe identity', () => {
       () => createStoryboardDirectorRecipeIdentity({ ...context, projectId: ' ' }, source),
       TypeError,
     )
+  })
+
+  test('fingerprints the complete Recipe revision and detects same-identity concurrent edits', () => {
+    const recipe = validRecipeFixture()
+    const same = structuredClone(recipe)
+    const concurrent = {
+      ...structuredClone(recipe),
+      storyboard: {
+        ...structuredClone(recipe.storyboard),
+        shots: recipe.storyboard.shots.map((shot) => (
+          shot.id === 'card-1' ? { ...shot, directorNote: 'Concurrent edit' } : shot
+        )),
+      },
+    }
+
+    assert.equal(
+      createStoryboardDirectorRecipeRevision(recipe),
+      createStoryboardDirectorRecipeRevision(same),
+    )
+    assert.notEqual(
+      createStoryboardDirectorRecipeRevision(recipe),
+      createStoryboardDirectorRecipeRevision(concurrent),
+    )
+    assert.match(createStoryboardDirectorRecipeRevision(recipe), /^sdrr1_[0-9a-f]{8}$/)
   })
 
   test('creates deterministic materialization identities from every identity input', () => {
