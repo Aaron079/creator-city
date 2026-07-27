@@ -40,7 +40,7 @@ type RecipeNode = {
   metadataJson?: unknown
 }
 
-function mergeRecipeMetadata(
+export function mergeStoryboardDirectorRecipeMetadata(
   metadataJson: unknown,
   recipeMetadata: ReturnType<typeof storyboardDirectorRecipeMetadata>,
 ) {
@@ -101,7 +101,7 @@ export function planStoryboardDirectorReceiptAwareDeletion<Node extends RecipeNo
     if (read.status !== 'valid') continue
     const removed = removeStoryboardDirectorReceiptsForTarget(read.recipe, targetId, now)
     if (removed.removedReceipts.length === 0) continue
-    const metadataJson = mergeRecipeMetadata(
+    const metadataJson = mergeStoryboardDirectorRecipeMetadata(
       node.metadataJson,
       storyboardDirectorRecipeMetadata(removed.recipe),
     )
@@ -216,6 +216,22 @@ export function collectStoryboardDirectorDurableLocks(
   })
 }
 
+export function hasDurablyAcknowledgedStoryboardDirectorBatch(
+  nodes: readonly RecipeNode[],
+  scope: EmergencyLockScope,
+  batchId: string,
+) {
+  const controlNode = nodes.find((node) => node.id === scope.controlNodeId)
+  const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+  return read.status === 'valid'
+    && read.recipe.recipeId === scope.recipeId
+    && read.recipe.projectId === scope.projectId
+    && read.recipe.workflowId === scope.workflowId
+    && !storyboardDirectorPartialBatchBlockers(read.recipe).some(
+      (blocker) => blocker.batchId === batchId,
+    )
+}
+
 export function runStoryboardDirectorContextTransition({
   flushDrafts,
   transition,
@@ -290,22 +306,30 @@ export function executeStoryboardDirectorRecoveryPersistence<Recipe>({
   readLatest,
   buildRecovery,
   persist,
+  retainCandidate,
   retainEmergency,
 }: {
   readLatest: () => Recipe | null
   buildRecovery: (latest: Recipe) => Recipe
   persist: (candidate: Recipe, latest: Recipe) => boolean
+  retainCandidate: (candidate: Recipe, latest: Recipe) => void
   retainEmergency: () => void
 }): { status: 'persisted' | 'emergency' } {
+  let candidate: Recipe | null = null
+  let latest: Recipe | null = null
   try {
-    const latest = readLatest()
+    latest = readLatest()
     if (latest) {
-      const candidate = buildRecovery(latest)
+      candidate = buildRecovery(latest)
       if (persist(candidate, latest)) return { status: 'persisted' }
     }
   } catch {
     // Retain the scoped in-memory lock below.
   }
-  retainEmergency()
+  try {
+    if (candidate && latest) retainCandidate(candidate, latest)
+  } finally {
+    retainEmergency()
+  }
   return { status: 'emergency' }
 }

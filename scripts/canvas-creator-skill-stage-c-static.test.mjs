@@ -30,6 +30,10 @@ const workspaceLifecycle = readFileSync(new URL(
   '../apps/web/src/components/create/canvas/storyboardDirectorWorkspaceLifecycle.ts',
   import.meta.url,
 ), 'utf8')
+const draftRecovery = readFileSync(new URL(
+  '../apps/web/src/lib/canvas/canvasDraftRecovery.ts',
+  import.meta.url,
+), 'utf8')
 const stateMachine = readFileSync(new URL(
   '../apps/web/src/lib/storyboard/recipe/state-machine.ts',
   import.meta.url,
@@ -262,6 +266,82 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(legacy, /importLegacyShotBoard/)
     assert.match(legacy, /handleCommitStoryboardDirectorRecipe/)
     assert.doesNotMatch(legacy, /writeDirectorState/)
+  })
+
+  test('loader merges valid local Stage C recovery risk before exposing the server canvas', () => {
+    const load = namedBlock(
+      workspace,
+      'const serverNodes =',
+      'hasHydratedCanvasRef.current = true',
+    )
+    assert.match(draftRecovery, /mergeStoryboardDirectorRecoveryRiskIntoServerNodes/)
+    assert.match(load, /mergeStoryboardDirectorRecoveryRiskIntoServerNodes\(\{[\s\S]*serverNodes,[\s\S]*localNodes:/)
+    assert.match(load, /nodes:\s*stageCRecovery\.nodes/)
+    assert.match(workspace, /role=["']alertdialog["']/)
+    assert.match(workspace, /aria-modal=["']true["']/)
+    const keepServer = namedBlock(
+      workspace,
+      'const keepServerCanvas',
+      'const handleManualSave',
+    )
+    assert.match(keepServer, /stageCRecoveryStatus\s*===\s*['"]blocked['"]/)
+    assert.match(keepServer, /window\.confirm\(/)
+    assert.match(keepServer, /if\s*\(!confirmed\)\s*return/)
+    assert.match(keepServer, /stageCRecoveryStatus\s*===\s*['"]merged['"]/)
+    assert.match(keepServer, /flushSnapshot:\s*writeStageCCanonicalLocalSnapshot/)
+    assert.match(keepServer, /scheduleCanvasSave\(0,\s*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}\)/)
+  })
+
+  test('failed recovery retains the merged candidate without suppressing autosave', () => {
+    const recovery = namedBlock(
+      workspace,
+      'const installEmergencyDirectorPartialBatch',
+      'const handleMaterializeStoryboardDirectorRecipe',
+    )
+    const retainCandidate = namedBlock(
+      recovery,
+      'retainCandidate: (candidate, recoveryBase)',
+      '      retainEmergency,',
+    )
+    assert.match(recovery, /retainCandidate:\s*\(candidate,\s*recoveryBase\)/)
+    assert.match(retainCandidate, /recoverLatestRecipe\(read\.recipe\)/)
+    assert.match(recovery, /handleNodePatch\(context\.controlNode\.id/)
+    assert.doesNotMatch(retainCandidate, /suppressExplicitCanvasAutosave/)
+    assert.match(recovery, /upsertStoryboardDirectorEmergencyLock/)
+  })
+
+  test('all canvas route exits flush Director drafts before snapshots or navigation', () => {
+    const newProject = namedBlock(workspace, 'const handleBeforeNewProject', 'const handleOpenClientDelivery')
+    const delivery = namedBlock(workspace, 'const handleOpenClientDelivery', 'const handleOpenProjects')
+    const projects = namedBlock(workspace, 'const handleOpenProjects', 'const handleCanvasRootClickCapture')
+    const capture = namedBlock(workspace, 'const handleCanvasRootClickCapture', 'const nodeDialogStyle')
+    for (const block of [newProject, delivery, projects, capture]) {
+      assert.match(block, /guardStoryboardDirectorNavigation\(\)/)
+    }
+    assert.ok(newProject.indexOf('guardStoryboardDirectorNavigation()') < newProject.indexOf('flushLocalSnapshot()'))
+    assert.ok(delivery.indexOf('guardStoryboardDirectorNavigation()') < delivery.indexOf('flushLocalSnapshot()'))
+    assert.ok(projects.indexOf('guardStoryboardDirectorNavigation()') < projects.indexOf('flushLocalSnapshot()'))
+    assert.match(capture, /event\.preventDefault\(\)/)
+    assert.match(capture, /event\.stopPropagation\(\)/)
+  })
+
+  test('shot-board sync and legacy import only report success after a true commit', () => {
+    const sync = namedBlock(
+      workspace,
+      'const handleSyncStoryboardDirectorShotBoard',
+      'const handleCreateStoryboardDirectorDraftNodes',
+    )
+    const legacy = namedBlock(
+      workspace,
+      'const handleImportLegacyStoryboardDirectorState',
+      'const handleAcknowledgeEmergencyDirectorPartialBatch',
+    )
+    for (const block of [sync, legacy]) {
+      assert.match(block, /const\s+persisted\s*=\s*handleCommitStoryboardDirectorRecipe/)
+      assert.match(block, /if\s*\(!persisted\)\s*return/)
+    }
+    assert.ok(sync.indexOf('if (!persisted) return') < sync.indexOf('镜头板已同步'))
+    assert.ok(legacy.indexOf('if (!persisted) return') < legacy.indexOf('旧版镜头板已导入'))
   })
 
   test('wired Director receives required Recipe integration props and global open creates nothing', () => {

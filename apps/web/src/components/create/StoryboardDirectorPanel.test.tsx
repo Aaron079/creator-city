@@ -464,6 +464,15 @@ function renderedHarnessSource() {
       boardCommitAllowed = false
     }
 
+    function navigateFromBoard(destination) {
+      if (!deferredBoardFlush?.()) {
+        calls.push('navigation-blocked:' + destination)
+        return false
+      }
+      calls.push('navigate:' + destination)
+      return true
+    }
+
     function renderLivePanel() {
       const recipe = livePanel.recipeKind
         ? structuredClone(FIXTURES[livePanel.recipeKind])
@@ -541,6 +550,7 @@ function renderedHarnessSource() {
       switchBoardContext,
       unmountBoard,
       failBoardCommit,
+      navigateFromBoard,
       mountLivePanel,
       updateLivePanel,
       calls: () => calls.slice(),
@@ -621,6 +631,7 @@ type RenderedHarness = {
   switchBoardContext: (kind: 'project' | 'workflow' | 'control' | 'replacement') => void
   unmountBoard: () => void
   failBoardCommit: () => void
+  navigateFromBoard: (destination: string) => boolean
   mountLivePanel: () => void
   updateLivePanel: (patch: {
     open?: boolean
@@ -1234,6 +1245,33 @@ describe('Storyboard Director rendered interactions', () => {
 
       assert.deepEqual(await renderedCalls(page), ['state-change-failed'])
       assert.equal(await page.getByRole('dialog', { name: 'Storyboard Director' }).count(), 1)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('each route exit flushes two dirty Recipe fields and blocks navigation on commit failure', async () => {
+    const page = await renderPage()
+    try {
+      for (const destination of ['new-project', 'delivery', 'projects', 'project-center']) {
+        await mountRenderedBoard(page, 'matching')
+        await setRenderedBoardDrafts(page, {
+          mood: `${destination} mood`,
+          directorNote: `${destination} note`,
+        })
+        await page.evaluate(() => (
+          window as unknown as { __directorHarness: RenderedHarness }
+        ).__directorHarness.failBoardCommit())
+        const navigated = await page.evaluate((nextDestination) => (
+          window as unknown as { __directorHarness: RenderedHarness }
+        ).__directorHarness.navigateFromBoard(nextDestination), destination)
+
+        assert.equal(navigated, false, destination)
+        assert.deepEqual(await renderedCalls(page), [
+          'state-change-failed',
+          `navigation-blocked:${destination}`,
+        ], destination)
+      }
     } finally {
       await page.close()
     }

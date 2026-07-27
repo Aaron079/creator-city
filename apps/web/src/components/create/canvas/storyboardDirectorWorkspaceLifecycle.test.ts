@@ -12,6 +12,7 @@ import {
   collectStoryboardDirectorDurableLocks,
   executeStoryboardDirectorReceiptAwareDeletion,
   executeStoryboardDirectorRecoveryPersistence,
+  hasDurablyAcknowledgedStoryboardDirectorBatch,
   reserveStoryboardDirectorNodeId,
   runStoryboardDirectorCreationBatch,
   runStoryboardDirectorContextTransition,
@@ -333,6 +334,7 @@ describe('Storyboard Director workspace lifecycle', () => {
         events.push(`persist:${candidate.findings.map((finding) => finding.code).join(',')}`)
         return true
       },
+      retainCandidate: () => { events.push('retain-candidate') },
       retainEmergency: () => { events.push('retain') },
     })
 
@@ -345,22 +347,113 @@ describe('Storyboard Director workspace lifecycle', () => {
   test('retains a scoped fail-closed lock when recovery serialization or scheduling fails', () => {
     const latest = recipeWithReceipt('source-a', 'derived-target', 'scene')
     let retained = 0
+    let retainedCandidate: StoryboardDirectorRecipe | null = null
     for (const failure of ['build', 'persist'] as const) {
       const result = executeStoryboardDirectorRecoveryPersistence({
         readLatest: () => latest,
-        buildRecovery: (current) => {
+        buildRecovery: (current): StoryboardDirectorRecipe => {
           if (failure === 'build') throw new Error('record failed')
-          return current
+          return {
+            ...current,
+            findings: [{
+              findingId: 'recovery-blocker',
+              severity: 'blocking' as const,
+              code: 'PARTIAL_MATERIALIZATION_BATCH',
+              message: 'Keep this candidate in memory.',
+              evidenceIds: [],
+              partialBatch: {
+                batchId: 'batch-recovery',
+                operation: 'draft-node-creation' as const,
+                plannedCount: 1,
+                createdCount: 1,
+                uncreatedCount: 0,
+                plannedIdentities: ['draft-a'],
+                successfulTargetIds: ['target-a'],
+              },
+            }],
+          }
         },
         persist: () => {
           if (failure === 'persist') throw new Error('storage failed')
           return true
         },
+        retainCandidate: (candidate) => { retainedCandidate = candidate },
         retainEmergency: () => { retained += 1 },
       })
       assert.equal(result.status, 'emergency')
     }
     assert.equal(retained, 2)
+    const candidate = retainedCandidate as StoryboardDirectorRecipe | null
+    assert.equal(
+      candidate?.findings.some((finding) => finding.code === 'PARTIAL_MATERIALIZATION_BATCH'),
+      true,
+    )
+  })
+
+  test('verifies targeted acknowledgment against the strict durable snapshot Recipe', () => {
+    const original = recipeWithReceipt('source-a', 'derived-target', 'scene')
+    const batchId = createStoryboardDirectorPartialBatchIdentity(
+      original.recipeId,
+      'draft-node-creation',
+      ['draft-a'],
+    )
+    const blocker = {
+      batchId,
+      operation: 'draft-node-creation' as const,
+      plannedCount: 1,
+      createdCount: 1,
+      uncreatedCount: 0,
+      plannedIdentities: ['draft-a'],
+      successfulTargetIds: ['target-a'],
+    }
+    const blocked = {
+      ...original,
+      findings: [{
+        findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+        severity: 'blocking' as const,
+        code: 'PARTIAL_MATERIALIZATION_BATCH',
+        message: 'Inspect before retry.',
+        evidenceIds: [],
+        partialBatch: blocker,
+      }],
+    }
+    const scope = {
+      projectId: original.projectId,
+      workflowId: original.workflowId,
+      controlNodeId: 'control-durable',
+      recipeId: original.recipeId,
+    }
+
+    assert.equal(hasDurablyAcknowledgedStoryboardDirectorBatch(
+      [controlNode(scope.controlNodeId, blocked)],
+      scope,
+      blocker.batchId,
+    ), false)
+    assert.equal(hasDurablyAcknowledgedStoryboardDirectorBatch(
+      [controlNode(scope.controlNodeId, original)],
+      scope,
+      blocker.batchId,
+    ), true)
+    assert.equal(hasDurablyAcknowledgedStoryboardDirectorBatch(
+      [{ id: scope.controlNodeId, metadataJson: { malformed: true } }],
+      scope,
+      blocker.batchId,
+    ), false)
+  })
+
+  test('guards every route exit before navigation when the aggregate board flush fails', () => {
+    for (const destination of ['new-project', 'delivery', 'projects', 'project-center']) {
+      const events: string[] = []
+      const transitioned = runStoryboardDirectorContextTransition({
+        flushDrafts: () => {
+          events.push('flush:mood+directorNote:failed')
+          return false
+        },
+        transition: () => { events.push(`navigate:${destination}`) },
+      })
+      assert.equal(transitioned, false, destination)
+      assert.deepEqual(events, ['flush:mood+directorNote:failed'], destination)
+    }
   })
 
   test('restores durable blockers after reload, remount, and returning from a canvas switch', () => {

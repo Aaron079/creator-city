@@ -149,6 +149,8 @@ import {
   collectStoryboardDirectorDurableLocks,
   executeStoryboardDirectorRecoveryPersistence,
   executeStoryboardDirectorReceiptAwareDeletion,
+  hasDurablyAcknowledgedStoryboardDirectorBatch,
+  mergeStoryboardDirectorRecipeMetadata,
   planStoryboardDirectorReceiptAwareDeletion,
   reserveStoryboardDirectorNodeId,
   resolveStoryboardDirectorRecipeRevision,
@@ -230,7 +232,10 @@ import {
   consumePendingCanvasSave,
   type CanvasSaveResponseData,
 } from '@/lib/canvas/canvasSaveIntegrity'
-import { decideCanvasDraftRecovery } from '@/lib/canvas/canvasDraftRecovery'
+import {
+  decideCanvasDraftRecovery,
+  mergeStoryboardDirectorRecoveryRiskIntoServerNodes,
+} from '@/lib/canvas/canvasDraftRecovery'
 import {
   validateLocalImageFile,
   readImageDimensions,
@@ -349,6 +354,8 @@ interface DraftRestorePrompt {
   edges: CanvasEdge[]
   viewport: { zoom: number; pan: { x: number; y: number } }
   source: 'snapshot' | 'cache' | 'draft'
+  stageCRecoveryBatchIds: string[]
+  stageCRecoveryStatus: 'none' | 'merged' | 'blocked'
 }
 
 type LocalCanvasSource = 'snapshot' | 'cache' | 'draft'
@@ -3394,6 +3401,18 @@ export function VisualCanvasWorkspace({
     hasUnsyncedLocalChangesRef.current = true
   }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
 
+  const readStageCCanonicalLocalNodes = useCallback((targetProjectId: string) => {
+    if (typeof window === 'undefined') return null
+    try {
+      return normalizeLocalCanvasSnapshot(
+        targetProjectId,
+        window.localStorage.getItem(getCanvasSnapshotKey(targetProjectId)),
+      )?.nodes ?? null
+    } catch {
+      return null
+    }
+  }, [normalizeLocalCanvasSnapshot])
+
   const applyCanvasSnapshot = useCallback((args: {
     projectId: string
     workflowId: string
@@ -3661,13 +3680,6 @@ export function VisualCanvasWorkspace({
     }
   }, [applyCanvasSnapshot, draftRestorePrompt, writeUnifiedLocalSnapshot])
 
-  const keepServerCanvas = useCallback(() => {
-    if (serverSaveVersionRef.current) flushLocalSnapshot(serverSaveVersionRef.current)
-    setDraftRestorePrompt(null)
-    setSaveStatus('saved')
-    setSaveMessage('继续使用服务器版本')
-  }, [flushLocalSnapshot])
-
   const scheduleCanvasSave = useCallback((_delay?: number, options?: {
     snapshot: 'flush' | 'already-flushed'
   }) => {
@@ -3682,6 +3694,43 @@ export function VisualCanvasWorkspace({
       },
     })
   }, [projectId, workflowId, flushLocalSnapshot])
+
+  const keepServerCanvas = useCallback(() => {
+    if (draftRestorePrompt?.stageCRecoveryStatus === 'blocked') {
+      const confirmed = window.confirm(
+        `有 ${draftRestorePrompt.stageCRecoveryBatchIds.length} 个分镜导演恢复批次无法合并。继续使用服务器版本会放弃这些恢复标记，确认已了解风险？`,
+      )
+      if (!confirmed) return
+    }
+    if (draftRestorePrompt?.stageCRecoveryStatus === 'merged') {
+      const persistence = runBoundedCanvasPersistence({
+        hasPriorMutation: true,
+        persistenceOrder: 'schedule-first',
+        operation: () => true,
+        flushSnapshot: writeStageCCanonicalLocalSnapshot,
+        scheduleSave: () => scheduleCanvasSave(0, { snapshot: 'already-flushed' }),
+      })
+      if (!persistence.persistenceSucceeded) {
+        setCanvasFeedback('分镜导演恢复标记保存失败，恢复选择仍保持打开。')
+        return
+      }
+      suppressExplicitCanvasAutosave()
+      setDraftRestorePrompt(null)
+      setSaveStatus('local-draft')
+      setSaveMessage('服务器画布已保留，分镜导演恢复标记继续锁定。')
+      return
+    }
+    if (serverSaveVersionRef.current) flushLocalSnapshot(serverSaveVersionRef.current)
+    setDraftRestorePrompt(null)
+    setSaveStatus('saved')
+    setSaveMessage('继续使用服务器版本')
+  }, [
+    draftRestorePrompt,
+    flushLocalSnapshot,
+    scheduleCanvasSave,
+    suppressExplicitCanvasAutosave,
+    writeStageCCanonicalLocalSnapshot,
+  ])
 
   const handleManualSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -4003,11 +4052,23 @@ export function VisualCanvasWorkspace({
             nodeCount: localCandidate.value.nodes.length,
           } : null,
         })
+        const stageCRecovery = recoveryDecision.action === 'prompt-local-recovery' && localCandidate
+          ? mergeStoryboardDirectorRecoveryRiskIntoServerNodes({
+              projectId: resolvedProjectId,
+              workflowId: serverWorkflowId,
+              serverNodes,
+              localNodes: localCandidate.value.nodes,
+            })
+          : {
+              status: 'none' as const,
+              nodes: serverNodes,
+              batchIds: [],
+            }
         const applied = applyCanvasSnapshot({
           projectId: resolvedProjectId,
           workflowId: serverWorkflowId,
           title: data.project?.title ?? projectTitle,
-          nodes: serverNodes,
+          nodes: stageCRecovery.nodes,
           edges: serverEdges,
           viewport,
           allowEmpty: true,
@@ -4021,9 +4082,13 @@ export function VisualCanvasWorkspace({
             edges: localCandidate.value.edges,
             viewport: localCandidate.value.viewport,
             source: localCandidate.source,
+            stageCRecoveryBatchIds: stageCRecovery.batchIds,
+            stageCRecoveryStatus: stageCRecovery.status,
           })
           setSaveStatus('saved')
-          setSaveMessage('检测到未同步的本地草稿，可选择恢复。')
+          setSaveMessage(stageCRecovery.batchIds.length
+            ? '检测到未完成的分镜导演批次，已进入恢复保护。'
+            : '检测到未同步的本地草稿，可选择恢复。')
         } else {
           setDraftRestorePrompt(null)
           writeCanvasCache({
@@ -5569,16 +5634,20 @@ export function VisualCanvasWorkspace({
     if (result.persistenceSucceeded && result.persistenceAttempted) {
       suppressExplicitCanvasAutosave()
     }
-    if (succeeded && persistedRecipe) {
-      const durableBatchIds = new Set(
-        storyboardDirectorPartialBatchBlockers(persistedRecipe).map((batch) => batch.batchId),
-      )
+    const durableRecipe = persistedRecipe as StoryboardDirectorRecipe | null
+    if (succeeded && durableRecipe) {
+      const durableNodes = readStageCCanonicalLocalNodes(durableRecipe.projectId)
       setEmergencyDirectorPartialBatches((current) => current.filter((lock) => (
-        lock.projectId !== persistedRecipe!.projectId
-        || lock.workflowId !== persistedRecipe!.workflowId
+        lock.projectId !== durableRecipe.projectId
+        || lock.workflowId !== durableRecipe.workflowId
         || lock.controlNodeId !== targetControlNodeId
-        || lock.recipeId !== persistedRecipe!.recipeId
-        || durableBatchIds.has(lock.blocker.batchId)
+        || lock.recipeId !== durableRecipe.recipeId
+        || !durableNodes
+        || !hasDurablyAcknowledgedStoryboardDirectorBatch(
+          durableNodes,
+          lock,
+          lock.blocker.batchId,
+        )
       )))
     }
     return succeeded
@@ -5586,6 +5655,7 @@ export function VisualCanvasWorkspace({
     activeDirectorControlNodeId,
     handleNodePatch,
     projectId,
+    readStageCCanonicalLocalNodes,
     scheduleCanvasSave,
     showCanvasFeedback,
     suppressExplicitCanvasAutosave,
@@ -5720,10 +5790,38 @@ export function VisualCanvasWorkspace({
           controlNodeId: context.controlNode.id,
         })
       },
+      retainCandidate: (candidate, recoveryBase) => {
+        const controlNode = latestNodesRef.current.find(
+          (node) => node.id === context.controlNode.id,
+        )
+        const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+        if (!controlNode
+          || read.status !== 'valid'
+          || read.recipe.recipeId !== candidate.recipeId
+          || read.recipe.projectId !== candidate.projectId
+          || read.recipe.workflowId !== candidate.workflowId) return
+        let retainedRecipe = candidate
+        if (createStoryboardDirectorRecipeRevision(read.recipe)
+          !== createStoryboardDirectorRecipeRevision(recoveryBase)) {
+          const rebased = recoverLatestRecipe(read.recipe)
+          installedBlocker = rebased.blocker
+          retainedRecipe = rebased.recipe
+        }
+        const metadataJson = mergeStoryboardDirectorRecipeMetadata(
+          controlNode.metadataJson,
+          storyboardDirectorRecipeMetadata(retainedRecipe),
+        )
+        if (!metadataJson) return
+        handleNodePatch(context.controlNode.id, {
+          prompt: storyboardDirectorRecipeSummary(retainedRecipe),
+          metadataJson,
+        })
+      },
       retainEmergency,
     })
   }, [
     handleCommitStoryboardDirectorRecipe,
+    handleNodePatch,
     scheduleCanvasSave,
     suppressExplicitCanvasAutosave,
     writeStageCCanonicalLocalSnapshot,
@@ -5932,13 +6030,14 @@ export function VisualCanvasWorkspace({
         context.recipe.storyboard,
         new Date().toISOString(),
       )
-      handleCommitStoryboardDirectorRecipe({
+      const persisted = handleCommitStoryboardDirectorRecipe({
         ...context.recipe,
         storyboard: planned.state,
       }, {
         expectedRevision: context.recipeRevision,
         controlNodeId: context.controlNode.id,
       })
+      if (!persisted) return
       showCanvasFeedback(`镜头板已同步：新增 ${planned.createdShotIds.length}，更新 ${planned.updatedShotIds.length}。`)
     } catch {
       showCanvasFeedback('镜头板同步条件不足或存在冲突。')
@@ -6134,7 +6233,7 @@ export function VisualCanvasWorkspace({
       return
     }
     try {
-      handleCommitStoryboardDirectorRecipe(importLegacyShotBoard(
+      const persisted = handleCommitStoryboardDirectorRecipe(importLegacyShotBoard(
         context.recipe,
         legacy.state,
         new Date().toISOString(),
@@ -6142,6 +6241,7 @@ export function VisualCanvasWorkspace({
         expectedRevision: context.recipeRevision,
         controlNodeId: context.controlNode.id,
       })
+      if (!persisted) return
       showCanvasFeedback('旧版镜头板已导入云端 Recipe。')
     } catch {
       showCanvasFeedback('旧版镜头板无法导入当前 Recipe。')
@@ -6181,6 +6281,15 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback('恢复标记确认保存失败，批次继续锁定。')
       return
     }
+    const durableNodes = readStageCCanonicalLocalNodes(lock.projectId)
+    if (!durableNodes || !hasDurablyAcknowledgedStoryboardDirectorBatch(
+      durableNodes,
+      lock,
+      batchId,
+    )) {
+      showCanvasFeedback('恢复标记未通过持久化校验，批次继续锁定。')
+      return
+    }
     setEmergencyDirectorPartialBatches((current) => (
       clearStoryboardDirectorEmergencyLock(current, lock, batchId)
     ))
@@ -6188,6 +6297,7 @@ export function VisualCanvasWorkspace({
   }, [
     activeEmergencyDirectorPartialBatch,
     handleCommitStoryboardDirectorRecipe,
+    readStageCCanonicalLocalNodes,
     showCanvasFeedback,
   ])
 
@@ -9675,9 +9785,16 @@ export function VisualCanvasWorkspace({
     timersRef.current.push(timer)
   }, [flushLocalSnapshot])
 
+  const guardStoryboardDirectorNavigation = useCallback(() => {
+    if (flushDirectorBoardDrafts()) return true
+    showCanvasFeedback('分镜导演存在未保存的镜头板修改，已取消离开画布。')
+    return false
+  }, [flushDirectorBoardDrafts, showCanvasFeedback])
+
   const handleBeforeNewProject = useCallback(() => {
     const confirmed = window.confirm('将立即创建并进入新项目。旧画布会保留本地草稿，后台保存失败不会阻塞新项目。')
     if (!confirmed) return false
+    if (!guardStoryboardDirectorNavigation()) return false
     flushLocalSnapshot()
     isSwitchingProjectRef.current = true
     if (saveTimerRef.current) {
@@ -9691,9 +9808,10 @@ export function VisualCanvasWorkspace({
     clearGenerationTimersAndRequests()
     saveAbortRef.current?.abort()
     return true
-  }, [clearGenerationTimersAndRequests, flushLocalSnapshot])
+  }, [clearGenerationTimersAndRequests, flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
   const handleOpenClientDelivery = useCallback(() => {
+    if (!guardStoryboardDirectorNavigation()) return
     flushLocalSnapshot()
     const currentProjectId = projectId || new URLSearchParams(window.location.search).get('projectId') || ''
     if (!currentProjectId || isPlaceholderProjectId(currentProjectId)) {
@@ -9702,9 +9820,10 @@ export function VisualCanvasWorkspace({
       return
     }
     router.push(`/projects/${encodeURIComponent(currentProjectId)}/delivery`)
-  }, [projectId, router, flushLocalSnapshot])
+  }, [projectId, router, flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
   const handleOpenProjects = useCallback(() => {
+    if (!guardStoryboardDirectorNavigation()) return
     flushLocalSnapshot()
     try {
       if (projectId) window.localStorage.setItem('creator-city:last-project-id', projectId)
@@ -9713,14 +9832,19 @@ export function VisualCanvasWorkspace({
       // Explicit /projects navigation still works without localStorage.
     }
     router.push('/projects')
-  }, [projectId, router, workflowId, flushLocalSnapshot])
+  }, [projectId, router, workflowId, flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
   const handleCanvasRootClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null
-    const navigatesFromCanvas = target?.closest('a[href], button[data-flush-canvas-before-nav="true"]')
+    const navigatesFromCanvas = target?.closest('a[href]')
     if (!navigatesFromCanvas) return
+    if (!guardStoryboardDirectorNavigation()) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     flushLocalSnapshot()
-  }, [flushLocalSnapshot])
+  }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || typeof window === 'undefined') return undefined
@@ -10155,26 +10279,40 @@ export function VisualCanvasWorkspace({
       />
 
       {draftRestorePrompt ? (
-        <div className="fixed left-1/2 top-28 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
-          <div className="text-sm font-semibold text-white">发现本地画布草稿，是否恢复？</div>
-          <div className="mt-1 text-xs text-white/50">
-            服务器版本已保留。{draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => { void restoreDraftToServer() }}
-              className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100"
-            >
-              恢复草稿
-            </button>
-            <button
-              type="button"
-              onClick={keepServerCanvas}
-              className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
-            >
-              使用服务器版本
-            </button>
+        <div
+          className="fixed inset-0 z-[70] flex items-start justify-center bg-black/55 px-4 pt-28"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="canvas-draft-recovery-title"
+        >
+          <div className="w-[min(92vw,520px)] rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
+            <div id="canvas-draft-recovery-title" className="text-sm font-semibold text-white">
+              发现本地画布草稿，是否恢复？
+            </div>
+            <div className="mt-1 text-xs text-white/50">
+              服务器版本已保留。{draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
+            </div>
+            {draftRestorePrompt.stageCRecoveryBatchIds.length ? (
+              <div className="mt-2 text-xs font-medium text-amber-200">
+                检测到 {draftRestorePrompt.stageCRecoveryBatchIds.length} 个未完成的分镜导演批次。恢复标记已合并到服务器画布视图，确认检查前不能重复执行。
+              </div>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { void restoreDraftToServer() }}
+                className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100"
+              >
+                恢复草稿
+              </button>
+              <button
+                type="button"
+                onClick={keepServerCanvas}
+                className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
+              >
+                使用服务器版本
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
