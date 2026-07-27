@@ -30,6 +30,10 @@ const workspaceLifecycle = readFileSync(new URL(
   '../apps/web/src/components/create/canvas/storyboardDirectorWorkspaceLifecycle.ts',
   import.meta.url,
 ), 'utf8')
+const interactionGate = readFileSync(new URL(
+  '../apps/web/src/components/create/canvas/StoryboardDirectorInteractionGate.tsx',
+  import.meta.url,
+), 'utf8')
 const draftRecovery = readFileSync(new URL(
   '../apps/web/src/lib/canvas/canvasDraftRecovery.ts',
   import.meta.url,
@@ -277,8 +281,11 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(draftRecovery, /mergeStoryboardDirectorRecoveryRiskIntoServerNodes/)
     assert.match(load, /mergeStoryboardDirectorRecoveryRiskIntoServerNodes\(\{[\s\S]*serverNodes,[\s\S]*localNodes:/)
     assert.match(load, /nodes:\s*stageCRecovery\.nodes/)
-    assert.match(workspace, /role=["']alertdialog["']/)
-    assert.match(workspace, /aria-modal=["']true["']/)
+    assert.match(interactionGate, /role=["']alertdialog["']/)
+    assert.match(interactionGate, /aria-modal=["']true["']/)
+    assert.match(interactionGate, /stageCRecoveryStatus\s*===\s*['"]blocked['"]/)
+    assert.match(interactionGate, /交互已锁定/)
+    assert.doesNotMatch(interactionGate, /stageCRecoveryStatus\s*===\s*['"]blocked['"][\s\S]{0,300}已合并/)
     const keepServer = namedBlock(
       workspace,
       'const keepServerCanvas',
@@ -313,16 +320,34 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
   test('all canvas route exits flush Director drafts before snapshots or navigation', () => {
     const newProject = namedBlock(workspace, 'const handleBeforeNewProject', 'const handleOpenClientDelivery')
     const delivery = namedBlock(workspace, 'const handleOpenClientDelivery', 'const handleOpenProjects')
-    const projects = namedBlock(workspace, 'const handleOpenProjects', 'const handleCanvasRootClickCapture')
-    const capture = namedBlock(workspace, 'const handleCanvasRootClickCapture', 'const nodeDialogStyle')
-    for (const block of [newProject, delivery, projects, capture]) {
+    const projects = namedBlock(workspace, 'const handleOpenProjects', 'const handleCanvasShellNavigation')
+    const shellNavigation = namedBlock(workspace, 'const handleCanvasShellNavigation', 'const nodeDialogStyle')
+    for (const block of [newProject, delivery, projects, shellNavigation]) {
       assert.match(block, /guardStoryboardDirectorNavigation\(\)/)
     }
     assert.ok(newProject.indexOf('guardStoryboardDirectorNavigation()') < newProject.indexOf('flushLocalSnapshot()'))
     assert.ok(delivery.indexOf('guardStoryboardDirectorNavigation()') < delivery.indexOf('flushLocalSnapshot()'))
     assert.ok(projects.indexOf('guardStoryboardDirectorNavigation()') < projects.indexOf('flushLocalSnapshot()'))
-    assert.match(capture, /event\.preventDefault\(\)/)
-    assert.match(capture, /event\.stopPropagation\(\)/)
+    assert.ok(shellNavigation.indexOf('guardStoryboardDirectorNavigation()') < shellNavigation.indexOf('flushLocalSnapshot()'))
+    assert.match(workspace, /<StoryboardDirectorInteractionGate[\s\S]*<CanvasWorkspaceShell/)
+    assert.doesNotMatch(workspace, /onClickCapture=\{handleCanvasRootClickCapture\}/)
+    assert.match(interactionGate, /onClickCapture=\{handleClickCapture\}/)
+    assert.match(interactionGate, /event\.preventDefault\(\)/)
+    assert.match(interactionGate, /event\.stopPropagation\(\)/)
+    assert.match(interactionGate, /anchor\.target[\s\S]*['_"]self/)
+    assert.match(interactionGate, /anchor\.hasAttribute\(['"]download['"]\)/)
+    assert.match(interactionGate, /event\.metaKey[\s\S]*event\.ctrlKey[\s\S]*event\.shiftKey[\s\S]*event\.altKey/)
+    assert.match(interactionGate, /url\.origin\s*!==\s*window\.location\.origin/)
+  })
+
+  test('recovery gate is modal above the shell and traps interaction until resolution', () => {
+    assert.match(interactionGate, /fixed\s+inset-0\s+z-\[5000\]/)
+    assert.match(interactionGate, /setAttribute\(['"]inert['"],\s*['"]['"]\)/)
+    assert.match(interactionGate, /setAttribute\(['"]aria-hidden['"],\s*['"]true['"]\)/)
+    assert.match(interactionGate, /event\.key\s*===\s*['"]Escape['"]/)
+    assert.match(interactionGate, /event\.key\s*!==\s*['"]Tab['"]/)
+    assert.match(interactionGate, /previouslyFocusedElementRef/)
+    assert.match(interactionGate, /\.focus\(\)/)
   })
 
   test('shot-board sync and legacy import only report success after a true commit', () => {

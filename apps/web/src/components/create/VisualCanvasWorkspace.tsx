@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
@@ -96,6 +96,7 @@ async function fetchAssetTransformCaps(): Promise<AssetTransformCaps> {
 }
 import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
+import { StoryboardDirectorInteractionGate } from '@/components/create/canvas/StoryboardDirectorInteractionGate'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
 // CanvasRightInspector removed — inspector panel not used
 import { CanvasBottomDock } from '@/components/canvas/dock/CanvasBottomDock'
@@ -9834,16 +9835,10 @@ export function VisualCanvasWorkspace({
     router.push('/projects')
   }, [projectId, router, workflowId, flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
-  const handleCanvasRootClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement | null
-    const navigatesFromCanvas = target?.closest('a[href]')
-    if (!navigatesFromCanvas) return
-    if (!guardStoryboardDirectorNavigation()) {
-      event.preventDefault()
-      event.stopPropagation()
-      return
-    }
+  const handleCanvasShellNavigation = useCallback(() => {
+    if (!guardStoryboardDirectorNavigation()) return false
     flushLocalSnapshot()
+    return true
   }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
@@ -10244,6 +10239,17 @@ export function VisualCanvasWorkspace({
   )
 
   return (
+    <StoryboardDirectorInteractionGate
+      recovery={draftRestorePrompt ? {
+        source: draftRestorePrompt.source,
+        nodeCount: draftRestorePrompt.nodes.length,
+        stageCRecoveryBatchIds: draftRestorePrompt.stageCRecoveryBatchIds,
+        stageCRecoveryStatus: draftRestorePrompt.stageCRecoveryStatus,
+      } : null}
+      onBeforeInternalNavigation={handleCanvasShellNavigation}
+      onRestore={() => { void restoreDraftToServer() }}
+      onKeepServer={keepServerCanvas}
+    >
     <CanvasWorkspaceShell
       topCommand={topCommandBar}
       leftRail={leftToolRail}
@@ -10266,7 +10272,7 @@ export function VisualCanvasWorkspace({
       }
       showBottomDock
     >
-    <div className={`${canvasStyles.scope} h-full min-h-0`} onClickCapture={handleCanvasRootClickCapture}>
+    <div className={`${canvasStyles.scope} h-full min-h-0`}>
     <div className={`canvas-root ${hasStarted ? 'is-started' : ''}`}>
       <div className="canvas-background-glow" />
       <div className="canvas-grid" />
@@ -10277,45 +10283,6 @@ export function VisualCanvasWorkspace({
         source="create"
         beforeCreate={handleBeforeNewProject}
       />
-
-      {draftRestorePrompt ? (
-        <div
-          className="fixed inset-0 z-[70] flex items-start justify-center bg-black/55 px-4 pt-28"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="canvas-draft-recovery-title"
-        >
-          <div className="w-[min(92vw,520px)] rounded-lg border border-amber-300/25 bg-slate-950/95 p-4 shadow-2xl shadow-black/30 backdrop-blur">
-            <div id="canvas-draft-recovery-title" className="text-sm font-semibold text-white">
-              发现本地画布草稿，是否恢复？
-            </div>
-            <div className="mt-1 text-xs text-white/50">
-              服务器版本已保留。{draftRestorePrompt.source === 'cache' ? '本地缓存' : '本地草稿'}包含 {draftRestorePrompt.nodes.length} 个节点。
-            </div>
-            {draftRestorePrompt.stageCRecoveryBatchIds.length ? (
-              <div className="mt-2 text-xs font-medium text-amber-200">
-                检测到 {draftRestorePrompt.stageCRecoveryBatchIds.length} 个未完成的分镜导演批次。恢复标记已合并到服务器画布视图，确认检查前不能重复执行。
-              </div>
-            ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => { void restoreDraftToServer() }}
-                className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-100"
-              >
-                恢复草稿
-              </button>
-              <button
-                type="button"
-                onClick={keepServerCanvas}
-                className="rounded-md border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:border-white/25 hover:text-white"
-              >
-                使用服务器版本
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {saveStatus === 'opening' ? (
         <div className="canvas-empty-overlay">
@@ -12373,5 +12340,6 @@ export function VisualCanvasWorkspace({
     </div>
     </div>
     </CanvasWorkspaceShell>
+    </StoryboardDirectorInteractionGate>
   )
 }
