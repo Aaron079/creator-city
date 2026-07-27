@@ -125,12 +125,13 @@ import type {
 } from '@/lib/storyboard/recipe/types'
 import {
   attemptStoryboardDirectorRecipeCommit,
+  acknowledgeStoryboardDirectorPartialBatch,
   importLegacyShotBoard,
   planStoryboardDirectorControlNode,
   planStoryboardDirectorDraftNodes,
   planStoryboardDirectorGroupedNodes,
   planStoryboardDirectorShotBoardSync,
-  recordStoryboardDirectorPartialBatch,
+  recordStoryboardDirectorRecoveryBatch,
   recordStoryboardDirectorReceipts,
   storyboardDirectorPartialBatchBlockers,
   storyboardDirectorRecipeSummary,
@@ -140,12 +141,19 @@ import {
   consumeCanvasAutosaveSuppression,
   createCanvasAutosaveSuppression,
   runBoundedCanvasPersistence,
+  writeCanonicalCanvasSnapshot,
   type CanvasAutosaveSuppression,
 } from '@/components/create/canvas/canvasSaveScheduling'
 import {
+  clearStoryboardDirectorEmergencyLock,
+  collectStoryboardDirectorDurableLocks,
+  executeStoryboardDirectorRecoveryPersistence,
   executeStoryboardDirectorReceiptAwareDeletion,
   planStoryboardDirectorReceiptAwareDeletion,
+  reserveStoryboardDirectorNodeId,
   resolveStoryboardDirectorRecipeRevision,
+  runStoryboardDirectorCreationBatch,
+  runStoryboardDirectorContextTransition,
   selectStoryboardDirectorEmergencyLock,
   upsertStoryboardDirectorEmergencyLock,
   type StoryboardDirectorEmergencyLock,
@@ -3358,6 +3366,34 @@ export function VisualCanvasWorkspace({
     }
   }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
 
+  const writeStageCCanonicalLocalSnapshot = useCallback((args?: {
+    nodes?: VisualCanvasNode[]
+    edges?: CanvasEdge[]
+  }) => {
+    if (typeof window === 'undefined' || !projectId || !workflowId) {
+      throw new Error('Stage C canvas identity is unavailable')
+    }
+    const snapshot = getCanvasSnapshot()
+    const localSnapshot: CanvasLocalSnapshot = {
+      version: 1,
+      projectId,
+      workflowId,
+      title: loadedProjectTitle,
+      nodes: args?.nodes ?? snapshot.nodes,
+      edges: args?.edges ?? snapshot.edges,
+      viewport: snapshot.viewport,
+      commentsPreview: latestCommentsRef.current.slice(0, 20),
+      updatedAt: new Date().toISOString(),
+      source: 'local',
+    }
+    writeCanonicalCanvasSnapshot(
+      window.localStorage,
+      getCanvasSnapshotKey(projectId),
+      localSnapshot,
+    )
+    hasUnsyncedLocalChangesRef.current = true
+  }, [getCanvasSnapshot, loadedProjectTitle, projectId, workflowId])
+
   const applyCanvasSnapshot = useCallback((args: {
     projectId: string
     workflowId: string
@@ -3369,8 +3405,24 @@ export function VisualCanvasWorkspace({
     status?: SaveStatus
     message?: string
   }) => {
-    setProjectId(args.projectId)
-    setWorkflowId(args.workflowId)
+    const replacesDirectorContext = args.projectId !== projectId
+      || args.workflowId !== workflowId
+    if (replacesDirectorContext) {
+      const transitioned = runStoryboardDirectorContextTransition({
+        flushDrafts: () => directorDeferredBoardFlushRef.current(),
+        transition: () => {
+          setProjectId(args.projectId)
+          setWorkflowId(args.workflowId)
+        },
+      })
+      if (!transitioned) {
+        setCanvasFeedback('分镜导演存在未保存的镜头板修改，画布切换已取消。')
+        return false
+      }
+    } else {
+      setProjectId(args.projectId)
+      setWorkflowId(args.workflowId)
+    }
     if (args.title) {
       setLoadedProjectTitle(args.title)
       if (!projectTitleEditing) setProjectTitleDraft(args.title)
@@ -3403,7 +3455,7 @@ export function VisualCanvasWorkspace({
     if (!args.allowEmpty && sanitizedNodes.length === 0 && existingNodeCount > 0) {
       if (args.status) setSaveStatus(args.status)
       if (args.message !== undefined) setSaveMessage(args.message)
-      return
+      return false
     }
     latestNodesRef.current = sanitizedNodes
     latestEdgesRef.current = args.edges
@@ -3421,7 +3473,8 @@ export function VisualCanvasWorkspace({
     setHasStarted(sanitizedNodes.length > 0)
     if (args.status) setSaveStatus(args.status)
     if (args.message !== undefined) setSaveMessage(args.message)
-  }, [commitEdges, commitNodes, projectTitleEditing])
+    return true
+  }, [commitEdges, commitNodes, projectId, projectTitleEditing, workflowId])
 
   const flushLocalSnapshot = useCallback((syncedAt?: string) => {
     writeUnifiedLocalSnapshot(syncedAt ? { syncedAt, serverUpdatedAt: syncedAt } : undefined)
@@ -3929,8 +3982,6 @@ export function VisualCanvasWorkspace({
           if (data.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', data.workflow.id)
         } catch (_) { /* private mode */ }
 
-        setProjectId(resolvedProjectId)
-        setWorkflowId(data.workflow?.id ?? '')
         const serverNodes = (data.nodes ?? []) as VisualCanvasNode[]
         const serverEdges = (data.edges ?? []) as CanvasEdge[]
         const serverUpdatedAtText = data.serverUpdatedAt ?? data.workflow?.updatedAt
@@ -3952,7 +4003,7 @@ export function VisualCanvasWorkspace({
             nodeCount: localCandidate.value.nodes.length,
           } : null,
         })
-        applyCanvasSnapshot({
+        const applied = applyCanvasSnapshot({
           projectId: resolvedProjectId,
           workflowId: serverWorkflowId,
           title: data.project?.title ?? projectTitle,
@@ -3961,6 +4012,7 @@ export function VisualCanvasWorkspace({
           viewport,
           allowEmpty: true,
         })
+        if (!applied) return
         if (recoveryDecision.action === 'prompt-local-recovery' && localCandidate) {
           setDraftRestorePrompt({
             projectId: resolvedProjectId,
@@ -4320,8 +4372,9 @@ export function VisualCanvasWorkspace({
         persist: (nextNodes) => {
           const result = runBoundedCanvasPersistence({
             hasPriorMutation: true,
+            persistenceOrder: 'schedule-first',
             operation: () => true,
-            flushSnapshot: () => writeUnifiedLocalSnapshot({
+            flushSnapshot: () => writeStageCCanonicalLocalSnapshot({
               nodes: [...nextNodes],
               edges: nextEdges,
             }),
@@ -4395,7 +4448,7 @@ export function VisualCanvasWorkspace({
     flushDirectorBoardDrafts,
     scheduleCanvasSave,
     showCanvasFeedback,
-    writeUnifiedLocalSnapshot,
+    writeStageCCanonicalLocalSnapshot,
   ])
 
   const duplicateNode = useCallback((node: VisualCanvasNode, offset = 40) => {
@@ -4998,11 +5051,15 @@ export function VisualCanvasWorkspace({
       edgeLabel?: string
       edgeToolId?: string
       edgeToolIcon?: string
+      nodeId?: string
     },
   ) => {
     const meta = NODE_META[kind]
     const size = getNodeSize(kind)
-    const nodeId = createNodeId(kind)
+    const nodeId = options?.nodeId ?? createNodeId(kind)
+    if (latestNodesRef.current.some((node) => node.id === nodeId)) {
+      throw new Error('Canvas node ID collision')
+    }
     const parentNode = options?.parentNodeId
       ? nodes.find((item) => item.id === options.parentNodeId)
       : null
@@ -5356,8 +5413,17 @@ export function VisualCanvasWorkspace({
           parentNodeId: sourceNode.id,
         })
         setActiveDirectorControlNodeId(controlNode.id)
-        flushLocalSnapshot()
-        scheduleCanvasSave(0, { snapshot: 'already-flushed' })
+        const persistence = runBoundedCanvasPersistence({
+          hasPriorMutation: true,
+          persistenceOrder: 'schedule-first',
+          operation: () => true,
+          flushSnapshot: writeStageCCanonicalLocalSnapshot,
+          scheduleSave: () => scheduleCanvasSave(0, { snapshot: 'already-flushed' }),
+        })
+        if (!persistence.persistenceSucceeded) {
+          showCanvasFeedback('分镜导演 Recipe 已创建，但本地持久化失败。')
+          return
+        }
         suppressExplicitCanvasAutosave()
       }
       setStoryboardDirectorOpenedFromRecipe(true)
@@ -5368,11 +5434,11 @@ export function VisualCanvasWorkspace({
   }, [
     createNode,
     flushDirectorBoardDrafts,
-    flushLocalSnapshot,
     projectId,
     scheduleCanvasSave,
     showCanvasFeedback,
     suppressExplicitCanvasAutosave,
+    writeStageCCanonicalLocalSnapshot,
     workflowId,
   ])
 
@@ -5404,9 +5470,15 @@ export function VisualCanvasWorkspace({
     let revisionConflict = false
     let commitFailed = false
     let persistedRecipe: StoryboardDirectorRecipe | null = null
+    let rollbackControlPatch: {
+      id: string
+      prompt: string
+      metadataJson: unknown
+    } | null = null
     const targetControlNodeId = options.controlNodeId ?? activeDirectorControlNodeId
     const result = runBoundedCanvasPersistence({
       hasPriorMutation: options.hasPriorCanvasMutation,
+      persistenceOrder: 'schedule-first',
       operation: (markMutation) => {
         const controlNode = latestNodesRef.current.find((node) => node.id === targetControlNodeId)
         const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
@@ -5457,6 +5529,11 @@ export function VisualCanvasWorkspace({
               ...storyboardDirectorRecipeMetadata(freshRecipe),
             },
           }
+          rollbackControlPatch = {
+            id: controlNode.id,
+            prompt: controlNode.prompt ?? '',
+            metadataJson: controlNode.metadataJson,
+          }
           markMutation()
           handleNodePatch(controlNode.id, patch)
           persistedRecipe = freshRecipe
@@ -5466,7 +5543,7 @@ export function VisualCanvasWorkspace({
           return false
         }
       },
-      flushSnapshot: flushLocalSnapshot,
+      flushSnapshot: writeStageCCanonicalLocalSnapshot,
       scheduleSave: () => scheduleCanvasSave(0, { snapshot: 'already-flushed' }),
     })
     if (guarded) {
@@ -5477,7 +5554,19 @@ export function VisualCanvasWorkspace({
       showCanvasFeedback('分镜导演 Recipe 保存失败，修改已保留在当前检查上下文。')
     }
     const succeeded = result.operationSucceeded && result.persistenceSucceeded
-    if (result.persistenceAttempted) {
+    const rollback = rollbackControlPatch as {
+      id: string
+      prompt: string
+      metadataJson: unknown
+    } | null
+    if (!succeeded && rollback) {
+      handleNodePatch(rollback.id, {
+        prompt: rollback.prompt,
+        metadataJson: rollback.metadataJson,
+      })
+      persistedRecipe = null
+    }
+    if (result.persistenceSucceeded && result.persistenceAttempted) {
       suppressExplicitCanvasAutosave()
     }
     if (succeeded && persistedRecipe) {
@@ -5495,12 +5584,12 @@ export function VisualCanvasWorkspace({
     return succeeded
   }, [
     activeDirectorControlNodeId,
-    flushLocalSnapshot,
     handleNodePatch,
     projectId,
     scheduleCanvasSave,
     showCanvasFeedback,
     suppressExplicitCanvasAutosave,
+    writeStageCCanonicalLocalSnapshot,
     workflowId,
   ])
 
@@ -5574,6 +5663,7 @@ export function VisualCanvasWorkspace({
   const installEmergencyDirectorPartialBatch = useCallback((
     context: LiveStoryboardRecipeContext,
     blocker: StoryboardDirectorPartialBatch,
+    hasPriorCanvasMutation: boolean,
     recoverLatestRecipe: (
       latestRecipe: StoryboardDirectorRecipe,
     ) => {
@@ -5582,47 +5672,62 @@ export function VisualCanvasWorkspace({
     },
   ) => {
     let installedBlocker = blocker
-    const controlNode = latestNodesRef.current.find(
-      (node) => node.id === context.controlNode.id,
-    )
-    const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
-    if (controlNode
-      && read.status === 'valid'
-      && read.recipe.recipeId === context.recipe.recipeId
-      && read.recipe.projectId === context.recipe.projectId
-      && read.recipe.workflowId === context.recipe.workflowId) {
-      const existing = storyboardDirectorPartialBatchBlockers(read.recipe).find(
-        (item) => item.batchId === blocker.batchId,
-      )
-      if (existing) {
-        installedBlocker = existing
-      } else {
-        try {
-          const recovered = recoverLatestRecipe(read.recipe)
-          installedBlocker = recovered.blocker
-          handleNodePatch(controlNode.id, {
-            prompt: storyboardDirectorRecipeSummary(recovered.recipe),
-            metadataJson: {
-              ...metadataRecord(controlNode.metadataJson),
-              ...storyboardDirectorRecipeMetadata(recovered.recipe),
-            },
-          })
-          suppressExplicitCanvasAutosave()
-        } catch {
-          // The scoped in-memory lock remains the final fail-closed fallback.
-        }
+    let recoveryPersistenceAttempted = false
+    const retainEmergency = () => {
+      if (hasPriorCanvasMutation && !recoveryPersistenceAttempted) {
+        const canvasPersistence = runBoundedCanvasPersistence({
+          hasPriorMutation: true,
+          persistenceOrder: 'schedule-first',
+          operation: () => true,
+          flushSnapshot: writeStageCCanonicalLocalSnapshot,
+          scheduleSave: () => scheduleCanvasSave(0, { snapshot: 'already-flushed' }),
+        })
+        if (canvasPersistence.persistenceSucceeded) suppressExplicitCanvasAutosave()
       }
+      setEmergencyDirectorPartialBatches((current) => (
+        upsertStoryboardDirectorEmergencyLock(current, {
+          projectId: context.recipe.projectId,
+          workflowId: context.recipe.workflowId,
+          controlNodeId: context.controlNode.id,
+          recipeId: context.recipe.recipeId,
+          blocker: installedBlocker,
+        })
+      ))
     }
-    setEmergencyDirectorPartialBatches((current) => (
-      upsertStoryboardDirectorEmergencyLock(current, {
-        projectId: context.recipe.projectId,
-        workflowId: context.recipe.workflowId,
-        controlNodeId: context.controlNode.id,
-        recipeId: context.recipe.recipeId,
-        blocker: installedBlocker,
-      })
-    ))
-  }, [handleNodePatch, suppressExplicitCanvasAutosave])
+    executeStoryboardDirectorRecoveryPersistence({
+      readLatest: () => {
+        const controlNode = latestNodesRef.current.find(
+          (node) => node.id === context.controlNode.id,
+        )
+        const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+        return controlNode
+          && read.status === 'valid'
+          && read.recipe.recipeId === context.recipe.recipeId
+          && read.recipe.projectId === context.recipe.projectId
+          && read.recipe.workflowId === context.recipe.workflowId
+          ? read.recipe
+          : null
+      },
+      buildRecovery: (latestRecipe) => {
+        const recovered = recoverLatestRecipe(latestRecipe)
+        installedBlocker = recovered.blocker
+        return recovered.recipe
+      },
+      persist: (recoveredRecipe, latestRecipe) => {
+        recoveryPersistenceAttempted = true
+        return handleCommitStoryboardDirectorRecipe(recoveredRecipe, {
+          expectedRevision: createStoryboardDirectorRecipeRevision(latestRecipe),
+          controlNodeId: context.controlNode.id,
+        })
+      },
+      retainEmergency,
+    })
+  }, [
+    handleCommitStoryboardDirectorRecipe,
+    scheduleCanvasSave,
+    suppressExplicitCanvasAutosave,
+    writeStageCCanonicalLocalSnapshot,
+  ])
 
   const handleMaterializeStoryboardDirectorRecipe = useCallback((
     kinds: Array<'scene' | 'beat' | 'shot-plan'>,
@@ -5661,11 +5766,12 @@ export function VisualCanvasWorkspace({
       return
     }
     const occupancy = [...latestNodesRef.current]
-    const completed: ReturnType<typeof receiptFromCreatedPlan>[] = []
-    let creationAttempted = false
-    let failed = false
-    try {
-      for (const plan of plans.create) {
+    const occupiedIds = new Set(occupancy.map((node) => node.id))
+    const claims = plans.create.map((plan) => (
+      materializationClaimFromPlan(context.recipe, plan)
+    ))
+    const creation = runStoryboardDirectorCreationBatch(plans.create, {
+      create: (plan) => {
         const size = getNodeSize('text')
         const position = resolveNonOverlappingPosition({
           x: context.controlNode.x + context.controlNode.width + 120,
@@ -5673,107 +5779,118 @@ export function VisualCanvasWorkspace({
           width: size.width,
           height: size.height,
         }, occupancy)
-        creationAttempted = true
+        const nodeId = reserveStoryboardDirectorNodeId(
+          occupiedIds,
+          () => createNodeId('text'),
+        )
         const node = createNode('text', {
           ...plan,
           parentNodeId: context.controlNode.id,
           position,
+          nodeId,
         })
         occupancy.push(node)
-        completed.push(receiptFromCreatedPlan(context.recipe, plan, node.id))
-      }
-    } catch {
-      failed = true
-    } finally {
-      if (failed) {
-        const now = new Date().toISOString()
-        const plannedIdentities = plans.create.map(
-          (plan) => materializationClaimFromPlan(context.recipe, plan).identity,
+        return { targetId: node.id }
+      },
+      receipt: (plan, node) => receiptFromCreatedPlan(
+        context.recipe,
+        plan,
+        node.targetId,
+      ),
+    })
+    const completedTargets = creation.completed.map((item, index) => ({
+      identity: claims[index]!.identity,
+      targetId: item.targetId,
+      ...(item.receipt ? { receipt: item.receipt } : {}),
+    }))
+    const completed = completedTargets.flatMap((item) => (
+      item.receipt ? [item.receipt] : []
+    ))
+    const creationAttempted = completedTargets.length > 0
+    const plannedIdentities = claims.map((claim) => claim.identity)
+    const persistRecovery = (now: string) => {
+      const partial = recordStoryboardDirectorRecoveryBatch(
+        context.recipe,
+        'grouped-materialization',
+        plannedIdentities,
+        completedTargets,
+        now,
+      )
+      const persisted = attemptStoryboardDirectorRecipeCommit(
+        partial.recipe,
+        (recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
+          expectedRevision: context.recipeRevision,
+          controlNodeId: context.controlNode.id,
+          recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorRecoveryBatch(
+            latestRecipe,
+            'grouped-materialization',
+            plannedIdentities,
+            completedTargets,
+            now,
+          ).recipe,
+        }),
+      )
+      if (!persisted) {
+        installEmergencyDirectorPartialBatch(
+          context,
+          partial.blocker,
+          creationAttempted,
+          (latestRecipe) => recordStoryboardDirectorRecoveryBatch(
+            latestRecipe,
+            'grouped-materialization',
+            plannedIdentities,
+            completedTargets,
+            now,
+          ),
         )
-        const partial = recordStoryboardDirectorPartialBatch(
+      }
+      return persisted
+    }
+    if (creation.status === 'partial') {
+      try {
+        const now = new Date().toISOString()
+        persistRecovery(now)
+      } catch {
+        showCanvasFeedback(`已创建 ${completedTargets.length} 个节点，${creation.uncreatedCount} 个未创建。恢复记录失败，批次已锁定。`)
+        return
+      }
+      showCanvasFeedback(`已创建 ${completedTargets.length} 个节点，${creation.uncreatedCount} 个未创建。请检查后再继续。`)
+      return
+    }
+
+    let receiptCommitFailed = false
+    if (completed.length) {
+      const now = new Date().toISOString()
+      try {
+        const persisted = handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
           context.recipe,
-          'grouped-materialization',
-          plannedIdentities,
           completed,
           now,
-        )
-        const persisted = attemptStoryboardDirectorRecipeCommit(
-          partial.recipe,
-          (recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
-            expectedRevision: context.recipeRevision,
-            controlNodeId: context.controlNode.id,
-            hasPriorCanvasMutation: creationAttempted,
-            recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorPartialBatch(
-              latestRecipe,
-              'grouped-materialization',
-              plannedIdentities,
-              completed,
-              now,
-            ).recipe,
-          }),
-        )
-        if (!persisted) {
-          installEmergencyDirectorPartialBatch(
-            context,
-            partial.blocker,
-            (latestRecipe) => recordStoryboardDirectorPartialBatch(
-              latestRecipe,
-              'grouped-materialization',
-              plannedIdentities,
-              completed,
-              now,
-            ),
-          )
-        }
-        showCanvasFeedback(`已创建 ${completed.length} 个节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
-      } else {
-        let receiptCommitFailed = false
-        if (completed.length) {
-          const now = new Date().toISOString()
-          const plannedIdentities = plans.create.map(
-            (plan) => materializationClaimFromPlan(context.recipe, plan).identity,
-          )
-          const persisted = handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
-            context.recipe,
+        ), {
+          expectedRevision: context.recipeRevision,
+          controlNodeId: context.controlNode.id,
+          recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorReceipts(
+            latestRecipe,
             completed,
             now,
-          ), {
-            expectedRevision: context.recipeRevision,
-            controlNodeId: context.controlNode.id,
-            hasPriorCanvasMutation: creationAttempted,
-            recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorReceipts(
-              latestRecipe,
-              completed,
-              now,
-            ),
-          })
-          if (!persisted) {
-            const recovery = recordStoryboardDirectorPartialBatch(
-              context.recipe,
-              'grouped-materialization',
-              plannedIdentities,
-              completed,
-              now,
-            )
-            installEmergencyDirectorPartialBatch(
-              context,
-              recovery.blocker,
-              (latestRecipe) => recordStoryboardDirectorPartialBatch(
-                latestRecipe,
-                'grouped-materialization',
-                plannedIdentities,
-                completed,
-                now,
-              ),
-            )
-            showCanvasFeedback(`已创建 ${completed.length} 个节点，0 个未创建。回执保存未完成，请检查后再继续。`)
-            receiptCommitFailed = true
-          }
+          ),
+        })
+        if (!persisted) {
+          persistRecovery(now)
+          showCanvasFeedback(`已创建 ${completedTargets.length} 个节点，0 个未创建。回执保存未完成，请检查后再继续。`)
+          receiptCommitFailed = true
         }
-        if (!receiptCommitFailed) {
-          showCanvasFeedback(`已创建 ${completed.length} 个节点，跳过 ${plans.duplicates.length} 个重复项。`)
+      } catch {
+        try {
+          persistRecovery(now)
+        } finally {
+          showCanvasFeedback(`已创建 ${completedTargets.length} 个节点，0 个未创建。回执记录失败，请检查后再继续。`)
+          receiptCommitFailed = true
         }
       }
+    }
+    if (!receiptCommitFailed) {
+      showCanvasFeedback(`已创建 ${completedTargets.length} 个节点，跳过 ${plans.duplicates.length} 个重复项。`)
     }
   }, [
     createNode,
@@ -5865,16 +5982,9 @@ export function VisualCanvasWorkspace({
       return
     }
     const occupancy = [...latestNodesRef.current]
-    const completed: Array<{
-      identity: string
-      kind: 'draft-node'
-      resultId: string
-      targetId: string
-    }> = []
-    let creationAttempted = false
-    let failed = false
-    try {
-      for (const plan of plans.create) {
+    const occupiedIds = new Set(occupancy.map((node) => node.id))
+    const creation = runStoryboardDirectorCreationBatch(plans.create, {
+      create: (plan) => {
         const size = getNodeSize(plan.kind)
         const position = resolveNonOverlappingPosition({
           x: context.controlNode.x + context.controlNode.width + 120,
@@ -5882,110 +5992,121 @@ export function VisualCanvasWorkspace({
           width: size.width,
           height: size.height,
         }, occupancy)
-        creationAttempted = true
+        const nodeId = reserveStoryboardDirectorNodeId(
+          occupiedIds,
+          () => createNodeId(plan.kind),
+        )
         const node = createNode(plan.kind, {
           title: plan.title,
           prompt: plan.prompt,
           metadataJson: plan.metadataJson,
           parentNodeId: context.controlNode.id,
           position,
+          nodeId,
         })
         occupancy.push(node)
-        completed.push({
+        return { targetId: node.id }
+      },
+      receipt: (plan, node) => ({
           identity: plan.identity,
-          kind: 'draft-node',
+          kind: 'draft-node' as const,
           resultId: plan.resultId,
-          targetId: node.id,
-        })
+          targetId: node.targetId,
+      }),
+    })
+    const completedTargets = creation.completed.map((item, index) => ({
+      identity: plans.create[index]!.identity,
+      targetId: item.targetId,
+      ...(item.receipt ? { receipt: item.receipt } : {}),
+    }))
+    const completed = completedTargets.flatMap((item) => (
+      item.receipt ? [item.receipt] : []
+    ))
+    const creationAttempted = completedTargets.length > 0
+    const plannedIdentities = plans.create.map((plan) => plan.identity)
+    const persistRecovery = (now: string) => {
+      const partial = recordStoryboardDirectorRecoveryBatch(
+        context.recipe,
+        'draft-node-creation',
+        plannedIdentities,
+        completedTargets,
+        now,
+      )
+      const persisted = attemptStoryboardDirectorRecipeCommit(
+        partial.recipe,
+        (recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
+          expectedRevision: context.recipeRevision,
+          controlNodeId: context.controlNode.id,
+          recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorRecoveryBatch(
+            latestRecipe,
+            'draft-node-creation',
+            plannedIdentities,
+            completedTargets,
+            now,
+          ).recipe,
+        }),
+      )
+      if (!persisted) {
+        installEmergencyDirectorPartialBatch(
+          context,
+          partial.blocker,
+          creationAttempted,
+          (latestRecipe) => recordStoryboardDirectorRecoveryBatch(
+            latestRecipe,
+            'draft-node-creation',
+            plannedIdentities,
+            completedTargets,
+            now,
+          ),
+        )
       }
-    } catch {
-      failed = true
-    } finally {
-      if (failed) {
+      return persisted
+    }
+    if (creation.status === 'partial') {
+      try {
         const now = new Date().toISOString()
-        const plannedIdentities = plans.create.map((plan) => plan.identity)
-        const partial = recordStoryboardDirectorPartialBatch(
+        persistRecovery(now)
+      } catch {
+        showCanvasFeedback(`已创建 ${completedTargets.length} 个草稿节点，${creation.uncreatedCount} 个未创建。恢复记录失败，批次已锁定。`)
+        return
+      }
+      showCanvasFeedback(`已创建 ${completedTargets.length} 个草稿节点，${creation.uncreatedCount} 个未创建。请检查后再继续。`)
+      return
+    }
+
+    let receiptCommitFailed = false
+    if (completed.length) {
+      const now = new Date().toISOString()
+      try {
+        const persisted = handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
           context.recipe,
-          'draft-node-creation',
-          plannedIdentities,
           completed,
           now,
-        )
-        const persisted = attemptStoryboardDirectorRecipeCommit(
-          partial.recipe,
-          (recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
-            expectedRevision: context.recipeRevision,
-            controlNodeId: context.controlNode.id,
-            hasPriorCanvasMutation: creationAttempted,
-            recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorPartialBatch(
-              latestRecipe,
-              'draft-node-creation',
-              plannedIdentities,
-              completed,
-              now,
-            ).recipe,
-          }),
-        )
-        if (!persisted) {
-          installEmergencyDirectorPartialBatch(
-            context,
-            partial.blocker,
-            (latestRecipe) => recordStoryboardDirectorPartialBatch(
-              latestRecipe,
-              'draft-node-creation',
-              plannedIdentities,
-              completed,
-              now,
-            ),
-          )
-        }
-        showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
-      } else {
-        let receiptCommitFailed = false
-        if (completed.length) {
-          const now = new Date().toISOString()
-          const plannedIdentities = plans.create.map((plan) => plan.identity)
-          const persisted = handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
-            context.recipe,
+        ), {
+          expectedRevision: context.recipeRevision,
+          controlNodeId: context.controlNode.id,
+          recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorReceipts(
+            latestRecipe,
             completed,
             now,
-          ), {
-            expectedRevision: context.recipeRevision,
-            controlNodeId: context.controlNode.id,
-            hasPriorCanvasMutation: creationAttempted,
-            recoverLatestRecipe: (latestRecipe) => recordStoryboardDirectorReceipts(
-              latestRecipe,
-              completed,
-              now,
-            ),
-          })
-          if (!persisted) {
-            const recovery = recordStoryboardDirectorPartialBatch(
-              context.recipe,
-              'draft-node-creation',
-              plannedIdentities,
-              completed,
-              now,
-            )
-            installEmergencyDirectorPartialBatch(
-              context,
-              recovery.blocker,
-              (latestRecipe) => recordStoryboardDirectorPartialBatch(
-                latestRecipe,
-                'draft-node-creation',
-                plannedIdentities,
-                completed,
-                now,
-              ),
-            )
-            showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，0 个未创建。回执保存未完成，请检查后再继续。`)
-            receiptCommitFailed = true
-          }
+          ),
+        })
+        if (!persisted) {
+          persistRecovery(now)
+          showCanvasFeedback(`已创建 ${completedTargets.length} 个草稿节点，0 个未创建。回执保存未完成，请检查后再继续。`)
+          receiptCommitFailed = true
         }
-        if (!receiptCommitFailed) {
-          showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，跳过 ${plans.duplicates.length} 个重复项。`)
+      } catch {
+        try {
+          persistRecovery(now)
+        } finally {
+          showCanvasFeedback(`已创建 ${completedTargets.length} 个草稿节点，0 个未创建。回执记录失败，请检查后再继续。`)
+          receiptCommitFailed = true
         }
       }
+    }
+    if (!receiptCommitFailed) {
+      showCanvasFeedback(`已创建 ${completedTargets.length} 个草稿节点，跳过 ${plans.duplicates.length} 个重复项。`)
     }
   }, [
     createNode,
@@ -6035,10 +6156,38 @@ export function VisualCanvasWorkspace({
   ])
 
   const handleAcknowledgeEmergencyDirectorPartialBatch = useCallback((batchId: string) => {
-    if (activeEmergencyDirectorPartialBatch?.blocker.batchId !== batchId) return
-    showCanvasFeedback('恢复标记尚未持久化，批次继续锁定；请先重试保存。')
+    const lock = activeEmergencyDirectorPartialBatch
+    if (!lock || lock.blocker.batchId !== batchId) return
+    const controlNode = latestNodesRef.current.find((node) => node.id === lock.controlNodeId)
+    const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+    if (!controlNode
+      || read.status !== 'valid'
+      || read.recipe.recipeId !== lock.recipeId
+      || read.recipe.projectId !== lock.projectId
+      || read.recipe.workflowId !== lock.workflowId) {
+      showCanvasFeedback('恢复标记无法持久化，批次继续锁定。')
+      return
+    }
+    const acknowledged = acknowledgeStoryboardDirectorPartialBatch(
+      read.recipe,
+      batchId,
+      new Date().toISOString(),
+    )
+    const persisted = handleCommitStoryboardDirectorRecipe(acknowledged, {
+      expectedRevision: createStoryboardDirectorRecipeRevision(read.recipe),
+      controlNodeId: controlNode.id,
+    })
+    if (!persisted) {
+      showCanvasFeedback('恢复标记确认保存失败，批次继续锁定。')
+      return
+    }
+    setEmergencyDirectorPartialBatches((current) => (
+      clearStoryboardDirectorEmergencyLock(current, lock, batchId)
+    ))
+    showCanvasFeedback('已保存检查确认，可以重新执行该批次。')
   }, [
     activeEmergencyDirectorPartialBatch,
+    handleCommitStoryboardDirectorRecipe,
     showCanvasFeedback,
   ])
 
@@ -6068,18 +6217,9 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     if (!projectId || !workflowId) return
-    const durableLocks = nodes.flatMap((node) => {
-      const read = readStoryboardDirectorRecipe(node.metadataJson)
-      if (read.status !== 'valid'
-        || read.recipe.projectId !== projectId
-        || read.recipe.workflowId !== workflowId) return []
-      return storyboardDirectorPartialBatchBlockers(read.recipe).map((blocker) => ({
-        projectId,
-        workflowId,
-        controlNodeId: node.id,
-        recipeId: read.recipe.recipeId,
-        blocker,
-      }))
+    const durableLocks = collectStoryboardDirectorDurableLocks(nodes, {
+      projectId,
+      workflowId,
     })
     if (!durableLocks.length) return
     setEmergencyDirectorPartialBatches((current) => (
@@ -6109,15 +6249,25 @@ export function VisualCanvasWorkspace({
         },
       })
     }
-    flushLocalSnapshot()
-    scheduleCanvasSave(0, { snapshot: 'already-flushed' })
-    suppressExplicitCanvasAutosave()
+    const persistence = runBoundedCanvasPersistence({
+      hasPriorMutation: true,
+      persistenceOrder: 'schedule-first',
+      operation: () => true,
+      flushSnapshot: writeStageCCanonicalLocalSnapshot,
+      scheduleSave: () => scheduleCanvasSave(0, { snapshot: 'already-flushed' }),
+    })
+    if (persistence.persistenceSucceeded) {
+      suppressExplicitCanvasAutosave()
+    } else {
+      showCanvasFeedback('来源缺失状态未能持久化，请重试保存。')
+    }
   }, [
-    flushLocalSnapshot,
     handleNodePatch,
     nodes,
     scheduleCanvasSave,
+    showCanvasFeedback,
     suppressExplicitCanvasAutosave,
+    writeStageCCanonicalLocalSnapshot,
   ])
   // End Storyboard Director Recipe lifecycle
 
@@ -11316,6 +11466,7 @@ export function VisualCanvasWorkspace({
             activeShotId={directorActiveShotId}
             recipe={activeDirectorRecipe}
             boardCommitMode={activeDirectorRecipe ? 'buffered' : 'immediate'}
+            boardContextKey={`${projectId}:${workflowId}:${activeDirectorControlNodeId || 'manual'}`}
             openedFromRecipe={storyboardDirectorOpenedFromRecipe}
             availableSources={availableDirectorSources}
             availableRecipes={availableDirectorRecipes}

@@ -9,6 +9,7 @@ import type {
 } from '../../../lib/storyboard/recipe/types'
 import {
   removeStoryboardDirectorReceiptsForTarget,
+  storyboardDirectorPartialBatchBlockers,
 } from './skills/storyboardDirectorMaterialization'
 
 export function resolveStoryboardDirectorRecipeRevision({
@@ -195,4 +196,116 @@ export function clearStoryboardDirectorEmergencyLock(
   return locks.filter((lock) => (
     !sameEmergencyScope(lock, scope) || lock.blocker.batchId !== batchId
   ))
+}
+
+export function collectStoryboardDirectorDurableLocks(
+  nodes: readonly RecipeNode[],
+  scope: { projectId: string; workflowId: string },
+) {
+  return nodes.flatMap((node): StoryboardDirectorEmergencyLock[] => {
+    const read = readStoryboardDirectorRecipe(node.metadataJson)
+    if (read.status !== 'valid'
+      || read.recipe.projectId !== scope.projectId
+      || read.recipe.workflowId !== scope.workflowId) return []
+    return storyboardDirectorPartialBatchBlockers(read.recipe).map((blocker) => ({
+      ...scope,
+      controlNodeId: node.id,
+      recipeId: read.recipe.recipeId,
+      blocker,
+    }))
+  })
+}
+
+export function runStoryboardDirectorContextTransition({
+  flushDrafts,
+  transition,
+}: {
+  flushDrafts: () => boolean
+  transition: () => void
+}) {
+  if (!flushDrafts()) return false
+  transition()
+  return true
+}
+
+export function reserveStoryboardDirectorNodeId(
+  occupiedIds: Set<string>,
+  createCandidate: () => string,
+  maxAttempts = 16,
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const candidate = createCandidate()
+    if (!occupiedIds.has(candidate)) {
+      occupiedIds.add(candidate)
+      return candidate
+    }
+  }
+  throw new Error('Unable to reserve a unique node ID for Storyboard Director batch')
+}
+
+export type StoryboardDirectorCreationBatchResult<Receipt> = {
+  status: 'complete' | 'partial'
+  completed: Array<{ targetId: string; receipt?: Receipt }>
+  uncreatedCount: number
+}
+
+export function runStoryboardDirectorCreationBatch<Plan, Created extends { targetId: string }, Receipt>(
+  plans: readonly Plan[],
+  effects: {
+    create: (plan: Plan, index: number) => Created
+    receipt: (plan: Plan, created: Created, index: number) => Receipt
+  },
+): StoryboardDirectorCreationBatchResult<Receipt> {
+  const completed: Array<{ targetId: string; receipt?: Receipt }> = []
+  for (let index = 0; index < plans.length; index += 1) {
+    const plan = plans[index]!
+    let created: Created
+    try {
+      created = effects.create(plan, index)
+    } catch {
+      return {
+        status: 'partial',
+        completed,
+        uncreatedCount: plans.length - completed.length,
+      }
+    }
+    const item: { targetId: string; receipt?: Receipt } = {
+      targetId: created.targetId,
+    }
+    completed.push(item)
+    try {
+      item.receipt = effects.receipt(plan, created, index)
+    } catch {
+      return {
+        status: 'partial',
+        completed,
+        uncreatedCount: plans.length - completed.length,
+      }
+    }
+  }
+  return { status: 'complete', completed, uncreatedCount: 0 }
+}
+
+export function executeStoryboardDirectorRecoveryPersistence<Recipe>({
+  readLatest,
+  buildRecovery,
+  persist,
+  retainEmergency,
+}: {
+  readLatest: () => Recipe | null
+  buildRecovery: (latest: Recipe) => Recipe
+  persist: (candidate: Recipe, latest: Recipe) => boolean
+  retainEmergency: () => void
+}): { status: 'persisted' | 'emergency' } {
+  try {
+    const latest = readLatest()
+    if (latest) {
+      const candidate = buildRecovery(latest)
+      if (persist(candidate, latest)) return { status: 'persisted' }
+    }
+  } catch {
+    // Retain the scoped in-memory lock below.
+  }
+  retainEmergency()
+  return { status: 'emergency' }
 }

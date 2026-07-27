@@ -85,6 +85,7 @@ export interface StoryboardDirectorPanelProps {
   state: StoryboardState
   activeShotId: string | null
   boardCommitMode: 'immediate' | 'buffered'
+  boardContextKey: string
   recipe: StoryboardDirectorRecipe | null
   openedFromRecipe: boolean
   availableSources: Array<{ id: string; title: string }>
@@ -252,7 +253,10 @@ function BoardTextControl({
   ariaLabel,
   placeholder,
   multiline = false,
-  registerDeferredCommit,
+  registerDeferredField,
+  stageDeferredPatch,
+  flushDeferredPatches,
+  deferredPatch,
   onCommit,
 }: {
   fieldId: string
@@ -261,7 +265,13 @@ function BoardTextControl({
   ariaLabel: string
   placeholder: string
   multiline?: boolean
-  registerDeferredCommit: (fieldId: string, flush: () => boolean) => () => void
+  registerDeferredField: (fieldId: string, markCommitted: () => void) => () => void
+  stageDeferredPatch: (
+    fieldId: string,
+    patch: { shotId: string; patch: Partial<ShotCard> } | null,
+  ) => void
+  flushDeferredPatches: () => boolean
+  deferredPatch: (value: string) => { shotId: string; patch: Partial<ShotCard> }
   onCommit: (value: string) => boolean | void
 }) {
   const [draft, setDraft] = useState(value)
@@ -271,9 +281,6 @@ function BoardTextControl({
   const dirtyRef = useRef(false)
   const modeRef = useRef(mode)
   const onCommitRef = useRef(onCommit)
-  const dirtyCommitRef = useRef(onCommit)
-  const flushRef = useRef<() => boolean>(() => true)
-  const skipNextRegisteredFlush = useRef(false)
 
   modeRef.current = mode
   onCommitRef.current = onCommit
@@ -296,49 +303,37 @@ function BoardTextControl({
       dirtyRef.current = !committed
       return
     }
-    if (!dirtyRef.current) dirtyCommitRef.current = onCommitRef.current
     dirtyRef.current = next !== committedRef.current
+    stageDeferredPatch(
+      fieldId,
+      dirtyRef.current ? deferredPatch(next) : null,
+    )
   }
   const commitBuffered = () => {
     if (modeRef.current !== 'buffered' || !dirtyRef.current) return true
-    const next = draftRef.current
-    if (dirtyCommitRef.current(next) === false) {
-      dirtyCommitRef.current = onCommitRef.current
-      return false
-    }
-    committedRef.current = next
-    dirtyRef.current = false
-    return true
+    return flushDeferredPatches()
   }
-  flushRef.current = commitBuffered
 
-  useEffect(() => registerDeferredCommit(
+  useEffect(() => registerDeferredField(
     fieldId,
     () => {
-      if (skipNextRegisteredFlush.current) {
-        skipNextRegisteredFlush.current = false
-        return false
-      }
-      return flushRef.current()
+      committedRef.current = draftRef.current
+      dirtyRef.current = false
     },
-  ), [fieldId, registerDeferredCommit])
-
-  useEffect(() => () => {
-    flushRef.current()
-  }, [])
+  ), [fieldId, registerDeferredField])
 
   const handleBlur = () => {
     if (skipNextBlur.current) {
       skipNextBlur.current = false
       return
     }
-    if (!flushRef.current()) skipNextRegisteredFlush.current = true
+    commitBuffered()
   }
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || mode !== 'buffered') return
     event.preventDefault()
     if (!dirtyRef.current) return
-    if (flushRef.current()) skipNextBlur.current = true
+    if (commitBuffered()) skipNextBlur.current = true
   }
   const props = {
     'aria-label': ariaLabel,
@@ -370,6 +365,7 @@ export function StoryboardDirectorPanel({
   state,
   activeShotId,
   boardCommitMode,
+  boardContextKey,
   recipe,
   openedFromRecipe,
   availableSources,
@@ -403,30 +399,68 @@ export function StoryboardDirectorPanel({
     ? findStoryboardDirectorRecipeControl(availableRecipes, recipe.recipeId)
     : null
   const activeRecipeIdentity = recipe
-    ? `${recipe.recipeId}:${matchingRecipeControl?.nodeId ?? ''}`
+    ? `${boardContextKey}:${recipe.recipeId}:${matchingRecipeControl?.nodeId ?? ''}`
     : null
   const previousRecipeIdentity = useRef(activeRecipeIdentity)
   const tabRefs = useRef<Partial<Record<StoryboardDirectorPanelTab, HTMLButtonElement | null>>>({})
-  const deferredBoardCommitsRef = useRef(new Map<string, () => boolean>())
-  const registerDeferredCommit = useCallback((fieldId: string, flush: () => boolean) => {
-    deferredBoardCommitsRef.current.set(fieldId, flush)
+  const deferredBoardFieldsRef = useRef(new Map<string, () => void>())
+  const deferredBoardPatchesRef = useRef(new Map<
+    string,
+    { shotId: string; patch: Partial<ShotCard> }
+  >())
+  const deferredBoardBaseStateRef = useRef<StoryboardState | null>(null)
+  const deferredBoardCommitRef = useRef<
+    ((state: StoryboardState) => boolean | void) | null
+  >(null)
+  const registerDeferredField = useCallback((fieldId: string, markCommitted: () => void) => {
+    deferredBoardFieldsRef.current.set(fieldId, markCommitted)
     return () => {
-      if (deferredBoardCommitsRef.current.get(fieldId) === flush) {
-        deferredBoardCommitsRef.current.delete(fieldId)
+      if (deferredBoardFieldsRef.current.get(fieldId) === markCommitted) {
+        deferredBoardFieldsRef.current.delete(fieldId)
       }
     }
   }, [])
-  const flushDeferredBoardDrafts = useCallback(() => {
-    let committed = true
-    for (const flush of deferredBoardCommitsRef.current.values()) {
-      if (!flush()) committed = false
+  const stageDeferredPatch = useCallback((
+    fieldId: string,
+    patch: { shotId: string; patch: Partial<ShotCard> } | null,
+  ) => {
+    if (!patch) {
+      deferredBoardPatchesRef.current.delete(fieldId)
+      return
     }
-    return committed
+    if (deferredBoardPatchesRef.current.size === 0) {
+      deferredBoardBaseStateRef.current = state
+      deferredBoardCommitRef.current = onStateChange
+    }
+    deferredBoardPatchesRef.current.set(fieldId, patch)
+  }, [onStateChange, state])
+  const flushDeferredBoardDrafts = useCallback(() => {
+    if (deferredBoardPatchesRef.current.size === 0) return true
+    const baseState = deferredBoardBaseStateRef.current
+    const commit = deferredBoardCommitRef.current
+    if (!baseState || !commit) return false
+    const auditTime = now()
+    let nextState = baseState
+    for (const { shotId, patch } of deferredBoardPatchesRef.current.values()) {
+      nextState = patchStoryboardDirectorShot(nextState, shotId, patch, auditTime)
+    }
+    if (commit(nextState) === false) return false
+    for (const fieldId of deferredBoardPatchesRef.current.keys()) {
+      deferredBoardFieldsRef.current.get(fieldId)?.()
+    }
+    deferredBoardPatchesRef.current.clear()
+    deferredBoardBaseStateRef.current = null
+    deferredBoardCommitRef.current = null
+    return true
   }, [])
 
-  useEffect(() => registerDeferredBoardFlush(
-    flushDeferredBoardDrafts,
-  ), [flushDeferredBoardDrafts, registerDeferredBoardFlush])
+  useEffect(() => {
+    const unregister = registerDeferredBoardFlush(flushDeferredBoardDrafts)
+    return () => {
+      flushDeferredBoardDrafts()
+      unregister()
+    }
+  }, [activeRecipeIdentity, flushDeferredBoardDrafts, registerDeferredBoardFlush])
 
   useEffect(() => {
     const justOpened = open && !wasOpen.current
@@ -768,7 +802,13 @@ export function StoryboardDirectorPanel({
                       mode={boardCommitMode}
                       ariaLabel="情绪"
                       placeholder="例: 紧张 / 孤独 / 宏大"
-                      registerDeferredCommit={registerDeferredCommit}
+                      registerDeferredField={registerDeferredField}
+                      stageDeferredPatch={stageDeferredPatch}
+                      flushDeferredPatches={flushDeferredBoardDrafts}
+                      deferredPatch={(value) => ({
+                        shotId: activeShot.id,
+                        patch: { mood: value || undefined },
+                      })}
                       onCommit={(value) => updateShot(activeShot.id, { mood: value || undefined })}
                     />
                   </FieldRow>
@@ -796,7 +836,13 @@ export function StoryboardDirectorPanel({
                     ariaLabel="导演备注"
                     placeholder="镜头构图、情感要点、特别说明..."
                     multiline
-                    registerDeferredCommit={registerDeferredCommit}
+                    registerDeferredField={registerDeferredField}
+                    stageDeferredPatch={stageDeferredPatch}
+                    flushDeferredPatches={flushDeferredBoardDrafts}
+                    deferredPatch={(value) => ({
+                      shotId: activeShot.id,
+                      patch: { directorNote: value || undefined },
+                    })}
                     onCommit={(value) => updateShot(activeShot.id, { directorNote: value || undefined })}
                   />
                 </FieldRow>

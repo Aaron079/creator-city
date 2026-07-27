@@ -1241,17 +1241,23 @@ export function storyboardDirectorPartialBatchBlockers(
   ))
 }
 
-export function recordStoryboardDirectorPartialBatch(
+export function recordStoryboardDirectorRecoveryBatch(
   recipe: StoryboardDirectorRecipe,
   operation: StoryboardDirectorPartialBatchOperation,
   plannedIdentities: string[],
   completed: Array<{
     identity: string
-    kind: StoryboardDirectorMaterializationReceipt['kind']
-    resultId: string
     targetId: string
+    receipt?: StoryboardDirectorMaterializationReceipt
   }>,
   now: string,
+  receiptRecorder: (
+    recipe: StoryboardDirectorRecipe,
+    receipt: StoryboardDirectorMaterializationReceipt,
+    now: string,
+  ) => StoryboardDirectorRecipe = (current, receipt, auditTime) => (
+    recordStoryboardDirectorReceipts(current, [receipt], auditTime)
+  ),
 ) {
   const plannedItems = snapshotDenseArray<unknown>(
     plannedIdentities,
@@ -1265,7 +1271,30 @@ export function recordStoryboardDirectorPartialBatch(
     completed,
     'completed',
     STORYBOARD_DIRECTOR_MAX_RECEIPTS,
-  ).map((value, index) => snapshotReceipt(value, `completed[${index}]`))
+  ).map((value, index) => {
+    if (!isPlainRecord(value)) fail(`completed[${index}] is malformed`)
+    let keys: PropertyKey[]
+    try {
+      keys = Reflect.ownKeys(value)
+    } catch {
+      return fail(`completed[${index}] descriptors are unreadable`)
+    }
+    if (keys.some((key) => (
+      typeof key !== 'string'
+      || !['identity', 'targetId', 'receipt'].includes(key)
+    ))) fail(`completed[${index}] is malformed`)
+    const receiptValue = ownData(value, 'receipt')
+    if (receiptValue.status === 'invalid') {
+      fail(`completed[${index}].receipt is malformed`)
+    }
+    return {
+      identity: requiredId(ownValue(value, 'identity'), `completed[${index}].identity`),
+      targetId: requiredId(ownValue(value, 'targetId'), `completed[${index}].targetId`),
+      ...(receiptValue.status === 'value'
+        ? { receipt: snapshotReceipt(receiptValue.value, `completed[${index}].receipt`) }
+        : {}),
+    }
+  })
   const plannedSet = new Set(plannedItems)
   const successfulTargetIds: string[] = []
   const completedIdentities = new Set<string>()
@@ -1313,13 +1342,47 @@ export function recordStoryboardDirectorPartialBatch(
   let recordedRecipe = blockedRecipe
   let receiptsRecorded = true
   for (const item of completedItems) {
+    if (!item.receipt) {
+      receiptsRecorded = false
+      continue
+    }
     try {
-      recordedRecipe = recordStoryboardDirectorReceipts(recordedRecipe, [item], now)
+      recordedRecipe = receiptRecorder(recordedRecipe, item.receipt, now)
     } catch {
       receiptsRecorded = false
     }
   }
   return { recipe: recordedRecipe, blocker, receiptsRecorded }
+}
+
+export function recordStoryboardDirectorPartialBatch(
+  recipe: StoryboardDirectorRecipe,
+  operation: StoryboardDirectorPartialBatchOperation,
+  plannedIdentities: string[],
+  completed: Array<{
+    identity: string
+    kind: StoryboardDirectorMaterializationReceipt['kind']
+    resultId: string
+    targetId: string
+  }>,
+  now: string,
+) {
+  const completedItems = snapshotDenseArray<unknown>(
+    completed,
+    'completed',
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  ).map((value, index) => snapshotReceipt(value, `completed[${index}]`))
+  return recordStoryboardDirectorRecoveryBatch(
+    recipe,
+    operation,
+    plannedIdentities,
+    completedItems.map((receipt) => ({
+      identity: receipt.identity,
+      targetId: receipt.targetId,
+      receipt,
+    })),
+    now,
+  )
 }
 
 export function acknowledgeStoryboardDirectorPartialBatch(

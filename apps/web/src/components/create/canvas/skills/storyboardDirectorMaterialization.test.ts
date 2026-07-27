@@ -44,6 +44,7 @@ import {
   planStoryboardDirectorGroupedNodes,
   planStoryboardDirectorShotBoardSync,
   recordStoryboardDirectorPartialBatch,
+  recordStoryboardDirectorRecoveryBatch,
   recordStoryboardDirectorReceipts,
   removeStoryboardDirectorReceiptsForTarget,
   storyboardDirectorPartialBatchBlockers,
@@ -1320,6 +1321,52 @@ describe('Storyboard Director compatibility draft planning and receipts', () => 
     assert.equal(recovered.blocker.createdCount, completed.length)
     assert.equal(recovered.blocker.uncreatedCount, 0)
     assert.deepEqual(recovered.blocker.successfulTargetIds, completed.map((item) => item.targetId))
+    assert.equal(readStoryboardDirectorRecipe(
+      storyboardDirectorRecipeMetadata(recovered.recipe),
+    ).status, 'valid')
+  })
+
+  test('records exact created targets while tolerating receipt construction and recorder failures', () => {
+    const recipe = completedRecipe()
+    const plans = planStoryboardDirectorDraftNodes(recipe, []).create
+    assert.ok(plans.length >= 3)
+    const completed = plans.slice(0, 3).map((plan, index) => ({
+      identity: plan.identity,
+      targetId: `created-target-${index}`,
+      ...(index === 1 ? {} : {
+        receipt: {
+          identity: plan.identity,
+          kind: 'draft-node' as const,
+          resultId: plan.resultId,
+          targetId: `created-target-${index}`,
+        },
+      }),
+    }))
+    const recovered = recordStoryboardDirectorRecoveryBatch(
+      recipe,
+      'draft-node-creation',
+      plans.map((plan) => plan.identity),
+      completed,
+      LATER_TIME,
+      (current, receipt, now) => {
+        if (receipt.targetId === 'created-target-2') {
+          throw new Error('receipt recorder failed')
+        }
+        return recordStoryboardDirectorReceipts(current, [receipt], now)
+      },
+    )
+
+    assert.equal(recovered.blocker.createdCount, 3)
+    assert.equal(recovered.blocker.uncreatedCount, plans.length - 3)
+    assert.deepEqual(recovered.blocker.successfulTargetIds, [
+      'created-target-0',
+      'created-target-1',
+      'created-target-2',
+    ])
+    assert.deepEqual(recovered.recipe.receipts.map((receipt) => receipt.targetId), [
+      'created-target-0',
+    ])
+    assert.equal(recovered.receiptsRecorded, false)
     assert.equal(readStoryboardDirectorRecipe(
       storyboardDirectorRecipeMetadata(recovered.recipe),
     ).status, 'valid')

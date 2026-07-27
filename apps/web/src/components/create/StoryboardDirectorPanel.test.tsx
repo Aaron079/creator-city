@@ -266,6 +266,7 @@ function renderedHarnessSource() {
     let detachedConfirm = null
     let livePanel = null
     let boardMode = null
+    let boardContextKey = 'project-1:workflow-1:control-node-1'
     let currentBoardState = null
     let boardCommitAllowed = true
     let deferredBoardFlush = null
@@ -279,6 +280,7 @@ function renderedHarnessSource() {
       detachedConfirm = null
       livePanel = null
       boardMode = null
+      boardContextKey = 'project-1:workflow-1:control-node-1'
       currentBoardState = null
       boardCommitAllowed = true
       deferredBoardFlush = null
@@ -358,6 +360,7 @@ function renderedHarnessSource() {
         activeShotId: currentBoardState.shots[0].id,
         recipe: boardMode === 'unavailable' ? null : currentRecipe,
         boardCommitMode: boardMode === 'manual' ? 'immediate' : 'buffered',
+        boardContextKey,
         openedFromRecipe: false,
         availableSources: [],
         availableRecipes: matching,
@@ -437,6 +440,18 @@ function renderedHarnessSource() {
     function switchBoardRecipe() {
       currentRecipe = structuredClone(FIXTURES.replacement)
       boardMode = 'replacement'
+      boardContextKey = 'project-1:workflow-1:control-node-2'
+      renderBoard()
+    }
+
+    function switchBoardContext(kind) {
+      if (kind === 'project') boardContextKey = 'project-2:workflow-2:control-node-2'
+      if (kind === 'workflow') boardContextKey = 'project-1:workflow-2:control-node-2'
+      if (kind === 'control') boardContextKey = 'project-1:workflow-1:control-node-2'
+      if (kind === 'replacement') {
+        currentRecipe = structuredClone(FIXTURES.replacement)
+        boardContextKey = 'project-1:workflow-1:control-node-2'
+      }
       renderBoard()
     }
 
@@ -470,6 +485,12 @@ function renderedHarnessSource() {
         activeShotId: null,
         recipe,
         boardCommitMode: recipe ? 'buffered' : 'immediate',
+        boardContextKey: [
+          'project-1',
+          'workflow-1',
+          livePanel.controlNodeId,
+          recipe?.recipeId ?? 'manual',
+        ].join(':'),
         openedFromRecipe: livePanel.openedFromRecipe,
         availableSources: [],
         availableRecipes: control,
@@ -517,6 +538,7 @@ function renderedHarnessSource() {
       clickDetachedConfirm,
       mountBoard,
       switchBoardRecipe,
+      switchBoardContext,
       unmountBoard,
       failBoardCommit,
       mountLivePanel,
@@ -596,6 +618,7 @@ type RenderedHarness = {
   clickDetachedConfirm: () => void
   mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
   switchBoardRecipe: () => void
+  switchBoardContext: (kind: 'project' | 'workflow' | 'control' | 'replacement') => void
   unmountBoard: () => void
   failBoardCommit: () => void
   mountLivePanel: () => void
@@ -675,6 +698,22 @@ async function renderedBoardState(page: Page) {
   return page.evaluate(() => (
     window as unknown as { __directorHarness: RenderedHarness }
   ).__directorHarness.boardState())
+}
+
+async function setRenderedBoardDrafts(
+  page: Page,
+  values: { mood: string; directorNote: string },
+) {
+  await page.evaluate((next) => {
+    const mood = document.querySelector('[aria-label="情绪"]') as HTMLInputElement
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+      ?.set?.call(mood, next.mood)
+    mood.dispatchEvent(new Event('input', { bubbles: true }))
+    const note = document.querySelector('[aria-label="导演备注"]') as HTMLTextAreaElement
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')
+      ?.set?.call(note, next.directorNote)
+    note.dispatchEvent(new Event('input', { bubbles: true }))
+  }, values)
 }
 
 describe('Storyboard Director panel state', () => {
@@ -1110,59 +1149,71 @@ describe('Storyboard Director rendered interactions', () => {
     }
   })
 
-  test('backdrop and Close flush dirty Recipe fields once before closing', async () => {
+  test('backdrop and Close atomically flush two dirty Recipe fields once before closing', async () => {
     const page = await renderPage()
     try {
       await mountRenderedBoard(page, 'matching')
-      const moodValue = 'quiet dread'
-      await page.getByLabel('情绪').fill(moodValue)
+      const first = { mood: 'quiet dread', directorNote: 'Hold on the sealed case.' }
+      await setRenderedBoardDrafts(page, first)
       await page.locator('[role="presentation"][data-storyboard-director="true"]').click({
         position: { x: 2, y: 2 },
       })
       assert.deepEqual(await renderedCalls(page), ['state-change', 'close'])
-      assert.equal((await renderedBoardState(page)).shots[0]?.mood, moodValue)
+      assert.equal((await renderedBoardState(page)).shots[0]?.mood, first.mood)
+      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, first.directorNote)
 
       await mountRenderedBoard(page, 'matching')
-      const noteValue = 'Hold on the sealed case.'
-      await page.getByLabel('导演备注').fill(noteValue)
+      const second = { mood: 'measured relief', directorNote: 'End on the antenna.' }
+      await setRenderedBoardDrafts(page, second)
       await page.getByRole('button', { name: '关闭分镜导演' }).click()
       assert.deepEqual(await renderedCalls(page), ['state-change', 'close'])
-      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, noteValue)
+      assert.equal((await renderedBoardState(page)).shots[0]?.mood, second.mood)
+      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, second.directorNote)
     } finally {
       await page.close()
     }
   })
 
-  test('Recipe replacement flushes the dirty A field exactly once before B renders', async () => {
+  test('Recipe, control, project, and workflow replacement atomically flush two dirty fields', async () => {
     const page = await renderPage()
     try {
-      await mountRenderedBoard(page, 'matching')
-      const moodValue = 'revision A remains'
-      await page.getByLabel('情绪').fill(moodValue)
-      await page.evaluate(() => (
-        window as unknown as { __directorHarness: RenderedHarness }
-      ).__directorHarness.switchBoardRecipe())
-      await page.waitForTimeout(50)
+      for (const kind of ['replacement', 'control', 'project', 'workflow'] as const) {
+        await mountRenderedBoard(page, 'matching')
+        const values = {
+          mood: `${kind} mood remains`,
+          directorNote: `${kind} note remains`,
+        }
+        await setRenderedBoardDrafts(page, values)
+        await page.evaluate((value) => (
+          window as unknown as { __directorHarness: RenderedHarness }
+        ).__directorHarness.switchBoardContext(value), kind)
+        await page.waitForTimeout(50)
 
-      assert.deepEqual(await renderedCalls(page), ['state-change'])
-      assert.equal((await renderedBoardState(page)).shots[0]?.mood, moodValue)
+        assert.deepEqual(await renderedCalls(page), ['state-change'])
+        assert.equal((await renderedBoardState(page)).shots[0]?.mood, values.mood)
+        assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, values.directorNote)
+      }
     } finally {
       await page.close()
     }
   })
 
-  test('unmount flushes a focused dirty Recipe field exactly once', async () => {
+  test('unmount atomically flushes two focused dirty Recipe fields exactly once', async () => {
     const page = await renderPage()
     try {
       await mountRenderedBoard(page, 'matching')
-      const noteValue = 'Persist before project switch.'
-      await page.getByLabel('导演备注').fill(noteValue)
+      const values = {
+        mood: 'unmount mood',
+        directorNote: 'Persist before unmount.',
+      }
+      await setRenderedBoardDrafts(page, values)
       await page.evaluate(() => (
         window as unknown as { __directorHarness: RenderedHarness }
       ).__directorHarness.unmountBoard())
 
       assert.deepEqual(await renderedCalls(page), ['state-change'])
-      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, noteValue)
+      assert.equal((await renderedBoardState(page)).shots[0]?.mood, values.mood)
+      assert.equal((await renderedBoardState(page)).shots[0]?.directorNote, values.directorNote)
     } finally {
       await page.close()
     }
@@ -1172,7 +1223,10 @@ describe('Storyboard Director rendered interactions', () => {
     const page = await renderPage()
     try {
       await mountRenderedBoard(page, 'matching')
-      await page.getByLabel('情绪').fill('must not disappear')
+      await setRenderedBoardDrafts(page, {
+        mood: 'must not disappear',
+        directorNote: 'must also remain',
+      })
       await page.evaluate(() => (
         window as unknown as { __directorHarness: RenderedHarness }
       ).__directorHarness.failBoardCommit())

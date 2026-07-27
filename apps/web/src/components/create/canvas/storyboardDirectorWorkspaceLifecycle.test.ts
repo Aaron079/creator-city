@@ -3,16 +3,25 @@ import { describe, test } from 'node:test'
 import {
   createRecipeMaterializationIdentity,
   createStoryboardDirectorRecipe,
+  createStoryboardDirectorPartialBatchIdentity,
   createStoryboardDirectorRecipeRevision,
   storyboardDirectorRecipeMetadata,
 } from '../../../lib/storyboard'
 import {
+  clearStoryboardDirectorEmergencyLock,
+  collectStoryboardDirectorDurableLocks,
   executeStoryboardDirectorReceiptAwareDeletion,
+  executeStoryboardDirectorRecoveryPersistence,
+  reserveStoryboardDirectorNodeId,
+  runStoryboardDirectorCreationBatch,
+  runStoryboardDirectorContextTransition,
   planStoryboardDirectorReceiptAwareDeletion,
   resolveStoryboardDirectorRecipeRevision,
   selectStoryboardDirectorEmergencyLock,
   upsertStoryboardDirectorEmergencyLock,
+  type StoryboardDirectorEmergencyLock,
 } from './storyboardDirectorWorkspaceLifecycle'
+import type { StoryboardDirectorRecipe } from '../../../lib/storyboard/recipe/types'
 
 const NOW = '2026-07-19T01:00:00.000Z'
 
@@ -47,7 +56,7 @@ function recipeWithReceipt(
   }
 }
 
-function controlNode(id: string, recipe: ReturnType<typeof recipeWithReceipt>) {
+function controlNode(id: string, recipe: StoryboardDirectorRecipe) {
   return {
     id,
     kind: 'text',
@@ -190,5 +199,209 @@ describe('Storyboard Director workspace lifecycle', () => {
       assert.equal(recovered.recipe.receipts.at(-1)?.targetId, 'requested-target')
       assert.equal(recovered.recipe.findings[0]?.code, 'CONCURRENT_REVIEW')
     }
+  })
+
+  test('flushes every dirty board field before a context transition mutates identity', () => {
+    const events: string[] = []
+    const transitioned = runStoryboardDirectorContextTransition({
+      flushDrafts: () => {
+        events.push('flush:mood+directorNote')
+        return true
+      },
+      transition: () => { events.push('replace:project+workflow+control+recipe') },
+    })
+
+    assert.equal(transitioned, true)
+    assert.deepEqual(events, [
+      'flush:mood+directorNote',
+      'replace:project+workflow+control+recipe',
+    ])
+
+    events.length = 0
+    assert.equal(runStoryboardDirectorContextTransition({
+      flushDrafts: () => {
+        events.push('flush:failed')
+        return false
+      },
+      transition: () => { events.push('must-not-replace') },
+    }), false)
+    assert.deepEqual(events, ['flush:failed'])
+  })
+
+  test('reserves a unique Stage C node ID against evolving occupancy', () => {
+    const occupied = new Set(['text-collision-1', 'text-collision-2'])
+    const candidates = ['text-collision-1', 'text-collision-2', 'text-unique']
+    const reserved = reserveStoryboardDirectorNodeId(
+      occupied,
+      () => candidates.shift() ?? 'text-collision-2',
+    )
+
+    assert.equal(reserved, 'text-unique')
+    assert.equal(occupied.has('text-unique'), true)
+    assert.throws(() => reserveStoryboardDirectorNodeId(
+      new Set(['duplicate']),
+      () => 'duplicate',
+      3,
+    ), /unique node ID/)
+  })
+
+  test('captures first, middle, last, and receipt-construction failures without losing created targets', () => {
+    for (const failureIndex of [0, 1, 2]) {
+      const result = runStoryboardDirectorCreationBatch(
+        ['first', 'middle', 'last'],
+        {
+          create: (plan, index) => {
+            if (index === failureIndex) throw new Error(`create ${plan}`)
+            return { targetId: `target-${plan}` }
+          },
+          receipt: (plan, created) => ({
+            identity: plan,
+            targetId: created.targetId,
+          }),
+        },
+      )
+      assert.equal(result.status, 'partial')
+      assert.equal(result.completed.length, failureIndex)
+      assert.equal(result.uncreatedCount, 3 - failureIndex)
+    }
+
+    const recorderFailure = runStoryboardDirectorCreationBatch(
+      ['first', 'middle', 'last'],
+      {
+        create: (plan) => ({ targetId: `target-${plan}` }),
+        receipt: (plan, created) => {
+          if (plan === 'middle') throw new Error('receipt construction failed')
+          return { identity: plan, targetId: created.targetId }
+        },
+      },
+    )
+    assert.equal(recorderFailure.status, 'partial')
+    assert.deepEqual(recorderFailure.completed, [
+      {
+        targetId: 'target-first',
+        receipt: { identity: 'first', targetId: 'target-first' },
+      },
+      { targetId: 'target-middle' },
+    ])
+    assert.equal(recorderFailure.uncreatedCount, 1)
+  })
+
+  test('durably persists a recovery rebased on latest before clearing its scoped lock', () => {
+    const original = recipeWithReceipt('source-a', 'derived-target', 'scene')
+    const latest: StoryboardDirectorRecipe = {
+      ...original,
+      findings: [{
+        findingId: 'concurrent-review',
+        severity: 'advisory' as const,
+        code: 'CONCURRENT_REVIEW',
+        message: 'Preserve latest review.',
+        evidenceIds: [],
+      }],
+    }
+    const blocker = {
+      batchId: 'batch-1',
+      operation: 'draft-node-creation' as const,
+      plannedCount: 2,
+      createdCount: 1,
+      uncreatedCount: 1,
+      plannedIdentities: ['one', 'two'],
+      successfulTargetIds: ['target-1'],
+    }
+    const lock = {
+      projectId: latest.projectId,
+      workflowId: latest.workflowId,
+      controlNodeId: 'control-1',
+      recipeId: latest.recipeId,
+      blocker,
+    }
+    let locks: StoryboardDirectorEmergencyLock[] = [lock]
+    const events: string[] = []
+    const result = executeStoryboardDirectorRecoveryPersistence({
+      readLatest: () => latest,
+      buildRecovery: (current) => ({
+        ...current,
+        findings: [...current.findings, {
+          findingId: 'partial-recovery',
+          severity: 'blocking' as const,
+          code: 'PARTIAL_MATERIALIZATION_BATCH',
+          message: 'Recovery blocker.',
+          evidenceIds: [],
+          partialBatch: blocker,
+        }],
+      }),
+      persist: (candidate) => {
+        events.push(`persist:${candidate.findings.map((finding) => finding.code).join(',')}`)
+        return true
+      },
+      retainEmergency: () => { events.push('retain') },
+    })
+
+    assert.equal(result.status, 'persisted')
+    assert.deepEqual(events, ['persist:CONCURRENT_REVIEW,PARTIAL_MATERIALIZATION_BATCH'])
+    locks = clearStoryboardDirectorEmergencyLock(locks, lock, blocker.batchId)
+    assert.deepEqual(locks, [])
+  })
+
+  test('retains a scoped fail-closed lock when recovery serialization or scheduling fails', () => {
+    const latest = recipeWithReceipt('source-a', 'derived-target', 'scene')
+    let retained = 0
+    for (const failure of ['build', 'persist'] as const) {
+      const result = executeStoryboardDirectorRecoveryPersistence({
+        readLatest: () => latest,
+        buildRecovery: (current) => {
+          if (failure === 'build') throw new Error('record failed')
+          return current
+        },
+        persist: () => {
+          if (failure === 'persist') throw new Error('storage failed')
+          return true
+        },
+        retainEmergency: () => { retained += 1 },
+      })
+      assert.equal(result.status, 'emergency')
+    }
+    assert.equal(retained, 2)
+  })
+
+  test('restores durable blockers after reload, remount, and returning from a canvas switch', () => {
+    const original = recipeWithReceipt('source-a', 'derived-target', 'scene')
+    const batchId = createStoryboardDirectorPartialBatchIdentity(
+      original.recipeId,
+      'grouped-materialization',
+      ['one', 'two'],
+    )
+    const blocker = {
+      batchId,
+      operation: 'grouped-materialization' as const,
+      plannedCount: 2,
+      createdCount: 1,
+      uncreatedCount: 1,
+      plannedIdentities: ['one', 'two'],
+      successfulTargetIds: ['target-1'],
+    }
+    const persisted: StoryboardDirectorRecipe = {
+      ...original,
+      findings: [{
+        findingId: batchId.replace(/^sdrb1_/, 'sdrf1_'),
+        severity: 'blocking',
+        code: 'PARTIAL_MATERIALIZATION_BATCH',
+        message: 'Reload recovery.',
+        evidenceIds: [],
+        partialBatch: blocker,
+      }],
+    }
+    const nodes = [controlNode('control-reload', persisted)]
+    for (const phase of ['reload', 'remount', 'return-after-switch']) {
+      const restored = collectStoryboardDirectorDurableLocks(nodes, {
+        projectId: persisted.projectId,
+        workflowId: persisted.workflowId,
+      })
+      assert.equal(restored.length, 1, phase)
+      assert.equal(restored[0]?.blocker.batchId, blocker.batchId, phase)
+    }
+    assert.deepEqual(collectStoryboardDirectorDurableLocks(nodes, {
+      projectId: 'other-project',
+      workflowId: 'other-workflow',
+    }), [])
   })
 })

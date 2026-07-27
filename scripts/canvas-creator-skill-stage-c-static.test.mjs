@@ -127,14 +127,14 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
 
   test('workspace creates or patches only the control and derived nodes', () => {
     const start = namedBlock(workspace, 'const handleStartStoryboardDirectorRecipe', 'const handleOpenStoryboardDirectorRecipe')
-    const commit = namedBlock(workspace, 'const handleCommitStoryboardDirectorRecipe', 'const handleMaterializeStoryboardDirectorRecipe')
+    const commit = namedBlock(workspace, 'const handleCommitStoryboardDirectorRecipe', 'const currentStoryboardRecipeContext')
     assert.match(start, /planStoryboardDirectorControlNode/)
     assert.match(start, /createNode\(\s*['"]text['"]/)
     assert.match(start, /parentNodeId:\s*sourceNode\.id/)
     assert.doesNotMatch(start, /handleNodePatch\(\s*sourceNode\.id/)
     assert.match(commit, /handleNodePatch\(\s*controlNode\.id/)
     assert.match(commit, /\.\.\.metadataRecord\(controlNode\.metadataJson\)/)
-    assert.equal(count(commit, /flushSnapshot:\s*flushLocalSnapshot/g), 1)
+    assert.equal(count(commit, /flushSnapshot:\s*writeStageCCanonicalLocalSnapshot/g), 1)
     assert.doesNotMatch(commit, /flushLocalSnapshot\(\)/)
     assert.equal(count(commit, /scheduleCanvasSave\(/g), 1)
     assert.match(commit, /scheduleCanvasSave\([^)]*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}/)
@@ -169,7 +169,9 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(directorPanel, /boardCommitMode:\s*['"]immediate['"]\s*\|\s*['"]buffered['"]/)
     assert.doesNotMatch(directorPanel, /boardCommitMode\s*=\s*['"]immediate['"]/)
     assert.doesNotMatch(directorPanel, /onCommitRecipe\?\s*:|onMaterializeGrouped\?\s*:|const\s+NOOP/)
-    assert.match(directorPanel, /const\s+handleBlur[\s\S]*flushRef\.current\(\)/)
+    assert.match(directorPanel, /deferredBoardPatchesRef/)
+    assert.match(directorPanel, /let\s+nextState\s*=\s*baseState[\s\S]*commit\(nextState\)/)
+    assert.match(directorPanel, /const\s+handleBlur[\s\S]*commitBuffered\(\)/)
     assert.match(directorPanel, /onBlur:\s*handleBlur/)
     assert.match(directorPanel, /skipNextBlur/)
   })
@@ -187,7 +189,10 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(materialize, /const\s+occupancy\s*=\s*\[\.\.\.latestNodesRef\.current\]/)
     assert.match(materialize, /resolveNonOverlappingPosition\([\s\S]*occupancy/)
     assert.match(materialize, /occupancy\.push\(node\)/)
-    assert.match(materialize, /completed\.push\(receiptFromCreatedPlan/)
+    assert.match(materialize, /runStoryboardDirectorCreationBatch/)
+    assert.match(materialize, /reserveStoryboardDirectorNodeId/)
+    assert.match(materialize, /nodeId,/)
+    assert.match(materialize, /completedTargets/)
     assert.match(materialize, /recordStoryboardDirectorReceipts\([\s\S]*completed/)
     assert.equal(count(materialize, /flushLocalSnapshot\(\)/g), 0)
     assert.equal(count(materialize, /scheduleCanvasSave\(/g), 0)
@@ -200,15 +205,15 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
       'const handleMaterializeStoryboardDirectorRecipe',
       'const handleSyncStoryboardDirectorShotBoard',
     )
-    assert.match(materialize, /completed\.length/)
-    assert.match(materialize, /plans\.create\.length\s*-\s*completed\.length/)
+    assert.match(materialize, /completedTargets\.length/)
+    assert.match(materialize, /creation\.uncreatedCount/)
     assert.match(materialize, /showCanvasFeedback\(/)
-    assert.match(materialize, /recordStoryboardDirectorPartialBatch/)
+    assert.match(materialize, /recordStoryboardDirectorRecoveryBatch/)
     assert.match(materialize, /attemptStoryboardDirectorRecipeCommit/)
     assert.match(materialize, /['"]grouped-materialization['"]/)
     assert.match(materialize, /installEmergencyDirectorPartialBatch/)
-    assert.match(materialize, /recoverLatestRecipe:\s*\(latestRecipe\)\s*=>\s*recordStoryboardDirectorPartialBatch\(/)
-    assert.match(materialize, /const\s+persisted\s*=\s*handleCommitStoryboardDirectorRecipe\(recordStoryboardDirectorReceipts/)
+    assert.match(materialize, /recoverLatestRecipe:\s*\(latestRecipe\)\s*=>\s*recordStoryboardDirectorRecoveryBatch\(/)
+    assert.match(materialize, /handleCommitStoryboardDirectorRecipe\(recordStoryboardDirectorReceipts/)
     assert.match(materialize, /if\s*\(!persisted\)[\s\S]*0 个未创建/)
     assert.doesNotMatch(materialize, /catch[\s\S]*deleteNode/)
   })
@@ -237,9 +242,11 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(drafts, /recordStoryboardDirectorReceipts/)
     assert.equal(count(drafts, /flushLocalSnapshot\(\)/g), 0)
     assert.equal(count(drafts, /scheduleCanvasSave\(/g), 0)
-    assert.match(drafts, /recordStoryboardDirectorPartialBatch/)
+    assert.match(drafts, /recordStoryboardDirectorRecoveryBatch/)
+    assert.match(drafts, /runStoryboardDirectorCreationBatch/)
+    assert.match(drafts, /reserveStoryboardDirectorNodeId/)
     assert.match(drafts, /['"]draft-node-creation['"]/)
-    assert.match(drafts, /const\s+persisted\s*=\s*handleCommitStoryboardDirectorRecipe\(recordStoryboardDirectorReceipts/)
+    assert.match(drafts, /handleCommitStoryboardDirectorRecipe\(recordStoryboardDirectorReceipts/)
     assert.match(drafts, /if\s*\(!persisted\)[\s\S]*0 个未创建/)
     assert.doesNotMatch(drafts, /pendingAutoGenerateIds|handleRegenerateNodeFromPrompt|openGenerationDialog/)
   })
@@ -277,6 +284,7 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
       'emergencyPartialBatch',
       'onAcknowledgeEmergencyPartialBatch',
       'boardCommitMode',
+      'boardContextKey',
       'registerDeferredBoardFlush',
     ]) {
       assert.match(rendered, new RegExp(`${prop}=`), `${prop} should be wired`)
@@ -302,7 +310,7 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(lifecycle, /setActiveDirectorControlNodeId\(['"]['"]\)/)
     assert.match(lifecycle, /setStoryboardDirectorOpen\(false\)/)
     assert.doesNotMatch(lifecycle, /setEmergencyDirectorPartialBatches\(\[\]\)|setEmergencyDirectorPartialBatch\(null\)/)
-    assert.match(lifecycle, /storyboardDirectorPartialBatchBlockers\(read\.recipe\)/)
+    assert.match(lifecycle, /collectStoryboardDirectorDurableLocks\(nodes/)
     assert.match(lifecycle, /durableLocks\.reduce\(upsertStoryboardDirectorEmergencyLock,\s*current\)/)
     assert.match(lifecycle, /\[flushDirectorBoardDrafts,\s*projectId,\s*workflowId\]/)
     assert.match(lifecycle, /markRecipeSourceMissing/)
@@ -330,9 +338,13 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(saveScheduling, /options\?\.snapshot\s*!==\s*['"]already-flushed['"]/)
     assert.match(saveScheduling, /runBoundedCanvasPersistence/)
     assert.match(saveScheduling, /hasPriorMutation/)
+    assert.match(saveScheduling, /persistenceOrder\?:\s*['"]flush-first['"]\s*\|\s*['"]schedule-first['"]/)
     assert.match(saveScheduling, /completeEmergencyCanvasAcknowledgment/)
     assert.match(saveScheduling, /createCanvasAutosaveSuppression/)
     assert.match(saveScheduling, /consumeCanvasAutosaveSuppression/)
+    assert.match(saveScheduling, /function\s+writeCanonicalCanvasSnapshot/)
+    assert.match(saveScheduling, /const\s+serialized\s*=\s*JSON\.stringify\(payload\)/)
+    assert.equal(count(saveScheduling, /storage\.setItem\(key,\s*serialized\)/g), 1)
     const schedule = namedBlock(
       workspace,
       'const scheduleCanvasSave',
@@ -348,10 +360,12 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     )
     assert.match(commit, /runBoundedCanvasPersistence/)
     assert.match(commit, /hasPriorMutation:\s*options\.hasPriorCanvasMutation/)
+    assert.match(commit, /persistenceOrder:\s*['"]schedule-first['"]/)
     assert.match(commit, /markMutation\(\)[\s\S]*handleNodePatch/)
     assert.match(commit, /resolveStoryboardDirectorRecipeRevision\(/)
     assert.match(commit, /recoverLatestRecipe:\s*options\.recoverLatestRecipe/)
-    assert.equal(count(commit, /flushSnapshot:\s*flushLocalSnapshot/g), 1)
+    assert.match(commit, /rollbackControlPatch/)
+    assert.equal(count(commit, /flushSnapshot:\s*writeStageCCanonicalLocalSnapshot/g), 1)
     assert.equal(count(commit, /scheduleCanvasSave\(\s*0,\s*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}\s*\)/g), 1)
     const grouped = namedBlock(
       workspace,
@@ -363,15 +377,17 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
       'const handleCreateStoryboardDirectorDraftNodes',
       'const handleImportLegacyStoryboardDirectorState',
     )
-    assert.match(grouped, /hasPriorCanvasMutation:\s*creationAttempted/)
-    assert.match(drafts, /hasPriorCanvasMutation:\s*creationAttempted/)
+    assert.match(grouped, /installEmergencyDirectorPartialBatch\([\s\S]*creationAttempted/)
+    assert.match(drafts, /installEmergencyDirectorPartialBatch\([\s\S]*creationAttempted/)
     const emergencyAck = namedBlock(
       workspace,
       'const handleAcknowledgeEmergencyDirectorPartialBatch',
       'const focusStoryboardDirectorSource',
     )
-    assert.match(emergencyAck, /恢复标记尚未持久化/)
-    assert.doesNotMatch(emergencyAck, /setEmergencyDirectorPartialBatches|flushLocalSnapshot|scheduleCanvasSave/)
+    assert.match(emergencyAck, /acknowledgeStoryboardDirectorPartialBatch/)
+    assert.match(emergencyAck, /handleCommitStoryboardDirectorRecipe/)
+    assert.match(emergencyAck, /clearStoryboardDirectorEmergencyLock/)
+    assert.doesNotMatch(emergencyAck, /flushLocalSnapshot|scheduleCanvasSave/)
     assert.match(recipePanel, /onCommitRecipe\(acknowledgeStoryboardDirectorPartialBatch\(/)
   })
 
@@ -389,7 +405,7 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     const deletion = namedBlock(workspace, 'const deleteNode', 'useEffect(() => {')
     assert.match(deletion, /planStoryboardDirectorReceiptAwareDeletion/)
     assert.match(deletion, /executeStoryboardDirectorReceiptAwareDeletion/)
-    assert.match(deletion, /writeUnifiedLocalSnapshot\(\{\s*nodes:/)
+    assert.match(deletion, /writeStageCCanonicalLocalSnapshot\(\{\s*nodes:/)
     assert.match(deletion, /scheduleCanvasSave\(\s*0,\s*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}\s*\)/)
     assert.match(deletion, /无法保存 Recipe 回执变更，节点未删除。/)
   })
@@ -397,6 +413,8 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
   test('dirty Recipe board fields flush before every close and switch boundary', () => {
     assert.match(directorPanel, /registerDeferredBoardFlush/)
     assert.match(directorPanel, /flushDeferredBoardDrafts/)
+    assert.match(directorPanel, /boardContextKey:\s*string/)
+    assert.match(directorPanel, /deferredBoardBaseStateRef/)
     assert.match(directorPanel, /requestClose/)
     assert.doesNotMatch(directorPanel, /onPointerDown=\{\(e\)\s*=>\s*\{\s*e\.stopPropagation\(\);\s*onClose\(\)/)
     assert.match(workspace, /directorDeferredBoardFlushRef/)
@@ -407,7 +425,10 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
   test('partial recovery rebases by revision and emergency locks remain canvas-scoped', () => {
     assert.match(recipeFiles, /createStoryboardDirectorRecipeRevision/)
     assert.match(workspace, /recoverLatestRecipe/)
-    assert.match(workspace, /recordStoryboardDirectorPartialBatch\(\s*latestRecipe/)
+    assert.match(workspace, /executeStoryboardDirectorRecoveryPersistence/)
+    assert.match(workspace, /recordStoryboardDirectorRecoveryBatch\(\s*latestRecipe/)
+    assert.match(workspace, /persist:\s*\(recoveredRecipe,\s*latestRecipe\)/)
+    assert.match(workspace, /expectedRevision:\s*createStoryboardDirectorRecipeRevision\(latestRecipe\)/)
     assert.match(workspaceLifecycle, /selectStoryboardDirectorEmergencyLock/)
     assert.match(workspaceLifecycle, /upsertStoryboardDirectorEmergencyLock/)
     assert.doesNotMatch(

@@ -2,6 +2,16 @@ export type CanvasSaveScheduleOptions = {
   snapshot: 'flush' | 'already-flushed'
 }
 
+export function writeCanonicalCanvasSnapshot(
+  storage: Pick<Storage, 'setItem'>,
+  key: string,
+  payload: unknown,
+) {
+  const serialized = JSON.stringify(payload)
+  storage.setItem(key, serialized)
+  return serialized
+}
+
 export function completeLocalCanvasSaveSchedule(
   options: CanvasSaveScheduleOptions | undefined,
   effects: {
@@ -21,11 +31,13 @@ export type BoundedCanvasPersistenceResult = {
 
 export function runBoundedCanvasPersistence({
   hasPriorMutation = false,
+  persistenceOrder = 'flush-first',
   operation,
   flushSnapshot,
   scheduleSave,
 }: {
   hasPriorMutation?: boolean
+  persistenceOrder?: 'flush-first' | 'schedule-first'
   operation: (markMutation: () => void) => boolean
   flushSnapshot: () => void
   scheduleSave: () => void
@@ -47,17 +59,36 @@ export function runBoundedCanvasPersistence({
     }
   }
 
-  let flushSucceeded = true
-  let scheduleSucceeded = true
-  try {
-    flushSnapshot()
-  } catch {
-    flushSucceeded = false
-  }
-  try {
-    scheduleSave()
-  } catch {
-    scheduleSucceeded = false
+  let flushSucceeded = false
+  let scheduleSucceeded = false
+  if (persistenceOrder === 'schedule-first') {
+    try {
+      scheduleSave()
+      scheduleSucceeded = true
+    } catch {
+      scheduleSucceeded = false
+    }
+    if (scheduleSucceeded) {
+      try {
+        flushSnapshot()
+        flushSucceeded = true
+      } catch {
+        flushSucceeded = false
+      }
+    }
+  } else {
+    try {
+      flushSnapshot()
+      flushSucceeded = true
+    } catch {
+      flushSucceeded = false
+    }
+    try {
+      scheduleSave()
+      scheduleSucceeded = true
+    } catch {
+      scheduleSucceeded = false
+    }
   }
   return {
     operationSucceeded,

@@ -6,6 +6,7 @@ import {
   createCanvasAutosaveSuppression,
   consumeCanvasAutosaveSuppression,
   runBoundedCanvasPersistence,
+  writeCanonicalCanvasSnapshot,
 } from './canvasSaveScheduling'
 
 describe('canvas save scheduling', () => {
@@ -162,15 +163,34 @@ describe('canvas save scheduling', () => {
       let serializations = 0
       let localWrites = 0
       let schedules = 0
+      const originalStringify = JSON.stringify
+      const storage = {
+        setItem(key: string, serialized: string) {
+          assert.equal(key, 'creator-city:canvas-snapshot:project-1')
+          assert.equal(typeof serialized, 'string')
+          localWrites += 1
+        },
+      }
       const result = runBoundedCanvasPersistence({
+        persistenceOrder: 'schedule-first',
         operation: (markMutation) => {
           markMutation()
           return true
         },
         flushSnapshot: () => {
-          JSON.stringify({ nodes, edges, viewport })
-          serializations += 1
-          localWrites += 1
+          JSON.stringify = ((value: unknown) => {
+            serializations += 1
+            return originalStringify(value)
+          }) as typeof JSON.stringify
+          try {
+            writeCanonicalCanvasSnapshot(
+              storage,
+              'creator-city:canvas-snapshot:project-1',
+              { nodes, edges, viewport },
+            )
+          } finally {
+            JSON.stringify = originalStringify
+          }
         },
         scheduleSave: () => { schedules += 1 },
       })
@@ -192,6 +212,50 @@ describe('canvas save scheduling', () => {
         { serializations: 1, localWrites: 1, schedules: 1 },
       )
     }
+  })
+
+  test('reports canonical serialization and durable storage failures', () => {
+    assert.throws(() => writeCanonicalCanvasSnapshot(
+      { setItem() { throw new Error('quota exceeded') } },
+      'creator-city:canvas-snapshot:project-1',
+      { nodes: [], edges: [] },
+    ), /quota exceeded/)
+
+    const cyclic: { self?: unknown } = {}
+    cyclic.self = cyclic
+    assert.throws(() => writeCanonicalCanvasSnapshot(
+      { setItem() { assert.fail('storage must not run after serialization failure') } },
+      'creator-city:canvas-snapshot:project-1',
+      cyclic,
+    ), /circular/i)
+  })
+
+  test('keeps a Stage C transaction durable-state atomic when scheduling fails', () => {
+    let serializations = 0
+    let writes = 0
+    let schedules = 0
+    const result = runBoundedCanvasPersistence({
+      persistenceOrder: 'schedule-first',
+      operation: (markMutation) => {
+        markMutation()
+        return true
+      },
+      flushSnapshot: () => {
+        serializations += 1
+        writes += 1
+      },
+      scheduleSave: () => {
+        schedules += 1
+        throw new Error('schedule failed')
+      },
+    })
+
+    assert.equal(result.persistenceSucceeded, false)
+    assert.deepEqual({ serializations, writes, schedules }, {
+      serializations: 0,
+      writes: 0,
+      schedules: 1,
+    })
   })
 
   test('never suppresses a later unrelated node, edge, or viewport mutation', () => {
