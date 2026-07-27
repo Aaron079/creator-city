@@ -10,7 +10,7 @@ import path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { chromium, type Browser, type Page } from '@playwright/test'
 import { runCreatorSkill, type CreatorSkillReviewStatus } from '../../lib/skills'
-import type { StoryboardState } from '../../lib/storyboard/types'
+import type { ShotCard, StoryboardState } from '../../lib/storyboard/types'
 import { analyzeStoryboardDirectorRecipe } from '../../lib/storyboard/recipe/intelligence'
 import {
   approveBeatStage,
@@ -22,6 +22,7 @@ import {
   setRecipeDecision,
   updateRecipeDraft,
 } from '../../lib/storyboard/recipe/state-machine'
+import { planStoryboardDirectorShotBoardSync } from './canvas/skills/storyboardDirectorMaterialization'
 import type {
   StoryboardDirectorFinding,
   StoryboardDirectorRecipe,
@@ -183,6 +184,7 @@ function healthyOrderedFindings(): StoryboardDirectorFinding[] {
 
 let renderedBrowser: Browser | null = null
 let renderedBundlePath = ''
+let renderedStylesPath = ''
 let renderedTempDirectory = ''
 const renderedPageErrors = new WeakMap<Page, string[]>()
 
@@ -209,6 +211,15 @@ function renderedHarnessSource() {
   const panelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorPanel.tsx')
   const recipePanelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorRecipePanel.tsx')
   const completed = JSON.stringify(completedRecipe())
+  const replacement = JSON.stringify({
+    ...completedRecipe(),
+    recipeId: 'sdr1_replacement',
+    sourceNode: {
+      ...completedRecipe().sourceNode,
+      id: 'source-replacement',
+      title: 'Replacement',
+    },
+  })
   const sceneReview = JSON.stringify(decidedSceneRecipe())
   const beatReview = JSON.stringify(approveSceneStage(decidedSceneRecipe(), ISO_TIME))
   return `
@@ -219,18 +230,23 @@ function renderedHarnessSource() {
 
     const FIXTURES = {
       completed: ${completed},
+      replacement: ${replacement},
       sceneReview: ${sceneReview},
       beatReview: ${beatReview},
     }
     let root = null
     let calls = []
     let currentRecipe = null
+    let detachedConfirm = null
+    let livePanel = null
 
     function resetRoot() {
       if (root) root.unmount()
       document.getElementById('root').replaceChildren()
       root = createRoot(document.getElementById('root'))
       calls = []
+      detachedConfirm = null
+      livePanel = null
     }
 
     function recipeProps() {
@@ -265,6 +281,18 @@ function renderedHarnessSource() {
       renderRecipe()
     }
 
+    function replaceRecipe(kind = 'replacement') {
+      detachedConfirm = document.querySelector('[aria-label="确认修改"]')
+        || Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '确认修改')
+        || null
+      currentRecipe = structuredClone(FIXTURES[kind])
+      renderRecipe()
+    }
+
+    function clickDetachedConfirm() {
+      detachedConfirm?.click()
+    }
+
     function mountBoard(mode = 'matching') {
       resetRoot()
       currentRecipe = structuredClone(FIXTURES.completed)
@@ -283,6 +311,15 @@ function renderedHarnessSource() {
         id: 'shot-card-1',
         index: 0,
         title: 'S01',
+        shotType: {
+          wide: 'ELS',
+          full: 'LS',
+          medium: 'MS',
+          close: 'CU',
+          'extreme-close': 'ECU',
+        }[draft.suggestedShotSize],
+        durationSec: draft.duration,
+        directorNote: (draft.objective + '\\n' + draft.action).trim(),
         nodeIds: [],
         createdAt: '2026-07-19T01:00:00.000Z',
         updatedAt: '2026-07-19T01:00:00.000Z',
@@ -311,9 +348,60 @@ function renderedHarnessSource() {
       }))
     }
 
+    function renderLivePanel() {
+      const recipe = livePanel.recipeKind
+        ? structuredClone(FIXTURES[livePanel.recipeKind])
+        : null
+      currentRecipe = recipe
+      const control = recipe ? [{
+        nodeId: livePanel.controlNodeId,
+        recipeId: recipe.recipeId,
+        title: 'Live Recipe',
+        status: 'approved',
+      }] : []
+      root.render(React.createElement(StoryboardDirectorPanel, {
+        open: livePanel.open,
+        state: {
+          version: '2',
+          shots: [],
+          updatedAt: livePanel.boardUpdatedAt,
+        },
+        activeShotId: null,
+        recipe,
+        openedFromRecipe: livePanel.openedFromRecipe,
+        availableRecipes: control,
+        saveState: livePanel.saveState,
+        onStateChange() {},
+        onActiveShotChange() {},
+        onClose() {},
+      }))
+    }
+
+    function mountLivePanel() {
+      resetRoot()
+      livePanel = {
+        open: true,
+        openedFromRecipe: false,
+        recipeKind: 'completed',
+        controlNodeId: 'control-live-a',
+        boardUpdatedAt: '2026-07-19T01:00:00.000Z',
+        saveState: 'cloud',
+      }
+      renderLivePanel()
+    }
+
+    function updateLivePanel(patch) {
+      livePanel = { ...livePanel, ...patch }
+      renderLivePanel()
+    }
+
     window.__directorHarness = {
       mountRecipe,
+      replaceRecipe,
+      clickDetachedConfirm,
       mountBoard,
+      mountLivePanel,
+      updateLivePanel,
       calls: () => calls.slice(),
       recipe: () => structuredClone(currentRecipe),
     }
@@ -324,6 +412,7 @@ before(async () => {
   renderedTempDirectory = await mkdtemp(path.join(tmpdir(), 'storyboard-director-render-'))
   const entryPath = path.join(renderedTempDirectory, 'entry.tsx')
   renderedBundlePath = path.join(renderedTempDirectory, 'bundle.js')
+  renderedStylesPath = path.join(renderedTempDirectory, 'styles.css')
   await writeFile(entryPath, renderedHarnessSource(), 'utf8')
   const build = spawnSync(await findEsbuildBinary(), [
     entryPath,
@@ -339,6 +428,17 @@ before(async () => {
     encoding: 'utf8',
   })
   assert.equal(build.status, 0, build.stderr || build.stdout)
+  const styles = spawnSync(path.resolve(process.cwd(), 'node_modules/.bin/tailwindcss'), [
+    '-i',
+    path.resolve(process.cwd(), 'src/app/globals.css'),
+    '-o',
+    renderedStylesPath,
+    '--minify',
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+  assert.equal(styles.status, 0, styles.stderr || styles.stdout)
   renderedBrowser = await chromium.launch({ headless: true })
 })
 
@@ -347,9 +447,9 @@ after(async () => {
   if (renderedTempDirectory) await rm(renderedTempDirectory, { recursive: true, force: true })
 })
 
-async function renderPage() {
+async function renderPage(viewport = { width: 1280, height: 900 }) {
   assert.ok(renderedBrowser)
-  const page = await renderedBrowser.newPage({ viewport: { width: 1280, height: 900 } })
+  const page = await renderedBrowser.newPage({ viewport })
   page.setDefaultTimeout(5_000)
   const errors: string[] = []
   renderedPageErrors.set(page, errors)
@@ -358,6 +458,7 @@ async function renderPage() {
     if (message.type() === 'error') errors.push(message.text())
   })
   await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>')
+  await page.addStyleTag({ path: renderedStylesPath })
   await page.addScriptTag({ path: renderedBundlePath })
   return page
 }
@@ -369,8 +470,19 @@ async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜�
 }
 
 type RenderedHarness = {
-  mountRecipe: (kind?: 'completed' | 'sceneReview' | 'beatReview') => void
+  mountRecipe: (kind?: 'completed' | 'replacement' | 'sceneReview' | 'beatReview') => void
+  replaceRecipe: (kind?: 'completed' | 'replacement') => void
+  clickDetachedConfirm: () => void
   mountBoard: (mode?: 'matching' | 'blocking' | 'stale' | 'unavailable' | 'manual') => void
+  mountLivePanel: () => void
+  updateLivePanel: (patch: {
+    open?: boolean
+    openedFromRecipe?: boolean
+    recipeKind?: 'completed' | 'replacement' | null
+    controlNodeId?: string
+    boardUpdatedAt?: string
+    saveState?: 'local' | 'saving' | 'cloud' | 'failed'
+  }) => void
   calls: () => string[]
   recipe: () => StoryboardDirectorRecipe
 }
@@ -392,6 +504,23 @@ async function mountRenderedBoard(
   await page.evaluate((value) => (
     window as unknown as { __directorHarness: RenderedHarness }
   ).__directorHarness.mountBoard(value), mode)
+  await page.waitForTimeout(50)
+}
+
+async function mountRenderedLivePanel(page: Page) {
+  await page.evaluate(() => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.mountLivePanel())
+  await page.waitForTimeout(50)
+}
+
+async function updateRenderedLivePanel(
+  page: Page,
+  patch: Parameters<RenderedHarness['updateLivePanel']>[0],
+) {
+  await page.evaluate((value) => (
+    window as unknown as { __directorHarness: RenderedHarness }
+  ).__directorHarness.updateLivePanel(value), patch)
   await page.waitForTimeout(50)
 }
 
@@ -476,6 +605,15 @@ describe('Storyboard Director panel state', () => {
       id: 'card-1',
       index: 0,
       title: 'S01',
+      shotType: {
+        wide: 'ELS',
+        full: 'LS',
+        medium: 'MS',
+        close: 'CU',
+        'extreme-close': 'ECU',
+      }[cleanDraft.suggestedShotSize],
+      durationSec: cleanDraft.duration,
+      directorNote: `${cleanDraft.objective}\n${cleanDraft.action}`.trim(),
       nodeIds: [],
       createdAt: ISO_TIME,
       updatedAt: ISO_TIME,
@@ -613,6 +751,47 @@ describe('Storyboard Director panel state', () => {
       deriveStoryboardDirectorShotRecipeMarkers(shot, sourceInvalidated)?.quality,
       'clean',
     )
+  })
+
+  test('synchronization matches every Recipe-owned shot-board field', () => {
+    const recipe = completedRecipe()
+    const planned = planStoryboardDirectorShotBoardSync(
+      recipe,
+      { version: '2', shots: [], updatedAt: ISO_TIME },
+      ISO_TIME,
+    )
+    const synchronized = planned.state.shots[0]
+    assert.ok(synchronized)
+    assert.equal(
+      deriveStoryboardDirectorShotRecipeMarkers(synchronized, recipe)?.synchronization,
+      'synchronized',
+    )
+
+    const divergence: Array<Partial<ShotCard>> = [
+      { shotType: synchronized.shotType === 'ELS' ? 'CU' : 'ELS' },
+      { durationSec: (synchronized.durationSec ?? 0) + 1 },
+      { directorNote: `${synchronized.directorNote ?? ''}\nManual change` },
+      { recipe: { ...synchronized.recipe!, recipeId: 'sdr1_manual-divergence' } },
+      { recipe: { ...synchronized.recipe!, shotId: 'manual-shot-id' } },
+      { recipe: { ...synchronized.recipe!, sourceArtifactId: 'manual-artifact-id' } },
+      { recipe: { ...synchronized.recipe!, sceneId: 'manual-scene-id' } },
+      { recipe: { ...synchronized.recipe!, beatId: 'manual-beat-id' } },
+    ]
+    for (const patch of divergence) {
+      const markers = deriveStoryboardDirectorShotRecipeMarkers({
+        ...synchronized,
+        ...patch,
+      }, recipe)
+      assert.notEqual(markers?.synchronization, 'synchronized')
+      assert.notEqual(markers?.quality, 'clean')
+    }
+
+    for (const status of ['needs-review', 'stale', 'blocked', 'idle'] as const) {
+      const nonFinal = { ...recipe, shot: { ...recipe.shot, status } }
+      const markers = deriveStoryboardDirectorShotRecipeMarkers(synchronized, nonFinal)
+      assert.equal(markers?.synchronization, 'stale')
+      assert.notEqual(markers?.quality, 'clean')
+    }
   })
 })
 
@@ -1005,6 +1184,223 @@ describe('Storyboard Director rendered interactions', () => {
       }
     } finally {
       await page.close()
+    }
+  })
+
+  test('renders compact visible labels for every Recipe review control', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      const labelsByStage = {
+        '场景': ['场景标题', '场景地点', '场景时间', '场景角色', '场景动作摘要'],
+        '节拍': ['节拍类型', '节拍摘要'],
+        '镜头': ['镜头目标', '镜头主体', '镜头动作', '镜头景别', '输出类型', '镜头时长'],
+      } as const
+
+      for (const [stage, labels] of Object.entries(labelsByStage)) {
+        await selectReviewStage(page, stage as keyof typeof labelsByStage)
+        for (const label of labels) {
+          const visibleLabel = page.locator('label').filter({ hasText: label }).first()
+          assert.equal(await visibleLabel.isVisible(), true, `${label} must have a visible label`)
+          assert.equal(await page.getByLabel(label).first().isVisible(), true)
+        }
+      }
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('Recipe replacement clears pending confirmation and detached drafts cannot commit to B', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      await selectReviewStage(page, '场景')
+      const heading = page.getByLabel('场景标题').first()
+      await heading.fill('A-only pending heading')
+      await heading.blur()
+      await page.getByRole('button', { name: '确认修改' }).waitFor()
+
+      await page.evaluate(() => (
+        window as unknown as { __directorHarness: RenderedHarness }
+      ).__directorHarness.replaceRecipe('replacement'))
+      await page.waitForTimeout(50)
+
+      assert.equal(await page.getByRole('button', { name: '确认修改' }).count(), 0)
+      await page.evaluate(() => (
+        window as unknown as { __directorHarness: RenderedHarness }
+      ).__directorHarness.clickDetachedConfirm())
+      assert.deepEqual(await renderedCalls(page), [])
+      const replacement = await renderedRecipe(page)
+      assert.equal(replacement.recipeId, 'sdr1_replacement')
+      assert.notEqual(replacement.scene.drafts[0]?.heading, 'A-only pending heading')
+      assert.deepEqual(renderedPageErrors.get(page), [])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('live-open intent selects Recipe without overriding later manual board choice', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedLivePanel(page)
+      const recipeTab = page.getByTestId('storyboard-director-tab-recipe')
+      const boardTab = page.getByTestId('storyboard-director-tab-board')
+      assert.equal(await boardTab.getAttribute('aria-selected'), 'true')
+
+      await updateRenderedLivePanel(page, { openedFromRecipe: true })
+      assert.equal(await recipeTab.getAttribute('aria-selected'), 'true')
+
+      await boardTab.click()
+      await updateRenderedLivePanel(page, {
+        saveState: 'saving',
+        boardUpdatedAt: '2026-07-19T01:05:00.000Z',
+      })
+      assert.equal(await boardTab.getAttribute('aria-selected'), 'true')
+
+      await updateRenderedLivePanel(page, { controlNodeId: 'control-live-b' })
+      assert.equal(await recipeTab.getAttribute('aria-selected'), 'true')
+
+      await boardTab.click()
+      await updateRenderedLivePanel(page, { open: false })
+      await updateRenderedLivePanel(page, { open: true })
+      assert.equal(await recipeTab.getAttribute('aria-selected'), 'true')
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('tabs and segmented controls expose selection and keyboard navigation', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedLivePanel(page)
+      const recipeTab = page.getByTestId('storyboard-director-tab-recipe')
+      const boardTab = page.getByTestId('storyboard-director-tab-board')
+
+      assert.equal(await recipeTab.getAttribute('id'), 'storyboard-director-tab-recipe')
+      assert.equal(await boardTab.getAttribute('id'), 'storyboard-director-tab-board')
+      assert.equal(await recipeTab.getAttribute('aria-controls'), 'storyboard-director-panel-recipe')
+      assert.equal(await boardTab.getAttribute('aria-controls'), 'storyboard-director-panel-board')
+      const tabPanels = page.getByRole('tabpanel', { includeHidden: true })
+      assert.equal(await tabPanels.count(), 2)
+      assert.deepEqual(
+        (await tabPanels.evaluateAll((elements) => elements.map((element) => element.id))).sort(),
+        ['storyboard-director-panel-board', 'storyboard-director-panel-recipe'],
+      )
+      assert.equal(
+        await page.getByRole('tabpanel').getAttribute('aria-labelledby'),
+        'storyboard-director-tab-board',
+      )
+
+      await boardTab.focus()
+      await boardTab.press('ArrowRight')
+      assert.equal(await recipeTab.getAttribute('aria-selected'), 'true')
+      assert.equal(await recipeTab.evaluate((element) => document.activeElement === element), true)
+      await recipeTab.press('End')
+      assert.equal(await boardTab.getAttribute('aria-selected'), 'true')
+      await boardTab.press('Home')
+      assert.equal(await recipeTab.getAttribute('aria-selected'), 'true')
+      await recipeTab.press('ArrowLeft')
+      assert.equal(await boardTab.getAttribute('aria-selected'), 'true')
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      await recipeTab.click()
+      const reviewFilter = page.getByRole('button', { name: '全部' })
+      await reviewFilter.click()
+      assert.equal(await reviewFilter.getAttribute('aria-pressed'), 'true')
+      const reviewRegion = page.getByRole('button', { name: '审核', exact: true })
+      assert.equal(await reviewRegion.getAttribute('aria-pressed'), 'true')
+      const evidenceRegion = page.getByRole('button', { name: '证据', exact: true })
+      await evidenceRegion.click()
+      assert.equal(await reviewRegion.getAttribute('aria-pressed'), 'false')
+      assert.equal(await evidenceRegion.getAttribute('aria-pressed'), 'true')
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('styled dialog stays safe, contained, and responsive at required viewports', async () => {
+    const viewports = [
+      { width: 390, height: 844 },
+      { width: 768, height: 1024 },
+      { width: 1280, height: 720 },
+      { width: 1440, height: 900 },
+    ]
+
+    for (const viewport of viewports) {
+      const page = await renderPage(viewport)
+      try {
+        await mountRenderedBoard(page, 'matching')
+        const dialog = page.getByRole('dialog', { name: 'Storyboard Director' })
+        const box = await dialog.boundingBox()
+        assert.ok(box)
+        assert.ok(box.x >= 15.5, `${viewport.width}: left safe margin`)
+        assert.ok(box.y >= 15.5, `${viewport.width}: top safe margin`)
+        assert.ok(box.x + box.width <= viewport.width - 15.5, `${viewport.width}: right safe margin`)
+        assert.ok(box.y + box.height <= viewport.height - 15.5, `${viewport.width}: bottom safe margin`)
+
+        const overflow = await page.evaluate(() => ({
+          viewport: document.documentElement.scrollWidth - window.innerWidth,
+          dialog: (() => {
+            const element = document.querySelector('[role="dialog"]') as HTMLElement
+            return element.scrollWidth - element.clientWidth
+          })(),
+        }))
+        assert.ok(overflow.viewport <= 0, `${viewport.width}: viewport horizontal overflow`)
+        assert.ok(overflow.dialog <= 0, `${viewport.width}: dialog horizontal overflow`)
+
+        const detailDirection = await page.getByTestId('storyboard-board-detail').evaluate(
+          (element) => getComputedStyle(element).flexDirection,
+        )
+        assert.equal(detailDirection, viewport.width < 1024 ? 'column' : 'row')
+        assert.equal(
+          await page.getByTestId('storyboard-board-scroll').evaluate(
+            (element) => getComputedStyle(element).overflowY,
+          ),
+          'auto',
+        )
+
+        const contentFits = await dialog.locator('button:visible, label:visible').evaluateAll((elements) => (
+          elements.every((item) => {
+            const element = item as HTMLElement
+            return element.scrollWidth <= element.clientWidth + 1
+          })
+        ))
+        assert.equal(contentFits, true, `${viewport.width}: board text and button containment`)
+
+        const titleBox = await page.getByRole('heading', { name: '分镜导演' }).boundingBox()
+        const closeBox = await page.getByRole('button', { name: '关闭分镜导演' }).boundingBox()
+        const tabListBox = await page.getByRole('tablist', { name: '分镜导演视图' }).boundingBox()
+        assert.ok(titleBox && closeBox && tabListBox)
+        if (viewport.width === 390) {
+          assert.ok(closeBox.x > viewport.width / 2, 'mobile Close must be anchored right')
+          assert.ok(Math.abs(closeBox.y - titleBox.y) < 16, 'mobile title and Close share row one')
+          assert.ok(tabListBox.y >= titleBox.y + titleBox.height, 'mobile tabs occupy row two')
+          assert.equal(await page.getByText('本地已保留', { exact: true }).isVisible(), true)
+        } else if (viewport.width >= 1024) {
+          assert.ok(tabListBox.y < titleBox.y + titleBox.height, 'desktop header stays compact')
+        }
+
+        await page.getByTestId('storyboard-director-tab-recipe').click()
+        const recipePanel = page.locator('#storyboard-director-panel-recipe')
+        assert.equal(await recipePanel.isVisible(), true)
+        assert.ok(
+          await recipePanel.evaluate((element) => element.scrollWidth <= element.clientWidth),
+          `${viewport.width}: Recipe horizontal containment`,
+        )
+        assert.equal(
+          await recipePanel.locator('button:visible, label:visible').evaluateAll((elements) => (
+            elements.every((item) => {
+              const element = item as HTMLElement
+              return element.scrollWidth <= element.clientWidth + 1
+            })
+          )),
+          true,
+          `${viewport.width}: Recipe text and button containment`,
+        )
+        assert.deepEqual(renderedPageErrors.get(page), [])
+      } finally {
+        await page.close()
+      }
     }
   })
 })

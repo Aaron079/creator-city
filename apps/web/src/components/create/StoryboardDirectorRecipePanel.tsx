@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
   AlertTriangle,
@@ -192,13 +192,6 @@ export function getStoryboardDirectorRecipeActions(recipe: StoryboardDirectorRec
   }
 }
 
-const SAVE_LABELS = {
-  local: '本地已保留',
-  saving: '同步中',
-  cloud: '已同步到云端',
-  failed: '云端保存失败',
-} as const
-
 const STAGE_LABELS: Array<{ id: StoryboardDirectorStageId; label: string }> = [
   { id: 'source', label: '来源' },
   { id: 'scene-review', label: '场景' },
@@ -318,6 +311,7 @@ function DraftTextField({
   resetVersion: number
   onCommit: (value: string) => boolean
 }) {
+  const controlId = useId()
   const [draft, setDraft] = useState(() => createRecipeFieldDraft(value))
   const draftRef = useRef(draft)
   useEffect(() => {
@@ -338,6 +332,7 @@ function DraftTextField({
     }
   }
   const shared = {
+    id: controlId,
     'aria-label': label,
     value: draft.value,
     disabled,
@@ -347,17 +342,21 @@ function DraftTextField({
     onBlur: () => finish('blur'),
     className: 'w-full rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-5 text-white/80 outline-none transition placeholder:text-white/22 focus:border-cyan-200/35 disabled:cursor-not-allowed disabled:opacity-45',
   }
-  if (multiline) return <textarea {...shared} rows={2} />
   return (
-    <input
-      {...shared}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-        event.preventDefault()
-        finish('enter')
-        event.currentTarget.blur()
-      }}
-    />
+    <label htmlFor={controlId} className="block min-w-0 space-y-1">
+      <span className="block truncate text-[9px] font-semibold text-white/38">{label}</span>
+      {multiline ? <textarea {...shared} rows={2} /> : (
+        <input
+          {...shared}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            finish('enter')
+            event.currentTarget.blur()
+          }}
+        />
+      )}
+    </label>
   )
 }
 
@@ -376,6 +375,7 @@ function DraftSelectField({
   resetVersion: number
   onCommit: (value: string) => boolean
 }) {
+  const controlId = useId()
   const [draft, setDraft] = useState(() => createRecipeFieldDraft(value))
   const draftRef = useRef(draft)
   useEffect(() => {
@@ -394,26 +394,30 @@ function DraftSelectField({
     }
   }
   return (
-    <select
-      aria-label={label}
-      value={draft.value}
-      disabled={disabled}
-      onChange={(event) => {
-        const next = { ...draftRef.current, value: event.target.value }
-        draftRef.current = next
-        setDraft(next)
-      }}
-      onBlur={() => finish('blur')}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-        event.preventDefault()
-        finish('enter')
-        event.currentTarget.blur()
-      }}
-      className="h-9 w-full rounded-md border border-white/10 bg-[#15181c] px-2 text-[10px] text-white/68 outline-none transition focus:border-cyan-200/35 disabled:cursor-not-allowed disabled:opacity-45"
-    >
-      {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
-    </select>
+    <label htmlFor={controlId} className="block min-w-0 space-y-1">
+      <span className="block truncate text-[9px] font-semibold text-white/38">{label}</span>
+      <select
+        id={controlId}
+        aria-label={label}
+        value={draft.value}
+        disabled={disabled}
+        onChange={(event) => {
+          const next = { ...draftRef.current, value: event.target.value }
+          draftRef.current = next
+          setDraft(next)
+        }}
+        onBlur={() => finish('blur')}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+          event.preventDefault()
+          finish('enter')
+          event.currentTarget.blur()
+        }}
+        className="h-9 w-full rounded-md border border-white/10 bg-[#15181c] px-2 text-[10px] text-white/68 outline-none transition focus:border-cyan-200/35 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
+      </select>
+    </label>
   )
 }
 
@@ -558,7 +562,7 @@ function RecipeReviewEditor({
       <div className="flex flex-none items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
         <div className="grid min-w-0 flex-1 grid-cols-5 rounded-md border border-white/10 bg-white/[0.025] p-0.5" role="group" aria-label="审核筛选">
           {FILTERS.map((item) => (
-            <button key={item.id} type="button" onClick={() => setFilter(item.id)} className={`h-7 min-w-0 rounded px-1 text-[10px] font-medium transition ${filter === item.id ? 'bg-white/[0.11] text-white' : 'text-white/42 hover:text-white/70'}`}>
+            <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} className={`h-7 min-w-0 rounded px-1 text-[10px] font-medium transition ${filter === item.id ? 'bg-white/[0.11] text-white' : 'text-white/42 hover:text-white/70'}`}>
               {item.label}
             </button>
           ))}
@@ -606,7 +610,7 @@ function RecipeReviewEditor({
                       : null
                     return (
                       <div key={itemId} className="px-4 py-3">
-                        <div className="flex items-start gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                           <div className="min-w-0 flex-1 space-y-2">
                             <div className="flex min-h-6 items-center gap-2">
                               <span className="text-[9px] font-semibold text-white/28">{String(index + 1).padStart(2, '0')}</span>
@@ -638,7 +642,7 @@ function RecipeReviewEditor({
                                   <DraftTextField value={shotItem.subject} label="镜头主体" disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { subject: value })} />
                                 </div>
                                 <DraftTextField value={shotItem.action} label="镜头动作" multiline disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { action: value })} />
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                                   <DraftSelectField value={shotItem.suggestedShotSize} label="镜头景别" options={SHOT_SIZES} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { suggestedShotSize: value })} />
                                   <DraftSelectField value={shotItem.outputKind} label="输出类型" options={OUTPUT_KINDS} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { outputKind: value })} />
                                   <DraftSelectField value={String(shotItem.duration)} label="镜头时长" options={[["5", "5 秒"], ["10", "10 秒"]]} disabled={fieldsDisabled} resetVersion={draftResetVersion} onCommit={(value) => commitEdit('shot-review', itemId, { duration: Number(value) })} />
@@ -667,7 +671,7 @@ function RecipeReviewEditor({
       </div>
 
       {pendingAction ? (
-        <div className="flex flex-none items-center gap-3 border-t border-amber-300/20 bg-amber-300/[0.06] px-4 py-3">
+        <div className="flex flex-none flex-wrap items-center gap-3 border-t border-amber-300/20 bg-amber-300/[0.06] px-4 py-3">
           <AlertTriangle size={15} className="flex-none text-amber-200" aria-hidden="true" />
           <p className="min-w-0 flex-1 text-[10px] leading-5 text-amber-100/75">
             此修改将使 {changeImpactForStage(recipe, pendingAction.stageId).beatCount} 个节拍和 {changeImpactForStage(recipe, pendingAction.stageId).shotCount} 个镜头失效。
@@ -775,7 +779,6 @@ export function StoryboardDirectorRecipePanel({
   recipe,
   availableSources,
   availableRecipes,
-  saveState,
   legacyState,
   onStartRecipe,
   onOpenRecipe,
@@ -809,9 +812,8 @@ export function StoryboardDirectorRecipePanel({
   if (!recipe) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-10 flex-none items-center justify-between border-b border-white/[0.07] px-5">
+        <div className="flex h-10 flex-none items-center border-b border-white/[0.07] px-5">
           <p className="text-[10px] text-white/38">选择已有 Recipe，或从文本来源显式创建。</p>
-          <span className="text-[9px] font-semibold text-white/35">{SAVE_LABELS[saveState]}</span>
         </div>
         <RecipeSelection availableRecipes={availableRecipes} availableSources={availableSources} onOpenRecipe={onOpenRecipe} onStartRecipe={onStartRecipe} />
         {legacyState.status === 'valid' && legacyState.state.shots.length > 0 ? (
@@ -832,7 +834,6 @@ export function StoryboardDirectorRecipePanel({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex flex-none items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-2">
         <div className="min-w-0"><p className="truncate text-[11px] font-semibold text-white/72">{recipe.sourceNode.title}</p><p className="text-[9px] text-white/28">Recipe {recipe.recipeId}</p></div>
-        <span className={`flex-none text-[9px] font-semibold ${saveState === 'failed' ? 'text-rose-200' : saveState === 'cloud' ? 'text-emerald-200' : 'text-white/38'}`}>{SAVE_LABELS[saveState]}</span>
       </div>
 
       <div data-testid="director-intelligence" className="grid grid-cols-2 gap-px border-y border-white/10 bg-white/10 md:grid-cols-6">
@@ -855,13 +856,13 @@ export function StoryboardDirectorRecipePanel({
 
       <div className="grid flex-none grid-cols-3 border-b border-white/[0.07] p-1 lg:hidden" role="group" aria-label="Recipe 工作区">
         {([['stages', '阶段'], ['review', '审核'], ['evidence', '证据']] as const).map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setRegionState((current) => selectRecipeWorkspaceRegion(current, id))} className={`h-8 rounded-md text-[10px] font-semibold ${regionState.region === id ? 'bg-white/[0.1] text-white' : 'text-white/40'}`}>{label}</button>
+          <button key={id} type="button" aria-pressed={regionState.region === id} onClick={() => setRegionState((current) => selectRecipeWorkspaceRegion(current, id))} className={`h-8 rounded-md text-[10px] font-semibold ${regionState.region === id ? 'bg-white/[0.1] text-white' : 'text-white/40'}`}>{label}</button>
         ))}
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_300px]">
         <div className={`${regionState.region === 'stages' ? 'block' : 'hidden'} min-h-0 lg:block`}><StageNavigation recipe={recipe} selectedStage={selectedStage} onSelect={(stage) => { setSelectedStage(stage); setRegionState({ region: 'review' }) }} /></div>
-        <div className={`${regionState.region === 'review' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeReviewEditor recipe={recipe} selectedStage={selectedStage} onCommit={onCommitRecipe} onPendingActionChange={handlePendingActionChange} /></div>
+        <div className={`${regionState.region === 'review' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeReviewEditor key={recipe.recipeId} recipe={recipe} selectedStage={selectedStage} onCommit={onCommitRecipe} onPendingActionChange={handlePendingActionChange} /></div>
         <div className={`${regionState.region === 'evidence' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeEvidenceInspector recipe={recipe} selectedFindingId={selectedFindingId} onSelectFinding={setSelectedFindingId} /></div>
       </div>
 
