@@ -450,12 +450,43 @@ describe('StoryboardDirectorInteractionGate rendered boundary', () => {
     await dialog.waitFor({ state: 'detached' })
     await page.waitForTimeout(1150)
     await page.keyboard.up('Enter')
+    assert.deepEqual(await harnessCalls(page), ['keep-server'])
+
+    await page.evaluate(() => {
+      for (let index = 0; index < 2; index += 1) {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', {
+          bubbles: true,
+          code: 'Space',
+          key: ' ',
+          repeat: true,
+        }))
+      }
+    })
+    assert.deepEqual(await harnessCalls(page), ['keep-server'])
+
     await page.keyboard.up('Space')
     assert.deepEqual(await harnessCalls(page), ['keep-server'])
 
-    await page.keyboard.press('Delete')
+    await page.evaluate(() => {
+      for (const [code, key] of [['Space', ' '], ['Delete', 'Delete']]) {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', {
+          bubbles: true,
+          code,
+          key,
+        }))
+        document.body.dispatchEvent(new KeyboardEvent('keyup', {
+          bubbles: true,
+          code,
+          key,
+        }))
+      }
+    })
     assert.deepEqual(await harnessCalls(page), [
       'keep-server',
+      'document-key: ',
+      'window-key: ',
+      'document-keyup: ',
+      'window-keyup: ',
       'document-key:Delete',
       'window-key:Delete',
       'document-keyup:Delete',

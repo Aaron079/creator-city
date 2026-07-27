@@ -351,6 +351,8 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(interactionGate, /setAttribute\(['"]aria-hidden['"],\s*['"]true['"]\)/)
     assert.match(interactionGate, /document\.addEventListener\(['"]keydown['"],[\s\S]*true\)/)
     assert.match(interactionGate, /document\.addEventListener\(['"]keyup['"],[\s\S]*true\)/)
+    assert.match(interactionGate, /document\.addEventListener\(['"]keydown['"],\s*blockPendingKeyDown,\s*true\)/)
+    assert.match(interactionGate, /document\.removeEventListener\(['"]keydown['"],\s*blockPendingKeyDown,\s*true\)/)
     assert.doesNotMatch(interactionGate, /setTimeout\(/)
     assert.match(interactionGate, /window\.addEventListener\(['"]blur['"]/)
     assert.match(interactionGate, /document\.addEventListener\(['"]visibilitychange['"]/)

@@ -95,6 +95,7 @@ export function StoryboardDirectorInteractionGate({
     const stop = () => {
       if (stopped) return
       stopped = true
+      document.removeEventListener('keydown', blockPendingKeyDown, true)
       document.removeEventListener('keyup', blockPendingKeyUp, true)
       window.removeEventListener('blur', releaseAbandonedKeys)
       document.removeEventListener('visibilitychange', releaseHiddenKeys, true)
@@ -112,6 +113,11 @@ export function StoryboardDirectorInteractionGate({
     const releaseHiddenKeys = () => {
       if (document.visibilityState === 'hidden') releaseAll()
     }
+    const blockPendingKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!pendingKeyUps.has(event.code || event.key)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
     const blockPendingKeyUp = (event: globalThis.KeyboardEvent) => {
       const key = event.code || event.key
       if (!pendingKeyUps.has(key)) return
@@ -119,6 +125,7 @@ export function StoryboardDirectorInteractionGate({
       pendingKeyUps.delete(key)
       if (pendingKeyUps.size === 0) stop()
     }
+    document.addEventListener('keydown', blockPendingKeyDown, true)
     document.addEventListener('keyup', blockPendingKeyUp, true)
     window.addEventListener('blur', releaseAbandonedKeys)
     document.addEventListener('visibilitychange', releaseHiddenKeys, true)
