@@ -48,6 +48,12 @@ function restoreAttribute(element: HTMLElement, name: 'aria-hidden' | 'inert', v
   else element.setAttribute(name, value)
 }
 
+function enabledFocusableElements(container: HTMLElement | null) {
+  return Array.from(
+    container?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
+  ).filter((element) => !element.hasAttribute('disabled') && element.tabIndex >= 0)
+}
+
 export function StoryboardDirectorInteractionGate({
   children,
   recovery,
@@ -60,6 +66,7 @@ export function StoryboardDirectorInteractionGate({
   const dialogRef = useRef<HTMLDivElement>(null)
   const restoreButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
+  const pressedRecoveryKeysRef = useRef(new Set<string>())
   const [portalReady, setPortalReady] = useState(false)
   const recoveryOpen = recovery !== null
 
@@ -67,11 +74,19 @@ export function StoryboardDirectorInteractionGate({
     setPortalReady(true)
   }, [])
 
+  const focusRecoveryTarget = useCallback(() => {
+    const firstEnabledAction = enabledFocusableElements(dialogRef.current)[0]
+    if (firstEnabledAction) firstEnabledAction.focus()
+    else dialogRef.current?.focus()
+  }, [])
+
   useEffect(() => {
     if (!recoveryOpen || !portalReady) return
     const recoveryOverlay = recoveryOverlayRef.current
     if (!recoveryOverlay) return
     const accessibilityStates = new Map<HTMLElement, AccessibilityState>()
+    const pressedRecoveryKeys = pressedRecoveryKeysRef.current
+    pressedRecoveryKeys.clear()
 
     const isolateBodySibling = (element: HTMLElement) => {
       if (element === recoveryOverlay || accessibilityStates.has(element)) return
@@ -86,7 +101,7 @@ export function StoryboardDirectorInteractionGate({
     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null
-    restoreButtonRef.current?.focus()
+    focusRecoveryTarget()
     for (const child of Array.from(document.body.children)) {
       if (child instanceof HTMLElement) isolateBodySibling(child)
     }
@@ -112,17 +127,22 @@ export function StoryboardDirectorInteractionGate({
       if (isRecoveryTarget(event.target)) return
       event.preventDefault()
       event.stopImmediatePropagation()
-      restoreButtonRef.current?.focus()
+      focusRecoveryTarget()
+    }
+    const blockOutsideKeyUp = (event: globalThis.KeyboardEvent) => {
+      if (isRecoveryTarget(event.target)) return
+      event.stopImmediatePropagation()
     }
     const containFocus = (event: FocusEvent) => {
       if (isRecoveryTarget(event.target)) return
       event.stopImmediatePropagation()
-      restoreButtonRef.current?.focus()
+      focusRecoveryTarget()
     }
 
     document.addEventListener('pointerdown', blockOutsidePointer, true)
     document.addEventListener('click', blockOutsidePointer, true)
     document.addEventListener('keydown', blockOutsideKeyDown, true)
+    document.addEventListener('keyup', blockOutsideKeyUp, true)
     document.addEventListener('focusin', containFocus, true)
 
     return () => {
@@ -130,7 +150,25 @@ export function StoryboardDirectorInteractionGate({
       document.removeEventListener('pointerdown', blockOutsidePointer, true)
       document.removeEventListener('click', blockOutsidePointer, true)
       document.removeEventListener('keydown', blockOutsideKeyDown, true)
+      document.removeEventListener('keyup', blockOutsideKeyUp, true)
       document.removeEventListener('focusin', containFocus, true)
+      const pendingKeyUps = new Set(pressedRecoveryKeys)
+      pressedRecoveryKeys.clear()
+      if (pendingKeyUps.size > 0) {
+        let releaseTimer = 0
+        const releaseTrailingKeyUpGuard = () => {
+          document.removeEventListener('keyup', blockTrailingKeyUp, true)
+          window.clearTimeout(releaseTimer)
+        }
+        const blockTrailingKeyUp = (event: globalThis.KeyboardEvent) => {
+          if (!pendingKeyUps.has(event.code || event.key)) return
+          event.stopImmediatePropagation()
+          pendingKeyUps.delete(event.code || event.key)
+          if (pendingKeyUps.size === 0) releaseTrailingKeyUpGuard()
+        }
+        document.addEventListener('keyup', blockTrailingKeyUp, true)
+        releaseTimer = window.setTimeout(releaseTrailingKeyUpGuard, 1000)
+      }
       for (const [element, state] of accessibilityStates) {
         restoreAttribute(element, 'inert', state.inert)
         restoreAttribute(element, 'aria-hidden', state.ariaHidden)
@@ -141,7 +179,7 @@ export function StoryboardDirectorInteractionGate({
         window.requestAnimationFrame(() => previouslyFocused.focus())
       }
     }
-  }, [portalReady, recoveryOpen])
+  }, [focusRecoveryTarget, portalReady, recoveryOpen])
 
   const handleClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (recoveryOpen) {
@@ -185,15 +223,14 @@ export function StoryboardDirectorInteractionGate({
   }, [onBeforeInternalNavigation, recoveryOpen])
 
   const handleRecoveryKeyDownCapture = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    pressedRecoveryKeysRef.current.add(event.code || event.key)
     event.stopPropagation()
     if (event.key === 'Escape') {
       event.preventDefault()
       return
     }
     if (event.key !== 'Tab') return
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
-    ).filter((element) => !element.hasAttribute('disabled') && element.tabIndex >= 0)
+    const focusable = enabledFocusableElements(dialogRef.current)
     if (!focusable.length) {
       event.preventDefault()
       dialogRef.current?.focus()
@@ -208,6 +245,11 @@ export function StoryboardDirectorInteractionGate({
       event.preventDefault()
       first.focus()
     }
+  }, [])
+
+  const handleRecoveryKeyUpCapture = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    pressedRecoveryKeysRef.current.delete(event.code || event.key)
+    event.stopPropagation()
   }, [])
 
   const stageCRecoveryStatus = recovery?.stageCRecoveryStatus ?? 'none'
@@ -244,6 +286,7 @@ export function StoryboardDirectorInteractionGate({
           aria-describedby="canvas-draft-recovery-description"
           tabIndex={-1}
           onKeyDownCapture={handleRecoveryKeyDownCapture}
+          onKeyUpCapture={handleRecoveryKeyUpCapture}
         >
           <div id="canvas-draft-recovery-title" className="text-sm font-semibold text-white">
             发现本地画布草稿，是否恢复？

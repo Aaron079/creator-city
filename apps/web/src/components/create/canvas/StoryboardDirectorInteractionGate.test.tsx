@@ -149,8 +149,12 @@ function harnessSource() {
 
     const recordDocumentKey = (event) => calls.push('document-key:' + event.key)
     const recordWindowKey = (event) => calls.push('window-key:' + event.key)
+    const recordDocumentKeyUp = (event) => calls.push('document-keyup:' + event.key)
+    const recordWindowKeyUp = (event) => calls.push('window-keyup:' + event.key)
     document.addEventListener('keydown', recordDocumentKey)
     window.addEventListener('keydown', recordWindowKey)
+    document.addEventListener('keyup', recordDocumentKeyUp)
+    window.addEventListener('keyup', recordWindowKeyUp)
 
     function addBodyPortal(id, priorAriaHidden = null) {
       const portal = document.createElement('div')
@@ -189,6 +193,17 @@ function harnessSource() {
         render()
       },
       addBodyPortal,
+      disableRecoveryActions() {
+        document.querySelectorAll(
+          '[data-storyboard-director-recovery-overlay="true"] button',
+        ).forEach((button) => {
+          button.disabled = true
+        })
+      },
+      resolveRecovery() {
+        recovery = null
+        render()
+      },
       unmount() {
         root.unmount()
       },
@@ -235,6 +250,8 @@ type InteractionGateHarness = {
   openRecovery: (status: 'none' | 'merged' | 'blocked') => void
   mountGeometry: () => void
   addBodyPortal: (id: string, priorAriaHidden?: string | null) => void
+  disableRecoveryActions: () => void
+  resolveRecovery: () => void
   unmount: () => void
   calls: () => string[]
 }
@@ -413,6 +430,34 @@ describe('StoryboardDirectorInteractionGate rendered boundary', () => {
     await page.close()
   })
 
+  test('Tab containment falls back to the dialog when every recovery action becomes disabled', async () => {
+    const page = await renderPage()
+    await page.locator('#background-action').focus()
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.openRecovery('blocked'))
+    const dialog = page.getByRole('alertdialog')
+    await dialog.waitFor()
+    await page.getByRole('button', { name: '恢复草稿' }).focus()
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.disableRecoveryActions())
+
+    await page.keyboard.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('role')), 'alertdialog')
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('role')), 'alertdialog')
+    assert.deepEqual(await harnessCalls(page), [])
+
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.resolveRecovery())
+    await dialog.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.activeElement?.id === 'background-action')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-action')
+    await page.close()
+  })
+
   test('recovery isolates existing and late body portals and restores their prior accessibility state', async () => {
     const page = await renderPage()
     await page.evaluate(() => {
@@ -462,6 +507,8 @@ describe('StoryboardDirectorInteractionGate rendered boundary', () => {
       'late-portal-key:Delete',
       'document-key:Delete',
       'window-key:Delete',
+      'document-keyup:Delete',
+      'window-keyup:Delete',
     ])
     await page.close()
   })
