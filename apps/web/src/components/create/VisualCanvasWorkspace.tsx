@@ -103,8 +103,31 @@ import type { CanvasModalId } from '@/components/canvas/modal/canvasModalTypes'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
 import { StoryboardPreviewPanel } from '@/components/create/StoryboardPreviewPanel'
 import { StoryboardDirectorPanel } from '@/components/create/StoryboardDirectorPanel'
-import { readDirectorState, writeDirectorState, createShotCard, addNodeToShot } from '@/lib/storyboard/director'
+import { readDirectorState, readLegacyDirectorState, writeDirectorState, createShotCard, addNodeToShot } from '@/lib/storyboard/director'
 import type { StoryboardState } from '@/lib/storyboard/types'
+import {
+  createRecipeMaterializationIdentity,
+  createStoryboardDirectorRecipeIdentity,
+} from '@/lib/storyboard/recipe/identity'
+import {
+  readStoryboardDirectorRecipe,
+  storyboardDirectorRecipeMetadata,
+} from '@/lib/storyboard/recipe/persistence'
+import {
+  createStoryboardDirectorRecipe,
+  markRecipeSourceFreshness,
+  markRecipeSourceMissing,
+} from '@/lib/storyboard/recipe/state-machine'
+import type { StoryboardDirectorRecipe } from '@/lib/storyboard/recipe/types'
+import {
+  importLegacyShotBoard,
+  planStoryboardDirectorControlNode,
+  planStoryboardDirectorDraftNodes,
+  planStoryboardDirectorGroupedNodes,
+  planStoryboardDirectorShotBoardSync,
+  recordStoryboardDirectorReceipts,
+  storyboardDirectorRecipeSummary,
+} from '@/components/create/canvas/skills/storyboardDirectorMaterialization'
 import { ProjectAssetsPanel, type ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 import {
@@ -381,6 +404,22 @@ type VisualCanvasNode = CanvasNodeCardNode & {
   resultAudioUrl?: string
   resultText?: string
   metadataJson?: unknown
+}
+
+type LiveStoryboardRecipeContext = {
+  controlNode: VisualCanvasNode
+  sourceNode: VisualCanvasNode
+  recipe: StoryboardDirectorRecipe
+}
+
+function creatorSkillSourceSnapshot(node: VisualCanvasNode): CreatorSkillSourceNode {
+  return {
+    id: node.id,
+    kind: 'text',
+    title: node.title,
+    prompt: node.prompt ?? '',
+    ...(typeof node.resultText === 'string' ? { resultText: node.resultText } : {}),
+  }
 }
 
 function nodeHasMediaResult(node: VisualCanvasNode): boolean {
@@ -2567,6 +2606,9 @@ export function VisualCanvasWorkspace({
   const [generationTasksOpen, setGenerationTasksOpen] = useState(false)
   const [storyboardPreviewOpen, setStoryboardPreviewOpen] = useState(false)
   const [storyboardDirectorOpen, setStoryboardDirectorOpen] = useState(false)
+  const [activeDirectorControlNodeId, setActiveDirectorControlNodeId] = useState('')
+  const [storyboardDirectorOpenedFromRecipe, setStoryboardDirectorOpenedFromRecipe] = useState(false)
+  const [storyboardDirectorMaterializationLocked, setStoryboardDirectorMaterializationLocked] = useState(false)
   const [p0MediaDebugOpen, setP0MediaDebugOpen] = useState(false)
   const [directorState, setDirectorState] = useState<StoryboardState>({ version: '1', shots: [], updatedAt: '' })
   const [directorActiveShotId, setDirectorActiveShotId] = useState<string | null>(null)
@@ -2667,6 +2709,43 @@ export function VisualCanvasWorkspace({
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+
+  const availableDirectorRecipes = useMemo(() => nodes.flatMap((node) => {
+    const read = readStoryboardDirectorRecipe(node.metadataJson)
+    return read.status === 'valid'
+      ? [{
+          nodeId: node.id,
+          recipeId: read.recipe.recipeId,
+          title: node.title,
+          status: read.recipe.activeStage,
+        }]
+      : []
+  }), [nodes])
+
+  const activeDirectorRecipe = useMemo(() => {
+    const node = nodes.find((item) => item.id === activeDirectorControlNodeId)
+    const read = readStoryboardDirectorRecipe(node?.metadataJson)
+    return read.status === 'valid' ? read.recipe : null
+  }, [activeDirectorControlNodeId, nodes])
+
+  const availableDirectorSources = useMemo(() => nodes.flatMap((node) => (
+    node.kind === 'text'
+      && readStoryboardDirectorRecipe(node.metadataJson).status !== 'valid'
+      ? [{ id: node.id, title: node.title }]
+      : []
+  )), [nodes])
+
+  const effectiveDirectorState = activeDirectorRecipe
+    ? activeDirectorRecipe.storyboard
+    : directorState
+  const legacyDirectorState = readLegacyDirectorState(projectId)
+  const directorRecipeSaveState = saveStatus === 'saving'
+    ? 'saving' as const
+    : saveStatus === 'saved'
+      ? 'cloud' as const
+      : saveStatus === 'failed'
+        ? 'failed' as const
+        : 'local' as const
   const panStartRef = useRef({
     pointerId: 0,
     clientX: 0,
@@ -2769,8 +2848,9 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     if (!directorState.updatedAt) return
+    if (activeDirectorRecipe) return
     writeDirectorState(directorState, projectId)
-  }, [directorState, projectId])
+  }, [activeDirectorRecipe, directorState, projectId])
 
   useEffect(() => {
     const stopAutosave = () => {
@@ -5084,6 +5164,405 @@ export function VisualCanvasWorkspace({
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
+
+  const handleOpenGlobalStoryboardDirector = useCallback(() => {
+    setStoryboardDirectorOpenedFromRecipe(false)
+    setStoryboardDirectorOpen(true)
+  }, [])
+
+  const handleStartStoryboardDirectorRecipe = useCallback((sourceNodeId: string) => {
+    const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
+    if (!sourceNode || sourceNode.kind !== 'text' || !projectId || !workflowId) return
+    try {
+      const recipe = createStoryboardDirectorRecipe(
+        { projectId, workflowId },
+        creatorSkillSourceSnapshot(sourceNode),
+        new Date().toISOString(),
+      )
+      const planned = planStoryboardDirectorControlNode(recipe, latestNodesRef.current)
+      if (planned.status === 'conflict') {
+        showCanvasFeedback('分镜导演状态冲突，请检查现有控制节点。')
+        return
+      }
+      if (planned.status === 'existing') {
+        setActiveDirectorControlNodeId(planned.nodeId)
+      } else {
+        const controlNode = createNode('text', {
+          ...planned.plan,
+          parentNodeId: sourceNode.id,
+        })
+        setActiveDirectorControlNodeId(controlNode.id)
+        flushLocalSnapshot()
+        scheduleCanvasSave(0)
+      }
+      setStoryboardDirectorMaterializationLocked(false)
+      setStoryboardDirectorOpenedFromRecipe(true)
+      setStoryboardDirectorOpen(true)
+    } catch {
+      showCanvasFeedback('无法从当前文本创建分镜导演 Recipe，请检查来源内容。')
+    }
+  }, [createNode, flushLocalSnapshot, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+
+  const handleOpenStoryboardDirectorRecipe = useCallback((controlNodeId: string) => {
+    const controlNode = latestNodesRef.current.find((node) => node.id === controlNodeId)
+    const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+    if (!controlNode || read.status !== 'valid') {
+      showCanvasFeedback('分镜导演 Recipe 无效或已不存在。')
+      return
+    }
+    setActiveDirectorControlNodeId(controlNode.id)
+    setStoryboardDirectorMaterializationLocked(false)
+    setStoryboardDirectorOpenedFromRecipe(true)
+    setStoryboardDirectorOpen(true)
+  }, [showCanvasFeedback])
+
+  const handleCommitStoryboardDirectorRecipe = useCallback((nextRecipe: StoryboardDirectorRecipe) => {
+    const controlNode = latestNodesRef.current.find((node) => node.id === activeDirectorControlNodeId)
+    const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+    if (!controlNode
+      || read.status !== 'valid'
+      || read.recipe.recipeId !== nextRecipe.recipeId
+      || read.recipe.projectId !== nextRecipe.projectId
+      || read.recipe.workflowId !== nextRecipe.workflowId
+      || read.recipe.sourceNode.id !== nextRecipe.sourceNode.id
+      || nextRecipe.projectId !== projectId
+      || nextRecipe.workflowId !== workflowId) {
+      showCanvasFeedback('分镜导演上下文已变化，本次修改未保存。')
+      return
+    }
+    const liveSource = latestNodesRef.current.find((node) => node.id === nextRecipe.sourceNode.id)
+    const freshRecipe = liveSource?.kind === 'text'
+      ? markRecipeSourceFreshness(nextRecipe, creatorSkillSourceSnapshot(liveSource), new Date().toISOString())
+      : markRecipeSourceMissing(nextRecipe, new Date().toISOString())
+    handleNodePatch(controlNode.id, {
+      prompt: storyboardDirectorRecipeSummary(freshRecipe),
+      metadataJson: {
+        ...metadataRecord(controlNode.metadataJson),
+        ...storyboardDirectorRecipeMetadata(freshRecipe),
+      },
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+  }, [activeDirectorControlNodeId, flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+
+  const currentStoryboardRecipeContext = useCallback((): LiveStoryboardRecipeContext | null => {
+    const controlNode = latestNodesRef.current.find((node) => node.id === activeDirectorControlNodeId)
+    const read = readStoryboardDirectorRecipe(controlNode?.metadataJson)
+    if (!controlNode || read.status !== 'valid') return null
+    const sourceNode = latestNodesRef.current.find((node) => node.id === read.recipe.sourceNode.id)
+    if (!sourceNode || sourceNode.kind !== 'text') return null
+    return { controlNode, sourceNode, recipe: read.recipe }
+  }, [activeDirectorControlNodeId])
+
+  const isLiveStoryboardRecipeContext = useCallback((context: LiveStoryboardRecipeContext) => {
+    if (context.recipe.projectId !== projectId || context.recipe.workflowId !== workflowId) return false
+    const identity = createStoryboardDirectorRecipeIdentity(
+      { projectId: context.recipe.projectId, workflowId: context.recipe.workflowId },
+      creatorSkillSourceSnapshot(context.sourceNode),
+    )
+    return identity.recipeId === context.recipe.recipeId
+      && identity.sourceFingerprint === context.recipe.sourceFingerprint
+  }, [projectId, workflowId])
+
+  const receiptFromCreatedPlan = useCallback((
+    recipe: StoryboardDirectorRecipe,
+    plan: GroupedSkillNodePlan | SceneNodeMaterializationPlan,
+    targetId: string,
+  ) => {
+    const resultType = plan.metadataJson.creatorSkill.resultType
+    const kind = resultType === 'shot-plan'
+      ? 'shot-plan' as const
+      : resultType === 'narrative-beat-map'
+        ? 'beat' as const
+        : 'scene' as const
+    return {
+      identity: createRecipeMaterializationIdentity(
+        recipe.recipeId,
+        kind,
+        plan.metadataJson.creatorSkill.approvedArtifact.artifactId,
+        plan.resultId,
+      ),
+      kind,
+      resultId: plan.resultId,
+      targetId,
+    }
+  }, [])
+
+  const handleMaterializeStoryboardDirectorRecipe = useCallback((
+    kinds: Array<'scene' | 'beat' | 'shot-plan'>,
+  ) => {
+    if (storyboardDirectorMaterializationLocked) {
+      showCanvasFeedback('上次落地仅部分完成，请先检查已创建节点。')
+      return
+    }
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe)
+      showCanvasFeedback('来源已变化，审核已刷新，本次未创建节点。')
+      return
+    }
+
+    let plans: ReturnType<typeof planStoryboardDirectorGroupedNodes>
+    try {
+      plans = planStoryboardDirectorGroupedNodes(
+        context.recipe,
+        kinds,
+        latestNodesRef.current,
+      )
+    } catch {
+      showCanvasFeedback('分镜导演落地规划存在冲突，本次未创建节点。')
+      return
+    }
+    const occupancy = [...latestNodesRef.current]
+    const completed: ReturnType<typeof receiptFromCreatedPlan>[] = []
+    let failed = false
+    try {
+      for (const plan of plans.create) {
+        const size = getNodeSize('text')
+        const position = resolveNonOverlappingPosition({
+          x: context.controlNode.x + context.controlNode.width + 120,
+          y: context.controlNode.y,
+          width: size.width,
+          height: size.height,
+        }, occupancy)
+        const node = createNode('text', {
+          ...plan,
+          parentNodeId: context.controlNode.id,
+          position,
+        })
+        occupancy.push(node)
+        completed.push(receiptFromCreatedPlan(context.recipe, plan, node.id))
+      }
+    } catch {
+      failed = true
+    } finally {
+      if (completed.length) {
+        handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+          context.recipe,
+          completed,
+          new Date().toISOString(),
+        ))
+      }
+      if (failed) {
+        setStoryboardDirectorMaterializationLocked(true)
+        showCanvasFeedback(`已创建 ${completed.length} 个节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
+      } else {
+        setStoryboardDirectorMaterializationLocked(false)
+        showCanvasFeedback(`已创建 ${completed.length} 个节点，跳过 ${plans.duplicates.length} 个重复项。`)
+      }
+    }
+  }, [
+    createNode,
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    receiptFromCreatedPlan,
+    showCanvasFeedback,
+    storyboardDirectorMaterializationLocked,
+  ])
+
+  const handleSyncStoryboardDirectorShotBoard = useCallback(() => {
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe)
+      showCanvasFeedback('来源已变化，镜头板未同步。')
+      return
+    }
+    try {
+      const planned = planStoryboardDirectorShotBoardSync(
+        context.recipe,
+        context.recipe.storyboard,
+        new Date().toISOString(),
+      )
+      handleCommitStoryboardDirectorRecipe({
+        ...context.recipe,
+        storyboard: planned.state,
+      })
+      showCanvasFeedback(`镜头板已同步：新增 ${planned.createdShotIds.length}，更新 ${planned.updatedShotIds.length}。`)
+    } catch {
+      showCanvasFeedback('镜头板同步条件不足或存在冲突。')
+    }
+  }, [
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    showCanvasFeedback,
+  ])
+
+  const handleCreateStoryboardDirectorDraftNodes = useCallback(() => {
+    if (storyboardDirectorMaterializationLocked) {
+      showCanvasFeedback('上次落地仅部分完成，请先检查已创建节点。')
+      return
+    }
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe)
+      showCanvasFeedback('来源已变化，草稿节点未创建。')
+      return
+    }
+
+    let plans: ReturnType<typeof planStoryboardDirectorDraftNodes>
+    try {
+      plans = planStoryboardDirectorDraftNodes(context.recipe, latestNodesRef.current)
+    } catch {
+      showCanvasFeedback('草稿节点规划条件不足或存在冲突。')
+      return
+    }
+    const occupancy = [...latestNodesRef.current]
+    const completed: Array<{
+      identity: string
+      kind: 'draft-node'
+      resultId: string
+      targetId: string
+    }> = []
+    let failed = false
+    try {
+      for (const plan of plans.create) {
+        const size = getNodeSize(plan.kind)
+        const position = resolveNonOverlappingPosition({
+          x: context.controlNode.x + context.controlNode.width + 120,
+          y: context.controlNode.y,
+          width: size.width,
+          height: size.height,
+        }, occupancy)
+        const node = createNode(plan.kind, {
+          title: plan.title,
+          prompt: plan.prompt,
+          metadataJson: plan.metadataJson,
+          parentNodeId: context.controlNode.id,
+          position,
+        })
+        occupancy.push(node)
+        completed.push({
+          identity: plan.identity,
+          kind: 'draft-node',
+          resultId: plan.resultId,
+          targetId: node.id,
+        })
+      }
+    } catch {
+      failed = true
+    } finally {
+      if (completed.length) {
+        handleCommitStoryboardDirectorRecipe(recordStoryboardDirectorReceipts(
+          context.recipe,
+          completed,
+          new Date().toISOString(),
+        ))
+      }
+      if (failed) {
+        setStoryboardDirectorMaterializationLocked(true)
+        showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，${plans.create.length - completed.length} 个未创建。请检查后再继续。`)
+      } else {
+        setStoryboardDirectorMaterializationLocked(false)
+        showCanvasFeedback(`已创建 ${completed.length} 个草稿节点，跳过 ${plans.duplicates.length} 个重复项。`)
+      }
+    }
+  }, [
+    createNode,
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    showCanvasFeedback,
+    storyboardDirectorMaterializationLocked,
+  ])
+
+  const handleImportLegacyStoryboardDirectorState = useCallback(() => {
+    if (!activeDirectorRecipe || activeDirectorRecipe.storyboard.shots.length > 0) {
+      showCanvasFeedback('云端镜头板非空，不能导入旧版状态。')
+      return
+    }
+    const context = currentStoryboardRecipeContext()
+    if (!context || !isLiveStoryboardRecipeContext(context)) {
+      showCanvasFeedback('分镜导演上下文已变化，旧版状态未导入。')
+      return
+    }
+    const legacy = readLegacyDirectorState(projectId)
+    if (legacy.status !== 'valid') {
+      showCanvasFeedback('没有可导入的旧版镜头板。')
+      return
+    }
+    try {
+      handleCommitStoryboardDirectorRecipe(importLegacyShotBoard(
+        context.recipe,
+        legacy.state,
+        new Date().toISOString(),
+      ))
+      showCanvasFeedback('旧版镜头板已导入云端 Recipe。')
+    } catch {
+      showCanvasFeedback('旧版镜头板无法导入当前 Recipe。')
+    }
+  }, [
+    activeDirectorRecipe,
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    projectId,
+    showCanvasFeedback,
+  ])
+
+  const focusStoryboardDirectorSource = useCallback((sourceNodeId: string) => {
+    const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
+    if (!sourceNode) return
+    setActiveNodeId(sourceNode.id)
+    setEditingNodeId(null)
+  }, [])
+
+  // Storyboard Director Recipe lifecycle
+  useEffect(() => {
+    if (!activeDirectorControlNodeId) return
+    if (nodes.some((node) => node.id === activeDirectorControlNodeId)) return
+    setActiveDirectorControlNodeId('')
+    setStoryboardDirectorOpenedFromRecipe(false)
+    setStoryboardDirectorMaterializationLocked(false)
+    setStoryboardDirectorOpen(false)
+  }, [activeDirectorControlNodeId, nodes])
+
+  useEffect(() => {
+    setActiveDirectorControlNodeId('')
+    setStoryboardDirectorOpenedFromRecipe(false)
+    setStoryboardDirectorMaterializationLocked(false)
+    setStoryboardDirectorOpen(false)
+  }, [projectId, workflowId])
+
+  useEffect(() => {
+    const missingSources = nodes.flatMap((controlNode) => {
+      const read = readStoryboardDirectorRecipe(controlNode.metadataJson)
+      if (read.status !== 'valid'
+        || read.recipe.findings.some((finding) => finding.code === 'SOURCE_NODE_MISSING')) return []
+      const sourceExists = nodes.some((node) => (
+        node.id === read.recipe.sourceNode.id && node.kind === 'text'
+      ))
+      return sourceExists ? [] : [{ controlNode, recipe: read.recipe }]
+    })
+    if (!missingSources.length) return
+    const now = new Date().toISOString()
+    for (const { controlNode, recipe } of missingSources) {
+      const missingRecipe = markRecipeSourceMissing(recipe, now)
+      handleNodePatch(controlNode.id, {
+        prompt: storyboardDirectorRecipeSummary(missingRecipe),
+        metadataJson: {
+          ...metadataRecord(controlNode.metadataJson),
+          ...storyboardDirectorRecipeMetadata(missingRecipe),
+        },
+      })
+    }
+    flushLocalSnapshot()
+    scheduleCanvasSave()
+  }, [flushLocalSnapshot, handleNodePatch, nodes, scheduleCanvasSave])
+  // End Storyboard Director Recipe lifecycle
 
   const handleSaveNodeAnnotations = useCallback((nodeId: string, annotations: CanvasAnnotationState) => {
     commitNodes((current) => current.map((node) => {
@@ -8892,11 +9371,11 @@ export function VisualCanvasWorkspace({
                       <button
                         type="button"
                         className="canvas-topbar-more-item"
-                        onClick={() => setStoryboardDirectorOpen(true)}
+                        onClick={handleOpenGlobalStoryboardDirector}
                         title="打开分镜导演"
                       >
                         分镜
-                        {directorState.shots.length > 0 ? <span className="canvas-generation-tasks-badge">{directorState.shots.length}</span> : null}
+                        {effectiveDirectorState.shots.length > 0 ? <span className="canvas-generation-tasks-badge">{effectiveDirectorState.shots.length}</span> : null}
                       </button>
                     </>
                   ) : null}
@@ -10218,6 +10697,7 @@ export function VisualCanvasWorkspace({
                 ? () => openShotListBuilderForNode(activeNode)
                 : undefined
             }
+            onOpenStoryboardDirector={() => handleStartStoryboardDirectorRecipe(activeNode.id)}
             onOpenRemoveBackground={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.removeBackground
                 ? () => openCanvasPanel('remove-background')
@@ -10275,8 +10755,14 @@ export function VisualCanvasWorkspace({
 
           <StoryboardDirectorPanel
             open={storyboardDirectorOpen}
-            state={directorState}
+            state={effectiveDirectorState}
             activeShotId={directorActiveShotId}
+            recipe={activeDirectorRecipe}
+            openedFromRecipe={storyboardDirectorOpenedFromRecipe}
+            availableSources={availableDirectorSources}
+            availableRecipes={availableDirectorRecipes}
+            saveState={directorRecipeSaveState}
+            legacyState={legacyDirectorState}
             projectId={projectId}
             canvasNodes={nodes.map((n) => ({
               id: n.id,
@@ -10285,8 +10771,25 @@ export function VisualCanvasWorkspace({
               resultImageUrl: n.resultImageUrl,
               resultVideoUrl: n.resultVideoUrl,
             }))}
-            onStateChange={(next) => setDirectorState(next)}
+            onStateChange={(next) => {
+              if (activeDirectorRecipe) {
+                handleCommitStoryboardDirectorRecipe({
+                  ...activeDirectorRecipe,
+                  storyboard: next,
+                })
+              } else {
+                setDirectorState(next)
+              }
+            }}
             onActiveShotChange={(id) => setDirectorActiveShotId(id)}
+            onStartRecipe={handleStartStoryboardDirectorRecipe}
+            onOpenRecipe={handleOpenStoryboardDirectorRecipe}
+            onCommitRecipe={handleCommitStoryboardDirectorRecipe}
+            onFocusSource={focusStoryboardDirectorSource}
+            onMaterializeGrouped={handleMaterializeStoryboardDirectorRecipe}
+            onSyncShotBoard={handleSyncStoryboardDirectorShotBoard}
+            onCreateDraftNodes={handleCreateStoryboardDirectorDraftNodes}
+            onImportLegacy={handleImportLegacyStoryboardDirectorState}
             onClose={() => setStoryboardDirectorOpen(false)}
           />
         </>
