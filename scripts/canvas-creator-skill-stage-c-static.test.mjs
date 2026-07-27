@@ -130,7 +130,8 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.doesNotMatch(start, /handleNodePatch\(\s*sourceNode\.id/)
     assert.match(commit, /handleNodePatch\(\s*controlNode\.id/)
     assert.match(commit, /\.\.\.metadataRecord\(controlNode\.metadataJson\)/)
-    assert.equal(count(commit, /flushLocalSnapshot\(\)/g), 1)
+    assert.equal(count(commit, /flushSnapshot:\s*flushLocalSnapshot/g), 1)
+    assert.doesNotMatch(commit, /flushLocalSnapshot\(\)/)
     assert.equal(count(commit, /scheduleCanvasSave\(/g), 1)
     assert.match(commit, /scheduleCanvasSave\([^)]*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}/)
   })
@@ -313,6 +314,9 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
   test('Stage C persistence executes one snapshot and one save transition', () => {
     assert.match(saveScheduling, /snapshot:\s*['"]flush['"]\s*\|\s*['"]already-flushed['"]/)
     assert.match(saveScheduling, /options\?\.snapshot\s*!==\s*['"]already-flushed['"]/)
+    assert.match(saveScheduling, /runBoundedCanvasPersistence/)
+    assert.match(saveScheduling, /hasPriorMutation/)
+    assert.match(saveScheduling, /completeEmergencyCanvasAcknowledgment/)
     const schedule = namedBlock(
       workspace,
       'const scheduleCanvasSave',
@@ -321,13 +325,42 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.match(schedule, /completeLocalCanvasSaveSchedule/)
     assert.equal(count(schedule, /flushSnapshot:\s*flushLocalSnapshot/g), 1)
     assert.doesNotMatch(schedule, /flushLocalSnapshot\(\)/)
-    for (const [start, end] of [
-      ['const handleStartStoryboardDirectorRecipe', 'const handleOpenStoryboardDirectorRecipe'],
-      ['const handleCommitStoryboardDirectorRecipe', 'const handleMaterializeStoryboardDirectorRecipe'],
-    ]) {
-      const block = namedBlock(workspace, start, end)
-      if (!block.includes('flushLocalSnapshot()')) continue
-      assert.match(block, /scheduleCanvasSave\([^)]*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}/)
-    }
+    const commit = namedBlock(
+      workspace,
+      'const handleCommitStoryboardDirectorRecipe',
+      'const currentStoryboardRecipeContext',
+    )
+    assert.match(commit, /runBoundedCanvasPersistence/)
+    assert.match(commit, /hasPriorMutation:\s*options\?\.hasPriorCanvasMutation/)
+    assert.match(commit, /markMutation\(\)[\s\S]*handleNodePatch/)
+    assert.equal(count(commit, /flushSnapshot:\s*flushLocalSnapshot/g), 1)
+    assert.equal(count(commit, /scheduleCanvasSave\(\s*0,\s*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}\s*\)/g), 1)
+    const grouped = namedBlock(
+      workspace,
+      'const handleMaterializeStoryboardDirectorRecipe',
+      'const handleSyncStoryboardDirectorShotBoard',
+    )
+    const drafts = namedBlock(
+      workspace,
+      'const handleCreateStoryboardDirectorDraftNodes',
+      'const handleImportLegacyStoryboardDirectorState',
+    )
+    assert.match(grouped, /hasPriorCanvasMutation:\s*creationAttempted/)
+    assert.match(drafts, /hasPriorCanvasMutation:\s*creationAttempted/)
+    const emergencyAck = namedBlock(
+      workspace,
+      'const handleAcknowledgeEmergencyDirectorPartialBatch',
+      'const focusStoryboardDirectorSource',
+    )
+    assert.match(emergencyAck, /completeEmergencyCanvasAcknowledgment/)
+    assert.match(emergencyAck, /scheduleCanvasSave\(\s*0,\s*\{\s*snapshot:\s*['"]already-flushed['"]\s*\}\s*\)/)
+    assert.match(emergencyAck, /if\s*\(!acknowledged\)[\s\S]*return[\s\S]*setEmergencyDirectorPartialBatch/)
+  })
+
+  test('Director buffering does not add a shot title editor', () => {
+    assert.doesNotMatch(directorPanel, /ariaLabel=["']镜头标题["']/)
+    assert.doesNotMatch(directorPanel, /FieldRow label=["']镜头标题["']/)
+    assert.match(directorPanel, /ariaLabel=["']情绪["']/)
+    assert.match(directorPanel, /ariaLabel=["']导演备注["']/)
   })
 })

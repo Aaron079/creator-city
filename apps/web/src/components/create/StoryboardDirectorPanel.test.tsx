@@ -1005,15 +1005,16 @@ describe('Storyboard Director Recipe actions', () => {
 })
 
 describe('Storyboard Director rendered interactions', () => {
-  test('Recipe board text buffers twenty characters until blur and Enter does not double commit', async () => {
+  test('Recipe board text buffers existing fields until blur and Enter does not double commit', async () => {
     const page = await renderPage()
     try {
       await mountRenderedBoard(page, 'matching')
-      const title = page.getByLabel('镜头标题')
-      await title.press('End')
-      await title.pressSequentially('abcdefghijklmnopqrst')
+      assert.equal(await page.getByLabel('镜头标题').count(), 0)
+      const mood = page.getByLabel('情绪')
+      await mood.press('End')
+      await mood.pressSequentially('abcdefghijklmnopqrst')
       assert.deepEqual(await renderedCalls(page), [])
-      await title.blur()
+      await mood.blur()
       assert.deepEqual(await renderedCalls(page), ['state-change'])
 
       await mountRenderedBoard(page, 'matching')
@@ -1029,13 +1030,14 @@ describe('Storyboard Director rendered interactions', () => {
     }
   })
 
-  test('manual board text stays immediate while Recipe select and number changes commit once', async () => {
+  test('manual preexisting board text stays immediate while Recipe select and number changes commit once', async () => {
     const page = await renderPage()
     try {
       await mountRenderedBoard(page, 'manual')
-      const title = page.getByLabel('镜头标题')
-      await title.press('End')
-      await title.pressSequentially('abcdefghijklmnopqrst')
+      assert.equal(await page.getByLabel('镜头标题').count(), 0)
+      const mood = page.getByLabel('情绪')
+      await mood.press('End')
+      await mood.pressSequentially('abcdefghijklmnopqrst')
       assert.equal((await renderedCalls(page)).length, 20)
 
       await mountRenderedBoard(page, 'matching')

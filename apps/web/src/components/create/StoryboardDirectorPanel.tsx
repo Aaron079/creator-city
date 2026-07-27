@@ -650,17 +650,6 @@ export function StoryboardDirectorPanel({
                 ) : null}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <FieldRow label="镜头标题">
-                    <BoardTextControl
-                      key={`${activeShot.id}:title`}
-                      value={activeShot.title}
-                      mode={boardCommitMode}
-                      ariaLabel="镜头标题"
-                      placeholder="例: S01"
-                      onCommit={(value) => updateShot(activeShot.id, { title: value })}
-                    />
-                  </FieldRow>
-
                   <FieldRow label="景别">
                     <select
                       aria-label="景别"
