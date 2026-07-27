@@ -67,6 +67,8 @@ export function StoryboardDirectorInteractionGate({
   const restoreButtonRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
   const pressedRecoveryKeysRef = useRef(new Set<string>())
+  const pendingRecoveryKeyUpsRef = useRef(new Set<string>())
+  const stopPendingKeyReleaseGuardRef = useRef<(() => void) | null>(null)
   const [portalReady, setPortalReady] = useState(false)
   const recoveryOpen = recovery !== null
 
@@ -80,12 +82,56 @@ export function StoryboardDirectorInteractionGate({
     else dialogRef.current?.focus()
   }, [])
 
+  const stopPendingKeyReleaseGuard = useCallback(() => {
+    const stop = stopPendingKeyReleaseGuardRef.current
+    stopPendingKeyReleaseGuardRef.current = null
+    stop?.()
+  }, [])
+
+  const ensurePendingKeyReleaseGuard = useCallback(() => {
+    const pendingKeyUps = pendingRecoveryKeyUpsRef.current
+    if (pendingKeyUps.size === 0 || stopPendingKeyReleaseGuardRef.current) return
+    let stopped = false
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      document.removeEventListener('keyup', blockPendingKeyUp, true)
+      window.removeEventListener('blur', releaseAbandonedKeys)
+      document.removeEventListener('visibilitychange', releaseHiddenKeys, true)
+      if (stopPendingKeyReleaseGuardRef.current === stop) {
+        stopPendingKeyReleaseGuardRef.current = null
+      }
+    }
+    const releaseAll = () => {
+      pendingKeyUps.clear()
+      stop()
+    }
+    const releaseAbandonedKeys = () => {
+      releaseAll()
+    }
+    const releaseHiddenKeys = () => {
+      if (document.visibilityState === 'hidden') releaseAll()
+    }
+    const blockPendingKeyUp = (event: globalThis.KeyboardEvent) => {
+      const key = event.code || event.key
+      if (!pendingKeyUps.has(key)) return
+      event.stopImmediatePropagation()
+      pendingKeyUps.delete(key)
+      if (pendingKeyUps.size === 0) stop()
+    }
+    document.addEventListener('keyup', blockPendingKeyUp, true)
+    window.addEventListener('blur', releaseAbandonedKeys)
+    document.addEventListener('visibilitychange', releaseHiddenKeys, true)
+    stopPendingKeyReleaseGuardRef.current = stop
+  }, [])
+
   useEffect(() => {
     if (!recoveryOpen || !portalReady) return
     const recoveryOverlay = recoveryOverlayRef.current
     if (!recoveryOverlay) return
     const accessibilityStates = new Map<HTMLElement, AccessibilityState>()
     const pressedRecoveryKeys = pressedRecoveryKeysRef.current
+    const pendingKeyUps = pendingRecoveryKeyUpsRef.current
     pressedRecoveryKeys.clear()
 
     const isolateBodySibling = (element: HTMLElement) => {
@@ -133,6 +179,12 @@ export function StoryboardDirectorInteractionGate({
       if (isRecoveryTarget(event.target)) return
       event.stopImmediatePropagation()
     }
+    const releasePressedKeys = () => {
+      pressedRecoveryKeys.clear()
+    }
+    const releaseHiddenPressedKeys = () => {
+      if (document.visibilityState === 'hidden') releasePressedKeys()
+    }
     const containFocus = (event: FocusEvent) => {
       if (isRecoveryTarget(event.target)) return
       event.stopImmediatePropagation()
@@ -144,6 +196,8 @@ export function StoryboardDirectorInteractionGate({
     document.addEventListener('keydown', blockOutsideKeyDown, true)
     document.addEventListener('keyup', blockOutsideKeyUp, true)
     document.addEventListener('focusin', containFocus, true)
+    window.addEventListener('blur', releasePressedKeys)
+    document.addEventListener('visibilitychange', releaseHiddenPressedKeys, true)
 
     return () => {
       observer.disconnect()
@@ -152,23 +206,11 @@ export function StoryboardDirectorInteractionGate({
       document.removeEventListener('keydown', blockOutsideKeyDown, true)
       document.removeEventListener('keyup', blockOutsideKeyUp, true)
       document.removeEventListener('focusin', containFocus, true)
-      const pendingKeyUps = new Set(pressedRecoveryKeys)
+      window.removeEventListener('blur', releasePressedKeys)
+      document.removeEventListener('visibilitychange', releaseHiddenPressedKeys, true)
+      for (const key of pressedRecoveryKeys) pendingKeyUps.add(key)
       pressedRecoveryKeys.clear()
-      if (pendingKeyUps.size > 0) {
-        let releaseTimer = 0
-        const releaseTrailingKeyUpGuard = () => {
-          document.removeEventListener('keyup', blockTrailingKeyUp, true)
-          window.clearTimeout(releaseTimer)
-        }
-        const blockTrailingKeyUp = (event: globalThis.KeyboardEvent) => {
-          if (!pendingKeyUps.has(event.code || event.key)) return
-          event.stopImmediatePropagation()
-          pendingKeyUps.delete(event.code || event.key)
-          if (pendingKeyUps.size === 0) releaseTrailingKeyUpGuard()
-        }
-        document.addEventListener('keyup', blockTrailingKeyUp, true)
-        releaseTimer = window.setTimeout(releaseTrailingKeyUpGuard, 1000)
-      }
+      ensurePendingKeyReleaseGuard()
       for (const [element, state] of accessibilityStates) {
         restoreAttribute(element, 'inert', state.inert)
         restoreAttribute(element, 'aria-hidden', state.ariaHidden)
@@ -179,7 +221,15 @@ export function StoryboardDirectorInteractionGate({
         window.requestAnimationFrame(() => previouslyFocused.focus())
       }
     }
-  }, [focusRecoveryTarget, portalReady, recoveryOpen])
+  }, [ensurePendingKeyReleaseGuard, focusRecoveryTarget, portalReady, recoveryOpen])
+
+  useEffect(() => {
+    const pendingKeyUps = pendingRecoveryKeyUpsRef.current
+    return () => {
+      pendingKeyUps.clear()
+      stopPendingKeyReleaseGuard()
+    }
+  }, [stopPendingKeyReleaseGuard])
 
   const handleClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (recoveryOpen) {

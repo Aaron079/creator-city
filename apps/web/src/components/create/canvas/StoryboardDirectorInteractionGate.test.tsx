@@ -430,6 +430,98 @@ describe('StoryboardDirectorInteractionGate rendered boundary', () => {
     await page.close()
   })
 
+  test('recovery contains repeated and simultaneous key releases until every held key is released', async () => {
+    const page = await renderPage()
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.openRecovery('blocked'))
+    const dialog = page.getByRole('alertdialog')
+    const keepServer = page.getByRole('button', { name: '确认风险并使用服务器版本' })
+    await keepServer.focus()
+
+    await page.keyboard.down('Space')
+    await keepServer.dispatchEvent('keydown', {
+      bubbles: true,
+      code: 'Space',
+      key: ' ',
+      repeat: true,
+    })
+    await page.keyboard.down('Enter')
+    await dialog.waitFor({ state: 'detached' })
+    await page.waitForTimeout(1150)
+    await page.keyboard.up('Enter')
+    await page.keyboard.up('Space')
+    assert.deepEqual(await harnessCalls(page), ['keep-server'])
+
+    await page.keyboard.press('Delete')
+    assert.deepEqual(await harnessCalls(page), [
+      'keep-server',
+      'document-key:Delete',
+      'window-key:Delete',
+      'document-keyup:Delete',
+      'window-keyup:Delete',
+    ])
+    await page.close()
+  })
+
+  test('focus and visibility loss reset abandoned recovery keys without retaining capture listeners', async () => {
+    const page = await renderPage()
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.openRecovery('blocked'))
+    let dialog = page.getByRole('alertdialog')
+    await dialog.dispatchEvent('keydown', {
+      bubbles: true,
+      code: 'F8',
+      key: 'F8',
+    })
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.resolveRecovery())
+    await dialog.waitFor({ state: 'detached' })
+    await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keyup', {
+      bubbles: true,
+      code: 'F8',
+      key: 'F8',
+    })))
+
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.openRecovery('blocked'))
+    dialog = page.getByRole('alertdialog')
+    await dialog.dispatchEvent('keydown', {
+      bubbles: true,
+      code: 'F9',
+      key: 'F9',
+    })
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: 'hidden',
+      })
+      document.dispatchEvent(new Event('visibilitychange'))
+      delete (document as unknown as { visibilityState?: string }).visibilityState
+    })
+    await page.evaluate(() => (
+      window as unknown as { __interactionGateHarness: InteractionGateHarness }
+    ).__interactionGateHarness.resolveRecovery())
+    await dialog.waitFor({ state: 'detached' })
+    await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keyup', {
+      bubbles: true,
+      code: 'F9',
+      key: 'F9',
+    })))
+
+    assert.deepEqual(await harnessCalls(page), [
+      'document-keyup:F8',
+      'window-keyup:F8',
+      'document-keyup:F9',
+      'window-keyup:F9',
+    ])
+    await page.close()
+  })
+
   test('Tab containment falls back to the dialog when every recovery action becomes disabled', async () => {
     const page = await renderPage()
     await page.locator('#background-action').focus()
