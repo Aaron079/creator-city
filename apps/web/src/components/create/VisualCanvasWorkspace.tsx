@@ -11552,76 +11552,74 @@ export function VisualCanvasWorkspace({
       />
 
       {STORYBOARD_TOOLS_ENABLED ? (
-        <>
-          <StoryboardPreviewPanel
-            open={storyboardPreviewOpen}
-            nodes={nodes}
-            edges={edges}
-            projectId={projectId}
-            onClose={() => setStoryboardPreviewOpen(false)}
-            onOpenPromptInspector={(nodeId) => {
-              setStoryboardPreviewOpen(false)
-              openPromptInspector(nodeId)
-            }}
-          />
+        <StoryboardPreviewPanel
+          open={storyboardPreviewOpen}
+          nodes={nodes}
+          edges={edges}
+          projectId={projectId}
+          onClose={() => setStoryboardPreviewOpen(false)}
+          onOpenPromptInspector={(nodeId) => {
+            setStoryboardPreviewOpen(false)
+            openPromptInspector(nodeId)
+          }}
+        />
+      ) : null}
 
-          <StoryboardDirectorPanel
-            open={storyboardDirectorOpen}
-            state={effectiveDirectorState}
-            activeShotId={directorActiveShotId}
-            recipe={activeDirectorRecipe}
-            boardCommitMode={activeDirectorRecipe ? 'buffered' : 'immediate'}
-            boardContextKey={`${projectId}:${workflowId}:${activeDirectorControlNodeId || 'manual'}`}
-            openedFromRecipe={storyboardDirectorOpenedFromRecipe}
-            availableSources={availableDirectorSources}
-            availableRecipes={availableDirectorRecipes}
-            saveState={directorRecipeSaveState}
-            legacyState={legacyDirectorState}
-            emergencyPartialBatch={
-              activeDirectorRecipe
-                && activeEmergencyDirectorPartialBatch?.recipeId === activeDirectorRecipe.recipeId
-                ? activeEmergencyDirectorPartialBatch.blocker
-                : null
-            }
-            projectId={projectId}
-            canvasNodes={nodes.map((n) => ({
-              id: n.id,
-              kind: n.kind,
-              title: n.title,
-              resultImageUrl: n.resultImageUrl,
-              resultVideoUrl: n.resultVideoUrl,
-            }))}
-            onStateChange={(next) => {
-              if (activeDirectorRecipe) {
-                return handleCommitStoryboardDirectorRecipe({
-                  ...activeDirectorRecipe,
-                  storyboard: next,
-                }, {
-                  expectedRevision: activeDirectorRecipeRevision,
-                  controlNodeId: activeDirectorControlNodeId,
-                })
-              }
-              setDirectorState(next)
-              return true
-            }}
-            onActiveShotChange={(id) => setDirectorActiveShotId(id)}
-            onStartRecipe={handleStartStoryboardDirectorRecipe}
-            onOpenRecipe={handleOpenStoryboardDirectorRecipe}
-            onCommitRecipe={(recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
+      <StoryboardDirectorPanel
+        open={storyboardDirectorOpen}
+        state={effectiveDirectorState}
+        activeShotId={directorActiveShotId}
+        recipe={activeDirectorRecipe}
+        boardCommitMode={activeDirectorRecipe ? 'buffered' : 'immediate'}
+        boardContextKey={`${projectId}:${workflowId}:${activeDirectorControlNodeId || 'manual'}`}
+        openedFromRecipe={storyboardDirectorOpenedFromRecipe}
+        availableSources={availableDirectorSources}
+        availableRecipes={availableDirectorRecipes}
+        saveState={directorRecipeSaveState}
+        legacyState={legacyDirectorState}
+        emergencyPartialBatch={
+          activeDirectorRecipe
+            && activeEmergencyDirectorPartialBatch?.recipeId === activeDirectorRecipe.recipeId
+            ? activeEmergencyDirectorPartialBatch.blocker
+            : null
+        }
+        projectId={projectId}
+        canvasNodes={nodes.map((n) => ({
+          id: n.id,
+          kind: n.kind,
+          title: n.title,
+          resultImageUrl: n.resultImageUrl,
+          resultVideoUrl: n.resultVideoUrl,
+        }))}
+        onStateChange={(next) => {
+          if (activeDirectorRecipe) {
+            return handleCommitStoryboardDirectorRecipe({
+              ...activeDirectorRecipe,
+              storyboard: next,
+            }, {
               expectedRevision: activeDirectorRecipeRevision,
               controlNodeId: activeDirectorControlNodeId,
-            })}
-            onFocusSource={focusStoryboardDirectorSource}
-            onMaterializeGrouped={handleMaterializeStoryboardDirectorRecipe}
-            onSyncShotBoard={handleSyncStoryboardDirectorShotBoard}
-            onCreateDraftNodes={handleCreateStoryboardDirectorDraftNodes}
-            onImportLegacy={handleImportLegacyStoryboardDirectorState}
-            onAcknowledgeEmergencyPartialBatch={handleAcknowledgeEmergencyDirectorPartialBatch}
-            registerDeferredBoardFlush={registerDirectorDeferredBoardFlush}
-            onClose={handleCloseStoryboardDirector}
-          />
-        </>
-      ) : null}
+            })
+          }
+          setDirectorState(next)
+          return true
+        }}
+        onActiveShotChange={(id) => setDirectorActiveShotId(id)}
+        onStartRecipe={handleStartStoryboardDirectorRecipe}
+        onOpenRecipe={handleOpenStoryboardDirectorRecipe}
+        onCommitRecipe={(recipe) => handleCommitStoryboardDirectorRecipe(recipe, {
+          expectedRevision: activeDirectorRecipeRevision,
+          controlNodeId: activeDirectorControlNodeId,
+        })}
+        onFocusSource={focusStoryboardDirectorSource}
+        onMaterializeGrouped={handleMaterializeStoryboardDirectorRecipe}
+        onSyncShotBoard={handleSyncStoryboardDirectorShotBoard}
+        onCreateDraftNodes={handleCreateStoryboardDirectorDraftNodes}
+        onImportLegacy={handleImportLegacyStoryboardDirectorState}
+        onAcknowledgeEmergencyPartialBatch={handleAcknowledgeEmergencyDirectorPartialBatch}
+        registerDeferredBoardFlush={registerDirectorDeferredBoardFlush}
+        onClose={handleCloseStoryboardDirector}
+      />
 
       <PromptInspectorPanel
         open={Boolean(activeInspectorNode)}

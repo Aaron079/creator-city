@@ -422,6 +422,13 @@ describe('Creator Skill Engine Stage C canvas boundary', () => {
     assert.doesNotMatch(globalOpen, /createNode|handleStartStoryboardDirectorRecipe/)
   })
 
+  test('public Stage C Director remains mounted while legacy storyboard tools stay gated', () => {
+    assert.match(
+      workspace,
+      /\{STORYBOARD_TOOLS_ENABLED\s*\?\s*\(\s*<StoryboardPreviewPanel[\s\S]*?\)\s*:\s*null\}\s*<StoryboardDirectorPanel/,
+    )
+  })
+
   test('active control deletion and canvas identity changes close stale Recipe context', () => {
     const lifecycle = namedBlock(
       workspace,
