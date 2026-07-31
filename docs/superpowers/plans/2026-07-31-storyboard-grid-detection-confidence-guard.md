@@ -151,10 +151,11 @@ type LayoutEvidence = {
   confidence: number
   expectedLines: number
   everyBoundaryReliable: boolean
+  hasReliableBoundaryOnBothAxes: boolean
 }
 ~~~
 
-For every expected row/column boundary, sample 24 evenly distributed positions. Compare darkness at the line with darkness five pixels on both sides; a point is present only when local darkness difference is at least MIN_BOUNDARY_PROMINENCE. Coverage is present points divided by samples. Prominence is mean clamped local difference. A layout is reliable only when every expected boundary meets prominence and coverage thresholds. scoreLayout returns LayoutEvidence with confidence derived from mean prominence and minimum coverage. expectedLines * 0.01 is only a deterministic tie-breaker; it never makes unreliable evidence eligible.
+For every expected row/column boundary, sample 24 evenly distributed positions. Compare darkness at the line with darkness five pixels on both sides; a point is present only when local darkness difference is at least MIN_BOUNDARY_PROMINENCE. Coverage is present points divided by samples. Prominence is mean clamped local difference. A layout is reliable only when every expected boundary meets prominence and coverage thresholds. scoreLayout returns LayoutEvidence with confidence derived from mean prominence and minimum coverage. Track reliable horizontal and vertical boundary counts. Automatic confirmation additionally requires at least one reliable boundary on each axis; a one-axis strip candidate always needs manual confirmation. expectedLines * 0.01 is only a deterministic tie-breaker; it never makes unreliable evidence eligible.
 
 - [ ] **Step 3: Resolve the public result**
 
@@ -167,7 +168,7 @@ function resolveDetection(candidates: LayoutEvidence[]): StoryboardGridDetection
 
   const bestScore = best.confidence + best.expectedLines * 0.01
   const nextScore = (next?.confidence ?? 0) + (next?.expectedLines ?? 0) * 0.01
-  if (!best.everyBoundaryReliable || bestScore - nextScore < MIN_CONFIRMATION_MARGIN) {
+  if (!best.everyBoundaryReliable || !best.hasReliableBoundaryOnBothAxes || bestScore - nextScore < MIN_CONFIRMATION_MARGIN) {
     return { layoutId: best.layoutId, confidence: best.confidence, reason: 'ambiguous-grid', selectionMode: 'needs-confirmation' }
   }
 

@@ -28,6 +28,8 @@ The candidate score must include all expected boundaries, not only their average
 2. the aggregate evidence clears the high-confidence threshold; and
 3. the winning candidate exceeds the next-best candidate by the required ambiguity margin.
 
+Automatic selection additionally requires reliable evidence on both axes: at least one horizontal boundary and at least one vertical boundary. A one-axis strip candidate may be suggested, but it must require manual confirmation because a single compositional line is not sufficient evidence for an automatic crop.
+
 The detector returns a typed decision with the candidate layout, score, reason, and selection mode:
 
 - `confirmed`: safe to auto-select;
