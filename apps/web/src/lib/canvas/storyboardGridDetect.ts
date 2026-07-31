@@ -42,6 +42,20 @@ export type ImageDataLike = {
   data: Uint8ClampedArray
 }
 
+export type StoryboardGridSelectionMode = 'confirmed' | 'needs-confirmation' | 'manual'
+
+export type StoryboardGridDetectionReason =
+  | 'confirmed-grid'
+  | 'ambiguous-grid'
+  | 'manual-fallback'
+
+export type StoryboardGridDetectionResult = {
+  layoutId: StoryboardGridLayoutId | null
+  confidence: number
+  reason: StoryboardGridDetectionReason
+  selectionMode: StoryboardGridSelectionMode
+}
+
 function round(value: number) {
   return Number(value.toFixed(6))
 }
@@ -108,76 +122,129 @@ export function buildCropMetadata(args: {
   }
 }
 
-function darknessAtColumn(image: ImageDataLike, x: number) {
-  let total = 0
-  for (let y = 0; y < image.height; y += 1) {
-    const idx = (y * image.width + x) * 4
-    const brightness = ((image.data[idx] ?? 255) + (image.data[idx + 1] ?? 255) + (image.data[idx + 2] ?? 255)) / 3
-    total += 1 - brightness / 255
-  }
-  return total / image.height
+const BOUNDARY_SAMPLE_COUNT = 24
+const BOUNDARY_NEIGHBOR_OFFSET = 5
+const MIN_BOUNDARY_PROMINENCE = 0.45
+const MIN_BOUNDARY_COVERAGE = 0.9
+const MIN_CONFIRMED_CONFIDENCE = 0.78
+const MIN_CONFIRMATION_MARGIN = 0.015
+
+type BoundaryEvidence = {
+  prominence: number
+  coverage: number
 }
 
-function darknessAtRow(image: ImageDataLike, y: number) {
-  let total = 0
-  for (let x = 0; x < image.width; x += 1) {
-    const idx = (y * image.width + x) * 4
-    const brightness = ((image.data[idx] ?? 255) + (image.data[idx + 1] ?? 255) + (image.data[idx + 2] ?? 255)) / 3
-    total += 1 - brightness / 255
-  }
-  return total / image.width
+type LayoutEvidence = {
+  layoutId: StoryboardGridLayoutId
+  confidence: number
+  expectedLines: number
+  everyBoundaryReliable: boolean
+  hasReliableBoundaryOnBothAxes: boolean
 }
 
-function boundaryScore(image: ImageDataLike, axis: 'x' | 'y', pos: number) {
-  const max = axis === 'x' ? image.width - 1 : image.height - 1
-  let best = 0
-  for (let offset = -3; offset <= 3; offset += 1) {
-    const line = Math.max(0, Math.min(max, Math.round(pos + offset)))
-    best = Math.max(best, axis === 'x' ? darknessAtColumn(image, line) : darknessAtRow(image, line))
-  }
-  return best
+function clampCoordinate(value: number, max: number) {
+  return Math.max(0, Math.min(max, Math.round(value)))
 }
 
-function scoreLayout(image: ImageDataLike, layoutId: StoryboardGridLayoutId) {
+function darknessAt(image: ImageDataLike, x: number, y: number) {
+  const index = (y * image.width + x) * 4
+  const brightness = ((image.data[index] ?? 255) + (image.data[index + 1] ?? 255) + (image.data[index + 2] ?? 255)) / 3
+  return 1 - brightness / 255
+}
+
+function boundaryEvidence(image: ImageDataLike, axis: 'x' | 'y', position: number): BoundaryEvidence {
+  const crossAxisMax = axis === 'x' ? image.height - 1 : image.width - 1
+  const boundaryMax = axis === 'x' ? image.width - 1 : image.height - 1
+  const boundary = clampCoordinate(position, boundaryMax)
+  const before = clampCoordinate(boundary - BOUNDARY_NEIGHBOR_OFFSET, boundaryMax)
+  const after = clampCoordinate(boundary + BOUNDARY_NEIGHBOR_OFFSET, boundaryMax)
+  let prominenceTotal = 0
+  let presentCount = 0
+
+  for (let sample = 0; sample < BOUNDARY_SAMPLE_COUNT; sample += 1) {
+    const crossAxisPosition = clampCoordinate(((sample + 0.5) * (crossAxisMax + 1)) / BOUNDARY_SAMPLE_COUNT, crossAxisMax)
+    const lineDarkness = axis === 'x'
+      ? darknessAt(image, boundary, crossAxisPosition)
+      : darknessAt(image, crossAxisPosition, boundary)
+    const neighborDarkness = axis === 'x'
+      ? (darknessAt(image, before, crossAxisPosition) + darknessAt(image, after, crossAxisPosition)) / 2
+      : (darknessAt(image, crossAxisPosition, before) + darknessAt(image, crossAxisPosition, after)) / 2
+    const prominence = Math.max(0, lineDarkness - neighborDarkness)
+    prominenceTotal += prominence
+    if (prominence >= MIN_BOUNDARY_PROMINENCE) presentCount += 1
+  }
+
+  return {
+    prominence: prominenceTotal / BOUNDARY_SAMPLE_COUNT,
+    coverage: presentCount / BOUNDARY_SAMPLE_COUNT,
+  }
+}
+
+function isReliableBoundary(evidence: BoundaryEvidence) {
+  return evidence.prominence >= MIN_BOUNDARY_PROMINENCE && evidence.coverage >= MIN_BOUNDARY_COVERAGE
+}
+
+function scoreLayout(image: ImageDataLike, layoutId: StoryboardGridLayoutId): LayoutEvidence {
   const validation = validateGridLayout(layoutId)
-  if (!validation.ok) return 0
-  const { rows, cols } = validation.layout
-  const scores: number[] = []
-  for (let col = 1; col < cols; col += 1) {
-    scores.push(boundaryScore(image, 'x', (image.width * col) / cols))
-  }
-  for (let row = 1; row < rows; row += 1) {
-    scores.push(boundaryScore(image, 'y', (image.height * row) / rows))
-  }
-  if (!scores.length) return 0
-  return scores.reduce((sum, value) => sum + value, 0) / scores.length
-}
-
-export function detectGridLayoutFromImageData(image: ImageDataLike) {
-  let best: { layoutId: StoryboardGridLayoutId; confidence: number; expectedLines: number } | null = null
-  for (const layout of STORYBOARD_GRID_LAYOUTS) {
-    const confidence = scoreLayout(image, layout.id)
-    const expectedLines = (layout.rows - 1) + (layout.cols - 1)
-    if (
-      !best ||
-      confidence > best.confidence ||
-      (Math.abs(confidence - best.confidence) < 0.0001 && expectedLines > best.expectedLines)
-    ) {
-      best = { layoutId: layout.id, confidence, expectedLines }
+  if (!validation.ok) {
+    return {
+      layoutId,
+      confidence: 0,
+      expectedLines: 0,
+      everyBoundaryReliable: false,
+      hasReliableBoundaryOnBothAxes: false,
     }
   }
-  const confidence = best?.confidence ?? 0
-  return confidence >= 0.7
-    ? { layoutId: best?.layoutId ?? null, confidence, reason: 'detected-grid-lines' as const }
-    : { layoutId: null, confidence, reason: 'manual-fallback' as const }
+
+  const { rows, cols } = validation.layout
+  const vertical = Array.from({ length: cols - 1 }, (_, index) => boundaryEvidence(image, 'x', (image.width * (index + 1)) / cols))
+  const horizontal = Array.from({ length: rows - 1 }, (_, index) => boundaryEvidence(image, 'y', (image.height * (index + 1)) / rows))
+  const boundaries = [...vertical, ...horizontal]
+  const expectedLines = boundaries.length
+  const averageProminence = boundaries.reduce((total, evidence) => total + evidence.prominence, 0) / expectedLines
+  const minimumCoverage = Math.min(...boundaries.map((evidence) => evidence.coverage))
+
+  return {
+    layoutId,
+    confidence: averageProminence * minimumCoverage,
+    expectedLines,
+    everyBoundaryReliable: boundaries.every(isReliableBoundary),
+    hasReliableBoundaryOnBothAxes: vertical.some(isReliableBoundary) && horizontal.some(isReliableBoundary),
+  }
 }
 
-export function detectGridLayout(image: HTMLImageElement | HTMLCanvasElement | ImageBitmap) {
+function rankedScore(evidence: LayoutEvidence) {
+  return evidence.confidence + evidence.expectedLines * 0.01
+}
+
+function resolveDetection(candidates: LayoutEvidence[]): StoryboardGridDetectionResult {
+  const ordered = [...candidates].sort((left, right) => rankedScore(right) - rankedScore(left))
+  const best = ordered[0]
+  if (!best || best.confidence < MIN_CONFIRMED_CONFIDENCE) {
+    return { layoutId: null, confidence: best?.confidence ?? 0, reason: 'manual-fallback', selectionMode: 'manual' }
+  }
+  if (!best.everyBoundaryReliable || !best.hasReliableBoundaryOnBothAxes) {
+    return { layoutId: best.layoutId, confidence: best.confidence, reason: 'ambiguous-grid', selectionMode: 'needs-confirmation' }
+  }
+
+  const nextReliableCandidate = ordered.find((candidate) => candidate !== best && candidate.hasReliableBoundaryOnBothAxes)
+  if (nextReliableCandidate && rankedScore(best) - rankedScore(nextReliableCandidate) < MIN_CONFIRMATION_MARGIN) {
+    return { layoutId: best.layoutId, confidence: best.confidence, reason: 'ambiguous-grid', selectionMode: 'needs-confirmation' }
+  }
+
+  return { layoutId: best.layoutId, confidence: best.confidence, reason: 'confirmed-grid', selectionMode: 'confirmed' }
+}
+
+export function detectGridLayoutFromImageData(image: ImageDataLike): StoryboardGridDetectionResult {
+  return resolveDetection(STORYBOARD_GRID_LAYOUTS.map((layout) => scoreLayout(image, layout.id)))
+}
+
+export function detectGridLayout(image: HTMLImageElement | HTMLCanvasElement | ImageBitmap): StoryboardGridDetectionResult {
   const canvas = document.createElement('canvas')
   canvas.width = image.width
   canvas.height = image.height
   const ctx = canvas.getContext('2d')
-  if (!ctx) return { layoutId: null, confidence: 0, reason: 'manual-fallback' as const }
+  if (!ctx) return { layoutId: null, confidence: 0, reason: 'manual-fallback', selectionMode: 'manual' }
   ctx.drawImage(image, 0, 0)
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   return detectGridLayoutFromImageData(imageData)

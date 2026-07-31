@@ -45,6 +45,35 @@ function drawBlackLine(data: Uint8ClampedArray, width: number, height: number, a
   }
 }
 
+function drawBlackBoundarySegment(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  axis: 'x' | 'y',
+  position: number,
+  startRatio: number,
+  endRatio: number,
+) {
+  const start = Math.round((axis === 'x' ? height : width) * startRatio)
+  const end = Math.round((axis === 'x' ? height : width) * endRatio)
+  for (let offset = start; offset < end; offset += 1) {
+    const x = axis === 'x' ? position : offset
+    const y = axis === 'x' ? offset : position
+    const index = (y * width + x) * 4
+    data[index] = 0
+    data[index + 1] = 0
+    data[index + 2] = 0
+  }
+}
+
+function drawConfirmedGrid(data: Uint8ClampedArray, width: number, height: number, layout: '2x2' | '3x3') {
+  const boundaries = layout === '2x2' ? [0.5] : [1 / 3, 2 / 3]
+  for (const ratio of boundaries) {
+    drawBlackLine(data, width, height, 'x', Math.round(width * ratio))
+    drawBlackLine(data, width, height, 'y', Math.round(height * ratio))
+  }
+}
+
 describe('validateGridLayout', () => {
   test('accepts all V1 layouts and rejects invalid layouts', () => {
     for (const id of ['1x2', '2x1', '2x2', '3x2', '2x3', '3x3', '4x3']) {
@@ -102,21 +131,39 @@ describe('buildGridCells', () => {
 })
 
 describe('detectGridLayoutFromImageData', () => {
-  test('detects a simple 2x2 bordered storyboard image', () => {
-    const image = makeImageData(200, 200, (data) => {
-      drawBlackLine(data, 200, 200, 'x', 100)
-      drawBlackLine(data, 200, 200, 'y', 100)
-    })
+  test('confirms a clean 2x2 bordered storyboard image', () => {
+    const image = makeImageData(240, 240, (data) => drawConfirmedGrid(data, 240, 240, '2x2'))
     const result = detectGridLayoutFromImageData(image)
     assert.equal(result.layoutId, '2x2')
-    assert.ok(result.confidence >= 0.7)
+    assert.equal(result.selectionMode, 'confirmed')
+    assert.equal(result.reason, 'confirmed-grid')
   })
 
-  test('falls back when confidence is low or image is not a grid', () => {
-    const image = makeImageData(200, 200)
+  test('does not confirm a logo-like interrupted 3x3 signal', () => {
+    const image = makeImageData(240, 240, (data) => {
+      for (const ratio of [1 / 3, 2 / 3]) {
+        drawBlackBoundarySegment(data, 240, 240, 'x', Math.round(240 * ratio), 0.1, 0.85)
+        drawBlackBoundarySegment(data, 240, 240, 'y', Math.round(240 * ratio), 0.15, 0.9)
+      }
+    })
     const result = detectGridLayoutFromImageData(image)
+    assert.notEqual(result.selectionMode, 'confirmed')
+    assert.notEqual(result.layoutId, '3x3')
+  })
+
+  test('returns needs-confirmation for one-axis evidence', () => {
+    const image = makeImageData(240, 240, (data) => drawBlackLine(data, 240, 240, 'x', 120))
+    const result = detectGridLayoutFromImageData(image)
+    assert.equal(result.selectionMode, 'needs-confirmation')
+    assert.equal(result.layoutId, '1x2')
+    assert.equal(result.reason, 'ambiguous-grid')
+  })
+
+  test('returns manual when image has no grid evidence', () => {
+    const result = detectGridLayoutFromImageData(makeImageData(240, 240))
     assert.equal(result.layoutId, null)
-    assert.ok(result.confidence < 0.7)
+    assert.equal(result.selectionMode, 'manual')
+    assert.equal(result.reason, 'manual-fallback')
   })
 })
 
