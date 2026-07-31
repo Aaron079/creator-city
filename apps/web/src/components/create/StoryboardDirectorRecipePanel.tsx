@@ -20,6 +20,7 @@ import {
   analyzeStoryboardDirectorRecipe,
   summarizeStoryboardDirectorRecipe,
 } from '@/lib/storyboard/recipe/intelligence'
+import { getStoryboardDirectorWorkflowGuidance } from '@/lib/storyboard/recipe/workflowGuidance'
 import {
   approveBeatStage,
   approveSceneStage,
@@ -847,6 +848,12 @@ export function StoryboardDirectorRecipePanel({
       : []),
   ]
   const partialBatchBlocked = partialBatches.length > 0
+  const workflowGuidance = getStoryboardDirectorWorkflowGuidance(recipe, { partialBatchBlocked })
+  const workflowGuidanceClass = workflowGuidance.tone === 'warning'
+    ? 'border-rose-300/20 bg-rose-300/[0.05] text-rose-100/75'
+    : workflowGuidance.tone === 'ready'
+      ? 'border-cyan-200/20 bg-cyan-200/[0.05] text-cyan-100/75'
+      : 'border-white/[0.07] bg-white/[0.025] text-white/60'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -907,6 +914,15 @@ export function StoryboardDirectorRecipePanel({
         {([['stages', '阶段'], ['review', '审核'], ['evidence', '证据']] as const).map(([id, label]) => (
           <button key={id} type="button" aria-pressed={regionState.region === id} onClick={() => setRegionState((current) => selectRecipeWorkspaceRegion(current, id))} className={`h-8 rounded-md text-[10px] font-semibold ${regionState.region === id ? 'bg-white/[0.1] text-white' : 'text-white/40'}`}>{label}</button>
         ))}
+      </div>
+
+      <div
+        data-testid="director-workflow-guidance"
+        className={`flex flex-none flex-wrap items-baseline gap-x-2 gap-y-1 border-b px-4 py-2.5 ${workflowGuidanceClass}`}
+      >
+        <span className="text-[9px] font-semibold tracking-[0.08em]">下一步</span>
+        <span className="text-[10px] font-semibold">{workflowGuidance.label}</span>
+        <span className="min-w-[180px] flex-1 text-[10px] leading-5 opacity-75">{workflowGuidance.detail}</span>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_300px]">

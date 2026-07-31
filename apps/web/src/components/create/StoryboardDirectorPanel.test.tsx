@@ -234,6 +234,7 @@ function renderedHarnessSource() {
   const panelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorPanel.tsx')
   const recipePanelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorRecipePanel.tsx')
   const completed = JSON.stringify(completedRecipe())
+  const stale = JSON.stringify(invalidateRecipeAfter(completedRecipe(), 'source', ISO_TIME))
   const replacement = JSON.stringify({
     ...completedRecipe(),
     recipeId: 'sdr1_replacement',
@@ -254,6 +255,7 @@ function renderedHarnessSource() {
 
     const FIXTURES = {
       completed: ${completed},
+      stale: ${stale},
       replacement: ${replacement},
       sceneReview: ${sceneReview},
       beatReview: ${beatReview},
@@ -622,7 +624,7 @@ async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜�
 }
 
 type RenderedHarness = {
-  mountRecipe: (kind?: 'completed' | 'replacement' | 'sceneReview' | 'beatReview' | 'partialBatch') => void
+  mountRecipe: (kind?: 'completed' | 'replacement' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch') => void
   mountEmergencyRecipe: () => void
   replaceRecipe: (kind?: 'completed' | 'replacement') => void
   clickDetachedConfirm: () => void
@@ -648,7 +650,7 @@ type RenderedHarness = {
 
 async function mountRenderedRecipe(
   page: Page,
-  kind: 'completed' | 'sceneReview' | 'beatReview' | 'partialBatch' = 'completed',
+  kind: 'completed' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch' = 'completed',
 ) {
   await page.evaluate((fixture) => (
     window as unknown as { __directorHarness: RenderedHarness }
@@ -1601,6 +1603,23 @@ describe('Storyboard Director rendered interactions', () => {
           assert.equal(await page.getByLabel(label).first().isVisible(), true)
         }
       }
+    } finally {
+      await page.close()
+    }
+  })
+
+  test('renders truthful workflow guidance for ready and stale Recipes', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      const readyGuidance = page.getByTestId('director-workflow-guidance')
+      assert.equal(await readyGuidance.getByText('落地审核结果').isVisible(), true)
+      assert.equal(await readyGuidance.getByText('镜头已审核完成，可将结果明确写入画布。').isVisible(), true)
+
+      await mountRenderedRecipe(page, 'stale')
+      const staleGuidance = page.getByTestId('director-workflow-guidance')
+      assert.equal(await staleGuidance.getByText('定位来源并开始新版本').isVisible(), true)
+      assert.equal(await staleGuidance.getByText('来源已变化，当前版本不能审核或落地。').isVisible(), true)
     } finally {
       await page.close()
     }

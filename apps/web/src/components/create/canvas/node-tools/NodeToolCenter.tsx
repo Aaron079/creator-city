@@ -1,7 +1,10 @@
 'use client'
 
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
-import { NODE_TOOL_REGISTRY } from './nodeToolRegistry'
+import {
+  availableNodeTools,
+  recommendNodeTool,
+} from './nodeToolRecommendation'
 import type { NodeToolCategory } from './nodeToolTypes'
 
 const CATEGORY_LABELS: Record<NodeToolCategory, string> = {
@@ -21,16 +24,9 @@ interface NodeToolCenterProps {
 
 export function NodeToolCenter({ nodeKind, hasMediaResult, caps, onAction }: NodeToolCenterProps) {
   const isVisual = nodeKind === 'image' || nodeKind === 'video'
-
-  const enabledTools = NODE_TOOL_REGISTRY.filter((tool) => {
-    if (!tool.supportedKinds.includes(nodeKind)) return false
-    if (tool.requiresMedia && !hasMediaResult) return false
-    if (tool.capabilityKey === 'removeBackground' && !caps.removeBackground) return false
-    if (tool.capabilityKey === 'upscale' && !caps.upscale) return false
-    // image-edit category only shown for image nodes with media
-    if (tool.category === 'image-edit' && !(nodeKind === 'image' && hasMediaResult)) return false
-    return true
-  })
+  const toolInput = { nodeKind, hasMediaResult, caps }
+  const enabledTools = availableNodeTools(toolInput)
+  const recommendedTool = recommendNodeTool(toolInput)
 
   const byCategory = CATEGORY_ORDER.map((cat) => ({
     cat,
@@ -49,6 +45,22 @@ export function NodeToolCenter({ nodeKind, hasMediaResult, caps, onAction }: Nod
 
   return (
     <div className="ntb-menu ntb-menu-wide" data-no-node-drag="true">
+      {recommendedTool ? (
+        <>
+          <div className="ntb-menu-section-title">推荐下一步</div>
+          <button
+            type="button"
+            data-no-node-drag="true"
+            className="ntb-menu-item"
+            onClick={() => onAction(recommendedTool.openActionId)}
+          >
+            <span className="ntb-menu-item-icon">{recommendedTool.icon}</span>
+            {recommendedTool.label}
+            <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.04em' }}>建议</span>
+          </button>
+          <div className="ntb-menu-divider" />
+        </>
+      ) : null}
       {byCategory.map(({ cat, tools }, catIdx) => (
         <div key={cat}>
           {catIdx > 0 && <div className="ntb-menu-divider" />}
