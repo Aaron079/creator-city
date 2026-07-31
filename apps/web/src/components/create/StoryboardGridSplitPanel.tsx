@@ -106,7 +106,7 @@ export function StoryboardGridSplitPanel({
   onUpdateSourceSession,
 }: StoryboardGridSplitPanelProps) {
   const [sessionId] = useState(createSessionId)
-  const [layoutId, setLayoutId] = useState<StoryboardGridLayoutId>('2x2')
+  const [layoutId, setLayoutId] = useState<StoryboardGridLayoutId | null>(null)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
   const [loadingImage, setLoadingImage] = useState(false)
   const [imageError, setImageError] = useState('')
@@ -121,6 +121,7 @@ export function StoryboardGridSplitPanel({
   useEffect(() => {
     let disposed = false
     imageRef.current = null
+    setLayoutId(null)
     setImageSize(null)
     setImageError('')
     setDetectMessage('')
@@ -141,13 +142,18 @@ export function StoryboardGridSplitPanel({
         setImageSize({ width: image.naturalWidth, height: image.naturalHeight })
         try {
           const detected = detectGridLayout(image)
-          if (detected.layoutId) {
+          if (detected.selectionMode === 'confirmed' && detected.layoutId) {
             setLayoutId(detected.layoutId)
-            setDetectMessage(`已识别 ${detected.layoutId}，置信度 ${(detected.confidence * 100).toFixed(0)}%。`)
+            setDetectMessage(`已确认 ${detected.layoutId}，置信度 ${(detected.confidence * 100).toFixed(0)}%。`)
+          } else if (detected.selectionMode === 'needs-confirmation' && detected.layoutId) {
+            setLayoutId(null)
+            setDetectMessage(`可能是 ${detected.layoutId}，请确认布局后再裁切。`)
           } else {
-            setDetectMessage('未识别到稳定网格，请手动选择布局。')
+            setLayoutId(null)
+            setDetectMessage('未识别到稳定网格，请选择布局后再裁切入库。')
           }
         } catch {
+          setLayoutId(null)
           setDetectMessage(STORYBOARD_GRID_CORS_ERROR_MESSAGE)
         }
       })
@@ -163,7 +169,7 @@ export function StoryboardGridSplitPanel({
   }, [sourceNode?.assetId, sourceNode?.mediaUrl])
 
   const cells = useMemo(() => {
-    if (!imageSize) return []
+    if (!imageSize || !layoutId) return []
     return buildGridCells(layoutId, imageSize.width, imageSize.height)
   }, [imageSize, layoutId])
 
@@ -247,7 +253,8 @@ export function StoryboardGridSplitPanel({
   }, [patchItem, projectId, sourceNode?.assetId, sourceNode?.id, workflowId])
 
   const uploadAll = useCallback(async () => {
-    if (!canUseSource || !sourceNode?.assetId) return
+    if (!canUseSource || !sourceNode?.assetId || !layoutId) return
+    const selectedLayoutId = layoutId
     if (!hasProjectId) {
       setBatchError('请先保存项目后再拆格入库。')
       return
@@ -268,7 +275,7 @@ export function StoryboardGridSplitPanel({
         version: 1,
         toolId: STORYBOARD_GRID_SPLIT_TOOL_ID,
         gridSessionId: sessionId,
-        layoutId,
+        layoutId: selectedLayoutId,
         sourceNodeId: sourceNode.id,
         sourceAssetId: sourceNode.assetId,
         cellCount: activeItems.length,
@@ -297,6 +304,7 @@ export function StoryboardGridSplitPanel({
   }, [handleCreateOne, items])
 
   const previewGridStyle = useMemo(() => {
+    if (!layoutId) return undefined
     const layout = STORYBOARD_GRID_LAYOUTS.find((item) => item.id === layoutId)
     return layout
       ? { gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))` }
@@ -377,7 +385,7 @@ export function StoryboardGridSplitPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={!hasProjectId || !canUseSource || loadingImage || activeItems.length === 0}
+                disabled={!hasProjectId || !canUseSource || !layoutId || loadingImage || activeItems.length === 0}
                 onClick={uploadAll}
                 className="rounded-lg border border-cyan-300/25 bg-cyan-300/12 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-35"
               >
@@ -393,6 +401,10 @@ export function StoryboardGridSplitPanel({
               </button>
             </div>
           </div>
+
+          {!layoutId && !imageError ? (
+            <p className="px-5 pt-2 text-[10px] text-amber-200/75">请选择布局后再裁切入库。</p>
+          ) : null}
 
           {!hasProjectId ? (
             <div className="mx-5 mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100/80">请先保存项目后再拆格入库。</div>
