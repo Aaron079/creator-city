@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const configPath = new URL('../apps/web/playwright.canvas.config.ts', import.meta.url)
 const preflightPath = new URL('../apps/web/tests/e2e/auth-boundary.spec.ts', import.meta.url)
+const previewPath = new URL('../apps/web/tests/e2e/canvas-safe-preview.spec.ts', import.meta.url)
 
 test('canvas e2e config isolates browser discovery from unit tests', async () => {
   const config = await readFile(configPath, 'utf8')
@@ -20,4 +21,15 @@ test('credential-free preflight records only safe network evidence', async () =>
   assert.match(preflight, /pathname: new URL\(request\.url\(\)\)\.pathname/)
   assert.doesNotMatch(preflight, /CREATOR_CITY_E2E_EMAIL|CREATOR_CITY_E2E_PASSWORD/)
   assert.doesNotMatch(preflight, /\.fill\(|\.type\(/)
+})
+
+test('Preview save coverage fails closed before any navigation', async () => {
+  const preview = await readFile(previewPath, 'utf8')
+
+  assert.match(preview, /getSafePreviewFixture/)
+  assert.match(preview, /if \(!fixture\.ready\)/)
+  assert.match(preview, /test\.skip\(true, fixture\.reason\)/)
+  assert.match(preview, /storageState: fixture\.ready \? fixture\.storageState : undefined/)
+  assert.match(preview, /findForbiddenMutationRequests/)
+  assert.doesNotMatch(preview, /CREATOR_CITY_E2E_EMAIL|CREATOR_CITY_E2E_PASSWORD/)
 })
