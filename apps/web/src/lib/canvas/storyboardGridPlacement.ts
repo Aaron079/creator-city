@@ -4,7 +4,7 @@ export type GridCellCoordinates = { row: number; col: number }
 const GAP = 24
 const SOURCE_GAP_X = 240
 const COLUMN_GAP_X = 60
-const ROW_GAP_Y = 20
+const ROW_GAP_Y = 25
 const COLLISION_STEP_Y = 320
 const FALLBACK_STEP_X = 120
 

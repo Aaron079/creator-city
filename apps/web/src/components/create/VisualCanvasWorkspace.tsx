@@ -6418,7 +6418,7 @@ export function VisualCanvasWorkspace({
   const handleCreateStoryboardGridCellNode = useCallback((
     sourceNodeId: string,
     cell: StoryboardGridUploadedCell,
-    placementIndex: number,
+    _placementIndex: number,
     _total: number,
   ) => {
     const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
