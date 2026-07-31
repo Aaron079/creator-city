@@ -18,3 +18,25 @@ export function countProjectWorkflowNodes(
     0,
   )
 }
+
+export type ProjectAssetCountRow = {
+  projectId: string | null
+  _count: { _all: number }
+}
+
+export function toProjectAssetCountMap(
+  rows: readonly ProjectAssetCountRow[],
+): Map<string, number> {
+  return new Map(
+    rows.flatMap((row) => (
+      row.projectId === null ? [] : [[row.projectId, row._count._all] as const]
+    )),
+  )
+}
+
+export function countProjectAssets(
+  projectId: string,
+  counts: ReadonlyMap<string, number>,
+): number {
+  return counts.get(projectId) ?? 0
+}

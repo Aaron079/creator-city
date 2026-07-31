@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  countProjectAssets,
   countProjectWorkflowNodes,
+  toProjectAssetCountMap,
   toWorkflowNodeCountMap,
 } from './project-summary'
 
@@ -53,5 +55,39 @@ describe('project summary node counts', () => {
       ),
       4,
     )
+  })
+})
+
+describe('project summary asset counts', () => {
+  test('maps direct assets to their project', () => {
+    const counts = toProjectAssetCountMap([
+      { projectId: 'project-1', _count: { _all: 2 } },
+    ])
+
+    assert.equal(countProjectAssets('project-1', counts), 2)
+  })
+
+  test('keeps counts distinct across projects', () => {
+    const counts = toProjectAssetCountMap([
+      { projectId: 'project-1', _count: { _all: 1 } },
+      { projectId: 'project-2', _count: { _all: 3 } },
+    ])
+
+    assert.equal(countProjectAssets('project-1', counts), 1)
+    assert.equal(countProjectAssets('project-2', counts), 3)
+  })
+
+  test('treats a missing project count as zero', () => {
+    assert.equal(countProjectAssets('project-missing', new Map()), 0)
+  })
+
+  test('ignores unbound direct assets', () => {
+    const counts = toProjectAssetCountMap([
+      { projectId: null, _count: { _all: 9 } },
+      { projectId: 'project-1', _count: { _all: 1 } },
+    ])
+
+    assert.equal(countProjectAssets('project-1', counts), 1)
+    assert.equal(counts.has('null'), false)
   })
 })
