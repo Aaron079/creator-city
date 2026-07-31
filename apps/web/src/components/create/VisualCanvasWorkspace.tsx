@@ -14,7 +14,6 @@ import { CanvasSkillPanel } from '@/components/create/CanvasSkillPanel'
 import { CreativeAssetsPanel } from '@/components/create/CreativeAssetsPanel'
 import { EdgeDirectorPanel } from '@/components/create/EdgeDirectorPanel'
 import { GenerationTasksPanel } from '@/components/create/GenerationTasksPanel'
-import { ImageEditorPanel } from '@/components/create/ImageEditorPanel'
 import { MediaDiagnosticsPanel } from '@/components/create/MediaDiagnosticsPanel'
 import { P0MediaDebugPanel } from '@/components/create/P0MediaDebugPanel'
 import { PromptInspectorPanel } from '@/components/create/PromptInspectorPanel'
@@ -41,6 +40,7 @@ import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePan
 import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
 import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
+import { resolveStoryboardGridCellPosition } from '@/lib/canvas/storyboardGridPlacement'
 import { ScriptSegmentationPanel } from '@/components/create/canvas/skills/ScriptSegmentationPanel'
 import type { SceneNodeMaterializationPlan } from '@/components/create/canvas/skills/scriptSegmentationMaterialization'
 import { NarrativeBeatAnalysisPanel } from '@/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
@@ -2654,7 +2654,7 @@ export function VisualCanvasWorkspace({
   const [p0MediaDebugOpen, setP0MediaDebugOpen] = useState(false)
   const [directorState, setDirectorState] = useState<StoryboardState>({ version: '1', shots: [], updatedAt: '' })
   const [directorActiveShotId, setDirectorActiveShotId] = useState<string | null>(null)
-  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'image-editor' | 'skills' | null>(null)
+  const [activePanel, setActivePanel] = useState<'assets' | 'templates' | 'history' | 'skills' | null>(null)
   const [commentsEnabled, setCommentsEnabled] = useState(false)
   const [comments, setComments] = useState<CanvasComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -2662,7 +2662,6 @@ export function VisualCanvasWorkspace({
   const [commentsSyncing, setCommentsSyncing] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
-  const [appliedImageEdit, setAppliedImageEdit] = useState('')
   const [canvasFeedback, setCanvasFeedback] = useState('')
   const [dialogLocalRefs, setDialogLocalRefs] = useState<LocalRefEntry[]>([])
   const [dialogScriptInputs, setDialogScriptInputs] = useState<LocalScriptEntry[]>([])
@@ -6425,10 +6424,13 @@ export function VisualCanvasWorkspace({
     const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
     if (!sourceNode) return null
     const title = cell.title || `${sourceNode.title || '分镜'} · ${cell.metadata.index + 1}`
-    const position = {
-      x: sourceNode.x + sourceNode.width + 240 + Math.floor(placementIndex / 4) * 440,
-      y: sourceNode.y + cell.metadata.row * 340,
-    }
+    const nodeSize = getNodeSize('image')
+    const position = resolveStoryboardGridCellPosition({
+      source: sourceNode,
+      cell: { row: cell.metadata.row, col: cell.metadata.col },
+      size: nodeSize,
+      occupied: latestNodesRef.current,
+    })
     const node = createNode('image', {
       title,
       prompt: sourceNode.prompt ?? '',
@@ -8117,36 +8119,6 @@ export function VisualCanvasWorkspace({
     }
     showCanvasFeedback(`${item.title} · ${item.detail}`)
   }, [createNode, handleNodePatch, showCanvasFeedback])
-
-  const handleApplyImageEdit = useCallback((action: string) => {
-    setAppliedImageEdit(action)
-    const targetKind: VisualCanvasNodeKind = action === '涂鸦生视频' ? 'video' : 'image'
-    const shouldCreateNode = action !== '图片编辑器节点' || activeNode?.kind !== 'image'
-    const targetNode = shouldCreateNode
-      ? createNode(targetKind, {
-        title: action,
-        prompt: `${action} · 根据当前参考图/草图生成可继续编辑的${targetKind === 'video' ? '视频镜头' : '图片结果'}。`,
-        model: NODE_META[targetKind].model,
-        ratio: NODE_META[targetKind].ratio,
-        status: 'done',
-      })
-      : activeNode
-    if (targetNode) {
-      handleNodePatch(targetNode.id, {
-        resultPreview: `${action} 已创建可用节点，可继续接下游节点生成。`,
-        outputLabel: `${action} 已应用`,
-        status: 'done',
-      })
-    }
-    if (activeNode?.kind === 'image') {
-      handleNodePatch(activeNode.id, {
-        resultPreview: `图片编辑器 · ${action} · 已应用编辑效果。`,
-        outputLabel: `已应用编辑效果。`,
-        status: 'done',
-      })
-    }
-    showCanvasFeedback(`${action} 已执行，节点已加入画布。`)
-  }, [activeNode, createNode, handleNodePatch, showCanvasFeedback])
 
   const handleNodeDialogGenerate = useCallback(() => {
     if (!editingNode) return
@@ -11088,22 +11060,6 @@ export function VisualCanvasWorkspace({
               items={canvasHistoryItems}
               selectedId={selectedHistoryId}
               onSelectItem={handleSelectHistoryItem}
-              onClose={closeSidePanel}
-            />
-          </motion.div>
-        ) : activePanel === 'image-editor' ? (
-          <motion.div
-            key="image-editor"
-            className="canvas-motion-panel-layer"
-            initial={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, x: -18, y: 12, scale: 0.985, filter: 'blur(8px)' }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <ImageEditorPanel
-              nodeTitle={activeNode?.kind === 'image' ? activeNode.title : '图片编辑器'}
-              appliedAction={appliedImageEdit}
-              onApply={handleApplyImageEdit}
               onClose={closeSidePanel}
             />
           </motion.div>
