@@ -52,11 +52,12 @@ network/console contract.
 ### Test Isolation
 
 Create a dedicated `apps/web/tests/e2e/` test tree and a dedicated config that
-uses only that tree. Keep its output under the already ignored Playwright
-temporary-output directory.
+uses only that tree. Keep its output under an external temporary directory so
+test artifacts cannot dirty the repository.
 
-The config defaults to a Preview base URL. Production is never the implicit
-target. An explicit runtime value is required to use any other base URL.
+The config defaults to a local base URL because the repository has no stable
+Preview URL. Production is never the implicit target. An explicit runtime value
+is required to use any remote Preview URL.
 
 ### Authentication and Fixture Contract
 
