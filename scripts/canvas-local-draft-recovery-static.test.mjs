@@ -16,19 +16,22 @@ test('workspace rejects cross-project local records during normalization', () =>
 })
 
 test('workspace delegates version classification to the recovery guard', () => {
-  assert.match(workspace, /import \{ decideCanvasDraftRecovery \}/)
+  assert.match(
+    workspace,
+    /import \{[\s\S]*decideCanvasDraftRecovery,[\s\S]*\} from '@\/lib\/canvas\/canvasDraftRecovery'/,
+  )
   assert.match(workspace, /const recoveryDecision = decideCanvasDraftRecovery\(/)
   assert.match(workspace, /recoveryDecision\.action === 'prompt-local-recovery'/)
 })
 
 test('authorized load renders the server before offering local recovery', () => {
-  const applyServer = workspace.indexOf('nodes: serverNodes,')
-  const promptDecision = workspace.indexOf("recoveryDecision.action === 'prompt-local-recovery'")
+  const applyServer = workspace.indexOf('nodes: stageCRecovery.nodes,')
+  const promptDecision = workspace.indexOf('setDraftRestorePrompt({')
 
   assert.notEqual(applyServer, -1)
   assert.notEqual(promptDecision, -1)
   assert.ok(applyServer < promptDecision)
-  assert.match(workspace, /nodes: serverNodes,[\s\S]*allowEmpty: true/)
+  assert.match(workspace, /nodes: stageCRecovery\.nodes,[\s\S]*allowEmpty: true/)
   assert.match(workspace, /setDraftRestorePrompt\(\{[\s\S]*source: localCandidate\.source/)
 })
 
@@ -49,8 +52,8 @@ test('workspace no longer auto-renders local canvas candidates', () => {
 
 test('dismissal explicitly keeps the server version without a save', () => {
   assert.match(workspace, /const keepServerCanvas = useCallback\(\(\) => \{[\s\S]*继续使用服务器版本/)
-  assert.match(workspace, /onClick=\{keepServerCanvas\}/)
-  assert.match(workspace, />\s*使用服务器版本\s*</)
+  assert.match(workspace, /onKeepServer=\{keepServerCanvas\}/)
+  assert.match(workspace, /<StoryboardDirectorInteractionGate[\s\S]*recovery=\{draftRestorePrompt \? \{/)
 })
 
 test('clean page leave does not manufacture a newer local draft', () => {
@@ -61,7 +64,7 @@ test('clean page leave does not manufacture a newer local draft', () => {
   )
   assert.match(
     workspace,
-    /function flushBeforeLeave\(\) \{[\s\S]*if \(hasUnsyncedLocalChangesRef\.current\) flushLocalSnapshot\(\)/,
+    /function flushBeforeLeave\(context: 'background' \| 'stale'\) \{[\s\S]*if \(hasUnsyncedLocalChangesRef\.current\) flushLocalSnapshot\(\)/,
   )
   assert.match(
     workspace,
