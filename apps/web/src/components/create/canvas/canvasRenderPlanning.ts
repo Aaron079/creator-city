@@ -25,7 +25,7 @@ export function resolveCanvasEdgeNodes<
   return fromNode && toNode ? { fromNode, toNode } : null
 }
 
-export type CanvasNodeLayerVisualState<Node, Mode> = {
+export type CanvasNodeLayerVisualState<Node, Mode, Health> = {
   node: Node
   active: boolean
   dragging: boolean
@@ -34,13 +34,24 @@ export type CanvasNodeLayerVisualState<Node, Mode> = {
   sourceNodeTitle: string | undefined
   sourceNodeMissing: boolean
   reframeMode: Mode
+  canOpenPromptInspector: boolean
+  canOpenMediaDiagnostics: boolean
+  canCreateStableCopy: boolean
+  canRecoverMedia: boolean
+  canRegenerateFromPrompt: boolean
+  canOpenSkillPanel: boolean
+  canOpenCreativeAssets: boolean
+  canOpenAssetIntelligence: boolean
+  canAddToStoryboard: boolean
+  canContinueWorkflow: boolean
   canCreateDerivedVideo: boolean
   canOpenGenerationDialog: boolean
+  generationHealth: Health
 }
 
-export function canvasNodeLayerPropsEqual<Node, Mode>(
-  previous: CanvasNodeLayerVisualState<Node, Mode>,
-  next: CanvasNodeLayerVisualState<Node, Mode>,
+export function canvasNodeLayerPropsEqual<Node, Mode, Health>(
+  previous: CanvasNodeLayerVisualState<Node, Mode, Health>,
+  next: CanvasNodeLayerVisualState<Node, Mode, Health>,
 ) {
   return previous.node === next.node
     && previous.active === next.active
@@ -50,6 +61,17 @@ export function canvasNodeLayerPropsEqual<Node, Mode>(
     && previous.sourceNodeTitle === next.sourceNodeTitle
     && previous.sourceNodeMissing === next.sourceNodeMissing
     && previous.reframeMode === next.reframeMode
+    && previous.canOpenPromptInspector === next.canOpenPromptInspector
+    && previous.canOpenMediaDiagnostics === next.canOpenMediaDiagnostics
+    && previous.canCreateStableCopy === next.canCreateStableCopy
+    && previous.canRecoverMedia === next.canRecoverMedia
+    && previous.canRegenerateFromPrompt === next.canRegenerateFromPrompt
+    && previous.canOpenSkillPanel === next.canOpenSkillPanel
+    && previous.canOpenCreativeAssets === next.canOpenCreativeAssets
+    && previous.canOpenAssetIntelligence === next.canOpenAssetIntelligence
+    && previous.canAddToStoryboard === next.canAddToStoryboard
+    && previous.canContinueWorkflow === next.canContinueWorkflow
     && previous.canCreateDerivedVideo === next.canCreateDerivedVideo
     && previous.canOpenGenerationDialog === next.canOpenGenerationDialog
+    && previous.generationHealth === next.generationHealth
 }

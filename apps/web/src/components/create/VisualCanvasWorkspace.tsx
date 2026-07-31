@@ -4,7 +4,13 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSP
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
-import { CanvasNodeCard, type CanvasNodePreviewType, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { type CanvasNodePreviewType, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
+import { CanvasNodeLayer, type CanvasNodeCardPropsFactory } from '@/components/create/canvas/CanvasNodeLayer'
+import {
+  buildCanvasNodeIndex,
+  resolveCanvasEdgeNodes,
+  type CanvasNodeLayerVisualState,
+} from '@/components/create/canvas/canvasRenderPlanning'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -4684,6 +4690,8 @@ export function VisualCanvasWorkspace({
     }
   }, [activeCanvasModal, activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCanvasPanel, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, handleCloseStoryboardDirector, mediaReviewWindows.length, resetCanvasView, setZoomAroundPoint])
 
+  const nodeById = useMemo(() => buildCanvasNodeIndex(nodes), [nodes])
+
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
     [activeNodeId, nodes],
@@ -4819,11 +4827,6 @@ export function VisualCanvasWorkspace({
     setStyleBible((current) => deriveStyleBibleTemplate(latestNodesRef.current, current))
     showCanvasFeedback('已根据当前节点生成风格圣经模板。')
   }, [showCanvasFeedback])
-
-  const nodeTitleById = useMemo(
-    () => new Map(nodes.map((n) => [n.id, n.title || n.kind])),
-    [nodes],
-  )
 
   const inspectorSourceNode = useMemo(() => {
     if (!activeNode) return undefined
@@ -8990,7 +8993,6 @@ export function VisualCanvasWorkspace({
   const PORTRAIT_RE = /人|人物|角色|女孩|男孩|女|男|girl|boy|man|woman|person|portrait|face|character|child/i
 
   const upstreamContextMap = useMemo(() => {
-    const nodeById = new Map(nodes.map((n) => [n.id, n]))
     const result = new Map<string, { isPortraitLikely: boolean; sourceNodeId: string }>()
     for (const edge of edges) {
       if (result.has(edge.toNodeId)) continue
@@ -9010,7 +9012,7 @@ export function VisualCanvasWorkspace({
     }
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges])
+  }, [edges, nodeById])
 
   const handleUpstreamTool = useCallback((
     targetNode: VisualCanvasNode,
@@ -9960,6 +9962,84 @@ export function VisualCanvasWorkspace({
     () => nodes.some((node) => isActiveGenerationStatus(node.status)),
     [nodes],
   )
+
+  const nodeCardPropsFactoryRef = useRef<CanvasNodeCardPropsFactory>(() => {
+    throw new Error('CanvasNodeLayer rendered before its card props factory was assigned')
+  })
+  const createCardProps = useCallback((visualState: CanvasNodeLayerVisualState<
+    CanvasNodeCardNode,
+    ReframeMode,
+    GenerationHealthResponse | null
+  >) => (
+    nodeCardPropsFactoryRef.current(visualState)
+  ), [])
+  nodeCardPropsFactoryRef.current = (visualState) => {
+    const {
+      node,
+      active,
+      dragging,
+      incomingSourceNode,
+      incomingPortraitLikely,
+      sourceNodeTitle,
+      sourceNodeMissing,
+      reframeMode: nodeReframeMode,
+      canOpenPromptInspector,
+      canOpenMediaDiagnostics,
+      canCreateStableCopy,
+      canRecoverMedia,
+      canRegenerateFromPrompt,
+      canOpenSkillPanel,
+      canOpenCreativeAssets,
+      canOpenAssetIntelligence,
+      canAddToStoryboard,
+      canContinueWorkflow,
+      canCreateDerivedVideo,
+      canOpenGenerationDialog,
+    } = visualState
+
+    return {
+      node,
+      active,
+      projectId,
+      workflowId,
+      dragging,
+      onSelect: () => {
+        selectNodeForMove(node)
+      },
+      onAddPrev: (event) => startConnectionDrag(node.id, 'in', event),
+      onAddNext: (event) => startConnectionDrag(node.id, 'out', event),
+      onDragStart: (event) => handleNodeDragStart(node.id, event),
+      onOpenContextMenu: (event) => openNodeContextMenu(node.id, event.clientX, event.clientY),
+      onEdit: () => focusPromptForNode(node),
+      onOpenPreview: (type) => openNodePreview(node, type),
+      onOpenPromptInspector: canOpenPromptInspector ? () => openPromptInspector(node.id) : undefined,
+      onOpenMediaDiagnostics: canOpenMediaDiagnostics ? (type) => openMediaDiagnostics(node.id, type) : undefined,
+      onCreateStableCopy: canCreateStableCopy ? () => createStableCopyFromExpiredNode(node) : undefined,
+      onRecoverMedia: canRecoverMedia ? handleMediaRecoveryPatch : undefined,
+      onRegenerateFromPrompt: canRegenerateFromPrompt ? () => handleRegenerateNodeFromPrompt(node) : undefined,
+      enabledSkillCount: 0,
+      onOpenSkillPanel: canOpenSkillPanel ? () => setActivePanel('skills') : undefined,
+      creativeAssetLabel: creativeAssetLabelForNode(node),
+      onOpenCreativeAssets: canOpenCreativeAssets ? () => openCreativeAssets(node.id) : undefined,
+      onOpenAssetIntelligence: canOpenAssetIntelligence ? () => openCreativeAssets(node.id, { tab: 'intelligence' }) : undefined,
+      onAddToStoryboard: canAddToStoryboard ? () => handleAddNodeToDirector(node) : undefined,
+      generationHealth,
+      reframeMode: nodeReframeMode,
+      workflowIncomingContext: incomingSourceNode
+        ? { sourceNode: incomingSourceNode, isPortraitLikely: incomingPortraitLikely }
+        : undefined,
+      onWorkflowContinue: canContinueWorkflow
+        ? (event) => handleWorkflowContinue(node.id, event)
+        : undefined,
+      onCreateDerivedVideo: canCreateDerivedVideo ? () => {
+        const videoNode = createNode('video', { parentNodeId: node.id })
+        openCanvasPanel('generation', { nodeId: videoNode.id })
+      } : undefined,
+      sourceNodeTitle,
+      sourceNodeMissing,
+      onOpenGenerationDialog: canOpenGenerationDialog ? () => openGenerationDialog(node.id) : undefined,
+    }
+  }
 
   const topCommandBar = (
     <CanvasTopCommandBar>
@@ -11207,9 +11287,9 @@ export function VisualCanvasWorkspace({
           {edges.length > 0 ? (
             <>
               {edges.map((edge) => {
-                const fromNode = nodes.find((node) => node.id === edge.fromNodeId)
-                const toNode = nodes.find((node) => node.id === edge.toNodeId)
-                if (!fromNode || !toNode) return null
+                const edgeNodes = resolveCanvasEdgeNodes(nodeById, edge)
+                if (!edgeNodes) return null
+                const { fromNode, toNode } = edgeNodes
 
                 // UI-only fallback for edges whose labels were lost before the cloud-persistence
                 // fix: if the target node has derivedFromToolLabel and its generationDraft.sourceNodeId
@@ -11258,77 +11338,58 @@ export function VisualCanvasWorkspace({
             />
           ) : null}
 
-          {nodes.map((node) => (
-            <div
-              key={node.id}
-              className="absolute"
-              style={{
-                left: node.x,
-                top: node.y,
-                zIndex: draggingNodeId === node.id ? 12 : activeNodeId === node.id ? 8 : 4,
-              }}
-            >
-              <CanvasNodeErrorBoundary nodeId={node.id}>
-                <CanvasNodeCard
-                  node={node}
-                  active={node.id === activeNode?.id}
-                  projectId={projectId}
-                  workflowId={workflowId}
-                  dragging={draggingNodeId === node.id}
-                  onSelect={() => {
-                    selectNodeForMove(node)
-                  }}
-                  onAddPrev={(event) => startConnectionDrag(node.id, 'in', event)}
-                  onAddNext={(event) => startConnectionDrag(node.id, 'out', event)}
-                  onDragStart={(event) => handleNodeDragStart(node.id, event)}
-                  onOpenContextMenu={(event) => openNodeContextMenu(node.id, event.clientX, event.clientY)}
-                  onEdit={() => focusPromptForNode(node)}
-                  onOpenPreview={(type) => openNodePreview(node, type)}
-                  onOpenPromptInspector={() => openPromptInspector(node.id)}
-                  onOpenMediaDiagnostics={ASSET_RECOVERY_TOOLS_ENABLED ? (type) => openMediaDiagnostics(node.id, type) : undefined}
-                  onCreateStableCopy={ASSET_RECOVERY_TOOLS_ENABLED ? () => createStableCopyFromExpiredNode(node) : undefined}
-                  onRecoverMedia={ASSET_RECOVERY_TOOLS_ENABLED ? handleMediaRecoveryPatch : undefined}
-                  onRegenerateFromPrompt={ASSET_RECOVERY_TOOLS_ENABLED ? () => handleRegenerateNodeFromPrompt(node) : undefined}
-                  enabledSkillCount={0}
-                  onOpenSkillPanel={undefined}
-                  creativeAssetLabel={creativeAssetLabelForNode(node)}
-                  onOpenCreativeAssets={() => openCreativeAssets(node.id)}
-                  onOpenAssetIntelligence={() => openCreativeAssets(node.id, { tab: 'intelligence' })}
-                  onAddToStoryboard={STORYBOARD_TOOLS_ENABLED ? () => handleAddNodeToDirector(node) : undefined}
-                  generationHealth={generationHealth}
-                  reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
-                  workflowIncomingContext={(() => {
-                    const ctx = upstreamContextMap.get(node.id)
-                    if (!ctx) return undefined
-                    const sourceNode = nodes.find((n) => n.id === ctx.sourceNodeId)
-                    if (!sourceNode) return undefined
-                    return { sourceNode, isPortraitLikely: ctx.isPortraitLikely }
-                  })()}
-                  onWorkflowContinue={upstreamContextMap.has(node.id)
-                    ? (e) => handleWorkflowContinue(node.id, e)
-                    : undefined}
-                  onCreateDerivedVideo={node.kind === 'image' && node.status === 'done' && node.resultImageUrl ? () => {
-                    const videoNode = createNode('video', { parentNodeId: node.id })
-                    openCanvasPanel('generation', { nodeId: videoNode.id })
-                  } : undefined}
-                  sourceNodeTitle={(() => {
-                    const meta = metadataRecord(node.metadataJson)
-                    const draft = metadataRecord(meta.generationDraft)
-                    const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
-                    if (!sid) return undefined
-                    return nodeTitleById.get(sid) ?? undefined
-                  })()}
-                  sourceNodeMissing={(() => {
-                    const meta = metadataRecord(node.metadataJson)
-                    const draft = metadataRecord(meta.generationDraft)
-                    const sid = typeof draft.sourceNodeId === 'string' ? draft.sourceNodeId : undefined
-                    return Boolean(sid && !nodeTitleById.has(sid))
-                  })()}
-                  onOpenGenerationDialog={node.kind === 'text' ? () => openGenerationDialog(node.id) : undefined}
-                />
-              </CanvasNodeErrorBoundary>
-            </div>
-          ))}
+          {nodes.map((node) => {
+            const incomingContext = upstreamContextMap.get(node.id)
+            const incomingSourceNode = incomingContext
+              ? nodeById.get(incomingContext.sourceNodeId)
+              : undefined
+            const metadata = metadataRecord(node.metadataJson)
+            const generationDraft = metadataRecord(metadata.generationDraft)
+            const sourceNodeId = typeof generationDraft.sourceNodeId === 'string'
+              ? generationDraft.sourceNodeId
+              : undefined
+            const sourceNode = sourceNodeId ? nodeById.get(sourceNodeId) : undefined
+
+            return (
+              <div
+                key={node.id}
+                className="absolute"
+                style={{
+                  left: node.x,
+                  top: node.y,
+                  zIndex: draggingNodeId === node.id ? 12 : activeNodeId === node.id ? 8 : 4,
+                }}
+              >
+                <CanvasNodeErrorBoundary nodeId={node.id}>
+                  <CanvasNodeLayer
+                    node={node}
+                    active={node.id === activeNode?.id}
+                    dragging={draggingNodeId === node.id}
+                    incomingSourceNode={incomingSourceNode}
+                    incomingPortraitLikely={incomingContext?.isPortraitLikely ?? false}
+                    sourceNodeTitle={sourceNode ? sourceNode.title || sourceNode.kind : undefined}
+                    sourceNodeMissing={Boolean(sourceNodeId && !sourceNode)}
+                    reframeMode={node.id === activeNodeId ? reframeMode : 'original'}
+                    canOpenPromptInspector
+                    canOpenMediaDiagnostics={ASSET_RECOVERY_TOOLS_ENABLED}
+                    canCreateStableCopy={ASSET_RECOVERY_TOOLS_ENABLED}
+                    canRecoverMedia={ASSET_RECOVERY_TOOLS_ENABLED}
+                    canRegenerateFromPrompt={ASSET_RECOVERY_TOOLS_ENABLED}
+                    canOpenSkillPanel={false}
+                    canOpenCreativeAssets
+                    canOpenAssetIntelligence
+                    canAddToStoryboard={STORYBOARD_TOOLS_ENABLED}
+                    canContinueWorkflow={Boolean(incomingSourceNode)}
+                    canCreateDerivedVideo={Boolean(node.kind === 'image' && node.status === 'done' && node.resultImageUrl)}
+                    canOpenGenerationDialog={node.kind === 'text'}
+                    generationHealth={generationHealth}
+                    createCardProps={createCardProps}
+                    cardPropsFactoryRef={nodeCardPropsFactoryRef}
+                  />
+                </CanvasNodeErrorBoundary>
+              </div>
+            )
+          })}
 
         </div>
       </div>

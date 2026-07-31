@@ -9,11 +9,37 @@ import {
 
 type CanvasNode = { id: string; title: string }
 type ReframeMode = 'original' | 'wide'
+type GenerationHealth = { status: 'healthy' | 'unhealthy' } | null
+type CanvasNodeLayerAvailability = {
+  canOpenPromptInspector: boolean
+  canOpenMediaDiagnostics: boolean
+  canCreateStableCopy: boolean
+  canRecoverMedia: boolean
+  canRegenerateFromPrompt: boolean
+  canOpenSkillPanel: boolean
+  canOpenCreativeAssets: boolean
+  canOpenAssetIntelligence: boolean
+  canAddToStoryboard: boolean
+  canContinueWorkflow: boolean
+}
+type CanvasNodeLayerState = CanvasNodeLayerVisualState<CanvasNode, ReframeMode, GenerationHealth>
+const availabilityFields: Array<keyof CanvasNodeLayerAvailability> = [
+  'canOpenPromptInspector',
+  'canOpenMediaDiagnostics',
+  'canCreateStableCopy',
+  'canRecoverMedia',
+  'canRegenerateFromPrompt',
+  'canOpenSkillPanel',
+  'canOpenCreativeAssets',
+  'canOpenAssetIntelligence',
+  'canAddToStoryboard',
+  'canContinueWorkflow',
+]
 
 function layerState(
   node: CanvasNode,
-  overrides: Partial<CanvasNodeLayerVisualState<CanvasNode, ReframeMode>> = {},
-): CanvasNodeLayerVisualState<CanvasNode, ReframeMode> {
+  overrides: Partial<CanvasNodeLayerState> = {},
+): CanvasNodeLayerState {
   return {
     node,
     active: false,
@@ -25,6 +51,17 @@ function layerState(
     reframeMode: 'original',
     canCreateDerivedVideo: false,
     canOpenGenerationDialog: false,
+    generationHealth: null,
+    canOpenPromptInspector: false,
+    canOpenMediaDiagnostics: false,
+    canCreateStableCopy: false,
+    canRecoverMedia: false,
+    canRegenerateFromPrompt: false,
+    canOpenSkillPanel: false,
+    canOpenCreativeAssets: false,
+    canOpenAssetIntelligence: false,
+    canAddToStoryboard: false,
+    canContinueWorkflow: false,
     ...overrides,
   }
 }
@@ -124,6 +161,18 @@ describe('canvas render planning', () => {
       previous,
       layerState(node, { canOpenGenerationDialog: true }),
     ), false)
+    assert.equal(canvasNodeLayerPropsEqual(
+      previous,
+      layerState(node, { generationHealth: { status: 'healthy' } }),
+    ), false)
+    for (const field of availabilityFields) {
+      const enabled = layerState(node, { [field]: true } as Partial<CanvasNodeLayerState>)
+      assert.equal(canvasNodeLayerPropsEqual(previous, enabled), false, `${field}: false to true`)
+      assert.equal(canvasNodeLayerPropsEqual(
+        enabled,
+        layerState(node, { [field]: false } as Partial<CanvasNodeLayerState>),
+      ), false, `${field}: true to false`)
+    }
     assert.equal(canvasNodeLayerPropsEqual(
       previous,
       layerState({ ...node }),

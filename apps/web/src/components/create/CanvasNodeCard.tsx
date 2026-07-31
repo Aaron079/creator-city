@@ -55,7 +55,7 @@ export interface VisualCanvasNode {
   createdAt: number
 }
 
-interface CanvasNodeCardProps {
+export interface CanvasNodeCardProps {
   node: VisualCanvasNode
   active: boolean
   projectId?: string
