@@ -10,7 +10,9 @@ import {
   projectJsonError,
 } from '@/lib/projects/api-errors'
 import {
+  countProjectAssets,
   countProjectWorkflowNodes,
+  toProjectAssetCountMap,
   toWorkflowNodeCountMap,
 } from '@/lib/projects/project-summary'
 
@@ -18,6 +20,21 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
+
+async function loadProjectAssetCounts(userId: string, projectIds: readonly string[]) {
+  if (projectIds.length === 0) return new Map<string, number>()
+
+  const rows = await db.asset.groupBy({
+    by: ['projectId'],
+    where: {
+      ownerId: userId,
+      projectId: { in: [...projectIds] },
+    },
+    _count: { _all: true },
+  })
+
+  return toProjectAssetCountMap(rows)
+}
 
 function projectSelect() {
   return {
@@ -31,7 +48,6 @@ function projectSelect() {
     createdAt: true,
     updatedAt: true,
     lastOpenedAt: true,
-    _count: { select: { generatedAssets: true, assets: true } },
     canvasWorkflows: {
       orderBy: [{ updatedAt: 'desc' as const }, { createdAt: 'desc' as const }],
       select: {
@@ -80,10 +96,6 @@ function countProjectNodes<T extends { _count: { nodes: number } }>(workflows: T
   return workflows.reduce((sum, workflow) => sum + workflow._count.nodes, 0)
 }
 
-function countProjectAssets(project: { _count: { generatedAssets: number; assets: number } }) {
-  return project._count.generatedAssets + project._count.assets
-}
-
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -100,6 +112,18 @@ export async function GET(request: NextRequest) {
         select: projectSelect(),
         orderBy: [{ lastOpenedAt: 'desc' }, { updatedAt: 'desc' }],
       })
+      let assetCounts = new Map<string, number>()
+      let assetCountWarning: string | undefined
+      try {
+        assetCounts = await loadProjectAssetCounts(
+          user.id,
+          project ? [project.id] : [],
+        )
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        console.warn('[projects] asset count query failed', { userId: user.id, error })
+        assetCountWarning = `asset_count_query: ${msg}`
+      }
       const workflow = project?.canvasWorkflows[0]
       const bestWorkflow = project ? pickProjectWorkflow(project.canvasWorkflows) : null
       const recentProject = project
@@ -116,7 +140,7 @@ export async function GET(request: NextRequest) {
             lastOpenedAt: project.lastOpenedAt,
             workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
             nodeCount: countProjectNodes(project.canvasWorkflows),
-            assetCount: countProjectAssets(project),
+            assetCount: countProjectAssets(project.id, assetCounts),
             ownerRole: 'OWNER',
             membershipRole: null,
           }
@@ -130,6 +154,7 @@ export async function GET(request: NextRequest) {
           currentProjectId: recentProject?.id ?? null,
           recentProject,
         },
+        ...(assetCountWarning ? { warnings: [assetCountWarning] } : {}),
       })
     }
 
@@ -183,6 +208,20 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      let assetCounts = new Map<string, number>()
+      if (ownedProjects.length > 0) {
+        try {
+          assetCounts = await loadProjectAssetCounts(
+            user.id,
+            ownedProjects.map((project) => project.id),
+          )
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          console.warn('[projects] asset count query failed', { userId: user.id, error })
+          warnings.push(`asset_count_query: ${msg}`)
+        }
+      }
+
       const projects = ownedProjects.map((project) => {
         const workflow = project.canvasWorkflows[0] ?? null
         return {
@@ -198,7 +237,7 @@ export async function GET(request: NextRequest) {
           lastOpenedAt: project.lastOpenedAt,
           workflowId: workflow?.id ?? null,
           nodeCount: countProjectWorkflowNodes(project.canvasWorkflows, workflowNodeCounts),
-          assetCount: 0,
+          assetCount: countProjectAssets(project.id, assetCounts),
           ownerRole: 'OWNER',
           membershipRole: null,
         }
@@ -253,6 +292,16 @@ export async function GET(request: NextRequest) {
     const byId = new Map<string, (typeof ownedProjects)[number]>()
     for (const project of [...ownedProjects, ...memberProjects]) byId.set(project.id, project)
 
+    let assetCounts = new Map<string, number>()
+    let assetCountWarning: string | undefined
+    try {
+      assetCounts = await loadProjectAssetCounts(user.id, [...byId.keys()])
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      console.warn('[projects] asset count query failed', { userId: user.id, error })
+      assetCountWarning = `asset_count_query: ${msg}`
+    }
+
     const projects = [...byId.values()]
       .sort((left, right) => {
         const leftTime = new Date(left.lastOpenedAt ?? left.updatedAt).getTime()
@@ -276,7 +325,7 @@ export async function GET(request: NextRequest) {
           lastOpenedAt: project.lastOpenedAt,
           workflowId: bestWorkflow?.id ?? workflow?.id ?? null,
           nodeCount: countProjectNodes(project.canvasWorkflows),
-          assetCount: countProjectAssets(project),
+          assetCount: countProjectAssets(project.id, assetCounts),
           ownerRole: isOwner ? 'OWNER' : null,
           membershipRole: membershipByProjectId.get(project.id) ?? null,
         }
@@ -292,6 +341,7 @@ export async function GET(request: NextRequest) {
         recentProject: projects[0] ?? null,
       },
       ...(membershipWarning ? { membershipWarning } : {}),
+      ...(assetCountWarning ? { warnings: [assetCountWarning] } : {}),
     })
   } catch (error) {
     if (isProjectCanvasSchemaMissing(error)) {
