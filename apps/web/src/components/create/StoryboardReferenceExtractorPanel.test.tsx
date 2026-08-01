@@ -58,6 +58,7 @@ function renderedHarnessSource() {
     const initialSelection = ${selection}
     let root = null
     const counts = { crop: 0, uploadFetch: 0, nodeCreate: 0 }
+    const processing = { closeCount: 0, cropStarted: false, resolveCrop: null }
 
     function mount() {
       root?.unmount()
@@ -89,9 +90,46 @@ function renderedHarnessSource() {
       }))
     }
 
+    function mountProcessing() {
+      root?.unmount()
+      document.getElementById('root').replaceChildren()
+      root = createRoot(document.getElementById('root'))
+      root.render(React.createElement(StoryboardReferenceExtractorPanel, {
+        projectId: 'project-1',
+        sourceNode,
+        testInitialSelections: [{
+          id: 'selection-ready-1',
+          label: '参考图 1',
+          order: 0,
+          crop: { x: 10, y: 20, width: 120, height: 80 },
+          status: 'ready',
+        }],
+        testProcessingDependencies: {
+          cropToBlob: () => new Promise((resolve) => {
+            processing.cropStarted = true
+            processing.resolveCrop = () => resolve(new Blob(['crop'], { type: 'image/png' }))
+          }),
+          fetchImpl: async () => new Response(JSON.stringify({
+            success: true,
+            asset: { id: 'asset-created-1', url: 'https://assets.example.test/created-1.jpg' },
+          }), { status: 200, headers: { 'content-type': 'application/json' } }),
+        },
+        onCreateReferenceNode() {
+          return 'node-created-1'
+        },
+        onUpdateSourceSession() {},
+        onClose() {
+          processing.closeCount += 1
+        },
+      }))
+    }
+
     window.__referenceExtractorHarness = {
       mount,
+      mountProcessing,
       counts: () => ({ ...counts }),
+      processing: () => ({ closeCount: processing.closeCount, cropStarted: processing.cropStarted }),
+      finishProcessing: () => processing.resolveCrop?.(),
     }
   `
 }
@@ -236,6 +274,34 @@ test('confirmation retry reuses the uploaded reference without cropping or uploa
   assert.equal(result.status, 'uploaded')
 })
 
+test('clears a prior node error after a successful retry', async () => {
+  const failedSelection: ReferenceSelection = {
+    id: 'selection-1',
+    label: '参考图 1',
+    order: 0,
+    crop: { x: 10, y: 20, width: 120, height: 80 },
+    status: 'uploaded',
+    assetId: 'asset-reference-1',
+    assetUrl: 'https://assets.example.test/reference-1.jpg',
+    error: '参考节点创建失败，资产已入库，可再次点击确认重试。',
+  }
+
+  const result = await processStoryboardReferenceSelection({
+    selection: failedSelection,
+    sourceAssetId: 'asset-source-1',
+    sourceNodeId: 'image-node-1',
+    extractionSessionId: 'session-1',
+    image: {} as HTMLImageElement,
+    imageSize: { width: 320, height: 180 },
+    projectId: 'project-1',
+    total: 1,
+    onCreateReferenceNode: () => 'node-reference-1',
+  })
+
+  assert.equal(result.createdNodeId, 'node-reference-1')
+  assert.equal(result.error, undefined)
+})
+
 test('clicking 确认提取 retries an uploaded selection without a second crop or upload', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -274,6 +340,62 @@ test('clicking 确认提取 retries an uploaded selection without a second crop 
     ).__referenceExtractorHarness.counts())
     assert.deepEqual(counts, { crop: 0, uploadFetch: 0, nodeCreate: 1 })
     assert.deepEqual(pageErrors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test('prevents closing or backdrop dismissal while extraction is processing', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+
+  try {
+    await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>')
+    await page.addScriptTag({ path: bundlePath })
+    await page.evaluate(() => (
+      window as unknown as { __referenceExtractorHarness: { mountProcessing: () => void } }
+    ).__referenceExtractorHarness.mountProcessing())
+
+    const confirm = page.getByRole('button', { name: '确认提取' })
+    await page.waitForFunction(() => {
+      const button = Array.from(document.querySelectorAll('button'))
+        .find((element) => element.textContent === '确认提取') as HTMLButtonElement | undefined
+      return Boolean(button && !button.disabled)
+    })
+    await confirm.click()
+    await page.waitForFunction(() => (
+      window as unknown as {
+        __referenceExtractorHarness: { processing: () => { cropStarted: boolean } }
+      }
+    ).__referenceExtractorHarness.processing().cropStarted)
+
+    const closeButton = page.getByRole('button', { name: '关闭分镜参考提取' })
+    await assert.rejects(closeButton.click({ timeout: 300 }), /Timeout/)
+    await page.getByTestId('storyboard-reference-extractor-backdrop').click({ position: { x: 12, y: 12 } })
+    const processingStatus = page.getByRole('status', { name: '正在提取参考图' })
+    await assert.equal(await processingStatus.isVisible(), true)
+    const closeCountWhileProcessing = await page.evaluate(() => (
+      window as unknown as {
+        __referenceExtractorHarness: { processing: () => { closeCount: number } }
+      }
+    ).__referenceExtractorHarness.processing().closeCount)
+    assert.equal(closeCountWhileProcessing, 0)
+
+    await page.evaluate(() => (
+      window as unknown as { __referenceExtractorHarness: { finishProcessing: () => void } }
+    ).__referenceExtractorHarness.finishProcessing())
+    await page.waitForFunction(() => {
+      const button = Array.from(document.querySelectorAll('button'))
+        .find((element) => element.getAttribute('aria-label') === '关闭分镜参考提取') as HTMLButtonElement | undefined
+      return Boolean(button && !button.disabled)
+    })
+    await closeButton.click()
+    const closeCountAfterProcessing = await page.evaluate(() => (
+      window as unknown as {
+        __referenceExtractorHarness: { processing: () => { closeCount: number } }
+      }
+    ).__referenceExtractorHarness.processing().closeCount)
+    assert.equal(closeCountAfterProcessing, 1)
   } finally {
     await page.close()
   }

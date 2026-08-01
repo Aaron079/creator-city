@@ -224,7 +224,7 @@ export async function processStoryboardReferenceSelection({
     assetId: uploaded.assetId,
     assetUrl: uploaded.assetUrl,
     ...(createdNodeId ? { createdNodeId } : {}),
-    ...(nodeError ? { error: nodeError } : {}),
+    error: nodeError || undefined,
   }
 }
 
@@ -429,16 +429,30 @@ export function StoryboardReferenceExtractorPanel({
     }
   }, [imageSize])
 
+  const requestDismiss = useCallback(() => {
+    if (!isProcessing) onClose()
+  }, [isProcessing, onClose])
+
+  const handleBackdropClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) requestDismiss()
+  }, [requestDismiss])
+
   return (
-    <aside
-      className="fixed left-[80px] top-1/2 z-[1200] flex max-h-[92vh] w-[min(960px,calc(100vw-112px))] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1016]/98 text-white shadow-2xl backdrop-blur-xl"
-      data-testid="storyboard-reference-extractor-panel"
-      data-no-node-drag="true"
-      onPointerDown={stopPanelEvent}
-      onMouseDown={stopPanelEvent}
-      onClick={stopPanelEvent}
-      onWheel={stopPanelEvent}
+    <div
+      className="fixed inset-0 z-[1200]"
+      data-testid="storyboard-reference-extractor-backdrop"
+      onClick={handleBackdropClick}
     >
+      <aside
+        className="fixed left-[80px] top-1/2 flex max-h-[92vh] w-[min(960px,calc(100vw-112px))] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1016]/98 text-white shadow-2xl backdrop-blur-xl"
+        data-testid="storyboard-reference-extractor-panel"
+        data-no-node-drag="true"
+        aria-busy={isProcessing || undefined}
+        onPointerDown={stopPanelEvent}
+        onMouseDown={stopPanelEvent}
+        onClick={stopPanelEvent}
+        onWheel={stopPanelEvent}
+      >
       <header className="flex items-start justify-between border-b border-white/8 px-5 py-4">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">Storyboard Reference Extractor</p>
@@ -449,11 +463,16 @@ export function StoryboardReferenceExtractorPanel({
           type="button"
           className="ml-3 grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-[18px] leading-none text-white/55 transition hover:bg-white/[0.08] hover:text-white"
           aria-label="关闭分镜参考提取"
-          onClick={onClose}
+          disabled={isProcessing}
+          onClick={requestDismiss}
         >
           ×
         </button>
       </header>
+
+      {isProcessing ? (
+        <p className="sr-only" role="status" aria-label="正在提取参考图">正在提取参考图，请勿关闭面板。</p>
+      ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.15fr)_minmax(310px,0.85fr)] overflow-hidden max-md:grid-cols-1">
         <section className="min-h-0 overflow-y-auto border-r border-white/8 p-5 max-md:border-r-0 max-md:border-b">
@@ -562,7 +581,8 @@ export function StoryboardReferenceExtractorPanel({
             ))}
           </div>
         </section>
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </div>
   )
 }
