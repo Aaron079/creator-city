@@ -17,6 +17,16 @@ test('normalizes a pixel selection against the source image dimensions', () => {
   )
 })
 
+test('keeps rounded crop boundaries within normalized image bounds', () => {
+  const cropBox = normalizeReferenceCropBox(
+    { x: 125, y: 0, width: 3, height: 128 },
+    { width: 128, height: 128 },
+  )
+
+  assert.ok(cropBox.x + cropBox.width <= 1)
+  assert.ok(cropBox.y + cropBox.height <= 1)
+})
+
 test('rejects zero-area and out-of-bounds selections', () => {
   assert.throws(
     () => normalizeReferenceCropBox({ x: 0, y: 0, width: 0, height: 10 }, { width: 100, height: 100 }),
@@ -80,5 +90,47 @@ test('rejects a negative extraction index', () => {
       image: { width: 100, height: 100 },
     }),
     /index/i,
+  )
+})
+
+test('rejects blank source asset identifiers', () => {
+  assert.throws(
+    () => buildStoryboardReferenceExtractionMetadata({
+      sourceNodeId: 'node-source',
+      sourceAssetId: '   ',
+      extractionSessionId: 'extract-session-1',
+      index: 0,
+      crop: { x: 0, y: 0, width: 10, height: 10 },
+      image: { width: 100, height: 100 },
+    }),
+    /source asset id/i,
+  )
+})
+
+test('rejects blank source node identifiers', () => {
+  assert.throws(
+    () => buildStoryboardReferenceExtractionMetadata({
+      sourceNodeId: '\t',
+      sourceAssetId: 'asset-source',
+      extractionSessionId: 'extract-session-1',
+      index: 0,
+      crop: { x: 0, y: 0, width: 10, height: 10 },
+      image: { width: 100, height: 100 },
+    }),
+    /source node id/i,
+  )
+})
+
+test('rejects blank extraction session identifiers', () => {
+  assert.throws(
+    () => buildStoryboardReferenceExtractionMetadata({
+      sourceNodeId: 'node-source',
+      sourceAssetId: 'asset-source',
+      extractionSessionId: '\n',
+      index: 0,
+      crop: { x: 0, y: 0, width: 10, height: 10 },
+      image: { width: 100, height: 100 },
+    }),
+    /extraction session id/i,
   )
 })

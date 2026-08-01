@@ -49,6 +49,16 @@ function roundToSixDecimals(value: number) {
   return Number(value.toFixed(6))
 }
 
+function normalizeCropAxis(start: number, size: number, dimension: number) {
+  const normalizedStart = roundToSixDecimals(start / dimension)
+  const normalizedSize = roundToSixDecimals(size / dimension)
+
+  return {
+    start: normalizedStart,
+    size: Math.min(normalizedSize, roundToSixDecimals(1 - normalizedStart)),
+  }
+}
+
 export function normalizeReferenceCropBox(crop: ReferenceCropBox, image: ImageDimensions): NormalizedReferenceCropBox {
   assertFiniteValues({
     imageWidth: image.width,
@@ -72,17 +82,24 @@ export function normalizeReferenceCropBox(crop: ReferenceCropBox, image: ImageDi
     throw new RangeError('Reference extraction selection exceeds the image boundary')
   }
 
-  return {
-    x: roundToSixDecimals(crop.x / image.width),
-    y: roundToSixDecimals(crop.y / image.height),
-    width: roundToSixDecimals(crop.width / image.width),
-    height: roundToSixDecimals(crop.height / image.height),
+  const x = normalizeCropAxis(crop.x, crop.width, image.width)
+  const y = normalizeCropAxis(crop.y, crop.height, image.height)
+
+  return { x: x.start, y: y.start, width: x.size, height: y.size }
+}
+
+function assertNonBlankIdentifier(value: string, label: string) {
+  if (value.trim().length === 0) {
+    throw new RangeError(`${label} must not be blank`)
   }
 }
 
 export function buildStoryboardReferenceExtractionMetadata(
   args: StoryboardReferenceExtractionMetadataInput,
 ): StoryboardReferenceExtractionMetadata {
+  assertNonBlankIdentifier(args.sourceAssetId, 'Source asset ID')
+  assertNonBlankIdentifier(args.sourceNodeId, 'Source node ID')
+  assertNonBlankIdentifier(args.extractionSessionId, 'Extraction session ID')
   assertFiniteValues({ index: args.index })
   if (!Number.isInteger(args.index) || args.index < 0) {
     throw new RangeError('Reference extraction index must be a non-negative integer')
