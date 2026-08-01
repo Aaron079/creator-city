@@ -59,6 +59,30 @@ export function KeyframeExtractorPanel({
   const { copiedKey, copy } = useCopy()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const selectedIdRef = useRef(selectedId)
+  const extractionRef = useRef<{
+    token: number
+    animationFrameId: number | null
+    resolveFrame: (() => void) | null
+  }>({ token: 0, animationFrameId: null, resolveFrame: null })
+
+  selectedIdRef.current = selectedId
+
+  const cancelPendingExtraction = useCallback(() => {
+    const pendingExtraction = extractionRef.current
+    pendingExtraction.token += 1
+    if (pendingExtraction.animationFrameId !== null) {
+      cancelAnimationFrame(pendingExtraction.animationFrameId)
+      pendingExtraction.animationFrameId = null
+    }
+    const resolveFrame = pendingExtraction.resolveFrame
+    pendingExtraction.resolveFrame = null
+    resolveFrame?.()
+  }, [])
+
+  const isCurrentExtraction = useCallback((token: number, nodeId: string) => (
+    extractionRef.current.token === token && selectedIdRef.current === nodeId
+  ), [])
 
   const selectedNode = videoNodes.find((n) => n.id === selectedId) ?? null
   const sourceLabel = selectedNode?.title || '未选择视频'
@@ -92,13 +116,16 @@ export function KeyframeExtractorPanel({
         })
 
   useEffect(() => {
+    cancelPendingExtraction()
     setFrameDataUrl(null)
     setCorsError(false)
     setVideoError(false)
+    setExtracting(false)
     setCurrentTime(0)
     setDuration(0)
     setCreated(null)
-  }, [selectedId])
+    return cancelPendingExtraction
+  }, [cancelPendingExtraction, selectedId])
 
   const seekTo = useCallback((seconds: number) => {
     const video = videoRef.current
@@ -121,9 +148,24 @@ export function KeyframeExtractorPanel({
   const handleExtractFrame = useCallback(() => {
     const video = videoRef.current
     const canvas = canvasRef.current
-    if (!video || !canvas) return
-    setExtracting(true)
-    setCorsError(false)
+    const nodeId = selectedIdRef.current
+    if (!video || !canvas || !nodeId) return
+     cancelPendingExtraction()
+     const extractionToken = extractionRef.current.token
+     setExtracting(true)
+     setCorsError(false)
+     await new Promise<void>((resolve) => {
+       const completeFrame = () => {
+         if (extractionRef.current.token === extractionToken) {
+          extractionRef.current.animationFrameId = null
+          extractionRef.current.resolveFrame = null
+        }
+        resolve()
+      }
+      extractionRef.current.resolveFrame = completeFrame
+      extractionRef.current.animationFrameId = requestAnimationFrame(completeFrame)
+     })
+     if (!isCurrentExtraction(extractionToken, nodeId)) return
     try {
       canvas.width = video.videoWidth || 640
       canvas.height = video.videoHeight || 360
@@ -131,14 +173,16 @@ export function KeyframeExtractorPanel({
       if (!ctx) return
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.88)
-      setFrameDataUrl(dataUrl)
+      if (isCurrentExtraction(extractionToken, nodeId)) setFrameDataUrl(dataUrl)
     } catch {
-      setCorsError(true)
-      setFrameDataUrl(null)
+      if (isCurrentExtraction(extractionToken, nodeId)) {
+        setCorsError(true)
+        setFrameDataUrl(null)
+      }
     } finally {
-      setExtracting(false)
+      if (isCurrentExtraction(extractionToken, nodeId)) setExtracting(false)
     }
-  }, [])
+  }, [cancelPendingExtraction, isCurrentExtraction])
 
   const timeLabel = formatTime(currentTime)
   const durLabel = duration ? formatTime(duration) : '--:--'

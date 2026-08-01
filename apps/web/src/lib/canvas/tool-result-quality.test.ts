@@ -9,7 +9,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
 import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
-import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
@@ -138,6 +137,17 @@ function clientHarnessSource() {
       x: 0, y: 0, width: 320, height: 220, createdAt: 0,
     }
 
+    const extractableVideoNode = {
+      ...requestOnlyVideoNode,
+      id: 'video-extract',
+      title: '镜头 09',
+      resultVideoUrl: 'data:video/mp4;base64,',
+    }
+    const secondExtractableVideoNode = {
+      ...extractableVideoNode,
+      id: 'video-extract-next',
+      title: '镜头 10',
+    }
     const mode = (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode
     const panel = mode === 'ab'
       ? React.createElement(ABComparePanel, {
@@ -145,9 +155,11 @@ function clientHarnessSource() {
           onFocusNode() {},
           onClose() {},
         })
-      : mode === 'keyframe'
+      : mode === 'keyframe' || mode === 'keyframe-extract'
         ? React.createElement(KeyframeExtractorPanel, {
-            nodes: [requestOnlyVideoNode],
+            nodes: mode === 'keyframe-extract'
+              ? [extractableVideoNode, secondExtractableVideoNode]
+              : [requestOnlyVideoNode],
             onCreateNode() {},
             onFocusNode() {},
             onClose() {},
@@ -312,6 +324,56 @@ test('reports a keyframe draft request without asserting node persistence', asyn
   await page.close()
 })
 
+test('shows keyframe extraction progress before browser canvas work runs', async () => {
+  const page = await renderClientPanel('keyframe-extract')
+  const strip = page.locator('[data-testid="tool-result-quality-strip"]')
+
+  await page.evaluate(() => {
+    const callbacks: FrameRequestCallback[] = []
+    window.requestAnimationFrame = (callback) => {
+      callbacks.push(callback)
+      return callbacks.length
+    }
+    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
+      callbacks.shift()?.(performance.now())
+    }
+  })
+  await page.getByRole('button', { name: '预览当前帧' }).click({ timeout: 2_000 })
+  await strip.waitFor({ state: 'visible' })
+  assert.match(await strip.textContent() ?? '', /正在提取浏览器关键帧/)
+  await page.evaluate(() => {
+    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
+  })
+  await page.close()
+})
+
+test('ignores a pending keyframe extraction after the selected video changes', async () => {
+  const page = await renderClientPanel('keyframe-extract')
+  const strip = page.locator('[data-testid="tool-result-quality-strip"]')
+
+  await page.evaluate(() => {
+    const callbacks: FrameRequestCallback[] = []
+    window.requestAnimationFrame = (callback) => {
+      callbacks.push(callback)
+      return callbacks.length
+    }
+    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
+      callbacks.shift()?.(performance.now())
+    }
+  })
+  await page.getByRole('button', { name: '预览当前帧' }).click({ timeout: 2_000 })
+  await page.locator('select').selectOption('video-extract-next')
+  await page.evaluate(() => {
+    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
+  })
+  await page.waitForTimeout(20)
+
+  const summaryText = await strip.textContent()
+  assert.match(summaryText ?? '', /镜头 10/)
+  assert.match(summaryText ?? '', /尚未提取浏览器关键帧/)
+  assert.doesNotMatch(summaryText ?? '', /本地帧预览可用|正在提取/)
+  await page.close()
+})
 test('renders one quality strip in each image tool panel', () => {
   const annotationMarkup = renderToStaticMarkup(createElement(AnnotationPanel, {
     sourceNode: {
@@ -361,7 +423,7 @@ test('renders one informational color-grade quality strip before previewing', ()
     onClose: () => {},
     defaultSelectedNodeId: 'image-1',
   }))
-  const stripMarkup = markup.match(/<section[^>]*data-testid="tool-result-quality-strip"[\s\S]*?<\/section>/)?.[0] ?? ''
+  const stripMarkup = qualityStripMarkup(markup)
 
   assert.equal(countQualityStrips(markup), 1)
   assert.match(stripMarkup, /尚未调色/)
