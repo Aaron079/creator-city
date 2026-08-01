@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { Check, Copy, X, ChevronDown, ChevronUp, Lock } from 'lucide-react'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
+import { colorGradeQuality } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 import {
   COLOR_GRADE_PRESETS,
   createDefaultColorGradeSetting,
@@ -38,10 +40,14 @@ interface CreateGradeNodeRequest {
   cssFilter: string
 }
 
+interface ColorGradeActionResult {
+  acknowledged: boolean
+}
+
 interface ColorGradePalettePanelProps {
   nodes: GradeNode[]
-  onApplyGrade: (updates: Array<{ nodeId: string; prompt: string }>) => void
-  onCreateGradeNode?: (req: CreateGradeNodeRequest) => void
+  onApplyGrade: (updates: Array<{ nodeId: string; prompt: string }>) => ColorGradeActionResult
+  onCreateGradeNode?: (req: CreateGradeNodeRequest) => ColorGradeActionResult
   onClose: () => void
   defaultSelectedNodeId?: string
   lockedNodeId?: string
@@ -552,6 +558,8 @@ export function ColorGradePalettePanel({
   const [previewResults, setPreviewResults] = useState<ReturnType<typeof previewColorGradeApply> | null>(null)
   const [applySuccess, setApplySuccess] = useState(false)
   const [createSuccess, setCreateSuccess] = useState(false)
+  const [applyAcknowledged, setApplyAcknowledged] = useState(false)
+  const [createAcknowledged, setCreateAcknowledged] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showPromptPreview, setShowPromptPreview] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
@@ -579,6 +587,8 @@ export function ColorGradePalettePanel({
     setPreviewResults(null)
     setApplySuccess(false)
     setCreateSuccess(false)
+    setApplyAcknowledged(false)
+    setCreateAcknowledged(false)
   }
 
   const patchSetting = useCallback((patch: Partial<ColorGradeSetting>) => {
@@ -614,8 +624,9 @@ export function ColorGradePalettePanel({
       .filter((r) => !r.skipped)
       .map((r) => ({ nodeId: r.nodeId, prompt: r.newPrompt }))
     if (updates.length > 0) {
-      onApplyGrade(updates)
+      const result = onApplyGrade(updates)
       setApplySuccess(true)
+      setApplyAcknowledged(result.acknowledged)
     }
   }
 
@@ -627,9 +638,10 @@ export function ColorGradePalettePanel({
     const sourcePrompt = primaryNode.prompt?.trimEnd() ?? ''
     const gradePrompt = buildColorGradePrompt(setting, kind)
     const fullPrompt = sourcePrompt ? `${sourcePrompt}\n\n${gradePrompt}` : gradePrompt
-    onCreateGradeNode?.({ sourceNodeId: primaryNode.id, kind, prompt: fullPrompt, cssFilter })
+    const result = onCreateGradeNode?.({ sourceNodeId: primaryNode.id, kind, prompt: fullPrompt, cssFilter })
     setPreviewText(gradePrompt)
     setCreateSuccess(true)
+    setCreateAcknowledged(Boolean(result?.acknowledged))
   }
 
   const handleCopyReport = async () => {
@@ -660,6 +672,24 @@ export function ColorGradePalettePanel({
     const wh = setting[w]
     return wh.temperature !== 0 || wh.tint !== 0 || wh.luminance !== 0 || Math.abs(wh.saturation - 1) > 0.01
   }).length
+  const previewQuality = colorGradeQuality({
+    sourceLabel: primaryNode?.title ?? primaryNode?.id ?? '',
+    activeWheelCount: activeWheels,
+    previewReady: previewResults !== null,
+    promptAppended: applyAcknowledged,
+    derivedDraftCreated: createAcknowledged,
+    isApplying: false,
+    applyError: '',
+  })
+  const requestEvidence = createSuccess && !createAcknowledged
+    ? ['已准备调色草案请求，等待画布确认']
+    : applySuccess && !applyAcknowledged
+      ? ['已发出提示词更新请求，等待外部确认']
+      : []
+  const resultQuality = {
+    ...previewQuality,
+    evidence: [...requestEvidence, ...previewQuality.evidence],
+  }
 
   const TABS: { id: ActiveTab; label: string; zh: string }[] = [
     { id: 'wheels', label: 'Wheels', zh: '色轮' },
@@ -1127,17 +1157,25 @@ export function ColorGradePalettePanel({
             )}
           </div>
 
+          <div className="mx-3 mb-2 mt-1">
+            <ToolResultQualityStrip summary={resultQuality} />
+          </div>
+
           {/* Create grade node success */}
           {createSuccess && (
             <div className="mx-3 mb-1 rounded-xl border border-indigo-500/25 bg-indigo-500/8 px-3 py-2">
-              <p className="text-[11px] font-semibold text-indigo-300">✦ 已输出到画布 — 新节点显示调色后的图像（CSS 滤镜预览）</p>
+              <p className="text-[11px] font-semibold text-indigo-300">
+                {createAcknowledged ? '✦ 画布已确认调色草案节点创建' : '✦ 已准备调色草案请求 — 等待画布确认新节点'}
+              </p>
             </div>
           )}
 
           {/* Apply success */}
           {applySuccess && (
             <div className="mx-3 mb-1 rounded-xl border border-emerald-500/22 bg-emerald-500/7 px-3 py-2">
-              <p className="text-[11px] font-semibold text-emerald-400">✅ 已追加调色描述到当前节点 — 请重新生成查看效果</p>
+              <p className="text-[11px] font-semibold text-emerald-400">
+                {applyAcknowledged ? '✅ 已确认调色说明附加到当前提示词' : '✅ 已发出提示词更新请求 — 等待外部确认'}
+              </p>
             </div>
           )}
 
@@ -1183,7 +1221,7 @@ export function ColorGradePalettePanel({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => { setSetting(createDefaultColorGradeSetting()); setPreviewText(null); setPreviewResults(null); setApplySuccess(false); setCreateSuccess(false) }}
+            onClick={() => { setSetting(createDefaultColorGradeSetting()); setPreviewText(null); setPreviewResults(null); setApplySuccess(false); setCreateSuccess(false); setApplyAcknowledged(false); setCreateAcknowledged(false) }}
             className="flex-1 rounded-xl border border-white/7 bg-white/[0.025] py-1.5 text-[9.5px] text-white/38 transition hover:bg-white/5 hover:text-white/58"
           >
             重置调色

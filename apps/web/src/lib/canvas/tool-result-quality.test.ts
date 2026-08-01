@@ -7,6 +7,7 @@ import { chromium, type Browser } from '@playwright/test'
 import React, { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
+import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { StoryboardGridSplitPanel } from '@/components/create/StoryboardGridSplitPanel'
 import {
   abCompareQuality,
@@ -27,6 +28,20 @@ globalThis.React = React
 let browser: Browser | null = null
 let clientBundlePath = ''
 let clientTempDirectory = ''
+let colorGradeClientBundlePath = ''
+
+type ColorGradeHarnessState = {
+  sourceNode: { prompt: string }
+  applyRequests: Array<Array<{ nodeId: string; prompt: string }>>
+  createRequests: Array<{ sourceNodeId: string; kind: string; prompt: string; cssFilter: string }>
+}
+
+declare global {
+  interface Window {
+    __colorGradeTestState?: ColorGradeHarnessState
+    __renderColorGradeHarness?: (acknowledged: boolean) => void
+  }
+}
 
 async function findEsbuildBinary() {
   const pnpmDirectory = path.resolve(process.cwd(), '../..', 'node_modules/.pnpm')
@@ -77,6 +92,59 @@ function annotationClientHarnessSource() {
   `
 }
 
+function colorGradeClientHarnessSource() {
+  const panelPath = path.resolve(process.cwd(), 'src/components/create/ColorGradePalettePanel.tsx')
+  return `
+    import * as React from 'react'
+    import { createRoot } from 'react-dom/client'
+    import { ColorGradePalettePanel } from ${JSON.stringify(panelPath)}
+
+    type TestState = {
+      sourceNode: { prompt: string }
+      applyRequests: Array<Array<{ nodeId: string; prompt: string }>>
+      createRequests: Array<{ sourceNodeId: string; kind: string; prompt: string; cssFilter: string }>
+    }
+
+    declare global {
+      interface Window {
+        __colorGradeTestState?: TestState
+        __renderColorGradeHarness?: (acknowledged: boolean) => void
+      }
+    }
+
+    const sourceNode = {
+      id: 'image-1',
+      kind: 'image',
+      title: '主视觉',
+      prompt: 'cinematic product still',
+      resultImageUrl: 'https://example.com/reference.png',
+    }
+    const testState: TestState = { sourceNode, applyRequests: [], createRequests: [] }
+    const root = createRoot(document.getElementById('root'))
+
+    function render(acknowledged: boolean) {
+      root.render(React.createElement(ColorGradePalettePanel, {
+        key: acknowledged ? 'acknowledged' : 'pending',
+        nodes: [sourceNode],
+        onApplyGrade(updates) {
+          testState.applyRequests.push(updates)
+          return { acknowledged }
+        },
+        onCreateGradeNode(request) {
+          testState.createRequests.push(request)
+          return { acknowledged }
+        },
+        onClose() {},
+        defaultSelectedNodeId: 'image-1',
+      }))
+    }
+
+    window.__colorGradeTestState = testState
+    window.__renderColorGradeHarness = render
+    render(false)
+  `
+}
+
 before(async () => {
   clientTempDirectory = await mkdtemp(path.join(process.cwd(), '.annotation-quality-'))
   assert.equal(path.dirname(clientTempDirectory), process.cwd())
@@ -94,6 +162,21 @@ before(async () => {
     '--define:process.env.NODE_ENV="test"',
   ], { cwd: process.cwd(), encoding: 'utf8' })
   assert.equal(build.status, 0, build.stderr || build.stdout)
+
+  const colorGradeEntryPath = path.join(clientTempDirectory, 'color-grade-entry.tsx')
+  colorGradeClientBundlePath = path.join(clientTempDirectory, 'color-grade-bundle.js')
+  await writeFile(colorGradeEntryPath, colorGradeClientHarnessSource(), 'utf8')
+  const colorGradeBuild = spawnSync(await findEsbuildBinary(), [
+    colorGradeEntryPath,
+    '--bundle',
+    '--platform=browser',
+    '--format=iife',
+    '--jsx=automatic',
+    `--outfile=${colorGradeClientBundlePath}`,
+    `--tsconfig=${path.resolve(process.cwd(), 'tsconfig.json')}`,
+    '--define:process.env.NODE_ENV="test"',
+  ], { cwd: process.cwd(), encoding: 'utf8' })
+  assert.equal(colorGradeBuild.status, 0, colorGradeBuild.stderr || colorGradeBuild.stdout)
   browser = await chromium.launch({ headless: true })
 })
 
@@ -163,6 +246,87 @@ test('renders one quality strip in each image tool panel', () => {
   assert.equal(countQualityStrips(annotationMarkup), 1)
   assert.match(annotationMarkup, /标注已保存/)
   assert.equal(countQualityStrips(gridMarkup), 1)
+})
+
+test('renders one informational color-grade quality strip before previewing', () => {
+  const markup = renderToStaticMarkup(createElement(ColorGradePalettePanel, {
+    nodes: [{ id: 'image-1', kind: 'image', title: '主视觉' }],
+    onApplyGrade: () => ({ acknowledged: false }),
+    onCreateGradeNode: () => ({ acknowledged: false }),
+    onClose: () => {},
+    defaultSelectedNodeId: 'image-1',
+  }))
+  const stripMarkup = markup.match(/<section[^>]*data-testid="tool-result-quality-strip"[\s\S]*?<\/section>/)?.[0] ?? ''
+
+  assert.equal(countQualityStrips(markup), 1)
+  assert.match(stripMarkup, /尚未调色/)
+  assert.doesNotMatch(stripMarkup, /<button/)
+})
+
+test('reports color-grade completion only after a parent acknowledgement', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  await page.setContent('<div id="root"></div>')
+  await page.addScriptTag({ path: colorGradeClientBundlePath })
+
+  const strip = page.locator('[data-testid="tool-result-quality-strip"]')
+  await strip.waitFor({ timeout: 2_000 })
+  await page.getByRole('button', { name: '预览 Prompt' }).click()
+  await strip.getByText('预览可用', { exact: true }).waitFor({ timeout: 2_000 })
+  assert.match(await strip.textContent() ?? '', /本地调色预览已就绪/)
+  assert.match(await strip.textContent() ?? '', /CSS 仅用于本地预览/)
+
+  await page.getByRole('button', { name: '追加到当前 Prompt' }).click()
+  await strip.getByText('证据已发出提示词更新请求，等待外部确认', { exact: true }).waitFor({ timeout: 2_000 })
+  const afterApply = await page.evaluate(() => window.__colorGradeTestState)
+  assert.ok(afterApply)
+  assert.equal(afterApply.applyRequests.length, 1)
+  const [applyRequest] = afterApply.applyRequests
+  assert.ok(applyRequest)
+  const [applyUpdate] = applyRequest
+  assert.ok(applyUpdate)
+  assert.equal(applyUpdate.nodeId, 'image-1')
+  assert.match(applyUpdate.prompt, /^cinematic product still\n\n\[Color Grade Palette\]/)
+  assert.equal(afterApply.sourceNode.prompt, 'cinematic product still')
+  assert.match(await strip.textContent() ?? '', /预览可用/)
+  assert.doesNotMatch(await strip.textContent() ?? '', /已附加到现有提示词/)
+
+  await page.evaluate(() => window.__renderColorGradeHarness?.(true))
+  await page.getByRole('button', { name: '预览 Prompt' }).click()
+  await strip.getByText('预览可用', { exact: true }).waitFor({ timeout: 2_000 })
+  await page.getByRole('button', { name: '追加到当前 Prompt' }).click()
+  await strip.getByText('说明已附加', { exact: true }).waitFor({ timeout: 2_000 })
+  const afterApplyAcknowledgement = await page.evaluate(() => window.__colorGradeTestState)
+  assert.ok(afterApplyAcknowledgement)
+  assert.equal(afterApplyAcknowledgement.applyRequests.length, 2)
+  assert.equal(afterApplyAcknowledgement.sourceNode.prompt, 'cinematic product still')
+
+  await page.getByRole('button', { name: '应用调色到画布' }).click()
+  await strip.getByText('草案节点已创建', { exact: true }).waitFor({ timeout: 2_000 })
+  const afterCreate = await page.evaluate(() => window.__colorGradeTestState)
+  assert.ok(afterCreate)
+  assert.equal(afterCreate.createRequests.length, 1)
+  const [createRequest] = afterCreate.createRequests
+  assert.ok(createRequest)
+  assert.deepEqual(Object.keys(createRequest).sort(), ['cssFilter', 'kind', 'prompt', 'sourceNodeId'])
+  assert.equal(createRequest.sourceNodeId, 'image-1')
+  assert.equal(createRequest.kind, 'image')
+  assert.match(createRequest.prompt, /^cinematic product still\n\n\[Color Grade Palette\]/)
+  assert.equal(afterCreate.sourceNode.prompt, 'cinematic product still')
+  assert.match(await strip.textContent() ?? '', /已创建调色草案节点/)
+  assert.equal(await strip.locator('button').count(), 0)
+  await page.close()
+})
+
+test('marks color grading unavailable when no source node is selected', () => {
+  const markup = renderToStaticMarkup(createElement(ColorGradePalettePanel, {
+    nodes: [],
+    onApplyGrade: () => ({ acknowledged: false }),
+    onClose: () => {},
+  }))
+
+  assert.equal(countQualityStrips(markup), 1)
+  assert.match(markup, /未选择可调色节点/)
 })
 
 test('keeps a detected grid layout pending before any crop upload', () => {

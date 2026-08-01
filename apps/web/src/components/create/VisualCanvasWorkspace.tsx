@@ -10898,6 +10898,7 @@ export function VisualCanvasWorkspace({
               }
               flushLocalSnapshot()
               scheduleCanvasSave(0)
+              return { acknowledged: true }
             }}
             onCreateGradeNode={(req) => {
               const sourceNode = nodes.find((n) => n.id === req.sourceNodeId)
@@ -10921,6 +10922,7 @@ export function VisualCanvasWorkspace({
               })
               flushLocalSnapshot()
               scheduleCanvasSave(0)
+              return { acknowledged: true }
             }}
             onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
             defaultSelectedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
