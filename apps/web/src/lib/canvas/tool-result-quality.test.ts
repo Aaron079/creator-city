@@ -262,14 +262,34 @@ before(async () => {
   browser = await chromium.launch({ headless: true })
 })
 
-async function renderClientPanel(mode: 'ab' | 'keyframe') {
+type ClientPanelMode = 'ab' | 'keyframe' | 'keyframe-extract'
+
+async function renderClientPanel(mode: ClientPanelMode) {
   assert.ok(browser)
   const page = await browser.newPage()
   await page.setContent('<div id="root"></div>')
   await page.evaluate((panelMode) => {
     ;(globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
+    if (panelMode === 'keyframe-extract') {
+      document.addEventListener('error', (event) => {
+        if (event.target instanceof HTMLVideoElement) event.stopImmediatePropagation()
+      }, true)
+    }
   }, mode)
   await page.addScriptTag({ path: clientBundlePath })
+  if (mode === 'keyframe-extract') {
+    const video = page.locator('video')
+    await video.waitFor({ state: 'attached', timeout: 2_000 })
+    await video.evaluate((element) => {
+      Object.defineProperties(element, {
+        duration: { configurable: true, value: 8 },
+        videoWidth: { configurable: true, value: 640 },
+        videoHeight: { configurable: true, value: 360 },
+      })
+      element.dispatchEvent(new Event('loadedmetadata', { bubbles: true }))
+    })
+    await page.getByRole('button', { name: '预览当前帧' }).waitFor({ state: 'visible', timeout: 2_000 })
+  }
   return page
 }
 
@@ -338,9 +358,9 @@ test('shows keyframe extraction progress before browser canvas work runs', async
       callbacks.shift()?.(performance.now())
     }
   })
-  await page.getByRole('button', { name: '预览当前帧' }).click({ timeout: 2_000 })
-  await strip.waitFor({ state: 'visible' })
-  assert.match(await strip.textContent() ?? '', /正在提取浏览器关键帧/)
+  const extractButton = page.getByRole('button', { name: '预览当前帧' })
+  await extractButton.click({ timeout: 2_000 })
+  await strip.getByText('正在提取', { exact: true }).waitFor({ timeout: 2_000 })
   await page.evaluate(() => {
     ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
   })
@@ -361,12 +381,13 @@ test('ignores a pending keyframe extraction after the selected video changes', a
       callbacks.shift()?.(performance.now())
     }
   })
-  await page.getByRole('button', { name: '预览当前帧' }).click({ timeout: 2_000 })
+  const extractButton = page.getByRole('button', { name: '预览当前帧' })
+  await extractButton.click({ timeout: 2_000 })
   await page.locator('select').selectOption('video-extract-next')
+  await strip.getByText('尚未提取', { exact: true }).waitFor({ timeout: 2_000 })
   await page.evaluate(() => {
     ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
   })
-  await page.waitForTimeout(20)
 
   const summaryText = await strip.textContent()
   assert.match(summaryText ?? '', /镜头 10/)
