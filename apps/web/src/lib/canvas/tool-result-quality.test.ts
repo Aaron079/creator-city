@@ -752,6 +752,30 @@ test('keeps uploaded references pending when any uploaded asset has no created n
   assert.match(summary.resultLabel, /1 个参考节点/)
 })
 
+test('keeps node creation errors failed until a node is actually created', () => {
+  const failed = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 1,
+    uploadedCount: 1,
+    createdNodeCount: 0,
+    errorCount: 1,
+    isProcessing: false,
+    uploadError: '参考节点创建失败，资产已入库，可再次点击确认重试。',
+  })
+  const completed = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 1,
+    uploadedCount: 1,
+    createdNodeCount: 1,
+    errorCount: 0,
+    isProcessing: false,
+  })
+
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.evidence.join(' '), /参考节点创建失败/)
+  assert.equal(completed.status, 'completed')
+})
+
 test('separates dirty annotation drafts from persisted annotations', () => {
   const summary = annotationQuality({
     sourceLabel: '角色参考',

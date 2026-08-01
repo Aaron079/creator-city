@@ -3,6 +3,7 @@ import test from 'node:test'
 import React, { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
+  getReferenceSelectionAction,
   StoryboardReferenceExtractorPanel,
   appendReferenceSelection,
   type ReferenceSelection,
@@ -43,4 +44,33 @@ test('keeps user-confirmed selections in a stable ordered label sequence', () =>
 
   assert.deepEqual(second.map((item: ReferenceSelection) => item.label), ['参考图 1', '参考图 2'])
   assert.deepEqual(second.map((item: ReferenceSelection) => item.order), [0, 1])
+})
+
+test('retries only node creation for an uploaded reference without duplicating the upload', () => {
+  const ready: ReferenceSelection = {
+    id: 'selection-1',
+    label: '参考图 1',
+    order: 0,
+    crop: { x: 10, y: 20, width: 120, height: 80 },
+    status: 'ready',
+  }
+  const uploadedWithoutNode: ReferenceSelection = {
+    ...ready,
+    id: 'selection-1',
+    status: 'uploaded',
+    assetId: 'asset-reference-1',
+    assetUrl: 'https://assets.example.test/reference-1.jpg',
+  }
+  const created: ReferenceSelection = { ...uploadedWithoutNode, createdNodeId: 'node-reference-1' }
+  let uploadCount = 0
+  let nodeCreateCount = 0
+
+  for (const selection of [ready, uploadedWithoutNode, created]) {
+    const action = getReferenceSelectionAction(selection)
+    if (action === 'upload-and-create') uploadCount += 1
+    if (action === 'create-node-retry') nodeCreateCount += 1
+  }
+
+  assert.equal(uploadCount, 1)
+  assert.equal(nodeCreateCount, 1)
 })
