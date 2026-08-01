@@ -5,6 +5,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { verifyUploadProjectAccess } from './project-validation'
+import { verifyStoryboardReferenceSourceAccess } from './route'
 
 function prismaPoolTimeout() {
   return Object.assign(new Error('Timed out fetching a new connection from the connection pool.'), {
@@ -106,5 +107,93 @@ describe('verifyUploadProjectAccess', () => {
     assert.equal(result.status, 503)
     assert.equal(result.message, '项目验证服务繁忙，请稍后重试。')
     assert.equal(result.attempts, 3)
+  })
+})
+
+describe('verifyStoryboardReferenceSourceAccess', () => {
+  const referenceLineage = {
+    version: 2 as const,
+    toolId: 'storyboard-reference-extractor' as const,
+    parentAssetId: 'source-asset',
+    sourceAssetId: 'source-asset',
+    sourceNodeId: 'source-node',
+    extractionSessionId: 'session-1',
+    index: 0,
+    cropBox: { x: 0, y: 0, width: 0.5, height: 0.5 },
+  }
+
+  test('rejects a missing reference source without disclosing its existence', async () => {
+    const result = await verifyStoryboardReferenceSourceAccess({
+      lineage: referenceLineage,
+      projectId: 'project-1',
+      userId: 'user-1',
+      lookupSourceAsset: async () => null,
+    })
+
+    assert.deepEqual(result, {
+      ok: false,
+      errorCode: 'INVALID_REFERENCE_SOURCE',
+      message: '参考图来源无效或无权访问。',
+      status: 403,
+    })
+  })
+
+  test('rejects a reference source owned by another user', async () => {
+    const result = await verifyStoryboardReferenceSourceAccess({
+      lineage: referenceLineage,
+      projectId: 'project-1',
+      userId: 'user-1',
+      lookupSourceAsset: async () => ({ ownerId: 'user-2', projectId: 'project-1' }),
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.errorCode, 'INVALID_REFERENCE_SOURCE')
+    assert.equal(result.message, '参考图来源无效或无权访问。')
+    assert.equal(result.status, 403)
+  })
+
+  test('rejects a reference source from another project', async () => {
+    const result = await verifyStoryboardReferenceSourceAccess({
+      lineage: referenceLineage,
+      projectId: 'project-1',
+      userId: 'user-1',
+      lookupSourceAsset: async () => ({ ownerId: 'user-1', projectId: 'project-2' }),
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.errorCode, 'INVALID_REFERENCE_SOURCE')
+    assert.equal(result.message, '参考图来源无效或无权访问。')
+    assert.equal(result.status, 403)
+  })
+
+  test('accepts a same-project reference source owned by the current user', async () => {
+    const result = await verifyStoryboardReferenceSourceAccess({
+      lineage: referenceLineage,
+      projectId: 'project-1',
+      userId: 'user-1',
+      lookupSourceAsset: async () => ({ ownerId: 'user-1', projectId: 'project-1' }),
+    })
+
+    assert.deepEqual(result, { ok: true })
+  })
+
+  test('leaves ordinary and legacy storyboard uploads without a reference source lookup', async () => {
+    let lookupCalls = 0
+    const result = await verifyStoryboardReferenceSourceAccess({
+      lineage: {
+        version: 1,
+        toolId: 'storyboard-grid-split',
+        cropBox: { x: 0, y: 0, width: 1, height: 1 },
+      },
+      projectId: 'project-1',
+      userId: 'user-1',
+      lookupSourceAsset: async () => {
+        lookupCalls += 1
+        return null
+      },
+    })
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(lookupCalls, 0)
   })
 })

@@ -4,9 +4,11 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { serializeAsset, toAssetType } from '@/lib/projects/canvas-mappers'
 import { uploadAsset } from '@/lib/assets/storage-adapter'
+import { STORYBOARD_REFERENCE_EXTRACTOR_TOOL_ID } from '@/lib/canvas/storyboardReferenceExtract'
 import {
   buildUploadAssetMetadata,
   parseStoryboardCropLineage,
+  type StoryboardCropLineage,
 } from './storyboard-grid-split-metadata'
 import { verifyUploadProjectAccess } from './project-validation'
 
@@ -43,6 +45,63 @@ function safePrismaError(error: unknown, fallback: string): string {
     return fallback
   }
   return message || fallback
+}
+
+type ReferenceSourceAsset = {
+  ownerId: string
+  projectId: string | null
+}
+
+type ReferenceSourceLookup = (sourceAssetId: string) => Promise<ReferenceSourceAsset | null>
+
+export type StoryboardReferenceSourceAccessResult =
+  | { ok: true }
+  | {
+      ok: false
+      errorCode: 'INVALID_REFERENCE_SOURCE' | 'REFERENCE_SOURCE_CHECK_FAILED'
+      message: string
+      status: number
+      cause?: unknown
+    }
+
+export async function verifyStoryboardReferenceSourceAccess(args: {
+  lineage?: StoryboardCropLineage
+  projectId: string | null
+  userId: string
+  lookupSourceAsset: ReferenceSourceLookup
+}): Promise<StoryboardReferenceSourceAccessResult> {
+  if (args.lineage?.toolId !== STORYBOARD_REFERENCE_EXTRACTOR_TOOL_ID) return { ok: true }
+
+  const projectId = args.projectId?.trim() || null
+  if (!projectId) {
+    return {
+      ok: false,
+      errorCode: 'INVALID_REFERENCE_SOURCE',
+      message: '参考图来源无效或无权访问。',
+      status: 400,
+    }
+  }
+
+  try {
+    const sourceAsset = await args.lookupSourceAsset(args.lineage.sourceAssetId)
+    if (!sourceAsset || sourceAsset.ownerId !== args.userId || sourceAsset.projectId !== projectId) {
+      return {
+        ok: false,
+        errorCode: 'INVALID_REFERENCE_SOURCE',
+        message: '参考图来源无效或无权访问。',
+        status: 403,
+      }
+    }
+    return { ok: true }
+  } catch (cause) {
+    return {
+      ok: false,
+      errorCode: 'REFERENCE_SOURCE_CHECK_FAILED',
+      message: '参考图来源验证失败，请重试。',
+      status: 500,
+      cause,
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -96,7 +155,29 @@ export async function POST(request: NextRequest) {
     return jsonError(projectAccess.errorCode, projectAccess.message, projectAccess.status)
   }
 
-  // Step 2: upload file to storage
+  // V2 reference crops must be derived from an asset the caller owns in this project.
+  // This is deliberately checked before storage upload so rejected provenance creates no blob.
+  const sourceAccess = await verifyStoryboardReferenceSourceAccess({
+    lineage: lineageResult.lineage,
+    projectId,
+    userId: user.id,
+    lookupSourceAsset: async (sourceAssetId) => db.asset.findUnique({
+      where: { id: sourceAssetId },
+      select: { ownerId: true, projectId: true },
+    }),
+  })
+  if (!sourceAccess.ok) {
+    if (sourceAccess.cause) {
+      console.error('[assets/upload] storyboard reference source check failed', {
+        projectIdPrefix: projectId?.slice(0, 8) ?? null,
+        errorCode: sourceAccess.errorCode,
+        err: sourceAccess.cause,
+      })
+    }
+    return jsonError(sourceAccess.errorCode, sourceAccess.message, sourceAccess.status)
+  }
+
+  // Step 3: upload file to storage
   let uploaded: Awaited<ReturnType<typeof uploadAsset>>
   try {
     const buffer = Buffer.from(await file.arrayBuffer())
@@ -114,7 +195,7 @@ export async function POST(request: NextRequest) {
     return jsonError('STORAGE_UPLOAD_FAILED', isTimeout ? '上传超时，请重试' : '文件存储失败，请重试', 500)
   }
 
-  // Step 3: create Asset record in DB
+  // Step 4: create Asset record in DB
   try {
     const metadataJson = buildUploadAssetMetadata({
       storageProvider: uploaded.storageProvider,

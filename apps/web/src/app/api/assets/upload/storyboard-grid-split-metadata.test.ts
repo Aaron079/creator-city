@@ -225,4 +225,21 @@ describe('buildUploadAssetMetadata', () => {
       assert.equal(parsed.ok, false)
     }
   })
+
+  test('rejects a reference extractor lineage when parentAssetId differs from sourceAssetId', () => {
+    const fd = new FormData()
+    fd.append('toolId', 'storyboard-reference-extractor')
+    fd.append('parentAssetId', 'parent-a')
+    fd.append('sourceAssetId', 'source-a')
+    fd.append('sourceNodeId', 'node-a')
+    fd.append('extractionSessionId', 'extract-a')
+    fd.append('index', '0')
+    fd.append('cropBox', JSON.stringify({ x: 0, y: 0, width: 0.5, height: 0.5 }))
+
+    assert.deepEqual(parseStoryboardCropLineage(fd), {
+      ok: false,
+      errorCode: 'INVALID_REFERENCE_LINEAGE',
+      message: '参考图提取来源无效。',
+    })
+  })
 })
