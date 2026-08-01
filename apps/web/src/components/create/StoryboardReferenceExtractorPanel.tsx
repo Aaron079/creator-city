@@ -67,6 +67,11 @@ type StoryboardReferenceExtractorPanelProps = {
   onCreateReferenceNode: (reference: StoryboardReferenceUploadedAsset, placementIndex: number, total: number) => string | null
   onUpdateSourceSession: (summary: StoryboardReferenceSessionSummary) => void
   onClose: () => void
+  testInitialSelections?: ReferenceSelection[]
+  testProcessingDependencies?: {
+    cropToBlob?: typeof cropStoryboardReferenceToBlob
+    fetchImpl?: typeof fetch
+  }
 }
 
 type ImageSize = { width: number; height: number }
@@ -245,10 +250,14 @@ export function StoryboardReferenceExtractorPanel({
   onCreateReferenceNode,
   onUpdateSourceSession,
   onClose,
+  testInitialSelections,
+  testProcessingDependencies,
 }: StoryboardReferenceExtractorPanelProps) {
   const [sessionId] = useState(createExtractionSessionId)
   const [imageSize, setImageSize] = useState<ImageSize | null>(null)
-  const [selections, setSelections] = useState<ReferenceSelection[]>([])
+  const [selections, setSelections] = useState<ReferenceSelection[]>(() => (
+    testInitialSelections?.map((selection) => ({ ...selection, crop: { ...selection.crop } })) ?? []
+  ))
   const [draftCrop, setDraftCrop] = useState<ReferenceSelection['crop'] | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -376,6 +385,7 @@ export function StoryboardReferenceExtractorPanel({
           workflowId,
           total,
           onCreateReferenceNode,
+          ...testProcessingDependencies,
         })
       } catch (error) {
         next[currentIndex] = {
@@ -407,7 +417,7 @@ export function StoryboardReferenceExtractorPanel({
     })
     setIsProcessing(false)
     setMessage(failed.length > 0 ? '部分参考图未完成，已入库的参考图可再次确认重试。' : '参考图已按顺序保存。')
-  }, [canConfirm, imageSize, onCreateReferenceNode, onUpdateSourceSession, projectId, selections, sessionId, sourceNode?.assetId, sourceNode?.id, validSelections.length, workflowId])
+  }, [canConfirm, imageSize, onCreateReferenceNode, onUpdateSourceSession, projectId, selections, sessionId, sourceNode?.assetId, sourceNode?.id, testProcessingDependencies, validSelections.length, workflowId])
 
   const previewStyle = useCallback((crop: ReferenceSelection['crop']) => {
     if (!imageSize) return undefined
