@@ -6,10 +6,15 @@ import { after, before, test } from 'node:test'
 import { chromium, type Browser } from '@playwright/test'
 import React, { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
+import { AssetVariantPlannerPanel } from '@/components/create/AssetVariantPlannerPanel'
+import { ABComparePanel } from '@/components/create/ABComparePanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
+import { KeyframeExtractorPanel } from '@/components/create/KeyframeExtractorPanel'
 import { StoryboardGridSplitPanel } from '@/components/create/StoryboardGridSplitPanel'
+import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
 import { analyzeContinuity, buildContinuityReportText } from './continuity-check'
 import {
   abCompareQuality,
@@ -23,6 +28,30 @@ import {
 
 function countQualityStrips(markup: string) {
   return (markup.match(/data-testid="tool-result-quality-strip"/g) ?? []).length
+}
+
+function qualityStripMarkup(markup: string) {
+  return markup.match(/<section[^>]*data-testid="tool-result-quality-strip"[\s\S]*?<\/section>/)?.[0] ?? ''
+}
+
+function makeCanvasNode(
+  overrides: Pick<VisualCanvasNode, 'id' | 'kind' | 'type'> & Partial<VisualCanvasNode>,
+): VisualCanvasNode {
+  return {
+    title: '',
+    subtitle: '',
+    prompt: '',
+    model: '',
+    providerId: '',
+    stage: '',
+    status: 'idle',
+    x: 0,
+    y: 0,
+    width: 320,
+    height: 220,
+    createdAt: 0,
+    ...overrides,
+  }
 }
 
 globalThis.React = React
@@ -60,12 +89,16 @@ async function findEsbuildBinary() {
   throw new Error('Unable to locate the existing tsx esbuild binary')
 }
 
-function annotationClientHarnessSource() {
-  const panelPath = path.resolve(process.cwd(), 'src/components/create/AnnotationPanel.tsx')
+function clientHarnessSource() {
+  const annotationPanelPath = path.resolve(process.cwd(), 'src/components/create/AnnotationPanel.tsx')
+  const abComparePanelPath = path.resolve(process.cwd(), 'src/components/create/ABComparePanel.tsx')
+  const keyframePanelPath = path.resolve(process.cwd(), 'src/components/create/KeyframeExtractorPanel.tsx')
   return `
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
-    import { AnnotationPanel } from ${JSON.stringify(panelPath)}
+    import { AnnotationPanel } from ${JSON.stringify(annotationPanelPath)}
+    import { ABComparePanel } from ${JSON.stringify(abComparePanelPath)}
+    import { KeyframeExtractorPanel } from ${JSON.stringify(keyframePanelPath)}
 
     const sourceNode = {
       id: 'image-1',
@@ -86,11 +119,46 @@ function annotationClientHarnessSource() {
       },
     }
 
-    createRoot(document.getElementById('root')).render(React.createElement(AnnotationPanel, {
-      sourceNode,
-      onSave() {},
-      onClose() {},
-    }))
+    const comparableNodes = [
+      {
+        id: 'image-a', type: 'image', kind: 'image', title: '版本 A', subtitle: '',
+        prompt: '晴天中的城市街头', model: '', providerId: '', stage: '', status: 'idle',
+        x: 0, y: 0, width: 320, height: 220, createdAt: 0,
+      },
+      {
+        id: 'image-b', type: 'image', kind: 'image', title: '版本 B', subtitle: '',
+        prompt: '雨夜中的城市街头', model: '', providerId: '', stage: '', status: 'idle',
+        x: 0, y: 0, width: 320, height: 220, createdAt: 0,
+      },
+    ]
+
+    const requestOnlyVideoNode = {
+      id: 'video-request', type: 'video', kind: 'video', title: '镜头 08', subtitle: '',
+      prompt: '下一镜头草案', model: '', providerId: '', stage: '', status: 'idle',
+      x: 0, y: 0, width: 320, height: 220, createdAt: 0,
+    }
+
+    const mode = (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode
+    const panel = mode === 'ab'
+      ? React.createElement(ABComparePanel, {
+          nodes: comparableNodes,
+          onFocusNode() {},
+          onClose() {},
+        })
+      : mode === 'keyframe'
+        ? React.createElement(KeyframeExtractorPanel, {
+            nodes: [requestOnlyVideoNode],
+            onCreateNode() {},
+            onFocusNode() {},
+            onClose() {},
+          })
+        : React.createElement(AnnotationPanel, {
+            sourceNode,
+            onSave() {},
+            onClose() {},
+          })
+
+    createRoot(document.getElementById('root')).render(panel)
   `
 }
 
@@ -152,7 +220,7 @@ before(async () => {
   assert.equal(path.dirname(clientTempDirectory), process.cwd())
   const entryPath = path.join(clientTempDirectory, 'entry.tsx')
   clientBundlePath = path.join(clientTempDirectory, 'bundle.js')
-  await writeFile(entryPath, annotationClientHarnessSource(), 'utf8')
+  await writeFile(entryPath, clientHarnessSource(), 'utf8')
   const build = spawnSync(await findEsbuildBinary(), [
     entryPath,
     '--bundle',
@@ -182,6 +250,17 @@ before(async () => {
   browser = await chromium.launch({ headless: true })
 })
 
+async function renderClientPanel(mode: 'ab' | 'keyframe') {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  await page.setContent('<div id="root"></div>')
+  await page.evaluate((panelMode) => {
+    ;(globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
+  }, mode)
+  await page.addScriptTag({ path: clientBundlePath })
+  return page
+}
+
 after(async () => {
   await browser?.close()
   if (clientTempDirectory) await rm(clientTempDirectory, { recursive: true, force: true })
@@ -206,6 +285,30 @@ test('keeps saved annotations completed after client image dimensions load', asy
   const summaryText = await page.locator('[data-testid="tool-result-quality-strip"]').textContent()
   assert.match(summaryText ?? '', /标注已保存/)
   assert.doesNotMatch(summaryText ?? '', /存在未保存修改/)
+  await page.close()
+})
+
+test('reports an A/B winner only after the user selects one', async () => {
+  const page = await renderClientPanel('ab')
+  const strip = page.locator('[data-testid="tool-result-quality-strip"]')
+
+  await strip.waitFor()
+  assert.doesNotMatch(await strip.textContent() ?? '', /已选择结果/)
+  await page.locator('button[title="标记为推荐版本"]').first().click()
+  assert.match(await strip.textContent() ?? '', /已选择 版本 A 作为更优版本/)
+  await page.close()
+})
+
+test('reports a keyframe draft request without asserting node persistence', async () => {
+  const page = await renderClientPanel('keyframe')
+  const strip = page.locator('[data-testid="tool-result-quality-strip"]')
+
+  await strip.waitFor()
+  await page.getByRole('button', { name: '创建图片节点草案' }).click()
+  const summaryText = await strip.textContent()
+  assert.match(summaryText ?? '', /草案请求已发出/)
+  assert.match(summaryText ?? '', /已请求创建图片草案节点/)
+  assert.doesNotMatch(summaryText ?? '', /草案节点已创建/)
   await page.close()
 })
 
@@ -329,6 +432,116 @@ test('marks color grading unavailable when no source node is selected', () => {
 
   assert.equal(countQualityStrips(markup), 1)
   assert.match(markup, /未选择可调色节点/)
+})
+
+test('renders one truthful quality strip in each director tool panel', () => {
+  const promptOnlyNode = makeCanvasNode({
+    id: 'prompt-only',
+    kind: 'text',
+    type: 'text',
+    title: '',
+    prompt: '城市夜景中的角色独白',
+  })
+  const firstComparableNode = makeCanvasNode({
+    id: 'image-a',
+    kind: 'image',
+    type: 'image',
+    title: '版本 A',
+    prompt: '晴天中的城市街头',
+  })
+  const secondComparableNode = makeCanvasNode({
+    id: 'image-b',
+    kind: 'image',
+    type: 'image',
+    title: '版本 B',
+    prompt: '雨夜中的城市街头',
+  })
+  const videoNode = makeCanvasNode({
+    id: 'video-1',
+    kind: 'video',
+    type: 'video',
+    title: '镜头 07',
+    resultVideoUrl: 'https://example.com/shot-07.mp4',
+  })
+
+  const variantMarkup = renderToStaticMarkup(createElement(AssetVariantPlannerPanel, {
+    node: promptOnlyNode,
+    canvasPrompt: '',
+    canInsert: true,
+    onInsert: () => {},
+    onCreateNode: () => {},
+    onClose: () => {},
+  }))
+  const compareMarkup = renderToStaticMarkup(createElement(ABComparePanel, {
+    nodes: [firstComparableNode, secondComparableNode],
+    onFocusNode: () => {},
+    onClose: () => {},
+  }))
+  const keyframeMarkup = renderToStaticMarkup(createElement(KeyframeExtractorPanel, {
+    nodes: [videoNode],
+    onCreateNode: () => {},
+    onFocusNode: () => {},
+    onClose: () => {},
+  }))
+  const unavailableKeyframeMarkup = renderToStaticMarkup(createElement(KeyframeExtractorPanel, {
+    nodes: [makeCanvasNode({
+      id: 'video-prompt-only',
+      kind: 'video',
+      type: 'video',
+      title: '仅提示词视频',
+      prompt: '尚未生成的视频设想',
+    })],
+    onCreateNode: () => {},
+    onFocusNode: () => {},
+    onClose: () => {},
+  }))
+
+  assert.equal(countQualityStrips(variantMarkup), 1)
+  assert.match(variantMarkup, /规划可用/)
+  assert.match(qualityStripMarkup(variantMarkup), /未命名节点/)
+  assert.match(variantMarkup, /提示词上下文/)
+  assert.doesNotMatch(variantMarkup, /缺少可用资产/)
+  assert.equal(countQualityStrips(compareMarkup), 1)
+  assert.match(compareMarkup, /对比版本已就绪，尚未选择结果/)
+  assert.equal(countQualityStrips(keyframeMarkup), 1)
+  assert.match(keyframeMarkup, /尚未提取浏览器关键帧/)
+  assert.equal(countQualityStrips(unavailableKeyframeMarkup), 1)
+  assert.match(unavailableKeyframeMarkup, /需要可用视频才能提取关键帧/)
+})
+
+test('renders distinct A/B comparison states for insufficient and same selections', () => {
+  const onlyComparableNode = makeCanvasNode({
+    id: 'image-a',
+    kind: 'image',
+    type: 'image',
+    title: '版本 A',
+    prompt: '晴天中的城市街头',
+  })
+  const secondComparableNode = makeCanvasNode({
+    id: 'image-b',
+    kind: 'image',
+    type: 'image',
+    title: '版本 B',
+    prompt: '雨夜中的城市街头',
+  })
+
+  const insufficientMarkup = renderToStaticMarkup(createElement(ABComparePanel, {
+    nodes: [onlyComparableNode],
+    onFocusNode: () => {},
+    onClose: () => {},
+  }))
+  const samePairMarkup = renderToStaticMarkup(createElement(ABComparePanel, {
+    nodes: [onlyComparableNode, secondComparableNode],
+    initialNodeAId: onlyComparableNode.id,
+    initialNodeBId: onlyComparableNode.id,
+    onFocusNode: () => {},
+    onClose: () => {},
+  }))
+
+  assert.equal(countQualityStrips(insufficientMarkup), 1)
+  assert.match(insufficientMarkup, /至少需要两个可比较节点/)
+  assert.equal(countQualityStrips(samePairMarkup), 1)
+  assert.match(samePairMarkup, /A 和 B 选择了同一个节点/)
 })
 
 test('keeps a detected grid layout pending before any crop upload', () => {
@@ -617,7 +830,7 @@ test('keeps a browser keyframe frame as a local preview', () => {
   assert.doesNotMatch(JSON.stringify(summary), /已保存资产|已生成/)
 })
 
-test('recognizes a created keyframe draft after an extraction error', () => {
+test('reports a CORS keyframe extraction failure without a draft request', () => {
   const summary = keyframeQuality({
     sourceLabel: '镜头 07',
     hasVideo: true,
@@ -625,9 +838,10 @@ test('recognizes a created keyframe draft after an extraction error', () => {
     extractionFailed: true,
     extractionError: 'CORS 访问受限',
     isExtracting: false,
-    createdDraftKind: 'image',
+    createdDraftKind: null,
   })
 
-  assert.equal(summary.status, 'completed')
+  assert.equal(summary.status, 'failed')
   assert.match(summary.evidence.join(' '), /CORS 访问受限/)
+  assert.doesNotMatch(JSON.stringify(summary), /草案节点已创建/)
 })

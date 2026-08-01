@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
+import { keyframeQuality, type ToolResultQualitySummary } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
 interface KeyframeExtractorPanelProps {
   nodes: VisualCanvasNode[]
@@ -59,6 +61,35 @@ export function KeyframeExtractorPanel({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const selectedNode = videoNodes.find((n) => n.id === selectedId) ?? null
+  const sourceLabel = selectedNode?.title || '未选择视频'
+  const resultQuality: ToolResultQualitySummary = created
+    ? {
+        status: 'needs-confirmation',
+        statusLabel: '草案请求已发出',
+        sourceLabel,
+        resultLabel: `已请求创建${created === 'image' ? '图片' : '视频'}草案节点`,
+        evidence: [
+          '创建请求已交给当前画布回调',
+          '当前面板无法确认节点是否已持久化',
+        ],
+      }
+    : videoError
+      ? {
+          status: 'failed',
+          statusLabel: '视频不可用',
+          sourceLabel,
+          resultLabel: '视频预览或浏览器关键帧提取失败',
+          evidence: ['视频元素未能加载可用内容'],
+        }
+      : keyframeQuality({
+          sourceLabel,
+          hasVideo: Boolean(selectedNode?.resultVideoUrl),
+          hasLocalFrame: Boolean(frameDataUrl),
+          extractionFailed: corsError,
+          extractionError: corsError ? '浏览器因 CORS 限制无法截帧' : '',
+          isExtracting: extracting,
+          createdDraftKind: null,
+        })
 
   useEffect(() => {
     setFrameDataUrl(null)
@@ -166,6 +197,10 @@ export function KeyframeExtractorPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="mb-3">
+          <ToolResultQualityStrip summary={resultQuality} />
+        </div>
+
         {/* Node selector */}
         {videoNodes.length === 0 ? (
           <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-6 text-center">

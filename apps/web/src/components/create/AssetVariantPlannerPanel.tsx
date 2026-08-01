@@ -17,6 +17,8 @@ import {
 import { generateVariantPlans, parseAssetIntelligence } from '@/lib/canvas/asset-variant-planner'
 import type { AssetVariantPlan, VariantIconKey } from '@/lib/canvas/asset-variant-planner'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
+import { variantPlannerQuality } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
 interface AssetVariantPlannerPanelProps {
   node: VisualCanvasNode | null
@@ -241,6 +243,12 @@ export function AssetVariantPlannerPanel({
   const isTextNode = node?.kind === 'text'
   const isWorkflow = Boolean(workflowTargetNodeTitle)
   const insertLabel = isWorkflow ? `追加到「${workflowTargetNodeTitle}」Prompt` : '追加 Prompt'
+  const resultQuality = variantPlannerQuality({
+    sourceLabel: node ? node.title || '未命名节点' : '',
+    hasAsset: Boolean(node?.assetId || node?.resultImageUrl || node?.resultVideoUrl),
+    planCount: plans.length,
+    isPlanning: false,
+  })
 
   return (
     <div
@@ -272,6 +280,10 @@ export function AssetVariantPlannerPanel({
         >
           <X size={13} />
         </button>
+      </div>
+
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <ToolResultQualityStrip summary={resultQuality} />
       </div>
 
       {/* No node selected */}

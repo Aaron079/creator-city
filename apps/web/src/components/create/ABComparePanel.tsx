@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { Copy, ExternalLink, Play, Star, X } from 'lucide-react'
 import { analyzePromptDiff, buildCompareReport, isComparableNode } from '@/lib/canvas/compare-utils'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
+import { abCompareQuality, type ToolResultQualitySummary } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 import { getNodeImageUrl, getNodeVideoUrl } from '@/lib/canvas/media-urls'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 
@@ -294,6 +296,36 @@ export function ABComparePanel({
   }, [copy, nodeA, nodeB, diff, winner])
 
   const hasValidPair = Boolean(nodeA && nodeB && nodeA.id !== nodeB.id)
+  const resultQuality: ToolResultQualitySummary = comparableNodes.length < 2
+    ? {
+        status: 'unavailable',
+        statusLabel: '可比较节点不足',
+        sourceLabel: `已找到 ${comparableNodes.length} 个可比较节点`,
+        resultLabel: '至少需要两个可比较节点才能开始对比',
+        evidence: ['图片或视频节点需包含提示词、资产或结果'],
+      }
+    : !nodeA || !nodeB
+      ? {
+          status: 'needs-confirmation',
+          statusLabel: '选择不完整',
+          sourceLabel: 'A/B 对比',
+          resultLabel: '请选择两个可比较节点',
+          evidence: ['当前选择未形成有效对比'],
+        }
+      : nodeA.id === nodeB.id
+        ? {
+            status: 'needs-confirmation',
+            statusLabel: '需要不同版本',
+            sourceLabel: `${nodeA.title || '版本 A'} 与 ${nodeB.title || '版本 B'}`,
+            resultLabel: 'A 和 B 选择了同一个节点',
+            evidence: ['请更改其中一个选择后再比较'],
+          }
+        : abCompareQuality({
+            firstLabel: nodeA.title,
+            secondLabel: nodeB.title,
+            hasValidPair,
+            winner,
+          })
 
   return (
     <div
@@ -343,6 +375,10 @@ export function ABComparePanel({
             setWinner(null)
           }}
         />
+      </div>
+
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <ToolResultQualityStrip summary={resultQuality} />
       </div>
 
       {/* No comparable nodes */}
