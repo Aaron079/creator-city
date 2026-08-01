@@ -5,7 +5,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { verifyUploadProjectAccess } from './project-validation'
-import { verifyStoryboardReferenceSourceAccess } from './route'
+import { verifyStoryboardReferenceSourceAccess } from './reference-source-access'
 
 function prismaPoolTimeout() {
   return Object.assign(new Error('Timed out fetching a new connection from the connection pool.'), {
