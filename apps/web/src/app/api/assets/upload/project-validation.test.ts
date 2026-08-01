@@ -28,6 +28,20 @@ describe('verifyUploadProjectAccess', () => {
     assert.equal(result.message, '请先保存项目后再上传裁切资产。')
   })
 
+  test('requires projectId for storyboard reference extraction uploads', async () => {
+    const result = await verifyUploadProjectAccess({
+      projectId: null,
+      userId: 'user-1',
+      required: true,
+      lookupProjectOwnerId: async () => ({ ownerId: 'user-1' }),
+      retryDelaysMs: [],
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.errorCode, 'PROJECT_REQUIRED')
+    assert.equal(result.status, 400)
+  })
+
   test('rejects unauthorized project without bypassing ownership', async () => {
     const result = await verifyUploadProjectAccess({
       projectId: 'project-1',
@@ -41,6 +55,20 @@ describe('verifyUploadProjectAccess', () => {
     assert.equal(result.errorCode, 'FORBIDDEN')
     assert.equal(result.status, 403)
     assert.equal(result.message, '无权访问该项目。')
+  })
+
+  test('rejects a reference extractor upload for a project owned by another user', async () => {
+    const result = await verifyUploadProjectAccess({
+      projectId: 'project-1',
+      userId: 'user-1',
+      required: true,
+      lookupProjectOwnerId: async () => ({ ownerId: 'other-user' }),
+      retryDelaysMs: [],
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.errorCode, 'FORBIDDEN')
+    assert.equal(result.status, 403)
   })
 
   test('retries transient pool timeout and preserves project ownership on success', async () => {

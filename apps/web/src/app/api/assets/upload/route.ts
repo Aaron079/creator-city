@@ -6,7 +6,7 @@ import { serializeAsset, toAssetType } from '@/lib/projects/canvas-mappers'
 import { uploadAsset } from '@/lib/assets/storage-adapter'
 import {
   buildUploadAssetMetadata,
-  parseStoryboardGridSplitLineage,
+  parseStoryboardCropLineage,
 } from './storyboard-grid-split-metadata'
 import { verifyUploadProjectAccess } from './project-validation'
 
@@ -68,12 +68,12 @@ export async function POST(request: NextRequest) {
   const assetType = inferAssetType(requestedType, contentType)
   const title = String(formData.get('title') ?? '').trim() || file.name || 'Uploaded asset'
   const assetId = crypto.randomUUID()
-  const lineageResult = parseStoryboardGridSplitLineage(formData)
+  const lineageResult = parseStoryboardCropLineage(formData)
   if (!lineageResult.ok) {
     return jsonError(lineageResult.errorCode, lineageResult.message, 400)
   }
 
-  // Step 1: verify project ownership. Storyboard grid crops must be bound to a
+  // Step 1: verify project ownership. Storyboard crop assets must be bound to a
   // saved project so crop assets stay recoverable from /assets after reload.
   const projectAccess = await verifyUploadProjectAccess({
     projectId,
