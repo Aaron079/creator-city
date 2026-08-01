@@ -29,6 +29,15 @@ export type GridSplitQualityInput = BaseInput & {
   uploadError?: string
 }
 
+export type ReferenceExtractionQualityInput = BaseInput & {
+  selectedCount: number
+  uploadedCount: number
+  createdNodeCount: number
+  errorCount: number
+  isProcessing: boolean
+  uploadError?: string
+}
+
 export type AnnotationQualityInput = BaseInput & {
   persistedCount: number
   unsavedDraftCount: number
@@ -118,6 +127,40 @@ export function gridSplitQuality(input: GridSplitQualityInput): ToolResultQualit
     return summary('needs-confirmation', '布局待确认', input.sourceLabel, '已检测到裁切布局，尚未上传裁切', evidence, '确认布局后上传裁切')
   }
   return summary('not-started', '尚未开始', input.sourceLabel, '尚未检测到裁切布局', evidence)
+}
+
+export function referenceExtractionQuality(input: ReferenceExtractionQualityInput): ToolResultQualitySummary {
+  const selectedCount = count(input.selectedCount)
+  const uploadedCount = count(input.uploadedCount)
+  const createdNodeCount = count(input.createdNodeCount)
+  const errorCount = count(input.errorCount)
+  const evidence = [
+    `已选择 ${selectedCount} 个参考区域`,
+    ...(uploadedCount > 0 ? [`已入库 ${uploadedCount} 个参考图`] : []),
+    ...(createdNodeCount > 0 ? [`已创建 ${createdNodeCount} 个参考节点`] : []),
+  ]
+
+  if (!hasLabel(input.sourceLabel)) {
+    return summary('unavailable', '缺少来源', '未选择来源图', '无法提取参考图', evidence)
+  }
+  if (errorCount > 0) {
+    return summary('failed', '提取未完成', input.sourceLabel, `${errorCount} 个参考区域处理失败`, [input.uploadError || '请检查失败区域后重试', ...evidence])
+  }
+  if (input.isProcessing) {
+    return summary('processing', '正在提取', input.sourceLabel, '正在按顺序裁切并保存参考图', evidence)
+  }
+  if (uploadedCount > createdNodeCount) {
+    const nodeEvidence = createdNodeCount > 0 ? [`其中 ${createdNodeCount} 个参考节点已创建`, ...evidence] : evidence
+    const createdSuffix = createdNodeCount > 0 ? `，${createdNodeCount} 个参考节点已创建` : ''
+    return summary('needs-confirmation', '节点待确认', input.sourceLabel, `${uploadedCount} 个参考图已入库${createdSuffix}，等待创建参考节点`, nodeEvidence, '确认参考节点放置结果')
+  }
+  if (createdNodeCount > 0) {
+    return summary('completed', '参考节点已创建', input.sourceLabel, `已创建 ${createdNodeCount} 个参考节点`, evidence)
+  }
+  if (selectedCount > 0) {
+    return summary('needs-confirmation', '等待提取', input.sourceLabel, `已选择 ${selectedCount} 个参考区域`, evidence, '确认提取')
+  }
+  return summary('not-started', '尚未选择区域', input.sourceLabel, '尚未选择参考区域', evidence, '拖拽添加参考区域')
 }
 
 export function annotationQuality(input: AnnotationQualityInput): ToolResultQualitySummary {

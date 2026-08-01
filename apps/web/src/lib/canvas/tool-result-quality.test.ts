@@ -22,6 +22,7 @@ import {
   continuityQuality,
   gridSplitQuality,
   keyframeQuality,
+  referenceExtractionQuality,
   variantPlannerQuality,
 } from './tool-result-quality'
 
@@ -693,6 +694,62 @@ test('reports grid upload errors and processing from crop state', () => {
   assert.equal(failed.status, 'failed')
   assert.match(failed.evidence.join(' '), /上传失败/)
   assert.equal(processing.status, 'processing')
+})
+
+test('keeps selected references pending until explicit extraction begins', () => {
+  const summary = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 2,
+    uploadedCount: 0,
+    createdNodeCount: 0,
+    errorCount: 0,
+    isProcessing: false,
+  })
+
+  assert.equal(summary.status, 'needs-confirmation')
+  assert.match(summary.resultLabel, /已选择 2 个参考区域/)
+  assert.match(summary.nextStepLabel ?? '', /确认提取/)
+})
+
+test('reports reference extraction processing and item errors from real operation evidence', () => {
+  const processing = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 3,
+    uploadedCount: 1,
+    createdNodeCount: 1,
+    errorCount: 0,
+    isProcessing: true,
+  })
+  const failed = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 3,
+    uploadedCount: 1,
+    createdNodeCount: 1,
+    errorCount: 2,
+    isProcessing: false,
+    uploadError: '上传失败',
+  })
+
+  assert.equal(processing.status, 'processing')
+  assert.match(processing.evidence.join(' '), /已入库 1 个参考图/)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.resultLabel, /2 个参考区域处理失败/)
+  assert.match(failed.evidence.join(' '), /上传失败/)
+})
+
+test('keeps uploaded references pending when any uploaded asset has no created node', () => {
+  const summary = referenceExtractionQuality({
+    sourceLabel: '角色构图参考',
+    selectedCount: 2,
+    uploadedCount: 2,
+    createdNodeCount: 1,
+    errorCount: 0,
+    isProcessing: false,
+  })
+
+  assert.equal(summary.status, 'needs-confirmation')
+  assert.match(summary.resultLabel, /2 个参考图已入库/)
+  assert.match(summary.resultLabel, /1 个参考节点/)
 })
 
 test('separates dirty annotation drafts from persisted annotations', () => {
