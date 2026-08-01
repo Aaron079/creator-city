@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import type { ShotPlanDraft } from '../../skills/shot-planning/types'
-import type { RecipeReviewItem } from '../recipe/types'
 import { deriveStoryboardSketchFrame } from './grammar'
+import type { ApprovedStoryboardShot } from './types'
 
 function approvedShot(
-  overrides: Partial<RecipeReviewItem<ShotPlanDraft>> = {},
-): RecipeReviewItem<ShotPlanDraft> {
+  overrides: Partial<Omit<ApprovedStoryboardShot, 'decision'>> = {},
+): ApprovedStoryboardShot {
   return {
     shotId: 'scene-001-shot-001',
     sceneId: 'scene-001',
@@ -76,7 +75,11 @@ describe('deriveStoryboardSketchFrame', () => {
 
   test('marks pending and rejected review items unresolved instead of producing ready frames', () => {
     for (const decision of ['pending', 'rejected'] as const) {
-      const frame = deriveStoryboardSketchFrame(approvedShot({ decision }))
+      // Runtime callers are type-filtered; this cast verifies hostile persisted input stays defensive.
+      const frame = deriveStoryboardSketchFrame({
+        ...approvedShot(),
+        decision,
+      } as unknown as ApprovedStoryboardShot)
 
       assert.equal(frame.status, 'needs-review')
       assert.match(frame.notes.join(' '), /审核/)

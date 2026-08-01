@@ -12,7 +12,7 @@ import {
   type SceneBreakdownPayload,
   type ShotPlanPayload,
 } from '../../skills'
-import { storyboardDirectorRecipeMetadata } from './persistence'
+import { readStoryboardDirectorRecipe, storyboardDirectorRecipeMetadata } from './persistence'
 import type { StoryboardDirectorRecipe, StoryboardDirectorStageId } from './types'
 import {
   approveBeatStage,
@@ -20,6 +20,7 @@ import {
   approveShotStage,
   changeImpactForStage,
   createRecipeOperationToken,
+  createRecipeSketchBoard,
   createStoryboardDirectorRecipe,
   invalidateRecipeAfter,
   isRecipeOperationCurrent,
@@ -28,6 +29,7 @@ import {
   moveRecipeDraft,
   rerunRecipeStage,
   setRecipeDecision,
+  patchStoryboardSketchFrame,
   updateRecipeDraft,
 } from './state-machine'
 
@@ -213,6 +215,90 @@ beforeEach(() => {
 })
 
 describe('Storyboard Director Recipe progression', () => {
+  test('creates only approved local sketch frames and invalidates one patched frame', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const first = board.sketchBoard?.frames.find((frame) => frame.status === 'ready')
+    const second = board.sketchBoard?.frames.find((frame) => (
+      frame.status === 'ready' && frame.shotId !== first?.shotId
+    ))
+    assert.ok(first)
+    assert.ok(second)
+    assert.equal(first.status, 'ready')
+
+    const patched = patchStoryboardSketchFrame(board, first.shotId, { movement: 'pan' }, LATER_TIME)
+    const patchedFirst = patched.sketchBoard?.frames.find((frame) => frame.shotId === first.shotId)
+    const untouchedSecond = patched.sketchBoard?.frames.find((frame) => frame.shotId === second.shotId)
+    assert.equal(patchedFirst?.movement, 'pan')
+    assert.equal(patchedFirst?.status, 'stale')
+    assert.equal(untouchedSecond?.renderKey, second.renderKey)
+  })
+
+  test('excludes rejected drafts and stales retained sketch frames after upstream invalidation', () => {
+    const complete = completedRecipe()
+    const rejectedShotId = complete.shot.drafts[0]?.shotId
+    assert.ok(rejectedShotId)
+    const withRejected = {
+      ...complete,
+      shot: {
+        ...complete.shot,
+        drafts: complete.shot.drafts.map((draft) => (
+          draft.shotId === rejectedShotId ? { ...draft, decision: 'rejected' as const } : draft
+        )),
+      },
+    }
+
+    const board = createRecipeSketchBoard(withRejected, ISO_TIME)
+    assert.ok(board.sketchBoard)
+    assert.ok(board.sketchBoard.frames.every((frame) => frame.shotId !== rejectedShotId))
+
+    const stale = invalidateRecipeAfter(board, 'source', LATER_TIME)
+    assert.ok(stale.sketchBoard?.frames.every((frame) => frame.status === 'stale'))
+    assert.throws(() => createRecipeSketchBoard(stale, LATER_TIME), /fresh approved/i)
+  })
+
+  test('persists an exact stale sketch board after upstream invalidation', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const stale = invalidateRecipeAfter(board, 'source', LATER_TIME)
+
+    const read = readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(stale))
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.ok(read.recipe.sketchBoard?.frames.every((frame) => frame.status === 'stale'))
+    }
+  })
+
+  test('clears a sketch board before a new shot planning review replaces its approved drafts', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const rerun = rerunRecipeStage(board, 'shot-review', LATER_TIME)
+
+    assert.equal(rerun.sketchBoard, null)
+    assert.equal(readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(rerun)).status, 'valid')
+  })
+
+  test('rejects arbitrary or invalid sketch frame patches', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const frame = board.sketchBoard?.frames.find((item) => item.status === 'ready')
+    assert.ok(frame)
+
+    assert.throws(
+      () => patchStoryboardSketchFrame(board, frame.shotId, { renderKey: 'forged' }, LATER_TIME),
+      /unsupported fields/i,
+    )
+    assert.throws(
+      () => patchStoryboardSketchFrame(board, frame.shotId, { movement: 'orbit' }, LATER_TIME),
+      /movement is invalid/i,
+    )
+  })
+
+  test('persists a stale manually patched frame while preserving the derived frame contract', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const frame = board.sketchBoard?.frames.find((item) => item.status === 'ready')
+    assert.ok(frame)
+    const patched = patchStoryboardSketchFrame(board, frame.shotId, { movement: 'pan' }, LATER_TIME)
+
+    assert.equal(readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(patched)).status, 'valid')
+  })
+
   test('start runs only public script-segmentation and leaves every scene pending', () => {
     const recipe = createStoryboardDirectorRecipe(context, source, ISO_TIME, runner)
 

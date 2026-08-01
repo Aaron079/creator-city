@@ -93,3 +93,13 @@ export function createStoryboardDirectorRecipeRevision(
     options: { recipe },
   }).replace(/^csf1_/, 'sdrr1_')
 }
+
+/**
+ * Sketch boards store this revision, calculated without the board itself, so
+ * persisted board metadata can never participate in its own identity.
+ */
+export function createStoryboardDirectorRecipeSketchRevision(
+  recipe: StoryboardDirectorRecipe,
+) {
+  return createStoryboardDirectorRecipeRevision({ ...recipe, sketchBoard: null })
+}

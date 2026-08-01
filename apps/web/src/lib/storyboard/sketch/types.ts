@@ -32,7 +32,7 @@ export type StoryboardSketchMovement =
 export type StoryboardSketchFrame = {
   shotId: string
   renderKey: string
-  status: 'ready' | 'needs-review'
+  status: 'ready' | 'needs-review' | 'stale'
   composition: StoryboardSketchComposition
   camera: {
     label: string
@@ -47,4 +47,6 @@ export type StoryboardSketchFrame = {
   notes: string[]
 }
 
-export type ApprovedStoryboardShot = RecipeReviewItem<ShotPlanDraft>
+export type ApprovedStoryboardShot = RecipeReviewItem<ShotPlanDraft> & {
+  decision: 'approved'
+}

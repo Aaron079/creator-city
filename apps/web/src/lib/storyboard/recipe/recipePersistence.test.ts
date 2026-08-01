@@ -10,6 +10,7 @@ import {
   createStoryboardDirectorPartialBatchIdentity,
   createStoryboardDirectorRecipeIdentity,
   createStoryboardDirectorRecipeRevision,
+  createStoryboardDirectorRecipeSketchRevision,
   readStoryboardDirectorRecipe,
   storyboardDirectorRecipeMetadata,
   STORYBOARD_DIRECTOR_MAX_RECEIPTS,
@@ -21,6 +22,9 @@ import type {
   ScriptSceneDraft,
   ShotPlanDraft,
 } from '../../skills'
+import { deriveStoryboardSketchFrame } from '../sketch/grammar'
+import { createStoryboardSketchRenderKey } from '../sketch/renderer'
+import type { ApprovedStoryboardShot } from '../sketch/types'
 
 const context = { projectId: 'project-1', workflowId: 'workflow-1' }
 const source = {
@@ -85,7 +89,7 @@ function shotDraft(index = 1): RecipeReviewItem<ShotPlanDraft> {
 function validRecipeFixture(): StoryboardDirectorRecipe {
   const identity = createStoryboardDirectorRecipeIdentity(context, source)
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     recipeId: identity.recipeId,
     projectId: context.projectId,
     workflowId: context.workflowId,
@@ -161,6 +165,7 @@ function validRecipeFixture(): StoryboardDirectorRecipe {
       resultId: 'result-1',
       targetId: 'card-1',
     }],
+    sketchBoard: null,
     legacyImportStatus: 'not-offered',
     audit: {
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -173,8 +178,30 @@ function metadataWith(recipe: unknown): unknown {
   return { storyboardDirectorRecipe: recipe }
 }
 
+function sketchBoardFixture(recipe: StoryboardDirectorRecipe) {
+  const base = { ...recipe, sketchBoard: null }
+  const frames = recipe.shot.drafts
+    .filter((shot) => shot.decision === 'approved')
+    .map((shot) => {
+      const draft = deriveStoryboardSketchFrame(shot as ApprovedStoryboardShot)
+      return { ...draft, renderKey: createStoryboardSketchRenderKey(draft) }
+    })
+  if (frames.length === 0) throw new TypeError('Fixture requires an approved shot')
+  return {
+    version: 1 as const,
+    recipeRevision: createStoryboardDirectorRecipeSketchRevision(base),
+    frames,
+    updatedAt: '2026-01-03T00:00:00.000Z',
+  }
+}
+
+function freshSketchBoardFixture(recipe: StoryboardDirectorRecipe) {
+  recipe.shot.status = 'approved'
+  return sketchBoardFixture(recipe)
+}
+
 function unsupportedVersionFixture() {
-  return metadataWith({ ...validRecipeFixture(), schemaVersion: 2 })
+  return metadataWith({ ...validRecipeFixture(), schemaVersion: 3 })
 }
 
 function assertInvalid(recipe: unknown) {
@@ -187,6 +214,20 @@ function assertInvalid(recipe: unknown) {
 }
 
 describe('Storyboard Director Recipe identity', () => {
+  test('upgrades a valid version-1 Recipe to version 2 without a sketch board', () => {
+    const legacy = structuredClone(validRecipeFixture()) as Record<string, unknown>
+    legacy.schemaVersion = 1
+    delete legacy.sketchBoard
+
+    const read = readStoryboardDirectorRecipe(metadataWith(legacy))
+
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.equal(read.recipe.schemaVersion, 2)
+      assert.equal(read.recipe.sketchBoard, null)
+    }
+  })
+
   test('is deterministic and ignores title and metadata audit time', () => {
     const first = createStoryboardDirectorRecipeIdentity(context, source)
     const second = createStoryboardDirectorRecipeIdentity(context, {
@@ -269,6 +310,14 @@ describe('Storyboard Director Recipe identity', () => {
     assert.match(createStoryboardDirectorRecipeRevision(recipe), /^sdrr1_[0-9a-f]{8}$/)
   })
 
+  test('derives a sketch board revision from the board-free Recipe state', () => {
+    const recipe = validRecipeFixture()
+    const baseRevision = createStoryboardDirectorRecipeSketchRevision(recipe)
+    recipe.sketchBoard = sketchBoardFixture(recipe)
+
+    assert.equal(createStoryboardDirectorRecipeSketchRevision(recipe), baseRevision)
+  })
+
   test('creates deterministic materialization identities from every identity input', () => {
     const first = createRecipeMaterializationIdentity('recipe-1', 'scene', 'scene-1', 'result-1')
     assert.equal(
@@ -309,6 +358,143 @@ describe('Storyboard Director Recipe identity', () => {
 })
 
 describe('Storyboard Director Recipe persistence', () => {
+  test('strictly round-trips the exact version-2 sketch board shape', () => {
+    const recipe = validRecipeFixture()
+    recipe.sketchBoard = freshSketchBoardFixture(recipe)
+
+    const read = readStoryboardDirectorRecipe(metadataWith(recipe))
+
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.equal(read.recipe.schemaVersion, 2)
+      assert.deepEqual(read.recipe.sketchBoard, recipe.sketchBoard)
+    }
+  })
+
+  test('rejects duplicate or arbitrary sketch board metadata', () => {
+    const duplicate = validRecipeFixture()
+    const board = sketchBoardFixture(duplicate)
+    const firstFrame = board.frames[0]
+    assert.ok(firstFrame)
+    duplicate.sketchBoard = {
+      ...board,
+      frames: [...board.frames, { ...firstFrame }],
+    }
+    assertInvalid(duplicate)
+
+    const arbitrary = validRecipeFixture()
+    arbitrary.sketchBoard = {
+      ...sketchBoardFixture(arbitrary),
+      unexpected: true,
+    } as unknown as typeof arbitrary.sketchBoard
+    assertInvalid(arbitrary)
+
+    const forgedRevision = validRecipeFixture()
+    forgedRevision.sketchBoard = {
+      ...sketchBoardFixture(forgedRevision),
+      recipeRevision: 'sdrr1_deadbeef',
+    }
+    assertInvalid(forgedRevision)
+  })
+
+  test('binds sketch board frames to the exact approved shot set and computed render keys', () => {
+    const missing = validRecipeFixture()
+    missing.sketchBoard = { ...freshSketchBoardFixture(missing), frames: [] }
+    assertInvalid(missing)
+
+    const unapproved = validRecipeFixture()
+    unapproved.sketchBoard = freshSketchBoardFixture(unapproved)
+    unapproved.shot.drafts = unapproved.shot.drafts.map((draft) => ({
+      ...draft,
+      decision: 'rejected',
+    }))
+    unapproved.sketchBoard.recipeRevision = createStoryboardDirectorRecipeSketchRevision({
+      ...unapproved,
+      sketchBoard: null,
+    })
+    assertInvalid(unapproved)
+
+    const forgedRenderKey = validRecipeFixture()
+    forgedRenderKey.sketchBoard = freshSketchBoardFixture(forgedRenderKey)
+    const frame = forgedRenderKey.sketchBoard.frames[0]
+    assert.ok(frame)
+    forgedRenderKey.sketchBoard.frames = [{ ...frame, renderKey: 'csf1_forged' }]
+    assertInvalid(forgedRenderKey)
+  })
+
+  test('requires persisted sketch board frame order to match approved shot draft order', () => {
+    const recipe = validRecipeFixture()
+    recipe.shot.drafts = [shotDraft(1), shotDraft(2)]
+    recipe.sketchBoard = freshSketchBoardFixture(recipe)
+    const first = recipe.sketchBoard.frames[0]
+    const second = recipe.sketchBoard.frames[1]
+    assert.ok(first)
+    assert.ok(second)
+    recipe.sketchBoard.frames = [second, first]
+
+    assertInvalid(recipe)
+  })
+
+  test('rejects recomputed-key frames with forged immutable derived content', () => {
+    const mutateFrame = (mutate: (frame: NonNullable<StoryboardDirectorRecipe['sketchBoard']>['frames'][number]) => void) => {
+      const recipe = validRecipeFixture()
+      recipe.sketchBoard = freshSketchBoardFixture(recipe)
+      const frame = recipe.sketchBoard.frames[0]
+      assert.ok(frame)
+      mutate(frame)
+      frame.renderKey = createStoryboardSketchRenderKey(frame)
+      assertInvalid(recipe)
+    }
+
+    mutateFrame((frame) => { frame.subjects = frame.subjects.map((subject, index) => (
+      index === 0 ? { ...subject, label: 'Forged subject' } : subject
+    )) })
+    mutateFrame((frame) => { frame.camera = { ...frame.camera, label: 'Forged label' } })
+    mutateFrame((frame) => { frame.notes = ['Forged note'] })
+    mutateFrame((frame) => { frame.status = 'needs-review' })
+  })
+
+  test('round-trips a stale allowed manual frame override with a recomputed render key', () => {
+    const recipe = validRecipeFixture()
+    recipe.sketchBoard = freshSketchBoardFixture(recipe)
+    const frame = recipe.sketchBoard.frames[0]
+    assert.ok(frame)
+    frame.movement = 'pan'
+    frame.status = 'stale'
+    frame.renderKey = createStoryboardSketchRenderKey(frame)
+
+    const read = readStoryboardDirectorRecipe(metadataWith(recipe))
+
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.equal(read.recipe.sketchBoard?.frames[0]?.movement, 'pan')
+      assert.equal(read.recipe.sketchBoard?.frames[0]?.status, 'stale')
+    }
+  })
+
+  test('allows only stale frames while the retained recipe is stale', () => {
+    const stale = validRecipeFixture()
+    stale.sketchBoard = freshSketchBoardFixture(stale)
+    stale.activeStage = 'source'
+    stale.scene.status = 'stale'
+    stale.beat.status = 'stale'
+    stale.shot.status = 'stale'
+    stale.sketchBoard.recipeRevision = createStoryboardDirectorRecipeSketchRevision({
+      ...stale,
+      sketchBoard: null,
+    })
+    assertInvalid(stale)
+
+    const freshUnapproved = validRecipeFixture()
+    freshUnapproved.sketchBoard = freshSketchBoardFixture(freshUnapproved)
+    freshUnapproved.shot.status = 'needs-review'
+    freshUnapproved.sketchBoard.recipeRevision = createStoryboardDirectorRecipeSketchRevision({
+      ...freshUnapproved,
+      sketchBoard: null,
+    })
+    assertInvalid(freshUnapproved)
+  })
+
   test('round-trips valid owned metadata without sharing references', () => {
     const recipe = validRecipeFixture()
     const metadata = storyboardDirectorRecipeMetadata(recipe)

@@ -21,11 +21,26 @@ import {
   type ShotPlanningOptions,
   type ShotPlanPayload,
 } from '../../skills'
-import { createStoryboardDirectorRecipeIdentity } from './identity'
+import { deriveStoryboardSketchFrame } from '../sketch/grammar'
+import { createStoryboardSketchRenderKey } from '../sketch/renderer'
+import type {
+  ApprovedStoryboardShot,
+  StoryboardSketchActionLine,
+  StoryboardSketchCameraAngle,
+  StoryboardSketchComposition,
+  StoryboardSketchFrame,
+  StoryboardSketchMovement,
+  StoryboardSketchSubjectAnchor,
+} from '../sketch/types'
+import {
+  createStoryboardDirectorRecipeIdentity,
+  createStoryboardDirectorRecipeSketchRevision,
+} from './identity'
 import {
   STORYBOARD_DIRECTOR_RECIPE_VERSION,
   type RecipeReviewItem,
   type StoryboardDirectorRecipe,
+  type StoryboardSketchBoard,
   type StoryboardDirectorStage,
   type StoryboardDirectorStageId,
 } from './types'
@@ -83,6 +98,37 @@ const SHOT_SIZES = new Set<PlannedShotSize>([
   'extreme-close',
 ])
 const SHOT_OUTPUT_KINDS = new Set<ShotOutputKind>(['image', 'video'])
+const SKETCH_COMPOSITIONS = new Set<StoryboardSketchComposition>([
+  'establishing',
+  'two-shot',
+  'single',
+  'detail',
+])
+const SKETCH_CAMERA_ANGLES = new Set<StoryboardSketchCameraAngle>([
+  'eye-level',
+  'high',
+  'low',
+])
+const SKETCH_SUBJECT_ANCHORS = new Set<StoryboardSketchSubjectAnchor>([
+  'lower-left',
+  'lower-center',
+  'lower-right',
+])
+const SKETCH_ACTION_LINES = new Set<StoryboardSketchActionLine>([
+  'none',
+  'left-to-right',
+  'right-to-left',
+  'toward-camera',
+  'away-camera',
+])
+const SKETCH_MOVEMENTS = new Set<StoryboardSketchMovement>([
+  'static',
+  'pan',
+  'tilt',
+  'dolly',
+  'zoom',
+  'handheld',
+])
 const MAX_SCENES = 40
 const MAX_REVIEW_ITEMS = 120
 const MAX_SCENE_CHARACTERS = 120
@@ -1098,8 +1144,158 @@ export function createStoryboardDirectorRecipe(
     findings: [],
     storyboard: { version: '2', shots: [], updatedAt: now },
     receipts: [],
+    sketchBoard: null,
     legacyImportStatus: 'not-offered',
     audit: { createdAt: now, updatedAt: now },
+  }
+}
+
+function assertSketchBoardCreationAllowed(recipe: StoryboardDirectorRecipe) {
+  if (recipe.activeStage !== 'shot-review'
+    || recipe.shot.status !== 'approved'
+    || recipe.shot.sourceFingerprint !== recipe.sourceFingerprint
+    || !recipe.shot.result
+    || !recipe.shot.approvedArtifact) {
+    throw new TypeError('Sketch board requires a fresh approved shot stage')
+  }
+}
+
+function isApprovedStoryboardShot(
+  shot: RecipeReviewItem<ShotPlanDraft>,
+): shot is ApprovedStoryboardShot {
+  return shot.decision === 'approved'
+}
+
+function renderSketchFrame(shot: ApprovedStoryboardShot): StoryboardSketchFrame {
+  const frame = deriveStoryboardSketchFrame(shot)
+  return { ...frame, renderKey: createStoryboardSketchRenderKey(frame) }
+}
+
+function createSketchBoard(
+  recipe: StoryboardDirectorRecipe,
+  now: string,
+): StoryboardDirectorRecipe {
+  const base = {
+    ...recipe,
+    sketchBoard: null,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+  const frames = recipe.shot.drafts
+    .filter(isApprovedStoryboardShot)
+    .map(renderSketchFrame)
+  const sketchBoard: StoryboardSketchBoard = {
+    version: 1,
+    recipeRevision: createStoryboardDirectorRecipeSketchRevision(base),
+    frames,
+    updatedAt: now,
+  }
+  return { ...base, sketchBoard }
+}
+
+export function createRecipeSketchBoard(
+  recipe: StoryboardDirectorRecipe,
+  now: string,
+): StoryboardDirectorRecipe {
+  assertSketchBoardCreationAllowed(recipe)
+  return createSketchBoard(recipe, now)
+}
+
+function assertPatchRecord(value: unknown, field: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new TypeError(`${field} must be a plain object`)
+  return value
+}
+
+function assertOnlyPatchKeys(value: Record<string, unknown>, allowed: readonly string[], field: string) {
+  const keys = Reflect.ownKeys(value)
+  if (keys.length === 0 || keys.some((key) => typeof key !== 'string' || !allowed.includes(key))) {
+    throw new TypeError(`${field} contains unsupported fields`)
+  }
+}
+
+function patchSketchFrame(
+  frame: StoryboardSketchFrame,
+  patch: unknown,
+): StoryboardSketchFrame {
+  const input = assertPatchRecord(patch, 'Sketch frame patch')
+  assertOnlyPatchKeys(input, ['composition', 'camera', 'subjects', 'actionLine', 'movement'], 'Sketch frame patch')
+  let next: StoryboardSketchFrame = {
+    ...frame,
+    camera: { ...frame.camera },
+    subjects: frame.subjects.map((subject) => ({ ...subject })),
+    notes: frame.notes.slice(),
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'composition')) {
+    if (!SKETCH_COMPOSITIONS.has(input.composition as StoryboardSketchComposition)) {
+      throw new TypeError('Sketch frame composition is invalid')
+    }
+    next = { ...next, composition: input.composition as StoryboardSketchComposition }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'camera')) {
+    const camera = assertPatchRecord(input.camera, 'Sketch frame patch.camera')
+    assertOnlyPatchKeys(camera, ['angle'], 'Sketch frame patch.camera')
+    if (!SKETCH_CAMERA_ANGLES.has(camera.angle as StoryboardSketchCameraAngle)) {
+      throw new TypeError('Sketch frame camera angle is invalid')
+    }
+    next = { ...next, camera: { ...next.camera, angle: camera.angle as StoryboardSketchCameraAngle } }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'subjects')) {
+    if (!isDenseArray(input.subjects) || input.subjects.length > 3) {
+      throw new TypeError('Sketch frame subjects are invalid')
+    }
+    if (input.subjects.length !== frame.subjects.length) {
+      throw new TypeError('Sketch frame subjects must preserve the approved subject list')
+    }
+    const subjects = input.subjects.map((value, index) => {
+      const subject = assertPatchRecord(value, `Sketch frame patch.subjects[${index}]`)
+      assertOnlyPatchKeys(subject, ['anchor'], `Sketch frame patch.subjects[${index}]`)
+      if (!SKETCH_SUBJECT_ANCHORS.has(subject.anchor as StoryboardSketchSubjectAnchor)) {
+        throw new TypeError('Sketch frame subject anchor is invalid')
+      }
+      return { ...frame.subjects[index]!, anchor: subject.anchor as StoryboardSketchSubjectAnchor }
+    })
+    next = { ...next, subjects }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'actionLine')) {
+    if (!SKETCH_ACTION_LINES.has(input.actionLine as StoryboardSketchActionLine)) {
+      throw new TypeError('Sketch frame action line is invalid')
+    }
+    next = { ...next, actionLine: input.actionLine as StoryboardSketchActionLine }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'movement')) {
+    if (!SKETCH_MOVEMENTS.has(input.movement as StoryboardSketchMovement)) {
+      throw new TypeError('Sketch frame movement is invalid')
+    }
+    next = { ...next, movement: input.movement as StoryboardSketchMovement }
+  }
+  const stale = { ...next, status: 'stale' as const }
+  return { ...stale, renderKey: createStoryboardSketchRenderKey(stale) }
+}
+
+export function patchStoryboardSketchFrame(
+  recipe: StoryboardDirectorRecipe,
+  shotId: string,
+  patch: unknown,
+  now: string,
+): StoryboardDirectorRecipe {
+  if (!recipe.sketchBoard) throw new TypeError('Sketch board does not exist')
+  if (!isIdentifier(shotId)) throw new TypeError('Sketch frame shot ID is invalid')
+  const index = recipe.sketchBoard.frames.findIndex((frame) => frame.shotId === shotId)
+  if (index < 0) throw new TypeError('Sketch frame was not found')
+  const frames = recipe.sketchBoard.frames.slice()
+  frames[index] = patchSketchFrame(recipe.sketchBoard.frames[index]!, patch)
+  const base = {
+    ...recipe,
+    sketchBoard: null,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+  return {
+    ...base,
+    sketchBoard: {
+      ...recipe.sketchBoard,
+      recipeRevision: createStoryboardDirectorRecipeSketchRevision(base),
+      frames,
+      updatedAt: now,
+    },
   }
 }
 
@@ -1214,43 +1410,65 @@ function staleStage<T extends StoryboardDirectorStage<unknown>>(stage: T, force 
   }
 }
 
+function withSketchBoardStale(
+  recipe: StoryboardDirectorRecipe,
+  now: string,
+): StoryboardDirectorRecipe {
+  if (!recipe.sketchBoard) return recipe
+  const base = { ...recipe, sketchBoard: null }
+  const frames = recipe.sketchBoard.frames.map((frame) => {
+    if (frame.status === 'stale') return frame
+    const stale = { ...frame, status: 'stale' as const }
+    return { ...stale, renderKey: createStoryboardSketchRenderKey(stale) }
+  })
+  return {
+    ...base,
+    sketchBoard: {
+      ...recipe.sketchBoard,
+      recipeRevision: createStoryboardDirectorRecipeSketchRevision(base),
+      frames,
+      updatedAt: now,
+    },
+  }
+}
+
 export function invalidateRecipeAfter(
   recipe: StoryboardDirectorRecipe,
   stageId: StoryboardDirectorStageId,
   now: string,
 ): StoryboardDirectorRecipe {
   if (stageId === 'source') {
-    return {
+    return withSketchBoardStale({
       ...recipe,
       activeStage: 'source',
       scene: staleStage(recipe.scene, true),
       beat: staleStage(recipe.beat, true),
       shot: staleStage(recipe.shot, true),
       audit: { ...recipe.audit, updatedAt: now },
-    }
+    }, now)
   }
   if (stageId === 'scene-review') {
-    return {
+    return withSketchBoardStale({
       ...recipe,
       activeStage: 'scene-review',
       beat: staleStage(recipe.beat),
       shot: staleStage(recipe.shot),
       audit: { ...recipe.audit, updatedAt: now },
-    }
+    }, now)
   }
   if (stageId === 'beat-review') {
-    return {
+    return withSketchBoardStale({
       ...recipe,
       activeStage: 'beat-review',
       shot: staleStage(recipe.shot),
       audit: { ...recipe.audit, updatedAt: now },
-    }
+    }, now)
   }
-  return {
+  return withSketchBoardStale({
     ...recipe,
     activeStage: 'shot-review',
     audit: { ...recipe.audit, updatedAt: now },
-  }
+  }, now)
 }
 
 function finishReviewChange(
@@ -1716,6 +1934,7 @@ export function approveBeatStage(
     activeStage: 'shot-review',
     beat: { ...recipe.beat, status: 'approved', approvedArtifact },
     shot,
+    sketchBoard: null,
     audit: { ...recipe.audit, updatedAt: now },
   }
 }
@@ -1828,6 +2047,7 @@ export function rerunRecipeStage(
     ...recipe,
     activeStage: 'shot-review',
     shot,
+    sketchBoard: null,
     findings: clearFindingsForStage(recipe, stageId),
     audit: { ...recipe.audit, updatedAt: now },
   }

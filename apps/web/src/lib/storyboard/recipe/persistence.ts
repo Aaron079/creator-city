@@ -4,14 +4,19 @@ import type {
   CreatorSkillRunResult,
   CreatorSkillSourceNode,
 } from '../../skills'
+import { deriveStoryboardSketchFrame } from '../sketch/grammar'
+import { createStoryboardSketchRenderKey } from '../sketch/renderer'
+import type { ApprovedStoryboardShot, StoryboardSketchFrame } from '../sketch/types'
 import {
   createStoryboardDirectorPartialBatchIdentity,
   createStoryboardDirectorRecipeIdentity,
+  createStoryboardDirectorRecipeSketchRevision,
 } from './identity'
 import {
   STORYBOARD_DIRECTOR_MAX_RECEIPTS,
   STORYBOARD_DIRECTOR_RECIPE_VERSION,
   type StoryboardDirectorRecipe,
+  type StoryboardSketchBoard,
   type StoryboardDirectorStageStatus,
 } from './types'
 
@@ -20,6 +25,10 @@ const MAX_BEATS = 120
 const MAX_SHOTS = 120
 const MAX_COLLECTION_ITEMS = 120
 const MAX_CLONE_ARRAY_LENGTH = 10_000
+const MAX_SKETCH_FRAMES = 120
+const MAX_SKETCH_SUBJECTS = 3
+const MAX_SKETCH_NOTES = 8
+const MAX_SKETCH_TEXT_LENGTH = 320
 
 export type StoryboardDirectorRecipeReadResult =
   | { status: 'absent' }
@@ -148,6 +157,12 @@ function record(
 function stringValue(value: unknown, field: string) {
   if (typeof value !== 'string') fail(`${field} must be a string`)
   return value
+}
+
+function boundedString(value: unknown, field: string, maximum = MAX_SKETCH_TEXT_LENGTH) {
+  const text = stringValue(value, field)
+  if (text.length > maximum) fail(`${field} exceeds the persistence limit`)
+  return text
 }
 
 function identifier(value: unknown, field: string) {
@@ -666,6 +681,151 @@ function validateStoryboard(value: unknown, field: string) {
   assertUnique(ids, `${field}.shots`)
 }
 
+function validateSketchFrame(value: unknown, field: string): StoryboardSketchFrame {
+  const frame = record(value, field, [
+    'shotId',
+    'renderKey',
+    'status',
+    'composition',
+    'camera',
+    'subjects',
+    'actionLine',
+    'movement',
+    'notes',
+  ])
+  identifier(frame.shotId, `${field}.shotId`)
+  boundedString(frame.renderKey, `${field}.renderKey`, 512)
+  enumValue(frame.status, `${field}.status`, ['ready', 'needs-review', 'stale'])
+  enumValue(frame.composition, `${field}.composition`, [
+    'establishing',
+    'two-shot',
+    'single',
+    'detail',
+  ])
+  const camera = record(frame.camera, `${field}.camera`, ['label', 'angle'])
+  boundedString(camera.label, `${field}.camera.label`, 80)
+  enumValue(camera.angle, `${field}.camera.angle`, ['eye-level', 'high', 'low'])
+  const subjects = arrayValue(frame.subjects, `${field}.subjects`, MAX_SKETCH_SUBJECTS)
+  for (let index = 0; index < subjects.length; index += 1) {
+    const subject = record(subjects[index], `${field}.subjects[${index}]`, ['label', 'anchor'])
+    boundedString(subject.label, `${field}.subjects[${index}].label`, 120)
+    enumValue(subject.anchor, `${field}.subjects[${index}].anchor`, [
+      'lower-left',
+      'lower-center',
+      'lower-right',
+    ])
+  }
+  enumValue(frame.actionLine, `${field}.actionLine`, [
+    'none',
+    'left-to-right',
+    'right-to-left',
+    'toward-camera',
+    'away-camera',
+  ])
+  enumValue(frame.movement, `${field}.movement`, [
+    'static',
+    'pan',
+    'tilt',
+    'dolly',
+    'zoom',
+    'handheld',
+  ])
+  const notes = arrayValue(frame.notes, `${field}.notes`, MAX_SKETCH_NOTES)
+  for (let index = 0; index < notes.length; index += 1) {
+    boundedString(notes[index], `${field}.notes[${index}]`)
+  }
+  return frame as StoryboardSketchFrame
+}
+
+function validateNullableSketchBoard(value: unknown, field: string): asserts value is StoryboardSketchBoard | null {
+  if (value === null) return
+  const board = record(value, field, ['version', 'recipeRevision', 'frames', 'updatedAt'])
+  if (board.version !== 1) fail(`${field}.version is invalid`)
+  const revision = identifier(board.recipeRevision, `${field}.recipeRevision`)
+  if (!/^sdrr1_[0-9a-f]{8}$/u.test(revision)) fail(`${field}.recipeRevision is invalid`)
+  const frames = arrayValue(board.frames, `${field}.frames`, MAX_SKETCH_FRAMES)
+  const shotIds: string[] = []
+  for (let index = 0; index < frames.length; index += 1) {
+    shotIds.push(validateSketchFrame(frames[index], `${field}.frames[${index}]`).shotId)
+  }
+  assertUnique(shotIds, `${field}.frames`)
+  boundedString(board.updatedAt, `${field}.updatedAt`, 80)
+}
+
+function recipeHasStaleSketchInputs(recipe: StoryboardDirectorRecipe) {
+  return recipe.activeStage === 'source'
+    || recipe.scene.status === 'stale'
+    || recipe.beat.status === 'stale'
+    || recipe.shot.status === 'stale'
+    || recipe.scene.sourceFingerprint !== recipe.sourceFingerprint
+    || recipe.beat.sourceFingerprint !== recipe.sourceFingerprint
+    || recipe.shot.sourceFingerprint !== recipe.sourceFingerprint
+}
+
+function isApprovedStoryboardShot(
+  shot: StoryboardDirectorRecipe['shot']['drafts'][number],
+): shot is ApprovedStoryboardShot {
+  return shot.decision === 'approved'
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function validateSketchFrameAgainstApprovedShot(
+  frame: StoryboardSketchFrame,
+  shot: ApprovedStoryboardShot,
+  field: string,
+) {
+  const derived = deriveStoryboardSketchFrame(shot)
+  if (frame.shotId !== derived.shotId
+    || frame.camera.label !== derived.camera.label
+    || frame.subjects.length !== derived.subjects.length
+    || frame.subjects.some((subject, index) => subject.label !== derived.subjects[index]?.label)
+    || !sameStrings(frame.notes, derived.notes)) {
+    fail(`${field} does not match immutable approved shot fields`)
+  }
+  if (frame.status === 'stale') return
+  if (frame.status !== derived.status
+    || frame.composition !== derived.composition
+    || frame.camera.angle !== derived.camera.angle
+    || frame.subjects.some((subject, index) => subject.anchor !== derived.subjects[index]?.anchor)
+    || frame.actionLine !== derived.actionLine
+    || frame.movement !== derived.movement) {
+    fail(`${field} changed derived fields without becoming stale`)
+  }
+}
+
+function validateSketchBoardAgainstRecipe(recipe: StoryboardDirectorRecipe) {
+  const board = recipe.sketchBoard
+  if (!board) return
+  const approvedShots = recipe.shot.drafts.filter(isApprovedStoryboardShot)
+  if (board.frames.length !== approvedShots.length
+    || board.frames.some((frame, index) => frame.shotId !== approvedShots[index]?.shotId)) {
+    fail('Storyboard Director Recipe sketch board frames do not match approved shots')
+  }
+  for (let index = 0; index < board.frames.length; index += 1) {
+    const frame = board.frames[index]!
+    if (frame.renderKey !== createStoryboardSketchRenderKey(frame)) {
+      fail(`Storyboard Director Recipe sketch board frame ${index} render key is invalid`)
+    }
+    validateSketchFrameAgainstApprovedShot(
+      frame,
+      approvedShots[index]!,
+      `Storyboard Director Recipe sketch board frame ${index}`,
+    )
+  }
+  if (recipeHasStaleSketchInputs(recipe)) {
+    if (board.frames.some((frame) => frame.status !== 'stale')) {
+      fail('Storyboard Director Recipe stale sketch board contains current frames')
+    }
+    return
+  }
+  if (recipe.activeStage !== 'shot-review' || recipe.shot.status !== 'approved') {
+    fail('Storyboard Director Recipe sketch board requires an approved shot stage')
+  }
+}
+
 function validateReceipt(value: unknown, field: string) {
   const receipt = record(value, field, ['identity', 'kind', 'resultId', 'targetId'])
   const identity = identifier(receipt.identity, `${field}.identity`)
@@ -701,9 +861,12 @@ const RECIPE_FIELDS = [
   'findings',
   'storyboard',
   'receipts',
+  'sketchBoard',
   'legacyImportStatus',
   'audit',
 ] as const
+
+const LEGACY_RECIPE_FIELDS = RECIPE_FIELDS.filter((field) => field !== 'sketchBoard')
 
 function validateRecipe(value: unknown): asserts value is StoryboardDirectorRecipe {
   const recipe = record(value, 'storyboardDirectorRecipe', RECIPE_FIELDS)
@@ -749,6 +912,7 @@ function validateRecipe(value: unknown): asserts value is StoryboardDirectorReci
   }
   assertUnique(findingIds, 'storyboardDirectorRecipe.findings')
   validateStoryboard(recipe.storyboard, 'storyboardDirectorRecipe.storyboard')
+  validateNullableSketchBoard(recipe.sketchBoard, 'storyboardDirectorRecipe.sketchBoard')
 
   const receipts = arrayValue(
     recipe.receipts,
@@ -776,6 +940,13 @@ function validateRecipe(value: unknown): asserts value is StoryboardDirectorReci
     || sourceFingerprint !== expectedIdentity.sourceFingerprint) {
     fail('Storyboard Director Recipe identity does not match its source snapshot')
   }
+  if (recipe.sketchBoard
+    && recipe.sketchBoard.recipeRevision !== createStoryboardDirectorRecipeSketchRevision(
+      recipe as StoryboardDirectorRecipe,
+    )) {
+    fail('Storyboard Director Recipe sketch board revision does not match its source snapshot')
+  }
+  validateSketchBoardAgainstRecipe(recipe as StoryboardDirectorRecipe)
 }
 
 function readPositiveInteger(value: unknown, field: string) {
@@ -833,10 +1004,26 @@ export function readStoryboardDirectorRecipe(
       return invalid('STORYBOARD_RECIPE_INVALID')
     }
     const version = readPositiveInteger(property.value, 'schemaVersion')
-    if (version !== STORYBOARD_DIRECTOR_RECIPE_VERSION) {
+    if (version !== 1 && version !== STORYBOARD_DIRECTOR_RECIPE_VERSION) {
       return unsupported('STORYBOARD_RECIPE_VERSION_UNSUPPORTED')
     }
-    return { status: 'valid', recipe: cloneStoryboardDirectorRecipe(property.value) }
+    const clone = cloneJsonValue(
+      property.value,
+      new WeakSet<object>(),
+      'storyboardDirectorRecipe',
+    )
+    if (version === 1) {
+      record(clone, 'storyboardDirectorRecipe', LEGACY_RECIPE_FIELDS)
+      return {
+        status: 'valid',
+        recipe: cloneStoryboardDirectorRecipe({
+          ...(clone as PlainRecord),
+          schemaVersion: STORYBOARD_DIRECTOR_RECIPE_VERSION,
+          sketchBoard: null,
+        }),
+      }
+    }
+    return { status: 'valid', recipe: cloneStoryboardDirectorRecipe(clone) }
   } catch {
     return invalid('STORYBOARD_RECIPE_INVALID')
   }

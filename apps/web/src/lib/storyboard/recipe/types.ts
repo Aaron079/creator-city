@@ -9,8 +9,9 @@ import type {
   ShotPlanningOptions,
 } from '../../skills'
 import type { StoryboardState } from '../types'
+import type { StoryboardSketchFrame } from '../sketch/types'
 
-export const STORYBOARD_DIRECTOR_RECIPE_VERSION = 1 as const
+export const STORYBOARD_DIRECTOR_RECIPE_VERSION = 2 as const
 export const STORYBOARD_DIRECTOR_RECIPE_SKILL_VERSION = '1.0.0' as const
 export const STORYBOARD_DIRECTOR_MAX_RECEIPTS = 360
 
@@ -75,6 +76,13 @@ export type StoryboardDirectorMaterializationReceipt = {
   targetId: string
 }
 
+export type StoryboardSketchBoard = {
+  version: 1
+  recipeRevision: string
+  frames: StoryboardSketchFrame[]
+  updatedAt: string
+}
+
 export type StoryboardDirectorRecipe = {
   schemaVersion: typeof STORYBOARD_DIRECTOR_RECIPE_VERSION
   recipeId: string
@@ -91,6 +99,7 @@ export type StoryboardDirectorRecipe = {
   findings: StoryboardDirectorFinding[]
   storyboard: StoryboardState
   receipts: StoryboardDirectorMaterializationReceipt[]
+  sketchBoard: StoryboardSketchBoard | null
   legacyImportStatus: 'not-offered' | 'available' | 'imported' | 'dismissed'
   audit: { createdAt: string; updatedAt: string }
 }
