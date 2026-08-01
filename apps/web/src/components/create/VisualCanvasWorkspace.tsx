@@ -11,6 +11,11 @@ import {
   resolveCanvasEdgeNodes,
   type CanvasNodeLayerVisualState,
 } from '@/components/create/canvas/canvasRenderPlanning'
+import {
+  getCanvasNodeDialogSize,
+  getCanvasNodeSize,
+  normalizeLegacyCanvasNodeSize,
+} from '@/components/create/canvas/canvasWorkspaceLayout'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -599,18 +604,6 @@ const NODE_META: Record<VisualCanvasNodeKind, { title: string; subtitle: string;
   upload: { title: '上传', subtitle: '导入图片、视频或音频参考素材。', model: 'asset-drop' },
 }
 
-const NODE_SIZE: Record<VisualCanvasNodeKind, { width: number; height: number }> = {
-  text: { width: 360, height: 300 },
-  image: { width: 380, height: 320 },
-  video: { width: 380, height: 320 },
-  audio: { width: 360, height: 260 },
-  asset: { width: 360, height: 280 },
-  template: { width: 360, height: 280 },
-  delivery: { width: 360, height: 280 },
-  world: { width: 380, height: 320 },
-  upload: { width: 360, height: 280 },
-}
-
 const ASSET_RECOVERY_TOOLS_ENABLED = false
 const STORYBOARD_TOOLS_ENABLED = false
 
@@ -634,7 +627,6 @@ const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
 const NODE_DIALOG_GAP = 56
-const NODE_DIALOG_HEIGHT = 500
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
 const REVIEW_WINDOW_MIN_WIDTH = 320
@@ -2314,7 +2306,7 @@ function getTemplateFromSession(templateId: string) {
 }
 
 function getNodeSize(kind: VisualCanvasNodeKind) {
-  return NODE_SIZE[kind] ?? NODE_SIZE.text
+  return getCanvasNodeSize(kind)
 }
 
 function doNodesOverlap(
@@ -2714,6 +2706,7 @@ export function VisualCanvasWorkspace({
   } | null>(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
+  const [browserViewport, setBrowserViewport] = useState({ width: 0, height: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [isLocalImageDragOver, setIsLocalImageDragOver] = useState(false)
@@ -2761,6 +2754,16 @@ export function VisualCanvasWorkspace({
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setBrowserViewport({ width: window.innerWidth, height: window.innerHeight })
+    }
+
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
 
   const availableDirectorRecipes = useMemo(() => nodes.flatMap((node) => {
     const read = readStoryboardDirectorRecipe(node.metadataJson)
@@ -3453,7 +3456,8 @@ export function VisualCanvasWorkspace({
       if (!projectTitleEditing) setProjectTitleDraft(args.title)
     }
     skipNextAutosaveRef.current = true
-    const sanitizedNodes = args.nodes.map((node) => {
+    const sanitizedNodes = args.nodes.map((sourceNode) => {
+      const node = normalizeLegacyCanvasNodeSize(sourceNode)
       if (!isActiveGenerationStatus(node.status)) return node
       const meta = metadataRecord(node.metadataJson)
       const hasJobId = typeof meta.generationJobId === 'string' && meta.generationJobId.length > 0
@@ -9676,7 +9680,7 @@ export function VisualCanvasWorkspace({
     const size = getNodeSize(kind)
     const position = nodeCreateMenu
       ? {
-        x: nodeCreateMenu.worldX - (size.width - NODE_SIZE.text.width) / 2,
+        x: nodeCreateMenu.worldX - (size.width - getNodeSize('text').width) / 2,
         y: nodeCreateMenu.worldY,
       }
       : undefined
@@ -9718,8 +9722,8 @@ export function VisualCanvasWorkspace({
       model: NODE_META.video.model,
       ratio: NODE_META.video.ratio,
       position: {
-        x: referencePoint.x - NODE_SIZE.video.width / 2,
-        y: referencePoint.y - NODE_SIZE.video.height / 2,
+        x: referencePoint.x - getNodeSize('video').width / 2,
+        y: referencePoint.y - getNodeSize('video').height / 2,
       },
     })
     focusPromptForNode(node)
@@ -9821,8 +9825,10 @@ export function VisualCanvasWorkspace({
     if (!rect) return undefined
 
     const viewportMargin = 24
+    const viewportWidth = browserViewport.width || window.innerWidth
+    const viewportHeight = browserViewport.height || window.innerHeight
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const dialogWidth = Math.max(320, Math.min(720, window.innerWidth - viewportMargin * 2))
+    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(viewportWidth)
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
@@ -9831,26 +9837,25 @@ export function VisualCanvasWorkspace({
     const nodeHeight = editingNode.height * canvasZoom
     const nodeBottom = nodeTop + nodeHeight
     const nodeCenterX = nodeLeft + nodeWidth / 2
-    const dialogHeight = window.innerWidth <= 900 ? 190 : NODE_DIALOG_HEIGHT
     const visualDialogHeight = dialogHeight * dialogScale
     const belowTop = nodeBottom + NODE_DIALOG_GAP
     const aboveTop = nodeTop - NODE_DIALOG_GAP - visualDialogHeight
-    const hasRoomBelow = belowTop + visualDialogHeight <= window.innerHeight - viewportMargin
+    const hasRoomBelow = belowTop + visualDialogHeight <= viewportHeight - viewportMargin
     const hasRoomAbove = aboveTop >= viewportMargin
     // Default to below; only flip above if the node bottom is at the screen edge AND there's room above
-    const top = (!hasRoomBelow && belowTop >= window.innerHeight - viewportMargin && hasRoomAbove)
+    const top = (!hasRoomBelow && belowTop >= viewportHeight - viewportMargin && hasRoomAbove)
       ? aboveTop
-      : clampNumber(belowTop, viewportMargin, window.innerHeight - visualDialogHeight - viewportMargin)
+      : clampNumber(belowTop, viewportMargin, viewportHeight - visualDialogHeight - viewportMargin)
 
     return {
-      left: clampNumber(nodeCenterX - visualDialogWidth / 2, viewportMargin, window.innerWidth - visualDialogWidth - viewportMargin),
+      left: clampNumber(nodeCenterX - visualDialogWidth / 2, viewportMargin, viewportWidth - visualDialogWidth - viewportMargin),
       height: dialogHeight,
       top,
       transform: `scale(${dialogScale})`,
       transformOrigin: 'top left',
       width: dialogWidth,
     }
-  }, [canvasPan.x, canvasPan.y, canvasZoom, editingNode, isRightInspectorOpen, isBottomDockExpanded])
+  }, [browserViewport.height, browserViewport.width, canvasPan.x, canvasPan.y, canvasZoom, editingNode])
 
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
@@ -11727,7 +11732,7 @@ export function VisualCanvasWorkspace({
       {editingNode && nodeDialogStyle ? (
         <div
           className="canvas-node-dialog create-floating-console"
-          style={{ ...nodeDialogStyle, height: 'auto', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <UpstreamTaskStrip
