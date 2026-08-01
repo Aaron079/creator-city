@@ -14,6 +14,8 @@ import {
   type CanvasAnnotationState,
   type CanvasAnnotationType,
 } from '@/lib/canvas/annotationMetadata'
+import { annotationQuality } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
 type AnnotationTool = CanvasAnnotationType
 
@@ -203,6 +205,11 @@ function makeAnnotationId(type: AnnotationTool, point: CanvasAnnotationPoint) {
   return `annotation-${type}-${Date.now()}-${Math.round(point.x * 1000)}-${Math.round(point.y * 1000)}`
 }
 
+function annotationStateSignature(state: CanvasAnnotationState) {
+  const normalized = normalizeAnnotationState(state)
+  return JSON.stringify(normalized.items)
+}
+
 export function AnnotationPanel({ sourceNode, onSave, onClose }: AnnotationPanelProps) {
   const initialAnnotations = useMemo(() => readAnnotationMetadata(sourceNode.metadataJson), [sourceNode.metadataJson])
   const [items, setItems] = useState<CanvasAnnotationItem[]>(initialAnnotations.items)
@@ -292,6 +299,24 @@ export function AnnotationPanel({ sourceNode, onSave, onClose }: AnnotationPanel
     ...(imageSize ? { imageSize } : {}),
     items,
   }), [imageSize, items])
+  const initialAnnotationSignature = useMemo(() => annotationStateSignature(initialAnnotations), [initialAnnotations])
+  const hasUnsavedChanges = useMemo(
+    () => annotationStateSignature(annotationState) !== initialAnnotationSignature,
+    [annotationState, initialAnnotationSignature],
+  )
+  const persistedAnnotationIds = useMemo(
+    () => new Set(initialAnnotations.items.map((item) => item.id)),
+    [initialAnnotations],
+  )
+  const unsavedDraftCount = items.filter((item) => !persistedAnnotationIds.has(item.id)).length
+  const resultQuality = useMemo(() => annotationQuality({
+    sourceLabel: sourceNode.title || sourceNode.prompt || '图像节点',
+    persistedCount: initialAnnotations.items.length,
+    unsavedDraftCount,
+    hasUnsavedChanges,
+    isSaving: false,
+    saveError: '',
+  }), [hasUnsavedChanges, initialAnnotations.items.length, sourceNode.prompt, sourceNode.title, unsavedDraftCount])
 
   return (
     <aside
@@ -420,9 +445,12 @@ export function AnnotationPanel({ sourceNode, onSave, onClose }: AnnotationPanel
             />
           </label>
 
-          <div className="mt-auto rounded-lg border border-white/8 bg-black/24 p-2 text-[11px] leading-relaxed text-white/45">
-            <div>{items.length} 条标注</div>
-            <div>保存后请点击画布顶部保存到云端同步。</div>
+          <div className="mt-auto space-y-2">
+            <ToolResultQualityStrip summary={resultQuality} />
+            <div className="rounded-lg border border-white/8 bg-black/24 p-2 text-[11px] leading-relaxed text-white/45">
+              <div>{items.length} 条标注</div>
+              <div>保存后请点击画布顶部保存到云端同步。</div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">

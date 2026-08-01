@@ -17,6 +17,8 @@ import {
   cropImageCellToBlob,
   loadImageForCanvas,
 } from '@/lib/canvas/storyboardGridCrop'
+import { gridSplitQuality } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
 export type StoryboardGridSourceNode = {
   id: string
@@ -199,6 +201,18 @@ export function StoryboardGridSplitPanel({
 
   const uploadedCells = items.filter((item) => item.status === 'uploaded' && item.assetId && item.assetUrl && !item.deleted)
   const activeItems = items.filter((item) => !item.deleted)
+  const resultQuality = useMemo(() => {
+    const uploadErrorItem = items.find((item) => !item.deleted && item.status === 'error')
+    return gridSplitQuality({
+      sourceLabel: sourceNode?.title || sourceNode?.prompt || (sourceNode ? '来源图像' : ''),
+      layoutLabel: layoutId ?? '',
+      uploadedCount: uploadedCells.length,
+      createdChildCount: items.filter((item) => Boolean(item.createdNodeId)).length,
+      hasUploadError: Boolean(uploadErrorItem),
+      isProcessing: loadingImage || items.some((item) => !item.deleted && item.status === 'uploading'),
+      uploadError: uploadErrorItem?.error,
+    })
+  }, [items, layoutId, loadingImage, sourceNode, uploadedCells.length])
 
   const patchItem = useCallback((index: number, patch: Partial<CellItem>) => {
     setItems((current) => current.map((item) => (
@@ -400,6 +414,10 @@ export function StoryboardGridSplitPanel({
                 全部放入画布
               </button>
             </div>
+          </div>
+
+          <div className="px-5 pt-3">
+            <ToolResultQualityStrip summary={resultQuality} />
           </div>
 
           {!layoutId && !imageError ? (
