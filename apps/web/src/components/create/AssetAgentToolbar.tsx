@@ -54,7 +54,7 @@ export interface AssetAgentToolbarProps {
   onOpenStoryboardDirector?: () => void
   onOpenRemoveBackground?: () => void
   onOpenHdReconstruction?: () => void
-  onOpenStoryboardGridSplit?: () => void
+  onOpenStoryboardReferenceExtractor?: () => void
   onOpenDrawAnnotation?: () => void
   // Asset Transform capability gates
   assetTransformCaps?: { removeBackground?: boolean; upscale?: boolean }
@@ -108,7 +108,7 @@ export function AssetAgentToolbar({
   onOpenStoryboardDirector,
   onOpenRemoveBackground,
   onOpenHdReconstruction,
-  onOpenStoryboardGridSplit,
+  onOpenStoryboardReferenceExtractor,
   onOpenDrawAnnotation,
   assetTransformCaps = {},
 }: AssetAgentToolbarProps) {
@@ -205,7 +205,7 @@ export function AssetAgentToolbar({
       case 'remove-background':  onOpenRemoveBackground?.(); break
       case 'hd-reconstruction':  onOpenHdReconstruction?.(); break
       case 'color-grade':        onOpenColorGrade?.(); break
-      case 'storyboard-grid-split': onOpenStoryboardGridSplit?.(); break
+      case 'storyboard-reference-extractor': onOpenStoryboardReferenceExtractor?.(); break
       case 'draw-annotation':    onOpenDrawAnnotation?.(); break
       default: break
     }
@@ -349,7 +349,7 @@ export function AssetAgentToolbar({
                 </>
               ) : null}
               {/* Analysis tools */}
-              {nodeKind === 'image' && hasMediaResult && onOpenStoryboardGridSplit ? (
+              {nodeKind === 'image' && hasMediaResult && onOpenStoryboardReferenceExtractor ? (
                 <>
                   <div className="ntb-menu-divider" />
                   <div className="ntb-menu-section-title">分镜工具</div>
@@ -357,10 +357,10 @@ export function AssetAgentToolbar({
                     type="button"
                     data-no-node-drag="true"
                     className="ntb-menu-item"
-                    onClick={(e) => { stopEvent(e); onOpenStoryboardGridSplit(); closeAll() }}
+                    onClick={(e) => { stopEvent(e); onOpenStoryboardReferenceExtractor(); closeAll() }}
                   >
-                    <span className="ntb-menu-item-icon">▦</span>
-                    分镜拆格
+                    <span className="ntb-menu-item-icon">⌑</span>
+                    分镜参考提取
                   </button>
                 </>
               ) : null}

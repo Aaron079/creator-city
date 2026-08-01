@@ -134,17 +134,17 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
   },
   // ── Category B: 画面编辑 ─────────────────────────────────────────────────
   {
-    id: 'storyboard-grid-split',
-    label: '分镜拆格',
-    icon: '▦',
-    description: '识别分镜网格并裁切为独立资产',
+    id: 'storyboard-reference-extractor',
+    label: '分镜参考提取',
+    icon: '⌑',
+    description: '自由选取画面参考并建立来源关系',
     category: 'image-edit',
     executionType: 'panel',
     supportedKinds: ['image'],
     requiresMedia: true,
     requiresAsset: true,
     available: true,
-    openActionId: 'storyboard-grid-split',
+    openActionId: 'storyboard-reference-extractor',
   },
   {
     id: 'draw-annotation',

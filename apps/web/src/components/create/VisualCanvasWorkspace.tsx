@@ -51,7 +51,6 @@ import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePan
 import { RemoveBackgroundPanel } from '@/components/create/RemoveBackgroundPanel'
 import { HdReconstructionPanel } from '@/components/create/HdReconstructionPanel'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
-import { resolveStoryboardGridCellPosition } from '@/lib/canvas/storyboardGridPlacement'
 import { ScriptSegmentationPanel } from '@/components/create/canvas/skills/ScriptSegmentationPanel'
 import type { SceneNodeMaterializationPlan } from '@/components/create/canvas/skills/scriptSegmentationMaterialization'
 import { NarrativeBeatAnalysisPanel } from '@/components/create/canvas/skills/NarrativeBeatAnalysisPanel'
@@ -61,10 +60,10 @@ import {
   type ShotPlanReviewedSource,
 } from '@/components/create/canvas/skills/groupedSkillMaterialization'
 import {
-  StoryboardGridSplitPanel,
-  type StoryboardGridSessionSummary,
-  type StoryboardGridUploadedCell,
-} from '@/components/create/StoryboardGridSplitPanel'
+  StoryboardReferenceExtractorPanel,
+  type StoryboardReferenceSessionSummary,
+  type StoryboardReferenceUploadedAsset,
+} from '@/components/create/StoryboardReferenceExtractorPanel'
 import { mergeAnnotationMetadata, type CanvasAnnotationState } from '@/lib/canvas/annotationMetadata'
 
 // ─── Asset Transform capability cache (module-level, session-scoped) ──────────
@@ -2618,7 +2617,7 @@ export function VisualCanvasWorkspace({
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
   const [isRemoveBackgroundOpen, setIsRemoveBackgroundOpen] = useState(false)
   const [isHdReconstructionOpen, setIsHdReconstructionOpen] = useState(false)
-  const [isStoryboardGridSplitOpen, setIsStoryboardGridSplitOpen] = useState(false)
+  const [isStoryboardReferenceExtractorOpen, setIsStoryboardReferenceExtractorOpen] = useState(false)
   const [isAnnotationPanelOpen, setIsAnnotationPanelOpen] = useState(false)
   const [assetTransformCaps, setAssetTransformCaps] = useState<AssetTransformCaps>({ removeBackground: false, upscale: false })
   const [activeCanvasModal, setActiveCanvasModal] = useState<CanvasModalId | null>(null)
@@ -3050,7 +3049,7 @@ export function VisualCanvasWorkspace({
     setIsColorGradePaletteOpen(false)
     setIsRemoveBackgroundOpen(false)
     setIsHdReconstructionOpen(false)
-    setIsStoryboardGridSplitOpen(false)
+    setIsStoryboardReferenceExtractorOpen(false)
     setIsAnnotationPanelOpen(false)
     setEditingNodeId(null)
     setLockedNodeToolContext(null)
@@ -3088,7 +3087,7 @@ export function VisualCanvasWorkspace({
       case 'color-grade':        setIsColorGradePaletteOpen(true); break
       case 'remove-background':  setIsRemoveBackgroundOpen(true); break
       case 'hd-reconstruction':  setIsHdReconstructionOpen(true); break
-      case 'storyboard-grid-split': setIsStoryboardGridSplitOpen(true); break
+      case 'storyboard-reference-extractor': setIsStoryboardReferenceExtractorOpen(true); break
       case 'draw-annotation':    setIsAnnotationPanelOpen(true); break
       case 'generation':
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
@@ -6407,14 +6406,14 @@ export function VisualCanvasWorkspace({
     closeCanvasPanel()
   }, [closeCanvasPanel, commitNodes, flushLocalSnapshot, showCanvasFeedback])
 
-  const handleStoryboardGridSourceSession = useCallback((summary: StoryboardGridSessionSummary) => {
+  const handleStoryboardReferenceSourceSession = useCallback((summary: StoryboardReferenceSessionSummary) => {
     commitNodes((current) => current.map((node) => {
       if (node.id !== summary.sourceNodeId) return node
       return {
         ...node,
         metadataJson: {
           ...metadataRecord(node.metadataJson),
-          gridCropSession: summary,
+          referenceExtractionSession: summary,
         },
       }
     }))
@@ -6422,39 +6421,42 @@ export function VisualCanvasWorkspace({
     scheduleCanvasSave(0)
   }, [commitNodes, flushLocalSnapshot, scheduleCanvasSave])
 
-  const handleCreateStoryboardGridCellNode = useCallback((
+  const handleCreateStoryboardReferenceNode = useCallback((
     sourceNodeId: string,
-    cell: StoryboardGridUploadedCell,
-    _placementIndex: number,
-    _total: number,
+    reference: StoryboardReferenceUploadedAsset,
+    placementIndex: number,
+    total: number,
   ) => {
     const sourceNode = latestNodesRef.current.find((node) => node.id === sourceNodeId)
     if (!sourceNode) return null
-    const title = cell.title || `${sourceNode.title || '分镜'} · ${cell.metadata.index + 1}`
+    const title = reference.title || `${sourceNode.title || '分镜'} · 参考图 ${reference.metadata.index + 1}`
     const nodeSize = getNodeSize('image')
-    const position = resolveStoryboardGridCellPosition({
-      source: sourceNode,
-      cell: { row: cell.metadata.row, col: cell.metadata.col },
-      size: nodeSize,
-      occupied: latestNodesRef.current,
-    })
+    const itemsPerColumn = 4
+    const column = Math.floor(placementIndex / itemsPerColumn)
+    const row = placementIndex % itemsPerColumn
+    const position = resolveNonOverlappingPosition({
+      x: sourceNode.x + sourceNode.width + 160 + column * (nodeSize.width + 72),
+      y: sourceNode.y - Math.floor(Math.min(total, itemsPerColumn) / 2) * (nodeSize.height + 64) + row * (nodeSize.height + 64),
+      width: nodeSize.width,
+      height: nodeSize.height,
+    }, latestNodesRef.current)
     const node = createNode('image', {
       title,
       prompt: sourceNode.prompt ?? '',
       parentNodeId: sourceNode.id,
       position,
       status: 'done',
-      resultImageUrl: cell.assetUrl,
-      assetId: cell.assetId,
+      resultImageUrl: reference.assetUrl,
+      assetId: reference.assetId,
       metadataJson: {
-        assetId: cell.assetId,
-        assetUrl: cell.assetUrl,
-        resolvedUrl: cell.assetUrl,
-        derivedFromTool: 'storyboard-grid-split',
-        derivedFromToolLabel: '分镜拆格',
-        toolSummaryText: `第 ${cell.metadata.index + 1} 格 · R${cell.metadata.row + 1} C${cell.metadata.col + 1}`,
+        assetId: reference.assetId,
+        assetUrl: reference.assetUrl,
+        resolvedUrl: reference.assetUrl,
+        derivedFromTool: 'storyboard-reference-extractor',
+        derivedFromToolLabel: '分镜参考提取',
+        toolSummaryText: `参考图 ${reference.metadata.index + 1} · 自由选区`,
         sourceNodeTitle: sourceNode.title || sourceNode.kind,
-        cropLineage: cell.metadata,
+        cropLineage: reference.metadata,
         generationDraft: {
           status: 'asset-derived',
           sourceNodeId: sourceNode.id,
@@ -6465,18 +6467,18 @@ export function VisualCanvasWorkspace({
         },
         mediaPersistence: {
           status: 'persisted',
-          assetId: cell.assetId,
-          assetUrl: cell.assetUrl,
+          assetId: reference.assetId,
+          assetUrl: reference.assetUrl,
           persistedAt: new Date().toISOString(),
         },
       },
-      edgeLabel: '分镜拆格',
-      edgeToolId: 'storyboard-grid-split',
-      edgeToolIcon: '▦',
+      edgeLabel: '分镜参考提取',
+      edgeToolId: 'storyboard-reference-extractor',
+      edgeToolIcon: '⌑',
     })
     flushLocalSnapshot()
     scheduleCanvasSave(0)
-    showCanvasFeedback('分镜格已放入画布。')
+    showCanvasFeedback('参考图已放入画布。')
     return node.id
   }, [createNode, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
 
@@ -10966,14 +10968,14 @@ export function VisualCanvasWorkspace({
         })()
       ) : null}
 
-      {/* Storyboard Grid Split — client-side crop to real Assets */}
-      {isStoryboardGridSplitOpen && saveStatus !== 'opening' ? (
+      {/* Storyboard Reference Extractor — explicit freeform crop to real Assets */}
+      {isStoryboardReferenceExtractorOpen && saveStatus !== 'opening' ? (
         (() => {
-          const splitTargetId = lockedNodeToolContext?.targetNodeId ?? activeNode?.id ?? null
-          const splitSource = splitTargetId ? nodes.find((node) => node.id === splitTargetId) ?? null : null
-          if (!splitSource || splitSource.kind !== 'image') return null
-          const sourceMediaUrl = getProxiedMediaUrl(getNodeImageUrl(splitSource) || (splitSource.resultImageUrl ?? ''))
-          const sourceAssetId = getNodeAssetId(splitSource)
+          const referenceTargetId = lockedNodeToolContext?.targetNodeId ?? activeNode?.id ?? null
+          const referenceSource = referenceTargetId ? nodes.find((node) => node.id === referenceTargetId) ?? null : null
+          if (!referenceSource || referenceSource.kind !== 'image') return null
+          const sourceMediaUrl = getProxiedMediaUrl(getNodeImageUrl(referenceSource) || (referenceSource.resultImageUrl ?? ''))
+          const sourceAssetId = getNodeAssetId(referenceSource)
           return (
             <>
               <div
@@ -10981,20 +10983,20 @@ export function VisualCanvasWorkspace({
                 aria-hidden="true"
                 onPointerDown={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
               />
-              <StoryboardGridSplitPanel
+              <StoryboardReferenceExtractorPanel
                 projectId={projectId ?? ''}
                 workflowId={workflowId}
                 sourceNode={{
-                  id: splitSource.id,
-                  title: splitSource.title,
-                  prompt: splitSource.prompt,
+                  id: referenceSource.id,
+                  title: referenceSource.title,
+                  prompt: referenceSource.prompt,
                   mediaUrl: sourceMediaUrl,
                   assetId: sourceAssetId,
                 }}
-                onCreateCellNode={(cell, placementIndex, total) => (
-                  handleCreateStoryboardGridCellNode(splitSource.id, cell, placementIndex, total)
+                onCreateReferenceNode={(reference, placementIndex, total) => (
+                  handleCreateStoryboardReferenceNode(referenceSource.id, reference, placementIndex, total)
                 )}
-                onUpdateSourceSession={handleStoryboardGridSourceSession}
+                onUpdateSourceSession={handleStoryboardReferenceSourceSession}
                 onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}
               />
             </>
@@ -11544,9 +11546,9 @@ export function VisualCanvasWorkspace({
                 ? () => openCanvasPanel('hd-reconstruction')
                 : undefined
             }
-            onOpenStoryboardGridSplit={
+            onOpenStoryboardReferenceExtractor={
               activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
-                ? () => openNodeScopedTool('storyboard-grid-split', activeNode)
+                ? () => openNodeScopedTool('storyboard-reference-extractor', activeNode)
                 : undefined
             }
             onOpenDrawAnnotation={

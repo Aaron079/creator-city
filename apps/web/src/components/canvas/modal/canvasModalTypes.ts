@@ -36,7 +36,7 @@ export type CanvasModalId =
   | 'shot-sequencer'
   | 'remove-background'
   | 'hd-reconstruction'
-  | 'storyboard-grid-split'
+  | 'storyboard-reference-extractor'
   | 'draw-annotation'
 
 export type ModalCloseReason =

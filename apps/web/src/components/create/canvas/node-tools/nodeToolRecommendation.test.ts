@@ -4,6 +4,7 @@ import {
   availableNodeTools,
   recommendNodeTool,
 } from './nodeToolRecommendation'
+import { NODE_TOOL_REGISTRY } from './nodeToolRegistry'
 
 describe('node tool recommendations', () => {
   test('recommends Storyboard Director for a text node', () => {
@@ -47,6 +48,18 @@ describe('node tool recommendations', () => {
     })
 
     assert.equal(available.some((tool) => tool.openActionId === 'draw-annotation'), false)
-    assert.equal(available.some((tool) => tool.openActionId === 'storyboard-grid-split'), false)
+    assert.equal(available.some((tool) => tool.openActionId === 'storyboard-reference-extractor'), false)
+  })
+
+  test('offers freeform reference extraction instead of the fixed-grid split entry', () => {
+    assert.equal(NODE_TOOL_REGISTRY.some((tool) => tool.id === 'storyboard-reference-extractor'), true)
+    assert.equal(NODE_TOOL_REGISTRY.some((tool) => tool.id === 'storyboard-grid-split'), false)
+
+    const available = availableNodeTools({
+      nodeKind: 'image',
+      hasMediaResult: true,
+      caps: {},
+    })
+    assert.equal(available.some((tool) => tool.openActionId === 'storyboard-reference-extractor'), true)
   })
 })
