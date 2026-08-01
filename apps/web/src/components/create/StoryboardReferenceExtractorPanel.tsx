@@ -169,44 +169,43 @@ export async function processStoryboardReferenceSelection({
     crop: selection.crop,
     image: imageSize,
   })
-  let uploaded: StoryboardReferenceUploadedAsset
-  if (action === 'create-node-retry') {
-    uploaded = {
+  const uploaded: StoryboardReferenceUploadedAsset = action === 'create-node-retry'
+    ? {
       assetId: selection.assetId!,
       assetUrl: selection.assetUrl!,
       title: selection.label,
       metadata,
     }
-  } else {
-    const blob = await cropToBlob(image, metadata.cropBox)
-    const response = await fetchImpl('/api/assets/upload', {
-      method: 'POST',
-      credentials: 'include',
-      body: buildStoryboardReferenceUploadFormData({
-        blob,
-        projectId,
-        workflowId,
-        assetNodeId: sourceNodeId,
+    : await (async () => {
+      const blob = await cropToBlob(image, metadata.cropBox)
+      const response = await fetchImpl('/api/assets/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: buildStoryboardReferenceUploadFormData({
+          blob,
+          projectId,
+          workflowId,
+          assetNodeId: sourceNodeId,
+          title: selection.label,
+          metadata,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as {
+        success?: boolean
+        message?: string
+        errorCode?: string
+        asset?: { id?: string; url?: string | null }
+      }
+      if (!response.ok || !data.success || !data.asset?.id || !data.asset.url) {
+        throw new Error(data.message ?? data.errorCode ?? '参考图上传失败。')
+      }
+      return {
+        assetId: data.asset.id,
+        assetUrl: data.asset.url,
         title: selection.label,
         metadata,
-      }),
-    })
-    const data = await response.json().catch(() => ({})) as {
-      success?: boolean
-      message?: string
-      errorCode?: string
-      asset?: { id?: string; url?: string | null }
-    }
-    if (!response.ok || !data.success || !data.asset?.id || !data.asset.url) {
-      throw new Error(data.message ?? data.errorCode ?? '参考图上传失败。')
-    }
-    uploaded = {
-      assetId: data.asset.id,
-      assetUrl: data.asset.url,
-      title: selection.label,
-      metadata,
-    }
-  }
+      }
+    })()
 
   let createdNodeId: string | null = null
   let nodeError = ''
@@ -363,7 +362,7 @@ export function StoryboardReferenceExtractorPanel({
 
     setIsProcessing(true)
     setMessage('正在按顺序裁切并保存参考图。')
-    let next = selections.map((selection) => ({ ...selection }))
+    const next = selections.map((selection) => ({ ...selection }))
     const total = validSelections.length
 
     for (const selection of queue) {
