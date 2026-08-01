@@ -9,6 +9,8 @@ import type {
   CheckSeverity,
 } from '@/lib/canvas/continuity-check'
 import { analyzeContinuity, buildContinuityReportText } from '@/lib/canvas/continuity-check'
+import { continuityQuality } from '@/lib/canvas/tool-result-quality'
+import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
 interface ContinuityCheckerPanelProps {
   nodes: ContNode[]
@@ -40,20 +42,6 @@ const SECTION_LABEL_COLOR: Record<CheckSeverity, string> = {
 
 const SEVERITY_SORT: Record<CheckSeverity, number> = { risk: 0, warn: 1, info: 2, pass: 3 }
 
-function scoreTextColor(score: number): string {
-  if (score >= 85) return 'text-green-400'
-  if (score >= 70) return 'text-amber-400'
-  if (score >= 50) return 'text-orange-400'
-  return 'text-red-400'
-}
-
-function scoreRingClass(score: number): string {
-  if (score >= 85) return 'border-green-400/60'
-  if (score >= 70) return 'border-amber-400/60'
-  if (score >= 50) return 'border-orange-400/60'
-  return 'border-red-400/60'
-}
-
 export function ContinuityCheckerPanel({
   nodes,
   edges,
@@ -80,6 +68,12 @@ export function ContinuityCheckerPanel({
   const sortedIssues = [...report.issues].sort(
     (a, b) => SEVERITY_SORT[a.severity] - SEVERITY_SORT[b.severity],
   )
+  const resultQuality = continuityQuality({
+    checkedNodeCount: report.totalNodesChecked,
+    riskCount: report.riskCount,
+    warnCount: report.warnCount,
+    infoCount: report.infoCount,
+  })
 
   return (
     <div
@@ -114,22 +108,8 @@ export function ContinuityCheckerPanel({
         </div>
 
         <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 180px)' }}>
-          {/* Score row */}
-          <div className="flex items-center gap-5 px-5 py-4">
-            <div
-              className={`flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full border-2 ${scoreRingClass(report.overallScore)}`}
-            >
-              <span className={`text-2xl font-bold tabular-nums ${scoreTextColor(report.overallScore)}`}>
-                {report.overallScore}
-              </span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[12px] text-white/80">{report.summary}</p>
-              <p className="mt-1 text-[11px] text-white/35">
-                已检查 {report.totalNodesChecked} 个节点 · WARN {report.warnCount} · RISK{' '}
-                {report.riskCount} · INFO {report.infoCount}
-              </p>
-            </div>
+          <div className="px-5 py-3">
+            <ToolResultQualityStrip summary={resultQuality} />
           </div>
 
           {/* Section cards 2-col grid */}

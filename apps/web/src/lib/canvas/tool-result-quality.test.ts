@@ -8,7 +8,9 @@ import React, { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { AnnotationPanel } from '@/components/create/AnnotationPanel'
 import { ColorGradePalettePanel } from '@/components/create/ColorGradePalettePanel'
+import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { StoryboardGridSplitPanel } from '@/components/create/StoryboardGridSplitPanel'
+import { analyzeContinuity, buildContinuityReportText } from './continuity-check'
 import {
   abCompareQuality,
   annotationQuality,
@@ -495,6 +497,58 @@ test('reports insufficient continuity context as unavailable', () => {
   })
 
   assert.equal(summary.status, 'unavailable')
+})
+
+test('requires confirmation when continuity warnings need review', () => {
+  const summary = continuityQuality({
+    checkedNodeCount: 4,
+    riskCount: 0,
+    warnCount: 2,
+    infoCount: 1,
+  })
+
+  assert.equal(summary.status, 'needs-confirmation')
+  assert.match(summary.statusLabel, /需要确认/)
+  assert.match(summary.nextStepLabel ?? '', /警告/)
+})
+
+test('completes continuity checks with no issues', () => {
+  const summary = continuityQuality({
+    checkedNodeCount: 4,
+    riskCount: 0,
+    warnCount: 0,
+    infoCount: 0,
+  })
+
+  assert.equal(summary.status, 'completed')
+  assert.match(summary.resultLabel, /未发现需要处理的问题/)
+})
+
+test('renders and copies continuity evidence without the legacy numeric score', () => {
+  const nodes = [
+    { id: 'failed-node', kind: 'text', title: '失败节点', prompt: 'A girl in a forest', status: 'failed' },
+    { id: 'next-node', kind: 'text', title: '后续节点', prompt: 'A girl walks through the forest', status: 'done' },
+  ]
+  const report = analyzeContinuity(nodes, [])
+  const markup = renderToStaticMarkup(
+    createElement(ContinuityCheckerPanel, {
+      nodes,
+      edges: [],
+      onFocusNode() {},
+      onClose() {},
+    }),
+  )
+  const copiedText = buildContinuityReportText(report)
+  const renderedText = markup.replace(/<[^>]+>/g, '')
+
+  assert.equal('overallScore' in report, false)
+  assert.match(markup, /data-testid="tool-result-quality-strip"/)
+  assert.match(renderedText, /优先处理/)
+  assert.match(renderedText, /风险 1 项/)
+  assert.match(renderedText, /定位节点/)
+  assert.doesNotMatch(renderedText, /评分|\/100/)
+  assert.match(copiedText, /RISK/)
+  assert.doesNotMatch(copiedText, /评分|\/100/)
 })
 
 test('keeps variant plans as planning previews rather than assets', () => {

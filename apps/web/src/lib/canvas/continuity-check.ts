@@ -1,6 +1,8 @@
 // Pure rule-engine for canvas continuity analysis.
 // No API calls, no generation, no credits consumed.
 
+import { continuityQuality } from './tool-result-quality'
+
 export type CheckSeverity = 'pass' | 'info' | 'warn' | 'risk'
 
 export interface ContinuityIssue {
@@ -24,8 +26,6 @@ export interface ContinuitySection {
 
 export interface ContinuityReport {
   totalNodesChecked: number
-  overallScore: number
-  summary: string
   passCount: number
   warnCount: number
   riskCount: number
@@ -459,25 +459,6 @@ function checkAssetHealth(nodes: ContNode[]): ContinuityIssue[] {
   return issues
 }
 
-// ── Overall score ─────────────────────────────────────────────────────
-
-function calcScore(issues: ContinuityIssue[]): number {
-  let score = 100
-  for (const issue of issues) {
-    if (issue.severity === 'risk') score -= 20
-    else if (issue.severity === 'warn') score -= 10
-    else if (issue.severity === 'info') score -= 3
-  }
-  return Math.max(0, Math.round(score))
-}
-
-function scoreSummary(score: number): string {
-  if (score >= 85) return '连贯性良好，未发现明显冲突。'
-  if (score >= 70) return '整体连贯，有少量需关注的地方。'
-  if (score >= 50) return '存在一些连贯性问题，建议检查标注节点。'
-  return '连贯性风险较高，建议仔细检查各分类问题。'
-}
-
 function makeSections(
   issueMap: Record<ContinuityIssue['category'], ContinuityIssue[]>,
 ): ContinuitySection[] {
@@ -511,8 +492,6 @@ export function analyzeContinuity(nodes: ContNode[], edges: ContEdge[]): Continu
   if (checkable.length < 2) {
     return {
       totalNodesChecked: checkable.length,
-      overallScore: 100,
-      summary: '节点数量不足，无法进行连贯性分析。',
       passCount: 0,
       warnCount: 0,
       riskCount: 0,
@@ -546,12 +525,8 @@ export function analyzeContinuity(nodes: ContNode[], edges: ContEdge[]): Continu
     ...styleIssues, ...shotIssues, ...assetIssues,
   ]
 
-  const score = calcScore(allIssues)
-
   return {
     totalNodesChecked: checkable.length,
-    overallScore: score,
-    summary: scoreSummary(score),
     passCount: allIssues.filter((i) => i.severity === 'pass').length,
     warnCount: allIssues.filter((i) => i.severity === 'warn').length,
     riskCount: allIssues.filter((i) => i.severity === 'risk').length,
@@ -572,13 +547,20 @@ const SEVERITY_LABEL: Record<CheckSeverity, string> = {
 }
 
 export function buildContinuityReportText(report: ContinuityReport): string {
+  const resultQuality = continuityQuality({
+    checkedNodeCount: report.totalNodesChecked,
+    riskCount: report.riskCount,
+    warnCount: report.warnCount,
+    infoCount: report.infoCount,
+  })
   const lines = [
     '=== 连贯性检查报告 — Creator City ===',
     `检查时间：${new Date(report.generatedAt).toLocaleString('zh-CN')}`,
-    `综合评分：${report.overallScore}/100`,
-    `检查节点数：${report.totalNodesChecked}`,
-    `问题统计：WARN ${report.warnCount} / RISK ${report.riskCount} / INFO ${report.infoCount}`,
-    `总结：${report.summary}`,
+    `检查状态：${resultQuality.statusLabel}`,
+    `来源：${resultQuality.sourceLabel}`,
+    `结果：${resultQuality.resultLabel}`,
+    ...resultQuality.evidence.map((item) => `证据：${item}`),
+    ...(resultQuality.nextStepLabel ? [`下一步：${resultQuality.nextStepLabel}`] : []),
     '',
     '── 分类摘要 ──',
   ]
