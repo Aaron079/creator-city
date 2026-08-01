@@ -145,7 +145,7 @@ export function KeyframeExtractorPanel({
     [duration, seekTo],
   )
 
-  const handleExtractFrame = useCallback(() => {
+  const handleExtractFrame = useCallback(async () => {
     const video = videoRef.current
     const canvas = canvasRef.current
     const nodeId = selectedIdRef.current
