@@ -269,7 +269,7 @@ async function renderClientPanel(mode: ClientPanelMode) {
   const page = await browser.newPage()
   await page.setContent('<div id="root"></div>')
   await page.evaluate((panelMode) => {
-    ;(globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
+    (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
     if (panelMode === 'keyframe-extract') {
       document.addEventListener('error', (event) => {
         if (event.target instanceof HTMLVideoElement) event.stopImmediatePropagation()
@@ -354,7 +354,7 @@ test('shows keyframe extraction progress before browser canvas work runs', async
       callbacks.push(callback)
       return callbacks.length
     }
-    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
+    (globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
       callbacks.shift()?.(performance.now())
     }
   })
@@ -362,7 +362,7 @@ test('shows keyframe extraction progress before browser canvas work runs', async
   await extractButton.click({ timeout: 2_000 })
   await strip.getByText('正在提取', { exact: true }).waitFor({ timeout: 2_000 })
   await page.evaluate(() => {
-    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
+    (globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
   })
   await page.close()
 })
@@ -377,7 +377,7 @@ test('ignores a pending keyframe extraction after the selected video changes', a
       callbacks.push(callback)
       return callbacks.length
     }
-    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
+    (globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame = () => {
       callbacks.shift()?.(performance.now())
     }
   })
@@ -386,7 +386,7 @@ test('ignores a pending keyframe extraction after the selected video changes', a
   await page.locator('select').selectOption('video-extract-next')
   await strip.getByText('尚未提取', { exact: true }).waitFor({ timeout: 2_000 })
   await page.evaluate(() => {
-    ;(globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
+    (globalThis as typeof globalThis & { __releaseFrame?: () => void }).__releaseFrame?.()
   })
 
   const summaryText = await strip.textContent()
