@@ -1279,10 +1279,43 @@ export function patchStoryboardSketchFrame(
 ): StoryboardDirectorRecipe {
   if (!recipe.sketchBoard) throw new TypeError('Sketch board does not exist')
   if (!isIdentifier(shotId)) throw new TypeError('Sketch frame shot ID is invalid')
+  assertSketchBoardCreationAllowed(recipe)
   const index = recipe.sketchBoard.frames.findIndex((frame) => frame.shotId === shotId)
   if (index < 0) throw new TypeError('Sketch frame was not found')
   const frames = recipe.sketchBoard.frames.slice()
   frames[index] = patchSketchFrame(recipe.sketchBoard.frames[index]!, patch)
+  const base = {
+    ...recipe,
+    sketchBoard: null,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+  return {
+    ...base,
+    sketchBoard: {
+      ...recipe.sketchBoard,
+      recipeRevision: createStoryboardDirectorRecipeSketchRevision(base),
+      frames,
+      updatedAt: now,
+    },
+  }
+}
+
+export function regenerateStoryboardSketchFrame(
+  recipe: StoryboardDirectorRecipe,
+  shotId: string,
+  now: string,
+): StoryboardDirectorRecipe {
+  if (!recipe.sketchBoard) throw new TypeError('Sketch board does not exist')
+  if (!isIdentifier(shotId)) throw new TypeError('Sketch frame shot ID is invalid')
+  assertSketchBoardCreationAllowed(recipe)
+  const replacement = recipe.shot.drafts
+    .filter(isApprovedStoryboardShot)
+    .find((draft) => draft.shotId === shotId)
+  if (!replacement) throw new TypeError('Approved sketch shot was not found')
+  const index = recipe.sketchBoard.frames.findIndex((frame) => frame.shotId === shotId)
+  if (index < 0) throw new TypeError('Sketch frame was not found')
+  const frames = recipe.sketchBoard.frames.slice()
+  frames[index] = renderSketchFrame(replacement)
   const base = {
     ...recipe,
     sketchBoard: null,

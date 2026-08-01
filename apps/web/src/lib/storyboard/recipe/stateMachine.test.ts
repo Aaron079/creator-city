@@ -30,6 +30,7 @@ import {
   rerunRecipeStage,
   setRecipeDecision,
   patchStoryboardSketchFrame,
+  regenerateStoryboardSketchFrame,
   updateRecipeDraft,
 } from './state-machine'
 
@@ -233,6 +234,20 @@ describe('Storyboard Director Recipe progression', () => {
     assert.equal(untouchedSecond?.renderKey, second.renderKey)
   })
 
+  test('restores one stale manual sketch frame from its approved local shot plan', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const first = board.sketchBoard?.frames[0]
+    assert.ok(first)
+    const patched = patchStoryboardSketchFrame(board, first.shotId, { movement: 'pan' }, LATER_TIME)
+    const restored = regenerateStoryboardSketchFrame(patched, first.shotId, '2026-07-19T03:00:00.000Z')
+    const restoredFirst = restored.sketchBoard?.frames.find((frame) => frame.shotId === first.shotId)
+    const untouched = restored.sketchBoard?.frames.find((frame) => frame.shotId !== first.shotId)
+
+    assert.equal(restoredFirst?.status, first.status)
+    assert.equal(restoredFirst?.movement, first.movement)
+    assert.equal(untouched?.renderKey, board.sketchBoard?.frames.find((frame) => frame.shotId === untouched?.shotId)?.renderKey)
+  })
+
   test('excludes rejected drafts and stales retained sketch frames after upstream invalidation', () => {
     const complete = completedRecipe()
     const rejectedShotId = complete.shot.drafts[0]?.shotId
@@ -287,6 +302,15 @@ describe('Storyboard Director Recipe progression', () => {
     assert.throws(
       () => patchStoryboardSketchFrame(board, frame.shotId, { movement: 'orbit' }, LATER_TIME),
       /movement is invalid/i,
+    )
+    assert.throws(
+      () => patchStoryboardSketchFrame(
+        invalidateRecipeAfter(board, 'source', LATER_TIME),
+        frame.shotId,
+        { movement: 'pan' },
+        LATER_TIME,
+      ),
+      /fresh approved shot stage/i,
     )
   })
 

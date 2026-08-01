@@ -103,6 +103,9 @@ export interface StoryboardDirectorPanelProps {
   onFocusSource: (sourceNodeId: string) => void
   onMaterializeGrouped: StoryboardDirectorRecipePanelProps['onMaterializeGrouped']
   onSyncShotBoard: () => void
+  onCreateSketchBoard: StoryboardDirectorRecipePanelProps['onCreateSketchBoard']
+  onPatchSketchFrame: StoryboardDirectorRecipePanelProps['onPatchSketchFrame']
+  onRegenerateSketchFrame: StoryboardDirectorRecipePanelProps['onRegenerateSketchFrame']
   onCreateDraftNodes: () => void
   onImportLegacy: () => void
   onAcknowledgeEmergencyPartialBatch: (batchId: string) => void
@@ -382,6 +385,9 @@ export function StoryboardDirectorPanel({
   onFocusSource,
   onMaterializeGrouped,
   onSyncShotBoard,
+  onCreateSketchBoard,
+  onPatchSketchFrame,
+  onRegenerateSketchFrame,
   onCreateDraftNodes,
   onImportLegacy,
   onAcknowledgeEmergencyPartialBatch,
@@ -948,6 +954,9 @@ export function StoryboardDirectorPanel({
               onFocusSource={onFocusSource}
               onMaterializeGrouped={onMaterializeGrouped}
               onSyncShotBoard={onSyncShotBoard}
+              onCreateSketchBoard={onCreateSketchBoard}
+              onPatchSketchFrame={onPatchSketchFrame}
+              onRegenerateSketchFrame={onRegenerateSketchFrame}
               onCreateDraftNodes={onCreateDraftNodes}
               onImportLegacy={onImportLegacy}
               onAcknowledgeEmergencyPartialBatch={onAcknowledgeEmergencyPartialBatch}

@@ -127,8 +127,11 @@ import {
 } from '@/lib/storyboard/recipe/persistence'
 import {
   createStoryboardDirectorRecipe,
+  createRecipeSketchBoard,
   markRecipeSourceFreshness,
   markRecipeSourceMissing,
+  patchStoryboardSketchFrame,
+  regenerateStoryboardSketchFrame,
 } from '@/lib/storyboard/recipe/state-machine'
 import type {
   StoryboardDirectorPartialBatch,
@@ -6056,6 +6059,108 @@ export function VisualCanvasWorkspace({
     showCanvasFeedback,
   ])
 
+  const handleCreateStoryboardSketchBoard = useCallback(() => {
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe, {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      showCanvasFeedback('来源已变化，本地草图分镜未创建。')
+      return
+    }
+    try {
+      const persisted = handleCommitStoryboardDirectorRecipe(createRecipeSketchBoard(
+        context.recipe,
+        new Date().toISOString(),
+      ), {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      if (persisted) showCanvasFeedback('本地草图分镜已生成并保存。')
+    } catch {
+      showCanvasFeedback('本地草图分镜需要已批准的镜头审核结果。')
+    }
+  }, [
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    showCanvasFeedback,
+  ])
+
+  const handlePatchStoryboardSketchFrame = useCallback((shotId: string, patch: unknown) => {
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe, {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      showCanvasFeedback('来源已变化，草图调整未保存。')
+      return
+    }
+    try {
+      const persisted = handleCommitStoryboardDirectorRecipe(patchStoryboardSketchFrame(
+        context.recipe,
+        shotId,
+        patch,
+        new Date().toISOString(),
+      ), {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      if (persisted) showCanvasFeedback('草图局部调整已保存，镜头待恢复本地推演。')
+    } catch {
+      showCanvasFeedback('草图调整无效，未保存。')
+    }
+  }, [
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    showCanvasFeedback,
+  ])
+
+  const handleRegenerateStoryboardSketchFrame = useCallback((shotId: string) => {
+    const context = currentStoryboardRecipeContext()
+    if (!context) {
+      showCanvasFeedback('分镜导演上下文已失效，请重新打开 Recipe。')
+      return
+    }
+    if (!isLiveStoryboardRecipeContext(context)) {
+      handleCommitStoryboardDirectorRecipe(context.recipe, {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      showCanvasFeedback('来源已变化，草图未恢复。')
+      return
+    }
+    try {
+      const persisted = handleCommitStoryboardDirectorRecipe(regenerateStoryboardSketchFrame(
+        context.recipe,
+        shotId,
+        new Date().toISOString(),
+      ), {
+        expectedRevision: context.recipeRevision,
+        controlNodeId: context.controlNode.id,
+      })
+      if (persisted) showCanvasFeedback('草图已恢复为当前镜头的本地推演。')
+    } catch {
+      showCanvasFeedback('草图恢复条件不足，未保存。')
+    }
+  }, [
+    currentStoryboardRecipeContext,
+    handleCommitStoryboardDirectorRecipe,
+    isLiveStoryboardRecipeContext,
+    showCanvasFeedback,
+  ])
+
   const handleCreateStoryboardDirectorDraftNodes = useCallback(() => {
     const context = currentStoryboardRecipeContext()
     if (!context) {
@@ -11640,6 +11745,9 @@ export function VisualCanvasWorkspace({
         onFocusSource={focusStoryboardDirectorSource}
         onMaterializeGrouped={handleMaterializeStoryboardDirectorRecipe}
         onSyncShotBoard={handleSyncStoryboardDirectorShotBoard}
+        onCreateSketchBoard={handleCreateStoryboardSketchBoard}
+        onPatchSketchFrame={handlePatchStoryboardSketchFrame}
+        onRegenerateSketchFrame={handleRegenerateStoryboardSketchFrame}
         onCreateDraftNodes={handleCreateStoryboardDirectorDraftNodes}
         onImportLegacy={handleImportLegacyStoryboardDirectorState}
         onAcknowledgeEmergencyPartialBatch={handleAcknowledgeEmergencyDirectorPartialBatch}

@@ -43,6 +43,10 @@ import {
   storyboardDirectorPartialBatchBlockers,
 } from './canvas/skills/storyboardDirectorMaterialization'
 import type { StoryboardState } from '@/lib/storyboard/types'
+import {
+  StoryboardSketchBoard,
+  type StoryboardSketchBoardProps,
+} from './StoryboardSketchBoard'
 
 type ReviewStageId = Exclude<StoryboardDirectorStageId, 'source'>
 type ReviewFilter = 'pending' | 'warnings' | 'approved' | 'rejected' | 'all'
@@ -61,6 +65,9 @@ export type StoryboardDirectorRecipePanelProps = {
   onFocusSource: (sourceNodeId: string) => void
   onMaterializeGrouped: (kinds: Array<'scene' | 'beat' | 'shot-plan'>) => void
   onSyncShotBoard: () => void
+  onCreateSketchBoard: () => void
+  onPatchSketchFrame: StoryboardSketchBoardProps['onPatchFrame']
+  onRegenerateSketchFrame: StoryboardSketchBoardProps['onRegenerateFrame']
   onCreateDraftNodes: () => void
   onImportLegacy: () => void
   onAcknowledgeEmergencyPartialBatch: (batchId: string) => void
@@ -192,6 +199,11 @@ export function getStoryboardDirectorRecipeActions(recipe: StoryboardDirectorRec
   return {
     materializeGrouped: sourceFresh && summary.ready,
     syncShotBoard: sourceFresh && summary.ready,
+    createSketchBoard: sourceFresh
+      && summary.ready
+      && recipe.activeStage === 'shot-review'
+      && recipe.shot.status === 'approved'
+      && recipe.shot.drafts.some((item) => item.decision === 'approved'),
     createDraftNodes: sourceFresh && summary.ready,
     approveStage: canApprove,
     rerunStage: sourceFresh && Boolean(stage && stage.status !== 'idle'),
@@ -795,6 +807,9 @@ export function StoryboardDirectorRecipePanel({
   onFocusSource,
   onMaterializeGrouped,
   onSyncShotBoard,
+  onCreateSketchBoard,
+  onPatchSketchFrame,
+  onRegenerateSketchFrame,
   onCreateDraftNodes,
   onImportLegacy,
   onAcknowledgeEmergencyPartialBatch,
@@ -838,6 +853,9 @@ export function StoryboardDirectorRecipePanel({
 
   const summary = summarizeStoryboardDirectorRecipe(recipe)
   const actions = getStoryboardDirectorRecipeActions(recipe)
+  const sketchBoardEditable = summary.sourceFresh
+    && recipe.activeStage === 'shot-review'
+    && recipe.shot.status === 'approved'
   const legacyEnabled = canImportLegacyDirectorState(legacyState, recipe.storyboard)
   const persistedPartialBatches = storyboardDirectorPartialBatchBlockers(recipe)
   const partialBatches = [
@@ -931,6 +949,17 @@ export function StoryboardDirectorRecipePanel({
         <div className={`${regionState.region === 'evidence' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeEvidenceInspector recipe={recipe} selectedFindingId={selectedFindingId} onSelectFinding={setSelectedFindingId} /></div>
       </div>
 
+      {recipe.sketchBoard ? (
+        <div className="max-h-[42vh] flex-none overflow-y-auto border-t border-white/[0.08] px-4 py-3">
+          <StoryboardSketchBoard
+            board={recipe.sketchBoard}
+            disabled={!sketchBoardEditable || reviewActionPending}
+            onPatchFrame={onPatchSketchFrame}
+            onRegenerateFrame={onRegenerateSketchFrame}
+          />
+        </div>
+      ) : null}
+
       {summary.sourceFresh ? (
         <div className="flex flex-none flex-wrap items-center gap-2 border-t border-white/[0.08] px-4 py-3">
           <button type="button" title="重新运行当前阶段" aria-label="重新运行当前阶段" disabled={!actions.rerunStage || reviewActionPending} onClick={() => runUnlockedAction(() => {
@@ -941,6 +970,7 @@ export function StoryboardDirectorRecipePanel({
           <div className="mx-1 h-5 w-px bg-white/10" />
           <button type="button" disabled={!actions.materializeGrouped || partialBatchBlocked || reviewActionPending} onClick={() => runUnlockedAction(() => onMaterializeGrouped(['scene', 'beat', 'shot-plan']))} className="h-8 rounded-md border border-cyan-200/25 bg-cyan-200/[0.07] px-3 text-[10px] font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-30">落地审核结果</button>
           <button type="button" disabled={!actions.syncShotBoard || partialBatchBlocked || reviewActionPending} onClick={() => runUnlockedAction(onSyncShotBoard)} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">同步镜头板</button>
+          <button type="button" disabled={!actions.createSketchBoard || partialBatchBlocked || reviewActionPending} onClick={() => runUnlockedAction(onCreateSketchBoard)} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">生成本地草图分镜</button>
           <button type="button" disabled={!actions.createDraftNodes || partialBatchBlocked || reviewActionPending} onClick={() => runUnlockedAction(onCreateDraftNodes)} className="h-8 rounded-md border border-white/12 px-3 text-[10px] font-semibold text-white/60 disabled:opacity-30">创建草稿节点</button>
           {legacyState.status === 'valid' && legacyState.state.shots.length > 0 ? <button type="button" disabled={!legacyEnabled || reviewActionPending} onClick={() => runUnlockedAction(onImportLegacy)} className="ml-auto h-8 rounded-md border border-white/10 px-3 text-[10px] text-white/45 disabled:cursor-not-allowed disabled:opacity-30">导入旧版</button> : null}
         </div>

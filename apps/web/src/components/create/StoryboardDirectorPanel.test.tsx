@@ -252,6 +252,11 @@ function renderedHarnessSource() {
     import { createRoot } from 'react-dom/client'
     import { StoryboardDirectorPanel } from ${JSON.stringify(panelPath)}
     import { StoryboardDirectorRecipePanel } from ${JSON.stringify(recipePanelPath)}
+    import {
+      createRecipeSketchBoard,
+      patchStoryboardSketchFrame,
+      regenerateStoryboardSketchFrame,
+    } from ${JSON.stringify(path.resolve(process.cwd(), 'src/lib/storyboard/recipe/state-machine.ts'))}
 
     const FIXTURES = {
       completed: ${completed},
@@ -306,6 +311,30 @@ function renderedHarnessSource() {
         onFocusSource() {},
         onMaterializeGrouped() { calls.push('materialize') },
         onSyncShotBoard() { calls.push('sync') },
+        onCreateSketchBoard() {
+          calls.push('sketch-create')
+          currentRecipe = createRecipeSketchBoard(currentRecipe, '2026-08-01T10:00:00.000Z')
+          renderRecipe()
+        },
+        onPatchSketchFrame(shotId, patch) {
+          calls.push('sketch-patch:' + shotId)
+          currentRecipe = patchStoryboardSketchFrame(
+            currentRecipe,
+            shotId,
+            patch,
+            '2026-08-01T10:01:00.000Z',
+          )
+          renderRecipe()
+        },
+        onRegenerateSketchFrame(shotId) {
+          calls.push('sketch-regenerate:' + shotId)
+          currentRecipe = regenerateStoryboardSketchFrame(
+            currentRecipe,
+            shotId,
+            '2026-08-01T10:02:00.000Z',
+          )
+          renderRecipe()
+        },
         onCreateDraftNodes() { calls.push('draft-nodes') },
         onImportLegacy() {},
         onAcknowledgeEmergencyPartialBatch(batchId) {
@@ -389,6 +418,9 @@ function renderedHarnessSource() {
         onFocusSource() {},
         onMaterializeGrouped() {},
         onSyncShotBoard() {},
+        onCreateSketchBoard() {},
+        onPatchSketchFrame() {},
+        onRegenerateSketchFrame() {},
         onCreateDraftNodes() {},
         onImportLegacy() {},
         onClose() { calls.push('close') },
@@ -516,6 +548,9 @@ function renderedHarnessSource() {
         onFocusSource() {},
         onMaterializeGrouped() {},
         onSyncShotBoard() {},
+        onCreateSketchBoard() {},
+        onPatchSketchFrame() {},
+        onRegenerateSketchFrame() {},
         onCreateDraftNodes() {},
         onImportLegacy() {},
         onClose() {},
@@ -1027,6 +1062,7 @@ describe('Storyboard Director Recipe actions', () => {
 
     assert.equal(available.materializeGrouped, true)
     assert.equal(available.syncShotBoard, true)
+    assert.equal(available.createSketchBoard, true)
     assert.equal(available.createDraftNodes, true)
 
     const receipt = {
@@ -1042,6 +1078,7 @@ describe('Storyboard Director Recipe actions', () => {
     const blocked = getStoryboardDirectorRecipeActions(conflicting)
     assert.equal(blocked.materializeGrouped, false)
     assert.equal(blocked.syncShotBoard, false)
+    assert.equal(blocked.createSketchBoard, false)
     assert.equal(blocked.createDraftNodes, false)
   })
 
@@ -1052,6 +1089,7 @@ describe('Storyboard Director Recipe actions', () => {
     assert.deepEqual(actions, {
       materializeGrouped: false,
       syncShotBoard: false,
+      createSketchBoard: false,
       createDraftNodes: false,
       approveStage: false,
       rerunStage: false,
@@ -1115,6 +1153,42 @@ describe('Storyboard Director Recipe actions', () => {
 })
 
 describe('Storyboard Director rendered interactions', () => {
+  test('creates, locally adjusts, and restores a deterministic sketch board without a Provider action', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page)
+      await page.getByRole('button', { name: '生成本地草图分镜' }).click()
+      await page.getByRole('heading', { name: '本地草图分镜' }).waitFor()
+      assert.deepEqual(await renderedCalls(page), ['sketch-create'])
+
+      const recipeAfterCreate = await renderedRecipe(page)
+      const firstFrame = recipeAfterCreate.sketchBoard?.frames[0]
+      assert.ok(firstFrame)
+      assert.notEqual(firstFrame?.renderKey, '')
+
+      await page.getByLabel('镜头 1 运镜').selectOption('dolly')
+      const patched = await renderedRecipe(page)
+      assert.equal(patched.sketchBoard?.frames[0]?.movement, 'dolly')
+      assert.equal(patched.sketchBoard?.frames[0]?.status, 'stale')
+      assert.deepEqual(await renderedCalls(page), [
+        'sketch-create',
+        `sketch-patch:${firstFrame?.shotId}`,
+      ])
+
+      await page.getByRole('button', { name: '恢复本地推演镜头 1' }).click()
+      const restored = await renderedRecipe(page)
+      assert.notEqual(restored.sketchBoard?.frames[0]?.movement, 'dolly')
+      assert.notEqual(restored.sketchBoard?.frames[0]?.status, 'stale')
+      assert.deepEqual(await renderedCalls(page), [
+        'sketch-create',
+        `sketch-patch:${firstFrame?.shotId}`,
+        `sketch-regenerate:${firstFrame?.shotId}`,
+      ])
+    } finally {
+      await page.close()
+    }
+  })
+
   test('Recipe board text buffers existing fields until blur and Enter does not double commit', async () => {
     const page = await renderPage()
     try {
