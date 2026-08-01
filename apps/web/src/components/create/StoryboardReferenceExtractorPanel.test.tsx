@@ -4,6 +4,7 @@ import React, { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   getReferenceSelectionAction,
+  processStoryboardReferenceSelection,
   StoryboardReferenceExtractorPanel,
   appendReferenceSelection,
   type ReferenceSelection,
@@ -73,4 +74,51 @@ test('retries only node creation for an uploaded reference without duplicating t
 
   assert.equal(uploadCount, 1)
   assert.equal(nodeCreateCount, 1)
+})
+
+test('confirmation retry reuses the uploaded reference without cropping or uploading again', async () => {
+  const uploadedWithoutNode: ReferenceSelection = {
+    id: 'selection-1',
+    label: '参考图 1',
+    order: 0,
+    crop: { x: 10, y: 20, width: 120, height: 80 },
+    status: 'uploaded',
+    assetId: 'asset-reference-1',
+    assetUrl: 'https://assets.example.test/reference-1.jpg',
+  }
+  let cropCount = 0
+  let uploadFetchCount = 0
+  let nodeCreateCount = 0
+
+  const result = await processStoryboardReferenceSelection({
+    selection: uploadedWithoutNode,
+    sourceAssetId: 'asset-source-1',
+    sourceNodeId: 'image-node-1',
+    extractionSessionId: 'session-1',
+    image: {} as HTMLImageElement,
+    imageSize: { width: 320, height: 180 },
+    projectId: 'project-1',
+    total: 1,
+    onCreateReferenceNode: (reference, placementIndex, total) => {
+      nodeCreateCount += 1
+      assert.equal(reference.assetId, 'asset-reference-1')
+      assert.equal(placementIndex, 0)
+      assert.equal(total, 1)
+      return 'node-reference-1'
+    },
+    cropToBlob: async () => {
+      cropCount += 1
+      return new Blob()
+    },
+    fetchImpl: async () => {
+      uploadFetchCount += 1
+      return new Response(null, { status: 500 })
+    },
+  })
+
+  assert.equal(cropCount, 0)
+  assert.equal(uploadFetchCount, 0)
+  assert.equal(nodeCreateCount, 1)
+  assert.equal(result.createdNodeId, 'node-reference-1')
+  assert.equal(result.status, 'uploaded')
 })

@@ -126,6 +126,103 @@ export function getReferenceSelectionAction(selection: ReferenceSelection): Refe
   return 'none'
 }
 
+export async function processStoryboardReferenceSelection({
+  selection,
+  sourceAssetId,
+  sourceNodeId,
+  extractionSessionId,
+  image,
+  imageSize,
+  projectId,
+  workflowId,
+  total,
+  onCreateReferenceNode,
+  cropToBlob = cropStoryboardReferenceToBlob,
+  fetchImpl = fetch,
+}: {
+  selection: ReferenceSelection
+  sourceAssetId: string
+  sourceNodeId: string
+  extractionSessionId: string
+  image: HTMLImageElement
+  imageSize: ImageSize
+  projectId: string
+  workflowId?: string
+  total: number
+  onCreateReferenceNode: StoryboardReferenceExtractorPanelProps['onCreateReferenceNode']
+  cropToBlob?: typeof cropStoryboardReferenceToBlob
+  fetchImpl?: typeof fetch
+}): Promise<ReferenceSelection> {
+  const action = getReferenceSelectionAction(selection)
+  if (action === 'none') throw new Error('Reference selection does not require processing.')
+
+  const metadata = buildStoryboardReferenceExtractionMetadata({
+    sourceAssetId,
+    sourceNodeId,
+    extractionSessionId,
+    index: selection.order,
+    crop: selection.crop,
+    image: imageSize,
+  })
+  let uploaded: StoryboardReferenceUploadedAsset
+  if (action === 'create-node-retry') {
+    uploaded = {
+      assetId: selection.assetId!,
+      assetUrl: selection.assetUrl!,
+      title: selection.label,
+      metadata,
+    }
+  } else {
+    const blob = await cropToBlob(image, metadata.cropBox)
+    const response = await fetchImpl('/api/assets/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: buildStoryboardReferenceUploadFormData({
+        blob,
+        projectId,
+        workflowId,
+        assetNodeId: sourceNodeId,
+        title: selection.label,
+        metadata,
+      }),
+    })
+    const data = await response.json().catch(() => ({})) as {
+      success?: boolean
+      message?: string
+      errorCode?: string
+      asset?: { id?: string; url?: string | null }
+    }
+    if (!response.ok || !data.success || !data.asset?.id || !data.asset.url) {
+      throw new Error(data.message ?? data.errorCode ?? '参考图上传失败。')
+    }
+    uploaded = {
+      assetId: data.asset.id,
+      assetUrl: data.asset.url,
+      title: selection.label,
+      metadata,
+    }
+  }
+
+  let createdNodeId: string | null = null
+  let nodeError = ''
+  try {
+    createdNodeId = onCreateReferenceNode(uploaded, selection.order, total)
+  } catch (error) {
+    nodeError = error instanceof Error ? error.message : '参考节点创建失败。'
+  }
+  if (!createdNodeId && !nodeError) {
+    nodeError = '参考节点创建失败，资产已入库，可再次点击确认重试。'
+  }
+  return {
+    ...selection,
+    status: 'uploaded',
+    assetId: uploaded.assetId,
+    assetUrl: uploaded.assetUrl,
+    ...(createdNodeId ? { createdNodeId } : {}),
+    ...(nodeError ? { error: nodeError } : {}),
+  }
+}
+
 function moveReferenceSelection(selections: ReferenceSelection[], id: string, direction: -1 | 1) {
   const currentIndex = selections.findIndex((selection) => selection.id === id)
   const targetIndex = currentIndex + direction
@@ -268,71 +365,18 @@ export function StoryboardReferenceExtractorPanel({
       next[currentIndex] = { ...current, status: 'uploading', error: undefined }
       setSelections([...next])
       try {
-        const action = getReferenceSelectionAction(current)
-        const metadata = buildStoryboardReferenceExtractionMetadata({
+        next[currentIndex] = await processStoryboardReferenceSelection({
+          selection: current,
           sourceAssetId: sourceNode.assetId,
           sourceNodeId: sourceNode.id,
           extractionSessionId: sessionId,
-          index: current.order,
-          crop: current.crop,
-          image: imageSize,
+          image,
+          imageSize,
+          projectId,
+          workflowId,
+          total,
+          onCreateReferenceNode,
         })
-        let uploaded: StoryboardReferenceUploadedAsset
-        if (action === 'create-node-retry') {
-          uploaded = {
-            assetId: current.assetId!,
-            assetUrl: current.assetUrl!,
-            title: current.label,
-            metadata,
-          }
-        } else {
-          const blob = await cropStoryboardReferenceToBlob(image, metadata.cropBox)
-          const response = await fetch('/api/assets/upload', {
-            method: 'POST',
-            credentials: 'include',
-            body: buildStoryboardReferenceUploadFormData({
-              blob,
-              projectId,
-              workflowId,
-              assetNodeId: sourceNode.id,
-              title: current.label,
-              metadata,
-            }),
-          })
-          const data = await response.json().catch(() => ({})) as {
-            success?: boolean
-            message?: string
-            errorCode?: string
-            asset?: { id?: string; url?: string | null }
-          }
-          if (!response.ok || !data.success || !data.asset?.id || !data.asset.url) {
-            throw new Error(data.message ?? data.errorCode ?? '参考图上传失败。')
-          }
-          uploaded = {
-            assetId: data.asset.id,
-            assetUrl: data.asset.url,
-            title: current.label,
-            metadata,
-          }
-        }
-        let createdNodeId: string | null = null
-        let nodeError = ''
-        try {
-          createdNodeId = onCreateReferenceNode(uploaded, current.order, total)
-        } catch (error) {
-          nodeError = error instanceof Error ? error.message : '参考节点创建失败。'
-        }
-        if (!createdNodeId && !nodeError) {
-          nodeError = '参考节点创建失败，资产已入库，可再次点击确认重试。'
-        }
-        next[currentIndex] = {
-          ...current,
-          status: 'uploaded',
-          assetId: uploaded.assetId,
-          assetUrl: uploaded.assetUrl,
-          ...(createdNodeId ? { createdNodeId } : {}),
-          ...(nodeError ? { error: nodeError } : {}),
-        }
       } catch (error) {
         next[currentIndex] = {
           ...current,
