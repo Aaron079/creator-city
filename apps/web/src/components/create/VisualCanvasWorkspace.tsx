@@ -9981,11 +9981,18 @@ export function VisualCanvasWorkspace({
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const centerX = rect.left + surfaceOffset.left + canvasPan.x + (node.x + node.width / 2) * canvasZoom
     const nodeScreenTop = rect.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
+    const toolbarHeight = 48
+    const toolbarGap = 14
+    const shouldPlaceToolbarBelow = nodeScreenTop - toolbarGap - toolbarHeight < 12
     return {
       position: 'fixed' as const,
       left: Math.round(centerX),
-      top: Math.round(nodeScreenTop - 14),
-      transform: 'translateX(-50%) translateY(-100%)',
+      top: Math.round(shouldPlaceToolbarBelow
+        ? nodeScreenTop + node.height * canvasZoom + toolbarGap
+        : nodeScreenTop - toolbarGap),
+      transform: shouldPlaceToolbarBelow
+        ? 'translateX(-50%)'
+        : 'translateX(-50%) translateY(-100%)',
       zIndex: 90,
       pointerEvents: 'auto',
     }
