@@ -9,12 +9,33 @@ import { CreditLedgerType, PaymentOrderStatus } from '@prisma/client'
 
 // ── Wallet ─────────────────────────────────────────────────────
 
+type WalletStore<T> = {
+  upsert(args: {
+    where: { userId: string }
+    create: { userId: string; balance: number; frozenBalance: number; totalPurchased: number; totalConsumed: number }
+    update: Record<string, never>
+  }): Promise<T>
+  findUnique(args: { where: { userId: string } }): Promise<T | null>
+}
+
+export async function getOrCreateWalletWithStore<T>(store: WalletStore<T>, userId: string): Promise<T> {
+  try {
+    return await store.upsert({
+      where: { userId },
+      create: { userId, balance: 0, frozenBalance: 0, totalPurchased: 0, totalConsumed: 0 },
+      update: {},
+    })
+  } catch (error) {
+    if ((error as { code?: unknown })?.code !== 'P2002') throw error
+
+    const concurrentWallet = await store.findUnique({ where: { userId } })
+    if (concurrentWallet) return concurrentWallet
+    throw error
+  }
+}
+
 export async function getOrCreateWallet(userId: string) {
-  return db.userCreditWallet.upsert({
-    where: { userId },
-    create: { userId, balance: 0, frozenBalance: 0, totalPurchased: 0, totalConsumed: 0 },
-    update: {},
-  })
+  return getOrCreateWalletWithStore(db.userCreditWallet, userId)
 }
 
 export async function getWallet(userId: string) {
