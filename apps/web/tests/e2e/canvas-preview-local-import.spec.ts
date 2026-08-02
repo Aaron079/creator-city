@@ -61,7 +61,8 @@ async function dropCanvasFixtureImage(page: Page) {
 async function openStoryboardReferenceExtractor(page: Page) {
   const imagePreview = page.getByTestId('media-preview-image')
   await imagePreview.click()
-  const toolsButton = page.getByRole('button', { name: '工具' })
+  const toolsButton = page.locator('button.asset-agent-btn[title="工具"]')
+  await expect(toolsButton).toHaveCount(1)
   await expect(toolsButton).toBeVisible()
   await toolsButton.click()
   const extractorButton = page.getByRole('button', { name: '分镜参考提取' })
