@@ -254,6 +254,7 @@ import {
   validateLocalImageFile,
   readImageDimensions,
   buildLocalImportMetadata,
+  getLocalImportDisplayUrl,
   buildUploadFormData,
   getImportNodeTitle,
   uploadImageWithTimeout,
@@ -9498,7 +9499,7 @@ export function VisualCanvasWorkspace({
             const fd = buildUploadFormData(file, projectId, workflowId || undefined, nodeId)
             const asset = await uploadImageWithTimeout(fd)
             handleNodePatch(nodeId, {
-              resultImageUrl: asset.url,
+              resultImageUrl: getLocalImportDisplayUrl(asset),
               status: 'idle',
               resultPreview: undefined,
               assetId: asset.id,

@@ -9,6 +9,7 @@ import {
   buildLocalImportMetadata,
   buildUploadFormData,
   getImportNodeTitle,
+  getLocalImportDisplayUrl,
   LOCAL_IMPORT_MAX_SIZE_BYTES,
   LOCAL_IMPORT_MAX_DIMENSION,
 } from './localImageImport'
@@ -114,6 +115,22 @@ describe('buildLocalImportMetadata', () => {
     const meta = buildLocalImportMetadata(f, 'id-1')
     const d = new Date(meta.uploadedAt as string)
     assert.ok(!Number.isNaN(d.getTime()), 'uploadedAt is not a valid date')
+  })
+})
+
+describe('getLocalImportDisplayUrl', () => {
+  test('uses the authenticated asset proxy for private storage URLs', () => {
+    assert.equal(
+      getLocalImportDisplayUrl({ id: 'asset-abc-123', url: 'storage://supabase/creator-city-assets/path/image.png' }),
+      '/api/assets/asset-abc-123/file',
+    )
+  })
+
+  test('keeps a browser-renderable asset URL unchanged', () => {
+    assert.equal(
+      getLocalImportDisplayUrl({ id: 'asset-abc-123', url: 'https://cdn.example.test/path/image.png' }),
+      'https://cdn.example.test/path/image.png',
+    )
   })
 })
 

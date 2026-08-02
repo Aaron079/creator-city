@@ -41,6 +41,24 @@ export function getSafePreviewFixture(env: E2EEnvironment) {
       }
 }
 
+export function getSafePreviewRegistrationFixture(env: E2EEnvironment) {
+  const baseUrl = getCanvasE2EBaseUrl(env)
+  const expectedHost = env.PLAYWRIGHT_SAFE_PREVIEW_HOST?.trim().toLowerCase()
+  const actualHost = baseUrl.hostname.toLowerCase()
+  const missing = [
+    env.PLAYWRIGHT_SAFE_ENV !== 'preview' && 'PLAYWRIGHT_SAFE_ENV=preview',
+    env.PLAYWRIGHT_ALLOW_SAFE_WRITES !== '1' && 'PLAYWRIGHT_ALLOW_SAFE_WRITES=1',
+    env.PLAYWRIGHT_PREVIEW_E2E_REGISTER !== '1' && 'PLAYWRIGHT_PREVIEW_E2E_REGISTER=1',
+    !expectedHost && 'PLAYWRIGHT_SAFE_PREVIEW_HOST',
+    expectedHost && expectedHost !== actualHost && 'PLAYWRIGHT_SAFE_PREVIEW_HOST matching PLAYWRIGHT_BASE_URL',
+    isProductionCanvasUrl(baseUrl) && 'non-production PLAYWRIGHT_BASE_URL',
+  ].filter(Boolean) as string[]
+
+  return missing.length > 0
+    ? { ready: false as const, reason: `Safe Preview registration fixture unavailable: ${missing.join(', ')}` }
+    : { ready: true as const, baseUrl }
+}
+
 export function findForbiddenMutationRequests(requests: readonly RequestEvidence[]) {
   return requests.filter(({ method, pathname }) => {
     const normalizedMethod = method.toUpperCase()

@@ -90,6 +90,12 @@ export function buildLocalImportMetadata(file: File, assetId: string): Record<st
   }
 }
 
+export function getLocalImportDisplayUrl(asset: { id: string; url: string }) {
+  return asset.url.startsWith('storage://')
+    ? `/api/assets/${encodeURIComponent(asset.id)}/file`
+    : asset.url
+}
+
 export function buildUploadFormData(
   file: File,
   projectId: string,
