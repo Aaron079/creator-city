@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   findForbiddenMutationRequests,
   getSafePreviewRegistrationFixture,
@@ -108,13 +108,15 @@ async function createLocalStoryboardSource(page: Page) {
     '雨夜的城市天桥上，主角停下脚步，远处列车穿过霓虹灯。镜头从远景缓慢推进到近景，最后定格在她的表情。',
   )
   await page.getByRole('button', { name: '关闭节点面板' }).click()
-  return sourceNode
+  const nodeId = await sourceNode.locator('[data-node-id]').first().getAttribute('data-node-id')
+  if (!nodeId) throw new Error('Storyboard source node id is unavailable')
+  return { card: sourceNode, nodeId }
 }
 
-async function openLocalStoryboardDirector(page: Page, sourceNode: ReturnType<Page['locator']>) {
+async function openLocalStoryboardDirector(page: Page, sourceNode: { card: Locator; nodeId: string }) {
   const toolsButton = page.locator('button.asset-agent-btn[title="工具"]')
   if (await toolsButton.count() === 0) {
-    await sourceNode.click()
+    await sourceNode.card.click()
     await expect(page.getByRole('button', { name: '关闭节点面板' })).toBeVisible()
     await page.getByRole('button', { name: '关闭节点面板' }).click()
   }
@@ -122,6 +124,19 @@ async function openLocalStoryboardDirector(page: Page, sourceNode: ReturnType<Pa
   await toolsButton.click()
   await page.getByRole('button', { name: '分镜导演' }).first().click()
   await expect(page.getByRole('dialog', { name: 'Storyboard Director' })).toBeVisible()
+}
+
+async function approveStoryboardReviewStage(page: Page) {
+  await page.getByRole('button', { name: '批量批准' }).first().click()
+
+  const approveWarningItem = page.locator('button[title="批准"]')
+  while (await approveWarningItem.count()) {
+    await approveWarningItem.first().click()
+  }
+
+  const approveCurrentStage = page.getByRole('button', { name: '批准当前阶段' })
+  await expect(approveCurrentStage).toBeEnabled()
+  await approveCurrentStage.click()
 }
 
 test('isolated Preview imports a local image into a persistent source asset node', async ({ page }) => {
@@ -199,10 +214,9 @@ test('isolated Preview persists a local storyboard sketch board through refresh'
   const sourceNode = await createLocalStoryboardSource(page)
   await openLocalStoryboardDirector(page, sourceNode)
 
-  const approveCurrentStage = page.getByRole('button', { name: '批准当前阶段' })
-  await approveCurrentStage.click()
-  await approveCurrentStage.click()
-  await approveCurrentStage.click()
+  for (let stage = 0; stage < 3; stage += 1) {
+    await approveStoryboardReviewStage(page)
+  }
 
   await page.getByRole('button', { name: '生成本地草图分镜' }).click()
   await expect(page.getByRole('heading', { name: '本地草图分镜' })).toBeVisible()
@@ -214,9 +228,14 @@ test('isolated Preview persists a local storyboard sketch board through refresh'
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.locator('.canvas-viewport').last()).toBeVisible({ timeout: 30_000 })
 
-  const restoredSource = page.locator('.canvas-node-card').filter({ hasText: '雨夜的城市天桥上' }).first()
+  const restoredNodes = page.locator('.canvas-node-card')
+  await expect(restoredNodes).toHaveCount(2)
+  const restoredSource = restoredNodes.filter({
+    has: page.locator(`[data-node-id="${sourceNode.nodeId}"]`),
+  })
+  await expect(restoredSource).toHaveCount(1)
   await expect(restoredSource).toBeVisible()
-  await openLocalStoryboardDirector(page, restoredSource)
+  await openLocalStoryboardDirector(page, { card: restoredSource, nodeId: sourceNode.nodeId })
   await expect(page.getByRole('heading', { name: '本地草图分镜' })).toBeVisible()
 
   expect(findForbiddenMutationRequests(requests)).toEqual([])
