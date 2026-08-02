@@ -29,7 +29,8 @@ async function registerIsolatedPreviewUser(page: Page) {
   await page.getByPlaceholder('最少 8 位字符').fill(password)
   await page.getByPlaceholder('再次输入密码').fill(password)
   await page.getByRole('button', { name: '创建账号' }).click()
-  await expect(page).toHaveURL(/\/create/)
+  await expect(page).toHaveURL(/\/create\?projectId=[^&]+/, { timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
 }
 
 async function dropCanvasFixtureImage(page: Page) {
@@ -64,7 +65,13 @@ async function openStoryboardReferenceExtractor(page: Page) {
   const toolsButton = page.locator('button.asset-agent-btn[title="工具"]')
   await expect(toolsButton).toHaveCount(1)
   await expect(toolsButton).toBeVisible()
-  await toolsButton.click()
+  const toolsButtonBox = await toolsButton.boundingBox()
+  if (!toolsButtonBox) throw new Error('Asset tool button is unavailable')
+  expect(toolsButtonBox.x).toBeGreaterThanOrEqual(0)
+  expect(toolsButtonBox.y).toBeGreaterThanOrEqual(0)
+  expect(toolsButtonBox.x + toolsButtonBox.width).toBeLessThanOrEqual(1280)
+  expect(toolsButtonBox.y + toolsButtonBox.height).toBeLessThanOrEqual(720)
+  await toolsButton.click({ timeout: 10_000 })
   const extractorButton = page.getByRole('button', { name: '分镜参考提取' })
   await expect(extractorButton).toBeVisible()
   await extractorButton.click()
@@ -84,15 +91,8 @@ async function selectStoryboardReferenceRegion(page: Page) {
 
 async function importVisibleFixtureImage(page: Page) {
   const imagePreview = page.getByTestId('media-preview-image')
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await dropCanvasFixtureImage(page)
-    try {
-      await expect(imagePreview).toBeVisible({ timeout: 20_000 })
-      return
-    } catch (error) {
-      if (attempt === 1) throw error
-    }
-  }
+  await dropCanvasFixtureImage(page)
+  await expect(imagePreview).toBeVisible({ timeout: 70_000 })
 }
 
 test('isolated Preview imports a local image into a persistent source asset node', async ({ page }) => {
@@ -112,7 +112,6 @@ test('isolated Preview imports a local image into a persistent source asset node
   await expect(page.locator('.canvas-viewport').last()).toBeVisible()
   await importVisibleFixtureImage(page)
 
-  const imagePreview = page.getByTestId('media-preview-image')
   await page.getByRole('button', { name: '保存到云端' }).click()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('media-preview-image')).toBeVisible({ timeout: 30_000 })
@@ -122,7 +121,7 @@ test('isolated Preview imports a local image into a persistent source asset node
 })
 
 test('isolated Preview extracts a freeform reference into a visible persisted node', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
   if (!fixture.ready) {
     test.skip(true, fixture.reason)
     return
@@ -141,6 +140,8 @@ test('isolated Preview extracts a freeform reference into a visible persisted no
   await page.getByRole('button', { name: '确认提取' }).click()
   await expect(page.getByText('参考图已按顺序保存。')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('media-preview-image')).toHaveCount(2, { timeout: 30_000 })
+  await page.getByRole('button', { name: '关闭分镜参考提取' }).click()
+  await expect(page.getByTestId('storyboard-reference-extractor-panel')).toHaveCount(0)
   await page.getByRole('button', { name: '保存到云端' }).click()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('media-preview-image')).toHaveCount(2, { timeout: 30_000 })
