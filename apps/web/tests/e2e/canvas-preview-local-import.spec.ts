@@ -8,6 +8,8 @@ import {
 
 const fixture = getSafePreviewRegistrationFixture(process.env)
 
+test.describe.configure({ mode: 'serial' })
+
 async function registerIsolatedPreviewUser(page: Page) {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 16)
   const email = `canvas-import-${suffix}@example.test`
