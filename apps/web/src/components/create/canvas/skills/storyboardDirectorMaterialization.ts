@@ -275,6 +275,7 @@ function findRecipeIdentityMatches(
     }
     const metadata = ownData(node, 'metadataJson')
     if (metadata.status === 'absent') continue
+    if (metadata.status === 'value' && metadata.value == null) continue
     if (metadata.status !== 'value' || !isPlainRecord(metadata.value)) {
       invalid.push(nodeId)
       continue

@@ -186,6 +186,15 @@ function metadataSkillId(plan: { metadataJson: unknown }) {
 }
 
 describe('Storyboard Director control-node planning', () => {
+  test('ignores ordinary canvas nodes without storyboard Recipe metadata', () => {
+    const recipe = completedRecipe()
+
+    assert.equal(planStoryboardDirectorControlNode(recipe, [{
+      id: 'source-text-node',
+      metadataJson: undefined,
+    }]).status, 'create')
+  })
+
   test('finds the existing control node by stable Recipe identity and owns its snapshot', () => {
     const recipe = completedRecipe()
     const first = planStoryboardDirectorControlNode(recipe, [])
