@@ -6552,7 +6552,10 @@ export function VisualCanvasWorkspace({
       parentNodeId: sourceNode.id,
       position,
       status: 'done',
-      resultImageUrl: reference.assetUrl,
+      resultImageUrl: getLocalImportDisplayUrl({
+        id: reference.assetId,
+        url: reference.assetUrl,
+      }),
       assetId: reference.assetId,
       metadataJson: {
         assetId: reference.assetId,

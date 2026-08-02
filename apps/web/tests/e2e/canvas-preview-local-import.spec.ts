@@ -56,6 +56,42 @@ async function dropCanvasFixtureImage(page: Page) {
   await viewport.dispatchEvent('drop', { dataTransfer: transfer })
 }
 
+async function openStoryboardReferenceExtractor(page: Page) {
+  const imagePreview = page.getByTestId('media-preview-image')
+  await imagePreview.click()
+  const toolsButton = page.getByRole('button', { name: '工具' })
+  await expect(toolsButton).toBeVisible()
+  await toolsButton.click()
+  const extractorButton = page.getByRole('button', { name: '分镜参考提取' })
+  await expect(extractorButton).toBeVisible()
+  await extractorButton.click()
+  await expect(page.getByTestId('storyboard-reference-extractor-panel')).toBeVisible()
+}
+
+async function selectStoryboardReferenceRegion(page: Page) {
+  const canvas = page.getByTestId('storyboard-reference-selection-canvas')
+  await expect(canvas).toBeVisible({ timeout: 30_000 })
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Storyboard reference selection canvas is unavailable')
+  await page.mouse.move(box.x + box.width * 0.14, box.y + box.height * 0.18)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.48, box.y + box.height * 0.72)
+  await page.mouse.up()
+}
+
+async function importVisibleFixtureImage(page: Page) {
+  const imagePreview = page.getByTestId('media-preview-image')
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await dropCanvasFixtureImage(page)
+    try {
+      await expect(imagePreview).toBeVisible({ timeout: 20_000 })
+      return
+    } catch (error) {
+      if (attempt === 1) throw error
+    }
+  }
+}
+
 test('isolated Preview imports a local image into a persistent source asset node', async ({ page }) => {
   test.setTimeout(90_000)
   if (!fixture.ready) {
@@ -71,13 +107,40 @@ test('isolated Preview imports a local image into a persistent source asset node
   await registerIsolatedPreviewUser(page)
   await expect(page.getByText('正在打开项目...')).toHaveCount(0, { timeout: 30_000 })
   await expect(page.locator('.canvas-viewport').last()).toBeVisible()
-  await dropCanvasFixtureImage(page)
+  await importVisibleFixtureImage(page)
 
   const imagePreview = page.getByTestId('media-preview-image')
-  await expect(imagePreview).toBeVisible({ timeout: 30_000 })
   await page.getByRole('button', { name: '保存到云端' }).click()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('media-preview-image')).toBeVisible({ timeout: 30_000 })
+
+  expect(findForbiddenMutationRequests(requests)).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('isolated Preview extracts a freeform reference into a visible persisted node', async ({ page }) => {
+  test.setTimeout(120_000)
+  if (!fixture.ready) {
+    test.skip(true, fixture.reason)
+    return
+  }
+
+  const requests: RequestEvidence[] = []
+  const pageErrors: string[] = []
+  page.on('request', (request) => requests.push({ method: request.method(), pathname: new URL(request.url()).pathname }))
+  page.on('pageerror', (error) => pageErrors.push(error.name))
+
+  await registerIsolatedPreviewUser(page)
+  await expect(page.locator('.canvas-viewport').last()).toBeVisible({ timeout: 30_000 })
+  await importVisibleFixtureImage(page)
+  await openStoryboardReferenceExtractor(page)
+  await selectStoryboardReferenceRegion(page)
+  await page.getByRole('button', { name: '确认提取' }).click()
+  await expect(page.getByText('参考图已按顺序保存。')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('media-preview-image')).toHaveCount(2, { timeout: 30_000 })
+  await page.getByRole('button', { name: '保存到云端' }).click()
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('media-preview-image')).toHaveCount(2, { timeout: 30_000 })
 
   expect(findForbiddenMutationRequests(requests)).toEqual([])
   expect(pageErrors).toEqual([])
