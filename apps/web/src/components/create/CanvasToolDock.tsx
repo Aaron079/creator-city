@@ -33,6 +33,13 @@ export function nextCanvasToolDockMenu(
   return current === requested ? null : requested
 }
 
+export function isCanvasToolDockMenuOpen(
+  current: CanvasToolDockMenu,
+  target: Exclude<CanvasToolDockMenu, null>,
+) {
+  return current === target
+}
+
 const NODE_OPTIONS: Array<{
   id: string
   kind: VisualCanvasNodeKind
@@ -272,7 +279,7 @@ export function CanvasToolDock({
 
       {/* Add node menu */}
       <AnimatePresence>
-        {isAddMenuOpen ? (
+        {isCanvasToolDockMenuOpen(openMenu, 'add') ? (
           <motion.div
             initial={{ opacity: 0, x: -10, scale: 0.98 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
