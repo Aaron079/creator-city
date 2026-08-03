@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Clapperboard,
@@ -16,14 +16,21 @@ import { SettingsHoverMenu } from '@/components/navigation/SettingsHoverMenu'
 
 interface CanvasToolDockProps {
   onAddNode: (kind: VisualCanvasNodeKind, presetTitle?: string) => void
-  activeTool: string
-  onToolSelect: (tool: string) => void
   isAddMenuOpen: boolean
-  onToggleAddMenu: () => void
+  onSetAddMenuOpen: (open: boolean) => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
   onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'shot-sequencer') => void
   onOpenPromptTool: (tool: 'batch-rewriter') => void
+}
+
+export type CanvasToolDockMenu = 'add' | 'director' | 'prompt' | 'user' | null
+
+export function nextCanvasToolDockMenu(
+  current: CanvasToolDockMenu,
+  requested: Exclude<CanvasToolDockMenu, null>,
+): CanvasToolDockMenu {
+  return current === requested ? null : requested
 }
 
 const NODE_OPTIONS: Array<{
@@ -40,18 +47,27 @@ const NODE_OPTIONS: Array<{
 
 export function CanvasToolDock({
   onAddNode,
-  activeTool,
-  onToolSelect,
   isAddMenuOpen,
-  onToggleAddMenu,
+  onSetAddMenuOpen,
   hasActiveGenerations,
   onStopAllGenerations,
   onOpenDirectorTool,
   onOpenPromptTool,
 }: CanvasToolDockProps) {
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
-  const [isDirectorMenuOpen, setIsDirectorMenuOpen] = useState(false)
-  const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [openMenu, setOpenMenu] = useState<CanvasToolDockMenu>(isAddMenuOpen ? 'add' : null)
+
+  useEffect(() => {
+    setOpenMenu((current) => {
+      if (isAddMenuOpen) return 'add'
+      return current === 'add' ? null : current
+    })
+  }, [isAddMenuOpen])
+
+  function selectMenu(requested: Exclude<CanvasToolDockMenu, null>) {
+    const next = nextCanvasToolDockMenu(openMenu, requested)
+    setOpenMenu(next)
+    onSetAddMenuOpen(next === 'add')
+  }
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center">
@@ -62,11 +78,9 @@ export function CanvasToolDock({
           <button
             type="button"
             onClick={() => {
-              onToolSelect('add')
-              setIsUserMenuOpen(false)
-              onToggleAddMenu()
+              selectMenu('add')
             }}
-            className={`canvas-toolbar-button ${activeTool === 'add' || isAddMenuOpen ? 'is-active' : ''}`}
+            className={`canvas-toolbar-button ${openMenu === 'add' ? 'is-active' : ''}`}
             title="添加节点"
             aria-label="添加节点"
             data-no-node-drag="true"
@@ -80,7 +94,6 @@ export function CanvasToolDock({
             <button
               type="button"
               onClick={() => {
-                onToolSelect('stop')
                 onStopAllGenerations()
               }}
               className="canvas-toolbar-button"
@@ -99,11 +112,9 @@ export function CanvasToolDock({
             <button
               type="button"
               onClick={() => {
-                setIsDirectorMenuOpen((v) => !v)
-                setIsPromptMenuOpen(false)
-                setIsUserMenuOpen(false)
+                selectMenu('director')
               }}
-              className={`canvas-toolbar-button ${isDirectorMenuOpen ? 'is-active' : ''}`}
+              className={`canvas-toolbar-button ${openMenu === 'director' ? 'is-active' : ''}`}
               title="导演工具"
               aria-label="导演工具"
               data-no-node-drag="true"
@@ -112,7 +123,7 @@ export function CanvasToolDock({
               <span className="canvas-hover-tooltip" aria-hidden="true">导演工具</span>
             </button>
             <AnimatePresence>
-              {isDirectorMenuOpen ? (
+              {openMenu === 'director' ? (
                 <motion.div
                   initial={{ opacity: 0, x: -8, scale: 0.98 }}
                   animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -127,7 +138,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('shot-list-builder') }}
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('shot-list-builder') }}
                   >
                     <span className="text-[13px]">🎬</span>
                     <span>分镜清单生成器</span>
@@ -135,7 +146,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('continuity-checker') }}
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('continuity-checker') }}
                   >
                     <span className="text-[13px]">🔍</span>
                     <span>连贯性检查器</span>
@@ -144,7 +155,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('character-bible') }}
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('character-bible') }}
                   >
                     <span className="text-[13px]">👤</span>
                     <span>角色圣经</span>
@@ -152,7 +163,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-violet-300/80 transition hover:bg-violet-500/[0.06] hover:text-violet-200"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('scene-bible') }}
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('scene-bible') }}
                   >
                     <span className="text-[13px]">🏞</span>
                     <span>场景圣经</span>
@@ -161,7 +172,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-indigo-300/80 transition hover:bg-indigo-500/[0.06] hover:text-indigo-200"
-                    onClick={() => { setIsDirectorMenuOpen(false); onOpenDirectorTool('shot-sequencer') }}
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('shot-sequencer') }}
                   >
                     <span className="text-[13px]">🎞</span>
                     <span>镜头编排器</span>
@@ -176,11 +187,9 @@ export function CanvasToolDock({
             <button
               type="button"
               onClick={() => {
-                setIsPromptMenuOpen((v) => !v)
-                setIsDirectorMenuOpen(false)
-                setIsUserMenuOpen(false)
+                selectMenu('prompt')
               }}
-              className={`canvas-toolbar-button ${isPromptMenuOpen ? 'is-active' : ''}`}
+              className={`canvas-toolbar-button ${openMenu === 'prompt' ? 'is-active' : ''}`}
               title="提示词工具"
               aria-label="提示词工具"
               data-no-node-drag="true"
@@ -189,7 +198,7 @@ export function CanvasToolDock({
               <span className="canvas-hover-tooltip" aria-hidden="true">提示词工具</span>
             </button>
             <AnimatePresence>
-              {isPromptMenuOpen ? (
+              {openMenu === 'prompt' ? (
                 <motion.div
                   initial={{ opacity: 0, x: -8, scale: 0.98 }}
                   animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -204,7 +213,7 @@ export function CanvasToolDock({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-white/70 transition hover:bg-white/5 hover:text-white/90"
-                    onClick={() => { setIsPromptMenuOpen(false); onOpenPromptTool('batch-rewriter') }}
+                    onClick={() => { setOpenMenu(null); onOpenPromptTool('batch-rewriter') }}
                   >
                     <span className="text-[13px]">⚡</span>
                     <span>批量 Prompt 重写器</span>
@@ -220,20 +229,19 @@ export function CanvasToolDock({
           <div className="canvas-toolbar-user-wrap">
             <button
               type="button"
-              className={`canvas-toolbar-button ${isUserMenuOpen ? 'is-active' : ''}`}
+              className={`canvas-toolbar-button ${openMenu === 'user' ? 'is-active' : ''}`}
               title="当前用户"
               aria-label="当前用户"
               data-no-node-drag="true"
               onClick={() => {
-                setIsUserMenuOpen((current) => !current)
-                onToolSelect('user')
+                selectMenu('user')
               }}
             >
               <span className="canvas-toolbar-avatar" style={{ fontSize: 16, fontWeight: 700, lineHeight: 1 }}>U</span>
               <span className="canvas-hover-tooltip" aria-hidden="true">当前用户</span>
             </button>
             <AnimatePresence>
-              {isUserMenuOpen ? (
+              {openMenu === 'user' ? (
                 <motion.div
                   initial={{ opacity: 0, x: -8, scale: 0.98 }}
                   animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -285,7 +293,8 @@ export function CanvasToolDock({
                     type="button"
                     onClick={() => {
                       onAddNode(option.kind)
-                      onToggleAddMenu()
+                      setOpenMenu(null)
+                      onSetAddMenuOpen(false)
                     }}
                     className="canvas-add-option"
                   >

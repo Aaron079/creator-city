@@ -2596,7 +2596,6 @@ export function VisualCanvasWorkspace({
   const [isBottomDockExpanded, setIsBottomDockExpanded] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [activeTool, setActiveTool] = useState<string>('add')
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -10393,10 +10392,8 @@ export function VisualCanvasWorkspace({
     <div className={`${canvasStyles.scope} h-full`}>
       <CanvasToolDock
         onAddNode={handleAddNode}
-        activeTool={activeTool}
-        onToolSelect={setActiveTool}
         isAddMenuOpen={isAddMenuOpen}
-        onToggleAddMenu={() => setIsAddMenuOpen((current) => !current)}
+        onSetAddMenuOpen={setIsAddMenuOpen}
         hasActiveGenerations={hasActiveGenerations}
         onStopAllGenerations={handleStopAllGenerations}
         onOpenDirectorTool={(tool) => {
