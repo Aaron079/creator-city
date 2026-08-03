@@ -1,3 +1,5 @@
+import type { KeyframePreviewStatus } from './keyframe-extraction-provenance'
+
 export type ToolResultQualityStatus =
   | 'not-started'
   | 'processing'
@@ -81,7 +83,8 @@ export type KeyframeQualityInput = BaseInput & {
   extractionFailed: boolean
   extractionError: string
   isExtracting: boolean
-  createdDraftKind: string | null
+  createdDraftKind: 'image' | 'video' | null
+  previewStatus?: KeyframePreviewStatus
 }
 
 function count(value: number) {
@@ -272,11 +275,35 @@ export function keyframeQuality(input: KeyframeQualityInput): ToolResultQualityS
   if (!hasLabel(input.sourceLabel) || !input.hasVideo) {
     return summary('unavailable', '缺少视频来源', input.sourceLabel || '未选择视频', '需要可用视频才能提取关键帧', [])
   }
+  const previewStatus = input.previewStatus ?? 'not-extracted'
+  const frameEvidence = input.hasLocalFrame
+    ? '浏览器帧预览仅存在于当前浏览器，尚未成为资产'
+    : '该草案仅引用所选视频的时间点参考，不包含本地帧预览'
   const failureEvidence = input.extractionFailed
-    ? [input.extractionError.trim() || '请查看现有视频访问错误信息']
+    ? [
+        input.extractionError.trim() || '请查看现有视频访问错误信息',
+        ...(previewStatus === 'cors-restricted'
+          ? ['浏览器截帧受 CORS 限制，当前仅保留所选视频的时间点参考，不包含本地帧预览']
+          : []),
+      ]
     : []
-  if (input.createdDraftKind) {
-    return summary('completed', '草案节点已创建', input.sourceLabel, '已创建关键帧草案节点', ['浏览器帧仅作为创建草案的来源', ...failureEvidence])
+  if (input.createdDraftKind === 'image') {
+    return summary(
+      'completed',
+      '草案节点已创建',
+      input.sourceLabel,
+      '已创建图片草案节点',
+      [frameEvidence, ...failureEvidence],
+    )
+  }
+  if (input.createdDraftKind === 'video') {
+    return summary(
+      'completed',
+      '草案节点已创建',
+      input.sourceLabel,
+      '已创建视频草案节点',
+      [frameEvidence, ...failureEvidence],
+    )
   }
   if (input.extractionFailed) {
     return summary('failed', '提取未完成', input.sourceLabel, '浏览器关键帧提取失败', failureEvidence)

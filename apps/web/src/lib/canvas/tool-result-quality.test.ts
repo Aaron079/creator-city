@@ -994,6 +994,56 @@ test('keeps a browser keyframe frame as a local preview', () => {
   assert.doesNotMatch(JSON.stringify(summary), /已保存资产|已生成/)
 })
 
+test('describes a frame-backed draft without claiming an Asset', () => {
+  const summary = keyframeQuality({
+    sourceLabel: '镜头 07',
+    hasVideo: true,
+    hasLocalFrame: true,
+    extractionFailed: false,
+    extractionError: '',
+    isExtracting: false,
+    createdDraftKind: 'image',
+    previewStatus: 'available',
+  })
+
+  assert.equal(summary.status, 'completed')
+  assert.equal(summary.resultLabel, '已创建图片草案节点')
+  assert.match(summary.evidence.join(' '), /当前浏览器/)
+  assert.doesNotMatch(JSON.stringify(summary), /已上传|已保存资产|已生成/)
+})
+
+test('describes a CORS draft as timestamp-only evidence', () => {
+  const summary = keyframeQuality({
+    sourceLabel: '镜头 07',
+    hasVideo: true,
+    hasLocalFrame: false,
+    extractionFailed: true,
+    extractionError: '浏览器因 CORS 限制无法截帧',
+    isExtracting: false,
+    createdDraftKind: 'video',
+    previewStatus: 'cors-restricted',
+  })
+
+  assert.equal(summary.status, 'completed')
+  assert.equal(summary.resultLabel, '已创建视频草案节点')
+  assert.match(summary.evidence.join(' '), /时间点参考/)
+  assert.doesNotMatch(JSON.stringify(summary), /已上传|已保存资产|已生成/)
+})
+
+test('does not report an unexpected draft kind as a video draft', () => {
+  const summary = keyframeQuality({
+    sourceLabel: '镜头 07',
+    hasVideo: true,
+    hasLocalFrame: false,
+    extractionFailed: false,
+    extractionError: '',
+    isExtracting: false,
+    createdDraftKind: 'audio' as unknown as 'image' | 'video',
+  })
+
+  assert.notEqual(summary.resultLabel, '已创建视频草案节点')
+})
+
 test('reports a CORS keyframe extraction failure without a draft request', () => {
   const summary = keyframeQuality({
     sourceLabel: '镜头 07',
@@ -1003,9 +1053,11 @@ test('reports a CORS keyframe extraction failure without a draft request', () =>
     extractionError: 'CORS 访问受限',
     isExtracting: false,
     createdDraftKind: null,
+    previewStatus: 'cors-restricted',
   })
 
   assert.equal(summary.status, 'failed')
   assert.match(summary.evidence.join(' '), /CORS 访问受限/)
+  assert.match(summary.evidence.join(' '), /时间点参考/)
   assert.doesNotMatch(JSON.stringify(summary), /草案节点已创建/)
 })
