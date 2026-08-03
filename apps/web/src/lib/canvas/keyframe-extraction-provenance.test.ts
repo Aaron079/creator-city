@@ -52,6 +52,21 @@ test('rejects local frame evidence with an unavailable preview status', () => {
   }
 })
 
+test('rejects an available preview without local frame evidence', () => {
+  assert.throws(
+    () => buildKeyframeExtractionProvenance({
+      sourceNodeId: 'video-available-without-frame',
+      sourceVideoUrlAvailable: true,
+      selectedTimeSeconds: 1,
+      selectedTimeLabel: '0:01.0',
+      hasLocalFrame: false,
+      previewStatus: 'available',
+      createdAt: '2026-08-03T00:00:00.000Z',
+    }),
+    /available preview status requires local frame evidence/,
+  )
+})
+
 test('rejects a blank source identity before Canvas mutation', () => {
   assert.throws(
     () => buildKeyframeExtractionProvenance({

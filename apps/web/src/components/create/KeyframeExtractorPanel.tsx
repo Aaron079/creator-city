@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
+import { buildKeyframeExtractionProvenance } from '@/lib/canvas/keyframe-extraction-provenance'
 import { keyframeQuality, type ToolResultQualitySummary } from '@/lib/canvas/tool-result-quality'
 import { ToolResultQualityStrip } from '@/components/create/ToolResultQualityStrip'
 
@@ -10,7 +11,15 @@ interface KeyframeExtractorPanelProps {
   initialNodeId?: string
   onCreateNode: (
     kind: 'image' | 'video',
-    options: { title: string; prompt: string; parentNodeId: string }
+    options: {
+      title: string
+      prompt: string
+      parentNodeId: string
+      metadataJson?: Record<string, unknown>
+      edgeLabel?: string
+      edgeToolId?: string
+      edgeToolIcon?: string
+    }
   ) => void
   onFocusNode: (nodeId: string) => void
   onClose: () => void
@@ -55,7 +64,7 @@ export function KeyframeExtractorPanel({
   const [corsError, setCorsError] = useState(false)
   const [videoError, setVideoError] = useState(false)
   const [extracting, setExtracting] = useState(false)
-  const [created, setCreated] = useState<string | null>(null)
+  const [created, setCreated] = useState<'image' | 'video' | null>(null)
   const { copiedKey, copy } = useCopy()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -86,17 +95,28 @@ export function KeyframeExtractorPanel({
 
   const selectedNode = videoNodes.find((n) => n.id === selectedId) ?? null
   const sourceLabel = selectedNode?.title || '未选择视频'
+  const previewStatus = videoError
+    ? 'video-unavailable'
+    : corsError
+      ? 'cors-restricted'
+      : frameDataUrl
+        ? 'available'
+        : 'not-extracted'
   const resultQuality: ToolResultQualitySummary = created
-    ? {
-        status: 'needs-confirmation',
-        statusLabel: '草案请求已发出',
+    ? keyframeQuality({
         sourceLabel,
-        resultLabel: `已请求创建${created === 'image' ? '图片' : '视频'}草案节点`,
-        evidence: [
-          '创建请求已交给当前画布回调',
-          '当前面板无法确认节点是否已持久化',
-        ],
-      }
+        hasVideo: Boolean(selectedNode?.resultVideoUrl),
+        hasLocalFrame: Boolean(frameDataUrl),
+        extractionFailed: corsError || videoError,
+        extractionError: videoError
+          ? '视频元素未能加载可用内容'
+          : corsError
+            ? '浏览器因 CORS 限制无法截帧'
+            : '',
+        isExtracting: extracting,
+        createdDraftKind: created,
+        previewStatus,
+      })
     : videoError
       ? {
           status: 'failed',
@@ -113,6 +133,7 @@ export function KeyframeExtractorPanel({
           extractionError: corsError ? '浏览器因 CORS 限制无法截帧' : '',
           isExtracting: extracting,
           createdDraftKind: null,
+          previewStatus,
         })
 
   useEffect(() => {
@@ -184,6 +205,13 @@ export function KeyframeExtractorPanel({
     }
   }, [cancelPendingExtraction, isCurrentExtraction])
 
+  const handleVideoError = useCallback(() => {
+    cancelPendingExtraction()
+    setFrameDataUrl(null)
+    setExtracting(false)
+    setVideoError(true)
+  }, [cancelPendingExtraction])
+
   const timeLabel = formatTime(currentTime)
   const durLabel = duration ? formatTime(duration) : '--:--'
 
@@ -193,25 +221,32 @@ export function KeyframeExtractorPanel({
   const buildVideoPrompt = (node: VisualCanvasNode, time: string) =>
     `从上游视频「${node.title || '未命名'}」${time} 关键帧继续，保持主体/环境/光线一致，形成下一镜头。（视频续作草案，请编辑后生成）`
 
-  const handleCreateImageNode = useCallback(() => {
+  const createDraft = useCallback((kind: 'image' | 'video') => {
     if (!selectedNode) return
-    onCreateNode('image', {
-      title: `关键帧参考 ${timeLabel}`,
-      prompt: buildImagePrompt(selectedNode, timeLabel),
+    onCreateNode(kind, {
+      title: kind === 'image' ? `关键帧参考 ${timeLabel}` : `视频续作 ${timeLabel}`,
+      prompt: kind === 'image'
+        ? buildImagePrompt(selectedNode, timeLabel)
+        : buildVideoPrompt(selectedNode, timeLabel),
       parentNodeId: selectedNode.id,
+      metadataJson: {
+        keyframeExtraction: buildKeyframeExtractionProvenance({
+          sourceNodeId: selectedNode.id,
+          sourceAssetId: selectedNode.assetId,
+          sourceVideoUrlAvailable: Boolean(selectedNode.resultVideoUrl),
+          selectedTimeSeconds: currentTime,
+          selectedTimeLabel: timeLabel,
+          hasLocalFrame: Boolean(frameDataUrl),
+          previewStatus,
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      edgeLabel: '关键帧参考',
+      edgeToolId: 'keyframe-extractor',
+      edgeToolIcon: '🎞',
     })
-    setCreated('image')
-  }, [selectedNode, timeLabel, onCreateNode])
-
-  const handleCreateVideoNode = useCallback(() => {
-    if (!selectedNode) return
-    onCreateNode('video', {
-      title: `视频续作 ${timeLabel}`,
-      prompt: buildVideoPrompt(selectedNode, timeLabel),
-      parentNodeId: selectedNode.id,
-    })
-    setCreated('video')
-  }, [selectedNode, timeLabel, onCreateNode])
+    setCreated(kind)
+  }, [corsError, currentTime, frameDataUrl, onCreateNode, selectedNode, timeLabel, videoError])
 
   return (
     <div
@@ -301,7 +336,7 @@ export function KeyframeExtractorPanel({
                     onTimeUpdate={(e) => {
                       setCurrentTime((e.target as HTMLVideoElement).currentTime)
                     }}
-                    onError={() => setVideoError(true)}
+                    onError={handleVideoError}
                   />
                 </div>
                 {videoError ? (
@@ -421,7 +456,7 @@ export function KeyframeExtractorPanel({
               <button
                 type="button"
                 disabled={!selectedNode}
-                onClick={handleCreateImageNode}
+                onClick={() => createDraft('image')}
                 className="w-full rounded-xl border border-white/12 bg-white/4 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/8 disabled:opacity-40"
               >
                 <div className="flex items-center gap-2">
@@ -437,7 +472,7 @@ export function KeyframeExtractorPanel({
               <button
                 type="button"
                 disabled={!selectedNode}
-                onClick={handleCreateVideoNode}
+                onClick={() => createDraft('video')}
                 className="w-full rounded-xl border border-white/12 bg-white/4 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/8 disabled:opacity-40"
               >
                 <div className="flex items-center gap-2">

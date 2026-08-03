@@ -34,6 +34,9 @@ export function buildKeyframeExtractionProvenance(input: {
   if (input.hasLocalFrame && input.previewStatus !== 'available') {
     throw new Error('Keyframe local frame evidence requires an available preview status')
   }
+  if (!input.hasLocalFrame && input.previewStatus === 'available') {
+    throw new Error('Keyframe available preview status requires local frame evidence')
+  }
 
   return {
     version: 1,

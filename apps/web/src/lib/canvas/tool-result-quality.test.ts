@@ -67,10 +67,16 @@ type ColorGradeHarnessState = {
   createRequests: Array<{ sourceNodeId: string; kind: string; prompt: string; cssFilter: string }>
 }
 
+type KeyframeHarnessRequest = {
+  kind: 'image' | 'video'
+  options: Record<string, unknown>
+}
+
 declare global {
   interface Window {
     __colorGradeTestState?: ColorGradeHarnessState
     __renderColorGradeHarness?: (acknowledged: boolean) => void
+    __keyframeRequests?: KeyframeHarnessRequest[]
   }
 }
 
@@ -149,6 +155,11 @@ function clientHarnessSource() {
       id: 'video-extract-next',
       title: '镜头 10',
     }
+    type KeyframeRequest = {
+      kind: 'image' | 'video'
+      options: Record<string, unknown>
+    }
+    const keyframeRequests: KeyframeRequest[] = []
     const mode = (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode
     const panel = mode === 'ab'
       ? React.createElement(ABComparePanel, {
@@ -161,7 +172,9 @@ function clientHarnessSource() {
             nodes: mode === 'keyframe-extract'
               ? [extractableVideoNode, secondExtractableVideoNode]
               : [requestOnlyVideoNode],
-            onCreateNode() {},
+            onCreateNode(kind, options) {
+              keyframeRequests.push({ kind, options })
+            },
             onFocusNode() {},
             onClose() {},
           })
@@ -171,6 +184,7 @@ function clientHarnessSource() {
             onClose() {},
           })
 
+    window.__keyframeRequests = keyframeRequests
     createRoot(document.getElementById('root')).render(panel)
   `
 }
@@ -273,7 +287,7 @@ async function renderClientPanel(mode: ClientPanelMode) {
     (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
     if (panelMode === 'keyframe-extract') {
       document.addEventListener('error', (event) => {
-        if (event.target instanceof HTMLVideoElement) event.stopImmediatePropagation()
+        if (event.target instanceof HTMLVideoElement && event.isTrusted) event.stopImmediatePropagation()
       }, true)
     }
   }, mode)
@@ -332,16 +346,81 @@ test('reports an A/B winner only after the user selects one', async () => {
   await page.close()
 })
 
-test('reports a keyframe draft request without asserting node persistence', async () => {
-  const page = await renderClientPanel('keyframe')
+test('reports timestamp-only evidence for a keyframe draft without asserting node persistence', async () => {
+  const page = await renderClientPanel('keyframe-extract')
   const strip = page.locator('[data-testid="tool-result-quality-strip"]')
 
   await strip.waitFor()
   await page.getByRole('button', { name: '创建图片节点草案' }).click()
   const summaryText = await strip.textContent()
-  assert.match(summaryText ?? '', /草案请求已发出/)
-  assert.match(summaryText ?? '', /已请求创建图片草案节点/)
-  assert.doesNotMatch(summaryText ?? '', /草案节点已创建/)
+  assert.match(summaryText ?? '', /草案节点已创建/)
+  assert.match(summaryText ?? '', /已创建图片草案节点/)
+  assert.match(summaryText ?? '', /时间点参考/)
+  assert.doesNotMatch(summaryText ?? '', /草案请求已发出|已上传|已保存资产|已生成/)
+  await page.close()
+})
+
+test('creates image and video draft requests with stable keyframe provenance', async () => {
+  const page = await renderClientPanel('keyframe-extract')
+
+  await page.getByRole('button', { name: '创建图片节点草案' }).click()
+  await page.getByRole('button', { name: '创建视频续作节点草案' }).click()
+  const requests = await page.evaluate(() => window.__keyframeRequests)
+  assert.ok(requests)
+  assert.equal(requests.length, 2)
+
+  const [imageRequest, videoRequest] = requests
+  assert.ok(imageRequest)
+  assert.ok(videoRequest)
+  assert.equal(imageRequest.kind, 'image')
+  assert.equal(videoRequest.kind, 'video')
+  for (const request of requests) {
+    assert.equal(request.options.parentNodeId, 'video-extract')
+    assert.equal(request.options.edgeLabel, '关键帧参考')
+    assert.equal(request.options.edgeToolId, 'keyframe-extractor')
+    assert.equal(request.options.edgeToolIcon, '🎞')
+    const metadataJson = request.options.metadataJson as {
+      keyframeExtraction?: Record<string, unknown>
+    }
+    assert.equal(metadataJson.keyframeExtraction?.version, 1)
+    assert.equal(metadataJson.keyframeExtraction?.evidenceKind, 'time-point-reference')
+    assert.doesNotMatch(
+      JSON.stringify(metadataJson),
+      /data:image|data:video|base64|frameDataUrl|resultVideoUrl|bytes/i,
+    )
+  }
+
+  await page.close()
+})
+
+test('falls back to timestamp-only provenance when a local frame is followed by a video error', async () => {
+  const page = await renderClientPanel('keyframe-extract')
+  const video = page.locator('video')
+  const canvas = page.locator('canvas')
+
+  await canvas.evaluate((element) => {
+    Object.defineProperties(element, {
+      getContext: { configurable: true, value: Function('return { drawImage: Function() }') },
+      toDataURL: { configurable: true, value: Function('return "data:image/jpeg;base64,local-frame"') },
+    })
+  })
+  await page.getByRole('button', { name: '预览当前帧' }).click()
+  await page.getByAltText('关键帧预览').waitFor({ timeout: 2_000 })
+  await video.evaluate((element) => element.dispatchEvent(new Event('error', { bubbles: true })))
+
+  await page.getByRole('button', { name: '创建图片节点草案' }).click()
+  const request = await page.evaluate(() => window.__keyframeRequests?.[0])
+  assert.ok(request)
+  const metadataJson = request.options.metadataJson as {
+    keyframeExtraction?: Record<string, unknown>
+  }
+  assert.equal(metadataJson.keyframeExtraction?.evidenceKind, 'time-point-reference')
+  assert.equal(metadataJson.keyframeExtraction?.previewStatus, 'video-unavailable')
+  assert.doesNotMatch(
+    JSON.stringify(metadataJson),
+    /data:image|data:video|base64|frameDataUrl|resultVideoUrl|bytes/i,
+  )
+
   await page.close()
 })
 
