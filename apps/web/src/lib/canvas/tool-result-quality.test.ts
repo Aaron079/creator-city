@@ -283,6 +283,33 @@ async function renderClientPanel(mode: ClientPanelMode) {
   assert.ok(browser)
   const page = await browser.newPage()
   await page.setContent('<div id="root"></div>')
+  if (mode === 'keyframe-extract') {
+    await page.addStyleTag({
+      content: `
+        * { box-sizing: border-box; }
+        [role="dialog"][aria-label="关键帧提取"] {
+          position: fixed;
+          top: 16px;
+          bottom: 16px;
+          left: 16px;
+          display: flex;
+          width: calc(100vw - 32px);
+          max-width: 400px;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        @media (min-width: 768px) {
+          [role="dialog"][aria-label="关键帧提取"] { left: 80px; }
+        }
+        [role="dialog"][aria-label="关键帧提取"] > div:nth-of-type(2) {
+          min-height: 0;
+          flex: 1 1 0%;
+          overflow-y: auto;
+        }
+        [role="dialog"][aria-label="关键帧提取"] > div:last-child { flex-shrink: 0; }
+      `,
+    })
+  }
   await page.evaluate((panelMode) => {
     (globalThis as typeof globalThis & { __toolQualityPanelMode?: string }).__toolQualityPanelMode = panelMode
     if (panelMode === 'keyframe-extract') {
@@ -391,6 +418,33 @@ test('creates image and video draft requests with stable keyframe provenance', a
   }
 
   await page.close()
+})
+
+test('keeps keyframe extractor controls inside desktop and narrow viewports', async () => {
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    const page = await renderClientPanel('keyframe-extract')
+    await page.setViewportSize(viewport)
+
+    const dialog = page.getByRole('dialog', { name: '关键帧提取' })
+    const close = page.getByRole('button', { name: '关闭关键帧提取' })
+    const footer = page.getByRole('button', { name: '定位到视频节点' })
+    const dialogClassName = await dialog.getAttribute('class')
+    assert.match(dialogClassName ?? '', /bottom-4/)
+    assert.match(dialogClassName ?? '', /top-4/)
+    assert.match(dialogClassName ?? '', /w-\[calc\(100vw-32px\)\]/)
+    assert.match(dialogClassName ?? '', /md:left-20/)
+    const boxes = await Promise.all([dialog.boundingBox(), close.boundingBox(), footer.boundingBox()])
+
+    for (const box of boxes) {
+      assert.ok(box)
+      assert.ok(box.x >= 15)
+      assert.ok(box.y >= 15)
+      assert.ok(box.x + box.width <= viewport.width - 15)
+      assert.ok(box.y + box.height <= viewport.height - 15)
+    }
+
+    await page.close()
+  }
 })
 
 test('falls back to timestamp-only provenance when a local frame is followed by a video error', async () => {

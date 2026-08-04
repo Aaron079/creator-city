@@ -258,7 +258,8 @@ test('isolated Preview imports a local video and persists keyframe drafts throug
   await page.getByRole('button', { name: '创建图片节点草案' }).click()
   await page.getByRole('button', { name: '创建视频续作节点草案' }).click()
   await expect(page.getByText('视频草案节点已创建，请在画布中编辑 prompt 后手动生成。')).toBeVisible()
-  await page.getByRole('button', { name: '关闭' }).click()
+  await page.getByRole('button', { name: '关闭关键帧提取' }).click()
+  await expect(page.getByRole('dialog', { name: '关键帧提取' })).toHaveCount(0)
 
   await expect(page.locator('.canvas-node-card')).toHaveCount(3)
   await page.getByRole('button', { name: '保存到云端' }).click()
