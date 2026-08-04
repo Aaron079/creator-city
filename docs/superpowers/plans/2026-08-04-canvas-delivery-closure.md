@@ -80,6 +80,8 @@ Change only the close selector in \`canvas-preview-local-import.spec.ts\` to \`g
 
 - [ ] **Step 6: Run Preview video regression**
 
+Before this regression, commit the scoped implementation and promote that exact commit to the existing `preview/canvas-safe-qa-20260801` branch through a separate worktree. Wait for its new Vercel Preview deployment to be Ready; do not run guarded writes against Production or an older Preview deployment.
+
 \`\`\`bash
 PLAYWRIGHT_SAFE_ENV=preview PLAYWRIGHT_ALLOW_SAFE_WRITES=1 PLAYWRIGHT_PREVIEW_E2E_REGISTER=1 PLAYWRIGHT_BASE_URL=https://<safe-preview-host> PLAYWRIGHT_SAFE_PREVIEW_HOST=<safe-preview-host> pnpm --filter web exec playwright test tests/e2e/canvas-preview-local-import.spec.ts -g "local video" --config=playwright.canvas.config.ts --reporter=line
 \`\`\`
