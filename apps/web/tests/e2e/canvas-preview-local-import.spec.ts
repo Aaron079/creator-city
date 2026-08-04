@@ -201,6 +201,51 @@ test('isolated Preview imports a local image into a persistent source asset node
   expect(pageErrors).toEqual([])
 })
 
+test('isolated Preview restores a saved image in an independent authenticated context', async ({ page, browser }) => {
+  test.setTimeout(150_000)
+  if (!fixture.ready) {
+    test.skip(true, fixture.reason)
+    return
+  }
+
+  const firstRequests: RequestEvidence[] = []
+  const secondRequests: RequestEvidence[] = []
+  const firstPageErrors: string[] = []
+  const secondPageErrors: string[] = []
+  page.on('request', (request) => firstRequests.push({ method: request.method(), pathname: new URL(request.url()).pathname }))
+  page.on('pageerror', (error) => firstPageErrors.push(error.name))
+
+  await registerIsolatedPreviewUser(page)
+  await expect(page.locator('.canvas-viewport').last()).toBeVisible({ timeout: 30_000 })
+  await importVisibleFixtureImage(page)
+  await page.getByRole('button', { name: '保存到云端' }).click()
+  await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
+
+  const projectUrl = page.url()
+  const storageState = await page.context().storageState()
+  const independentContext = await browser.newContext({
+    storageState: { ...storageState, origins: [] },
+  })
+
+  try {
+    const independentPage = await independentContext.newPage()
+    independentPage.on('request', (request) => secondRequests.push({ method: request.method(), pathname: new URL(request.url()).pathname }))
+    independentPage.on('pageerror', (error) => secondPageErrors.push(error.name))
+    await independentPage.goto(projectUrl, { waitUntil: 'domcontentloaded' })
+
+    await expect(independentPage.locator('.canvas-viewport').last()).toBeVisible({ timeout: 30_000 })
+    await expect(independentPage.getByTestId('media-preview-image')).toHaveCount(1, { timeout: 30_000 })
+    await expect(independentPage.locator('.canvas-node-card')).toHaveCount(1)
+  } finally {
+    await independentContext.close()
+  }
+
+  expect(findForbiddenMutationRequests(firstRequests)).toEqual([])
+  expect(findForbiddenMutationRequests(secondRequests)).toEqual([])
+  expect(firstPageErrors).toEqual([])
+  expect(secondPageErrors).toEqual([])
+})
+
 test('isolated Preview extracts a freeform reference into a visible persisted node', async ({ page }) => {
   test.setTimeout(180_000)
   if (!fixture.ready) {
