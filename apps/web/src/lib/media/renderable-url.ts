@@ -7,7 +7,7 @@ export type RenderableMediaUrlRejectReason =
 export type RenderableMediaUrlDecision =
   | {
       ok: true
-      reason: 'media_extension' | 'oss_object_url' | 'cdn_media_url' | 'explicit_provider_media_field'
+      reason: 'media_extension' | 'oss_object_url' | 'cdn_media_url' | 'explicit_provider_media_field' | 'local_asset_proxy'
       hostname: string
       pathname: string
     }
@@ -82,6 +82,10 @@ function hasMediaExtension(pathname: string) {
   return [...MEDIA_EXTENSIONS].some((extension) => path.endsWith(extension))
 }
 
+function isLocalAssetProxyUrl(value: string) {
+  return /^\/api\/assets\/[^/?#]+\/file$/.test(value)
+}
+
 function isOssObjectUrl(hostname: string, pathname: string) {
   const host = hostname.toLowerCase()
   if (!pathname || pathname === '/') return false
@@ -133,6 +137,9 @@ export function isProviderApiEndpointUrl(value: string) {
 
 export function isRenderableMediaUrl(value: string, options: { source?: string } = {}): RenderableMediaUrlDecision {
   const trimmed = value.trim()
+  if (isLocalAssetProxyUrl(trimmed)) {
+    return { ok: true, reason: 'local_asset_proxy', hostname: '', pathname: trimmed }
+  }
   let parsed: URL
   try {
     parsed = new URL(trimmed)
