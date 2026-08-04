@@ -1,4 +1,11 @@
-export const LOCAL_IMPORT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+export type LocalImportKind = 'image' | 'video'
+
+export const LOCAL_IMAGE_IMPORT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+export const LOCAL_VIDEO_IMPORT_ALLOWED_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'] as const
+export const LOCAL_IMPORT_ALLOWED_TYPES = [
+  ...LOCAL_IMAGE_IMPORT_ALLOWED_TYPES,
+  ...LOCAL_VIDEO_IMPORT_ALLOWED_TYPES,
+] as const
 export const LOCAL_IMPORT_MAX_SIZE_BYTES = 20 * 1024 * 1024
 export const LOCAL_IMPORT_MAX_DIMENSION = 8192
 
@@ -28,14 +35,18 @@ export interface LocalImportValidationFail {
   error: LocalImportValidationError
 }
 
-export function validateLocalImageFile(file: File): LocalImportValidation | LocalImportValidationFail {
-  if (!(LOCAL_IMPORT_ALLOWED_TYPES as readonly string[]).includes(file.type)) {
+function validateLocalFile(
+  file: File,
+  allowedTypes: readonly string[],
+  acceptedFormats: string,
+): LocalImportValidation | LocalImportValidationFail {
+  if (!allowedTypes.includes(file.type)) {
     return {
       ok: false,
       error: {
         file,
         code: 'INVALID_TYPE',
-        message: `不支持的格式 ${file.type || '未知'}，仅支持 JPG / PNG / WebP`,
+        message: `不支持的格式 ${file.type || '未知'}，仅支持 ${acceptedFormats}`,
       },
     }
   }
@@ -50,6 +61,20 @@ export function validateLocalImageFile(file: File): LocalImportValidation | Loca
     }
   }
   return { ok: true }
+}
+
+export function validateLocalImageFile(file: File): LocalImportValidation | LocalImportValidationFail {
+  return validateLocalFile(file, LOCAL_IMAGE_IMPORT_ALLOWED_TYPES, 'JPG / PNG / WebP')
+}
+
+export function validateLocalMediaFile(file: File): LocalImportValidation | LocalImportValidationFail {
+  return validateLocalFile(file, LOCAL_IMPORT_ALLOWED_TYPES, 'JPG / PNG / WebP / MP4 / WebM / MOV')
+}
+
+export function getLocalImportKind(file: Pick<File, 'type'>): LocalImportKind | null {
+  if ((LOCAL_IMAGE_IMPORT_ALLOWED_TYPES as readonly string[]).includes(file.type)) return 'image'
+  if ((LOCAL_VIDEO_IMPORT_ALLOWED_TYPES as readonly string[]).includes(file.type)) return 'video'
+  return null
 }
 
 export function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
@@ -79,11 +104,16 @@ export function readImageDimensions(file: File): Promise<{ width: number; height
   })
 }
 
-export function buildLocalImportMetadata(file: File, assetId: string): Record<string, unknown> {
+export function buildLocalImportMetadata(
+  file: File,
+  assetId: string,
+  mediaKind: LocalImportKind = getLocalImportKind(file) ?? 'image',
+): Record<string, unknown> {
   return {
     assetId,
     importedFromLocal: true,
     importSource: 'drag-drop',
+    mediaKind,
     originalFileName: file.name,
     mimeType: file.type,
     uploadedAt: new Date().toISOString(),
@@ -101,11 +131,12 @@ export function buildUploadFormData(
   projectId: string,
   workflowId?: string,
   nodeId?: string,
+  mediaKind: LocalImportKind = getLocalImportKind(file) ?? 'image',
 ): FormData {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('projectId', projectId)
-  fd.append('type', 'image')
+  fd.append('type', mediaKind)
   fd.append('title', getImportNodeTitle(file))
   if (workflowId) fd.append('workflowId', workflowId)
   if (nodeId) fd.append('nodeId', nodeId)
@@ -122,7 +153,7 @@ export function isDragEventWithImageFiles(e: DragEvent | React.DragEvent): boole
   return Array.from(e.dataTransfer?.types ?? []).includes('Files')
 }
 
-export async function uploadImageWithTimeout(
+export async function uploadAssetWithTimeout(
   fd: FormData,
   timeoutMs = 60000,
 ): Promise<{ id: string; url: string; name: string }> {
@@ -154,3 +185,6 @@ export async function uploadImageWithTimeout(
     clearTimeout(timer)
   }
 }
+
+// Kept for existing image-only reference callers. Canvas drag-drop uses the media-neutral name.
+export const uploadImageWithTimeout = uploadAssetWithTimeout

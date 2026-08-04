@@ -251,12 +251,15 @@ import {
   mergeStoryboardDirectorRecoveryRiskIntoServerNodes,
 } from '@/lib/canvas/canvasDraftRecovery'
 import {
+  getLocalImportKind,
   validateLocalImageFile,
+  validateLocalMediaFile,
   readImageDimensions,
   buildLocalImportMetadata,
   getLocalImportDisplayUrl,
   buildUploadFormData,
   getImportNodeTitle,
+  uploadAssetWithTimeout,
   uploadImageWithTimeout,
   type LocalRefEntry,
 } from '@/lib/canvas/localImageImport'
@@ -9445,14 +9448,15 @@ export function VisualCanvasWorkspace({
     e.preventDefault()
     setIsLocalImageDragOver(false)
 
-    const validFiles: File[] = []
+    const validFiles: Array<{ file: File; kind: 'image' | 'video' }> = []
     let hasInvalidType = false
     let hasTooLarge = false
 
     for (const f of Array.from(e.dataTransfer.files)) {
-      const v = validateLocalImageFile(f)
+      const v = validateLocalMediaFile(f)
+      const kind = getLocalImportKind(f)
       if (v.ok) {
-        validFiles.push(f)
+        if (kind) validFiles.push({ file: f, kind })
       } else if (v.error.code === 'INVALID_TYPE') {
         hasInvalidType = true
       } else if (v.error.code === 'TOO_LARGE') {
@@ -9461,11 +9465,11 @@ export function VisualCanvasWorkspace({
     }
 
     if (hasInvalidType && hasTooLarge) {
-      showCanvasFeedback('部分文件无法导入：仅支持 JPG / PNG / WebP，且不能超过 20MB')
+      showCanvasFeedback('部分文件无法导入：仅支持图片或视频，且不能超过 20MB')
     } else if (hasInvalidType) {
-      showCanvasFeedback('仅支持 JPG / PNG / WebP 图片')
+      showCanvasFeedback('仅支持 JPG / PNG / WebP / MP4 / WebM / MOV')
     } else if (hasTooLarge) {
-      showCanvasFeedback('图片不能超过 20MB')
+      showCanvasFeedback('文件不能超过 20MB')
     }
 
     const files = validFiles.slice(0, 10)
@@ -9475,37 +9479,43 @@ export function VisualCanvasWorkspace({
     const basePos = getViewportWorldPoint(e.clientX, e.clientY)
     const NODE_H_OFFSET = 280
 
-    const nodeEntries = files.map((file, index) => {
-      const node = createNode('image', {
+    const nodeEntries = files.map(({ file, kind }, index) => {
+      const node = createNode(kind, {
         title: getImportNodeTitle(file),
         status: 'running',
         position: { x: basePos.x + index * NODE_H_OFFSET, y: basePos.y },
         metadataJson: {
           importedFromLocal: true,
           importSource: 'drag-drop',
+          mediaKind: kind,
           originalFileName: file.name,
           mimeType: file.type,
         },
       })
       handleNodePatch(node.id, { resultPreview: '上传中…' })
-      return { file, nodeId: node.id }
+      return { file, kind, nodeId: node.id }
     })
 
     const CONCURRENT = 3
     for (let i = 0; i < nodeEntries.length; i += CONCURRENT) {
       const batch = nodeEntries.slice(i, i + CONCURRENT)
       await Promise.all(
-        batch.map(async ({ file, nodeId }) => {
+        batch.map(async ({ file, kind, nodeId }) => {
           try {
-            await readImageDimensions(file)
-            const fd = buildUploadFormData(file, projectId, workflowId || undefined, nodeId)
-            const asset = await uploadImageWithTimeout(fd)
+            if (kind === 'image') await readImageDimensions(file)
+            const fd = buildUploadFormData(file, projectId, workflowId || undefined, nodeId, kind)
+            const asset = await uploadAssetWithTimeout(fd)
+            const displayUrl = getLocalImportDisplayUrl(asset)
             handleNodePatch(nodeId, {
-              resultImageUrl: getLocalImportDisplayUrl(asset),
+              ...(kind === 'image' ? { resultImageUrl: displayUrl } : {}),
+              ...(kind === 'video' ? {
+                resultVideoUrl: displayUrl,
+                preview: { type: 'remote-video', url: displayUrl },
+              } : {}),
               status: 'idle',
               resultPreview: undefined,
               assetId: asset.id,
-              metadataJson: buildLocalImportMetadata(file, asset.id),
+              metadataJson: buildLocalImportMetadata(file, asset.id, kind),
             })
             flushLocalSnapshot()
             scheduleCanvasSave(0)

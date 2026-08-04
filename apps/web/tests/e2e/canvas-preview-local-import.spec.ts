@@ -59,6 +59,43 @@ async function dropCanvasFixtureImage(page: Page) {
   await viewport.dispatchEvent('drop', { dataTransfer: transfer })
 }
 
+async function dropCanvasFixtureVideo(page: Page) {
+  const transfer = await page.evaluateHandle(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 160
+    canvas.height = 90
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas video fixture context unavailable')
+    const stream = canvas.captureStream(12)
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' })
+    const chunks: BlobPart[] = []
+    const finished = new Promise<Blob>((resolve, reject) => {
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size) chunks.push(event.data)
+      })
+      recorder.addEventListener('stop', () => resolve(new Blob(chunks, { type: 'video/webm' })), { once: true })
+      recorder.addEventListener('error', () => reject(new Error('Canvas video fixture recording failed')), { once: true })
+    })
+    recorder.start()
+    for (let frame = 0; frame < 8; frame += 1) {
+      context.fillStyle = frame % 2 ? '#2c1b47' : '#0d2538'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+      context.fillStyle = '#65d8ff'
+      context.fillRect(16 + frame * 8, 28, 44, 34)
+      await new Promise((resolve) => window.setTimeout(resolve, 45))
+    }
+    recorder.stop()
+    const blob = await finished
+    const value = new DataTransfer()
+    value.items.add(new File([blob], 'preview-canvas-source.webm', { type: 'video/webm' }))
+    return value
+  })
+  const viewport = page.locator('.canvas-viewport').last()
+  await viewport.dispatchEvent('dragenter', { dataTransfer: transfer })
+  await viewport.dispatchEvent('dragover', { dataTransfer: transfer })
+  await viewport.dispatchEvent('drop', { dataTransfer: transfer })
+}
+
 async function openStoryboardReferenceExtractor(page: Page) {
   const imagePreview = page.getByTestId('media-preview-image')
   await imagePreview.click()
@@ -189,6 +226,47 @@ test('isolated Preview extracts a freeform reference into a visible persisted no
   await page.getByRole('button', { name: '保存到云端' }).click()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('media-preview-image')).toHaveCount(2, { timeout: 30_000 })
+
+  expect(findForbiddenMutationRequests(requests)).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('isolated Preview imports a local video and persists keyframe drafts through refresh', async ({ page }) => {
+  test.setTimeout(180_000)
+  if (!fixture.ready) {
+    test.skip(true, fixture.reason)
+    return
+  }
+
+  const requests: RequestEvidence[] = []
+  const pageErrors: string[] = []
+  page.on('request', (request) => requests.push({ method: request.method(), pathname: new URL(request.url()).pathname }))
+  page.on('pageerror', (error) => pageErrors.push(error.name))
+
+  await registerIsolatedPreviewUser(page)
+  await expect(page.locator('.canvas-viewport').last()).toBeVisible({ timeout: 30_000 })
+  await dropCanvasFixtureVideo(page)
+
+  const videoPreview = page.getByTestId('media-preview-video')
+  await expect(videoPreview).toBeVisible({ timeout: 70_000 })
+  await videoPreview.click()
+  const toolsButton = page.locator('button.asset-agent-btn[title="工具"]')
+  await expect(toolsButton).toHaveCount(1)
+  await toolsButton.click()
+  await page.getByRole('button', { name: '关键帧提取' }).click()
+  await expect(page.getByRole('heading', { name: '关键帧提取' })).toBeVisible()
+  await page.getByRole('button', { name: '创建图片节点草案' }).click()
+  await page.getByRole('button', { name: '创建视频续作节点草案' }).click()
+  await expect(page.getByText('视频草案节点已创建，请在画布中编辑 prompt 后手动生成。')).toBeVisible()
+  await page.getByRole('button', { name: '关闭' }).click()
+
+  await expect(page.locator('.canvas-node-card')).toHaveCount(3)
+  await page.getByRole('button', { name: '保存到云端' }).click()
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('media-preview-video')).toHaveCount(1, { timeout: 30_000 })
+  await expect(page.locator('.canvas-node-card')).toHaveCount(3)
+  await expect(page.getByText('关键帧参考 0:00.0')).toBeVisible()
+  await expect(page.getByText('视频续作 0:00.0')).toBeVisible()
 
   expect(findForbiddenMutationRequests(requests)).toEqual([])
   expect(pageErrors).toEqual([])

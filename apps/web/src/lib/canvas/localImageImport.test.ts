@@ -5,7 +5,9 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  getLocalImportKind,
   validateLocalImageFile,
+  validateLocalMediaFile,
   buildLocalImportMetadata,
   buildUploadFormData,
   getImportNodeTitle,
@@ -74,6 +76,32 @@ describe('validateLocalImageFile', () => {
     assert.equal(r.ok, false)
     if (!r.ok) assert.equal(r.error.code, 'INVALID_TYPE')
   })
+
+  test('keeps video out of image-only reference inputs', () => {
+    const r = validateLocalImageFile(makeFile('shot.mp4', 'video/mp4', 1024))
+    assert.equal(r.ok, false)
+    if (!r.ok) assert.equal(r.error.code, 'INVALID_TYPE')
+  })
+})
+
+describe('validateLocalMediaFile', () => {
+  test('accepts an MP4 video for a Canvas video node', () => {
+    assert.deepEqual(validateLocalMediaFile(makeFile('shot.mp4', 'video/mp4', 1024)), { ok: true })
+  })
+
+  test('accepts a WebM video for a Canvas video node', () => {
+    assert.deepEqual(validateLocalMediaFile(makeFile('shot.webm', 'video/webm', 1024)), { ok: true })
+  })
+
+  test('accepts a QuickTime video for a Canvas video node', () => {
+    assert.deepEqual(validateLocalMediaFile(makeFile('shot.mov', 'video/quicktime', 1024)), { ok: true })
+  })
+
+  test('maps supported files to their Canvas node kind', () => {
+    assert.equal(getLocalImportKind(makeFile('frame.png', 'image/png', 1)), 'image')
+    assert.equal(getLocalImportKind(makeFile('shot.mp4', 'video/mp4', 1)), 'video')
+    assert.equal(getLocalImportKind(makeFile('sound.mp3', 'audio/mpeg', 1)), null)
+  })
 })
 
 describe('getImportNodeTitle', () => {
@@ -116,6 +144,11 @@ describe('buildLocalImportMetadata', () => {
     const d = new Date(meta.uploadedAt as string)
     assert.ok(!Number.isNaN(d.getTime()), 'uploadedAt is not a valid date')
   })
+
+  test('records the video kind for a local video import', () => {
+    const meta = buildLocalImportMetadata(makeFile('shot.webm', 'video/webm', 1), 'id-video', 'video')
+    assert.equal(meta.mediaKind, 'video')
+  })
 })
 
 describe('getLocalImportDisplayUrl', () => {
@@ -151,6 +184,12 @@ describe('buildUploadFormData', () => {
     const fd = buildUploadFormData(f, 'proj-2')
     assert.equal(fd.get('workflowId'), null)
     assert.equal(fd.get('nodeId'), null)
+  })
+
+  test('sends a video upload as type video', () => {
+    const f = makeFile('shot.mp4', 'video/mp4', 512)
+    const fd = buildUploadFormData(f, 'proj-3', 'wf-3', 'node-3', 'video')
+    assert.equal(fd.get('type'), 'video')
   })
 
   test('LOCAL_IMPORT_MAX_SIZE_BYTES is 20MB', () => {
