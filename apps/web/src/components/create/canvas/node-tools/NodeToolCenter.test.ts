@@ -56,7 +56,7 @@ describe('NodeToolCenter recommendations', () => {
     assert.match(visible, /推荐下一步/)
     assert.match(visible, /摄影机控制/)
     assert.match(visible, /画面标注/)
-    assert.match(visible, /分镜拆格/)
+    assert.match(visible, /分镜参考提取/)
     assert.doesNotMatch(visible, /主体抠图/)
   })
 

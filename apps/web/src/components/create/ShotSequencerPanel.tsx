@@ -274,55 +274,65 @@ export function ShotSequencerPanel({
   const primaryDisabled = saving || (items.length === 0 && !dirty && syncStatus !== 'cloud-save-failed')
 
   return (
-    <DirectorToolPanelFrame
-      title="镜头编排器"
-      titleEn="SHOT SEQUENCER"
-      icon="🎞"
-      accentColor="indigo"
-      count={aliveItems.length}
-      summary={summary}
-      primaryLabel={primaryLabel}
-      primaryDisabled={primaryDisabled}
-      onPrimary={() => { void handleSave() }}
-      secondaryLabel={view === 'sequence' ? '从画布添加' : '返回序列'}
-      onSecondary={() => setView(view === 'sequence' ? 'picker' : 'sequence')}
-      clearLabel="从分镜表同步"
-      onClear={handleSyncFromShotList}
-      onClose={handleCancel}
-      bodyClassName="min-h-0 flex-1 overflow-y-auto"
+    <div
+      className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
+      role="presentation"
+      data-no-node-drag="true"
+      onPointerDown={(event) => { event.stopPropagation(); handleCancel() }}
+      onClick={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+      onWheelCapture={(event) => event.stopPropagation()}
     >
-      {view === 'sequence' ? (
-        <>
-          <SyncStatusBanner
-            status={syncStatus}
-            legacyCount={legacyItems?.length ?? 0}
-            conflictCloudCount={conflictCloudItems?.length ?? 0}
-            onMigrate={() => { void handleMigrateFromLegacy() }}
-            onIgnoreLegacy={handleIgnoreLegacy}
-            onUseDraft={handleUseDraftVersion}
-            onUseCloud={handleUseCloudVersion}
+      <DirectorToolPanelFrame
+        title="镜头编排器"
+        titleEn="SHOT SEQUENCER"
+        icon="🎞"
+        accentColor="indigo"
+        count={aliveItems.length}
+        summary={summary}
+        primaryLabel={primaryLabel}
+        primaryDisabled={primaryDisabled}
+        onPrimary={() => { void handleSave() }}
+        secondaryLabel={view === 'sequence' ? '从画布添加' : '返回序列'}
+        onSecondary={() => setView(view === 'sequence' ? 'picker' : 'sequence')}
+        clearLabel="从分镜表同步"
+        onClear={handleSyncFromShotList}
+        onClose={handleCancel}
+        bodyClassName="min-h-0 flex-1 overflow-y-auto"
+      >
+        {view === 'sequence' ? (
+          <>
+            <SyncStatusBanner
+              status={syncStatus}
+              legacyCount={legacyItems?.length ?? 0}
+              conflictCloudCount={conflictCloudItems?.length ?? 0}
+              onMigrate={() => { void handleMigrateFromLegacy() }}
+              onIgnoreLegacy={handleIgnoreLegacy}
+              onUseDraft={handleUseDraftVersion}
+              onUseCloud={handleUseCloudVersion}
+            />
+            <SequenceView
+              items={items}
+              nodes={nodes}
+              onRemove={handleRemove}
+              onSelectNode={onSelectNode}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              formatDuration={formatSequenceDuration}
+              parseDuration={parseDuration}
+            />
+          </>
+        ) : (
+          <PickerView
+            nodes={pickableNodes}
+            addedNodeIds={addedNodeIds}
+            onAdd={handleAddNode}
+            onDone={() => setView('sequence')}
           />
-          <SequenceView
-            items={items}
-            nodes={nodes}
-            onRemove={handleRemove}
-            onSelectNode={onSelectNode}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            formatDuration={formatSequenceDuration}
-            parseDuration={parseDuration}
-          />
-        </>
-      ) : (
-        <PickerView
-          nodes={pickableNodes}
-          addedNodeIds={addedNodeIds}
-          onAdd={handleAddNode}
-          onDone={() => setView('sequence')}
-        />
-      )}
-    </DirectorToolPanelFrame>
+        )}
+      </DirectorToolPanelFrame>
+    </div>
   )
 }
 
