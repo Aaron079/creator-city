@@ -249,8 +249,11 @@ export function KeyframeExtractorPanel({
   }, [corsError, currentTime, frameDataUrl, onCreateNode, selectedNode, timeLabel, videoError])
 
   return (
-    <div
-      className="fixed left-[80px] top-1/2 z-[1200] flex w-[400px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117]/97 shadow-2xl backdrop-blur-xl"
+    <aside
+      className="fixed bottom-4 left-4 top-4 z-[1200] flex w-[calc(100vw-32px)] max-w-[400px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0f1117]/97 shadow-2xl backdrop-blur-xl md:left-20"
+      role="dialog"
+      aria-modal="true"
+      aria-label="关键帧提取"
       data-no-node-drag="true"
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -269,13 +272,13 @@ export function KeyframeExtractorPanel({
           type="button"
           onClick={onClose}
           className="ml-3 mt-0.5 flex-shrink-0 text-[18px] leading-none text-white/25 hover:text-white/55"
-          aria-label="关闭"
+          aria-label="关闭关键帧提取"
         >
           ×
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <div className="mb-3">
           <ToolResultQualityStrip summary={resultQuality} />
         </div>
@@ -505,7 +508,7 @@ export function KeyframeExtractorPanel({
 
       {/* Focus node footer */}
       {selectedNode ? (
-        <div className="border-t border-white/8 px-5 py-3">
+        <div className="flex-shrink-0 border-t border-white/8 px-5 py-3">
           <button
             type="button"
             onClick={() => onFocusNode(selectedNode.id)}
@@ -515,6 +518,6 @@ export function KeyframeExtractorPanel({
           </button>
         </div>
       ) : null}
-    </div>
+    </aside>
   )
 }
