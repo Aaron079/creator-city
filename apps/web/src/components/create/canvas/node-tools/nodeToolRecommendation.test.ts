@@ -62,4 +62,14 @@ describe('node tool recommendations', () => {
     })
     assert.equal(available.some((tool) => tool.openActionId === 'storyboard-reference-extractor'), true)
   })
+
+  test('offers keyframe extraction from the standard tools menu for a video with media', () => {
+    const available = availableNodeTools({
+      nodeKind: 'video',
+      hasMediaResult: true,
+      caps: {},
+    })
+
+    assert.equal(available.some((tool) => tool.openActionId === 'keyframe-extractor'), true)
+  })
 })

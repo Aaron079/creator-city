@@ -201,4 +201,17 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     available: true,
     openActionId: 'color-grade',
   },
+  {
+    id: 'keyframe-extractor',
+    label: '关键帧提取',
+    icon: '🎞',
+    description: '从视频当前时间建立图片或视频续作草稿',
+    category: 'analysis-preview',
+    executionType: 'panel',
+    supportedKinds: ['video'],
+    requiresMedia: true,
+    requiresAsset: false,
+    available: true,
+    openActionId: 'keyframe-extractor',
+  },
 ] as const

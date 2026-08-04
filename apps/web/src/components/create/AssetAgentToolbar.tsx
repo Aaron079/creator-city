@@ -205,6 +205,7 @@ export function AssetAgentToolbar({
       case 'remove-background':  onOpenRemoveBackground?.(); break
       case 'hd-reconstruction':  onOpenHdReconstruction?.(); break
       case 'color-grade':        onOpenColorGrade?.(); break
+      case 'keyframe-extractor': onOpenKeyframeExtractor?.(); break
       case 'storyboard-reference-extractor': onOpenStoryboardReferenceExtractor?.(); break
       case 'draw-annotation':    onOpenDrawAnnotation?.(); break
       default: break
@@ -365,32 +366,19 @@ export function AssetAgentToolbar({
                 </>
               ) : null}
               {/* Analysis tools */}
-              {(onOpenABCompare && hasMediaResult) || (nodeKind === 'video' && onOpenKeyframeExtractor && hasMediaResult) ? (
+              {onOpenABCompare && hasMediaResult ? (
                 <>
                   <div className="ntb-menu-divider" />
                   <div className="ntb-menu-section-title">分析工具</div>
-                  {onOpenABCompare && hasMediaResult ? (
-                    <button
-                      type="button"
-                      data-no-node-drag="true"
-                      className="ntb-menu-item"
-                      onClick={(e) => { stopEvent(e); onOpenABCompare(); closeAll() }}
-                    >
-                      <span className="ntb-menu-item-icon">⚖</span>
-                      版本对比
-                    </button>
-                  ) : null}
-                  {nodeKind === 'video' && onOpenKeyframeExtractor && hasMediaResult ? (
-                    <button
-                      type="button"
-                      data-no-node-drag="true"
-                      className="ntb-menu-item"
-                      onClick={(e) => { stopEvent(e); onOpenKeyframeExtractor(); closeAll() }}
-                    >
-                      <span className="ntb-menu-item-icon">🎞</span>
-                      关键帧提取
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    data-no-node-drag="true"
+                    className="ntb-menu-item"
+                    onClick={(e) => { stopEvent(e); onOpenABCompare(); closeAll() }}
+                  >
+                    <span className="ntb-menu-item-icon">⚖</span>
+                    版本对比
+                  </button>
                 </>
               ) : null}
               {/* Asset record */}
