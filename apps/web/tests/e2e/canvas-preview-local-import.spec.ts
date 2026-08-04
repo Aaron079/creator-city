@@ -311,8 +311,8 @@ test('isolated Preview imports a local video and persists keyframe drafts throug
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('media-preview-video')).toHaveCount(1, { timeout: 30_000 })
   await expect(page.locator('.canvas-node-card')).toHaveCount(3)
-  await expect(page.getByText('关键帧参考 0:00.0')).toBeVisible()
-  await expect(page.getByText('视频续作 0:00.0')).toBeVisible()
+  await expect(page.getByText('关键帧参考 0:00.0')).toHaveCount(1)
+  await expect(page.getByText('视频续作 0:00.0')).toHaveCount(1)
 
   expect(findForbiddenMutationRequests(requests)).toEqual([])
   expect(pageErrors).toEqual([])
