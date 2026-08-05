@@ -264,6 +264,7 @@ Expected: PASS.
 **Files:**
 - Create: apps/web/src/lib/creative-knowledge/resolver.ts
 - Create: apps/web/src/lib/creative-knowledge/index.ts
+- Modify: apps/web/src/lib/creative-knowledge/types.ts
 - Modify: apps/web/src/lib/creative-knowledge/creativeKnowledge.test.ts
 - Modify: apps/web/src/lib/skills/index.ts
 
@@ -328,6 +329,22 @@ Expected: PASS.
 Expected: FAIL because resolver.ts does not exist.
 
 - [ ] **Step 3: Implement resolver and exports.**
+
+Add these contract types to types.ts before implementing the resolver:
+
+    export type CreativeKnowledgeSelectionQuery = {
+      domains: readonly CreativeKnowledgeDomain[]
+      allowedUse: CreativeKnowledgeAllowedUse
+    }
+
+    export type CreativeKnowledgeSelectionReceipt = {
+      readonly packId: string
+      readonly packRevision: string
+      readonly selectionFingerprint: string
+      readonly recordIds: readonly string[]
+      readonly domains: readonly CreativeKnowledgeDomain[]
+      readonly allowedUse: CreativeKnowledgeAllowedUse
+    }
 
 Create resolver.ts with:
 
