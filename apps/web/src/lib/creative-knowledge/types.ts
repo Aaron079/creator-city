@@ -67,6 +67,20 @@ export type CreativeKnowledgePack = {
   readonly records: ReadonlyArray<CreativeKnowledgeRecord>
 }
 
+export type CreativeKnowledgeSelectionQuery = {
+  readonly domains: readonly CreativeKnowledgeDomain[]
+  readonly allowedUse: CreativeKnowledgeAllowedUse
+}
+
+export type CreativeKnowledgeSelectionReceipt = {
+  readonly packId: string
+  readonly packRevision: string
+  readonly selectionFingerprint: string
+  readonly recordIds: readonly string[]
+  readonly domains: readonly CreativeKnowledgeDomain[]
+  readonly allowedUse: CreativeKnowledgeAllowedUse
+}
+
 export const CREATIVE_KNOWLEDGE_DOMAINS = Object.freeze([
   'script',
   'cinematography',

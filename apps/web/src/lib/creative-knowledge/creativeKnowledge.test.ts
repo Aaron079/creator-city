@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { LOCAL_CINEMATIC_KNOWLEDGE_PACK } from "./local-cinematic-pack";
+import {
+  resolveCreativeKnowledge,
+  resolveLocalCinematicKnowledge,
+} from "./resolver";
 import type { CreativeKnowledgeDomain } from "./types";
 import {
   cloneCreativeKnowledgePack,
@@ -288,4 +292,204 @@ test("local cinematic knowledge pack contains the reviewed creator-owned rules",
   }
   assert.equal(recordIds.size, expectedRuleIds.length);
   assert.equal(contentHashes.size, LOCAL_CINEMATIC_KNOWLEDGE_PACK.records.length);
+});
+
+test("resolves eligible cinematic and continuity records with a canonical receipt", () => {
+  const result = resolveLocalCinematicKnowledge({
+    domains: ["continuity", "cinematography"],
+    allowedUse: "retrieval",
+  });
+
+  assert.deepEqual(
+    result.records.map((record) => record.knowledgeId),
+    [
+      "cinematic-screen-direction",
+      "continuity-action-match",
+      "continuity-eyeline",
+    ],
+  );
+  assert.equal(result.receipt.packRevision, "1.0.0");
+  assert.deepEqual(result.receipt.domains, ["cinematography", "continuity"]);
+  assert.match(result.receipt.selectionFingerprint, /^ckr1_[0-9a-f]{8}$/);
+  assert(Object.isFrozen(result));
+  assert(Object.isFrozen(result.records));
+  assert(Object.isFrozen(result.records[0]));
+  assert(Object.isFrozen(result.receipt));
+  assert(Object.isFrozen(result.receipt.recordIds));
+  assert(Object.isFrozen(result.receipt.domains));
+});
+
+test("receipt fingerprints include the pack revision", () => {
+  const query = {
+    domains: ["cinematography"] as const,
+    allowedUse: "retrieval" as const,
+  };
+  const first = resolveCreativeKnowledge({
+    pack: LOCAL_CINEMATIC_KNOWLEDGE_PACK,
+    query,
+  });
+  const second = resolveCreativeKnowledge({
+    pack: { ...LOCAL_CINEMATIC_KNOWLEDGE_PACK, revision: "1.0.1" },
+    query,
+  });
+
+  assert.notEqual(
+    first.receipt.selectionFingerprint,
+    second.receipt.selectionFingerprint,
+  );
+});
+
+test("receipt fingerprints include every selection contract field", () => {
+  const pack = {
+    packId: "creative-foundations",
+    revision: "1.0.0",
+    records: [validRecord()],
+  };
+  const query = { domains: ["script"] as const, allowedUse: "retrieval" as const };
+  const baseline = resolveCreativeKnowledge({ pack, query });
+
+  const assertFingerprintChanges = (
+    candidate: ReturnType<typeof resolveCreativeKnowledge>,
+  ) => {
+    assert.deepEqual(candidate.receipt.recordIds, baseline.receipt.recordIds);
+    assert.notEqual(
+      candidate.receipt.selectionFingerprint,
+      baseline.receipt.selectionFingerprint,
+    );
+  };
+
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack: { ...pack, packId: "creative-foundations-v2" },
+    query,
+  }));
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack: { ...pack, revision: "1.0.1" },
+    query,
+  }));
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack,
+    query: { ...query, domains: ["script", "cinematography"] },
+  }));
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack,
+    query: { ...query, allowedUse: "evaluation" },
+  }));
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack: {
+      ...pack,
+      records: [{ ...pack.records[0], revision: "2" }],
+    },
+    query,
+  }));
+  assertFingerprintChanges(resolveCreativeKnowledge({
+    pack: {
+      ...pack,
+      records: [{ ...pack.records[0], contentHash: "sha256:changed" }],
+    },
+    query,
+  }));
+});
+
+test("receipt identity changes when a selected knowledge ID changes", () => {
+  const pack = {
+    packId: "creative-foundations",
+    revision: "1.0.0",
+    records: [validRecord()],
+  };
+  const query = { domains: ["script"] as const, allowedUse: "retrieval" as const };
+  const baseline = resolveCreativeKnowledge({ pack, query });
+  const candidate = resolveCreativeKnowledge({
+    pack: {
+      ...pack,
+      records: [{ ...pack.records[0]!, knowledgeId: "script.beat-sheet.002" }],
+    },
+    query,
+  });
+
+  assert.deepEqual(baseline.receipt.recordIds, ["script.beat-sheet.001"]);
+  assert.deepEqual(candidate.receipt.recordIds, ["script.beat-sheet.002"]);
+  assert.notEqual(
+    candidate.receipt.selectionFingerprint,
+    baseline.receipt.selectionFingerprint,
+  );
+});
+
+test("rejects malformed packs before resolving a selection", () => {
+  const query = { domains: ["script"] as const, allowedUse: "retrieval" as const };
+
+  assert.throws(() => resolveCreativeKnowledge({
+    pack: {
+      packId: "creative-foundations",
+      revision: "1",
+      records: [validRecord(), validRecord()],
+    },
+    query,
+  }), TypeError);
+  assert.throws(() => resolveCreativeKnowledge({ pack: {}, query }), TypeError);
+});
+
+test("resolved selection is isolated from mutable pack sources", () => {
+  const pack = {
+    packId: "creative-foundations",
+    revision: "1",
+    records: [validRecord()],
+  };
+  const result = resolveCreativeKnowledge({
+    pack,
+    query: { domains: ["script"], allowedUse: "retrieval" },
+  });
+  const initialFingerprint = result.receipt.selectionFingerprint;
+  const sourceRecord = pack.records[0]!;
+
+  sourceRecord.title = "Changed title";
+  (sourceRecord.content.beats as unknown[])[1] = { name: "changed" };
+  sourceRecord.provenance.sourceId = "changed-source";
+  sourceRecord.provenance.allowedUses[0] = "training";
+
+  assert.equal(result.records[0]?.title, "Beat sheet");
+  assert.deepEqual(result.records[0]?.content, {
+    beats: ["opening image", { name: "catalyst" }],
+  });
+  assert.equal(result.records[0]?.provenance.sourceId, "creator-library");
+  assert.deepEqual(result.records[0]?.provenance.allowedUses, ["retrieval", "evaluation"]);
+  assert.equal(result.receipt.selectionFingerprint, initialFingerprint);
+  assert(Object.isFrozen(result.records[0]));
+  assert(Object.isFrozen(result.receipt));
+});
+
+test("disabled and revoked valid records are excluded from selection", () => {
+  const source = LOCAL_CINEMATIC_KNOWLEDGE_PACK.records[1]!;
+  const result = resolveCreativeKnowledge({
+    pack: {
+      ...LOCAL_CINEMATIC_KNOWLEDGE_PACK,
+      records: [
+        ...LOCAL_CINEMATIC_KNOWLEDGE_PACK.records,
+        {
+          ...source,
+          knowledgeId: "cinematography-disabled",
+          review: { ...source.review, status: "disabled" },
+        },
+        {
+          ...source,
+          knowledgeId: "cinematography-revoked",
+          provenance: { ...source.provenance, licenseStatus: "revoked" },
+        },
+      ],
+    },
+    query: { domains: ["cinematography"], allowedUse: "retrieval" },
+  });
+
+  assert.deepEqual(result.receipt.recordIds, ["cinematic-screen-direction"]);
+});
+
+test("rejects empty, sparse, duplicate, and invalid domain queries", () => {
+  const resolve = (domains: unknown) =>
+    resolveLocalCinematicKnowledge({ domains: domains as CreativeKnowledgeDomain[], allowedUse: "retrieval" });
+  const sparse = ["cinematography"];
+  sparse.length = 2;
+
+  assert.throws(() => resolve([]), TypeError);
+  assert.throws(() => resolve(sparse), TypeError);
+  assert.throws(() => resolve(["cinematography", "cinematography"]), TypeError);
+  assert.throws(() => resolve(["invalid-domain"]), TypeError);
 });
