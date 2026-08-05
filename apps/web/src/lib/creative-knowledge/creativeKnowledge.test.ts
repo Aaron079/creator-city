@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { LOCAL_CINEMATIC_KNOWLEDGE_PACK } from "./local-cinematic-pack";
 import {
+  CREATOR_INTELLIGENCE_CAPABILITY_MAP,
+  getCreatorIntelligenceCapability,
+} from "./capability-map";
+import {
   resolveCreativeKnowledge,
   resolveLocalCinematicKnowledge,
 } from "./resolver";
@@ -492,4 +496,35 @@ test("rejects empty, sparse, duplicate, and invalid domain queries", () => {
   assert.throws(() => resolve(sparse), TypeError);
   assert.throws(() => resolve(["cinematography", "cinematography"]), TypeError);
   assert.throws(() => resolve(["invalid-domain"]), TypeError);
+});
+
+test("maps every initial capability once to one existing owner", () => {
+  const ids = CREATOR_INTELLIGENCE_CAPABILITY_MAP.map((item) => item.id);
+
+  assert.deepEqual(ids, [
+    "script-segmentation",
+    "narrative-beat-analysis",
+    "shot-planning",
+    "storyboard-director",
+    "storyboard-reference-extractor",
+    "draw-annotation",
+    "camera-control",
+    "scene-lighting",
+    "continuity-checker",
+    "keyframe-extractor",
+  ]);
+  assert.equal(
+    getCreatorIntelligenceCapability("storyboard-director")?.owner,
+    "Storyboard Director Recipe",
+  );
+  assert.equal(getCreatorIntelligenceCapability("missing"), null);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test("keeps every initial capability local and strengthen-in-place", () => {
+  for (const item of CREATOR_INTELLIGENCE_CAPABILITY_MAP) {
+    assert.equal(item.deliveryMode, "strengthen-in-place");
+    assert.equal(item.requiresExternalGeneration, false);
+    assert.equal(item.acquisitionDependency, "none");
+  }
 });
