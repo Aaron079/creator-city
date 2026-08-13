@@ -26,6 +26,12 @@ type AdvisoryCandidate = {
   findingScope: Pick<StoryboardDirectorFinding, 'sceneId' | 'beatId' | 'shotId'>
 }
 
+type EvidenceTarget = {
+  stage: 'scene' | 'beat' | 'shot'
+  lineStart: number
+  lineEnd: number
+}
+
 function approved<T extends { decision: string }>(
   stage: { status: string; drafts: T[] },
 ) {
@@ -70,6 +76,23 @@ function selectedRuleIds(
     : []
 }
 
+function approvedEvidenceIds(
+  recipe: StoryboardDirectorRecipe,
+  targets: EvidenceTarget[],
+) {
+  const evidenceIds = new Set<string>()
+  for (const target of targets) {
+    for (const evidence of recipe[target.stage].result?.evidence ?? []) {
+      if (evidence.sourceNodeId === recipe.sourceNode.id
+        && evidence.lineStart <= target.lineEnd
+        && evidence.lineEnd >= target.lineStart) {
+        evidenceIds.add(evidence.evidenceId)
+      }
+    }
+  }
+  return [...evidenceIds].sort()
+}
+
 export function advisoryHandlingFor(
   recipe: StoryboardDirectorRecipe,
   advisoryId: string,
@@ -100,12 +123,18 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
   const narrativeShot = narrativeBeat
     ? shots.find((shot) => shot.beatId === narrativeBeat.beatId)
     : undefined
-  if (narrativeRuleIds.length && narrativeBeat && narrativeShot) {
+  const narrativeEvidenceIds = narrativeBeat && narrativeShot
+    ? approvedEvidenceIds(recipe, [
+      { stage: 'beat', lineStart: narrativeBeat.lineStart, lineEnd: narrativeBeat.lineEnd },
+      { stage: 'shot', lineStart: narrativeShot.lineStart, lineEnd: narrativeShot.lineEnd },
+    ])
+    : []
+  if (narrativeRuleIds.length && narrativeBeat && narrativeShot && narrativeEvidenceIds.length) {
     candidates.push({
       code: 'LOCAL_NARRATIVE_PURPOSE_REVIEW',
       message: '请人工确认该转折或反应镜头的叙事目的与场景变化一致。',
       ruleIds: narrativeRuleIds,
-      evidenceIds: [narrativeBeat.beatId, narrativeShot.shotId],
+      evidenceIds: narrativeEvidenceIds,
       scope: { beatId: narrativeBeat.beatId, shotId: narrativeShot.shotId },
       findingScope: { beatId: narrativeBeat.beatId, shotId: narrativeShot.shotId },
     })
@@ -116,12 +145,18 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
   const compositionShot = compositionScene
     ? shots.find((shot) => shot.sceneId === compositionScene.sceneId)
     : undefined
-  if (compositionRuleIds.length && compositionScene && compositionShot) {
+  const compositionEvidenceIds = compositionScene && compositionShot
+    ? approvedEvidenceIds(recipe, [
+      { stage: 'scene', lineStart: compositionScene.lineStart, lineEnd: compositionScene.lineEnd },
+      { stage: 'shot', lineStart: compositionShot.lineStart, lineEnd: compositionShot.lineEnd },
+    ])
+    : []
+  if (compositionRuleIds.length && compositionScene && compositionShot && compositionEvidenceIds.length) {
     candidates.push({
       code: 'LOCAL_COMPOSITION_HIERARCHY_REVIEW',
       message: '请人工确认多角色场景中该镜头的视觉主体层级清晰可读。',
       ruleIds: compositionRuleIds,
-      evidenceIds: [compositionScene.sceneId, compositionShot.shotId],
+      evidenceIds: compositionEvidenceIds,
       scope: { sceneId: compositionScene.sceneId, shotId: compositionShot.shotId },
       findingScope: { sceneId: compositionScene.sceneId, shotId: compositionShot.shotId },
     })
@@ -138,12 +173,23 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
   const continuityShots = continuityScene
     ? shots.filter((shot) => shot.sceneId === continuityScene.sceneId).slice(0, 2)
     : []
-  if (continuityRuleIds.length && continuityScene && continuityShots.length === 2) {
+  const continuityEvidenceIds = continuityScene && continuityShots.length === 2
+    ? approvedEvidenceIds(recipe, [
+      { stage: 'scene', lineStart: continuityScene.lineStart, lineEnd: continuityScene.lineEnd },
+      ...continuityShots.map((shot) => ({
+        stage: 'shot' as const,
+        lineStart: shot.lineStart,
+        lineEnd: shot.lineEnd,
+      })),
+    ])
+    : []
+  if (continuityRuleIds.length && continuityScene && continuityShots.length === 2
+    && continuityEvidenceIds.length) {
     candidates.push({
       code: 'LOCAL_CONTINUITY_CONFIRMATION',
       message: '连续镜头的动作、视线与屏幕方向需要人工确认；本地规则不会把它判定为既成错误。',
       ruleIds: continuityRuleIds,
-      evidenceIds: [continuityScene.sceneId, ...continuityShots.map((shot) => shot.shotId)],
+      evidenceIds: continuityEvidenceIds,
       scope: {
         sceneId: continuityScene.sceneId,
         firstShotId: continuityShots[0]!.shotId,
@@ -161,12 +207,18 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
   const lightingShot = lightingScene
     ? shots.find((shot) => shot.sceneId === lightingScene.sceneId)
     : undefined
-  if (lightingRuleIds.length && lightingScene && lightingShot) {
+  const lightingEvidenceIds = lightingScene && lightingShot
+    ? approvedEvidenceIds(recipe, [
+      { stage: 'scene', lineStart: lightingScene.lineStart, lineEnd: lightingScene.lineEnd },
+      { stage: 'shot', lineStart: lightingShot.lineStart, lineEnd: lightingShot.lineEnd },
+    ])
+    : []
+  if (lightingRuleIds.length && lightingScene && lightingShot && lightingEvidenceIds.length) {
     candidates.push({
       code: 'LOCAL_LIGHTING_MOTIVATION_REVIEW',
       message: '请人工确认该场景的时间与空间信息是否支撑清晰的关键光源动机。',
       ruleIds: lightingRuleIds,
-      evidenceIds: [lightingScene.sceneId, lightingShot.shotId],
+      evidenceIds: lightingEvidenceIds,
       scope: { sceneId: lightingScene.sceneId, shotId: lightingShot.shotId },
       findingScope: { sceneId: lightingScene.sceneId, shotId: lightingShot.shotId },
     })

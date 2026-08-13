@@ -10,6 +10,7 @@ const files = [
   'apps/web/src/lib/storyboard/recipe/intelligence.ts',
   'apps/web/src/lib/storyboard/recipe/state-machine.ts',
   'apps/web/src/components/create/StoryboardDirectorRecipePanel.tsx',
+  'apps/web/src/components/create/StoryboardDirectorPanel.tsx',
 ]
 const forbiddenSegments = new Set([
   'billing',
@@ -18,9 +19,22 @@ const forbiddenSegments = new Set([
   'prisma',
   'wallet',
   'cn-executor',
+  'crawler',
+  'crawlers',
+  'executor',
+  'executors',
+  'schema',
+  'schemas',
+  'external-model',
+  'external-models',
+  'model-adapter',
+  'model-adapters',
+  'provider',
   'providers',
+  'byok',
 ])
 const forbiddenModules = new Set(['http', 'https', 'net', 'undici'])
+const forbiddenNetworkConstructors = new Set(['XMLHttpRequest', 'WebSocket'])
 
 function violatesImportBoundary(specifier) {
   const normalized = specifier.toLowerCase()
@@ -29,12 +43,32 @@ function violatesImportBoundary(specifier) {
     || normalized.split(/[\\/]/).some((segment) => forbiddenSegments.has(segment))
 }
 
+function creativeKnowledgeResolverIsAllowed(relativePath, specifier) {
+  return relativePath === 'apps/web/src/lib/storyboard/recipe/advisory.ts'
+    && specifier === '../../creative-knowledge/resolver'
+}
+
 function isFetchExpression(expression) {
   return (ts.isIdentifier(expression) && expression.text === 'fetch')
     || (ts.isPropertyAccessExpression(expression)
       && ts.isIdentifier(expression.expression)
-      && expression.expression.text === 'globalThis'
+      && ['globalThis', 'window', 'self'].includes(expression.expression.text)
       && expression.name.text === 'fetch')
+}
+
+function isForbiddenNetworkExpression(expression) {
+  if (isFetchExpression(expression)) return true
+  if (ts.isIdentifier(expression)) {
+    return expression.text === 'axios' || forbiddenNetworkConstructors.has(expression.text)
+  }
+  if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.expression)) {
+    return false
+  }
+  if (expression.expression.text === 'navigator' && expression.name.text === 'sendBeacon') {
+    return true
+  }
+  return ['globalThis', 'window', 'self'].includes(expression.expression.text)
+    && forbiddenNetworkConstructors.has(expression.name.text)
 }
 
 function visit(node, callback) {
@@ -52,14 +86,23 @@ test('Storyboard advisory implementation remains local and dependency-bounded', 
       if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
         && node.moduleSpecifier
         && ts.isStringLiteral(node.moduleSpecifier)) {
+        const specifier = node.moduleSpecifier.text
         assert.equal(
-          violatesImportBoundary(node.moduleSpecifier.text),
+          violatesImportBoundary(specifier),
           false,
-          `${relativePath} must not import ${node.moduleSpecifier.text}`,
+          `${relativePath} must not import ${specifier}`,
         )
+        if (specifier.includes('creative-knowledge')) {
+          assert.equal(
+            creativeKnowledgeResolverIsAllowed(relativePath, specifier),
+            true,
+            `${relativePath} may not import creative knowledge directly`,
+          )
+        }
       }
-      if (ts.isCallExpression(node) && isFetchExpression(node.expression)) {
-        assert.fail(`${relativePath} must not call fetch`)
+      if ((ts.isCallExpression(node) || ts.isNewExpression(node))
+        && isForbiddenNetworkExpression(node.expression)) {
+        assert.fail(`${relativePath} must not use a network client`)
       }
       if (ts.isIdentifier(node) && node.text === 'axios') {
         assert.fail(`${relativePath} must not reference axios`)

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import type {
+  CreatorSkillEvidence,
+  CreatorSkillRunResult,
   NarrativeBeatDraft,
   ScriptSceneDraft,
   ShotPlanDraft,
@@ -22,6 +24,35 @@ const source = {
 
 function approved<T>(draft: T): RecipeReviewItem<T> {
   return { ...draft, decision: 'approved' }
+}
+
+function resultWithEvidence(evidence: CreatorSkillEvidence[]): CreatorSkillRunResult {
+  return {
+    skillId: 'local-test-skill',
+    skillVersion: '1.0.0',
+    runFingerprint: 'csk1_test',
+    status: 'ready',
+    artifacts: [],
+    evidence,
+    warnings: [],
+    blockers: [],
+  }
+}
+
+function sourceEvidence(
+  evidenceId: string,
+  lineStart: number,
+  lineEnd: number,
+): CreatorSkillEvidence {
+  return {
+    evidenceId,
+    ruleId: 'local-test-rule',
+    sourceNodeId: source.id,
+    lineStart,
+    lineEnd,
+    excerpt: source.prompt,
+    explanation: 'Local test evidence.',
+  }
 }
 
 function recipeFixture(): StoryboardDirectorRecipe {
@@ -94,15 +125,21 @@ function recipeFixture(): StoryboardDirectorRecipe {
     activeStage: 'shot-review',
     scene: {
       status: 'approved', generation: 1, sourceFingerprint: 'csf1_source',
-      result: null, drafts: [scene], approvedArtifact: null, staleResult: null,
+      result: resultWithEvidence([sourceEvidence('scene-evidence-001', 1, 2)]),
+      drafts: [scene], approvedArtifact: null, staleResult: null,
     },
     beat: {
       status: 'approved', generation: 1, sourceFingerprint: 'csf1_source',
-      result: null, drafts: [beat], approvedArtifact: null, staleResult: null,
+      result: resultWithEvidence([sourceEvidence('narrative-beat-evidence-001-001', 2, 2)]),
+      drafts: [beat], approvedArtifact: null, staleResult: null,
     },
     shot: {
       status: 'approved', generation: 1, sourceFingerprint: 'csf1_source',
-      result: null, drafts: shots, approvedArtifact: null, staleResult: null,
+      result: resultWithEvidence([
+        sourceEvidence('shot-plan-evidence-001-001', 2, 2),
+        sourceEvidence('shot-plan-evidence-001-002', 2, 2),
+      ]),
+      drafts: shots, approvedArtifact: null, staleResult: null,
       options: {
         requestedShotCount: 2,
         outputMode: 'image',
@@ -123,8 +160,9 @@ function recipeFixture(): StoryboardDirectorRecipe {
 
 describe('Storyboard Director local advisories', () => {
   test('emits deterministic, local-only advisory findings in professional review order', () => {
-    const first = evaluateStoryboardDirectorAdvisories(recipeFixture())
-    const second = evaluateStoryboardDirectorAdvisories(recipeFixture())
+    const recipe = recipeFixture()
+    const first = evaluateStoryboardDirectorAdvisories(recipe)
+    const second = evaluateStoryboardDirectorAdvisories(recipe)
 
     assert.deepEqual(first.findings.map((finding) => finding.code), [
       'LOCAL_NARRATIVE_PURPOSE_REVIEW',
@@ -142,6 +180,14 @@ describe('Storyboard Director local advisories', () => {
       && finding.evidenceIds.length > 0
       && Boolean(finding.shotId)
     )))
+    const approvedEvidenceIds = new Set([
+      ...recipe.scene.result?.evidence ?? [],
+      ...recipe.beat.result?.evidence ?? [],
+      ...recipe.shot.result?.evidence ?? [],
+    ].map((item) => item.evidenceId))
+    assert.ok(first.findings.every((finding) => (
+      finding.evidenceIds.every((evidenceId) => approvedEvidenceIds.has(evidenceId))
+    )))
     assert.match(first.receipt.selectionFingerprint, /^ckr1_[0-9a-f]{8}$/)
     assert.match(
       first.findings.find((finding) => finding.code === 'LOCAL_CONTINUITY_CONFIRMATION')!.message,
@@ -154,6 +200,15 @@ describe('Storyboard Director local advisories', () => {
     recipe.scene.drafts = []
     recipe.beat.drafts = []
     recipe.shot.drafts = []
+
+    assert.deepEqual(evaluateStoryboardDirectorAdvisories(recipe).findings, [])
+  })
+
+  test('does not emit a signal whose approved stages have no real source evidence', () => {
+    const recipe = recipeFixture()
+    recipe.scene.result = null
+    recipe.beat.result = null
+    recipe.shot.result = null
 
     assert.deepEqual(evaluateStoryboardDirectorAdvisories(recipe).findings, [])
   })
