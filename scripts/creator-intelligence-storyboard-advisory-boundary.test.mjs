@@ -7,6 +7,8 @@ import ts from 'typescript'
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 const files = [
   'apps/web/src/lib/storyboard/recipe/advisory.ts',
+  'apps/web/src/lib/storyboard/recipe/advisoryEvaluation.fixtures.ts',
+  'apps/web/src/lib/storyboard/recipe/advisoryEvaluation.test.ts',
   'apps/web/src/lib/storyboard/recipe/intelligence.ts',
   'apps/web/src/lib/storyboard/recipe/state-machine.ts',
   'apps/web/src/components/create/StoryboardDirectorRecipePanel.tsx',
@@ -75,6 +77,11 @@ function visit(node, callback) {
   callback(node)
   ts.forEachChild(node, (child) => visit(child, callback))
 }
+
+test('Storyboard advisory evaluation fixtures remain inside the local boundary', () => {
+  assert.ok(files.includes('apps/web/src/lib/storyboard/recipe/advisoryEvaluation.fixtures.ts'))
+  assert.ok(files.includes('apps/web/src/lib/storyboard/recipe/advisoryEvaluation.test.ts'))
+})
 
 test('Storyboard advisory implementation remains local and dependency-bounded', async () => {
   for (const relativePath of files) {

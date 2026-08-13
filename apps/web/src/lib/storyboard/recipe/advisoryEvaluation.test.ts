@@ -40,7 +40,8 @@ test('keeps the owned evaluation matrix immutable for consumers', () => {
   assert.equal(Object.isFrozen(allSignals.expectedCodes), true)
   assert.equal(Object.isFrozen(allSignals.recipe), true)
   assert.throws(() => {
-    ;(allSignals.expectedCodes as string[]).push('MUTATED')
+    const mutableExpectedCodes = allSignals.expectedCodes as string[]
+    mutableExpectedCodes.push('MUTATED')
   }, TypeError)
 })
 
