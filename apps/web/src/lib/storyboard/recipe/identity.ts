@@ -94,6 +94,55 @@ export function createStoryboardDirectorRecipeRevision(
   }).replace(/^csf1_/, 'sdrr1_')
 }
 
+function approvedDrafts<T extends { decision: string }>(
+  stage: { status: string; drafts: T[] },
+) {
+  if (stage.status !== 'approved') return []
+  return stage.drafts
+    .filter((draft) => draft.decision === 'approved')
+    .map(({ decision, ...draft }) => draft)
+}
+
+/**
+ * A local advisory belongs to the approved Recipe lineage and its local-rule
+ * selection. It intentionally omits pending and rejected review material.
+ */
+export function createStoryboardDirectorAdvisoryInputFingerprint(
+  recipe: StoryboardDirectorRecipe,
+  ruleIds: readonly string[],
+  scope: unknown,
+) {
+  return createCreatorSkillFingerprint('storyboard-director-advisory-input', '1.0.0', {
+    sourceNodes: [{
+      id: requireId(recipe.recipeId, 'recipe.recipeId'),
+      kind: 'text',
+      title: '',
+      prompt: recipe.sourceFingerprint,
+    }],
+    options: {
+      sourceFingerprint: recipe.sourceFingerprint,
+      approvedStages: {
+        scene: approvedDrafts(recipe.scene),
+        beat: approvedDrafts(recipe.beat),
+        shot: approvedDrafts(recipe.shot),
+      },
+      ruleIds: Array.from(ruleIds),
+      scope,
+    },
+  }).replace(/^csf1_/, 'sdra1_')
+}
+
+export function createStoryboardDirectorAdvisoryId(inputFingerprint: string) {
+  return createCreatorSkillFingerprint('storyboard-director-advisory', '1.0.0', {
+    sourceNodes: [{
+      id: requireId(inputFingerprint, 'inputFingerprint'),
+      kind: 'text',
+      title: '',
+      prompt: inputFingerprint,
+    }],
+  }).replace(/^csf1_/, 'sdrf1_')
+}
+
 /**
  * Sketch boards store this revision, calculated without the board itself, so
  * persisted board metadata can never participate in its own identity.

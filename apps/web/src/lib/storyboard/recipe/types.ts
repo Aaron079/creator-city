@@ -11,7 +11,7 @@ import type {
 import type { StoryboardState } from '../types'
 import type { StoryboardSketchFrame } from '../sketch/types'
 
-export const STORYBOARD_DIRECTOR_RECIPE_VERSION = 2 as const
+export const STORYBOARD_DIRECTOR_RECIPE_VERSION = 3 as const
 export const STORYBOARD_DIRECTOR_RECIPE_SKILL_VERSION = '1.0.0' as const
 export const STORYBOARD_DIRECTOR_MAX_RECEIPTS = 360
 
@@ -66,7 +66,25 @@ export type StoryboardDirectorFinding = {
   beatId?: string
   shotId?: string
   partialBatch?: StoryboardDirectorPartialBatch
+  advisory?: StoryboardDirectorAdvisoryMetadata
   evidenceIds: string[]
+}
+
+export type StoryboardDirectorAdvisoryHandling = 'open' | 'reviewed' | 'ignored'
+
+export type StoryboardDirectorAdvisoryDecision = {
+  advisoryId: string
+  inputFingerprint: string
+  selectionFingerprint: string
+  decision: Exclude<StoryboardDirectorAdvisoryHandling, 'open'>
+  decidedAt: string
+}
+
+export type StoryboardDirectorAdvisoryMetadata = {
+  ruleIds: string[]
+  inputFingerprint: string
+  selectionFingerprint: string
+  handling: StoryboardDirectorAdvisoryHandling
 }
 
 export type StoryboardDirectorMaterializationReceipt = {
@@ -97,6 +115,7 @@ export type StoryboardDirectorRecipe = {
     options: ShotPlanningOptions
   }
   findings: StoryboardDirectorFinding[]
+  advisoryDecisions: StoryboardDirectorAdvisoryDecision[]
   storyboard: StoryboardState
   receipts: StoryboardDirectorMaterializationReceipt[]
   sketchBoard: StoryboardSketchBoard | null
