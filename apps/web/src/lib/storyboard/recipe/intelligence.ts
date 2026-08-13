@@ -1,4 +1,5 @@
 import { createCreatorSkillFingerprint, runCreatorSkill } from '../../skills'
+import { evaluateStoryboardDirectorAdvisories } from './advisory'
 import { createRecipeMaterializationIdentity, createStoryboardDirectorRecipeIdentity } from './identity'
 import type {
   RecipeReviewItem,
@@ -790,6 +791,17 @@ function advisoryFindings(recipe: StoryboardDirectorRecipe) {
 
 export function analyzeStoryboardDirectorRecipe(recipe: StoryboardDirectorRecipe) {
   const values = [...blockingFindings(recipe), ...advisoryFindings(recipe)]
+  const localAdvisories = evaluateStoryboardDirectorAdvisories(recipe).findings
+  const findingKey = (item: Pick<StoryboardDirectorFinding,
+    'code' | 'sceneId' | 'beatId' | 'shotId' | 'partialBatch' | 'advisory'>,
+  ) => [
+    item.code,
+    item.sceneId ?? '',
+    item.beatId ?? '',
+    item.shotId ?? '',
+    item.partialBatch?.batchId ?? '',
+    item.advisory?.inputFingerprint ?? '',
+  ].join('\u0000')
   const seen = new Set<string>()
   const findings = recipe.findings.filter((item) => (
     item.code === 'PARTIAL_MATERIALIZATION_BATCH'
@@ -797,25 +809,19 @@ export function analyzeStoryboardDirectorRecipe(recipe: StoryboardDirectorRecipe
     && item.partialBatch
   ))
   for (const item of findings) {
-    seen.add([
-      item.code,
-      item.sceneId ?? '',
-      item.beatId ?? '',
-      item.shotId ?? '',
-      item.partialBatch?.batchId ?? '',
-    ].join('\u0000'))
+    seen.add(findingKey(item))
   }
   for (const value of values) {
-    const key = [
-      value.code,
-      value.sceneId ?? '',
-      value.beatId ?? '',
-      value.shotId ?? '',
-      value.partialBatch?.batchId ?? '',
-    ].join('\u0000')
+    const key = findingKey(value)
     if (seen.has(key)) continue
     seen.add(key)
     findings.push(finding(recipe, value))
+  }
+  for (const advisory of localAdvisories) {
+    const key = findingKey(advisory)
+    if (seen.has(key)) continue
+    seen.add(key)
+    findings.push(advisory)
   }
   return findings
 }

@@ -194,6 +194,17 @@ function advisoryFixture() {
   return recipe
 }
 
+function localAdvisoryRecipe() {
+  return canonicalRecipe({
+    scenePatch: (item) => item.sceneId === 'scene-001'
+      ? { characters: ['Jose', 'Mara'] }
+      : {},
+    beatPatch: (item) => item.sceneId === 'scene-001'
+      ? { type: 'turn' }
+      : {},
+  })
+}
+
 const ISO_TIME = '2026-07-19T01:00:00.000Z'
 const canonicalSource = {
   id: 'source-1',
@@ -379,6 +390,26 @@ describe('Storyboard Director intelligence', () => {
     assert.equal(isStoryboardRecipeMaterializationReady(corruptLineageRecipe()), false)
   })
 
+  test('keeps blockers ahead of local advisories while advisory-only Recipes remain ready', () => {
+    const local = analyzeStoryboardDirectorRecipe(localAdvisoryRecipe())
+    const localFindings = local.filter((item) => item.advisory)
+    assert.deepEqual(localFindings.map((item) => item.code), [
+      'LOCAL_NARRATIVE_PURPOSE_REVIEW',
+      'LOCAL_COMPOSITION_HIERARCHY_REVIEW',
+      'LOCAL_CONTINUITY_CONFIRMATION',
+      'LOCAL_LIGHTING_MOTIVATION_REVIEW',
+    ])
+    assert.ok(localFindings.every((item) => (
+      item.advisory?.ruleIds.length
+      && /^ckr1_[0-9a-f]{8}$/.test(item.advisory.selectionFingerprint)
+    )))
+    assert.equal(isStoryboardRecipeMaterializationReady(localAdvisoryRecipe()), true)
+
+    const blocked = analyzeStoryboardDirectorRecipe(corruptLineageRecipe())
+    assert.equal(blocked[0]?.severity, 'blocking')
+    assert.equal(isStoryboardRecipeMaterializationReady(corruptLineageRecipe()), false)
+  })
+
   test('advises on repetition, establishing coverage, reaction coverage, pacing, and naming', () => {
     const findings = analyzeStoryboardDirectorRecipe(advisoryFixture())
     assert.deepEqual(findings.map((item) => item.code), [
@@ -388,6 +419,10 @@ describe('Storyboard Director intelligence', () => {
       'OUTPUT_KIND_MOTION_MISMATCH',
       'PACING_DURATION_MISMATCH',
       'CHARACTER_NAME_INCONSISTENT',
+      'LOCAL_NARRATIVE_PURPOSE_REVIEW',
+      'LOCAL_COMPOSITION_HIERARCHY_REVIEW',
+      'LOCAL_CONTINUITY_CONFIRMATION',
+      'LOCAL_LIGHTING_MOTIVATION_REVIEW',
     ])
     assert.ok(findings.every((item) => item.findingId.startsWith('sdrf1_')))
   })
@@ -400,7 +435,7 @@ describe('Storyboard Director intelligence', () => {
       approvedShots: 6,
       coveredBeats: 5,
       blockingCount: 0,
-      advisoryCount: 1,
+      advisoryCount: 4,
       sourceFresh: true,
       ready: true,
     })
