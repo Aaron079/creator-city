@@ -21,10 +21,24 @@ const EXPECTED_CODES = {
 } as const
 
 export type StoryboardAdvisoryEvaluationCase = {
-  caseId: string
+  caseId: StoryboardAdvisoryEvaluationCaseId
   recipe: StoryboardDirectorRecipe
-  expectedCodes: string[]
+  expectedCodes: readonly StoryboardAdvisoryEvaluationCode[]
+  expectedSilence: boolean
 }
+
+export type StoryboardAdvisoryEvaluationCaseId =
+  | 'all-signals'
+  | 'narrative-only'
+  | 'composition-only'
+  | 'continuity-only'
+  | 'lighting-only'
+  | 'no-approved-stages'
+  | 'no-real-evidence'
+  | 'decision-scope-change'
+
+export type StoryboardAdvisoryEvaluationCode =
+  (typeof EXPECTED_CODES)[keyof typeof EXPECTED_CODES]
 
 type FixtureSignals = {
   narrative?: boolean
@@ -32,7 +46,7 @@ type FixtureSignals = {
   continuity?: boolean
   lighting?: boolean
   approved?: boolean
-  realEvidence?: boolean
+  evidence?: boolean
 }
 
 function sourceFor(caseId: string): CreatorSkillSourceNode {
@@ -66,12 +80,11 @@ function evidence(
   evidenceId: string,
   lineStart: number,
   lineEnd: number,
-  realEvidence: boolean,
 ): CreatorSkillEvidence {
   return {
     evidenceId,
     ruleId: 'owned-advisory-evaluation-rule',
-    sourceNodeId: realEvidence ? source.id : `${source.id}-unmatched`,
+    sourceNodeId: source.id,
     lineStart,
     lineEnd,
     excerpt: source.prompt,
@@ -79,19 +92,13 @@ function evidence(
   }
 }
 
-function expectedCodes(signals: FixtureSignals): string[] {
-  return [
-    signals.narrative ? EXPECTED_CODES.narrative : null,
-    signals.composition ? EXPECTED_CODES.composition : null,
-    signals.continuity ? EXPECTED_CODES.continuity : null,
-    signals.lighting ? EXPECTED_CODES.lighting : null,
-  ].filter((code): code is string => Boolean(code))
-}
-
-function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDirectorRecipe {
+function evaluationRecipe(
+  caseId: StoryboardAdvisoryEvaluationCaseId,
+  signals: FixtureSignals,
+): StoryboardDirectorRecipe {
   const sourceNode = sourceFor(caseId)
   const approved = signals.approved !== false
-  const realEvidence = signals.realEvidence !== false
+  const hasEvidence = signals.evidence !== false
   const stageStatus: StoryboardDirectorStageStatus = approved ? 'approved' : 'needs-review'
   const decision = approved ? 'approved' : 'pending'
   const sceneId = `evaluation-scene-${caseId}`
@@ -104,8 +111,12 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
     location: signals.lighting ? 'OWNED STUDIO' : undefined,
     timeOfDay: signals.lighting ? 'DAY' : undefined,
     characters: signals.composition ? ['Avery', 'Blake'] : ['Avery'],
-    actionSummary: 'Avery studies the storyboard at the worktable.',
-    sourceText: sourceNode.prompt,
+    actionSummary: signals.narrative
+      ? 'Avery must secure approval for the final animation pitch.'
+      : 'Avery studies the storyboard at the worktable.',
+    sourceText: signals.narrative
+      ? `${sourceNode.prompt}\nAvery prepares the final animation pitch for approval.`
+      : sourceNode.prompt,
     lineStart: 1,
     lineEnd: 2,
     reviewStatus: 'pending',
@@ -115,9 +126,11 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
     sceneId,
     order: 1,
     type: signals.narrative ? 'reaction' : 'action',
-    sourceText: 'Avery studies the storyboard at the worktable.',
+    sourceText: signals.narrative
+      ? 'The planned pitch is rejected, and Avery reacts to the sudden change in purpose.'
+      : 'Avery studies the storyboard at the worktable.',
     summary: signals.narrative
-      ? 'Avery reacts to the storyboard decision.'
+      ? 'Avery reacts to the rejected pitch, shifting from presentation to recovery.'
       : 'Avery studies the storyboard.',
     lineStart: 2,
     lineEnd: 2,
@@ -153,7 +166,9 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
       status: stageStatus,
       generation: 1,
       sourceFingerprint: `csf1_evaluation_${caseId}`,
-      result: result([evidence(sourceNode, `scene-evidence-${caseId}`, 1, 2, realEvidence)]),
+      result: result(hasEvidence
+        ? [evidence(sourceNode, `scene-evidence-${caseId}`, 1, 2)]
+        : []),
       drafts: [scene],
       approvedArtifact: null,
       staleResult: null,
@@ -162,7 +177,9 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
       status: stageStatus,
       generation: 1,
       sourceFingerprint: `csf1_evaluation_${caseId}`,
-      result: result([evidence(sourceNode, `beat-evidence-${caseId}`, 2, 2, realEvidence)]),
+      result: result(hasEvidence
+        ? [evidence(sourceNode, `beat-evidence-${caseId}`, 2, 2)]
+        : []),
       drafts: [beat],
       approvedArtifact: null,
       staleResult: null,
@@ -171,9 +188,9 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
       status: stageStatus,
       generation: 1,
       sourceFingerprint: `csf1_evaluation_${caseId}`,
-      result: result(shots.map((shot) => (
-        evidence(sourceNode, `shot-evidence-${caseId}-${shot.order}`, 2, 2, realEvidence)
-      ))),
+      result: result(hasEvidence
+        ? shots.map((shot) => evidence(sourceNode, `shot-evidence-${caseId}-${shot.order}`, 2, 2))
+        : []),
       drafts: shots,
       approvedArtifact: null,
       staleResult: null,
@@ -195,58 +212,43 @@ function evaluationRecipe(caseId: string, signals: FixtureSignals): StoryboardDi
   }
 }
 
-export function allApprovedEvidenceIds(recipe: StoryboardDirectorRecipe): string[] {
+export function allApprovedEvidenceIds(recipe: StoryboardDirectorRecipe): ReadonlySet<string> {
   const stages = [recipe.scene, recipe.beat, recipe.shot]
-  return [...new Set(stages.flatMap((stage) => (
-    stage.status === 'approved' ? stage.result?.evidence.map((item) => item.evidenceId) ?? [] : []
-  )))].sort()
+  return new Set(stages.flatMap((stage) => stage.result?.evidence.map((item) => item.evidenceId) ?? []))
 }
 
-export const STORYBOARD_ADVISORY_EVALUATION_CASES: readonly StoryboardAdvisoryEvaluationCase[] = [
-  {
-    caseId: 'all-signals',
-    recipe: evaluationRecipe('all-signals', {
-      narrative: true, composition: true, continuity: true, lighting: true,
-    }),
-    expectedCodes: expectedCodes({ narrative: true, composition: true, continuity: true, lighting: true }),
-  },
-  {
-    caseId: 'narrative-only',
-    recipe: evaluationRecipe('narrative-only', { narrative: true }),
-    expectedCodes: expectedCodes({ narrative: true }),
-  },
-  {
-    caseId: 'composition-only',
-    recipe: evaluationRecipe('composition-only', { composition: true }),
-    expectedCodes: expectedCodes({ composition: true }),
-  },
-  {
-    caseId: 'continuity-only',
-    recipe: evaluationRecipe('continuity-only', { continuity: true }),
-    expectedCodes: expectedCodes({ continuity: true }),
-  },
-  {
-    caseId: 'lighting-only',
-    recipe: evaluationRecipe('lighting-only', { lighting: true }),
-    expectedCodes: expectedCodes({ lighting: true }),
-  },
-  {
-    caseId: 'no-approved-stages',
-    recipe: evaluationRecipe('no-approved-stages', {
+function evaluationCase(
+  caseId: StoryboardAdvisoryEvaluationCaseId,
+  signals: FixtureSignals,
+  expectedCodes: readonly StoryboardAdvisoryEvaluationCode[],
+  expectedSilence = expectedCodes.length === 0,
+): StoryboardAdvisoryEvaluationCase {
+  return {
+    caseId,
+    recipe: evaluationRecipe(caseId, signals),
+    expectedCodes,
+    expectedSilence,
+  }
+}
+
+export const STORYBOARD_ADVISORY_EVALUATION_CASES = Object.freeze([
+  evaluationCase('all-signals', {
+    narrative: true, composition: true, continuity: true, lighting: true,
+  }, [
+    EXPECTED_CODES.narrative,
+    EXPECTED_CODES.composition,
+    EXPECTED_CODES.continuity,
+    EXPECTED_CODES.lighting,
+  ]),
+  evaluationCase('narrative-only', { narrative: true }, [EXPECTED_CODES.narrative]),
+  evaluationCase('composition-only', { composition: true }, [EXPECTED_CODES.composition]),
+  evaluationCase('continuity-only', { continuity: true }, [EXPECTED_CODES.continuity]),
+  evaluationCase('lighting-only', { lighting: true }, [EXPECTED_CODES.lighting]),
+  evaluationCase('no-approved-stages', {
       narrative: true, composition: true, continuity: true, lighting: true, approved: false,
-    }),
-    expectedCodes: [],
-  },
-  {
-    caseId: 'no-real-evidence',
-    recipe: evaluationRecipe('no-real-evidence', {
-      narrative: true, composition: true, continuity: true, lighting: true, realEvidence: false,
-    }),
-    expectedCodes: [],
-  },
-  {
-    caseId: 'decision-scope-change',
-    recipe: evaluationRecipe('decision-scope-change', { narrative: true }),
-    expectedCodes: expectedCodes({ narrative: true }),
-  },
-]
+  }, []),
+  evaluationCase('no-real-evidence', {
+    narrative: true, composition: true, continuity: true, lighting: true, evidence: false,
+  }, []),
+  evaluationCase('decision-scope-change', { narrative: true }, [EXPECTED_CODES.narrative]),
+] satisfies readonly StoryboardAdvisoryEvaluationCase[])
