@@ -79,10 +79,14 @@ test('uses the narrative-only sample for an explicit purpose-change review', () 
 })
 
 test('measures the owned advisory quality gate with a scoped decision lifecycle', () => {
-  const results = STORYBOARD_ADVISORY_EVALUATION_CASES.map((evaluationCase) => ({
-    evaluationCase,
-    output: evaluateStoryboardDirectorAdvisories(evaluationCase.recipe),
-  }))
+  const results = STORYBOARD_ADVISORY_EVALUATION_CASES.map((evaluationCase) => {
+    const output = evaluateStoryboardDirectorAdvisories(evaluationCase.recipe)
+    const repeatedOutput = evaluateStoryboardDirectorAdvisories(evaluationCase.recipe)
+
+    assert.deepEqual(repeatedOutput, output, `${evaluationCase.caseId} should evaluate deterministically`)
+
+    return { evaluationCase, output }
+  })
 
   for (const { evaluationCase, output } of results) {
     const findings = output.findings
@@ -97,10 +101,12 @@ test('measures the owned advisory quality gate with a scoped decision lifecycle'
 
     const approvedEvidenceIds = allApprovedEvidenceIds(evaluationCase.recipe)
     for (const finding of findings) {
+      assert.equal(finding.severity, 'advisory')
       assert.ok(finding.advisory, `${evaluationCase.caseId} should preserve advisory identity`)
       assert.match(finding.findingId, /^sdrf1_/)
       assert.match(finding.advisory.inputFingerprint, /^sdra1_/)
       assert.equal(finding.advisory.selectionFingerprint, output.receipt.selectionFingerprint)
+      assert.ok(finding.advisory.ruleIds.length > 0)
       assert.ok(finding.advisory.ruleIds.every((ruleId) => output.receipt.recordIds.includes(ruleId)))
       assert.ok(finding.evidenceIds.length > 0)
       assert.ok(finding.evidenceIds.every((evidenceId) => approvedEvidenceIds.has(evidenceId)))
@@ -111,18 +117,18 @@ test('measures the owned advisory quality gate with a scoped decision lifecycle'
     ({ evaluationCase }) => evaluationCase.caseId === 'decision-scope-change',
   )!
   const decisionFinding = decisionCase.output.findings[0]!
-  const reviewedRecipe = setStoryboardAdvisoryDecision(
+  const ignoredRecipe = setStoryboardAdvisoryDecision(
     decisionCase.evaluationCase.recipe,
     decisionFinding,
-    'reviewed',
+    'ignored',
     '2026-08-13T00:00:00.000Z',
   )
-  const reviewedFinding = evaluateStoryboardDirectorAdvisories(reviewedRecipe).findings[0]!
-  assert.equal(reviewedFinding.advisory?.handling, 'reviewed')
+  const ignoredFinding = evaluateStoryboardDirectorAdvisories(ignoredRecipe).findings[0]!
+  assert.equal(ignoredFinding.advisory?.handling, 'ignored')
 
   const changedSourceRecipe = {
-    ...reviewedRecipe,
-    sourceFingerprint: `${reviewedRecipe.sourceFingerprint}-source-change`,
+    ...ignoredRecipe,
+    sourceFingerprint: `${ignoredRecipe.sourceFingerprint}-source-change`,
   }
   const reopenedFinding = evaluateStoryboardDirectorAdvisories(changedSourceRecipe).findings[0]!
   assert.equal(reopenedFinding.advisory?.handling, 'open')
@@ -151,7 +157,7 @@ test('measures the owned advisory quality gate with a scoped decision lifecycle'
       evaluationCase.expectedSilence && output.findings.length === 0
     )).length,
     decisionInvalidationCount: Number(
-      reviewedFinding.advisory?.handling === 'reviewed'
+      ignoredFinding.advisory?.handling === 'ignored'
       && reopenedFinding.advisory?.handling === 'open',
     ),
   }
