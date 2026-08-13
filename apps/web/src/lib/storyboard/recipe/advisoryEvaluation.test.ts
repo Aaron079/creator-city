@@ -21,11 +21,26 @@ test('defines the deterministic owned storyboard advisory evaluation matrix', ()
     ],
   )
   assert.equal(allApprovedEvidenceIds(STORYBOARD_ADVISORY_EVALUATION_CASES[0]!.recipe).size > 0, true)
+  const noApprovedStages = STORYBOARD_ADVISORY_EVALUATION_CASES.find(
+    (evaluationCase) => evaluationCase.caseId === 'no-approved-stages',
+  )!
+  assert.equal(allApprovedEvidenceIds(noApprovedStages.recipe).size, 0)
   assert.deepEqual(
     STORYBOARD_ADVISORY_EVALUATION_CASES.filter((evaluationCase) => evaluationCase.expectedSilence)
       .map((evaluationCase) => evaluationCase.caseId),
     ['no-approved-stages', 'no-real-evidence'],
   )
+})
+
+test('keeps the owned evaluation matrix immutable for consumers', () => {
+  const allSignals = STORYBOARD_ADVISORY_EVALUATION_CASES[0]!
+  assert.equal(Object.isFrozen(STORYBOARD_ADVISORY_EVALUATION_CASES), true)
+  assert.equal(Object.isFrozen(allSignals), true)
+  assert.equal(Object.isFrozen(allSignals.expectedCodes), true)
+  assert.equal(Object.isFrozen(allSignals.recipe), true)
+  assert.throws(() => {
+    ;(allSignals.expectedCodes as string[]).push('MUTATED')
+  }, TypeError)
 })
 
 test('isolates owned advisory signals and keeps silent cases silent', () => {

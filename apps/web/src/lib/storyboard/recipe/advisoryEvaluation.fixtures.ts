@@ -214,7 +214,11 @@ function evaluationRecipe(
 
 export function allApprovedEvidenceIds(recipe: StoryboardDirectorRecipe): ReadonlySet<string> {
   const stages = [recipe.scene, recipe.beat, recipe.shot]
-  return new Set(stages.flatMap((stage) => stage.result?.evidence.map((item) => item.evidenceId) ?? []))
+  return new Set(stages.flatMap((stage) => (
+    stage.status === 'approved'
+      ? stage.result?.evidence.map((item) => item.evidenceId) ?? []
+      : []
+  )))
 }
 
 function evaluationCase(
@@ -231,7 +235,17 @@ function evaluationCase(
   }
 }
 
-export const STORYBOARD_ADVISORY_EVALUATION_CASES = Object.freeze([
+function freezeFixture<T>(fixture: T): Readonly<T> {
+  if (fixture && typeof fixture === 'object' && !Object.isFrozen(fixture)) {
+    Object.freeze(fixture)
+    for (const value of Object.values(fixture)) {
+      freezeFixture(value)
+    }
+  }
+  return fixture
+}
+
+export const STORYBOARD_ADVISORY_EVALUATION_CASES = freezeFixture([
   evaluationCase('all-signals', {
     narrative: true, composition: true, continuity: true, lighting: true,
   }, [
