@@ -1213,7 +1213,6 @@ export function setStoryboardAdvisoryDecision(
   return {
     ...recipe,
     advisoryDecisions,
-    audit: { ...recipe.audit, updatedAt: now },
   }
 }
 
@@ -1231,7 +1230,6 @@ export function restoreStoryboardAdvisory(
   return {
     ...recipe,
     advisoryDecisions,
-    audit: { ...recipe.audit, updatedAt: now },
   }
 }
 

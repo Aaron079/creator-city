@@ -146,11 +146,16 @@ export function createStoryboardDirectorAdvisoryId(inputFingerprint: string) {
 }
 
 /**
- * Sketch boards store this revision, calculated without the board itself, so
- * persisted board metadata can never participate in its own identity.
+ * Sketch boards use the V2-compatible Recipe projection. Advisory decisions
+ * describe reviewer handling, not the approved content rendered into a board.
+ * Keeping them out preserves valid V2 boards during the V3 metadata upgrade.
  */
 export function createStoryboardDirectorRecipeSketchRevision(
   recipe: StoryboardDirectorRecipe,
 ) {
-  return createStoryboardDirectorRecipeRevision({ ...recipe, sketchBoard: null })
+  const sketchRecipe = { ...recipe } as Record<string, unknown>
+  delete sketchRecipe.advisoryDecisions
+  delete sketchRecipe.sketchBoard
+  sketchRecipe.schemaVersion = 2
+  return createStoryboardDirectorRecipeRevision(sketchRecipe as unknown as StoryboardDirectorRecipe)
 }

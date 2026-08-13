@@ -353,7 +353,7 @@ describe('Storyboard Director Recipe progression', () => {
 
     assert.equal(recipe.advisoryDecisions.length, 0)
     assert.equal(reviewed.advisoryDecisions[0]?.decision, 'reviewed')
-    assert.equal(reviewed.audit.updatedAt, LATER_TIME)
+    assert.equal(reviewed.audit.updatedAt, ISO_TIME)
     assert.equal(reviewed.shot.status, 'approved')
     assert.equal(reviewed, setStoryboardAdvisoryDecision(reviewed, target, 'reviewed', ISO_TIME))
 
@@ -365,9 +365,31 @@ describe('Storyboard Director Recipe progression', () => {
 
     const restored = restoreStoryboardAdvisory(ignored, target, LATER_TIME)
     assert.deepEqual(restored.advisoryDecisions, [withOther.advisoryDecisions[1]])
-    assert.equal(restored.audit.updatedAt, LATER_TIME)
+    assert.equal(restored.audit.updatedAt, ISO_TIME)
     assert.equal(restored.shot.status, 'approved')
     assert.equal(restored, restoreStoryboardAdvisory(restored, target, ISO_TIME))
+  })
+
+  test('keeps a fresh sketch board current across local advisory review decisions', () => {
+    const board = createRecipeSketchBoard(completedRecipe(), ISO_TIME)
+    const target = localAdvisory()
+    const revision = board.sketchBoard?.recipeRevision
+    assert.ok(revision)
+
+    const reviewed = setStoryboardAdvisoryDecision(board, target, 'reviewed', LATER_TIME)
+    const ignored = setStoryboardAdvisoryDecision(reviewed, target, 'ignored', ISO_TIME)
+    const restored = restoreStoryboardAdvisory(ignored, target, LATER_TIME)
+
+    for (const recipe of [reviewed, ignored, restored]) {
+      assert.equal(recipe.shot.status, 'approved')
+      assert.equal(recipe.sketchBoard?.recipeRevision, revision)
+      const read = readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(recipe))
+      assert.equal(read.status, 'valid')
+      if (read.status === 'valid') {
+        assert.equal(read.recipe.shot.status, 'approved')
+        assert.equal(read.recipe.sketchBoard?.recipeRevision, revision)
+      }
+    }
   })
 
   test('start runs only public script-segmentation and leaves every scene pending', () => {

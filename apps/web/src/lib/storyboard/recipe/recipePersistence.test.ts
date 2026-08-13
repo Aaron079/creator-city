@@ -241,6 +241,28 @@ describe('Storyboard Director Recipe identity', () => {
     }
   })
 
+  test('retains a valid version-2 sketch board when upgrading to version 3', () => {
+    const legacy = structuredClone(validRecipeFixture()) as unknown as Record<string, unknown>
+    legacy.schemaVersion = 2
+    delete legacy.advisoryDecisions
+    legacy.sketchBoard = freshSketchBoardFixture(legacy as StoryboardDirectorRecipe)
+    const legacyRevision = (legacy.sketchBoard as { recipeRevision: string }).recipeRevision
+
+    const read = readStoryboardDirectorRecipe(metadataWith(legacy))
+
+    assert.equal(read.status, 'valid')
+    if (read.status === 'valid') {
+      assert.equal(read.recipe.schemaVersion, 3)
+      assert.deepEqual(read.recipe.advisoryDecisions, [])
+      assert.ok(read.recipe.sketchBoard)
+      assert.equal(read.recipe.sketchBoard.recipeRevision, legacyRevision)
+      assert.equal(
+        read.recipe.sketchBoard.recipeRevision,
+        createStoryboardDirectorRecipeSketchRevision(read.recipe),
+      )
+    }
+  })
+
   test('is deterministic and ignores title and metadata audit time', () => {
     const first = createStoryboardDirectorRecipeIdentity(context, source)
     const second = createStoryboardDirectorRecipeIdentity(context, {
@@ -329,6 +351,22 @@ describe('Storyboard Director Recipe identity', () => {
     recipe.sketchBoard = sketchBoardFixture(recipe)
 
     assert.equal(createStoryboardDirectorRecipeSketchRevision(recipe), baseRevision)
+  })
+
+  test('changes the sketch board revision for approved shot content changes', () => {
+    const recipe = validRecipeFixture()
+    const baseRevision = createStoryboardDirectorRecipeSketchRevision(recipe)
+    const changed = {
+      ...recipe,
+      shot: {
+        ...recipe.shot,
+        drafts: recipe.shot.drafts.map((shot) => (
+          shot.shotId === 'shot-1' ? { ...shot, action: 'Mara locks the case.' } : shot
+        )),
+      },
+    }
+
+    assert.notEqual(createStoryboardDirectorRecipeSketchRevision(changed), baseRevision)
   })
 
   test('creates deterministic materialization identities from every identity input', () => {
