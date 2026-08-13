@@ -161,6 +161,25 @@ function completedRecipe() {
   return approveShotStage(decideAll(shotReview, 'shot-review', 'approved'), ISO_TIME)
 }
 
+function localAdvisoryRecipe() {
+  const recipe = completedRecipe()
+  return {
+    ...recipe,
+    scene: {
+      ...recipe.scene,
+      drafts: recipe.scene.drafts.map((item) => item.sceneId === 'scene-001'
+        ? { ...item, characters: ['Jose', 'Mara'] }
+        : item),
+    },
+    beat: {
+      ...recipe.beat,
+      drafts: recipe.beat.drafts.map((item) => item.sceneId === 'scene-001'
+        ? { ...item, type: 'turn' }
+        : item),
+    },
+  }
+}
+
 function partialBatchRecipe() {
   const recipe = completedRecipe()
   const plans = planStoryboardDirectorDraftNodes(recipe, []).create
@@ -234,6 +253,7 @@ function renderedHarnessSource() {
   const panelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorPanel.tsx')
   const recipePanelPath = path.resolve(process.cwd(), 'src/components/create/StoryboardDirectorRecipePanel.tsx')
   const completed = JSON.stringify(completedRecipe())
+  const localAdvisory = JSON.stringify(localAdvisoryRecipe())
   const stale = JSON.stringify(invalidateRecipeAfter(completedRecipe(), 'source', ISO_TIME))
   const replacement = JSON.stringify({
     ...completedRecipe(),
@@ -260,6 +280,7 @@ function renderedHarnessSource() {
 
     const FIXTURES = {
       completed: ${completed},
+      localAdvisory: ${localAdvisory},
       stale: ${stale},
       replacement: ${replacement},
       sceneReview: ${sceneReview},
@@ -659,7 +680,7 @@ async function selectReviewStage(page: Page, label: '场景' | '节拍' | '镜�
 }
 
 type RenderedHarness = {
-  mountRecipe: (kind?: 'completed' | 'replacement' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch') => void
+  mountRecipe: (kind?: 'completed' | 'localAdvisory' | 'replacement' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch') => void
   mountEmergencyRecipe: () => void
   replaceRecipe: (kind?: 'completed' | 'replacement') => void
   clickDetachedConfirm: () => void
@@ -685,7 +706,7 @@ type RenderedHarness = {
 
 async function mountRenderedRecipe(
   page: Page,
-  kind: 'completed' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch' = 'completed',
+  kind: 'completed' | 'localAdvisory' | 'stale' | 'sceneReview' | 'beatReview' | 'partialBatch' = 'completed',
 ) {
   await page.evaluate((fixture) => (
     window as unknown as { __directorHarness: RenderedHarness }
@@ -824,11 +845,11 @@ describe('Storyboard Director panel state', () => {
       title: 'Pilot Recipe',
       status: 'approved',
     }]
-    const cleanDraft = recipe.shot.drafts.find((draft) => (
+    const advisoryDraft = recipe.shot.drafts.find((draft) => (
       draft.decision === 'approved'
       && !analyzeStoryboardDirectorRecipe(recipe).some((finding) => finding.shotId === draft.shotId)
     ))
-    assert.ok(cleanDraft)
+    assert.ok(advisoryDraft)
     const shot = {
       id: 'card-1',
       index: 0,
@@ -839,18 +860,18 @@ describe('Storyboard Director panel state', () => {
         medium: 'MS',
         close: 'CU',
         'extreme-close': 'ECU',
-      }[cleanDraft.suggestedShotSize],
-      durationSec: cleanDraft.duration,
-      directorNote: `${cleanDraft.objective}\n${cleanDraft.action}`.trim(),
+      }[advisoryDraft.suggestedShotSize],
+      durationSec: advisoryDraft.duration,
+      directorNote: `${advisoryDraft.objective}\n${advisoryDraft.action}`.trim(),
       nodeIds: [],
       createdAt: ISO_TIME,
       updatedAt: ISO_TIME,
       recipe: {
         recipeId: recipe.recipeId,
         sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
-        sceneId: cleanDraft.sceneId,
-        ...(cleanDraft.beatId ? { beatId: cleanDraft.beatId } : {}),
-        shotId: cleanDraft.shotId,
+        sceneId: advisoryDraft.sceneId,
+        ...(advisoryDraft.beatId ? { beatId: advisoryDraft.beatId } : {}),
+        shotId: advisoryDraft.shotId,
       },
     }
 
@@ -861,7 +882,7 @@ describe('Storyboard Director panel state', () => {
     assert.equal(findStoryboardDirectorRecipeControl(availableRecipes, 'foreign'), null)
     assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers(shot, recipe), {
       synchronization: 'synchronized',
-      quality: 'clean',
+      quality: 'advisory',
     })
     assert.deepEqual(deriveStoryboardDirectorShotRecipeMarkers({
       ...shot,
@@ -879,7 +900,7 @@ describe('Storyboard Director panel state', () => {
       ...recipe,
       shot: {
         ...recipe.shot,
-        drafts: recipe.shot.drafts.map((draft) => draft.shotId === cleanDraft.shotId
+        drafts: recipe.shot.drafts.map((draft) => draft.shotId === advisoryDraft.shotId
           ? { ...draft, subject: '' }
           : draft),
       },
@@ -894,12 +915,12 @@ describe('Storyboard Director panel state', () => {
     ))
     assert.ok(sameSceneDrafts.length >= 2)
     const previousDraft = sameSceneDrafts[0]!
-    const advisoryDraft = sameSceneDrafts[1]!
+    const duplicateAdvisoryDraft = sameSceneDrafts[1]!
     const advisory = {
       ...recipe,
       shot: {
         ...recipe.shot,
-        drafts: recipe.shot.drafts.map((draft) => draft.shotId === advisoryDraft.shotId
+        drafts: recipe.shot.drafts.map((draft) => draft.shotId === duplicateAdvisoryDraft.shotId
           ? {
               ...draft,
               objective: previousDraft.objective,
@@ -914,9 +935,9 @@ describe('Storyboard Director panel state', () => {
       recipe: {
         recipeId: recipe.recipeId,
         sourceArtifactId: recipe.shot.approvedArtifact!.artifactId,
-        sceneId: advisoryDraft.sceneId,
-        ...(advisoryDraft.beatId ? { beatId: advisoryDraft.beatId } : {}),
-        shotId: advisoryDraft.shotId,
+        sceneId: duplicateAdvisoryDraft.sceneId,
+        ...(duplicateAdvisoryDraft.beatId ? { beatId: duplicateAdvisoryDraft.beatId } : {}),
+        shotId: duplicateAdvisoryDraft.shotId,
       },
     }, advisory)?.quality, 'blocking')
 
@@ -949,7 +970,7 @@ describe('Storyboard Director panel state', () => {
       ...recipe,
       findings: [finding('advisory', { sceneId: 'foreign-scene' })],
     }
-    assert.equal(deriveStoryboardDirectorShotRecipeMarkers(shot, foreignScope)?.quality, 'clean')
+    assert.equal(deriveStoryboardDirectorShotRecipeMarkers(shot, foreignScope)?.quality, 'advisory')
 
     const invalidated = updateRecipeDraft(recipe, 'scene-review', recipe.scene.drafts[0]!.sceneId, {
       heading: 'INT. INVALIDATED LAB - NIGHT',
@@ -1153,6 +1174,28 @@ describe('Storyboard Director Recipe actions', () => {
 })
 
 describe('Storyboard Director rendered interactions', () => {
+  test('renders local advisory evidence and restores an ignored advisory without changing stages', async () => {
+    const page = await renderPage()
+    try {
+      await mountRenderedRecipe(page, 'localAdvisory')
+      await page.getByText('建议审阅', { exact: true }).waitFor()
+      await page.getByText('LOCAL_CONTINUITY_CONFIRMATION').click()
+      await page.getByRole('button', { name: '标记已审阅' }).waitFor()
+      await page.getByRole('button', { name: '忽略本条' }).click()
+      await page.getByText('本地已审核规则').waitFor()
+      const advisoryInspector = await page.locator('section').filter({ hasText: '本地已审核规则' }).textContent()
+      assert.match(advisoryInspector ?? '', /ckr1_/)
+      assert.equal((await renderedRecipe(page)).advisoryDecisions.length, 1)
+
+      await page.getByRole('button', { name: '恢复提示' }).click()
+      const restored = await renderedRecipe(page)
+      assert.deepEqual(restored.advisoryDecisions, [])
+      assert.equal(restored.shot.status, 'approved')
+    } finally {
+      await page.close()
+    }
+  })
+
   test('creates, locally adjusts, and restores a deterministic sketch board without a Provider action', async () => {
     const page = await renderPage()
     try {

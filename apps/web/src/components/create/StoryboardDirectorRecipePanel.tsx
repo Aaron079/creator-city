@@ -28,6 +28,8 @@ import {
   changeImpactForStage,
   moveRecipeDraft,
   rerunRecipeStage,
+  restoreStoryboardAdvisory,
+  setStoryboardAdvisoryDecision,
   setRecipeDecision,
   updateRecipeDraft,
   type StoryboardRecipeSkillRunner,
@@ -63,6 +65,7 @@ export type StoryboardDirectorRecipePanelProps = {
   onOpenRecipe: (controlNodeId: string) => void
   onCommitRecipe: (recipe: StoryboardDirectorRecipe) => void
   onFocusSource: (sourceNodeId: string) => void
+  onFocusShot?: (shotId: string) => void
   onMaterializeGrouped: (kinds: Array<'scene' | 'beat' | 'shot-plan'>) => void
   onSyncShotBoard: () => void
   onCreateSketchBoard: () => void
@@ -719,34 +722,67 @@ function RecipeEvidenceInspector({
   recipe,
   selectedFindingId,
   onSelectFinding,
+  onCommitRecipe,
+  onFocusShot,
 }: {
   recipe: StoryboardDirectorRecipe
   selectedFindingId: string | null
   onSelectFinding: (findingId: string | null) => void
+  onCommitRecipe: (recipe: StoryboardDirectorRecipe) => void
+  onFocusShot?: (shotId: string) => void
 }) {
   const findings = useMemo(() => analyzeStoryboardDirectorRecipe(recipe), [recipe])
-  const selected = findings.find((item) => item.findingId === selectedFindingId) ?? findings[0] ?? null
+  const visibleFindings = findings.filter((item) => item.advisory?.handling !== 'ignored')
+  const blockingFindings = visibleFindings.filter((item) => item.severity === 'blocking')
+  const regularAdvisories = visibleFindings.filter((item) => (
+    item.severity === 'advisory' && !item.advisory
+  ))
+  const localAdvisories = visibleFindings.filter((item) => Boolean(item.advisory))
+  const ignoredLocalAdvisories = findings.filter((item) => item.advisory?.handling === 'ignored')
+  const selected = findings.find((item) => item.findingId === selectedFindingId)
+    ?? visibleFindings[0]
+    ?? ignoredLocalAdvisories[0]
+    ?? null
   const evidence = [recipe.scene.result, recipe.beat.result, recipe.shot.result]
     .flatMap((result) => result?.evidence ?? [])
     .filter((item) => selected?.evidenceIds.includes(item.evidenceId))
+  const renderFinding = (finding: StoryboardDirectorFinding) => (
+    <button key={finding.findingId} type="button" onClick={() => onSelectFinding(finding.findingId)} className={`w-full px-4 py-3 text-left transition ${selected?.findingId === finding.findingId ? 'bg-white/[0.07]' : 'hover:bg-white/[0.035]'}`}>
+      <span className={`text-[9px] font-semibold ${finding.severity === 'blocking' ? 'text-rose-200' : finding.advisory ? 'text-cyan-100/75' : 'text-amber-200'}`}>{finding.severity === 'blocking' ? '阻塞' : finding.advisory ? '建议审阅' : '建议'} · {finding.code}</span>
+      <span className="mt-1 block break-words text-[10px] leading-5 text-white/58">{finding.message}</span>
+    </button>
+  )
   return (
     <aside className="flex h-full flex-col overflow-hidden border-l border-white/10 bg-white/[0.015]">
       <div className="flex h-12 flex-none items-center justify-between border-b border-white/[0.07] px-4">
         <h3 className="flex items-center gap-1.5 text-[10px] font-semibold text-white/55"><FileSearch size={13} aria-hidden="true" />证据与问题</h3>
-        <button type="button" disabled={findings.length === 0} onClick={() => onSelectFinding(nextUnresolvedFinding(findings, selected?.findingId ?? null)?.findingId ?? null)} className="h-7 rounded-md border border-white/10 px-2 text-[9px] text-white/50 disabled:opacity-30">下一个问题</button>
+        <button type="button" disabled={visibleFindings.length === 0} onClick={() => onSelectFinding(nextUnresolvedFinding(visibleFindings, selected?.findingId ?? null)?.findingId ?? null)} className="h-7 rounded-md border border-white/10 px-2 text-[9px] text-white/50 disabled:opacity-30">下一个问题</button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {findings.length === 0 ? <p className="px-4 py-6 text-[11px] text-white/30">当前没有 Intelligence 问题。</p> : null}
         <div className="divide-y divide-white/[0.06]">
-          {findings.map((finding) => (
-            <button key={finding.findingId} type="button" onClick={() => onSelectFinding(finding.findingId)} className={`w-full px-4 py-3 text-left transition ${selected?.findingId === finding.findingId ? 'bg-white/[0.07]' : 'hover:bg-white/[0.035]'}`}>
-              <span className={`text-[9px] font-semibold ${finding.severity === 'blocking' ? 'text-rose-200' : 'text-amber-200'}`}>{finding.severity === 'blocking' ? '阻塞' : '建议'} · {finding.code}</span>
-              <span className="mt-1 block break-words text-[10px] leading-5 text-white/58">{finding.message}</span>
-            </button>
-          ))}
+          {blockingFindings.map(renderFinding)}
+          {regularAdvisories.map(renderFinding)}
+          {localAdvisories.length > 0 ? <p className="border-y border-cyan-200/10 bg-cyan-200/[0.035] px-4 py-2 text-[9px] font-semibold text-cyan-100/70">建议审阅</p> : null}
+          {localAdvisories.map(renderFinding)}
+          {ignoredLocalAdvisories.length > 0 ? <button type="button" onClick={() => onSelectFinding(ignoredLocalAdvisories[0]!.findingId)} className="w-full border-y border-white/[0.06] px-4 py-2 text-left text-[9px] font-semibold text-white/38 hover:bg-white/[0.035]">已忽略建议 · {ignoredLocalAdvisories.length}</button> : null}
         </div>
         {selected ? (
           <section className="border-t border-white/[0.08] px-4 py-4">
+            {selected.advisory ? (
+              <div className="mb-4 border-b border-cyan-200/10 pb-4">
+                <p className="text-[9px] font-semibold text-cyan-100/70">本地已审核规则</p>
+                <p className="mt-1 text-[10px] text-white/58">{selected.advisory.ruleIds.join(' · ')}</p>
+                <p className="mt-1 font-mono text-[9px] text-white/32">{selected.advisory.selectionFingerprint}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selected.advisory.handling === 'ignored' ? <button type="button" onClick={() => onCommitRecipe(restoreStoryboardAdvisory(recipe, selected, new Date().toISOString()))} className="h-7 rounded-md border border-cyan-200/20 px-2 text-[9px] font-semibold text-cyan-100/80">恢复提示</button> : <>
+                    <button type="button" onClick={() => onCommitRecipe(setStoryboardAdvisoryDecision(recipe, selected, 'reviewed', new Date().toISOString()))} className="h-7 rounded-md border border-cyan-200/20 px-2 text-[9px] font-semibold text-cyan-100/80">标记已审阅</button>
+                    <button type="button" onClick={() => onCommitRecipe(setStoryboardAdvisoryDecision(recipe, selected, 'ignored', new Date().toISOString()))} className="h-7 rounded-md border border-white/10 px-2 text-[9px] text-white/50">忽略本条</button>
+                  </>}
+                  {selected.shotId && onFocusShot ? <button type="button" onClick={() => onFocusShot(selected.shotId!)} className="h-7 rounded-md border border-white/10 px-2 text-[9px] text-white/50">跳到关联镜头</button> : null}
+                </div>
+              </div>
+            ) : null}
             <p className="text-[9px] font-semibold text-white/30">证据</p>
             {evidence.length === 0 ? <p className="mt-2 text-[10px] text-white/28">此问题没有行级证据。</p> : evidence.map((item) => (
               <blockquote key={item.evidenceId} className="mt-3 border-l border-cyan-200/25 pl-3 text-[10px] leading-5 text-white/52">
@@ -805,6 +841,7 @@ export function StoryboardDirectorRecipePanel({
   onOpenRecipe,
   onCommitRecipe,
   onFocusSource,
+  onFocusShot,
   onMaterializeGrouped,
   onSyncShotBoard,
   onCreateSketchBoard,
@@ -946,7 +983,7 @@ export function StoryboardDirectorRecipePanel({
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)_300px]">
         <div className={`${regionState.region === 'stages' ? 'block' : 'hidden'} min-h-0 lg:block`}><StageNavigation recipe={recipe} selectedStage={selectedStage} onSelect={(stage) => { setSelectedStage(stage); setRegionState({ region: 'review' }) }} /></div>
         <div className={`${regionState.region === 'review' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeReviewEditor key={recipe.recipeId} recipe={recipe} selectedStage={selectedStage} onCommit={onCommitRecipe} onPendingActionChange={handlePendingActionChange} /></div>
-        <div className={`${regionState.region === 'evidence' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeEvidenceInspector recipe={recipe} selectedFindingId={selectedFindingId} onSelectFinding={setSelectedFindingId} /></div>
+        <div className={`${regionState.region === 'evidence' ? 'block' : 'hidden'} min-h-0 lg:block`}><RecipeEvidenceInspector recipe={recipe} selectedFindingId={selectedFindingId} onSelectFinding={setSelectedFindingId} onCommitRecipe={onCommitRecipe} onFocusShot={onFocusShot} /></div>
       </div>
 
       {recipe.sketchBoard ? (

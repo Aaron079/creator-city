@@ -23,6 +23,7 @@ type AdvisoryCandidate = {
   ruleIds: string[]
   evidenceIds: string[]
   scope: Record<string, string>
+  findingScope: Pick<StoryboardDirectorFinding, 'sceneId' | 'beatId' | 'shotId'>
 }
 
 function approved<T extends { decision: string }>(
@@ -50,6 +51,7 @@ function advisoryFinding(
     code: candidate.code,
     message: candidate.message,
     evidenceIds: candidate.evidenceIds,
+    ...candidate.findingScope,
     advisory: {
       ruleIds: candidate.ruleIds,
       inputFingerprint,
@@ -105,6 +107,7 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
       ruleIds: narrativeRuleIds,
       evidenceIds: [narrativeBeat.beatId, narrativeShot.shotId],
       scope: { beatId: narrativeBeat.beatId, shotId: narrativeShot.shotId },
+      findingScope: { beatId: narrativeBeat.beatId, shotId: narrativeShot.shotId },
     })
   }
 
@@ -120,6 +123,7 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
       ruleIds: compositionRuleIds,
       evidenceIds: [compositionScene.sceneId, compositionShot.shotId],
       scope: { sceneId: compositionScene.sceneId, shotId: compositionShot.shotId },
+      findingScope: { sceneId: compositionScene.sceneId, shotId: compositionShot.shotId },
     })
   }
 
@@ -145,6 +149,10 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
         firstShotId: continuityShots[0]!.shotId,
         secondShotId: continuityShots[1]!.shotId,
       },
+      findingScope: {
+        sceneId: continuityScene.sceneId,
+        shotId: continuityShots[1]!.shotId,
+      },
     })
   }
 
@@ -160,6 +168,7 @@ export function evaluateStoryboardDirectorAdvisories(recipe: StoryboardDirectorR
       ruleIds: lightingRuleIds,
       evidenceIds: [lightingScene.sceneId, lightingShot.shotId],
       scope: { sceneId: lightingScene.sceneId, shotId: lightingShot.shotId },
+      findingScope: { sceneId: lightingScene.sceneId, shotId: lightingShot.shotId },
     })
   }
 

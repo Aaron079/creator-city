@@ -214,13 +214,13 @@ export function deriveStoryboardDirectorShotRecipeMarkers(
   ))
   const quality = findings.some((finding) => finding.severity === 'blocking')
     ? 'blocking'
-    : findings.some((finding) => finding.severity === 'advisory')
-      ? 'advisory'
-      : synchronization === 'stale'
-        || recipe.scene.status !== 'approved'
-        || recipe.beat.status !== 'approved'
-        || recipe.shot.status !== 'approved'
-        ? 'stale'
+    : synchronization === 'stale'
+      || recipe.scene.status !== 'approved'
+      || recipe.beat.status !== 'approved'
+      || recipe.shot.status !== 'approved'
+      ? 'stale'
+      : findings.some((finding) => finding.severity === 'advisory')
+        ? 'advisory'
         : 'clean'
   return { synchronization, quality }
 }
@@ -952,6 +952,10 @@ export function StoryboardDirectorPanel({
               onOpenRecipe={onOpenRecipe}
               onCommitRecipe={onCommitRecipe}
               onFocusSource={onFocusSource}
+              onFocusShot={(recipeShotId) => {
+                const shot = shots.find((item) => item.recipe?.shotId === recipeShotId)
+                if (shot) onActiveShotChange(shot.id)
+              }}
               onMaterializeGrouped={onMaterializeGrouped}
               onSyncShotBoard={onSyncShotBoard}
               onCreateSketchBoard={onCreateSketchBoard}

@@ -140,6 +140,7 @@ describe('Storyboard Director local advisories', () => {
       && /^ckr1_[0-9a-f]{8}$/.test(finding.advisory.selectionFingerprint)
       && /^sdrf1_[0-9a-f]{8}$/.test(finding.findingId)
       && finding.evidenceIds.length > 0
+      && Boolean(finding.shotId)
     )))
     assert.match(first.receipt.selectionFingerprint, /^ckr1_[0-9a-f]{8}$/)
     assert.match(
