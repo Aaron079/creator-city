@@ -5,6 +5,7 @@ import {
   STORYBOARD_ADVISORY_EVALUATION_CASES,
 } from './advisoryEvaluation.fixtures'
 import { evaluateStoryboardDirectorAdvisories } from './advisory'
+import { setStoryboardAdvisoryDecision } from './state-machine'
 
 test('defines the deterministic owned storyboard advisory evaluation matrix', () => {
   assert.deepEqual(
@@ -75,4 +76,92 @@ test('uses the narrative-only sample for an explicit purpose-change review', () 
     evaluateStoryboardDirectorAdvisories(narrativeOnly.recipe).findings.map((finding) => finding.code),
     ['LOCAL_NARRATIVE_PURPOSE_REVIEW'],
   )
+})
+
+test('measures the owned advisory quality gate with a scoped decision lifecycle', () => {
+  const results = STORYBOARD_ADVISORY_EVALUATION_CASES.map((evaluationCase) => ({
+    evaluationCase,
+    output: evaluateStoryboardDirectorAdvisories(evaluationCase.recipe),
+  }))
+
+  for (const { evaluationCase, output } of results) {
+    const findings = output.findings
+    assert.deepEqual(
+      findings.map((finding) => finding.code),
+      evaluationCase.expectedCodes,
+      evaluationCase.caseId,
+    )
+    assert.match(output.receipt.selectionFingerprint, /^ckr1_[0-9a-f]{8}$/)
+    assert.equal(output.receipt.allowedUse, 'retrieval')
+    assert.ok(output.receipt.recordIds.length > 0)
+
+    const approvedEvidenceIds = allApprovedEvidenceIds(evaluationCase.recipe)
+    for (const finding of findings) {
+      assert.ok(finding.advisory, `${evaluationCase.caseId} should preserve advisory identity`)
+      assert.match(finding.findingId, /^sdrf1_/)
+      assert.match(finding.advisory.inputFingerprint, /^sdra1_/)
+      assert.equal(finding.advisory.selectionFingerprint, output.receipt.selectionFingerprint)
+      assert.ok(finding.advisory.ruleIds.every((ruleId) => output.receipt.recordIds.includes(ruleId)))
+      assert.ok(finding.evidenceIds.length > 0)
+      assert.ok(finding.evidenceIds.every((evidenceId) => approvedEvidenceIds.has(evidenceId)))
+    }
+  }
+
+  const decisionCase = results.find(
+    ({ evaluationCase }) => evaluationCase.caseId === 'decision-scope-change',
+  )!
+  const decisionFinding = decisionCase.output.findings[0]!
+  const reviewedRecipe = setStoryboardAdvisoryDecision(
+    decisionCase.evaluationCase.recipe,
+    decisionFinding,
+    'reviewed',
+    '2026-08-13T00:00:00.000Z',
+  )
+  const reviewedFinding = evaluateStoryboardDirectorAdvisories(reviewedRecipe).findings[0]!
+  assert.equal(reviewedFinding.advisory?.handling, 'reviewed')
+
+  const changedSourceRecipe = {
+    ...reviewedRecipe,
+    sourceFingerprint: `${reviewedRecipe.sourceFingerprint}-source-change`,
+  }
+  const reopenedFinding = evaluateStoryboardDirectorAdvisories(changedSourceRecipe).findings[0]!
+  assert.equal(reopenedFinding.advisory?.handling, 'open')
+
+  // This case validates decision lineage, so it stays out of the content-finding total.
+  const contentResults = results.filter(
+    ({ evaluationCase }) => evaluationCase.caseId !== 'decision-scope-change',
+  )
+  const qualityGate = {
+    caseCount: results.length,
+    expectedFindingCount: contentResults.reduce(
+      (total, { evaluationCase }) => total + evaluationCase.expectedCodes.length,
+      0,
+    ),
+    emittedFindingCount: contentResults.reduce(
+      (total, { output }) => total + output.findings.length,
+      0,
+    ),
+    exactMatchCount: results.filter(({ evaluationCase, output }) => (
+      output.findings.length === evaluationCase.expectedCodes.length
+      && output.findings.every(
+        (finding, index) => finding.code === evaluationCase.expectedCodes[index],
+      )
+    )).length,
+    silenceMatchCount: results.filter(({ evaluationCase, output }) => (
+      evaluationCase.expectedSilence && output.findings.length === 0
+    )).length,
+    decisionInvalidationCount: Number(
+      reviewedFinding.advisory?.handling === 'reviewed'
+      && reopenedFinding.advisory?.handling === 'open',
+    ),
+  }
+
+  assert.deepEqual(qualityGate, {
+    caseCount: 8,
+    expectedFindingCount: 8,
+    emittedFindingCount: 8,
+    exactMatchCount: 8,
+    silenceMatchCount: 2,
+    decisionInvalidationCount: 1,
+  })
 })
