@@ -496,6 +496,13 @@ test("rejects empty, sparse, duplicate, and invalid domain queries", () => {
   assert.throws(() => resolve(sparse), TypeError);
   assert.throws(() => resolve(["cinematography", "cinematography"]), TypeError);
   assert.throws(() => resolve(["invalid-domain"]), TypeError);
+  assert.throws(() => resolveLocalCinematicKnowledge(
+    {
+      domains: ["cinematography"],
+      allowedUse: "retrieval",
+      unexpected: true,
+    } as unknown as Parameters<typeof resolveLocalCinematicKnowledge>[0],
+  ), TypeError);
 });
 
 test("maps every initial capability once to one existing owner", () => {

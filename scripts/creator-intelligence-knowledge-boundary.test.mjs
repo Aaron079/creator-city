@@ -19,6 +19,12 @@ const forbiddenImportSegments = new Set([
   'prisma',
   'wallet',
 ])
+const forbiddenNetworkModules = new Set([
+  'http',
+  'https',
+  'net',
+  'undici',
+])
 
 async function listTypeScriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -47,7 +53,18 @@ function moduleSpecifierViolatesBoundary(specifier) {
 
   return (
     normalizedSpecifier.includes('/api/generate/') ||
+    forbiddenNetworkModules.has(normalizedSpecifier.replace(/^node:/, '')) ||
     segments.some((segment) => forbiddenImportSegments.has(segment))
+  )
+}
+
+function isFetchExpression(expression) {
+  return (
+    (ts.isIdentifier(expression) && expression.text === 'fetch') ||
+    (ts.isPropertyAccessExpression(expression) &&
+      ts.isIdentifier(expression.expression) &&
+      expression.expression.text === 'globalThis' &&
+      expression.name.text === 'fetch')
   )
 }
 
@@ -82,8 +99,7 @@ test('creative knowledge production modules stay within static boundaries', asyn
 
       if (
         ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'fetch'
+        isFetchExpression(node.expression)
       ) {
         assert.fail(`${file.slice(repositoryRoot.length + 1)} must not call fetch`)
       }

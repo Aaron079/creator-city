@@ -63,6 +63,10 @@ function cloneSelectionQuery(value: unknown): CreativeKnowledgeSelectionQuery {
   }
 
   const query = value as object
+  const keys = Reflect.ownKeys(query)
+  if (keys.length !== 2 || !keys.every((key) => key === 'domains' || key === 'allowedUse')) {
+    fail('query must contain only domains and allowedUse')
+  }
   const domains = cloneQueryDomains(ownDataValue(query, 'domains', 'query.domains'))
   const allowedUse = ownDataValue(query, 'allowedUse', 'query.allowedUse')
   if (
