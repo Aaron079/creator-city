@@ -89,7 +89,7 @@ function shotDraft(index = 1): RecipeReviewItem<ShotPlanDraft> {
 function validRecipeFixture(): StoryboardDirectorRecipe {
   const identity = createStoryboardDirectorRecipeIdentity(context, source)
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     recipeId: identity.recipeId,
     projectId: context.projectId,
     workflowId: context.workflowId,
@@ -138,6 +138,7 @@ function validRecipeFixture(): StoryboardDirectorRecipe {
       sceneId: 'scene-1',
       evidenceIds: ['evidence-1'],
     }],
+    advisoryDecisions: [],
     storyboard: {
       version: '1',
       shots: [{
@@ -201,7 +202,7 @@ function freshSketchBoardFixture(recipe: StoryboardDirectorRecipe) {
 }
 
 function unsupportedVersionFixture() {
-  return metadataWith({ ...validRecipeFixture(), schemaVersion: 3 })
+  return metadataWith({ ...validRecipeFixture(), schemaVersion: 4 })
 }
 
 function assertInvalid(recipe: unknown) {
@@ -214,17 +215,29 @@ function assertInvalid(recipe: unknown) {
 }
 
 describe('Storyboard Director Recipe identity', () => {
-  test('upgrades a valid version-1 Recipe to version 2 without a sketch board', () => {
+  test('upgrades valid version-1 and version-2 Recipes to version 3 with empty advisory decisions', () => {
     const legacy = structuredClone(validRecipeFixture()) as Record<string, unknown>
     legacy.schemaVersion = 1
     delete legacy.sketchBoard
+    delete legacy.advisoryDecisions
 
     const read = readStoryboardDirectorRecipe(metadataWith(legacy))
 
     assert.equal(read.status, 'valid')
     if (read.status === 'valid') {
-      assert.equal(read.recipe.schemaVersion, 2)
+      assert.equal(read.recipe.schemaVersion, 3)
       assert.equal(read.recipe.sketchBoard, null)
+      assert.deepEqual(read.recipe.advisoryDecisions, [])
+    }
+
+    const v2 = structuredClone(validRecipeFixture()) as Record<string, unknown>
+    v2.schemaVersion = 2
+    delete v2.advisoryDecisions
+    const upgraded = readStoryboardDirectorRecipe(metadataWith(v2))
+    assert.equal(upgraded.status, 'valid')
+    if (upgraded.status === 'valid') {
+      assert.equal(upgraded.recipe.schemaVersion, 3)
+      assert.deepEqual(upgraded.recipe.advisoryDecisions, [])
     }
   })
 
@@ -358,6 +371,58 @@ describe('Storyboard Director Recipe identity', () => {
 })
 
 describe('Storyboard Director Recipe persistence', () => {
+  test('strictly validates version-3 advisory decision records and advisory finding metadata', () => {
+    const valid = validRecipeFixture()
+    valid.findings = [{
+      findingId: 'sdrf1_advisory',
+      severity: 'advisory',
+      code: 'LOCAL_CONTINUITY_CONFIRMATION',
+      message: 'Confirm continuity.',
+      evidenceIds: ['scene-1', 'shot-1'],
+      advisory: {
+        ruleIds: ['continuity-action-match'],
+        inputFingerprint: 'sdra1_input',
+        selectionFingerprint: 'ckr1_selection',
+        handling: 'ignored',
+      },
+    }]
+    valid.advisoryDecisions = [{
+      advisoryId: 'sdrf1_advisory',
+      inputFingerprint: 'sdra1_input',
+      selectionFingerprint: 'ckr1_selection',
+      decision: 'ignored',
+      decidedAt: '2026-07-19T01:00:00.000Z',
+    }]
+    assert.equal(readStoryboardDirectorRecipe(metadataWith(valid)).status, 'valid')
+
+    const invalid = [
+      {
+        ...valid,
+        advisoryDecisions: [{ ...valid.advisoryDecisions[0]!, unexpected: true }],
+      },
+      {
+        ...valid,
+        advisoryDecisions: [{ ...valid.advisoryDecisions[0]!, decision: 'open' }],
+      },
+      {
+        ...valid,
+        advisoryDecisions: [valid.advisoryDecisions[0]!, { ...valid.advisoryDecisions[0]! }],
+      },
+      {
+        ...valid,
+        advisoryDecisions: [{ ...valid.advisoryDecisions[0]!, decidedAt: 'not-an-iso-timestamp' }],
+      },
+      {
+        ...valid,
+        findings: [{
+          ...valid.findings[0]!,
+          advisory: { ...valid.findings[0]!.advisory!, handling: 'unknown' },
+        }],
+      },
+    ]
+    for (const candidate of invalid) assertInvalid(candidate)
+  })
+
   test('strictly round-trips the exact version-2 sketch board shape', () => {
     const recipe = validRecipeFixture()
     recipe.sketchBoard = freshSketchBoardFixture(recipe)
@@ -366,7 +431,7 @@ describe('Storyboard Director Recipe persistence', () => {
 
     assert.equal(read.status, 'valid')
     if (read.status === 'valid') {
-      assert.equal(read.recipe.schemaVersion, 2)
+      assert.equal(read.recipe.schemaVersion, 3)
       assert.deepEqual(read.recipe.sketchBoard, recipe.sketchBoard)
     }
   })

@@ -568,7 +568,7 @@ function validateFinding(value: unknown, field: string, recipeId: string) {
     'code',
     'message',
     'evidenceIds',
-  ], ['sceneId', 'beatId', 'shotId', 'partialBatch'])
+  ], ['sceneId', 'beatId', 'shotId', 'partialBatch', 'advisory'])
   const findingId = identifier(finding.findingId, `${field}.findingId`)
   const severity = enumValue(finding.severity, `${field}.severity`, ['blocking', 'advisory'])
   const code = identifier(finding.code, `${field}.code`)
@@ -596,7 +596,51 @@ function validateFinding(value: unknown, field: string, recipeId: string) {
   } else if (hasPartialBatch) {
     fail(`${field}.partialBatch is only valid for a partial batch finding`)
   }
+  if (Object.prototype.hasOwnProperty.call(finding, 'advisory')) {
+    if (severity !== 'advisory') fail(`${field}.advisory requires advisory severity`)
+    validateAdvisoryMetadata(finding.advisory, `${field}.advisory`)
+  }
   return findingId
+}
+
+function isIsoTimestamp(value: unknown) {
+  if (typeof value !== 'string') return false
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
+}
+
+function validateAdvisoryMetadata(value: unknown, field: string) {
+  const advisory = record(value, field, [
+    'ruleIds',
+    'inputFingerprint',
+    'selectionFingerprint',
+    'handling',
+  ])
+  const ruleIds = stringArray(advisory.ruleIds, `${field}.ruleIds`, true)
+  if (ruleIds.length === 0) fail(`${field}.ruleIds must not be empty`)
+  assertUnique(ruleIds, `${field}.ruleIds`)
+  identifier(advisory.inputFingerprint, `${field}.inputFingerprint`)
+  identifier(advisory.selectionFingerprint, `${field}.selectionFingerprint`)
+  enumValue(advisory.handling, `${field}.handling`, ['open', 'reviewed', 'ignored'])
+}
+
+function validateAdvisoryDecision(value: unknown, field: string) {
+  const decision = record(value, field, [
+    'advisoryId',
+    'inputFingerprint',
+    'selectionFingerprint',
+    'decision',
+    'decidedAt',
+  ])
+  const advisoryId = identifier(decision.advisoryId, `${field}.advisoryId`)
+  const inputFingerprint = identifier(decision.inputFingerprint, `${field}.inputFingerprint`)
+  const selectionFingerprint = identifier(
+    decision.selectionFingerprint,
+    `${field}.selectionFingerprint`,
+  )
+  enumValue(decision.decision, `${field}.decision`, ['reviewed', 'ignored'])
+  if (!isIsoTimestamp(decision.decidedAt)) fail(`${field}.decidedAt must be an ISO timestamp`)
+  return [advisoryId, inputFingerprint, selectionFingerprint].join('\u0000')
 }
 
 const SHOT_CARD_REQUIRED_FIELDS = [
@@ -859,6 +903,7 @@ const RECIPE_FIELDS = [
   'beat',
   'shot',
   'findings',
+  'advisoryDecisions',
   'storyboard',
   'receipts',
   'sketchBoard',
@@ -866,7 +911,10 @@ const RECIPE_FIELDS = [
   'audit',
 ] as const
 
-const LEGACY_RECIPE_FIELDS = RECIPE_FIELDS.filter((field) => field !== 'sketchBoard')
+const V1_RECIPE_FIELDS = RECIPE_FIELDS.filter(
+  (field) => field !== 'sketchBoard' && field !== 'advisoryDecisions',
+)
+const V2_RECIPE_FIELDS = RECIPE_FIELDS.filter((field) => field !== 'advisoryDecisions')
 
 function validateRecipe(value: unknown): asserts value is StoryboardDirectorRecipe {
   const recipe = record(value, 'storyboardDirectorRecipe', RECIPE_FIELDS)
@@ -911,6 +959,19 @@ function validateRecipe(value: unknown): asserts value is StoryboardDirectorReci
     ))
   }
   assertUnique(findingIds, 'storyboardDirectorRecipe.findings')
+  const advisoryDecisions = arrayValue(
+    recipe.advisoryDecisions,
+    'storyboardDirectorRecipe.advisoryDecisions',
+    STORYBOARD_DIRECTOR_MAX_RECEIPTS,
+  )
+  const advisoryTuples: string[] = []
+  for (let index = 0; index < advisoryDecisions.length; index += 1) {
+    advisoryTuples.push(validateAdvisoryDecision(
+      advisoryDecisions[index],
+      `storyboardDirectorRecipe.advisoryDecisions[${index}]`,
+    ))
+  }
+  assertUnique(advisoryTuples, 'storyboardDirectorRecipe.advisoryDecisions')
   validateStoryboard(recipe.storyboard, 'storyboardDirectorRecipe.storyboard')
   validateNullableSketchBoard(recipe.sketchBoard, 'storyboardDirectorRecipe.sketchBoard')
 
@@ -1004,7 +1065,7 @@ export function readStoryboardDirectorRecipe(
       return invalid('STORYBOARD_RECIPE_INVALID')
     }
     const version = readPositiveInteger(property.value, 'schemaVersion')
-    if (version !== 1 && version !== STORYBOARD_DIRECTOR_RECIPE_VERSION) {
+    if (version !== 1 && version !== 2 && version !== STORYBOARD_DIRECTOR_RECIPE_VERSION) {
       return unsupported('STORYBOARD_RECIPE_VERSION_UNSUPPORTED')
     }
     const clone = cloneJsonValue(
@@ -1013,13 +1074,25 @@ export function readStoryboardDirectorRecipe(
       'storyboardDirectorRecipe',
     )
     if (version === 1) {
-      record(clone, 'storyboardDirectorRecipe', LEGACY_RECIPE_FIELDS)
+      record(clone, 'storyboardDirectorRecipe', V1_RECIPE_FIELDS)
       return {
         status: 'valid',
         recipe: cloneStoryboardDirectorRecipe({
           ...(clone as PlainRecord),
           schemaVersion: STORYBOARD_DIRECTOR_RECIPE_VERSION,
           sketchBoard: null,
+          advisoryDecisions: [],
+        }),
+      }
+    }
+    if (version === 2) {
+      record(clone, 'storyboardDirectorRecipe', V2_RECIPE_FIELDS)
+      return {
+        status: 'valid',
+        recipe: cloneStoryboardDirectorRecipe({
+          ...(clone as PlainRecord),
+          schemaVersion: STORYBOARD_DIRECTOR_RECIPE_VERSION,
+          advisoryDecisions: [],
         }),
       }
     }

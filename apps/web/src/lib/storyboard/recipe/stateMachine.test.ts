@@ -13,7 +13,11 @@ import {
   type ShotPlanPayload,
 } from '../../skills'
 import { readStoryboardDirectorRecipe, storyboardDirectorRecipeMetadata } from './persistence'
-import type { StoryboardDirectorRecipe, StoryboardDirectorStageId } from './types'
+import type {
+  StoryboardDirectorFinding,
+  StoryboardDirectorRecipe,
+  StoryboardDirectorStageId,
+} from './types'
 import {
   approveBeatStage,
   approveSceneStage,
@@ -28,6 +32,8 @@ import {
   markRecipeSourceMissing,
   moveRecipeDraft,
   rerunRecipeStage,
+  restoreStoryboardAdvisory,
+  setStoryboardAdvisoryDecision,
   setRecipeDecision,
   patchStoryboardSketchFrame,
   regenerateStoryboardSketchFrame,
@@ -102,6 +108,22 @@ function completedRecipe(skillRunner: typeof runCreatorSkill = runner) {
   const throughBeat = approvedBeatRecipe(skillRunner)
   const shotReview = approveBeatStage(throughBeat, ISO_TIME, skillRunner)
   return approveShotStage(decideAll(shotReview, 'shot-review', 'approved'), ISO_TIME)
+}
+
+function localAdvisory(
+  findingId = 'sdrf1_local-advisory',
+  inputFingerprint = 'sdra1_input-a',
+  selectionFingerprint = 'ckr1_selection-a',
+): Pick<StoryboardDirectorFinding, 'findingId' | 'advisory'> {
+  return {
+    findingId,
+    advisory: {
+      ruleIds: ['continuity-action-match'],
+      inputFingerprint,
+      selectionFingerprint,
+      handling: 'open',
+    },
+  }
 }
 
 function malformedResult(
@@ -321,6 +343,31 @@ describe('Storyboard Director Recipe progression', () => {
     const patched = patchStoryboardSketchFrame(board, frame.shotId, { movement: 'pan' }, LATER_TIME)
 
     assert.equal(readStoryboardDirectorRecipe(storyboardDirectorRecipeMetadata(patched)).status, 'valid')
+  })
+
+  test('records and restores only the exact local advisory decision tuple without mutating stages', () => {
+    const recipe = completedRecipe()
+    const target = localAdvisory()
+    const other = localAdvisory('sdrf1_other-advisory', 'sdra1_input-b', 'ckr1_selection-b')
+    const reviewed = setStoryboardAdvisoryDecision(recipe, target, 'reviewed', LATER_TIME)
+
+    assert.equal(recipe.advisoryDecisions.length, 0)
+    assert.equal(reviewed.advisoryDecisions[0]?.decision, 'reviewed')
+    assert.equal(reviewed.audit.updatedAt, LATER_TIME)
+    assert.equal(reviewed.shot.status, 'approved')
+    assert.equal(reviewed, setStoryboardAdvisoryDecision(reviewed, target, 'reviewed', ISO_TIME))
+
+    const withOther = setStoryboardAdvisoryDecision(reviewed, other, 'reviewed', ISO_TIME)
+    const ignored = setStoryboardAdvisoryDecision(withOther, target, 'ignored', ISO_TIME)
+    assert.equal(ignored.advisoryDecisions.length, 2)
+    assert.equal(ignored.advisoryDecisions[0]?.decision, 'ignored')
+    assert.equal(ignored.advisoryDecisions[1]?.decision, 'reviewed')
+
+    const restored = restoreStoryboardAdvisory(ignored, target, LATER_TIME)
+    assert.deepEqual(restored.advisoryDecisions, [withOther.advisoryDecisions[1]])
+    assert.equal(restored.audit.updatedAt, LATER_TIME)
+    assert.equal(restored.shot.status, 'approved')
+    assert.equal(restored, restoreStoryboardAdvisory(restored, target, ISO_TIME))
   })
 
   test('start runs only public script-segmentation and leaves every scene pending', () => {

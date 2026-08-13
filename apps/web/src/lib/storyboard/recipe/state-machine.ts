@@ -40,6 +40,7 @@ import {
   STORYBOARD_DIRECTOR_RECIPE_VERSION,
   type RecipeReviewItem,
   type StoryboardDirectorRecipe,
+  type StoryboardDirectorFinding,
   type StoryboardSketchBoard,
   type StoryboardDirectorStage,
   type StoryboardDirectorStageId,
@@ -1142,11 +1143,95 @@ export function createStoryboardDirectorRecipe(
       options: { ...DEFAULT_SHOT_PLANNING_OPTIONS },
     },
     findings: [],
+    advisoryDecisions: [],
     storyboard: { version: '2', shots: [], updatedAt: now },
     receipts: [],
     sketchBoard: null,
     legacyImportStatus: 'not-offered',
     audit: { createdAt: now, updatedAt: now },
+  }
+}
+
+type StoryboardAdvisoryReference = Pick<StoryboardDirectorFinding, 'findingId' | 'advisory'>
+
+function isIsoTimestamp(value: string) {
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
+}
+
+function assertStoryboardAdvisoryReference(advisory: StoryboardAdvisoryReference) {
+  if (!isIdentifier(advisory.findingId) || !advisory.advisory) {
+    throw new TypeError('Storyboard advisory metadata is required')
+  }
+  const metadata = advisory.advisory
+  if (!Array.isArray(metadata.ruleIds)
+    || metadata.ruleIds.length === 0
+    || metadata.ruleIds.some((ruleId) => !isIdentifier(ruleId))
+    || new Set(metadata.ruleIds).size !== metadata.ruleIds.length
+    || !['open', 'reviewed', 'ignored'].includes(metadata.handling)
+    || !isIdentifier(metadata.inputFingerprint)
+    || !isIdentifier(metadata.selectionFingerprint)) {
+    throw new TypeError('Storyboard advisory metadata is invalid')
+  }
+  return {
+    advisoryId: advisory.findingId,
+    inputFingerprint: metadata.inputFingerprint,
+    selectionFingerprint: metadata.selectionFingerprint,
+  }
+}
+
+function sameStoryboardAdvisoryTuple(
+  left: { advisoryId: string; inputFingerprint: string; selectionFingerprint: string },
+  right: { advisoryId: string; inputFingerprint: string; selectionFingerprint: string },
+) {
+  return left.advisoryId === right.advisoryId
+    && left.inputFingerprint === right.inputFingerprint
+    && left.selectionFingerprint === right.selectionFingerprint
+}
+
+export function setStoryboardAdvisoryDecision(
+  recipe: StoryboardDirectorRecipe,
+  advisory: StoryboardAdvisoryReference,
+  decision: 'reviewed' | 'ignored',
+  now: string,
+): StoryboardDirectorRecipe {
+  const reference = assertStoryboardAdvisoryReference(advisory)
+  if (decision !== 'reviewed' && decision !== 'ignored') {
+    throw new TypeError('Storyboard advisory decision is invalid')
+  }
+  if (!isIsoTimestamp(now)) throw new TypeError('Storyboard advisory decision time is invalid')
+  const index = recipe.advisoryDecisions.findIndex((candidate) => (
+    sameStoryboardAdvisoryTuple(candidate, reference)
+  ))
+  if (index >= 0 && recipe.advisoryDecisions[index]?.decision === decision) return recipe
+  const nextDecision = { ...reference, decision, decidedAt: now }
+  const advisoryDecisions = index < 0
+    ? [...recipe.advisoryDecisions, nextDecision]
+    : recipe.advisoryDecisions.map((candidate, candidateIndex) => (
+      candidateIndex === index ? nextDecision : candidate
+    ))
+  return {
+    ...recipe,
+    advisoryDecisions,
+    audit: { ...recipe.audit, updatedAt: now },
+  }
+}
+
+export function restoreStoryboardAdvisory(
+  recipe: StoryboardDirectorRecipe,
+  advisory: StoryboardAdvisoryReference,
+  now: string,
+): StoryboardDirectorRecipe {
+  const reference = assertStoryboardAdvisoryReference(advisory)
+  if (!isIsoTimestamp(now)) throw new TypeError('Storyboard advisory decision time is invalid')
+  const advisoryDecisions = recipe.advisoryDecisions.filter((candidate) => (
+    !sameStoryboardAdvisoryTuple(candidate, reference)
+  ))
+  if (advisoryDecisions.length === recipe.advisoryDecisions.length) return recipe
+  return {
+    ...recipe,
+    advisoryDecisions,
+    audit: { ...recipe.audit, updatedAt: now },
   }
 }
 
