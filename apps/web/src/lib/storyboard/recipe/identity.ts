@@ -100,7 +100,9 @@ function approvedDrafts<T extends { decision: string }>(
   if (stage.status !== 'approved') return []
   return stage.drafts
     .filter((draft) => draft.decision === 'approved')
-    .map(({ decision, ...draft }) => draft)
+    .map((draft) => Object.fromEntries(
+      Object.entries(draft).filter(([key]) => key !== 'decision'),
+    ))
 }
 
 /**

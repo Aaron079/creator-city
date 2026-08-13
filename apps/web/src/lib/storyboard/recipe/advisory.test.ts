@@ -173,10 +173,16 @@ describe('Storyboard Director local advisories', () => {
       evaluateStoryboardDirectorAdvisories(recipe).findings[0]!.advisory!.handling,
       'ignored',
     )
-    recipe.advisoryDecisions[0]!.selectionFingerprint = 'ckr1_00000000'
-    assert.equal(
-      evaluateStoryboardDirectorAdvisories(recipe).findings[0]!.advisory!.handling,
-      'open',
-    )
+    for (const decision of [
+      { ...recipe.advisoryDecisions[0]!, advisoryId: 'sdrf1_other' },
+      { ...recipe.advisoryDecisions[0]!, inputFingerprint: 'sdra1_00000000' },
+      { ...recipe.advisoryDecisions[0]!, selectionFingerprint: 'ckr1_00000000' },
+    ]) {
+      recipe.advisoryDecisions = [decision]
+      assert.equal(
+        evaluateStoryboardDirectorAdvisories(recipe).findings[0]!.advisory!.handling,
+        'open',
+      )
+    }
   })
 })
