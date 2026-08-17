@@ -42,11 +42,13 @@ export function normalizeLegacyCanvasNodeSize<
   }
 }
 
-export function getCanvasNodeDialogSize(viewportWidth: number): CanvasSize {
-  const width = Math.min(480, Math.max(0, viewportWidth - 48))
+export function getCanvasNodeDialogSize(viewportWidth: number, viewportHeight: number): CanvasSize {
+  const viewportMargin = 16
+  const width = Math.min(480, Math.max(0, viewportWidth - viewportMargin * 2))
+  const preferredHeight = viewportWidth <= 900 ? 320 : 420
 
   return {
     width,
-    height: viewportWidth <= 900 ? 320 : 420,
+    height: Math.min(preferredHeight, Math.max(0, viewportHeight - viewportMargin * 2)),
   }
 }

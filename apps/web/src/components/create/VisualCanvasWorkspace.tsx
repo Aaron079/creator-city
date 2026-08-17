@@ -9977,11 +9977,11 @@ export function VisualCanvasWorkspace({
     const rect = viewportRef.current?.getBoundingClientRect()
     if (!rect) return undefined
 
-    const viewportMargin = 24
+    const viewportMargin = 16
     const viewportWidth = browserViewport.width || window.innerWidth
     const viewportHeight = browserViewport.height || window.innerHeight
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(viewportWidth)
+    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(viewportWidth, viewportHeight)
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom

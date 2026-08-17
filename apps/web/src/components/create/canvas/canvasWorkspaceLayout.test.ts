@@ -13,11 +13,11 @@ test('uses readable compact canvas node dimensions at 100% zoom', () => {
 })
 
 test('uses a compact desktop task dialog without reducing its controls below usable size', () => {
-  assert.deepEqual(getCanvasNodeDialogSize(1440), { width: 480, height: 420 })
+  assert.deepEqual(getCanvasNodeDialogSize(1440, 720), { width: 480, height: 420 })
 })
 
 test('keeps the task dialog inside narrow viewports', () => {
-  assert.deepEqual(getCanvasNodeDialogSize(390), { width: 342, height: 320 })
+  assert.deepEqual(getCanvasNodeDialogSize(390, 300), { width: 358, height: 268 })
 })
 
 test('migrates legacy default node dimensions to the compact canvas scale', () => {
