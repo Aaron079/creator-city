@@ -104,11 +104,10 @@ export function CanvasRightInspector({
   projectId,
 }: CanvasRightInspectorProps) {
   const [promptExpanded, setPromptExpanded] = useState(false)
-  const [videoPreviewActive, setVideoPreviewActive] = useState(false)
+  const [videoPreviewNodeId, setVideoPreviewNodeId] = useState<string | null>(null)
 
   useEffect(() => {
     setPromptExpanded(false)
-    setVideoPreviewActive(false)
   }, [node.id])
 
   const meta = metaRecord(node.metadataJson)
@@ -205,7 +204,7 @@ export function CanvasRightInspector({
               )
             ) : (
               // Video — click-to-load, no auto-play
-              videoPreviewActive && videoUrl ? (
+              videoPreviewNodeId === node.id && videoUrl ? (
                 <video
                   src={videoUrl}
                   controls
@@ -216,7 +215,7 @@ export function CanvasRightInspector({
               ) : (
                 <button
                   type="button"
-                  onClick={() => videoUrl && setVideoPreviewActive(true)}
+                  onClick={() => videoUrl && setVideoPreviewNodeId(node.id)}
                   className="relative w-full overflow-hidden rounded-lg bg-white/[0.04]"
                   style={{ minHeight: 96 }}
                   disabled={!videoUrl}

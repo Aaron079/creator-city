@@ -49,7 +49,22 @@ function harnessSource() {
       id: 'node-b', type: 'video', kind: 'video', title: 'Node B', subtitle: '', prompt: 'Prompt B', model: '', providerId: '', stage: '', status: 'done', x: 0, y: 0, width: 240, height: 220, createdAt: 2,
       resultVideoUrl: 'data:video/mp4;base64,AAAA',
     }
+    const videoNodeA = {
+      id: 'video-node-a', type: 'video', kind: 'video', title: 'Video Node A', subtitle: '', prompt: 'Video Prompt A', model: '', providerId: '', stage: '', status: 'done', x: 0, y: 0, width: 240, height: 220, createdAt: 3,
+      resultVideoUrl: 'data:video/mp4;base64,AAAA',
+    }
     let activeNode = nodeA
+    let videoMountCount = 0
+    const videoObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach((addedNode) => {
+          if (!(addedNode instanceof Element)) return
+          if (addedNode.matches('video')) videoMountCount += 1
+          videoMountCount += addedNode.querySelectorAll('video').length
+        })
+      }
+    })
+    videoObserver.observe(document.body, { childList: true, subtree: true })
 
     function render() {
       const isNodeA = activeNode.id === 'node-a'
@@ -71,8 +86,11 @@ function harnessSource() {
     window.__canvasRightInspectorHarness = {
       renderNodeA() { activeNode = nodeA; render() },
       renderNodeB() { activeNode = nodeB; render() },
+      renderVideoNodeA() { activeNode = videoNodeA; render() },
       calls() { return calls.slice() },
       clearCalls() { calls.length = 0 },
+      videoMountCount() { return videoMountCount },
+      resetVideoMountCount() { videoMountCount = 0 },
       unmount() { root.unmount() },
     }
     render()
@@ -109,8 +127,11 @@ after(async () => {
 type CanvasRightInspectorHarness = {
   renderNodeA: () => void
   renderNodeB: () => void
+  renderVideoNodeA: () => void
   calls: () => string[]
   clearCalls: () => void
+  videoMountCount: () => number
+  resetVideoMountCount: () => void
   unmount: () => void
 }
 
@@ -134,10 +155,16 @@ async function calls(page: Page) {
   ).__canvasRightInspectorHarness.calls())
 }
 
-async function invoke(page: Page, method: 'renderNodeA' | 'renderNodeB' | 'clearCalls') {
+async function invoke(page: Page, method: 'renderNodeA' | 'renderNodeB' | 'renderVideoNodeA' | 'clearCalls' | 'resetVideoMountCount') {
   await page.evaluate((nextMethod) => (
     window as unknown as { __canvasRightInspectorHarness: CanvasRightInspectorHarness }
   ).__canvasRightInspectorHarness[nextMethod](), method)
+}
+
+async function videoMountCount(page: Page) {
+  return page.evaluate(() => (
+    window as unknown as { __canvasRightInspectorHarness: CanvasRightInspectorHarness }
+  ).__canvasRightInspectorHarness.videoMountCount())
 }
 
 describe('CanvasRightInspector node-scoped controls', () => {
@@ -178,12 +205,22 @@ describe('CanvasRightInspector node-scoped controls', () => {
     await page.close()
   })
 
-  test('keeps video click-to-load and never mounts a player until the labelled action', async () => {
+  test('keeps click-to-load scoped to the video node that explicitly requested it', async () => {
     const page = await renderPage()
+    await invoke(page, 'renderVideoNodeA')
+    await page.waitForSelector('text=Video Node A')
+
+    assert.equal(await page.locator('video').count(), 0)
+    await page.getByRole('button', { name: '播放视频预览' }).click()
+    assert.equal(await page.locator('video').count(), 1)
+    assert.equal(await videoMountCount(page), 1)
+
+    await invoke(page, 'resetVideoMountCount')
     await invoke(page, 'renderNodeB')
     await page.waitForSelector('text=Node B')
 
     assert.equal(await page.locator('video').count(), 0)
+    assert.equal(await videoMountCount(page), 0, 'switching to B must not mount a player before B is clicked')
     await page.getByRole('button', { name: '播放视频预览' }).click()
     assert.equal(await page.locator('video').count(), 1)
     assert.equal(await page.locator('video').evaluate((element) => (element as HTMLVideoElement).autoplay), false)
