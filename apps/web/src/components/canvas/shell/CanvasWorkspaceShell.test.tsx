@@ -37,6 +37,7 @@ function harnessSource() {
   )
   return `
     import * as React from 'react'
+    import { flushSync } from 'react-dom'
     import { createRoot } from 'react-dom/client'
     import { CanvasWorkspaceShell } from ${JSON.stringify(shellPath)}
 
@@ -74,7 +75,16 @@ function harnessSource() {
       dismissCount() { return dismissCount },
       openInspector() {
         isInspectorOpen = true
-        render()
+        flushSync(render)
+      },
+      openInspectorWithHigherLayerFocus() {
+        isInspectorOpen = true
+        flushSync(render)
+        const higherLayerModal = document.createElement('button')
+        higherLayerModal.id = 'higher-layer-modal'
+        higherLayerModal.type = 'button'
+        document.body.append(higherLayerModal)
+        higherLayerModal.focus()
       },
       unmount() { root.unmount() },
     }
@@ -114,6 +124,7 @@ after(async () => {
 type CanvasWorkspaceShellHarness = {
   dismissCount: () => number
   openInspector: () => void
+  openInspectorWithHigherLayerFocus: () => void
   unmount: () => void
 }
 
@@ -144,6 +155,10 @@ async function openInspector(page: Page) {
   await page.waitForSelector('[data-canvas-region="right-inspector"]')
 }
 
+async function waitForAnimationFrame(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())))
+}
+
 describe('CanvasWorkspaceShell responsive inspector', () => {
   test('renders the inspector as a bounded desktop aside', async () => {
     const page = await renderPage({ width: 1280, height: 720 })
@@ -170,6 +185,7 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     assert.equal(panel.height, 812)
     assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('role'), 'dialog')
     assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('aria-modal'), 'true')
+    await waitForAnimationFrame(page)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-first')
 
     await page.keyboard.press('Tab')
@@ -183,14 +199,12 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     assert.equal(await dismissCount(page), 1)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-button')
 
-    await openInspector(page)
-    await page.evaluate(() => {
-      const higherLayerModal = document.createElement('button')
-      higherLayerModal.id = 'higher-layer-modal'
-      higherLayerModal.type = 'button'
-      document.body.append(higherLayerModal)
-      higherLayerModal.focus()
-    })
+    await page.evaluate(() => (
+      window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
+    ).__canvasWorkspaceShellHarness.openInspectorWithHigherLayerFocus())
+    await page.waitForSelector('[data-canvas-region="right-inspector"]')
+    await waitForAnimationFrame(page)
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'higher-layer-modal')
     await page.keyboard.press('Escape')
     assert.equal(await dismissCount(page), 1)
 

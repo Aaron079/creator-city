@@ -90,6 +90,12 @@ export function CanvasWorkspaceShell({
       ? previousFocusedElement
       : null
     const frame = window.requestAnimationFrame(() => {
+      if (
+        document.activeElement !== previousFocusedElement
+        && document.activeElement !== document.body
+      ) {
+        return
+      }
       const panel = inspectorPanelRef.current
       if (!panel) return
       const [firstFocusable] = getInspectorFocusables(panel)
