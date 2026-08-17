@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getDerivedToolVisual } from '@/lib/canvas/derivedToolVisualConfig'
 import { getProxiedMediaUrl } from '@/lib/media/getProxiedMediaUrl'
 import type { VisualCanvasNode } from '@/components/create/CanvasNodeCard'
@@ -23,6 +23,9 @@ export interface CanvasRightInspectorProps {
   onClose(): void
   onOpenGenerationDialog(): void
   onSelectNode?(id: string): void
+  onOpenPromptInspector?(nodeId: string): void
+  onOpenCameraControl?(nodeId: string): void
+  onOpenSceneLighting?(nodeId: string): void
   projectId?: string
 }
 
@@ -95,10 +98,18 @@ export function CanvasRightInspector({
   onClose,
   onOpenGenerationDialog,
   onSelectNode,
+  onOpenPromptInspector,
+  onOpenCameraControl,
+  onOpenSceneLighting,
   projectId,
 }: CanvasRightInspectorProps) {
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [videoPreviewActive, setVideoPreviewActive] = useState(false)
+
+  useEffect(() => {
+    setPromptExpanded(false)
+    setVideoPreviewActive(false)
+  }, [node.id])
 
   const meta = metaRecord(node.metadataJson)
   const draft = metaRecord(meta.generationDraft)
@@ -209,6 +220,7 @@ export function CanvasRightInspector({
                   className="relative w-full overflow-hidden rounded-lg bg-white/[0.04]"
                   style={{ minHeight: 96 }}
                   disabled={!videoUrl}
+                  aria-label="播放视频预览"
                 >
                   {videoPoster ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -268,6 +280,40 @@ export function CanvasRightInspector({
                 <span className="truncate">定位来源：{sourceNode.title || '未命名'}</span>
               </button>
             ) : null}
+          </Section>
+        ) : null}
+
+        {(onOpenCameraControl || onOpenSceneLighting || onOpenPromptInspector) ? (
+          <Section title="节点控制">
+            <div className="flex flex-wrap gap-1.5">
+              {onOpenCameraControl ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenCameraControl(node.id)}
+                  className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] text-white/50 transition hover:bg-white/[0.08] hover:text-white/75"
+                >
+                  摄影机
+                </button>
+              ) : null}
+              {onOpenSceneLighting ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenSceneLighting(node.id)}
+                  className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] text-white/50 transition hover:bg-white/[0.08] hover:text-white/75"
+                >
+                  灯光
+                </button>
+              ) : null}
+              {onOpenPromptInspector ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenPromptInspector(node.id)}
+                  className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] text-white/50 transition hover:bg-white/[0.08] hover:text-white/75"
+                >
+                  查看 Prompt
+                </button>
+              ) : null}
+            </div>
           </Section>
         ) : null}
 
