@@ -199,6 +199,7 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     assert.equal(panel.height, 812)
     assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('role'), 'dialog')
     assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('aria-modal'), 'true')
+    assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('aria-label'), '节点检查器')
     await waitForAnimationFrame(page)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-first')
 

@@ -196,6 +196,7 @@ export function CanvasWorkspaceShell({
               data-canvas-inspector-panel="true"
               role={isMobileInspector ? 'dialog' : undefined}
               aria-modal={isMobileInspector ? true : undefined}
+              aria-label="节点检查器"
               tabIndex={-1}
               onKeyDown={handleInspectorPanelKeyDown}
             >
