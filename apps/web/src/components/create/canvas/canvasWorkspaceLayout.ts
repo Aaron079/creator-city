@@ -65,3 +65,16 @@ export function clampCanvasDialogLeftToStage(
 
   return Math.max(minimumLeft, Math.min(left, maximumLeft))
 }
+
+export function clampCanvasDialogTopToStage(
+  top: number,
+  dialogHeight: number,
+  stageTop: number,
+  stageBottom: number,
+  margin: number,
+) {
+  const minimumTop = stageTop + margin
+  const maximumTop = stageBottom - dialogHeight - margin
+
+  return Math.max(minimumTop, Math.min(top, maximumTop))
+}

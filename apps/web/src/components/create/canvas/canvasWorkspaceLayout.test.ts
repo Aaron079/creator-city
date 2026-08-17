@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   clampCanvasDialogLeftToStage,
+  clampCanvasDialogTopToStage,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -44,6 +45,22 @@ test('clamps a task dialog to the visible canvas stage instead of the browser vi
   )
 })
 
+test('clamps a task dialog vertically to the visible canvas stage', () => {
+  const stageTop = 64
+  const stageBottom = 580
+  const dialogHeight = 420
+  const margin = 16
+
+  assert.equal(
+    clampCanvasDialogTopToStage(700, dialogHeight, stageTop, stageBottom, margin),
+    144,
+  )
+  assert.equal(
+    clampCanvasDialogTopToStage(0, dialogHeight, stageTop, stageBottom, margin),
+    80,
+  )
+})
+
 test('keeps the runtime task dialog max height within 16px viewport margins', () => {
   assert.match(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 32px\)'/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 80px\)'/)
@@ -59,13 +76,20 @@ test('keeps the runtime task dialog max width within 16px viewport margins', () 
 
 test('uses canvas-stage bounds for the runtime task dialog and connects the inspector dismissal', () => {
   assert.match(visualCanvasWorkspaceSource, /clampCanvasDialogLeftToStage\([\s\S]*?rect\.left[\s\S]*?rect\.right/)
+  assert.match(visualCanvasWorkspaceSource, /clampCanvasDialogTopToStage\([\s\S]*?rect\.top[\s\S]*?rect\.bottom/)
   assert.match(
     visualCanvasWorkspaceSource,
-    /getCanvasNodeDialogSize\(\s*Math\.min\(viewportWidth, rect\.width\),\s*viewportHeight,\s*\)/,
+    /getCanvasNodeDialogSize\(\s*Math\.min\(viewportWidth, rect\.width\),\s*Math\.min\(viewportHeight, rect\.height\),\s*\)/,
   )
   assert.match(
     visualCanvasWorkspaceSource,
     /onDismissRightInspector=\{\(\) => setIsRightInspectorOpen\(false\)\}/,
+  )
+  const nodeDialogStyleStart = visualCanvasWorkspaceSource.indexOf('const nodeDialogStyle = useMemo')
+  const nodeDialogStyleEnd = visualCanvasWorkspaceSource.indexOf('// Toolbar position', nodeDialogStyleStart)
+  assert.match(
+    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
+    /isBottomDockExpanded/,
   )
 })
 

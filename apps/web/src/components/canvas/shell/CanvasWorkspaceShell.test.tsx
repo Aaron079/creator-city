@@ -40,7 +40,10 @@ function harnessSource() {
     import { flushSync } from 'react-dom'
     import { createRoot } from 'react-dom/client'
     import { CanvasWorkspaceShell } from ${JSON.stringify(shellPath)}
-    import { clampCanvasDialogLeftToStage } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
+    import {
+      clampCanvasDialogLeftToStage,
+      clampCanvasDialogTopToStage,
+    } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
 
     const root = createRoot(document.getElementById('root'))
     let dismissCount = 0
@@ -51,10 +54,15 @@ function harnessSource() {
       root.render(React.createElement(
         'div',
         { style: { width: '100vw', height: '100vh' } },
-        React.createElement('button', { id: 'background-button', type: 'button' }, 'Background action'),
+        React.createElement(
+          'button',
+          { id: 'background-button', type: 'button', style: { position: 'fixed', top: 0, left: 0 } },
+          'Background action',
+        ),
         React.createElement(
           CanvasWorkspaceShell,
           {
+            topCommand: React.createElement('div', { id: 'test-top-command', style: { height: 64 } }, 'Top command'),
             showRightInspector: isInspectorOpen,
             rightInspector: React.createElement(
               'div',
@@ -64,6 +72,12 @@ function harnessSource() {
             ),
             leftRail: React.createElement('div', { id: 'test-rail' }, 'Rail'),
             showLeftRail: true,
+            bottomDock: React.createElement(
+              'div',
+              { id: 'test-bottom-dock', style: { height: 139 } },
+              'Expanded dock',
+            ),
+            showBottomDock: true,
             onDismissRightInspector() {
               dismissCount += 1
               isInspectorOpen = false
@@ -81,13 +95,16 @@ function harnessSource() {
               style: (() => {
                 const stageLeft = 80
                 const stageRight = 940
+                const stageTop = 64
+                const stageBottom = 580
                 const dialogWidth = 480
+                const dialogHeight = 420
                 return {
                   position: 'fixed',
-                  top: 120,
+                  top: clampCanvasDialogTopToStage(700, dialogHeight, stageTop, stageBottom, 16),
                   left: clampCanvasDialogLeftToStage(800, dialogWidth, stageLeft, stageRight, 16),
                   width: dialogWidth,
-                  height: 240,
+                  height: dialogHeight,
                 }
               })(),
             }, 'Task dialog'),
@@ -203,11 +220,18 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
 
     assert.ok(inspector)
     assert.ok(inspector.width >= 320 && inspector.width <= 420)
-    assert.equal(inspector.height, 720)
+    assert.equal(inspector.y, 64)
+    assert.equal(inspector.height, 516)
     assert.equal(await page.locator('[data-canvas-inspector-backdrop="true"]').count(), 1)
+    const stage = await page.locator('[data-canvas-region="stage"]').boundingBox()
+    assert.ok(stage)
+    assert.equal(stage.y, 64)
+    assert.equal(stage.height, 516)
     const dialog = await page.locator('#fixed-task-dialog').boundingBox()
     assert.ok(dialog)
     assert.ok(dialog.x + dialog.width <= inspector.x - 16)
+    assert.ok(dialog.y >= stage.y + 16)
+    assert.ok(dialog.y + dialog.height <= stage.y + stage.height - 16)
     await page.close()
   })
 

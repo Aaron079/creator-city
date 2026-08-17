@@ -13,6 +13,7 @@ import {
 } from '@/components/create/canvas/canvasRenderPlanning'
 import {
   clampCanvasDialogLeftToStage,
+  clampCanvasDialogTopToStage,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -9984,7 +9985,7 @@ export function VisualCanvasWorkspace({
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
     const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(
       Math.min(viewportWidth, rect.width),
-      viewportHeight,
+      Math.min(viewportHeight, rect.height),
     )
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
@@ -9997,12 +9998,18 @@ export function VisualCanvasWorkspace({
     const visualDialogHeight = dialogHeight * dialogScale
     const belowTop = nodeBottom + NODE_DIALOG_GAP
     const aboveTop = nodeTop - NODE_DIALOG_GAP - visualDialogHeight
-    const hasRoomBelow = belowTop + visualDialogHeight <= viewportHeight - viewportMargin
-    const hasRoomAbove = aboveTop >= viewportMargin
+    const hasRoomBelow = belowTop + visualDialogHeight <= rect.bottom - viewportMargin
+    const hasRoomAbove = aboveTop >= rect.top + viewportMargin
     // Default to below; only flip above if the node bottom is at the screen edge AND there's room above
-    const top = (!hasRoomBelow && belowTop >= viewportHeight - viewportMargin && hasRoomAbove)
+    const top = (!hasRoomBelow && belowTop >= rect.bottom - viewportMargin && hasRoomAbove)
       ? aboveTop
-      : clampNumber(belowTop, viewportMargin, viewportHeight - visualDialogHeight - viewportMargin)
+      : clampCanvasDialogTopToStage(
+        belowTop,
+        visualDialogHeight,
+        rect.top,
+        rect.bottom,
+        viewportMargin,
+      )
 
     return {
       left: clampCanvasDialogLeftToStage(
@@ -10018,7 +10025,7 @@ export function VisualCanvasWorkspace({
       transformOrigin: 'top left',
       width: dialogWidth,
     }
-  }, [browserViewport.height, browserViewport.width, canvasPan.x, canvasPan.y, canvasZoom, editingNode])
+  }, [browserViewport.height, browserViewport.width, canvasPan.x, canvasPan.y, canvasZoom, editingNode, isBottomDockExpanded])
 
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
