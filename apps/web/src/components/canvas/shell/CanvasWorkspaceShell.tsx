@@ -48,6 +48,10 @@ export type CanvasWorkspaceShellProps = {
   showBottomDock?: boolean
   /** Dismisses the responsive right inspector shell */
   onDismissRightInspector?: () => void
+  /** Decides whether mobile inspector cleanup returns focus to its prior element */
+  shouldRestoreInspectorFocus?: () => boolean
+  /** Consumes a mobile inspector focus-restore decision after cleanup */
+  onInspectorFocusRestoreHandled?: () => void
   /** Compact layout for small screens */
   compact?: boolean
 }
@@ -63,6 +67,8 @@ export function CanvasWorkspaceShell({
   showRightInspector = false,
   showBottomDock = false,
   onDismissRightInspector,
+  shouldRestoreInspectorFocus,
+  onInspectorFocusRestoreHandled,
 }: CanvasWorkspaceShellProps) {
   const hasLeftRail = showLeftRail && leftRail != null
   const hasRightInspector = showRightInspector && rightInspector != null
@@ -70,6 +76,11 @@ export function CanvasWorkspaceShell({
   const [isMobileInspector, setIsMobileInspector] = useState(false)
   const inspectorPanelRef = useRef<HTMLDivElement>(null)
   const previousFocusedElementRef = useRef<HTMLElement | null>(null)
+  const shouldRestoreInspectorFocusRef = useRef(shouldRestoreInspectorFocus)
+  const onInspectorFocusRestoreHandledRef = useRef(onInspectorFocusRestoreHandled)
+
+  shouldRestoreInspectorFocusRef.current = shouldRestoreInspectorFocus
+  onInspectorFocusRestoreHandledRef.current = onInspectorFocusRestoreHandled
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 1023px)')
@@ -106,9 +117,11 @@ export function CanvasWorkspaceShell({
       window.cancelAnimationFrame(frame)
       const previous = previousFocusedElementRef.current
       previousFocusedElementRef.current = null
-      if (previous?.isConnected) {
+      const shouldRestoreFocus = shouldRestoreInspectorFocusRef.current?.() ?? true
+      if (shouldRestoreFocus && previous?.isConnected) {
         previous.focus()
       }
+      onInspectorFocusRestoreHandledRef.current?.()
     }
   }, [hasRightInspector, isMobileInspector])
 

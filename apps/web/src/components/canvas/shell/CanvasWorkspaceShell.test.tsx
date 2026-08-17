@@ -44,6 +44,7 @@ function harnessSource() {
     const root = createRoot(document.getElementById('root'))
     let dismissCount = 0
     let isInspectorOpen = false
+    let shouldRestoreFocus = true
 
     function render() {
       root.render(React.createElement(
@@ -65,6 +66,8 @@ function harnessSource() {
               isInspectorOpen = false
               render()
             },
+            shouldRestoreInspectorFocus() { return shouldRestoreFocus },
+            onInspectorFocusRestoreHandled() { shouldRestoreFocus = true },
           },
           React.createElement('main', { id: 'stage-content' }, 'Canvas stage'),
         ),
@@ -85,6 +88,16 @@ function harnessSource() {
         higherLayerModal.type = 'button'
         document.body.append(higherLayerModal)
         higherLayerModal.focus()
+      },
+      handoffInspectorToHigherLayer() {
+        shouldRestoreFocus = false
+        const higherLayerModal = document.createElement('button')
+        higherLayerModal.id = 'overlay-focus-handoff'
+        higherLayerModal.type = 'button'
+        document.body.append(higherLayerModal)
+        higherLayerModal.focus()
+        isInspectorOpen = false
+        flushSync(render)
       },
       unmount() { root.unmount() },
     }
@@ -123,6 +136,7 @@ after(async () => {
 
 type CanvasWorkspaceShellHarness = {
   dismissCount: () => number
+  handoffInspectorToHigherLayer: () => void
   openInspector: () => void
   openInspectorWithHigherLayerFocus: () => void
   unmount: () => void
@@ -212,6 +226,22 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     await page.keyboard.press('Escape')
     assert.equal(await dismissCount(page), 2)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-button')
+
+    await page.locator('#background-button').focus()
+    await openInspector(page)
+    await waitForAnimationFrame(page)
+    await page.evaluate(() => (
+      window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
+    ).__canvasWorkspaceShellHarness.handoffInspectorToHigherLayer())
+    await waitForAnimationFrame(page)
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'overlay-focus-handoff')
+    assert.equal(await page.locator('[data-canvas-region="right-inspector"]').count(), 0)
+
+    await page.locator('#background-button').focus()
+    await openInspector(page)
+    await waitForAnimationFrame(page)
+    await page.locator('[data-canvas-inspector-backdrop="true"]').click({ position: { x: 4, y: 4 } })
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-button')
     await page.close()
   })
 
@@ -219,13 +249,19 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     const workspacePath = path.resolve(process.cwd(), 'src/components/create/VisualCanvasWorkspace.tsx')
     const source = await readFile(workspacePath, 'utf8')
 
-    for (const entryPoint of ['openCanvasPanel', 'openPromptInspector', 'openNodePreview']) {
+    for (const entryPoint of [
+      'openCanvasPanel',
+      'openNodePreview',
+      'openPromptInspector',
+      'openMediaDiagnostics',
+      'openEdgeDirector',
+    ]) {
       const start = source.indexOf(`const ${entryPoint} = useCallback`)
       assert.notEqual(start, -1, `Missing ${entryPoint}`)
       const body = source.slice(start, start + 320)
       assert.match(
         body,
-        /setIsRightInspectorOpen\(false\)/,
+        /dismissInspectorForOverlay\(\)/,
         `${entryPoint} must dismiss the inspector before opening its overlay`,
       )
     }

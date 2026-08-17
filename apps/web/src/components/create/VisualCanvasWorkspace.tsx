@@ -2596,6 +2596,7 @@ export function VisualCanvasWorkspace({
   const [edges, setEdges] = useState<CanvasEdge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false)
+  const inspectorFocusHandoffRef = useRef(false)
   const [isBottomDockExpanded, setIsBottomDockExpanded] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
@@ -3069,9 +3070,14 @@ export function VisualCanvasWorkspace({
     resetCanvasModalStates()
   }, [resetCanvasModalStates])
 
+  const dismissInspectorForOverlay = useCallback(() => {
+    inspectorFocusHandoffRef.current = true
+    setIsRightInspectorOpen(false)
+  }, [])
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {
-    setIsRightInspectorOpen(false)
+    dismissInspectorForOverlay()
     resetCanvasModalStates()
     setActiveCanvasModal(id)
     switch (id) {
@@ -3100,7 +3106,7 @@ export function VisualCanvasWorkspace({
         if (payload?.nodeId) setEditingNodeId(payload.nodeId)
         break
     }
-  }, [resetCanvasModalStates])
+  }, [dismissInspectorForOverlay, resetCanvasModalStates])
 
   const openGenerationDialog = useCallback(
     (nodeId: string) => { openCanvasPanel('generation', { nodeId }) },
@@ -7480,7 +7486,7 @@ export function VisualCanvasWorkspace({
   }, [activePreviewNodeId, closeActivePreview])
 
   const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
-    setIsRightInspectorOpen(false)
+    dismissInspectorForOverlay()
     if (type !== 'text' && type !== node.kind) return
     if (type === 'text' && node.kind !== 'text') return
     setActiveNodeId(node.id)
@@ -7546,26 +7552,28 @@ export function VisualCanvasWorkspace({
       setTextEditorDraft('')
     }
     setTextEditorCopied(false)
-  }, [canvasPan.x, canvasPan.y, canvasZoom])
+  }, [canvasPan.x, canvasPan.y, canvasZoom, dismissInspectorForOverlay])
 
   const openPromptInspector = useCallback((nodeId: string) => {
-    setIsRightInspectorOpen(false)
+    dismissInspectorForOverlay()
     setActiveNodeId(nodeId)
     setActiveInspectorNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
-  }, [])
+  }, [dismissInspectorForOverlay])
 
   const openMediaDiagnostics = useCallback((nodeId: string, type: 'image' | 'video') => {
+    dismissInspectorForOverlay()
     setActiveNodeId(nodeId)
     setActiveMediaDiagnostics({ nodeId, type })
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
-  }, [])
+  }, [dismissInspectorForOverlay])
 
   const openEdgeDirector = useCallback((edgeId: string) => {
+    dismissInspectorForOverlay()
     const edge = latestEdgesRef.current.find((item) => item.id === edgeId)
     if (!edge) return
     setActiveEdgeId(edgeId)
@@ -7577,7 +7585,7 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
-  }, [closeActivePreview, closePromptInspector])
+  }, [closeActivePreview, closePromptInspector, dismissInspectorForOverlay])
 
   const saveTextEditor = useCallback(() => {
     if (!textEditorNode) return
@@ -10441,6 +10449,8 @@ export function VisualCanvasWorkspace({
       showLeftRail
       rightInspector={undefined}
       showRightInspector={false}
+      shouldRestoreInspectorFocus={() => !inspectorFocusHandoffRef.current}
+      onInspectorFocusRestoreHandled={() => { inspectorFocusHandoffRef.current = false }}
       bottomDock={
         <CanvasBottomDock
           expanded={isBottomDockExpanded}
