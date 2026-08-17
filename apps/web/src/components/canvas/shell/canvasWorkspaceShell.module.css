@@ -154,6 +154,7 @@
 /* Small screens < 1024px: inspector becomes a bounded sheet; narrow rail; dock collapses */
 @media (max-width: 1023px) {
   .rightInspector {
+    /* Existing Canvas overlays close this shell before mounting, so it may share the modal layer. */
     display: block;
     position: fixed;
     inset: 0;

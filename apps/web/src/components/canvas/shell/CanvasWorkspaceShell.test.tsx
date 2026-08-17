@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -42,17 +42,28 @@ function harnessSource() {
 
     const root = createRoot(document.getElementById('root'))
     let dismissCount = 0
+    let isInspectorOpen = false
 
     function render() {
       root.render(React.createElement(
         'div',
         { style: { width: '100vw', height: '100vh' } },
+        React.createElement('button', { id: 'background-button', type: 'button' }, 'Background action'),
         React.createElement(
           CanvasWorkspaceShell,
           {
-            showRightInspector: true,
-            rightInspector: React.createElement('div', { id: 'inspector-content' }, 'Inspector content'),
-            onDismissRightInspector() { dismissCount += 1 },
+            showRightInspector: isInspectorOpen,
+            rightInspector: React.createElement(
+              'div',
+              { id: 'inspector-content' },
+              React.createElement('button', { id: 'inspector-first', type: 'button' }, 'First action'),
+              React.createElement('button', { id: 'inspector-last', type: 'button' }, 'Last action'),
+            ),
+            onDismissRightInspector() {
+              dismissCount += 1
+              isInspectorOpen = false
+              render()
+            },
           },
           React.createElement('main', { id: 'stage-content' }, 'Canvas stage'),
         ),
@@ -61,6 +72,10 @@ function harnessSource() {
 
     window.__canvasWorkspaceShellHarness = {
       dismissCount() { return dismissCount },
+      openInspector() {
+        isInspectorOpen = true
+        render()
+      },
       unmount() { root.unmount() },
     }
     render()
@@ -98,6 +113,7 @@ after(async () => {
 
 type CanvasWorkspaceShellHarness = {
   dismissCount: () => number
+  openInspector: () => void
   unmount: () => void
 }
 
@@ -112,7 +128,6 @@ async function renderPage(viewport: { width: number; height: number }) {
   await page.goto('http://creator-city.test/canvas')
   await page.addStyleTag({ path: stylesPath })
   await page.addScriptTag({ path: bundlePath })
-  await page.waitForSelector('[data-canvas-region="right-inspector"]')
   return page
 }
 
@@ -122,9 +137,17 @@ async function dismissCount(page: Page) {
   ).__canvasWorkspaceShellHarness.dismissCount())
 }
 
+async function openInspector(page: Page) {
+  await page.evaluate(() => (
+    window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
+  ).__canvasWorkspaceShellHarness.openInspector())
+  await page.waitForSelector('[data-canvas-region="right-inspector"]')
+}
+
 describe('CanvasWorkspaceShell responsive inspector', () => {
   test('renders the inspector as a bounded desktop aside', async () => {
     const page = await renderPage({ width: 1280, height: 720 })
+    await openInspector(page)
     const inspector = await page.locator('[data-canvas-region="right-inspector"]').boundingBox()
 
     assert.ok(inspector)
@@ -134,8 +157,10 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     await page.close()
   })
 
-  test('renders a 16px-bounded mobile sheet and dismisses it by backdrop or Escape', async () => {
+  test('renders an accessible mobile sheet with contained focus and panel-local dismissal', async () => {
     const page = await renderPage({ width: 390, height: 844 })
+    await page.locator('#background-button').focus()
+    await openInspector(page)
     const panel = await page.locator('[data-canvas-inspector-panel="true"]').boundingBox()
 
     assert.ok(panel)
@@ -143,11 +168,52 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     assert.equal(panel.y, 16)
     assert.equal(panel.width, 358)
     assert.equal(panel.height, 812)
+    assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('role'), 'dialog')
+    assert.equal(await page.locator('[data-canvas-inspector-panel="true"]').getAttribute('aria-modal'), 'true')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-first')
+
+    await page.keyboard.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-last')
+    await page.keyboard.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-first')
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'inspector-last')
 
     await page.locator('[data-canvas-inspector-backdrop="true"]').click({ position: { x: 4, y: 4 } })
     assert.equal(await dismissCount(page), 1)
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-button')
+
+    await openInspector(page)
+    await page.evaluate(() => {
+      const higherLayerModal = document.createElement('button')
+      higherLayerModal.id = 'higher-layer-modal'
+      higherLayerModal.type = 'button'
+      document.body.append(higherLayerModal)
+      higherLayerModal.focus()
+    })
+    await page.keyboard.press('Escape')
+    assert.equal(await dismissCount(page), 1)
+
+    await page.locator('#inspector-first').focus()
     await page.keyboard.press('Escape')
     assert.equal(await dismissCount(page), 2)
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'background-button')
     await page.close()
+  })
+
+  test('closes the inspector before opening known overlapping canvas overlays', async () => {
+    const workspacePath = path.resolve(process.cwd(), 'src/components/create/VisualCanvasWorkspace.tsx')
+    const source = await readFile(workspacePath, 'utf8')
+
+    for (const entryPoint of ['openCanvasPanel', 'openPromptInspector', 'openNodePreview']) {
+      const start = source.indexOf(`const ${entryPoint} = useCallback`)
+      assert.notEqual(start, -1, `Missing ${entryPoint}`)
+      const body = source.slice(start, start + 320)
+      assert.match(
+        body,
+        /setIsRightInspectorOpen\(false\)/,
+        `${entryPoint} must dismiss the inspector before opening its overlay`,
+      )
+    }
   })
 })

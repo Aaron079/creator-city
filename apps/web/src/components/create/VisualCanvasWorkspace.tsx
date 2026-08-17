@@ -3071,6 +3071,7 @@ export function VisualCanvasWorkspace({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {
+    setIsRightInspectorOpen(false)
     resetCanvasModalStates()
     setActiveCanvasModal(id)
     switch (id) {
@@ -7479,6 +7480,7 @@ export function VisualCanvasWorkspace({
   }, [activePreviewNodeId, closeActivePreview])
 
   const openNodePreview = useCallback((node: VisualCanvasNode, type: CanvasNodePreviewType) => {
+    setIsRightInspectorOpen(false)
     if (type !== 'text' && type !== node.kind) return
     if (type === 'text' && node.kind !== 'text') return
     setActiveNodeId(node.id)
@@ -7547,6 +7549,7 @@ export function VisualCanvasWorkspace({
   }, [canvasPan.x, canvasPan.y, canvasZoom])
 
   const openPromptInspector = useCallback((nodeId: string) => {
+    setIsRightInspectorOpen(false)
     setActiveNodeId(nodeId)
     setActiveInspectorNodeId(nodeId)
     setContextMenu(null)

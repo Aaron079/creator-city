@@ -1,7 +1,22 @@
 'use client'
 
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import styles from './canvasWorkspaceShell.module.css'
+
+const INSPECTOR_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function getInspectorFocusables(panel: HTMLElement) {
+  return Array.from(panel.querySelectorAll<HTMLElement>(INSPECTOR_FOCUSABLE_SELECTOR)).filter(
+    (element) => element.getClientRects().length > 0,
+  )
+}
 
 /**
  * Canvas Workspace Shell — structural layout container.
@@ -52,21 +67,74 @@ export function CanvasWorkspaceShell({
   const hasLeftRail = showLeftRail && leftRail != null
   const hasRightInspector = showRightInspector && rightInspector != null
   const hasBottomDock = showBottomDock && bottomDock != null
+  const [isMobileInspector, setIsMobileInspector] = useState(false)
+  const inspectorPanelRef = useRef<HTMLDivElement>(null)
+  const previousFocusedElementRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (!hasRightInspector || onDismissRightInspector == null) {
+    const mediaQuery = window.matchMedia('(max-width: 1023px)')
+    const syncMobileInspector = () => setIsMobileInspector(mediaQuery.matches)
+
+    syncMobileInspector()
+    mediaQuery.addEventListener('change', syncMobileInspector)
+    return () => mediaQuery.removeEventListener('change', syncMobileInspector)
+  }, [])
+
+  useEffect(() => {
+    if (!hasRightInspector || !isMobileInspector) {
       return
     }
 
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onDismissRightInspector()
+    const previousFocusedElement = document.activeElement
+    previousFocusedElementRef.current = previousFocusedElement instanceof HTMLElement
+      ? previousFocusedElement
+      : null
+    const frame = window.requestAnimationFrame(() => {
+      const panel = inspectorPanelRef.current
+      if (!panel) return
+      const [firstFocusable] = getInspectorFocusables(panel)
+      ;(firstFocusable ?? panel).focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      const previous = previousFocusedElementRef.current
+      previousFocusedElementRef.current = null
+      if (previous?.isConnected) {
+        previous.focus()
       }
     }
+  }, [hasRightInspector, isMobileInspector])
 
-    window.addEventListener('keydown', dismissOnEscape)
-    return () => window.removeEventListener('keydown', dismissOnEscape)
-  }, [hasRightInspector, onDismissRightInspector])
+  const handleInspectorPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const panel = inspectorPanelRef.current
+    if (!panel || !panel.contains(event.target as Node)) return
+
+    if (event.key === 'Escape') {
+      if (event.defaultPrevented || onDismissRightInspector == null) return
+      event.preventDefault()
+      event.stopPropagation()
+      onDismissRightInspector()
+      return
+    }
+
+    if (event.key !== 'Tab' || event.defaultPrevented) return
+    const focusables = getInspectorFocusables(panel)
+    if (focusables.length === 0) {
+      event.preventDefault()
+      panel.focus()
+      return
+    }
+
+    const focusedIndex = focusables.indexOf(document.activeElement as HTMLElement)
+    if (event.shiftKey && focusedIndex <= 0) {
+      event.preventDefault()
+      focusables[focusables.length - 1]?.focus()
+    } else if (!event.shiftKey && focusedIndex === focusables.length - 1) {
+      event.preventDefault()
+      focusables[0]?.focus()
+    }
+  }
 
   return (
     <div className={styles.shell} data-canvas-shell="true">
@@ -103,7 +171,15 @@ export function CanvasWorkspaceShell({
               type="button"
               onClick={onDismissRightInspector}
             />
-            <div className={styles.inspectorPanel} data-canvas-inspector-panel="true">
+            <div
+              ref={inspectorPanelRef}
+              className={styles.inspectorPanel}
+              data-canvas-inspector-panel="true"
+              role={isMobileInspector ? 'dialog' : undefined}
+              aria-modal={isMobileInspector ? true : undefined}
+              tabIndex={-1}
+              onKeyDown={handleInspectorPanelKeyDown}
+            >
               {rightInspector}
             </div>
           </aside>
