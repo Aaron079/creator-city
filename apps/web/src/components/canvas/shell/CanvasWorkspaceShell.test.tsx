@@ -40,6 +40,7 @@ function harnessSource() {
     import { flushSync } from 'react-dom'
     import { createRoot } from 'react-dom/client'
     import { CanvasWorkspaceShell } from ${JSON.stringify(shellPath)}
+    import { clampCanvasDialogLeftToStage } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
 
     const root = createRoot(document.getElementById('root'))
     let dismissCount = 0
@@ -61,6 +62,8 @@ function harnessSource() {
               React.createElement('button', { id: 'inspector-first', type: 'button' }, 'First action'),
               React.createElement('button', { id: 'inspector-last', type: 'button' }, 'Last action'),
             ),
+            leftRail: React.createElement('div', { id: 'test-rail' }, 'Rail'),
+            showLeftRail: true,
             onDismissRightInspector() {
               dismissCount += 1
               isInspectorOpen = false
@@ -69,7 +72,26 @@ function harnessSource() {
             shouldRestoreInspectorFocus() { return shouldRestoreFocus },
             onInspectorFocusRestoreHandled() { shouldRestoreFocus = true },
           },
-          React.createElement('main', { id: 'stage-content' }, 'Canvas stage'),
+          React.createElement(
+            'main',
+            { id: 'stage-content' },
+            'Canvas stage',
+            React.createElement('div', {
+              id: 'fixed-task-dialog',
+              style: (() => {
+                const stageLeft = 80
+                const stageRight = 940
+                const dialogWidth = 480
+                return {
+                  position: 'fixed',
+                  top: 120,
+                  left: clampCanvasDialogLeftToStage(800, dialogWidth, stageLeft, stageRight, 16),
+                  width: dialogWidth,
+                  height: 240,
+                }
+              })(),
+            }, 'Task dialog'),
+          ),
         ),
       ))
     }
@@ -183,6 +205,9 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     assert.ok(inspector.width >= 320 && inspector.width <= 420)
     assert.equal(inspector.height, 720)
     assert.equal(await page.locator('[data-canvas-inspector-backdrop="true"]').count(), 1)
+    const dialog = await page.locator('#fixed-task-dialog').boundingBox()
+    assert.ok(dialog)
+    assert.ok(dialog.x + dialog.width <= inspector.x - 16)
     await page.close()
   })
 

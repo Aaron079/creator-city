@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  clampCanvasDialogLeftToStage,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -27,6 +28,22 @@ test('keeps the task dialog inside narrow viewports', () => {
   assert.deepEqual(getCanvasNodeDialogSize(390, 300), { width: 358, height: 268 })
 })
 
+test('clamps a task dialog to the visible canvas stage instead of the browser viewport', () => {
+  const stageLeft = 80
+  const stageRight = 940
+  const dialogWidth = 480
+  const margin = 16
+
+  assert.equal(
+    clampCanvasDialogLeftToStage(800, dialogWidth, stageLeft, stageRight, margin),
+    444,
+  )
+  assert.equal(
+    clampCanvasDialogLeftToStage(0, dialogWidth, stageLeft, stageRight, margin),
+    96,
+  )
+})
+
 test('keeps the runtime task dialog max height within 16px viewport margins', () => {
   assert.match(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 32px\)'/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 80px\)'/)
@@ -38,6 +55,18 @@ test('keeps the runtime task dialog max width within 16px viewport margins', () 
 
   assert.ok(dialogMaxWidths.includes('32'))
   assert.ok(dialogMaxWidths.every((maxWidth) => maxWidth !== '48'))
+})
+
+test('uses canvas-stage bounds for the runtime task dialog and connects the inspector dismissal', () => {
+  assert.match(visualCanvasWorkspaceSource, /clampCanvasDialogLeftToStage\([\s\S]*?rect\.left[\s\S]*?rect\.right/)
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /getCanvasNodeDialogSize\(\s*Math\.min\(viewportWidth, rect\.width\),\s*viewportHeight,\s*\)/,
+  )
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /onDismissRightInspector=\{\(\) => setIsRightInspectorOpen\(false\)\}/,
+  )
 })
 
 test('migrates legacy default node dimensions to the compact canvas scale', () => {

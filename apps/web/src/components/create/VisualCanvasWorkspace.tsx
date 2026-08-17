@@ -12,6 +12,7 @@ import {
   type CanvasNodeLayerVisualState,
 } from '@/components/create/canvas/canvasRenderPlanning'
 import {
+  clampCanvasDialogLeftToStage,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -9981,7 +9982,10 @@ export function VisualCanvasWorkspace({
     const viewportWidth = browserViewport.width || window.innerWidth
     const viewportHeight = browserViewport.height || window.innerHeight
     const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(viewportWidth, viewportHeight)
+    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(
+      Math.min(viewportWidth, rect.width),
+      viewportHeight,
+    )
     const visualDialogWidth = dialogWidth * dialogScale
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
     const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
@@ -10001,7 +10005,13 @@ export function VisualCanvasWorkspace({
       : clampNumber(belowTop, viewportMargin, viewportHeight - visualDialogHeight - viewportMargin)
 
     return {
-      left: clampNumber(nodeCenterX - visualDialogWidth / 2, viewportMargin, viewportWidth - visualDialogWidth - viewportMargin),
+      left: clampCanvasDialogLeftToStage(
+        nodeCenterX - visualDialogWidth / 2,
+        visualDialogWidth,
+        rect.left,
+        rect.right,
+        viewportMargin,
+      ),
       height: dialogHeight,
       top,
       transform: `scale(${dialogScale})`,
@@ -10537,6 +10547,7 @@ export function VisualCanvasWorkspace({
         />
       ) : undefined}
       showRightInspector={shouldRenderRightInspector}
+      onDismissRightInspector={() => setIsRightInspectorOpen(false)}
       shouldRestoreInspectorFocus={() => !inspectorFocusHandoffRef.current && !hasBlockingCanvasOverlayRef.current}
       onInspectorFocusRestoreHandled={() => { inspectorFocusHandoffRef.current = false }}
       bottomDock={

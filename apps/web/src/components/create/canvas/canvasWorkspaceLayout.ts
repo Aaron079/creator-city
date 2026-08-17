@@ -52,3 +52,16 @@ export function getCanvasNodeDialogSize(viewportWidth: number, viewportHeight: n
     height: Math.min(preferredHeight, Math.max(0, viewportHeight - viewportMargin * 2)),
   }
 }
+
+export function clampCanvasDialogLeftToStage(
+  left: number,
+  dialogWidth: number,
+  stageLeft: number,
+  stageRight: number,
+  margin: number,
+) {
+  const minimumLeft = stageLeft + margin
+  const maximumLeft = stageRight - dialogWidth - margin
+
+  return Math.max(minimumLeft, Math.min(left, maximumLeft))
+}
