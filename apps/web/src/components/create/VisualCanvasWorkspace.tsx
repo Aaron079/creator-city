@@ -3071,9 +3071,10 @@ export function VisualCanvasWorkspace({
   }, [resetCanvasModalStates])
 
   const dismissInspectorForOverlay = useCallback(() => {
+    if (!isRightInspectorOpen) return
     inspectorFocusHandoffRef.current = true
     setIsRightInspectorOpen(false)
-  }, [])
+  }, [isRightInspectorOpen])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {

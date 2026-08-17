@@ -248,6 +248,14 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
   test('closes the inspector before opening known overlapping canvas overlays', async () => {
     const workspacePath = path.resolve(process.cwd(), 'src/components/create/VisualCanvasWorkspace.tsx')
     const source = await readFile(workspacePath, 'utf8')
+    const helperStart = source.indexOf('const dismissInspectorForOverlay = useCallback')
+    assert.notEqual(helperStart, -1, 'Missing dismissInspectorForOverlay')
+    const helperBody = source.slice(helperStart, helperStart + 240)
+    assert.match(
+      helperBody,
+      /if \(!isRightInspectorOpen\) return\s+inspectorFocusHandoffRef\.current = true/,
+      'dismissInspectorForOverlay must only record a handoff while the inspector is open',
+    )
 
     for (const entryPoint of [
       'openCanvasPanel',
