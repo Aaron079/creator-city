@@ -2716,6 +2716,7 @@ export function VisualCanvasWorkspace({
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [browserViewport, setBrowserViewport] = useState({ width: 0, height: 0 })
+  const [canvasStageBoundsVersion, setCanvasStageBoundsVersion] = useState(0)
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [isLocalImageDragOver, setIsLocalImageDragOver] = useState(false)
@@ -2772,6 +2773,22 @@ export function VisualCanvasWorkspace({
     syncViewport()
     window.addEventListener('resize', syncViewport)
     return () => window.removeEventListener('resize', syncViewport)
+  }, [])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const updateCanvasStageBounds = () => {
+      setCanvasStageBoundsVersion((version) => version + 1)
+    }
+
+    updateCanvasStageBounds()
+    if (typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(updateCanvasStageBounds)
+    observer.observe(viewport)
+    return () => observer.disconnect()
   }, [])
 
   const availableDirectorRecipes = useMemo(() => nodes.flatMap((node) => {
@@ -10025,7 +10042,17 @@ export function VisualCanvasWorkspace({
       transformOrigin: 'top left',
       width: dialogWidth,
     }
-  }, [browserViewport.height, browserViewport.width, canvasPan.x, canvasPan.y, canvasZoom, editingNode, isBottomDockExpanded])
+  }, [
+    browserViewport.height,
+    browserViewport.width,
+    canvasPan.x,
+    canvasPan.y,
+    canvasStageBoundsVersion,
+    canvasZoom,
+    editingNode,
+    isBottomDockExpanded,
+    isRightInspectorOpen,
+  ])
 
   // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {

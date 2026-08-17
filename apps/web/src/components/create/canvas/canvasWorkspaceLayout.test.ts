@@ -85,11 +85,24 @@ test('uses canvas-stage bounds for the runtime task dialog and connects the insp
     visualCanvasWorkspaceSource,
     /onDismissRightInspector=\{\(\) => setIsRightInspectorOpen\(false\)\}/,
   )
+  assert.match(visualCanvasWorkspaceSource, /const \[canvasStageBoundsVersion, setCanvasStageBoundsVersion\] = useState\(0\)/)
+  assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(/)
+  assert.match(visualCanvasWorkspaceSource, /const viewport = viewportRef\.current/)
+  assert.match(visualCanvasWorkspaceSource, /observer\.observe\(viewport\)/)
+  assert.match(visualCanvasWorkspaceSource, /observer\.disconnect\(\)/)
   const nodeDialogStyleStart = visualCanvasWorkspaceSource.indexOf('const nodeDialogStyle = useMemo')
   const nodeDialogStyleEnd = visualCanvasWorkspaceSource.indexOf('// Toolbar position', nodeDialogStyleStart)
   assert.match(
     visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
     /isBottomDockExpanded/,
+  )
+  assert.match(
+    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
+    /canvasStageBoundsVersion/,
+  )
+  assert.match(
+    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
+    /isRightInspectorOpen/,
   )
 })
 

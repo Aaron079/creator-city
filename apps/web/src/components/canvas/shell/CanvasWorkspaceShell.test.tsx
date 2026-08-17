@@ -48,7 +48,35 @@ function harnessSource() {
     const root = createRoot(document.getElementById('root'))
     let dismissCount = 0
     let isInspectorOpen = false
+    let isBottomDockExpanded = false
     let shouldRestoreFocus = true
+
+    function remeasureTaskDialog() {
+      return new Promise((resolve) => window.requestAnimationFrame(() => {
+        const stage = document.querySelector('[data-canvas-region="stage"]')
+        const dialog = document.getElementById('fixed-task-dialog')
+        if (stage instanceof HTMLElement && dialog instanceof HTMLElement) {
+          const rect = stage.getBoundingClientRect()
+          const dialogWidth = 480
+          const dialogHeight = 420
+          dialog.style.left = String(clampCanvasDialogLeftToStage(
+            rect.right + 240,
+            dialogWidth,
+            rect.left,
+            rect.right,
+            16,
+          )) + 'px'
+          dialog.style.top = String(clampCanvasDialogTopToStage(
+            rect.bottom + 120,
+            dialogHeight,
+            rect.top,
+            rect.bottom,
+            16,
+          )) + 'px'
+        }
+        resolve(undefined)
+      }))
+    }
 
     function render() {
       root.render(React.createElement(
@@ -74,8 +102,8 @@ function harnessSource() {
             showLeftRail: true,
             bottomDock: React.createElement(
               'div',
-              { id: 'test-bottom-dock', style: { height: 139 } },
-              'Expanded dock',
+              { id: 'test-bottom-dock', style: { height: isBottomDockExpanded ? 139 : 39 } },
+              isBottomDockExpanded ? 'Expanded dock' : 'Collapsed dock',
             ),
             showBottomDock: true,
             onDismissRightInspector() {
@@ -92,21 +120,11 @@ function harnessSource() {
             'Canvas stage',
             React.createElement('div', {
               id: 'fixed-task-dialog',
-              style: (() => {
-                const stageLeft = 80
-                const stageRight = 940
-                const stageTop = 64
-                const stageBottom = 580
-                const dialogWidth = 480
-                const dialogHeight = 420
-                return {
-                  position: 'fixed',
-                  top: clampCanvasDialogTopToStage(700, dialogHeight, stageTop, stageBottom, 16),
-                  left: clampCanvasDialogLeftToStage(800, dialogWidth, stageLeft, stageRight, 16),
-                  width: dialogWidth,
-                  height: dialogHeight,
-                }
-              })(),
+              style: {
+                position: 'fixed',
+                width: 480,
+                height: 420,
+              },
             }, 'Task dialog'),
           ),
         ),
@@ -118,6 +136,15 @@ function harnessSource() {
       openInspector() {
         isInspectorOpen = true
         flushSync(render)
+        return remeasureTaskDialog()
+      },
+      expandBottomDock() {
+        isBottomDockExpanded = true
+        flushSync(render)
+        return remeasureTaskDialog()
+      },
+      remeasureTaskDialog() {
+        return remeasureTaskDialog()
       },
       openInspectorWithHigherLayerFocus() {
         isInspectorOpen = true
@@ -176,8 +203,10 @@ after(async () => {
 type CanvasWorkspaceShellHarness = {
   dismissCount: () => number
   closeInspectorForBlockingOverlay: () => void
-  openInspector: () => void
+  expandBottomDock: () => Promise<void>
+  openInspector: () => Promise<void>
   openInspectorWithHigherLayerFocus: () => void
+  remeasureTaskDialog: () => Promise<void>
   unmount: () => void
 }
 
@@ -202,10 +231,36 @@ async function dismissCount(page: Page) {
 }
 
 async function openInspector(page: Page) {
-  await page.evaluate(() => (
+  await page.evaluate(async () => (
     window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
   ).__canvasWorkspaceShellHarness.openInspector())
   await page.waitForSelector('[data-canvas-region="right-inspector"]')
+}
+
+async function remeasureTaskDialog(page: Page) {
+  await page.evaluate(async () => (
+    window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
+  ).__canvasWorkspaceShellHarness.remeasureTaskDialog())
+}
+
+async function expandBottomDock(page: Page) {
+  await page.evaluate(async () => (
+    window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
+  ).__canvasWorkspaceShellHarness.expandBottomDock())
+}
+
+async function assertTaskDialogWithinStage(page: Page) {
+  const stage = await page.locator('[data-canvas-region="stage"]').boundingBox()
+  const dialog = await page.locator('#fixed-task-dialog').boundingBox()
+
+  assert.ok(stage)
+  assert.ok(dialog)
+  assert.ok(dialog.x >= stage.x + 16)
+  assert.ok(dialog.x + dialog.width <= stage.x + stage.width - 16)
+  assert.ok(dialog.y >= stage.y + 16)
+  assert.ok(dialog.y + dialog.height <= stage.y + stage.height - 16)
+
+  return { dialog, stage }
 }
 
 async function waitForAnimationFrame(page: Page) {
@@ -213,25 +268,25 @@ async function waitForAnimationFrame(page: Page) {
 }
 
 describe('CanvasWorkspaceShell responsive inspector', () => {
-  test('renders the inspector as a bounded desktop aside', async () => {
+  test('remeasures fixed task dialogs as the inspector and dock change stage bounds', async () => {
     const page = await renderPage({ width: 1280, height: 720 })
+    await remeasureTaskDialog(page)
+    const initial = await assertTaskDialogWithinStage(page)
+    assert.equal(await page.locator('[data-canvas-region="right-inspector"]').count(), 0)
+
     await openInspector(page)
     const inspector = await page.locator('[data-canvas-region="right-inspector"]').boundingBox()
 
     assert.ok(inspector)
     assert.ok(inspector.width >= 320 && inspector.width <= 420)
-    assert.equal(inspector.y, 64)
-    assert.equal(inspector.height, 516)
     assert.equal(await page.locator('[data-canvas-inspector-backdrop="true"]').count(), 1)
-    const stage = await page.locator('[data-canvas-region="stage"]').boundingBox()
-    assert.ok(stage)
-    assert.equal(stage.y, 64)
-    assert.equal(stage.height, 516)
-    const dialog = await page.locator('#fixed-task-dialog').boundingBox()
-    assert.ok(dialog)
-    assert.ok(dialog.x + dialog.width <= inspector.x - 16)
-    assert.ok(dialog.y >= stage.y + 16)
-    assert.ok(dialog.y + dialog.height <= stage.y + stage.height - 16)
+    const afterInspector = await assertTaskDialogWithinStage(page)
+    assert.ok(afterInspector.stage.width < initial.stage.width)
+    assert.ok(afterInspector.dialog.x + afterInspector.dialog.width <= inspector.x - 16)
+
+    await expandBottomDock(page)
+    const afterDock = await assertTaskDialogWithinStage(page)
+    assert.ok(afterDock.stage.height < afterInspector.stage.height)
     await page.close()
   })
 
