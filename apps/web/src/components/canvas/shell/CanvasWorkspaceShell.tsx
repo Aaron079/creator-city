@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import styles from './canvasWorkspaceShell.module.css'
 
 /**
@@ -31,6 +31,8 @@ export type CanvasWorkspaceShellProps = {
   showRightInspector?: boolean
   /** Whether to show bottom dock when provided (default: false) */
   showBottomDock?: boolean
+  /** Dismisses the responsive right inspector shell */
+  onDismissRightInspector?: () => void
   /** Compact layout for small screens */
   compact?: boolean
 }
@@ -45,10 +47,26 @@ export function CanvasWorkspaceShell({
   showLeftRail = true,
   showRightInspector = false,
   showBottomDock = false,
+  onDismissRightInspector,
 }: CanvasWorkspaceShellProps) {
   const hasLeftRail = showLeftRail && leftRail != null
   const hasRightInspector = showRightInspector && rightInspector != null
   const hasBottomDock = showBottomDock && bottomDock != null
+
+  useEffect(() => {
+    if (!hasRightInspector || onDismissRightInspector == null) {
+      return
+    }
+
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onDismissRightInspector()
+      }
+    }
+
+    window.addEventListener('keydown', dismissOnEscape)
+    return () => window.removeEventListener('keydown', dismissOnEscape)
+  }, [hasRightInspector, onDismissRightInspector])
 
   return (
     <div className={styles.shell} data-canvas-shell="true">
@@ -73,9 +91,22 @@ export function CanvasWorkspaceShell({
         </div>
 
         {hasRightInspector ? (
-          <div className={styles.rightInspector} data-canvas-region="right-inspector">
-            {rightInspector}
-          </div>
+          <aside
+            className={styles.rightInspector}
+            data-canvas-region="right-inspector"
+            aria-label="节点检查器"
+          >
+            <button
+              className={styles.inspectorBackdrop}
+              data-canvas-inspector-backdrop="true"
+              aria-label="关闭节点检查器"
+              type="button"
+              onClick={onDismissRightInspector}
+            />
+            <div className={styles.inspectorPanel} data-canvas-inspector-panel="true">
+              {rightInspector}
+            </div>
+          </aside>
         ) : null}
       </div>
 
