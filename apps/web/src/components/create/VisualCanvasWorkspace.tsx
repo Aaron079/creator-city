@@ -108,7 +108,7 @@ import { SceneToolLayer } from '@/components/create/SceneToolLayer'
 import { CanvasWorkspaceShell } from '@/components/canvas/shell/CanvasWorkspaceShell'
 import { StoryboardDirectorInteractionGate } from '@/components/create/canvas/StoryboardDirectorInteractionGate'
 import { CanvasTopCommandBar } from '@/components/canvas/shell/CanvasTopCommandBar'
-// CanvasRightInspector removed — inspector panel not used
+import { CanvasRightInspector, type InspectorEdgeRef } from '@/components/canvas/inspector/CanvasRightInspector'
 import { CanvasBottomDock } from '@/components/canvas/dock/CanvasBottomDock'
 import type { CanvasModalId } from '@/components/canvas/modal/canvasModalTypes'
 import { SceneToolPalette } from '@/components/create/SceneToolPalette'
@@ -4709,6 +4709,10 @@ export function VisualCanvasWorkspace({
   }, [activeCanvasModal, activeCreativeAssetsNodeId, activeEdgeId, activeInspectorNodeId, activeNodeId, activePreviewNodeId, canvasZoom, closeActivePreview, closeCanvasPanel, closeCreativeAssets, closeEdgeDirector, closePromptInspector, deleteNode, handleCloseStoryboardDirector, mediaReviewWindows.length, resetCanvasView, setZoomAroundPoint])
 
   const nodeById = useMemo(() => buildCanvasNodeIndex(nodes), [nodes])
+  const nodeTitleById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node.title || '未命名节点'])),
+    [nodes],
+  )
 
   const activeNode = useMemo(
     () => nodes.find((node) => node.id === activeNodeId) ?? null,
@@ -4757,6 +4761,22 @@ export function VisualCanvasWorkspace({
       ? edges.filter((edge) => edge.toNodeId === activeInspectorNodeId)
       : [],
     [activeInspectorNodeId, edges],
+  )
+  const activeNodeIncomingEdges = useMemo<InspectorEdgeRef[]>(
+    () => activeNodeId
+      ? edges
+          .filter((edge) => edge.toNodeId === activeNodeId)
+          .map(({ id, fromNodeId, toNodeId, label }) => ({ id, fromNodeId, toNodeId, label }))
+      : [],
+    [activeNodeId, edges],
+  )
+  const activeNodeOutgoingEdges = useMemo<InspectorEdgeRef[]>(
+    () => activeNodeId
+      ? edges
+          .filter((edge) => edge.fromNodeId === activeNodeId)
+          .map(({ id, fromNodeId, toNodeId, label }) => ({ id, fromNodeId, toNodeId, label }))
+      : [],
+    [activeNodeId, edges],
   )
   const activeInspectorCharacterContext = useMemo(() => (
     activeInspectorNode
@@ -10491,7 +10511,22 @@ export function VisualCanvasWorkspace({
       topCommand={topCommandBar}
       leftRail={leftToolRail}
       showLeftRail
-      rightInspector={shouldRenderRightInspector ? undefined : undefined}
+      rightInspector={shouldRenderRightInspector ? (
+        <CanvasRightInspector
+          node={activeNode!}
+          sourceNode={inspectorSourceNode}
+          incomingEdges={activeNodeIncomingEdges}
+          outgoingEdges={activeNodeOutgoingEdges}
+          nodeTitleById={nodeTitleById}
+          projectId={projectId || undefined}
+          onClose={() => setIsRightInspectorOpen(false)}
+          onSelectNode={(nodeId) => {
+            const node = nodeById.get(nodeId)
+            if (node) selectNodeForMove(node)
+          }}
+          onOpenGenerationDialog={() => openGenerationDialog(activeNode!.id)}
+        />
+      ) : undefined}
       showRightInspector={shouldRenderRightInspector}
       shouldRestoreInspectorFocus={() => !inspectorFocusHandoffRef.current && !hasBlockingCanvasOverlayRef.current}
       onInspectorFocusRestoreHandled={() => { inspectorFocusHandoffRef.current = false }}

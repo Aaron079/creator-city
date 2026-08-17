@@ -245,7 +245,7 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     await page.close()
   })
 
-  test('closes the inspector before opening known overlapping canvas overlays', async () => {
+  test('gates and renders the inspector around known overlapping canvas overlays', async () => {
     const workspacePath = path.resolve(process.cwd(), 'src/components/create/VisualCanvasWorkspace.tsx')
     const source = await readFile(workspacePath, 'utf8')
     const helperStart = source.indexOf('const dismissInspectorForOverlay = useCallback')
@@ -269,6 +269,20 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     )
     assert.match(source, /rightInspector=\{shouldRenderRightInspector \?/)
     assert.match(source, /showRightInspector=\{shouldRenderRightInspector\}/)
+    assert.doesNotMatch(source, /rightInspector=\{shouldRenderRightInspector \? undefined : undefined\}/)
+    assert.match(
+      source,
+      /import \{ CanvasRightInspector, type InspectorEdgeRef \} from '@\/components\/canvas\/inspector\/CanvasRightInspector'/,
+    )
+    assert.match(source, /const nodeTitleById = useMemo\(/)
+    assert.match(source, /const activeNodeIncomingEdges = useMemo<InspectorEdgeRef\[\]>\(/)
+    assert.match(source, /const activeNodeOutgoingEdges = useMemo<InspectorEdgeRef\[\]>\(/)
+    assert.match(
+      source,
+      /rightInspector=\{shouldRenderRightInspector \? \(\s*<CanvasRightInspector[\s\S]*?node=\{activeNode!\}[\s\S]*?incomingEdges=\{activeNodeIncomingEdges\}[\s\S]*?outgoingEdges=\{activeNodeOutgoingEdges\}[\s\S]*?nodeTitleById=\{nodeTitleById\}/,
+    )
+    assert.match(source, /onClose=\{\(\) => setIsRightInspectorOpen\(false\)\}/)
+    assert.match(source, /onOpenGenerationDialog=\{\(\) => openGenerationDialog\(activeNode!\.id\)\}/)
 
     for (const entryPoint of [
       'openCanvasPanel',
