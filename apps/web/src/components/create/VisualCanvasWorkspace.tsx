@@ -11961,7 +11961,7 @@ export function VisualCanvasWorkspace({
       {editingNode && nodeDialogStyle ? (
         <div
           className="canvas-node-dialog create-floating-console"
-          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <UpstreamTaskStrip
