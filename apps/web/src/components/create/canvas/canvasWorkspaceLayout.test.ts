@@ -11,6 +11,7 @@ import {
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
 const visualCanvasWorkspaceSource = readFileSync(resolve(testDirectory, '../VisualCanvasWorkspace.tsx'), 'utf8')
+const canvasModuleSource = readFileSync(resolve(testDirectory, '../canvas.module.css'), 'utf8')
 
 test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
@@ -29,6 +30,14 @@ test('keeps the task dialog inside narrow viewports', () => {
 test('keeps the runtime task dialog max height within 16px viewport margins', () => {
   assert.match(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 32px\)'/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 80px\)'/)
+})
+
+test('keeps the runtime task dialog max width within 16px viewport margins', () => {
+  const dialogRule = /\.scope :global\(\.canvas-node-dialog\) \{[^}]*max-width: calc\(100vw - (\d+)px\);/g
+  const dialogMaxWidths = Array.from(canvasModuleSource.matchAll(dialogRule), (match) => match[1])
+
+  assert.ok(dialogMaxWidths.includes('32'))
+  assert.ok(dialogMaxWidths.every((maxWidth) => maxWidth !== '48'))
 })
 
 test('migrates legacy default node dimensions to the compact canvas scale', () => {

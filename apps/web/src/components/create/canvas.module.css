@@ -3126,7 +3126,7 @@
 }
 
 .scope :global(.canvas-node-dialog) {
-  max-width: calc(100vw - 48px);
+  max-width: calc(100vw - 32px);
   overflow: visible;
 }
 
@@ -3322,7 +3322,7 @@
 
 .scope :global(.canvas-node-dialog) {
   height: 210px;
-  max-width: calc(100vw - 48px);
+  max-width: calc(100vw - 32px);
   border-radius: 20px;
   padding: 14px 16px 12px;
   overflow: visible;
