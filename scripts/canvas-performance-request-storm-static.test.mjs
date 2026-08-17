@@ -6,6 +6,7 @@ const root = new URL('../', import.meta.url)
 const workspacePath = new URL('apps/web/src/components/create/VisualCanvasWorkspace.tsx', root)
 const cardPath = new URL('apps/web/src/components/create/CanvasNodeCard.tsx', root)
 const layerPath = new URL('apps/web/src/components/create/canvas/CanvasNodeLayer.tsx', root)
+const rightInspectorPath = new URL('apps/web/src/components/canvas/inspector/CanvasRightInspector.tsx', root)
 
 const workspace = readFileSync(workspacePath, 'utf8')
 const card = readFileSync(cardPath, 'utf8')
@@ -23,6 +24,7 @@ const cardAvailabilityProps = [
   'canCreateDerivedVideo',
   'canOpenGenerationDialog',
 ]
+const rightInspector = readFileSync(rightInspectorPath, 'utf8')
 
 test('canvas node layer memoizes planner state through a card props factory', () => {
   assert.ok(existsSync(layerPath), 'CanvasNodeLayer integration is absent')
@@ -75,4 +77,17 @@ test('canvas save and media request storm safeguards stay in place', () => {
   assert.match(card, /Click-to-load overlay/)
   assert.match(card, /preload="metadata"/)
   assert.match(card, /loading="lazy"/)
+})
+
+test('right inspector remains a request-free node-context surface', () => {
+  assert.doesNotMatch(rightInspector, /\bfetch\s*\(/)
+  assert.doesNotMatch(rightInspector, /scheduleCanvasSave/)
+  assert.doesNotMatch(rightInspector, /\/api\/generate\//)
+
+  assert.match(workspace, /const shouldRenderRightInspector = Boolean\([\s\S]*?activeNode && isRightInspectorOpen && !hasBlockingCanvasOverlay[\s\S]*?\)/)
+  assert.match(workspace, /rightInspector=\{shouldRenderRightInspector \? \(/)
+  assert.match(workspace, /showRightInspector=\{shouldRenderRightInspector\}/)
+  assert.match(workspace, /onOpenPromptInspector=\{\(nodeId\) => openPromptInspector\(nodeId\)\}/)
+  assert.match(workspace, /onOpenCameraControl=\{\(nodeId\) => \{[\s\S]*?openNodeScopedTool\('camera-control', node\)/)
+  assert.match(workspace, /onOpenSceneLighting=\{\(nodeId\) => \{[\s\S]*?openNodeScopedTool\('scene-lighting', node\)/)
 })

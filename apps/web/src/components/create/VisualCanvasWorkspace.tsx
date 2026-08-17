@@ -10525,6 +10525,15 @@ export function VisualCanvasWorkspace({
             if (node) selectNodeForMove(node)
           }}
           onOpenGenerationDialog={() => openGenerationDialog(activeNode!.id)}
+          onOpenPromptInspector={(nodeId) => openPromptInspector(nodeId)}
+          onOpenCameraControl={(nodeId) => {
+            const node = nodes.find((candidate) => candidate.id === nodeId)
+            if (node) openNodeScopedTool('camera-control', node)
+          }}
+          onOpenSceneLighting={(nodeId) => {
+            const node = nodes.find((candidate) => candidate.id === nodeId)
+            if (node) openNodeScopedTool('scene-lighting', node)
+          }}
         />
       ) : undefined}
       showRightInspector={shouldRenderRightInspector}
