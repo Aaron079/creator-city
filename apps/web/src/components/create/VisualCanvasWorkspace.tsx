@@ -2597,6 +2597,7 @@ export function VisualCanvasWorkspace({
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false)
   const inspectorFocusHandoffRef = useRef(false)
+  const hasBlockingCanvasOverlayRef = useRef(false)
   const [isBottomDockExpanded, setIsBottomDockExpanded] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
@@ -10432,6 +10433,48 @@ export function VisualCanvasWorkspace({
     </div>
   )
 
+  const hasBlockingCanvasOverlay = Boolean(
+    activeCanvasModal
+    || editingNodeId
+    || activePreviewNodeId
+    || mediaReviewWindows.length > 0
+    || activeInspectorNodeId
+    || activeMediaDiagnostics
+    || activeCreativeAssetsNodeId
+    || activeEdgeId
+    || storyboardPreviewOpen
+    || storyboardDirectorOpen
+    || generationTasksOpen
+    || p0MediaDebugOpen
+    || creditModal.open
+    || newProjectOpen
+    || isAddMenuOpen
+    || isLexiconOpen
+    || isVariantPlannerOpen
+    || isCharacterLockOpen
+    || isABCompareOpen
+    || isKeyframeExtractorOpen
+    || isShotListBuilderOpen
+    || isShotSequencerOpen
+    || isContinuityCheckerOpen
+    || isCharacterBibleOpen
+    || isSceneBibleOpen
+    || isCameraControlOpen
+    || isSceneLightingOpen
+    || isPromptBoosterOpen
+    || isBatchRewriterOpen
+    || isLookPackageOpen
+    || isColorGradePaletteOpen
+    || isRemoveBackgroundOpen
+    || isHdReconstructionOpen
+    || isStoryboardReferenceExtractorOpen
+    || isAnnotationPanelOpen
+  )
+  hasBlockingCanvasOverlayRef.current = hasBlockingCanvasOverlay
+  const shouldRenderRightInspector = Boolean(
+    activeNode && isRightInspectorOpen && !hasBlockingCanvasOverlay,
+  )
+
   return (
     <StoryboardDirectorInteractionGate
       recovery={draftRestorePrompt ? {
@@ -10448,9 +10491,9 @@ export function VisualCanvasWorkspace({
       topCommand={topCommandBar}
       leftRail={leftToolRail}
       showLeftRail
-      rightInspector={undefined}
-      showRightInspector={false}
-      shouldRestoreInspectorFocus={() => !inspectorFocusHandoffRef.current}
+      rightInspector={shouldRenderRightInspector ? undefined : undefined}
+      showRightInspector={shouldRenderRightInspector}
+      shouldRestoreInspectorFocus={() => !inspectorFocusHandoffRef.current && !hasBlockingCanvasOverlayRef.current}
       onInspectorFocusRestoreHandled={() => { inspectorFocusHandoffRef.current = false }}
       bottomDock={
         <CanvasBottomDock

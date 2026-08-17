@@ -89,7 +89,7 @@ function harnessSource() {
         document.body.append(higherLayerModal)
         higherLayerModal.focus()
       },
-      handoffInspectorToHigherLayer() {
+      closeInspectorForBlockingOverlay() {
         shouldRestoreFocus = false
         const higherLayerModal = document.createElement('button')
         higherLayerModal.id = 'overlay-focus-handoff'
@@ -136,7 +136,7 @@ after(async () => {
 
 type CanvasWorkspaceShellHarness = {
   dismissCount: () => number
-  handoffInspectorToHigherLayer: () => void
+  closeInspectorForBlockingOverlay: () => void
   openInspector: () => void
   openInspectorWithHigherLayerFocus: () => void
   unmount: () => void
@@ -232,7 +232,7 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
     await waitForAnimationFrame(page)
     await page.evaluate(() => (
       window as unknown as { __canvasWorkspaceShellHarness: CanvasWorkspaceShellHarness }
-    ).__canvasWorkspaceShellHarness.handoffInspectorToHigherLayer())
+    ).__canvasWorkspaceShellHarness.closeInspectorForBlockingOverlay())
     await waitForAnimationFrame(page)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'overlay-focus-handoff')
     assert.equal(await page.locator('[data-canvas-region="right-inspector"]').count(), 0)
@@ -256,6 +256,19 @@ describe('CanvasWorkspaceShell responsive inspector', () => {
       /if \(!isRightInspectorOpen\) return\s+inspectorFocusHandoffRef\.current = true/,
       'dismissInspectorForOverlay must only record a handoff while the inspector is open',
     )
+    assert.match(source, /const hasBlockingCanvasOverlay = Boolean\(/)
+    assert.match(source, /const hasBlockingCanvasOverlayRef = useRef\(false\)/)
+    assert.match(source, /hasBlockingCanvasOverlayRef\.current = hasBlockingCanvasOverlay/)
+    assert.match(
+      source,
+      /const shouldRenderRightInspector = Boolean\(\s*activeNode && isRightInspectorOpen && !hasBlockingCanvasOverlay/,
+    )
+    assert.match(
+      source,
+      /shouldRestoreInspectorFocus=\{\(\) => !inspectorFocusHandoffRef\.current && !hasBlockingCanvasOverlayRef\.current\}/,
+    )
+    assert.match(source, /rightInspector=\{shouldRenderRightInspector \?/)
+    assert.match(source, /showRightInspector=\{shouldRenderRightInspector\}/)
 
     for (const entryPoint of [
       'openCanvasPanel',
