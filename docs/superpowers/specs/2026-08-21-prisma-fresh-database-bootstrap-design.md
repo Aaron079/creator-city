@@ -12,12 +12,13 @@ account features can initialize.
 
 ## Root Cause
 
-The repository has Prisma schema definitions for the full application, but the
-old migration history begins after an implicit baseline. Core tables such as
-`Project`, `CanvasWorkflow`, `CanvasNode`, `CanvasEdge`, and `CanvasComment`
-were historically created through separate SQL Editor scripts. As a result,
+The first historical Prisma migration establishes the original application
+baseline, including `User`, `Project`, and `Asset`. Later Canvas, delivery, and
+Provider-account schema additions were partly created through separate SQL
+Editor scripts rather than committed Prisma migrations. As a result,
 `prisma migrate deploy` can report success while a blank database still lacks
-the tables that the Canvas routes need.
+`CanvasWorkflow`, `CanvasNode`, `CanvasEdge`, `CanvasComment`, and other
+objects required by the current application.
 
 The legacy `supabase-setup.sql` is also stale relative to the current schema.
 It does not cover every current model or enum. The unmerged recovery migration
@@ -26,15 +27,16 @@ baseline and cannot be adopted unchanged.
 
 ## Selected Design
 
-Add one new, idempotent Prisma baseline migration ordered before the existing
-migration history. It establishes every base enum, table, index, foreign key,
-and required trigger that later migrations rely upon. Existing migrations then
-continue to evolve that baseline to the current schema.
+Add one new, idempotent Prisma normalization migration after the existing
+migration history. It establishes the current schema objects that were omitted
+from the historical chain, including their indexes, foreign keys, and required
+triggers. The original baseline and existing migrations remain unchanged.
 
-The baseline migration has two supported modes:
+The normalization migration has two supported modes:
 
-1. On a blank PostgreSQL database, it creates the full legacy base schema so
-   all existing migrations can run without manual setup SQL.
+1. On a blank PostgreSQL database, the original migration chain creates its
+   base schema first and the normalization migration then completes the
+   historically omitted objects without manual setup SQL.
 2. On an existing compatible database, it uses guarded DDL and validation so it
    can be recorded without deleting, replacing, or rewriting existing data.
 
@@ -54,12 +56,12 @@ recovery references. New Preview bootstrap is not allowed to depend on them.
 
 ## Implementation Shape
 
-1. Audit the current Prisma schema against the legacy baseline and every
-   committed migration to establish the exact base objects required before the
-   first historical migration.
-2. Add one checked-in baseline migration containing guarded PostgreSQL DDL for
-   that base contract. It must preserve the original object names and relation
-   semantics expected by later migrations and Prisma Client.
+1. Audit the current Prisma schema against the original baseline and every
+   committed migration to establish the exact objects omitted from the migration
+   chain.
+2. Add one checked-in forward normalization migration containing guarded
+   PostgreSQL DDL for those omitted objects. It must preserve the current object
+   names and relation semantics expected by Prisma Client.
 3. Add a static schema-coverage regression that fails when a schema model or
    enum is neither established by the baseline nor introduced by a later
    migration.
