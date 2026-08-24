@@ -41,7 +41,7 @@ test('canvas client validates acknowledgement before clearing deletion state', (
   assert.match(workspace, /baseUpdatedAt:\s*serverSaveVersionRef\.current/)
   assert.match(
     workspace,
-    /const saveFailure = canvasSaveFailure\(response\.ok, data\)[\s\S]*if \(saveFailure\)[\s\S]*deletedNodeIdsRef\.current = \[\]/,
+    /const saveFailure = canvasSaveFailure\(response\.ok, data\)[\s\S]*if \(saveFailure\)[\s\S]*deletedNodeIdsRef\.current = deletedNodeIdsRef\.current\.filter/,
   )
 })
 

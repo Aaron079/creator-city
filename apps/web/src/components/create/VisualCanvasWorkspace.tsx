@@ -249,6 +249,10 @@ import {
   type CanvasSaveResponseData,
 } from '@/lib/canvas/canvasSaveIntegrity'
 import {
+  buildCanvasEntitySavePayload,
+  collectChangedEntityIds,
+} from '@/lib/canvas/canvasIncrementalSave'
+import {
   decideCanvasDraftRecovery,
   mergeStoryboardDirectorRecoveryRiskIntoServerNodes,
 } from '@/lib/canvas/canvasDraftRecovery'
@@ -2751,6 +2755,12 @@ export function VisualCanvasWorkspace({
   const saveBackoffUntilRef = useRef(0)
   const deletedNodeIdsRef = useRef<string[]>([])
   const deletedEdgeIdsRef = useRef<string[]>([])
+  const dirtyNodeIdsRef = useRef(new Set<string>())
+  const dirtyEdgeIdsRef = useRef(new Set<string>())
+  const dirtyNodeRevisionRef = useRef(new Map<string, number>())
+  const dirtyEdgeRevisionRef = useRef(new Map<string, number>())
+  const dirtyRevisionRef = useRef(0)
+  const forceFullCanvasSaveRef = useRef(false)
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
   const latestEdgesRef = useRef<CanvasEdge[]>([])
   const prevEditingNodeIdRef = useRef<string | null>(null)
@@ -3158,13 +3168,23 @@ export function VisualCanvasWorkspace({
   // ── End Canvas Modal Manager ─────────────────────────────────────────────
 
   const commitNodes = useCallback((next: VisualCanvasNode[] | ((current: VisualCanvasNode[]) => VisualCanvasNode[])) => {
-    const resolved = typeof next === 'function' ? next(latestNodesRef.current) : next
+    const previous = latestNodesRef.current
+    const resolved = typeof next === 'function' ? next(previous) : next
+    for (const nodeId of collectChangedEntityIds(previous, resolved)) {
+      dirtyNodeIdsRef.current.add(nodeId)
+      dirtyNodeRevisionRef.current.set(nodeId, ++dirtyRevisionRef.current)
+    }
     latestNodesRef.current = resolved
     setNodes(resolved)
   }, [])
 
   const commitEdges = useCallback((next: CanvasEdge[] | ((current: CanvasEdge[]) => CanvasEdge[])) => {
-    const resolved = typeof next === 'function' ? next(latestEdgesRef.current) : next
+    const previous = latestEdgesRef.current
+    const resolved = typeof next === 'function' ? next(previous) : next
+    for (const edgeId of collectChangedEntityIds(previous, resolved)) {
+      dirtyEdgeIdsRef.current.add(edgeId)
+      dirtyEdgeRevisionRef.current.set(edgeId, ++dirtyRevisionRef.current)
+    }
     latestEdgesRef.current = resolved
     setEdges(resolved)
   }, [])
@@ -3462,6 +3482,7 @@ export function VisualCanvasWorkspace({
     nodes: VisualCanvasNode[]
     edges: CanvasEdge[]
     viewport?: unknown
+    forceFullSave?: boolean
     allowEmpty?: boolean
     status?: SaveStatus
     message?: string
@@ -3523,6 +3544,11 @@ export function VisualCanvasWorkspace({
     latestEdgesRef.current = args.edges
     commitNodes(sanitizedNodes)
     commitEdges(args.edges)
+    dirtyNodeIdsRef.current.clear()
+    dirtyEdgeIdsRef.current.clear()
+    dirtyNodeRevisionRef.current.clear()
+    dirtyEdgeRevisionRef.current.clear()
+    forceFullCanvasSaveRef.current = args.forceFullSave ?? false
     const viewport = args.viewport as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
     if (viewport?.zoom) setCanvasZoom(Number(viewport.zoom))
     if (viewport?.pan) setCanvasPan({ x: Number(viewport.pan.x ?? 0), y: Number(viewport.pan.y ?? 0) })
@@ -3564,6 +3590,21 @@ export function VisualCanvasWorkspace({
     }
     saveInFlightRef.current = true
     const snapshot = getCanvasSnapshot()
+    const entityPayload = buildCanvasEntitySavePayload({
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      dirtyNodeIds: dirtyNodeIdsRef.current,
+      dirtyEdgeIds: dirtyEdgeIdsRef.current,
+      forceFull: forceFullCanvasSaveRef.current,
+    })
+    const submittedNodeRevisions = new Map(
+      entityPayload.nodes.map((node) => [node.id, dirtyNodeRevisionRef.current.get(node.id)]),
+    )
+    const submittedEdgeRevisions = new Map(
+      entityPayload.edges.map((edge) => [edge.id, dirtyEdgeRevisionRef.current.get(edge.id)]),
+    )
+    const submittedDeletedNodeIds = [...deletedNodeIdsRef.current]
+    const submittedDeletedEdgeIds = [...deletedEdgeIdsRef.current]
     flushLocalSnapshot()
     setSaveStatus('saving')
     setSaveMessage('')
@@ -3587,10 +3628,11 @@ export function VisualCanvasWorkspace({
         body: JSON.stringify({
           workflowId,
           viewport: snapshot.viewport,
-          nodes: snapshot.nodes,
-          edges: snapshot.edges,
-          deletedNodeIds: deletedNodeIdsRef.current,
-          deletedEdgeIds: deletedEdgeIdsRef.current,
+          saveMode: entityPayload.saveMode,
+          nodes: entityPayload.nodes,
+          edges: entityPayload.edges,
+          deletedNodeIds: submittedDeletedNodeIds,
+          deletedEdgeIds: submittedDeletedEdgeIds,
           baseUpdatedAt: serverSaveVersionRef.current,
         }),
       })
@@ -3636,8 +3678,21 @@ export function VisualCanvasWorkspace({
         saveRetryAttemptRef.current = 0
         return
       }
-      deletedNodeIdsRef.current = []
-      deletedEdgeIdsRef.current = []
+      for (const [nodeId, revision] of submittedNodeRevisions) {
+        if (dirtyNodeRevisionRef.current.get(nodeId) === revision) {
+          dirtyNodeIdsRef.current.delete(nodeId)
+          dirtyNodeRevisionRef.current.delete(nodeId)
+        }
+      }
+      for (const [edgeId, revision] of submittedEdgeRevisions) {
+        if (dirtyEdgeRevisionRef.current.get(edgeId) === revision) {
+          dirtyEdgeIdsRef.current.delete(edgeId)
+          dirtyEdgeRevisionRef.current.delete(edgeId)
+        }
+      }
+      deletedNodeIdsRef.current = deletedNodeIdsRef.current.filter((nodeId) => !submittedDeletedNodeIds.includes(nodeId))
+      deletedEdgeIdsRef.current = deletedEdgeIdsRef.current.filter((edgeId) => !submittedDeletedEdgeIds.includes(edgeId))
+      if (entityPayload.saveMode === 'full') forceFullCanvasSaveRef.current = false
       const savedAt = data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString()
       serverSaveVersionRef.current = savedAt
       flushLocalSnapshot(savedAt)
@@ -3677,6 +3732,7 @@ export function VisualCanvasWorkspace({
       nodes: draft.nodes,
       edges: draft.edges,
       viewport: draft.viewport,
+      forceFullSave: true,
       status: 'restored-draft',
       message: '本地草稿已恢复，正在同步...',
     })
@@ -3690,6 +3746,7 @@ export function VisualCanvasWorkspace({
         body: JSON.stringify({
           workflowId: draft.workflowId,
           viewport: draft.viewport,
+          saveMode: 'full',
           nodes: draft.nodes,
           edges: draft.edges,
           deletedNodeIds: [],
@@ -3705,6 +3762,11 @@ export function VisualCanvasWorkspace({
       if (saveFailure) throw new Error(saveFailure)
       const savedAt = data.serverUpdatedAt ?? data.savedAt ?? new Date().toISOString()
       serverSaveVersionRef.current = savedAt
+      dirtyNodeIdsRef.current.clear()
+      dirtyEdgeIdsRef.current.clear()
+      dirtyNodeRevisionRef.current.clear()
+      dirtyEdgeRevisionRef.current.clear()
+      forceFullCanvasSaveRef.current = false
       writeUnifiedLocalSnapshot({
         projectId: draft.projectId,
         workflowId: draft.workflowId,
@@ -3793,6 +3855,19 @@ export function VisualCanvasWorkspace({
       updatedAt: new Date().toISOString(),
     }
     const snapshot = getCanvasSnapshot()
+    const entityPayload = buildCanvasEntitySavePayload({
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      dirtyNodeIds: dirtyNodeIdsRef.current,
+      dirtyEdgeIds: dirtyEdgeIdsRef.current,
+      forceFull: forceFullCanvasSaveRef.current,
+    })
+    const submittedNodeRevisions = new Map(
+      entityPayload.nodes.map((node) => [node.id, dirtyNodeRevisionRef.current.get(node.id)]),
+    )
+    const submittedEdgeRevisions = new Map(
+      entityPayload.edges.map((edge) => [edge.id, dirtyEdgeRevisionRef.current.get(edge.id)]),
+    )
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -3802,8 +3877,9 @@ export function VisualCanvasWorkspace({
         body: JSON.stringify({
           workflowId,
           viewport: snapshot.viewport,
-          nodes: snapshot.nodes,
-          edges: snapshot.edges,
+          saveMode: entityPayload.saveMode,
+          nodes: entityPayload.nodes,
+          edges: entityPayload.edges,
           deletedNodeIds: [],
           deletedEdgeIds: [],
           workflowMetadata: { shotSequence: state },
@@ -3816,6 +3892,19 @@ export function VisualCanvasWorkspace({
         serverSaveVersionRef.current = responseServerVersion
       }
       if (canvasSaveFailure(response.ok, data)) return 'failed'
+      for (const [nodeId, revision] of submittedNodeRevisions) {
+        if (dirtyNodeRevisionRef.current.get(nodeId) === revision) {
+          dirtyNodeIdsRef.current.delete(nodeId)
+          dirtyNodeRevisionRef.current.delete(nodeId)
+        }
+      }
+      for (const [edgeId, revision] of submittedEdgeRevisions) {
+        if (dirtyEdgeRevisionRef.current.get(edgeId) === revision) {
+          dirtyEdgeIdsRef.current.delete(edgeId)
+          dirtyEdgeRevisionRef.current.delete(edgeId)
+        }
+      }
+      if (entityPayload.saveMode === 'full') forceFullCanvasSaveRef.current = false
       const savedAt = data.serverUpdatedAt ?? data.savedAt
       if (savedAt) {
         serverSaveVersionRef.current = savedAt
@@ -4164,6 +4253,7 @@ export function VisualCanvasWorkspace({
             nodes: localFallback.value.nodes,
             edges: localFallback.value.edges,
             viewport: localFallback.value.viewport,
+            forceFullSave: true,
             status: 'local-draft',
             message: '远端画布加载失败，已保留本地草稿。',
           })
@@ -4511,6 +4601,12 @@ export function VisualCanvasWorkspace({
     activeGenerationNodeIdsRef.current.delete(nodeId)
     deletedNodeIdsRef.current = [...new Set([...deletedNodeIdsRef.current, nodeId])]
     deletedEdgeIdsRef.current = [...new Set([...deletedEdgeIdsRef.current, ...removedEdges])]
+    dirtyNodeIdsRef.current.delete(nodeId)
+    dirtyNodeRevisionRef.current.delete(nodeId)
+    for (const edgeId of removedEdges) {
+      dirtyEdgeIdsRef.current.delete(edgeId)
+      dirtyEdgeRevisionRef.current.delete(edgeId)
+    }
     if (receiptAwareDeleted && reconciledNodes) {
       explicitCanvasAutosaveSuppressionRef.current = createCanvasAutosaveSuppression(
         reconciledNodes,
