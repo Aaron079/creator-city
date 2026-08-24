@@ -14,6 +14,12 @@ import {
 } from '@/lib/projects/ensure-active-project'
 import { isDbConnectionError } from '@/lib/db-error'
 import { CANVAS_SAVE_SERVER_DEADLINE_MS } from '@/lib/canvas/canvasSaveIntegrity'
+import {
+  buildCanvasEdgeBulkUpsert,
+  buildCanvasNodeBulkUpsert,
+  prepareCanvasEdgeRows,
+  prepareCanvasNodeRows,
+} from '@/lib/projects/canvas-bulk-persistence'
 
 function sanitizeJson(value: unknown): Prisma.InputJsonValue {
   try {
@@ -338,6 +344,7 @@ async function putImpl(request: NextRequest, params: { projectId: string }, save
     clearCanvas?: boolean
     workflowMetadata?: Record<string, unknown>
     baseUpdatedAt?: string
+    saveMode?: 'full' | 'incremental'
   }
   try {
     body = await request.json() as typeof body
@@ -347,6 +354,10 @@ async function putImpl(request: NextRequest, params: { projectId: string }, save
 
   if (!Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
     return jsonError('VALIDATION_FAILED', 'nodes and edges are required arrays.', 400)
+  }
+  const saveMode = body.saveMode ?? 'full'
+  if (saveMode !== 'full' && saveMode !== 'incremental') {
+    return jsonError('VALIDATION_FAILED', 'saveMode must be full or incremental.', 400)
   }
   const invalidNode = body.nodes.find(
     (node) => typeof node.id !== 'string' || !node.id || typeof node.kind !== 'string' || !node.kind,
@@ -377,7 +388,7 @@ async function putImpl(request: NextRequest, params: { projectId: string }, save
       ? await db.canvasWorkflow.findFirst({ where: { id: body.workflowId, projectId: params.projectId }, select: WORKFLOW_SELECT })
       : null
     const workflow = existingWorkflow ?? await ensureWorkflow(params.projectId)
-    if (body.nodes.length === 0 && !body.clearCanvas) {
+    if (saveMode === 'full' && body.nodes.length === 0 && !body.clearCanvas) {
       const savedAt = new Date().toISOString()
       const existingNodeCount = await db.canvasNode.count({ where: { workflowId: workflow.id } })
       return jsonOk({
@@ -441,116 +452,26 @@ async function putImpl(request: NextRequest, params: { projectId: string }, save
     }
 
     saveStage = 'node_upserts'
-    // Batched node upserts: BATCH_SIZE nodes run in parallel per batch, batches are serial.
-    // Pure parallel over many nodes saturates the single pgBouncer connection (connection_limit=1)
-    // and stretches total latency past the 60s Vercel timeout for large canvases.
-    const BATCH_SIZE = 5
-    const failedNodeIds: string[] = []
     const validNodes = (body.nodes ?? []).filter((node) => node.id && node.kind)
-    const nodeResults: PromiseSettledResult<unknown>[] = []
-    for (let batchStart = 0; batchStart < validNodes.length; batchStart += BATCH_SIZE) {
-      if (Date.now() - saveStart > CANVAS_SAVE_SERVER_DEADLINE_MS) {
-        console.warn('[canvas-api] save deadline reached during node upserts, returning 503', {
-          projectId: params.projectId, completedBatch: batchStart, totalNodes: validNodes.length,
-        })
-        return jsonError(
-          'CANVAS_SAVE_TIMEOUT',
-          '保存超时：数据库响应缓慢，部分节点可能已写入，请重试。',
-          503,
-          { serverUpdatedAt },
-        )
-      }
-      const batchResults = await Promise.allSettled(
-        validNodes.slice(batchStart, batchStart + BATCH_SIZE).map((node) => {
-        const providerId = node.providerId ?? node.model ?? null
-        const nodeMetadata = node.metadataJson && typeof node.metadataJson === 'object'
-          ? node.metadataJson as Record<string, unknown>
-          : {}
-        const metadataJson = sanitizeJson({
-          ...nodeMetadata,
-          projectId: params.projectId,
-          workflowId: workflow.id,
-          nodeId: node.id,
-          ...(typeof node.assetId === 'string' && node.assetId.trim() ? { assetId: node.assetId.trim() } : {}),
-          outputLabel: node.outputLabel ?? nodeMetadata.outputLabel ?? null,
-          preview: node.preview ?? nodeMetadata.preview ?? null,
-        })
-        // Only write resultImageUrl/resultVideoUrl when the frontend has a non-empty value.
-        // This prevents a stale null in frontend state from overwriting a valid URL already
-        // written to DB by cn-executor (race: poll hasn't returned yet when save fires).
-        const mediaResultPatch = {
-          ...(typeof node.resultImageUrl === 'string' && node.resultImageUrl.trim().length > 0
-            ? { resultImageUrl: node.resultImageUrl }
-            : {}),
-          ...(typeof node.resultVideoUrl === 'string' && node.resultVideoUrl.trim().length > 0
-            ? { resultVideoUrl: node.resultVideoUrl }
-            : {}),
-        }
-        return db.canvasNode.upsert({
-          where: { workflowId_nodeId: { workflowId: workflow.id, nodeId: node.id! } },
-          create: {
-            workflowId: workflow.id,
-            nodeId: node.id!,
-            kind: node.kind!,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            resultImageUrl: node.resultImageUrl ?? null,
-            resultVideoUrl: node.resultVideoUrl ?? null,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
-            metadataJson,
-          },
-          update: {
-            kind: node.kind!,
-            title: node.title ?? null,
-            providerId,
-            status: node.status ?? 'idle',
-            x: Number(node.x ?? 0),
-            y: Number(node.y ?? 0),
-            width: Number(node.width ?? 320),
-            height: Number(node.height ?? 220),
-            prompt: node.prompt ?? null,
-            resultText: node.resultText ?? null,
-            ...mediaResultPatch,
-            resultAudioUrl: node.resultAudioUrl ?? null,
-            resultPreview: node.resultPreview ?? null,
-            errorMessage: node.errorMessage ?? null,
-            paramsJson: sanitizeJson({ model: providerId, stage: node.stage ?? 'draft', ratio: node.ratio ?? null }),
-            metadataJson,
-            updatedAt: now,
-          },
-        })
-      }),
-      )
-      nodeResults.push(...batchResults)
-    }
-    nodeResults.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        const nodeId = validNodes[i]?.id ?? '?'
-        failedNodeIds.push(nodeId)
-        console.error('[canvas-api] node upsert failed, continuing', {
-          projectId: params.projectId,
-          workflowId: workflow.id,
-          nodeId,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        })
-      }
-    })
-    if (failedNodeIds.length > 0) {
+    try {
+      const nodeStatement = buildCanvasNodeBulkUpsert(prepareCanvasNodeRows({
+        workflowId: workflow.id,
+        projectId: params.projectId,
+        now,
+        nodes: validNodes,
+      }))
+      if (nodeStatement) await db.$executeRaw(nodeStatement)
+    } catch (error) {
+      console.error('[canvas-api] bulk node upsert failed', {
+        projectId: params.projectId,
+        workflowId: workflow.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return jsonError(
         'CANVAS_PARTIAL_SAVE',
         '部分节点未能保存，请重试。',
         503,
-        { serverUpdatedAt, failedNodeIds },
+        { serverUpdatedAt, failedNodeIds: validNodes.map((node) => node.id ?? '?') },
       )
     }
 
@@ -566,53 +487,25 @@ async function putImpl(request: NextRequest, params: { projectId: string }, save
       )
     }
     saveStage = 'edge_upserts'
-    // Parallel edge upserts for the same reason.
-    const failedEdgeIds: string[] = []
     const validEdges = (body.edges ?? []).filter((edge) => edge.id && edge.fromNodeId && edge.toNodeId)
-    const edgeResults = await Promise.allSettled(
-      validEdges.map((edge) => {
-        const edgeMetadata = edge.metadataJson && typeof edge.metadataJson === 'object'
-          ? edge.metadataJson as Record<string, unknown>
-          : {}
-        const metadataJson = sanitizeJson({ ...edgeMetadata, status: edge.status ?? edgeMetadata.status ?? 'active' })
-        return db.canvasEdge.upsert({
-          where: { workflowId_edgeId: { workflowId: workflow.id, edgeId: edge.id! } },
-          create: {
-            workflowId: workflow.id,
-            edgeId: edge.id!,
-            sourceNodeId: edge.fromNodeId!,
-            targetNodeId: edge.toNodeId!,
-            type: edge.type ?? 'flow',
-            metadataJson,
-          },
-          update: {
-            sourceNodeId: edge.fromNodeId!,
-            targetNodeId: edge.toNodeId!,
-            type: edge.type ?? 'flow',
-            metadataJson,
-            updatedAt: now,
-          },
-        })
-      }),
-    )
-    edgeResults.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        const edgeId = validEdges[i]?.id ?? '?'
-        failedEdgeIds.push(edgeId)
-        console.error('[canvas-api] edge upsert failed, continuing', {
-          projectId: params.projectId,
-          workflowId: workflow.id,
-          edgeId,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        })
-      }
-    })
-    if (failedEdgeIds.length > 0) {
+    try {
+      const edgeStatement = buildCanvasEdgeBulkUpsert(prepareCanvasEdgeRows({
+        workflowId: workflow.id,
+        now,
+        edges: validEdges,
+      }))
+      if (edgeStatement) await db.$executeRaw(edgeStatement)
+    } catch (error) {
+      console.error('[canvas-api] bulk edge upsert failed', {
+        projectId: params.projectId,
+        workflowId: workflow.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return jsonError(
         'CANVAS_PARTIAL_SAVE',
         '部分连接未能保存，请重试。',
         503,
-        { serverUpdatedAt, failedEdgeIds },
+        { serverUpdatedAt, failedEdgeIds: validEdges.map((edge) => edge.id ?? '?') },
       )
     }
 

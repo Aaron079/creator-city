@@ -29,7 +29,7 @@ describe('canvas incremental save payload', () => {
         dirtyNodeIds: new Set(['node-b']),
         dirtyEdgeIds: new Set(['edge-a']),
       }),
-      { saveMode: 'incremental', nodes: [nodes[1]], edges },
+      { saveMode: 'incremental', nodes: [nodes[1]!], edges },
     )
   })
 
@@ -48,7 +48,7 @@ describe('canvas incremental save payload', () => {
 
   test('derives only changed identities from immutable commit results', () => {
     const previous = [{ id: 'node-a', title: 'A' }, { id: 'node-b', title: 'B' }]
-    const next = [previous[0], { id: 'node-b', title: 'Edited' }, { id: 'node-c', title: 'C' }]
+    const next = [previous[0]!, { id: 'node-b', title: 'Edited' }, { id: 'node-c', title: 'C' }]
 
     assert.deepEqual([...collectChangedEntityIds(previous, next)], ['node-b', 'node-c'])
   })
