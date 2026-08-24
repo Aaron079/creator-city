@@ -103,7 +103,8 @@ try {
   const prismaArgs = ['--filter', 'server', 'exec', 'prisma']
 
   run('pnpm', [...prismaArgs, 'migrate', 'deploy', '--schema=prisma/schema.prisma'], { env })
-  run('pnpm', [...prismaArgs, 'migrate', 'status', '--schema=prisma/schema.prisma'], { env })
+  const migrationStatus = run('pnpm', [...prismaArgs, 'migrate', 'status', '--schema=prisma/schema.prisma'], { env })
+  assert.match(migrationStatus, /Database schema is up to date/i)
 
   assert.equal(missingTables(), '', 'all Prisma model tables must exist after migrate deploy')
   assert.equal(missingEnums(), '', 'all Prisma enum types must exist after migrate deploy')
