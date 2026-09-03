@@ -82,6 +82,7 @@ describe('tool plugin state', () => {
       loadRegisteredToolState(projectId, childNodeId).lighting,
       getDefaultRegisteredToolState().lighting,
     )
+    assert.equal(loadRegisteredToolState(projectId, sourceNodeId).camera.lens, '85mm')
     assert.equal(loadRegisteredToolState(projectId, sourceNodeId).lighting.lightingSetup, 'Low Key')
   })
 
