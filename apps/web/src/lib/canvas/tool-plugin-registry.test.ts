@@ -84,6 +84,21 @@ describe('resolveRegisteredToolContributions', () => {
     }
   })
 
+  test('keeps representative camera and lighting summaries ordered', () => {
+    const context: RegisteredToolContext = {
+      nodeKind: 'image',
+      camera: cloneCamera({ cameraBody: 'sony-venice-2', lens: '35mm' }),
+      lighting: cloneLighting({ lightingSetup: 'Backlight' }),
+    }
+
+    const contributions = resolveRegisteredToolContributions(context)
+
+    assert.deepEqual(
+      contributions.map((contribution) => contribution.summary),
+      ['sony-venice-2 · 35mm', 'Backlight'],
+    )
+  })
+
   test('returns lighting contribution when camera is empty', () => {
     const context: RegisteredToolContext = {
       nodeKind: 'video',
@@ -126,6 +141,65 @@ describe('resolveRegisteredToolContributions', () => {
         plugin.contribute = originalContributes[index]!
       })
     }
+  })
+})
+
+describe('compatibility coverage', () => {
+  const basePrompt = 'Base prompt'
+
+  test('does not mutate frozen or cloned camera and lighting settings', () => {
+    const frozenCamera = Object.freeze(cloneCamera({ cameraBody: 'sony-venice-2', lens: '35mm' }))
+    const frozenLighting = Object.freeze(cloneLighting({ lightingSetup: 'Backlight' }))
+    const clonedCamera = cloneCamera({ cameraBody: 'A7S III', aperture: 'f/2.8' })
+    const clonedLighting = cloneLighting({ atmosphere: 'Dreamlike', colorMood: 'Warm Amber' })
+
+    const frozenContext: RegisteredToolContext = {
+      nodeKind: 'image',
+      camera: frozenCamera,
+      lighting: frozenLighting,
+    }
+    const clonedContext: RegisteredToolContext = {
+      nodeKind: 'video',
+      camera: clonedCamera,
+      lighting: clonedLighting,
+    }
+
+    resolveRegisteredToolContributions(frozenContext)
+    composeRegisteredToolPrompt(basePrompt, frozenContext)
+    resolveRegisteredToolContributions(clonedContext)
+    composeRegisteredToolPrompt(basePrompt, clonedContext)
+
+    assert.deepEqual(frozenCamera, cloneCamera({ cameraBody: 'sony-venice-2', lens: '35mm' }))
+    assert.deepEqual(frozenLighting, cloneLighting({ lightingSetup: 'Backlight' }))
+    assert.deepEqual(clonedCamera, cloneCamera({ cameraBody: 'A7S III', aperture: 'f/2.8' }))
+    assert.deepEqual(clonedLighting, cloneLighting({ atmosphere: 'Dreamlike', colorMood: 'Warm Amber' }))
+  })
+
+  test('camera-only contributions match the camera helper legacy output', () => {
+    const context: RegisteredToolContext = {
+      nodeKind: 'image',
+      camera: cloneCamera({ cameraBody: 'sony-venice-2', lens: '35mm' }),
+      lighting: cloneLighting(),
+    }
+
+    const expected = appendCameraContextToPrompt(basePrompt, buildCameraPromptContext(context.camera))
+
+    assert.equal(composeRegisteredToolPrompt(basePrompt, context), expected)
+  })
+
+  test('lighting-only contributions match the lighting helper legacy output', () => {
+    const context: RegisteredToolContext = {
+      nodeKind: 'video',
+      camera: cloneCamera(),
+      lighting: cloneLighting({ lightingSetup: 'Backlight' }),
+    }
+
+    const expected = appendSceneLightingContextToPrompt(
+      basePrompt,
+      buildSceneLightingPromptContext(context.lighting),
+    )
+
+    assert.equal(composeRegisteredToolPrompt(basePrompt, context), expected)
   })
 })
 
