@@ -28,3 +28,11 @@ test('routes both canvas generation prompt paths through the tool plugin registr
   )
   assert.doesNotMatch(visualCanvasWorkspaceSource, /nodeSnapshot\.kind as CanvasToolPluginNodeKind/)
 })
+
+test('keeps Camera and Lighting node state behind the plugin-state adapter', () => {
+  assert.match(visualCanvasWorkspaceSource, /from '@\/lib\/canvas\/tool-plugin-state'/)
+  assert.doesNotMatch(visualCanvasWorkspaceSource, /from '@\/lib\/canvas\/nodeDirectorContextStorage'/)
+  assert.equal(visualCanvasWorkspaceSource.match(/loadRegisteredToolState\(/g)?.length, 4)
+  assert.equal(visualCanvasWorkspaceSource.match(/saveRegisteredToolStateValue\(/g)?.length, 2)
+  assert.equal(visualCanvasWorkspaceSource.match(/copyRegisteredToolState\(/g)?.length, 2)
+})

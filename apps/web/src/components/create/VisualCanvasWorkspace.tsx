@@ -232,11 +232,11 @@ import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAg
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
-import { appendCameraContextToPrompt, buildCameraPromptContext, buildCameraSummaryText, DEFAULT_CAMERA_SETTINGS, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
+import { appendCameraContextToPrompt, buildCameraPromptContext, buildCameraSummaryText, hasCameraContext, type CameraSettings } from '@/lib/canvas/cameraPromptContext'
 import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
-import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
-import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettingsForNode, saveSceneLightingForNode } from '@/lib/canvas/nodeDirectorContextStorage'
+import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { composeRegisteredToolPrompt, normalizeCanvasToolPluginNodeKind } from '@/lib/canvas/tool-plugin-registry'
+import { copyRegisteredToolState, getDefaultRegisteredToolState, loadRegisteredToolState, saveRegisteredToolStateValue } from '@/lib/canvas/tool-plugin-state'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
@@ -403,14 +403,6 @@ function getCanvasSnapshotKey(projectId: string) {
 
 function getStyleBibleKey(projectId: string) {
   return `creator-city:style-bible:${projectId}`
-}
-
-function getCameraSettingsKey(projectId: string) {
-  return `creator-city:camera-settings:${projectId}`
-}
-
-function getSceneLightingKey(projectId: string) {
-  return `creator-city:scene-lighting:${projectId}`
 }
 
 function getEnabledSkillsKey(projectId: string) {
@@ -2621,9 +2613,9 @@ export function VisualCanvasWorkspace({
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
   const [isCameraControlOpen, setIsCameraControlOpen] = useState(false)
-  const [cameraSettings, setCameraSettings] = useState<CameraSettings>(DEFAULT_CAMERA_SETTINGS)
+  const [cameraSettings, setCameraSettings] = useState<CameraSettings>(() => getDefaultRegisteredToolState().camera)
   const [isSceneLightingOpen, setIsSceneLightingOpen] = useState(false)
-  const [sceneLightingSettings, setSceneLightingSettings] = useState<SceneLightingSettings>(DEFAULT_SCENE_LIGHTING)
+  const [sceneLightingSettings, setSceneLightingSettings] = useState<SceneLightingSettings>(() => getDefaultRegisteredToolState().lighting)
   const [pendingAutoGenerateIds, setPendingAutoGenerateIds] = useState<string[]>([])
   const pendingAutoGenerateIdsRef = useRef<string[]>([])
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
@@ -2940,18 +2932,9 @@ export function VisualCanvasWorkspace({
     }
     setCharacterBible(loadCharacterBible(projectId))
     setSceneBible(loadSceneBible(projectId))
-    try {
-      const rawCamera = window.localStorage.getItem(getCameraSettingsKey(projectId))
-      setCameraSettings(rawCamera ? (JSON.parse(rawCamera) as CameraSettings) : DEFAULT_CAMERA_SETTINGS)
-    } catch {
-      setCameraSettings(DEFAULT_CAMERA_SETTINGS)
-    }
-    try {
-      const rawLighting = window.localStorage.getItem(getSceneLightingKey(projectId))
-      setSceneLightingSettings(rawLighting ? (JSON.parse(rawLighting) as SceneLightingSettings) : DEFAULT_SCENE_LIGHTING)
-    } catch {
-      setSceneLightingSettings(DEFAULT_SCENE_LIGHTING)
-    }
+    const defaults = getDefaultRegisteredToolState()
+    setCameraSettings(defaults.camera)
+    setSceneLightingSettings(defaults.lighting)
     try {
       const rawSkills = window.localStorage.getItem(getEnabledSkillsKey(projectId))
       const parsed = rawSkills ? JSON.parse(rawSkills) : null
@@ -4952,14 +4935,14 @@ export function VisualCanvasWorkspace({
     setCameraSettings(next)
     const targetId = directorTargetNodeIdRef.current
     if (!projectId || !targetId) return
-    saveCameraSettingsForNode(projectId, targetId, next)
+    saveRegisteredToolStateValue(projectId, targetId, 'camera-control', next)
   }, [projectId])
 
   const updateSceneLightingSettings = useCallback((next: SceneLightingSettings) => {
     setSceneLightingSettings(next)
     const targetId = directorTargetNodeIdRef.current
     if (!projectId || !targetId) return
-    saveSceneLightingForNode(projectId, targetId, next)
+    saveRegisteredToolStateValue(projectId, targetId, 'scene-lighting', next)
   }, [projectId])
 
   const persistSceneBibleSettings = useCallback((nextBible: SceneBible) => {
@@ -5200,8 +5183,9 @@ export function VisualCanvasWorkspace({
     }
     // Load per-node camera/lighting so chips + panel show this node's settings
     if (projectId) {
-      setCameraSettings(loadCameraSettingsForNode(projectId, activeNode.id))
-      setSceneLightingSettings(loadSceneLightingForNode(projectId, activeNode.id))
+      const toolState = loadRegisteredToolState(projectId, activeNode.id)
+      setCameraSettings(toolState.camera)
+      setSceneLightingSettings(toolState.lighting)
       directorTargetNodeIdRef.current = activeNode.id
     }
   }, [activeNode])
@@ -5210,8 +5194,9 @@ export function VisualCanvasWorkspace({
     setDialogError(null)
     // Load per-node camera/lighting so generation dialog chips show the editing node's settings
     if (editingNodeId && projectId) {
-      setCameraSettings(loadCameraSettingsForNode(projectId, editingNodeId))
-      setSceneLightingSettings(loadSceneLightingForNode(projectId, editingNodeId))
+      const toolState = loadRegisteredToolState(projectId, editingNodeId)
+      setCameraSettings(toolState.camera)
+      setSceneLightingSettings(toolState.lighting)
       directorTargetNodeIdRef.current = editingNodeId
     }
   }, [editingNodeId])
@@ -6775,10 +6760,11 @@ export function VisualCanvasWorkspace({
     const rawPrompt = node.prompt?.trim() ?? ''
     const bibleCtx = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
     // Read per-node camera/lighting — avoids cross-node contamination from global state
-    const nodeCameraCtx = projectId ? loadCameraSettingsForNode(projectId, node.id) : cameraSettings
-    const nodeLightingCtx = projectId ? loadSceneLightingForNode(projectId, node.id) : sceneLightingSettings
+    const nodeToolState = projectId
+      ? loadRegisteredToolState(projectId, node.id)
+      : { camera: cameraSettings, lighting: sceneLightingSettings }
     const promptWithBible = appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt
-    const prompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: node.kind, camera: nodeCameraCtx, lighting: nodeLightingCtx })
+    const prompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: node.kind, camera: nodeToolState.camera, lighting: nodeToolState.lighting })
     const fallbackProviderId = providerForRegenerationNode(node)
     const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
@@ -8599,11 +8585,12 @@ export function VisualCanvasWorkspace({
     const rawPrompt = trimmedPrompt || upstreamTextPrompt
     const bibleContext = buildBiblePromptContext({ characterBible, sceneBible, styleBible })
     // Read per-node camera/lighting — avoids cross-node contamination from global state
-    const nodeCamera = projectId ? loadCameraSettingsForNode(projectId, nodeSnapshot.id) : cameraSettings
-    const nodeLighting = projectId ? loadSceneLightingForNode(projectId, nodeSnapshot.id) : sceneLightingSettings
+    const nodeToolState = projectId
+      ? loadRegisteredToolState(projectId, nodeSnapshot.id)
+      : { camera: cameraSettings, lighting: sceneLightingSettings }
     const promptWithBible = appendBibleContextToPrompt(rawPrompt, bibleContext)
     const registryNodeKind = normalizeCanvasToolPluginNodeKind(nodeSnapshot.kind)
-    const generationPrompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: registryNodeKind, camera: nodeCamera, lighting: nodeLighting })
+    const generationPrompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: registryNodeKind, camera: nodeToolState.camera, lighting: nodeToolState.lighting })
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
         const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl
@@ -11033,7 +11020,7 @@ export function VisualCanvasWorkspace({
                 edgeToolIcon: '🎥',
               },
             )
-            if (projectId) saveCameraSettingsForNode(projectId, node.id, settings)
+            copyRegisteredToolState(projectId, sourceNode.id, node.id, 'camera-control')
             openCanvasPanel('generation', { nodeId: node.id })
             flushLocalSnapshot()
             scheduleCanvasSave(0)
@@ -11088,7 +11075,7 @@ export function VisualCanvasWorkspace({
                 edgeToolIcon: '💡',
               },
             )
-            if (projectId) saveSceneLightingForNode(projectId, node.id, settings)
+            copyRegisteredToolState(projectId, sourceNode.id, node.id, 'scene-lighting')
             openCanvasPanel('generation', { nodeId: node.id })
             flushLocalSnapshot()
             scheduleCanvasSave(0)
