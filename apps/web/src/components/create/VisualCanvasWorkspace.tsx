@@ -3130,6 +3130,12 @@ export function VisualCanvasWorkspace({
 
   const openNodeScopedTool = useCallback(
     (panelId: CanvasModalId, node: VisualCanvasNode) => {
+      if (panelId === 'camera-control' || panelId === 'scene-lighting') {
+        directorTargetNodeIdRef.current = node.id
+        const toolState = loadRegisteredToolState(projectId, node.id)
+        setCameraSettings(toolState.camera)
+        setSceneLightingSettings(toolState.lighting)
+      }
       // resetCanvasModalStates (called inside openCanvasPanel) sets lockedNodeToolContext to null.
       // Calling setLockedNodeToolContext(ctx) AFTER openCanvasPanel in the same event handler
       // causes React to batch both updates; ctx wins because it is the later setState call.
