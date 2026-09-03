@@ -13,6 +13,10 @@ import {
 
 export type CanvasToolPluginNodeKind = 'image' | 'video' | 'text'
 
+export function normalizeCanvasToolPluginNodeKind(nodeKind: string): CanvasToolPluginNodeKind {
+  return nodeKind === 'image' || nodeKind === 'video' || nodeKind === 'text' ? nodeKind : 'text'
+}
+
 export interface RegisteredToolContribution {
   id: string
   promptContext: string

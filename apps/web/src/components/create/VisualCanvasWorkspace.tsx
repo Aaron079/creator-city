@@ -236,6 +236,7 @@ import { appendCameraContextToPrompt, buildCameraPromptContext, buildCameraSumma
 import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
 import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, DEFAULT_SCENE_LIGHTING, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { loadCameraSettingsForNode, loadSceneLightingForNode, saveCameraSettingsForNode, saveSceneLightingForNode } from '@/lib/canvas/nodeDirectorContextStorage'
+import { composeRegisteredToolPrompt, normalizeCanvasToolPluginNodeKind } from '@/lib/canvas/tool-plugin-registry'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
@@ -6776,9 +6777,8 @@ export function VisualCanvasWorkspace({
     // Read per-node camera/lighting — avoids cross-node contamination from global state
     const nodeCameraCtx = projectId ? loadCameraSettingsForNode(projectId, node.id) : cameraSettings
     const nodeLightingCtx = projectId ? loadSceneLightingForNode(projectId, node.id) : sceneLightingSettings
-    const cameraCtx = buildCameraPromptContext(nodeCameraCtx)
-    const lightingCtx = buildSceneLightingPromptContext(nodeLightingCtx)
-    const prompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt, cameraCtx), lightingCtx)
+    const promptWithBible = appendBibleContextToPrompt(rawPrompt, bibleCtx) || rawPrompt
+    const prompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: node.kind, camera: nodeCameraCtx, lighting: nodeLightingCtx })
     const fallbackProviderId = providerForRegenerationNode(node)
     const selectedProviderId = fallbackProviderId || defaultProviderForRegenerationNode(node)
     const fallbackModel = modelForRegenerationNode(node)
@@ -8601,9 +8601,9 @@ export function VisualCanvasWorkspace({
     // Read per-node camera/lighting — avoids cross-node contamination from global state
     const nodeCamera = projectId ? loadCameraSettingsForNode(projectId, nodeSnapshot.id) : cameraSettings
     const nodeLighting = projectId ? loadSceneLightingForNode(projectId, nodeSnapshot.id) : sceneLightingSettings
-    const cameraContext = buildCameraPromptContext(nodeCamera)
-    const lightingContext = buildSceneLightingPromptContext(nodeLighting)
-    const generationPrompt = appendSceneLightingContextToPrompt(appendCameraContextToPrompt(appendBibleContextToPrompt(rawPrompt, bibleContext), cameraContext), lightingContext)
+    const promptWithBible = appendBibleContextToPrompt(rawPrompt, bibleContext)
+    const registryNodeKind = normalizeCanvasToolPluginNodeKind(nodeSnapshot.kind)
+    const generationPrompt = composeRegisteredToolPrompt(promptWithBible, { nodeKind: registryNodeKind, camera: nodeCamera, lighting: nodeLighting })
     const upstreamImageAssets = upstreamNodes
       .flatMap((upstreamNode) => {
         const imageUrl = getNodeImageUrl(upstreamNode) || upstreamNode.resultImageUrl

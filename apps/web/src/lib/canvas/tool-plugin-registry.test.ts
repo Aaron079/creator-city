@@ -17,6 +17,7 @@ import {
 import {
   CAMERA_LIGHTING_TOOL_PLUGINS,
   composeRegisteredToolPrompt,
+  normalizeCanvasToolPluginNodeKind,
   resolveRegisteredToolContributions,
   type CanvasToolPluginNodeKind,
   type RegisteredToolContext,
@@ -36,6 +37,17 @@ describe('CAMERA_LIGHTING_TOOL_PLUGINS', () => {
       CAMERA_LIGHTING_TOOL_PLUGINS.map((plugin) => plugin.id),
       ['camera-control', 'scene-lighting'],
     )
+  })
+})
+
+describe('normalizeCanvasToolPluginNodeKind', () => {
+  test('keeps supported kinds and maps other canvas kinds to text', () => {
+    assert.equal(normalizeCanvasToolPluginNodeKind('image'), 'image')
+    assert.equal(normalizeCanvasToolPluginNodeKind('video'), 'video')
+    assert.equal(normalizeCanvasToolPluginNodeKind('text'), 'text')
+    assert.equal(normalizeCanvasToolPluginNodeKind('audio'), 'text')
+    assert.equal(normalizeCanvasToolPluginNodeKind('asset'), 'text')
+    assert.equal(normalizeCanvasToolPluginNodeKind('template'), 'text')
   })
 })
 
