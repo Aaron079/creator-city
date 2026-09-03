@@ -1,31 +1,31 @@
 # Canvas Tool Plugin Registry Phase 2 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Put existing node-scoped Camera Control and Lighting & Atmosphere state behind a typed plugin-state adapter without changing Canvas core behavior.
 
-**Architecture:** The adapter delegates localStorage mechanics to \`nodeDirectorContextStorage.ts\` and returns one typed Camera/Lighting state object. \`VisualCanvasWorkspace.tsx\` retains its panel state, but replaces direct storage calls in selection, editing, generation, and derived-node flows with the adapter.
+**Architecture:** The adapter delegates localStorage mechanics to `nodeDirectorContextStorage.ts` and returns one typed Camera/Lighting state object. `VisualCanvasWorkspace.tsx` retains its panel state, but replaces direct storage calls in selection, editing, generation, and derived-node flows with the adapter.
 
-**Tech Stack:** TypeScript, React, existing localStorage helpers, \`tsx\` Node tests, Next.js quality gates.
+**Tech Stack:** TypeScript, React, existing localStorage helpers, `tsx` Node tests, Next.js quality gates.
 
 ---
 
 ## File Structure
 
-- Create: \`apps/web/src/lib/canvas/tool-plugin-state.ts\` - typed state adapter.
-- Create: \`apps/web/src/lib/canvas/tool-plugin-state.test.ts\` - pure adapter contracts.
-- Modify: \`apps/web/src/components/create/VisualCanvasWorkspace.tsx\` - direct storage call-site migration only.
-- Modify: \`apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts\` - static ownership boundary.
-- Modify after verified QA only: \`docs/CURRENT_STATUS.md\`, \`docs/NEXT_TASKS.md\`.
+- Create: `apps/web/src/lib/canvas/tool-plugin-state.ts` - typed state adapter.
+- Create: `apps/web/src/lib/canvas/tool-plugin-state.test.ts` - pure adapter contracts.
+- Modify: `apps/web/src/components/create/VisualCanvasWorkspace.tsx` - direct storage call-site migration only.
+- Modify: `apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts` - static ownership boundary.
+- Modify after verified QA only: `docs/CURRENT_STATUS.md`, `docs/NEXT_TASKS.md`.
 
 ### Task 1: Record RED state-adapter contracts
 
 **Files:**
-- Create: \`apps/web/src/lib/canvas/tool-plugin-state.test.ts\`
+- Create: `apps/web/src/lib/canvas/tool-plugin-state.test.ts`
 
 - [ ] **Step 1: Write the failing adapter test.**
 
-\`\`\`ts
+```ts
 import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
 import {
@@ -77,49 +77,49 @@ describe('tool plugin state', () => {
     assert.equal(loadRegisteredToolState(projectId, sourceNodeId).lighting.lightingSetup, 'Low Key')
   })
 })
-\`\`\`
+```
 
 - [ ] **Step 2: Run the test and confirm it fails.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city/apps/web
 node_modules/.bin/tsx --test src/lib/canvas/tool-plugin-state.test.ts
-\`\`\`
+```
 
-Expected: FAIL because \`tool-plugin-state.ts\` does not exist.
+Expected: FAIL because `tool-plugin-state.ts` does not exist.
 
 - [ ] **Step 3: Add legacy fallback and malformed storage assertions.**
 
-\`\`\`ts
+```ts
 import { getNodeCameraSettingsKey } from './nodeDirectorContextStorage'
 
 test('preserves lazy legacy fallback and defaults malformed values', () => {
   const values = installStorage()
-  values.set(\`creator-city:camera-settings:\${projectId}\`, JSON.stringify({ cameraBody: '', lens: '50mm', aperture: '', focus: '' }))
+  values.set(`creator-city:camera-settings:\${projectId}`, JSON.stringify({ cameraBody: '', lens: '50mm', aperture: '', focus: '' }))
   assert.equal(loadRegisteredToolState(projectId, sourceNodeId).camera.lens, '50mm')
   assert.equal(values.get(getNodeCameraSettingsKey(projectId, sourceNodeId))?.includes('50mm'), true)
   values.set(getNodeCameraSettingsKey(projectId, childNodeId), '{broken')
   assert.deepEqual(loadRegisteredToolState(projectId, childNodeId).camera, getDefaultRegisteredToolState().camera)
 })
-\`\`\`
+```
 
 - [ ] **Step 4: Commit the RED evidence.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city
 git add apps/web/src/lib/canvas/tool-plugin-state.test.ts
 git commit -m "test: define tool plugin state contracts"
-\`\`\`
+```
 
 ### Task 2: Implement the typed adapter
 
 **Files:**
-- Create: \`apps/web/src/lib/canvas/tool-plugin-state.ts\`
-- Test: \`apps/web/src/lib/canvas/tool-plugin-state.test.ts\`
+- Create: `apps/web/src/lib/canvas/tool-plugin-state.ts`
+- Test: `apps/web/src/lib/canvas/tool-plugin-state.test.ts`
 
 - [ ] **Step 1: Implement types, defaults, and delegated reads.**
 
-\`\`\`ts
+```ts
 import type { CameraSettings } from './cameraPromptContext'
 import { DEFAULT_CAMERA_SETTINGS } from './cameraPromptContext'
 import type { SceneLightingSettings } from './sceneLightingPromptContext'
@@ -152,11 +152,11 @@ export function loadRegisteredToolState(
     lighting: loadSceneLightingForNode(projectId, nodeId),
   }
 }
-\`\`\`
+```
 
 - [ ] **Step 2: Implement scoped writes and copy.**
 
-\`\`\`ts
+```ts
 export function saveRegisteredToolStateValue<TId extends RegisteredToolStatePluginId>(
   projectId: string | null | undefined,
   nodeId: string | null | undefined,
@@ -186,34 +186,34 @@ export function copyRegisteredToolState(
     pluginId === 'camera-control' ? source.camera : source.lighting,
   )
 }
-\`\`\`
+```
 
 - [ ] **Step 3: Run the adapter suite and confirm it passes.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city/apps/web
 node_modules/.bin/tsx --test src/lib/canvas/tool-plugin-state.test.ts
-\`\`\`
+```
 
 Expected: PASS for default, isolation, scoped-copy, legacy, and malformed-storage cases.
 
 - [ ] **Step 4: Commit the adapter.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city
 git add apps/web/src/lib/canvas/tool-plugin-state.ts apps/web/src/lib/canvas/tool-plugin-state.test.ts
 git commit -m "feat: add canvas tool plugin state adapter"
-\`\`\`
+```
 
 ### Task 3: Migrate Workspace state access
 
 **Files:**
-- Modify: \`apps/web/src/components/create/VisualCanvasWorkspace.tsx\`
-- Modify: \`apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts\`
+- Modify: `apps/web/src/components/create/VisualCanvasWorkspace.tsx`
+- Modify: `apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts`
 
 - [ ] **Step 1: Add a failing static boundary test.**
 
-\`\`\`ts
+```ts
 test('keeps Camera and Lighting node state behind the plugin-state adapter', () => {
   assert.match(visualCanvasWorkspaceSource, /from '@\\/lib\\/canvas\\/tool-plugin-state'/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /from '@\\/lib\\/canvas\\/nodeDirectorContextStorage'/)
@@ -221,20 +221,20 @@ test('keeps Camera and Lighting node state behind the plugin-state adapter', () 
   assert.equal(visualCanvasWorkspaceSource.match(/saveRegisteredToolStateValue\\(/g)?.length, 2)
   assert.equal(visualCanvasWorkspaceSource.match(/copyRegisteredToolState\\(/g)?.length, 2)
 })
-\`\`\`
+```
 
 - [ ] **Step 2: Confirm the static test is RED.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city/apps/web
 node_modules/.bin/tsx --test src/components/create/canvas/toolPluginRegistryBoundary.test.ts
-\`\`\`
+```
 
 Expected: FAIL because direct storage imports and call sites still exist.
 
 - [ ] **Step 3: Replace direct storage import and initial project reads.**
 
-\`\`\`ts
+```ts
 import {
   copyRegisteredToolState,
   getDefaultRegisteredToolState,
@@ -245,13 +245,13 @@ import {
 const defaults = getDefaultRegisteredToolState()
 setCameraSettings(defaults.camera)
 setSceneLightingSettings(defaults.lighting)
-\`\`\`
+```
 
 Remove only Camera/Lighting project-key helpers and direct storage import. Do not modify Canvas load, draft recovery, node graph, or save behavior.
 
 - [ ] **Step 4: Route selection, panel saves, generation reads, and derived copies.**
 
-\`\`\`ts
+```ts
 const toolState = loadRegisteredToolState(projectId, activeNode.id)
 setCameraSettings(toolState.camera)
 setSceneLightingSettings(toolState.lighting)
@@ -268,44 +268,44 @@ const prompt = composeRegisteredToolPrompt(promptWithBible, {
 
 copyRegisteredToolState(projectId, sourceNode.id, node.id, 'camera-control')
 copyRegisteredToolState(projectId, sourceNode.id, node.id, 'scene-lighting')
-\`\`\`
+```
 
-Use the equivalent \`nodeSnapshot.id\` load and retain \`normalizeCanvasToolPluginNodeKind(nodeSnapshot.kind)\` in the normal generation path. Do not alter request construction, Canvas graph mutation, local snapshots, or cloud-save scheduling.
+Use the equivalent `nodeSnapshot.id` load and retain `normalizeCanvasToolPluginNodeKind(nodeSnapshot.kind)` in the normal generation path. Do not alter request construction, Canvas graph mutation, local snapshots, or cloud-save scheduling.
 
 - [ ] **Step 5: Run focused tests and confirm GREEN.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city/apps/web
 node_modules/.bin/tsx --test \\
   src/lib/canvas/tool-plugin-state.test.ts \\
   src/lib/canvas/tool-plugin-registry.test.ts \\
   src/components/create/canvas/toolPluginRegistryBoundary.test.ts
-\`\`\`
+```
 
 Expected: PASS. The workspace has no direct node-storage import and both generation paths still use Phase 1 composition.
 
 - [ ] **Step 6: Commit the migration.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city
 git add apps/web/src/components/create/VisualCanvasWorkspace.tsx \\
   apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts
 git commit -m "refactor: route canvas tool state through registry"
-\`\`\`
+```
 
 ### Task 4: Run regression and boundary checks
 
 **Files:**
-- Test: \`apps/web/src/lib/canvas/tool-plugin-state.test.ts\`
-- Test: \`apps/web/src/lib/canvas/tool-plugin-registry.test.ts\`
-- Test: \`apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts\`
-- Test: \`apps/web/src/lib/canvas/canvasIncrementalSave.test.ts\`
-- Test: \`apps/web/src/lib/canvas/canvasDraftRecovery.test.ts\`
-- Test: \`apps/web/src/components/create/canvas/canvasSaveScheduling.test.ts\`
+- Test: `apps/web/src/lib/canvas/tool-plugin-state.test.ts`
+- Test: `apps/web/src/lib/canvas/tool-plugin-registry.test.ts`
+- Test: `apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts`
+- Test: `apps/web/src/lib/canvas/canvasIncrementalSave.test.ts`
+- Test: `apps/web/src/lib/canvas/canvasDraftRecovery.test.ts`
+- Test: `apps/web/src/components/create/canvas/canvasSaveScheduling.test.ts`
 
 - [ ] **Step 1: Run the focused Canvas suite.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city/apps/web
 node_modules/.bin/tsx --test \\
   src/lib/canvas/tool-plugin-state.test.ts \\
@@ -314,13 +314,13 @@ node_modules/.bin/tsx --test \\
   src/lib/canvas/canvasIncrementalSave.test.ts \\
   src/lib/canvas/canvasDraftRecovery.test.ts \\
   src/components/create/canvas/canvasSaveScheduling.test.ts
-\`\`\`
+```
 
 Expected: PASS. A new save or recovery failure is a stop condition; do not alter frozen Canvas core as a workaround.
 
 - [ ] **Step 2: Run project gates and audit the diff.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city
 pnpm type-check
 pnpm lint
@@ -328,7 +328,7 @@ pnpm build
 pnpm agent:check
 git diff --check
 git diff HEAD~3..HEAD --name-only
-\`\`\`
+```
 
 Expected: PASS, with only known pre-existing lint warnings. No API route, schema, environment, Provider/BYOK, billing, payment, package, cn-executor, Canvas graph, save, or generation dispatch change.
 
@@ -343,17 +343,17 @@ Open the authenticated Golden Path Canvas project. If local-draft recovery appea
 - [ ] **Step 2: Validate node isolation without generation.**
 
 1. Select an Image node, set a non-default Camera value, close/reopen, then verify a second node did not inherit it.
-2. Select a Video node when available; otherwise record \`QA_HARNESS_LIMITATION\` and use an Image node for Lighting.
+2. Select a Video node when available; otherwise record `QA_HARNESS_LIMITATION` and use an Image node for Lighting.
 3. Set a non-default Lighting value, create the existing Lighting derived draft, and verify the child copied that setting while the source remained unchanged.
 4. Save to cloud, wait for “已同步到云端”, reload, and verify the tested values persist.
 
-Do not click Generate or Provider, payment, recharge, or billing controls. Classify browser-extension-only Console entries as tooling, not product errors. If exact request enumeration is unavailable, record \`QA_HARNESS_LIMITATION\`.
+Do not click Generate or Provider, payment, recharge, or billing controls. Classify browser-extension-only Console entries as tooling, not product errors. If exact request enumeration is unavailable, record `QA_HARNESS_LIMITATION`.
 
 ### Task 6: Closeout and delivery
 
 **Files:**
-- Modify: \`docs/CURRENT_STATUS.md\`
-- Modify: \`docs/NEXT_TASKS.md\`
+- Modify: `docs/CURRENT_STATUS.md`
+- Modify: `docs/NEXT_TASKS.md`
 
 - [ ] **Step 1: Record verified results only.**
 
@@ -361,14 +361,14 @@ Document commits, validation, observed Vercel status, actual QA actions, and any
 
 - [ ] **Step 2: Validate and commit docs.**
 
-\`\`\`bash
+```bash
 cd /Users/aaron/creator-city
 git diff --check
 git add docs/CURRENT_STATUS.md docs/NEXT_TASKS.md
 git diff --cached --check
 git commit -m "docs: close tool plugin registry phase 2"
-\`\`\`
+```
 
 - [ ] **Step 3: Request explicit push confirmation.**
 
-Do not push implementation or docs until the Founder explicitly confirms. After confirmation, push \`main\`, verify remote SHA equals local \`HEAD\`, wait for Vercel Production Ready, and report only observed results.
+Do not push implementation or docs until the Founder explicitly confirms. After confirmation, push `main`, verify remote SHA equals local `HEAD`, wait for Vercel Production Ready, and report only observed results.
