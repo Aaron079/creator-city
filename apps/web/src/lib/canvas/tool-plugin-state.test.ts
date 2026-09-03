@@ -12,10 +12,12 @@ const projectId = 'project-phase-2'
 const sourceNodeId = 'node-source'
 const childNodeId = 'node-child'
 let originalWindowDescriptor: PropertyDescriptor | undefined
+let windowOverrideInstalled = false
 
 function installStorage(): Map<string, string> {
   const values = new Map<string, string>()
   originalWindowDescriptor ??= Object.getOwnPropertyDescriptor(globalThis, 'window')
+  windowOverrideInstalled = true
 
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -31,12 +33,15 @@ function installStorage(): Map<string, string> {
 }
 
 afterEach(() => {
+  if (!windowOverrideInstalled) return
+
   if (originalWindowDescriptor) {
     Object.defineProperty(globalThis, 'window', originalWindowDescriptor)
   } else {
     delete (globalThis as { window?: unknown }).window
   }
   originalWindowDescriptor = undefined
+  windowOverrideInstalled = false
 })
 
 describe('tool plugin state', () => {
