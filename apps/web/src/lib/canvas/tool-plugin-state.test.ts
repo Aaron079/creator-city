@@ -140,4 +140,18 @@ describe('tool plugin state', () => {
       getDefaultRegisteredToolState().camera,
     )
   })
+
+  test('clones loaded fallback state before returning it to callers', () => {
+    const values = installStorage()
+    values.set(getNodeCameraSettingsKey(projectId, childNodeId), '{broken')
+
+    const fallbackState = loadRegisteredToolState(projectId, childNodeId)
+    fallbackState.camera.lens = '135mm'
+    fallbackState.lighting.lightingSetup = 'Backlight'
+
+    assert.equal(getDefaultRegisteredToolState().camera.lens, '')
+    assert.equal(getDefaultRegisteredToolState().lighting.lightingSetup, '')
+    assert.equal(loadRegisteredToolState(projectId, childNodeId).camera.lens, '')
+    assert.equal(loadRegisteredToolState(projectId, childNodeId).lighting.lightingSetup, '')
+  })
 })

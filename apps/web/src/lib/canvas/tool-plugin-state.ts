@@ -23,6 +23,10 @@ export interface RegisteredToolPluginState {
 export type RegisteredToolStateValue<TPluginId extends RegisteredToolStatePluginId> =
   TPluginId extends 'camera-control' ? CameraSettings : SceneLightingSettings
 
+type RegisteredToolStateSaveArguments =
+  | [pluginId: 'camera-control', value: CameraSettings]
+  | [pluginId: 'scene-lighting', value: SceneLightingSettings]
+
 type ToolStateIdentity = string | null | undefined
 
 export function getDefaultRegisteredToolState(): RegisteredToolPluginState {
@@ -39,25 +43,36 @@ export function loadRegisteredToolState(
   if (!projectId || !nodeId) return getDefaultRegisteredToolState()
 
   return {
-    camera: loadCameraSettingsForNode(projectId, nodeId),
-    lighting: loadSceneLightingForNode(projectId, nodeId),
+    camera: { ...loadCameraSettingsForNode(projectId, nodeId) },
+    lighting: { ...loadSceneLightingForNode(projectId, nodeId) },
   }
 }
 
-export function saveRegisteredToolStateValue<TPluginId extends RegisteredToolStatePluginId>(
+export function saveRegisteredToolStateValue(
   projectId: ToolStateIdentity,
   nodeId: ToolStateIdentity,
-  pluginId: TPluginId,
-  value: RegisteredToolStateValue<TPluginId>,
+  pluginId: 'camera-control',
+  value: CameraSettings,
+): void
+export function saveRegisteredToolStateValue(
+  projectId: ToolStateIdentity,
+  nodeId: ToolStateIdentity,
+  pluginId: 'scene-lighting',
+  value: SceneLightingSettings,
+): void
+export function saveRegisteredToolStateValue(
+  projectId: ToolStateIdentity,
+  nodeId: ToolStateIdentity,
+  ...[pluginId, value]: RegisteredToolStateSaveArguments
 ): void {
   if (!projectId || !nodeId) return
 
   if (pluginId === 'camera-control') {
-    saveCameraSettingsForNode(projectId, nodeId, value as CameraSettings)
+    saveCameraSettingsForNode(projectId, nodeId, value)
     return
   }
 
-  saveSceneLightingForNode(projectId, nodeId, value as SceneLightingSettings)
+  saveSceneLightingForNode(projectId, nodeId, value)
 }
 
 export function copyRegisteredToolState(
