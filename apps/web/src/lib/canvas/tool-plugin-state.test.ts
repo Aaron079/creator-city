@@ -11,9 +11,11 @@ import { getNodeCameraSettingsKey } from './nodeDirectorContextStorage'
 const projectId = 'project-phase-2'
 const sourceNodeId = 'node-source'
 const childNodeId = 'node-child'
+let originalWindowDescriptor: PropertyDescriptor | undefined
 
 function installStorage(): Map<string, string> {
   const values = new Map<string, string>()
+  originalWindowDescriptor ??= Object.getOwnPropertyDescriptor(globalThis, 'window')
 
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -29,7 +31,12 @@ function installStorage(): Map<string, string> {
 }
 
 afterEach(() => {
-  delete (globalThis as { window?: unknown }).window
+  if (originalWindowDescriptor) {
+    Object.defineProperty(globalThis, 'window', originalWindowDescriptor)
+  } else {
+    delete (globalThis as { window?: unknown }).window
+  }
+  originalWindowDescriptor = undefined
 })
 
 describe('tool plugin state', () => {
