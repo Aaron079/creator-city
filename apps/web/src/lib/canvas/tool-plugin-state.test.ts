@@ -6,7 +6,10 @@ import {
   loadRegisteredToolState,
   saveRegisteredToolStateValue,
 } from './tool-plugin-state'
-import { getNodeCameraSettingsKey } from './nodeDirectorContextStorage'
+import {
+  getNodeCameraSettingsKey,
+  getNodeSceneLightingKey,
+} from './nodeDirectorContextStorage'
 
 const projectId = 'project-phase-2'
 const sourceNodeId = 'node-source'
@@ -96,6 +99,25 @@ describe('tool plugin state', () => {
     )
     assert.equal(loadRegisteredToolState(projectId, sourceNodeId).camera.lens, '85mm')
     assert.equal(loadRegisteredToolState(projectId, sourceNodeId).lighting.lightingSetup, 'Low Key')
+  })
+
+  test('does not migrate source Lighting when copying only Camera', () => {
+    const values = installStorage()
+    saveRegisteredToolStateValue(projectId, sourceNodeId, 'camera-control', {
+      cameraBody: '',
+      lens: '50mm',
+      aperture: '',
+      focus: '',
+    })
+    values.set(
+      `creator-city:scene-lighting:${projectId}`,
+      JSON.stringify({ lightingSetup: 'Backlight', timeWeather: '', atmosphere: '', colorMood: '' }),
+    )
+
+    copyRegisteredToolState(projectId, sourceNodeId, childNodeId, 'camera-control')
+
+    assert.equal(values.has(getNodeSceneLightingKey(projectId, sourceNodeId)), false)
+    assert.equal(values.has(getNodeSceneLightingKey(projectId, childNodeId)), false)
   })
 
   test('delegates Camera legacy project-key migration to the existing storage helper', () => {

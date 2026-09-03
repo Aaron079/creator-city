@@ -68,11 +68,12 @@ export function copyRegisteredToolState(
 ): void {
   if (!projectId || !sourceNodeId || !targetNodeId) return
 
-  const sourceState = loadRegisteredToolState(projectId, sourceNodeId)
   if (pluginId === 'camera-control') {
-    saveCameraSettingsForNode(projectId, targetNodeId, { ...sourceState.camera })
+    const sourceCamera = loadCameraSettingsForNode(projectId, sourceNodeId)
+    saveCameraSettingsForNode(projectId, targetNodeId, { ...sourceCamera })
     return
   }
 
-  saveSceneLightingForNode(projectId, targetNodeId, { ...sourceState.lighting })
+  const sourceLighting = loadSceneLightingForNode(projectId, sourceNodeId)
+  saveSceneLightingForNode(projectId, targetNodeId, { ...sourceLighting })
 }
