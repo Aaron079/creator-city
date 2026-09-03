@@ -95,7 +95,7 @@ import { getNodeCameraSettingsKey } from './nodeDirectorContextStorage'
 
 test('preserves lazy legacy fallback and defaults malformed values', () => {
   const values = installStorage()
-  values.set(`creator-city:camera-settings:\${projectId}`, JSON.stringify({ cameraBody: '', lens: '50mm', aperture: '', focus: '' }))
+  values.set(`creator-city:camera-settings:${projectId}`, JSON.stringify({ cameraBody: '', lens: '50mm', aperture: '', focus: '' }))
   assert.equal(loadRegisteredToolState(projectId, sourceNodeId).camera.lens, '50mm')
   assert.equal(values.get(getNodeCameraSettingsKey(projectId, sourceNodeId))?.includes('50mm'), true)
   values.set(getNodeCameraSettingsKey(projectId, childNodeId), '{broken')
@@ -215,11 +215,11 @@ git commit -m "feat: add canvas tool plugin state adapter"
 
 ```ts
 test('keeps Camera and Lighting node state behind the plugin-state adapter', () => {
-  assert.match(visualCanvasWorkspaceSource, /from '@\\/lib\\/canvas\\/tool-plugin-state'/)
-  assert.doesNotMatch(visualCanvasWorkspaceSource, /from '@\\/lib\\/canvas\\/nodeDirectorContextStorage'/)
-  assert.equal(visualCanvasWorkspaceSource.match(/loadRegisteredToolState\\(/g)?.length, 4)
-  assert.equal(visualCanvasWorkspaceSource.match(/saveRegisteredToolStateValue\\(/g)?.length, 2)
-  assert.equal(visualCanvasWorkspaceSource.match(/copyRegisteredToolState\\(/g)?.length, 2)
+  assert.match(visualCanvasWorkspaceSource, /from '@\/lib\/canvas\/tool-plugin-state'/)
+  assert.doesNotMatch(visualCanvasWorkspaceSource, /from '@\/lib\/canvas\/nodeDirectorContextStorage'/)
+  assert.equal(visualCanvasWorkspaceSource.match(/loadRegisteredToolState\(/g)?.length, 4)
+  assert.equal(visualCanvasWorkspaceSource.match(/saveRegisteredToolStateValue\(/g)?.length, 2)
+  assert.equal(visualCanvasWorkspaceSource.match(/copyRegisteredToolState\(/g)?.length, 2)
 })
 ```
 
@@ -276,9 +276,9 @@ Use the equivalent `nodeSnapshot.id` load and retain `normalizeCanvasToolPluginN
 
 ```bash
 cd /Users/aaron/creator-city/apps/web
-node_modules/.bin/tsx --test \\
-  src/lib/canvas/tool-plugin-state.test.ts \\
-  src/lib/canvas/tool-plugin-registry.test.ts \\
+node_modules/.bin/tsx --test \
+  src/lib/canvas/tool-plugin-state.test.ts \
+  src/lib/canvas/tool-plugin-registry.test.ts \
   src/components/create/canvas/toolPluginRegistryBoundary.test.ts
 ```
 
@@ -288,7 +288,7 @@ Expected: PASS. The workspace has no direct node-storage import and both generat
 
 ```bash
 cd /Users/aaron/creator-city
-git add apps/web/src/components/create/VisualCanvasWorkspace.tsx \\
+git add apps/web/src/components/create/VisualCanvasWorkspace.tsx \
   apps/web/src/components/create/canvas/toolPluginRegistryBoundary.test.ts
 git commit -m "refactor: route canvas tool state through registry"
 ```
@@ -307,12 +307,12 @@ git commit -m "refactor: route canvas tool state through registry"
 
 ```bash
 cd /Users/aaron/creator-city/apps/web
-node_modules/.bin/tsx --test \\
-  src/lib/canvas/tool-plugin-state.test.ts \\
-  src/lib/canvas/tool-plugin-registry.test.ts \\
-  src/components/create/canvas/toolPluginRegistryBoundary.test.ts \\
-  src/lib/canvas/canvasIncrementalSave.test.ts \\
-  src/lib/canvas/canvasDraftRecovery.test.ts \\
+node_modules/.bin/tsx --test \
+  src/lib/canvas/tool-plugin-state.test.ts \
+  src/lib/canvas/tool-plugin-registry.test.ts \
+  src/components/create/canvas/toolPluginRegistryBoundary.test.ts \
+  src/lib/canvas/canvasIncrementalSave.test.ts \
+  src/lib/canvas/canvasDraftRecovery.test.ts \
   src/components/create/canvas/canvasSaveScheduling.test.ts
 ```
 
