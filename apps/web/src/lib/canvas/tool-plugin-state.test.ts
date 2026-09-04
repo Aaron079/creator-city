@@ -120,6 +120,32 @@ describe('tool plugin state', () => {
     assert.equal(values.has(getNodeSceneLightingKey(projectId, childNodeId)), false)
   })
 
+  test('copies legacy Camera state without migrating the source node', () => {
+    const values = installStorage()
+    values.set(
+      `creator-city:camera-settings:${projectId}`,
+      JSON.stringify({ cameraBody: '', lens: '50mm', aperture: '', focus: '' }),
+    )
+
+    copyRegisteredToolState(projectId, sourceNodeId, childNodeId, 'camera-control')
+
+    assert.equal(values.has(getNodeCameraSettingsKey(projectId, sourceNodeId)), false)
+    assert.match(values.get(getNodeCameraSettingsKey(projectId, childNodeId)) ?? '', /50mm/)
+  })
+
+  test('copies legacy Lighting state without migrating the source node', () => {
+    const values = installStorage()
+    values.set(
+      `creator-city:scene-lighting:${projectId}`,
+      JSON.stringify({ lightingSetup: 'Backlight', timeWeather: '', atmosphere: '', colorMood: '' }),
+    )
+
+    copyRegisteredToolState(projectId, sourceNodeId, childNodeId, 'scene-lighting')
+
+    assert.equal(values.has(getNodeSceneLightingKey(projectId, sourceNodeId)), false)
+    assert.match(values.get(getNodeSceneLightingKey(projectId, childNodeId)) ?? '', /Backlight/)
+  })
+
   test('delegates Camera legacy project-key migration to the existing storage helper', () => {
     const values = installStorage()
     values.set(

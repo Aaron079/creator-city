@@ -5,6 +5,8 @@ import {
 import {
   loadCameraSettingsForNode,
   loadSceneLightingForNode,
+  readCameraSettingsForNodeWithoutMigration,
+  readSceneLightingForNodeWithoutMigration,
   saveCameraSettingsForNode,
   saveSceneLightingForNode,
 } from './nodeDirectorContextStorage'
@@ -84,11 +86,11 @@ export function copyRegisteredToolState(
   if (!projectId || !sourceNodeId || !targetNodeId) return
 
   if (pluginId === 'camera-control') {
-    const sourceCamera = loadCameraSettingsForNode(projectId, sourceNodeId)
+    const sourceCamera = readCameraSettingsForNodeWithoutMigration(projectId, sourceNodeId)
     saveCameraSettingsForNode(projectId, targetNodeId, { ...sourceCamera })
     return
   }
 
-  const sourceLighting = loadSceneLightingForNode(projectId, sourceNodeId)
+  const sourceLighting = readSceneLightingForNodeWithoutMigration(projectId, sourceNodeId)
   saveSceneLightingForNode(projectId, targetNodeId, { ...sourceLighting })
 }

@@ -19,6 +19,28 @@ function legacyProjectLightingKey(projectId: string): string {
   return `creator-city:scene-lighting:${projectId}`
 }
 
+export function readCameraSettingsForNodeWithoutMigration(projectId: string, nodeId: string): CameraSettings {
+  if (typeof window === 'undefined') return DEFAULT_CAMERA_SETTINGS
+  try {
+    const nodeRaw = window.localStorage.getItem(getNodeCameraSettingsKey(projectId, nodeId))
+    if (nodeRaw) return JSON.parse(nodeRaw) as CameraSettings
+    const legacyRaw = window.localStorage.getItem(legacyProjectCameraKey(projectId))
+    if (legacyRaw) return JSON.parse(legacyRaw) as CameraSettings
+  } catch { /* malformed JSON */ }
+  return DEFAULT_CAMERA_SETTINGS
+}
+
+export function readSceneLightingForNodeWithoutMigration(projectId: string, nodeId: string): SceneLightingSettings {
+  if (typeof window === 'undefined') return DEFAULT_SCENE_LIGHTING
+  try {
+    const nodeRaw = window.localStorage.getItem(getNodeSceneLightingKey(projectId, nodeId))
+    if (nodeRaw) return JSON.parse(nodeRaw) as SceneLightingSettings
+    const legacyRaw = window.localStorage.getItem(legacyProjectLightingKey(projectId))
+    if (legacyRaw) return JSON.parse(legacyRaw) as SceneLightingSettings
+  } catch { /* malformed JSON */ }
+  return DEFAULT_SCENE_LIGHTING
+}
+
 /**
  * Load camera settings for a specific node.
  * On first access writes the legacy project-level value to the node key so subsequent
