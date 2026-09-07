@@ -109,6 +109,10 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   assert.match(visualCanvasWorkspaceSource, /setCanvasStageBounds\(\(current\) =>/)
   assert.match(visualCanvasWorkspaceSource, /nodeContextPanAdjustmentKeyRef/)
   assert.match(visualCanvasWorkspaceSource, /window\.requestAnimationFrame/)
+  const toolbarStyleStart = visualCanvasWorkspaceSource.indexOf('const toolbarFixedStyle')
+  const toolbarStyleEnd = visualCanvasWorkspaceSource.indexOf('// Resolve upstream image', toolbarStyleStart)
+  const toolbarStyleSource = visualCanvasWorkspaceSource.slice(toolbarStyleStart, toolbarStyleEnd)
+  assert.match(toolbarStyleSource, /position: 'fixed'/)
 })
 
 test('uses node-anchored geometry without zoom-scaled dialog placement', () => {

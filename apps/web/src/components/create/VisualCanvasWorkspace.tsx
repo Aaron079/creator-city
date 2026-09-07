@@ -10165,6 +10165,7 @@ export function VisualCanvasWorkspace({
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
     if (!nodeContextSurfaceLayout) return undefined
     return {
+      position: 'fixed',
       height: nodeContextSurfaceLayout.navigation.height,
       left: nodeContextSurfaceLayout.navigation.left,
       top: nodeContextSurfaceLayout.navigation.top,
