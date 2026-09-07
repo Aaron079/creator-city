@@ -463,11 +463,15 @@ function SuggestionCard({
 }: SuggestionCardProps) {
   const sev = SEVERITY_LABEL[sugg.severity]
   return (
-    <div className={`rounded-xl border p-3 transition ${
-      isSelected
-        ? 'border-violet-500/40 bg-violet-500/[0.06]'
-        : 'border-white/10 bg-white/5'
-    }`}>
+    <div
+      role="group"
+      aria-label={`增强建议：${sugg.title}`}
+      className={`rounded-xl border p-3 transition ${
+        isSelected
+          ? 'border-violet-500/40 bg-violet-500/[0.06]'
+          : 'border-white/10 bg-white/5'
+      }`}
+    >
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-white/85">{sugg.title}</span>
@@ -496,6 +500,7 @@ function SuggestionCard({
         {hasDerivedMode ? (
           <button
             type="button"
+            aria-pressed={isSelected}
             onClick={() => onSelect(sugg)}
             className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
               alreadyExists

@@ -15,6 +15,7 @@ declare global {
   interface Window {
     __promptBoosterHarness: {
       mount: (persistedSelection: { suggestionId: string; title: string } | null) => void
+      rerender: (persistedSelection: { suggestionId: string; title: string } | null) => void
       calls: () => Array<{ suggestionId: string; title: string } | null>
     }
   }
@@ -57,11 +58,7 @@ function harnessSource() {
     let root = null
     let selectionCalls = []
 
-    function mount(persistedSelection) {
-      root?.unmount()
-      document.getElementById('root').replaceChildren()
-      root = createRoot(document.getElementById('root'))
-      selectionCalls = []
+    function renderPanel(persistedSelection) {
       root.render(React.createElement(PromptBoosterPanel, {
         nodes,
         lockedNodeId: 'image-node-1',
@@ -75,8 +72,22 @@ function harnessSource() {
       }))
     }
 
+    function mount(persistedSelection) {
+      root?.unmount()
+      document.getElementById('root').replaceChildren()
+      root = createRoot(document.getElementById('root'))
+      selectionCalls = []
+      renderPanel(persistedSelection)
+    }
+
+    function rerender(persistedSelection) {
+      if (!root) throw new Error('Prompt Booster must be mounted before rerendering')
+      renderPanel(persistedSelection)
+    }
+
     window.__promptBoosterHarness = {
       mount,
+      rerender,
       calls: () => structuredClone(selectionCalls),
     }
   `
@@ -93,9 +104,7 @@ async function mountPanel(
 }
 
 function suggestionCard(page: Page, title: string) {
-  return page.locator('div.rounded-xl').filter({
-    has: page.getByText(title, { exact: true }),
-  })
+  return page.getByRole('group', { name: `增强建议：${title}` })
 }
 
 test.before(async () => {
@@ -178,19 +187,68 @@ test('leaves a stale persisted selection inert without rewriting it', async () =
   }
 })
 
+test('synchronizes controlled persisted selection changes without emitting callbacks', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  try {
+    await mountPanel(page, {
+      suggestionId: 'sugg-img-lighting',
+      title: '补充光线描述',
+    })
+    const lightingCard = suggestionCard(page, '补充光线描述')
+    const styleCard = suggestionCard(page, '补充视觉风格')
+    await lightingCard.getByRole('button', { name: '✓ 已选择' }).waitFor()
+
+    await page.evaluate(() => window.__promptBoosterHarness.rerender(null))
+    await lightingCard.getByRole('button', { name: '选择此建议' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '创建增强版本' }).isDisabled(), true)
+
+    await page.evaluate(() => window.__promptBoosterHarness.rerender({
+      suggestionId: 'sugg-img-style',
+      title: 'Old persisted title',
+    }))
+    await styleCard.getByRole('button', { name: '✓ 已选择' }).waitFor()
+
+    await page.evaluate(() => window.__promptBoosterHarness.rerender({
+      suggestionId: 'retired-rule',
+      title: 'Retired rule',
+    }))
+    await styleCard.getByRole('button', { name: '选择此建议' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '创建增强版本' }).isDisabled(), true)
+
+    await page.evaluate(() => window.__promptBoosterHarness.rerender({
+      suggestionId: 'sugg-img-lighting',
+      title: 'Old persisted title',
+    }))
+    await lightingCard.getByRole('button', { name: '✓ 已选择' }).waitFor()
+    assert.equal(await styleCard.getByRole('button', { name: '选择此建议' }).isVisible(), true)
+    assert.deepEqual(await page.evaluate(() => window.__promptBoosterHarness.calls()), [])
+  } finally {
+    await page.close()
+  }
+})
+
 test('emits canonical selection changes when a current suggestion is toggled', async () => {
   assert.ok(browser)
   const page = await browser.newPage()
   try {
     await mountPanel(page, null)
     const styleCard = suggestionCard(page, '补充视觉风格')
+    const toggle = styleCard.getByRole('button', { name: '选择此建议' })
 
-    await styleCard.getByRole('button', { name: '选择此建议' }).click()
+    assert.equal(await styleCard.count(), 1)
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+    await toggle.click()
+    assert.equal(
+      await styleCard.getByRole('button', { name: '✓ 已选择' }).getAttribute('aria-pressed'),
+      'true',
+    )
     assert.deepEqual(await page.evaluate(() => window.__promptBoosterHarness.calls()), [
       { suggestionId: 'sugg-img-style', title: '补充视觉风格' },
     ])
 
     await styleCard.getByRole('button', { name: '✓ 已选择' }).click()
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
     assert.deepEqual(await page.evaluate(() => window.__promptBoosterHarness.calls()), [
       { suggestionId: 'sugg-img-style', title: '补充视觉风格' },
       null,
