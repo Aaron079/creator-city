@@ -228,7 +228,11 @@ import {
 } from '@/lib/scenes'
 import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
-import { AssetAgentToolbar, type ReframeMode } from '@/components/create/AssetAgentToolbar'
+import {
+  AssetAgentToolbar,
+  resolveToolbarViewportCenter,
+  type ReframeMode,
+} from '@/components/create/AssetAgentToolbar'
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
@@ -10173,7 +10177,10 @@ export function VisualCanvasWorkspace({
     const shouldPlaceToolbarBelow = nodeScreenTop - toolbarGap - toolbarHeight < 12
     return {
       position: 'fixed' as const,
-      left: Math.round(centerX),
+      left: Math.round(resolveToolbarViewportCenter({
+        preferredCenterX: centerX,
+        viewportWidth: browserViewport.width || window.innerWidth,
+      })),
       top: Math.round(shouldPlaceToolbarBelow
         ? nodeScreenTop + node.height * canvasZoom + toolbarGap
         : nodeScreenTop - toolbarGap),
@@ -10183,7 +10190,15 @@ export function VisualCanvasWorkspace({
       zIndex: 90,
       pointerEvents: 'auto',
     }
-  }, [activeNode, canvasPan.x, canvasPan.y, canvasZoom, isRightInspectorOpen, isBottomDockExpanded])
+  }, [
+    activeNode,
+    browserViewport.width,
+    canvasPan.x,
+    canvasPan.y,
+    canvasZoom,
+    isRightInspectorOpen,
+    isBottomDockExpanded,
+  ])
 
   // Resolve upstream image for video node editing dialog
   const videoModeInfo = useMemo(() => {

@@ -68,6 +68,9 @@ function stopEvent(e: React.MouseEvent | React.PointerEvent) {
 type OpenMenu = 'tools' | 'assets' | null
 type MenuPlacement = 'up' | 'down'
 
+const TOOLBAR_MAX_WIDTH = 720
+const TOOLBAR_VIEWPORT_GUTTER = 24
+
 export function resolveToolbarMenuPlacement({
   spaceAbove,
   spaceBelow,
@@ -80,6 +83,22 @@ export function resolveToolbarMenuPlacement({
   if (spaceBelow >= menuHeight) return 'down'
   if (spaceAbove >= menuHeight) return 'up'
   return spaceAbove > spaceBelow ? 'up' : 'down'
+}
+
+export function resolveToolbarViewportCenter({
+  preferredCenterX,
+  viewportWidth,
+}: {
+  preferredCenterX: number
+  viewportWidth: number
+}) {
+  const availableWidth = Math.max(0, viewportWidth - TOOLBAR_VIEWPORT_GUTTER * 2)
+  const toolbarWidth = Math.min(TOOLBAR_MAX_WIDTH, availableWidth)
+  const minimumCenter = TOOLBAR_VIEWPORT_GUTTER + toolbarWidth / 2
+  const maximumCenter = viewportWidth - minimumCenter
+
+  if (minimumCenter >= maximumCenter) return viewportWidth / 2
+  return Math.min(maximumCenter, Math.max(minimumCenter, preferredCenterX))
 }
 
 export function AssetAgentToolbar({

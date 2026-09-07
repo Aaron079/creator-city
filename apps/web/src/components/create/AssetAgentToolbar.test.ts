@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { resolveToolbarMenuPlacement } from './AssetAgentToolbar'
+import {
+  resolveToolbarMenuPlacement,
+  resolveToolbarViewportCenter,
+} from './AssetAgentToolbar'
 
 describe('resolveToolbarMenuPlacement', () => {
   test('opens down when the menu fits below the toolbar', () => {
@@ -25,5 +28,28 @@ describe('resolveToolbarMenuPlacement', () => {
       spaceBelow: 80,
       menuHeight: 200,
     }), 'up')
+  })
+})
+
+describe('resolveToolbarViewportCenter', () => {
+  test('keeps the toolbar reachable when its selected node is beyond the right edge', () => {
+    assert.equal(resolveToolbarViewportCenter({
+      preferredCenterX: 1_934,
+      viewportWidth: 1_920,
+    }), 1_536)
+  })
+
+  test('keeps the toolbar reachable when its selected node is beyond the left edge', () => {
+    assert.equal(resolveToolbarViewportCenter({
+      preferredCenterX: -120,
+      viewportWidth: 1_920,
+    }), 384)
+  })
+
+  test('centers within a narrow viewport while preserving the viewport gutter', () => {
+    assert.equal(resolveToolbarViewportCenter({
+      preferredCenterX: 10,
+      viewportWidth: 360,
+    }), 180)
   })
 })
