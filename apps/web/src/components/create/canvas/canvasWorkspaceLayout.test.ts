@@ -22,26 +22,26 @@ test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('video'), { width: 248, height: 220 })
 })
 
-test('lays out selected-node navigation and dialog below its display node', () => {
+test('anchors compact navigation above the selected display node and its dialog below', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 400, top: 120, width: 248, height: 220 },
     stage: { left: 0, top: 64, right: 1440, bottom: 720 },
   })
 
-  assert.deepEqual(layout.navigation, { left: 174, top: 358, width: 700, height: 48 })
-  assert.deepEqual(layout.dialog, { left: 174, top: 412, width: 700, height: 210 })
+  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
+  assert.deepEqual(layout.dialog, { left: 174, top: 348, width: 700, height: 210 })
   assert.equal(layout.panDeltaY, 0)
 })
 
-test('requests an upward Canvas pan instead of flipping the dialog above the node', () => {
+test('requests an upward Canvas pan for a below-node dialog without moving navigation away from the node', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 300, top: 460, width: 248, height: 220 },
     stage: { left: 0, top: 64, right: 1280, bottom: 720 },
   })
 
-  assert.equal(layout.navigation.top, 698)
-  assert.equal(layout.dialog.top, 752)
-  assert.equal(layout.panDeltaY, -258)
+  assert.equal(layout.navigation.top, 424)
+  assert.equal(layout.dialog.top, 688)
+  assert.equal(layout.panDeltaY, -194)
 })
 
 test('uses a compact desktop task dialog without reducing its controls below usable size', () => {
@@ -111,7 +111,7 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   assert.match(visualCanvasWorkspaceSource, /window\.requestAnimationFrame/)
 })
 
-test('uses anchored below-node geometry without zoom-scaled or above-node dialog placement', () => {
+test('uses node-anchored geometry without zoom-scaled dialog placement', () => {
   assert.match(visualCanvasWorkspaceSource, /getCanvasNodeContextSurfaceLayout\(/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /const dialogScale = clampNumber\(canvasZoom, 0\.56, 1\)/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /const aboveTop = nodeTop - NODE_DIALOG_GAP/)

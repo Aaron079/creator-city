@@ -8304,13 +8304,13 @@
 .scope :global(.asset-agent-toolbar) {
   box-sizing: border-box;
   display: flex;
-  height: 48px;
+  height: 28px;
   max-width: calc(100vw - 32px);
-  padding: 0 12px;
-  border-radius: 8px;
+  padding: 0 6px;
+  border-radius: 6px;
   background: rgba(20, 23, 29, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.46);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -8319,15 +8319,15 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
-  margin-right: 10px;
-  padding-right: 12px;
+  gap: 4px;
+  margin-right: 6px;
+  padding-right: 6px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .scope :global(.asset-agent-toolbar-kind-icon) {
   flex: 0 0 auto;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1;
   opacity: 0.68;
 }
@@ -8335,7 +8335,7 @@
 .scope :global(.asset-agent-toolbar-kind-label) {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.58);
-  font-size: 11px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8344,12 +8344,15 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
 }
 
 .scope :global(.asset-agent-btn) {
-  height: 34px;
-  border-radius: 6px;
+  height: 24px;
+  gap: 3px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 11px;
 }
 
 .scope :global(.canvas-node-dialog.create-floating-console),

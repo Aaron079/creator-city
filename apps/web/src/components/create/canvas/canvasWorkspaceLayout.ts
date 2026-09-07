@@ -10,8 +10,8 @@ export type CanvasContextSurfaceLayout = {
   panDeltaY: number
 }
 
-const CONTEXT_NAVIGATION = { width: 700, height: 48, gap: 18 }
-const CONTEXT_DIALOG = { width: 700, height: 210, gap: 6 }
+const CONTEXT_NAVIGATION = { width: 350, height: 28, gap: 8 }
+const CONTEXT_DIALOG = { width: 700, height: 210, gap: 8 }
 const CONTEXT_STAGE_MARGIN = 16
 
 const COMPACT_NODE_SIZES: Record<VisualCanvasNodeKind, CanvasSize> = {
@@ -103,8 +103,11 @@ export function getCanvasNodeContextSurfaceLayout({
   const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
   const dialogWidth = Math.min(CONTEXT_DIALOG.width, maxSurfaceWidth)
   const nodeCenter = node.left + node.width / 2
-  const navigationTop = node.top + node.height + CONTEXT_NAVIGATION.gap
-  const dialogTop = navigationTop + CONTEXT_NAVIGATION.height + CONTEXT_DIALOG.gap
+  const navigationTop = Math.max(
+    stage.top + CONTEXT_STAGE_MARGIN,
+    node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap,
+  )
+  const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
   const overflow = dialogTop + CONTEXT_DIALOG.height - (stage.bottom - CONTEXT_STAGE_MARGIN)
 
   return {
