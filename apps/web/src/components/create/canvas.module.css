@@ -8806,6 +8806,19 @@
   min-height: 26px;
 }
 
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-header) {
+  padding: 2px 8px;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-video-mode-bar) {
+  padding: 2px 6px;
+  margin-bottom: 0;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer) {
+  padding: 3px 8px 4px;
+}
+
 .scope :global(.canvas-node-dialog-context-controls) {
   flex-wrap: nowrap;
   overflow-x: auto;

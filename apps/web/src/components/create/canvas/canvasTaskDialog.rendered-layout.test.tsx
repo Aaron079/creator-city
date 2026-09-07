@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
@@ -11,21 +12,8 @@ let bundlePath = ''
 let stylesPath = ''
 let tempDirectory = ''
 let workspaceSource = ''
-
-async function findEsbuildBinary() {
-  const pnpmDirectory = path.resolve(process.cwd(), '../..', 'node_modules/.pnpm')
-  const entries = (await readdir(pnpmDirectory)).filter((entry) => entry.startsWith('tsx@')).sort()
-  for (const entry of entries) {
-    const candidate = path.join(pnpmDirectory, entry, 'node_modules/esbuild/bin/esbuild')
-    try {
-      await access(candidate)
-      return candidate
-    } catch {
-      // Keep looking for the existing tsx installation that owns esbuild.
-    }
-  }
-  throw new Error('Unable to locate the existing tsx esbuild binary')
-}
+const require = createRequire(import.meta.url)
+const esbuildBinary = require.resolve('esbuild/bin/esbuild')
 
 function harnessSource() {
   return `
@@ -33,6 +21,7 @@ function harnessSource() {
     import { createRoot } from 'react-dom/client'
     import styles from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas.module.css'))}
     import { CanvasPromptBox } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/CanvasPromptBox.tsx'))}
+    import { stabilizeCanvasTaskDialogSizing } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
     import { LocalReferenceStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/LocalReferenceStrip.tsx'))}
     import { UpstreamTaskStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/UpstreamTaskStrip.tsx'))}
 
@@ -55,10 +44,17 @@ function harnessSource() {
       textPreview: 'INT. CREATOR CITY - NIGHT\\nA compact scene begins.',
       fullText: 'INT. CREATOR CITY - NIGHT', importedAt: '2026-09-07T00:00:00.000Z', charCount: 25,
     }] : []
+    const longPrompt = Array.from(
+      { length: 12 },
+      (_, index) => 'Prompt line ' + (index + 1) + ': preserve the subject while refining motion and lighting.',
+    ).join('\\n')
     let accountCount = 0
     let applyCount = 0
     let removeCount = 0
     let uploadCount = 0
+    let compactFixedControls = false
+    let noncompactMeasurements = null
+    const sizingHistory = []
 
     function billingDetails() {
       if (!isByokMissingEndpoint) {
@@ -138,12 +134,12 @@ function harnessSource() {
           'div',
           {
             id: 'task-dialog',
-            className: 'canvas-node-dialog create-floating-console is-compact-fixed-controls',
-            style: { width: 358, height: 232 },
+            className: 'canvas-node-dialog create-floating-console',
+            style: { width: 358, height: 282 },
           },
           React.createElement(
             'div',
-            { id: 'fixed-top', className: 'canvas-node-dialog-fixed-controls is-top is-compact-fixed-controls' },
+            { id: 'fixed-top', className: 'canvas-node-dialog-fixed-controls is-top' },
             React.createElement(UpstreamTaskStrip, {
               targetNodeId: 'target-node', nodes: [upstreamNode],
               edges: [{ id: 'edge-1', fromNodeId: 'source-image', toNodeId: 'target-node' }],
@@ -158,7 +154,7 @@ function harnessSource() {
             }),
           ),
           React.createElement(CanvasPromptBox, {
-            prompt: 'Prompt body remains scrollable',
+            prompt: longPrompt,
             onPromptChange() {},
             model: isVideo ? 'video-model' : isText ? 'text-model' : 'volcengine-seedream-image',
             modelLabel: isVideo ? 'Video model' : isText ? 'Text model' : 'Seedream image',
@@ -185,7 +181,7 @@ function harnessSource() {
           }),
           React.createElement(
             'div',
-            { id: 'fixed-bottom', className: 'canvas-node-dialog-fixed-controls is-bottom is-compact-fixed-controls' },
+            { id: 'fixed-bottom', className: 'canvas-node-dialog-fixed-controls is-bottom' },
             React.createElement(
               'div',
               { className: 'canvas-node-dialog-billing-controls' },
@@ -203,9 +199,53 @@ function harnessSource() {
       ),
     )
 
+    function runSizingPass(stageHeight) {
+      const dialog = document.getElementById('task-dialog')
+      const fixedTop = document.getElementById('fixed-top')
+      const fixedBottom = document.getElementById('fixed-bottom')
+      const promptHeader = dialog.querySelector('.canvas-node-dialog-fixed-header')
+      const promptFooter = dialog.querySelector('.canvas-node-dialog-fixed-footer')
+      const measurements = {
+        fixedTopHeight: fixedTop.offsetHeight,
+        fixedBottomHeight: fixedBottom.offsetHeight,
+        promptChromeHeight: promptHeader.offsetHeight + promptFooter.offsetHeight,
+      }
+      const wasCompact = compactFixedControls
+      const sizing = stabilizeCanvasTaskDialogSizing({
+        stageHeight,
+        measurements,
+        compactFixedControls,
+        noncompactMeasurements,
+      })
+      compactFixedControls = sizing.compactFixedControls
+      noncompactMeasurements = sizing.noncompactMeasurements
+      dialog.style.height = sizing.height + 'px'
+      for (const element of [dialog, fixedTop, fixedBottom]) {
+        element.classList.toggle('is-compact-fixed-controls', compactFixedControls)
+      }
+      const entry = {
+        wasCompact,
+        compactFixedControls,
+        height: sizing.height,
+        measurements,
+      }
+      sizingHistory.push(entry)
+      return entry
+    }
+
+    async function settleSizing(stageHeight, passCount = 4) {
+      for (let pass = 0; pass < passCount; pass += 1) {
+        runSizingPass(stageHeight)
+        await new Promise((resolve) => window.requestAnimationFrame(resolve))
+      }
+      return sizingHistory.slice()
+    }
+
     window.__taskDialogHarness = {
       accountCount() { return accountCount }, applyCount() { return applyCount },
       removeCount() { return removeCount }, uploadCount() { return uploadCount },
+      settleSizing,
+      sizingHistory() { return sizingHistory.slice() },
     }
   `
 }
@@ -220,7 +260,7 @@ before(async () => {
   bundlePath = path.join(tempDirectory, 'bundle.js')
   stylesPath = path.join(tempDirectory, 'bundle.css')
   await writeFile(entryPath, harnessSource(), 'utf8')
-  const build = spawnSync(await findEsbuildBinary(), [
+  const build = spawnSync(esbuildBinary, [
     entryPath,
     '--bundle',
     '--platform=browser',
@@ -251,6 +291,22 @@ type HarnessCounters = {
   uploadCount: () => number
 }
 
+type HarnessSizingEntry = {
+  wasCompact: boolean
+  compactFixedControls: boolean
+  height: number
+  measurements: {
+    fixedTopHeight: number
+    fixedBottomHeight: number
+    promptChromeHeight: number
+  }
+}
+
+type TaskDialogHarness = HarnessCounters & {
+  settleSizing: (stageHeight: number, passCount?: number) => Promise<HarnessSizingEntry[]>
+  sizingHistory: () => HarnessSizingEntry[]
+}
+
 async function renderScenario(scenario: string) {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 390, height: 300 } })
@@ -262,12 +318,17 @@ async function renderScenario(scenario: string) {
   await page.goto(`http://creator-city.test/task-dialog?scenario=${scenario}`)
   await page.addStyleTag({ path: stylesPath })
   await page.addScriptTag({ path: bundlePath })
+  await page.locator('#task-dialog').waitFor()
+  await page.evaluate(async () => {
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
+    await harness.settleSizing(window.innerHeight)
+  })
   return page
 }
 
 async function harnessCount(page: Page, key: keyof HarnessCounters) {
   return page.evaluate((counterKey) => {
-    const harness = (window as unknown as { __taskDialogHarness: HarnessCounters }).__taskDialogHarness
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
     return harness[counterKey]()
   }, key)
 }
@@ -280,6 +341,14 @@ async function assertConstrainedSurface(page: Page) {
   const headerBox = await promptBox.locator('.canvas-node-dialog-fixed-header').boundingBox()
   const bodyBox = await promptBox.locator('.canvas-node-dialog-scroll-content').boundingBox()
   const footerBox = await promptBox.locator('.canvas-node-dialog-fixed-footer').boundingBox()
+  const scrollMetrics = await promptBox.locator('.canvas-node-dialog-scroll-content').evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }))
+  const sizingHistory = await page.evaluate(() => {
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
+    return harness.sizingHistory()
+  })
 
   assert.ok(dialogBox)
   assert.ok(topBox)
@@ -287,9 +356,28 @@ async function assertConstrainedSurface(page: Page) {
   assert.ok(headerBox)
   assert.ok(bodyBox)
   assert.ok(footerBox)
+  assert.equal(sizingHistory[0]?.wasCompact, false, 'first pass must measure expanded controls')
+  assert.equal(sizingHistory[0]?.compactFixedControls, true, 'expanded controls must trigger compact mode')
+  assert.ok(
+    sizingHistory.slice(1).every((entry) => entry.compactFixedControls),
+    'compact remeasurement must not return to expanded mode',
+  )
+  assert.equal(sizingHistory.at(-1)?.height, sizingHistory.at(-2)?.height)
+  assert.equal(await page.locator('#task-dialog').evaluate((element) => (
+    element.classList.contains('is-compact-fixed-controls')
+  )), true)
   assert.ok(topBox.height <= 72, `compact fixed top was ${topBox.height}px tall`)
   assert.ok(bottomBox.height <= 72, `compact fixed bottom was ${bottomBox.height}px tall`)
-  assert.ok(bodyBox.height > 0, `prompt body was ${bodyBox.height}px tall`)
+  assert.ok(bodyBox.height >= 32, `prompt body was only ${bodyBox.height}px tall`)
+  assert.ok(
+    scrollMetrics.scrollHeight > scrollMetrics.clientHeight,
+    `prompt body did not scroll (${scrollMetrics.scrollHeight}px <= ${scrollMetrics.clientHeight}px)`,
+  )
+  const scrollTop = await promptBox.locator('.canvas-node-dialog-scroll-content').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return element.scrollTop
+  })
+  assert.ok(scrollTop > 0, 'long prompt did not produce a usable scroll offset')
   assert.ok(Math.abs(topBox.y - bottomBox.y) < 1, 'fixed controls must share the compact top row')
   for (const box of [topBox, bottomBox, headerBox, bodyBox, footerBox]) {
     assert.ok(box.y >= dialogBox.y)
@@ -350,8 +438,13 @@ test('keeps the real image-to-video mode header visible at 390x300', async (t) =
   assert.equal(await videoModeBar.isVisible(), true)
   await assert.doesNotReject(videoModeBar.getByText('图生视频').waitFor())
   await assert.doesNotReject(videoModeBar.getByText('参考图：Upstream portrait').waitFor())
+  assert.equal(await page.getByText('Video model', { exact: true }).isVisible(), true)
+  assert.equal(await page.getByRole('button', { name: '参数' }).isVisible(), true)
+  assert.equal(await page.getByText('8 credits', { exact: true }).isVisible(), true)
+  assert.equal(await page.getByRole('button', { name: 'Generate' }).isVisible(), true)
+  assert.equal(await page.getByRole('button', { name: '关闭节点面板' }).isVisible(), true)
   assert.ok(
-    geometry.promptHeaderHeight >= 50,
+    geometry.promptHeaderHeight >= 40,
     `expected the production video header, measured ${geometry.promptHeaderHeight}px`,
   )
   t.diagnostic(

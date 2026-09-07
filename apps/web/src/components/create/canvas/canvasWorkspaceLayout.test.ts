@@ -11,6 +11,7 @@ import {
   getCanvasNodeSize,
   getCanvasTaskDialogSizing,
   normalizeLegacyCanvasNodeSize,
+  stabilizeCanvasTaskDialogSizing,
 } from './canvasWorkspaceLayout'
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
@@ -186,6 +187,53 @@ test('reports compact mode without promising prompt space when the stage is phys
   )
 })
 
+test('retains compact task sizing across compact remeasurement until noncompact controls fit', () => {
+  const expandedMeasurements = {
+    fixedTopHeight: 160,
+    fixedBottomHeight: 131,
+    promptChromeHeight: 145,
+  }
+  const first = stabilizeCanvasTaskDialogSizing({
+    stageHeight: 420,
+    measurements: expandedMeasurements,
+    compactFixedControls: false,
+    noncompactMeasurements: null,
+  })
+
+  assert.equal(first.compactFixedControls, true)
+  assert.equal(first.height, 352)
+  assert.deepEqual(first.noncompactMeasurements, expandedMeasurements)
+
+  const compactRemeasurement = stabilizeCanvasTaskDialogSizing({
+    stageHeight: 420,
+    measurements: {
+      fixedTopHeight: 70,
+      fixedBottomHeight: 70,
+      promptChromeHeight: 125,
+    },
+    compactFixedControls: first.compactFixedControls,
+    noncompactMeasurements: first.noncompactMeasurements,
+  })
+
+  assert.equal(compactRemeasurement.compactFixedControls, true)
+  assert.equal(compactRemeasurement.height, 282)
+  assert.deepEqual(compactRemeasurement.noncompactMeasurements, expandedMeasurements)
+
+  const largerStage = stabilizeCanvasTaskDialogSizing({
+    stageHeight: 570,
+    measurements: {
+      fixedTopHeight: 70,
+      fixedBottomHeight: 70,
+      promptChromeHeight: 125,
+    },
+    compactFixedControls: compactRemeasurement.compactFixedControls,
+    noncompactMeasurements: compactRemeasurement.noncompactMeasurements,
+  })
+
+  assert.equal(largerStage.compactFixedControls, false)
+  assert.equal(largerStage.height, 494)
+})
+
 test('requests an upward Canvas pan for a below-node dialog without moving navigation away from the node', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 300, top: 460, width: 248, height: 220 },
@@ -327,6 +375,18 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
     finalRules,
     /\.canvas-node-dialog-account-list\) \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;/,
   )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-header\) \{[^}]*padding: 2px 8px;/,
+  )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-video-mode-bar\) \{[^}]*padding: 2px 6px;[^}]*margin-bottom: 0;/,
+  )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-footer\) \{[^}]*padding: 3px 8px 4px;/,
+  )
   assert.match(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls/)
 })
 
@@ -348,11 +408,20 @@ test('keeps reference and billing controls in fixed regions outside the prompt b
 })
 
 test('renders the real CanvasPromptBox and image-to-video mode in the Chromium matrix', () => {
+  assert.match(renderedTaskDialogTestSource, /createRequire\(import\.meta\.url\)/)
+  assert.match(renderedTaskDialogTestSource, /require\.resolve\('esbuild\/bin\/esbuild'\)/)
+  assert.doesNotMatch(renderedTaskDialogTestSource, /node_modules\/\.pnpm/)
   assert.match(renderedTaskDialogTestSource, /import \{ CanvasPromptBox \} from/)
+  assert.match(renderedTaskDialogTestSource, /import \{ stabilizeCanvasTaskDialogSizing \} from/)
   assert.match(renderedTaskDialogTestSource, /React\.createElement\(CanvasPromptBox,/)
   assert.match(renderedTaskDialogTestSource, /mode: 'image-to-video'/)
   assert.match(renderedTaskDialogTestSource, /sourceNodeTitle: 'Upstream portrait'/)
   assert.match(renderedTaskDialogTestSource, /\.canvas-video-mode-bar\.is-image-to-video/)
+  assert.doesNotMatch(
+    renderedTaskDialogTestSource,
+    /className: 'canvas-node-dialog create-floating-console is-compact-fixed-controls'/,
+  )
+  assert.doesNotMatch(renderedTaskDialogTestSource, /style: \{ width: 358, height: 232 \}/)
 })
 
 test('expands only the task surface from its measured fixed-control stack', () => {
@@ -366,8 +435,10 @@ test('expands only the task surface from its measured fixed-control stack', () =
   )
   assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedTopRef/)
   assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedBottomRef/)
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogNoncompactMeasurementsRef/)
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogMeasurementKey/)
   assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(measureTaskDialogHeight\)/)
-  assert.match(visualCanvasWorkspaceSource, /getCanvasTaskDialogSizing\(/)
+  assert.match(visualCanvasWorkspaceSource, /stabilizeCanvasTaskDialogSizing\(/)
   assert.match(visualCanvasWorkspaceSource, /compactFixedControls/)
   assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogCompactControls \? ' is-compact-fixed-controls' : ''/)
 })

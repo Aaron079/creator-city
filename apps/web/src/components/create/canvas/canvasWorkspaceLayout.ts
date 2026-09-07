@@ -23,16 +23,30 @@ export type CanvasTaskDialogSizing = {
   promptBodyHeight: number
 }
 
-export function getCanvasTaskDialogSizing({
-  stageHeight,
-  fixedTopHeight,
-  fixedBottomHeight,
-  promptChromeHeight,
-}: {
-  stageHeight: number
+export type CanvasTaskDialogMeasurements = {
   fixedTopHeight: number
   fixedBottomHeight: number
   promptChromeHeight: number
+}
+
+function normalizeTaskDialogMeasurements(
+  measurements: CanvasTaskDialogMeasurements,
+): CanvasTaskDialogMeasurements {
+  return {
+    fixedTopHeight: Math.max(0, measurements.fixedTopHeight),
+    fixedBottomHeight: Math.max(0, measurements.fixedBottomHeight),
+    promptChromeHeight: Math.max(0, measurements.promptChromeHeight),
+  }
+}
+
+function getCanvasTaskDialogSizingForMode({
+  stageHeight,
+  measurements,
+  compactFixedControls,
+}: {
+  stageHeight: number
+  measurements: CanvasTaskDialogMeasurements
+  compactFixedControls: boolean
 }): CanvasTaskDialogSizing {
   const maxHeight = Math.max(
     0,
@@ -41,14 +55,12 @@ export function getCanvasTaskDialogSizing({
       - CONTEXT_NAVIGATION.height
       - CONTEXT_NAVIGATION.gap,
   )
-  const topHeight = Math.max(0, fixedTopHeight)
-  const bottomHeight = Math.max(0, fixedBottomHeight)
-  const chromeHeight = Math.max(0, promptChromeHeight)
-  const stackedFixedHeight = topHeight + bottomHeight + chromeHeight
-  const compactFixedControls = stackedFixedHeight + TASK_DIALOG_PROMPT_BODY_HEIGHT > maxHeight
   const fixedHeight = compactFixedControls
-    ? Math.max(topHeight, bottomHeight) + chromeHeight
-    : stackedFixedHeight
+    ? Math.max(measurements.fixedTopHeight, measurements.fixedBottomHeight)
+      + measurements.promptChromeHeight
+    : measurements.fixedTopHeight
+      + measurements.fixedBottomHeight
+      + measurements.promptChromeHeight
   const preferredHeight = Math.max(
     TASK_DIALOG_BASE_HEIGHT,
     fixedHeight + TASK_DIALOG_PROMPT_BODY_HEIGHT,
@@ -60,6 +72,90 @@ export function getCanvasTaskDialogSizing({
     maxHeight,
     compactFixedControls,
     promptBodyHeight: Math.max(0, height - fixedHeight),
+  }
+}
+
+export function getCanvasTaskDialogSizing({
+  stageHeight,
+  fixedTopHeight,
+  fixedBottomHeight,
+  promptChromeHeight,
+}: {
+  stageHeight: number
+  fixedTopHeight: number
+  fixedBottomHeight: number
+  promptChromeHeight: number
+}): CanvasTaskDialogSizing {
+  const measurements = normalizeTaskDialogMeasurements({
+    fixedTopHeight,
+    fixedBottomHeight,
+    promptChromeHeight,
+  })
+  const maxHeight = Math.max(
+    0,
+    stageHeight
+      - CONTEXT_STAGE_MARGIN * 2
+      - CONTEXT_NAVIGATION.height
+      - CONTEXT_NAVIGATION.gap,
+  )
+  const compactFixedControls = measurements.fixedTopHeight
+    + measurements.fixedBottomHeight
+    + measurements.promptChromeHeight
+    + TASK_DIALOG_PROMPT_BODY_HEIGHT > maxHeight
+
+  return getCanvasTaskDialogSizingForMode({
+    stageHeight,
+    measurements,
+    compactFixedControls,
+  })
+}
+
+export function stabilizeCanvasTaskDialogSizing({
+  stageHeight,
+  measurements,
+  compactFixedControls,
+  noncompactMeasurements,
+}: {
+  stageHeight: number
+  measurements: CanvasTaskDialogMeasurements
+  compactFixedControls: boolean
+  noncompactMeasurements: CanvasTaskDialogMeasurements | null
+}): CanvasTaskDialogSizing & {
+  noncompactMeasurements: CanvasTaskDialogMeasurements | null
+} {
+  const currentMeasurements = normalizeTaskDialogMeasurements(measurements)
+  const cachedNoncompactMeasurements = compactFixedControls
+    ? noncompactMeasurements
+    : currentMeasurements
+  const noncompactBasis = cachedNoncompactMeasurements
+    ? {
+      fixedTopHeight: Math.max(
+        currentMeasurements.fixedTopHeight,
+        cachedNoncompactMeasurements.fixedTopHeight,
+      ),
+      fixedBottomHeight: Math.max(
+        currentMeasurements.fixedBottomHeight,
+        cachedNoncompactMeasurements.fixedBottomHeight,
+      ),
+      promptChromeHeight: Math.max(
+        currentMeasurements.promptChromeHeight,
+        cachedNoncompactMeasurements.promptChromeHeight,
+      ),
+    }
+    : currentMeasurements
+  const shouldUseCompactControls = getCanvasTaskDialogSizing({
+    stageHeight,
+    ...noncompactBasis,
+  }).compactFixedControls
+  const sizing = getCanvasTaskDialogSizingForMode({
+    stageHeight,
+    measurements: shouldUseCompactControls ? currentMeasurements : noncompactBasis,
+    compactFixedControls: shouldUseCompactControls,
+  })
+
+  return {
+    ...sizing,
+    noncompactMeasurements: cachedNoncompactMeasurements,
   }
 }
 

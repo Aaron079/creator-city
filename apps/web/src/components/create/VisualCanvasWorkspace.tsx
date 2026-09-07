@@ -14,8 +14,9 @@ import {
 import {
   getCanvasNodeContextSurfaceLayout,
   getCanvasNodeSize,
-  getCanvasTaskDialogSizing,
   normalizeLegacyCanvasNodeSize,
+  stabilizeCanvasTaskDialogSizing,
+  type CanvasTaskDialogMeasurements,
   type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
@@ -2617,6 +2618,7 @@ export function VisualCanvasWorkspace({
   const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
+  const nodeTaskDialogNoncompactMeasurementsRef = useRef<CanvasTaskDialogMeasurements | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -10108,12 +10110,18 @@ export function VisualCanvasWorkspace({
     return true
   }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
+  const nodeTaskDialogMeasurementKey = activeNodeContextCategory === 'task'
+    ? editingNode?.id ?? null
+    : null
+
   useEffect(() => {
-    if (activeNodeContextCategory !== 'task' || !editingNode) {
-      setNodeTaskDialogHeight(282)
-      setNodeTaskDialogCompactControls(false)
-      return
-    }
+    nodeTaskDialogNoncompactMeasurementsRef.current = null
+    setNodeTaskDialogHeight(282)
+    setNodeTaskDialogCompactControls(false)
+  }, [nodeTaskDialogMeasurementKey])
+
+  useEffect(() => {
+    if (!nodeTaskDialogMeasurementKey) return
 
     const fixedTop = nodeTaskDialogFixedTopRef.current
     const fixedBottom = nodeTaskDialogFixedBottomRef.current
@@ -10123,14 +10131,19 @@ export function VisualCanvasWorkspace({
     if (!fixedTop || !fixedBottom || !promptHeader || !promptFooter) return
 
     const measureTaskDialogHeight = () => {
-      const sizing = getCanvasTaskDialogSizing({
+      const sizing = stabilizeCanvasTaskDialogSizing({
         stageHeight: canvasStageBounds
           ? canvasStageBounds.bottom - canvasStageBounds.top
           : window.innerHeight,
-        fixedTopHeight: fixedTop.offsetHeight,
-        fixedBottomHeight: fixedBottom.offsetHeight,
-        promptChromeHeight: promptHeader.offsetHeight + promptFooter.offsetHeight,
+        measurements: {
+          fixedTopHeight: fixedTop.offsetHeight,
+          fixedBottomHeight: fixedBottom.offsetHeight,
+          promptChromeHeight: promptHeader.offsetHeight + promptFooter.offsetHeight,
+        },
+        compactFixedControls: nodeTaskDialogCompactControls,
+        noncompactMeasurements: nodeTaskDialogNoncompactMeasurementsRef.current,
       })
+      nodeTaskDialogNoncompactMeasurementsRef.current = sizing.noncompactMeasurements
       setNodeTaskDialogHeight((current) => current === sizing.height ? current : sizing.height)
       setNodeTaskDialogCompactControls((current) => (
         current === sizing.compactFixedControls ? current : sizing.compactFixedControls
@@ -10146,7 +10159,7 @@ export function VisualCanvasWorkspace({
     observer.observe(promptHeader)
     observer.observe(promptFooter)
     return () => observer.disconnect()
-  }, [activeNodeContextCategory, canvasStageBounds, editingNode])
+  }, [canvasStageBounds, nodeTaskDialogCompactControls, nodeTaskDialogMeasurementKey])
 
   const nodeContextDialogHeight = activeNodeContextCategory === 'task' ? nodeTaskDialogHeight : 210
   const nodeContextSurfaceLayout = useMemo(() => {
