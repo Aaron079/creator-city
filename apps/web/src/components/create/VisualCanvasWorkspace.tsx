@@ -14,6 +14,7 @@ import {
 import {
   getCanvasNodeContextSurfaceLayout,
   getCanvasNodeSize,
+  getCanvasTaskDialogSizing,
   normalizeLegacyCanvasNodeSize,
   type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
@@ -2612,6 +2613,7 @@ export function VisualCanvasWorkspace({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeNodeContextCategory, setActiveNodeContextCategory] = useState<NodeContextCategory | null>(null)
   const [nodeTaskDialogHeight, setNodeTaskDialogHeight] = useState(282)
+  const [nodeTaskDialogCompactControls, setNodeTaskDialogCompactControls] = useState(false)
   const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
@@ -3135,7 +3137,10 @@ export function VisualCanvasWorkspace({
       case 'storyboard-reference-extractor': setIsStoryboardReferenceExtractorOpen(true); break
       case 'draw-annotation':    setIsAnnotationPanelOpen(true); break
       case 'generation':
-        if (payload?.nodeId) setEditingNodeId(payload.nodeId)
+        if (payload?.nodeId) {
+          setEditingNodeId(payload.nodeId)
+          setActiveNodeContextCategory('task')
+        }
         break
     }
   }, [dismissInspectorForOverlay, resetCanvasModalStates])
@@ -10106,6 +10111,7 @@ export function VisualCanvasWorkspace({
   useEffect(() => {
     if (activeNodeContextCategory !== 'task' || !editingNode) {
       setNodeTaskDialogHeight(282)
+      setNodeTaskDialogCompactControls(false)
       return
     }
 
@@ -10117,16 +10123,18 @@ export function VisualCanvasWorkspace({
     if (!fixedTop || !fixedBottom || !promptHeader || !promptFooter) return
 
     const measureTaskDialogHeight = () => {
-      const fixedHeight = fixedTop.offsetHeight
-        + fixedBottom.offsetHeight
-        + promptHeader.offsetHeight
-        + promptFooter.offsetHeight
-      const preferredHeight = Math.max(282, Math.ceil(fixedHeight + 58))
-      const stageHeight = canvasStageBounds
-        ? Math.max(0, canvasStageBounds.bottom - canvasStageBounds.top - 32)
-        : preferredHeight
-      const nextHeight = Math.min(preferredHeight, stageHeight)
-      setNodeTaskDialogHeight((current) => current === nextHeight ? current : nextHeight)
+      const sizing = getCanvasTaskDialogSizing({
+        stageHeight: canvasStageBounds
+          ? canvasStageBounds.bottom - canvasStageBounds.top
+          : window.innerHeight,
+        fixedTopHeight: fixedTop.offsetHeight,
+        fixedBottomHeight: fixedBottom.offsetHeight,
+        promptChromeHeight: promptHeader.offsetHeight + promptFooter.offsetHeight,
+      })
+      setNodeTaskDialogHeight((current) => current === sizing.height ? current : sizing.height)
+      setNodeTaskDialogCompactControls((current) => (
+        current === sizing.compactFixedControls ? current : sizing.compactFixedControls
+      ))
     }
 
     measureTaskDialogHeight()
@@ -10213,7 +10221,7 @@ export function VisualCanvasWorkspace({
       left: nodeContextSurfaceLayout.navigation.left,
       top: nodeContextSurfaceLayout.navigation.top,
       width: nodeContextSurfaceLayout.navigation.width,
-      zIndex: 90,
+      zIndex: 92,
       pointerEvents: 'auto',
     }
   }, [nodeContextSurfaceLayout])
@@ -12192,8 +12200,8 @@ export function VisualCanvasWorkspace({
 
       {editingNode && nodeDialogStyle ? (
         <div
-          className="canvas-node-dialog create-floating-console"
-          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 32px)' }}
+          className={`canvas-node-dialog create-floating-console${nodeTaskDialogCompactControls ? ' is-compact-fixed-controls' : ''}`}
+          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 68px)' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div ref={nodeTaskDialogFixedTopRef} className="canvas-node-dialog-fixed-controls is-top">
@@ -12292,7 +12300,7 @@ export function VisualCanvasWorkspace({
               editingNode.kind === 'image' ||
               editingNode.kind === 'video'
             ) && (
-              <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
+              <div className="canvas-node-dialog-context-controls border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
               {/* Bible context chips — only when content is present */}
               {characterBible.characters.filter((c) => c.name?.trim()).length > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
@@ -12333,9 +12341,9 @@ export function VisualCanvasWorkspace({
             )}
             {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
               <div className="canvas-node-dialog-billing-controls border-t border-white/[0.06] px-3 pb-2 pt-2 space-y-1.5">
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-white/25">API 费用来源</p>
+              <p className="canvas-node-dialog-billing-title text-[9px] font-semibold uppercase tracking-wider text-white/25">API 费用来源</p>
               {/* Billing mode icon cards */}
-              <div className="grid grid-cols-2 gap-1">
+              <div className="canvas-node-dialog-billing-modes grid grid-cols-2 gap-1">
                 <button
                   type="button"
                   onClick={() => setBillingMode('user_provider_account')}
@@ -12361,23 +12369,24 @@ export function VisualCanvasWorkspace({
                   <span className="text-[8px] leading-tight opacity-55">平台积分（内部）</span>
                 </button>
               </div>
-              {editingNode.kind === 'video' ? (
-                billingMode === 'user_provider_account' ? (
-                  <p className="text-[10px] text-amber-400/70 leading-relaxed">
-                    视频生成 BYOK 即将开放。请先前往{' '}
-                    <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-300">API 账户中心</a>
-                    {' '}配置火山 / Seedance API Key，开放后即可使用。
-                  </p>
+              <div className="canvas-node-dialog-billing-details">
+                {editingNode.kind === 'video' ? (
+                  billingMode === 'user_provider_account' ? (
+                    <p className="text-[10px] text-amber-400/70 leading-relaxed">
+                      视频生成 BYOK 即将开放。请先前往{' '}
+                      <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-300">API 账户中心</a>
+                      {' '}配置火山 / Seedance API Key，开放后即可使用。
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-white/25 leading-relaxed">平台积分视频生成暂未对外开放，不建议使用此模式。</p>
+                  )
                 ) : (
-                  <p className="text-[10px] text-white/25 leading-relaxed">平台积分视频生成暂未对外开放，不建议使用此模式。</p>
-                )
-              ) : (
-                <>
-                  {billingMode === 'platform_credits' && (
-                    <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
-                  )}
-                  {billingMode === 'user_provider_account' && (
-                    <div className="space-y-1.5">
+                  <>
+                    {billingMode === 'platform_credits' && (
+                      <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
+                    )}
+                    {billingMode === 'user_provider_account' && (
+                      <div className="space-y-1.5">
                       {editingNode.kind === 'image' ? (
                         <p className="text-[9px] text-violet-300/45 leading-relaxed">
                           Seedream 图片 · 费用计入 Volcengine 账户 · Creator City 不代扣
@@ -12441,10 +12450,11 @@ export function VisualCanvasWorkspace({
                           </>
                         )
                       })()}
-                    </div>
-                  )}
-                </>
-              )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
               </div>
             )}
           </div>

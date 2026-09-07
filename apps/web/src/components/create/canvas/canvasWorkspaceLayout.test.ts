@@ -9,12 +9,14 @@ import {
   getCanvasNodeContextSurfaceLayout,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
+  getCanvasTaskDialogSizing,
   normalizeLegacyCanvasNodeSize,
 } from './canvasWorkspaceLayout'
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
 const visualCanvasWorkspaceSource = readFileSync(resolve(testDirectory, '../VisualCanvasWorkspace.tsx'), 'utf8')
 const canvasModuleSource = readFileSync(resolve(testDirectory, '../canvas.module.css'), 'utf8')
+const canvasWorkspaceLayoutSource = readFileSync(resolve(testDirectory, 'canvasWorkspaceLayout.ts'), 'utf8')
 
 test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
@@ -55,6 +57,95 @@ test('uses a taller task dialog height to calculate stage overflow', () => {
   assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
   assert.equal(layout.dialog.top, 348)
   assert.equal(layout.panDeltaY, -46)
+})
+
+test('exposes pure task dialog sizing as a layout behavior boundary', () => {
+  assert.match(canvasWorkspaceLayoutSource, /export function getCanvasTaskDialogSizing\(/)
+})
+
+test('keeps the 282px task height when fixed controls and prompt allowance fit', () => {
+  assert.deepEqual(
+    getCanvasTaskDialogSizing({
+      stageHeight: 800,
+      fixedTopHeight: 20,
+      fixedBottomHeight: 30,
+      promptChromeHeight: 100,
+    }),
+    {
+      height: 282,
+      maxHeight: 732,
+      compactFixedControls: false,
+      promptBodyHeight: 132,
+    },
+  )
+})
+
+test('uses the smallest expanded task height that preserves fixed controls and prompt allowance', () => {
+  assert.deepEqual(
+    getCanvasTaskDialogSizing({
+      stageHeight: 800,
+      fixedTopHeight: 70,
+      fixedBottomHeight: 110,
+      promptChromeHeight: 90,
+    }),
+    {
+      height: 328,
+      maxHeight: 732,
+      compactFixedControls: false,
+      promptBodyHeight: 58,
+    },
+  )
+})
+
+test('reserves navigation height and gap while compacting fixed controls in a constrained stage', () => {
+  const stage = { left: 0, top: 64, right: 1280, bottom: 484 }
+  const sizing = getCanvasTaskDialogSizing({
+    stageHeight: stage.bottom - stage.top,
+    fixedTopHeight: 180,
+    fixedBottomHeight: 194,
+    promptChromeHeight: 100,
+  })
+
+  assert.deepEqual(sizing, {
+    height: 352,
+    maxHeight: 352,
+    compactFixedControls: true,
+    promptBodyHeight: 58,
+  })
+
+  const initialNode = { left: 300, top: 220, width: 248, height: 220 }
+  const firstLayout = getCanvasNodeContextSurfaceLayout({
+    node: initialNode,
+    stage,
+    dialogHeight: sizing.height,
+  })
+  const settledLayout = getCanvasNodeContextSurfaceLayout({
+    node: { ...initialNode, top: initialNode.top + firstLayout.panDeltaY },
+    stage,
+    dialogHeight: sizing.height,
+  })
+
+  assert.equal(
+    settledLayout.dialog.top,
+    settledLayout.navigation.top + settledLayout.navigation.height + 8,
+  )
+})
+
+test('shrinks only the prompt allowance after compacting controls when the stage is too short', () => {
+  assert.deepEqual(
+    getCanvasTaskDialogSizing({
+      stageHeight: 300,
+      fixedTopHeight: 70,
+      fixedBottomHeight: 90,
+      promptChromeHeight: 100,
+    }),
+    {
+      height: 232,
+      maxHeight: 232,
+      compactFixedControls: true,
+      promptBodyHeight: 42,
+    },
+  )
 })
 
 test('requests an upward Canvas pan for a below-node dialog without moving navigation away from the node', () => {
@@ -108,9 +199,9 @@ test('clamps a task dialog vertically to the visible canvas stage', () => {
   )
 })
 
-test('keeps the runtime task dialog max height within 16px viewport margins', () => {
-  assert.match(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 32px\)'/)
-  assert.doesNotMatch(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 80px\)'/)
+test('reserves viewport margins, navigation height, and gap in the runtime task max height', () => {
+  assert.match(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 68px\)'/)
+  assert.doesNotMatch(visualCanvasWorkspaceSource, /maxHeight: 'calc\(100vh - 32px\)'/)
 })
 
 test('keeps the runtime task dialog max width within 16px viewport margins', () => {
@@ -137,6 +228,20 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   const toolbarStyleEnd = visualCanvasWorkspaceSource.indexOf('// Resolve upstream image', toolbarStyleStart)
   const toolbarStyleSource = visualCanvasWorkspaceSource.slice(toolbarStyleStart, toolbarStyleEnd)
   assert.match(toolbarStyleSource, /position: 'fixed'/)
+  assert.match(toolbarStyleSource, /zIndex: 92/)
+})
+
+test('normal generation entry restores both the editing node and Task category after reset', () => {
+  const openPanelStart = visualCanvasWorkspaceSource.indexOf('const openCanvasPanel = useCallback')
+  const openPanelEnd = visualCanvasWorkspaceSource.indexOf('const openGenerationDialog', openPanelStart)
+  const openPanelSource = visualCanvasWorkspaceSource.slice(openPanelStart, openPanelEnd)
+  const generationStart = openPanelSource.indexOf("case 'generation':")
+  const generationEnd = openPanelSource.indexOf('break', generationStart)
+  const generationSource = openPanelSource.slice(generationStart, generationEnd)
+
+  assert.notEqual(generationStart, -1, 'missing generation modal case')
+  assert.match(generationSource, /setEditingNodeId\(payload\.nodeId\)/)
+  assert.match(generationSource, /setActiveNodeContextCategory\('task'\)/)
 })
 
 test('uses the taller fixed-surface height only for the task category', () => {
@@ -168,6 +273,15 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
     finalRules,
     /\.canvas-node-dialog \.canvas-prompt-box\.is-node\) \{[^}]*height: 100%;/,
   )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog-fixed-controls\) \{[^}]*display: flex;[^}]*overflow-x: auto;/,
+  )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog-billing-controls\) \{[^}]*display: flex;[^}]*overflow-x: auto;/,
+  )
+  assert.match(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls/)
 })
 
 test('keeps reference and billing controls in fixed regions outside the prompt box', () => {
@@ -198,6 +312,9 @@ test('expands only the task surface from its measured fixed-control stack', () =
   assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedTopRef/)
   assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedBottomRef/)
   assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(measureTaskDialogHeight\)/)
+  assert.match(visualCanvasWorkspaceSource, /getCanvasTaskDialogSizing\(/)
+  assert.match(visualCanvasWorkspaceSource, /compactFixedControls/)
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogCompactControls \? ' is-compact-fixed-controls' : ''/)
 })
 
 test('uses node-anchored geometry without zoom-scaled dialog placement', () => {

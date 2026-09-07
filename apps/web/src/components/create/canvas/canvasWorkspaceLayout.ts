@@ -13,6 +13,55 @@ export type CanvasContextSurfaceLayout = {
 const CONTEXT_NAVIGATION = { width: 350, height: 28, gap: 8 }
 const CONTEXT_DIALOG = { width: 700, height: 210, gap: 8 }
 const CONTEXT_STAGE_MARGIN = 16
+const TASK_DIALOG_BASE_HEIGHT = 282
+const TASK_DIALOG_PROMPT_BODY_HEIGHT = 58
+
+export type CanvasTaskDialogSizing = {
+  height: number
+  maxHeight: number
+  compactFixedControls: boolean
+  promptBodyHeight: number
+}
+
+export function getCanvasTaskDialogSizing({
+  stageHeight,
+  fixedTopHeight,
+  fixedBottomHeight,
+  promptChromeHeight,
+}: {
+  stageHeight: number
+  fixedTopHeight: number
+  fixedBottomHeight: number
+  promptChromeHeight: number
+}): CanvasTaskDialogSizing {
+  const maxHeight = Math.max(
+    0,
+    stageHeight
+      - CONTEXT_STAGE_MARGIN * 2
+      - CONTEXT_NAVIGATION.height
+      - CONTEXT_NAVIGATION.gap,
+  )
+  const topHeight = Math.max(0, fixedTopHeight)
+  const bottomHeight = Math.max(0, fixedBottomHeight)
+  const chromeHeight = Math.max(0, promptChromeHeight)
+  const stackedFixedHeight = topHeight + bottomHeight + chromeHeight
+  const compactFixedControls = stackedFixedHeight + TASK_DIALOG_PROMPT_BODY_HEIGHT > maxHeight
+  const fixedHeight = compactFixedControls
+    ? Math.max(topHeight, bottomHeight) + chromeHeight
+    : stackedFixedHeight
+  const preferredHeight = Math.max(
+    TASK_DIALOG_BASE_HEIGHT,
+    fixedHeight + TASK_DIALOG_PROMPT_BODY_HEIGHT,
+  )
+  const height = Math.min(preferredHeight, maxHeight)
+
+  return {
+    height,
+    maxHeight,
+    compactFixedControls,
+    promptBodyHeight: Math.max(0, height - fixedHeight),
+  }
+}
 
 const COMPACT_NODE_SIZES: Record<VisualCanvasNodeKind, CanvasSize> = {
   text: { width: 236, height: 208 },

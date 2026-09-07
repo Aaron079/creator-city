@@ -8503,7 +8503,7 @@
 /* Node task dialog fixed surfaces */
 .scope :global(.canvas-node-dialog.create-floating-console) {
   display: flex;
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 68px);
   flex-direction: column;
   overflow: hidden;
   border-radius: 8px;
@@ -8511,8 +8511,44 @@
 }
 
 .scope :global(.canvas-node-dialog-fixed-controls) {
+  display: flex;
   flex: 0 0 auto;
   min-width: 0;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top > [data-no-node-drag='true']) {
+  box-sizing: border-box;
+  flex: 0 0 min(340px, 100%);
+  width: min(340px, 100%);
+  padding: 5px 8px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom > *) {
+  flex: 0 0 100%;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-top) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-prompt-box.is-node) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-bottom) {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
@@ -8586,6 +8622,38 @@
 
 .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2) {
   min-height: 26px;
+}
+
+.scope :global(.canvas-node-dialog-context-controls) {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-billing-controls) {
+  display: flex;
+  min-width: 620px;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 10px !important;
+}
+
+.scope :global(.canvas-node-dialog-billing-title) {
+  flex: 0 0 auto;
+  margin: 3px 0 0;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-billing-modes) {
+  flex: 0 0 240px;
+}
+
+.scope :global(.canvas-node-dialog-billing-details) {
+  flex: 0 0 280px;
+  min-width: 0;
 }
 
 .scope :global(.canvas-node-dialog-account-list) {
