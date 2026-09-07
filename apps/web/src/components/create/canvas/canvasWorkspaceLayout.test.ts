@@ -17,6 +17,10 @@ const testDirectory = dirname(fileURLToPath(import.meta.url))
 const visualCanvasWorkspaceSource = readFileSync(resolve(testDirectory, '../VisualCanvasWorkspace.tsx'), 'utf8')
 const canvasModuleSource = readFileSync(resolve(testDirectory, '../canvas.module.css'), 'utf8')
 const canvasWorkspaceLayoutSource = readFileSync(resolve(testDirectory, 'canvasWorkspaceLayout.ts'), 'utf8')
+const renderedTaskDialogTestSource = readFileSync(
+  resolve(testDirectory, 'canvasTaskDialog.rendered-layout.test.tsx'),
+  'utf8',
+)
 
 test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
@@ -341,6 +345,14 @@ test('keeps reference and billing controls in fixed regions outside the prompt b
   assert.match(topControlsSource, /nodeTaskDialogCompactControls \? ' is-compact-fixed-controls' : ''/)
   assert.match(bottomControlsSource, /SHOW_GENERATION_CONTEXT_CHIPS/)
   assert.match(bottomControlsSource, /API 费用来源/)
+})
+
+test('renders the real CanvasPromptBox and image-to-video mode in the Chromium matrix', () => {
+  assert.match(renderedTaskDialogTestSource, /import \{ CanvasPromptBox \} from/)
+  assert.match(renderedTaskDialogTestSource, /React\.createElement\(CanvasPromptBox,/)
+  assert.match(renderedTaskDialogTestSource, /mode: 'image-to-video'/)
+  assert.match(renderedTaskDialogTestSource, /sourceNodeTitle: 'Upstream portrait'/)
+  assert.match(renderedTaskDialogTestSource, /\.canvas-video-mode-bar\.is-image-to-video/)
 })
 
 test('expands only the task surface from its measured fixed-control stack', () => {

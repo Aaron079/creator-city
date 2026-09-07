@@ -32,6 +32,7 @@ function harnessSource() {
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
     import styles from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas.module.css'))}
+    import { CanvasPromptBox } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/CanvasPromptBox.tsx'))}
     import { LocalReferenceStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/LocalReferenceStrip.tsx'))}
     import { UpstreamTaskStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/UpstreamTaskStrip.tsx'))}
 
@@ -156,46 +157,32 @@ function harnessSource() {
               onApplyScript() { applyCount += 1 },
             }),
           ),
-          React.createElement(
-            'div',
-            { className: 'canvas-prompt-box is-node' },
-            React.createElement(
-              'div',
-              { id: 'prompt-header', className: 'canvas-node-dialog-fixed-header' },
-              React.createElement(
-                'span',
-                { id: 'prompt-mode', className: 'canvas-node-dialog-mode' },
-                isVideo ? 'Video task' : isText ? 'Text task' : 'Image task',
-              ),
-              React.createElement('button', { type: 'button', 'aria-label': 'Close' }, 'x'),
-            ),
-            React.createElement(
-              'div',
-              { id: 'prompt-body', className: 'canvas-node-dialog-scroll-content' },
-              React.createElement('textarea', {
-                className: 'canvas-prompt-input', defaultValue: 'Prompt body remains scrollable',
-              }),
-            ),
-            React.createElement(
-              'div',
-              { id: 'prompt-footer', className: 'canvas-node-dialog-fixed-footer' },
-              React.createElement(
-                'div',
-                { className: 'canvas-prompt-footer-nav' },
-                React.createElement(
-                  'div',
-                  { className: 'canvas-prompt-footer-row1' },
-                  React.createElement('button', { type: 'button' }, 'Provider'),
-                  React.createElement('button', { type: 'button' }, 'Generate'),
-                ),
-                React.createElement(
-                  'div',
-                  { className: 'canvas-prompt-footer-row2' },
-                  React.createElement('button', { type: 'button' }, 'Parameters'),
-                ),
-              ),
-            ),
-          ),
+          React.createElement(CanvasPromptBox, {
+            prompt: 'Prompt body remains scrollable',
+            onPromptChange() {},
+            model: isVideo ? 'video-model' : isText ? 'text-model' : 'volcengine-seedream-image',
+            modelLabel: isVideo ? 'Video model' : isText ? 'Text model' : 'Seedream image',
+            models: isVideo ? ['video-model'] : isText ? ['text-model'] : ['volcengine-seedream-image'],
+            onModelChange() {},
+            placeholder: 'Describe the task',
+            layout: 'node',
+            onClose() {},
+            onGenerate() {},
+            generateLabel: 'Generate',
+            estimatedCredits: 8,
+            ratio: '16:9',
+            ratios: ['16:9', '9:16'],
+            onRatioChange() {},
+            footerItems: [{
+              id: 'provider', label: 'Provider', value: 'provider',
+              options: [{ value: 'provider', label: 'Provider' }],
+              onSelect() {},
+            }],
+            taskInputModeLabel: isVideo ? undefined : isText ? 'Text task' : 'Image task',
+            videoModeInfo: isVideo ? {
+              mode: 'image-to-video', sourceNodeTitle: 'Upstream portrait',
+            } : undefined,
+          }),
           React.createElement(
             'div',
             { id: 'fixed-bottom', className: 'canvas-node-dialog-fixed-controls is-bottom is-compact-fixed-controls' },
@@ -289,9 +276,10 @@ async function assertConstrainedSurface(page: Page) {
   const dialogBox = await page.locator('#task-dialog').boundingBox()
   const topBox = await page.locator('#fixed-top').boundingBox()
   const bottomBox = await page.locator('#fixed-bottom').boundingBox()
-  const headerBox = await page.locator('#prompt-header').boundingBox()
-  const bodyBox = await page.locator('#prompt-body').boundingBox()
-  const footerBox = await page.locator('#prompt-footer').boundingBox()
+  const promptBox = page.locator('#task-dialog .canvas-prompt-box.is-node')
+  const headerBox = await promptBox.locator('.canvas-node-dialog-fixed-header').boundingBox()
+  const bodyBox = await promptBox.locator('.canvas-node-dialog-scroll-content').boundingBox()
+  const footerBox = await promptBox.locator('.canvas-node-dialog-fixed-footer').boundingBox()
 
   assert.ok(dialogBox)
   assert.ok(topBox)
@@ -306,6 +294,14 @@ async function assertConstrainedSurface(page: Page) {
   for (const box of [topBox, bottomBox, headerBox, bodyBox, footerBox]) {
     assert.ok(box.y >= dialogBox.y)
     assert.ok(box.y + box.height <= dialogBox.y + dialogBox.height)
+  }
+
+  return {
+    fixedTopHeight: topBox.height,
+    fixedBottomHeight: bottomBox.height,
+    promptHeaderHeight: headerBox.height,
+    promptBodyHeight: bodyBox.height,
+    promptFooterHeight: footerBox.height,
   }
 }
 
@@ -347,11 +343,21 @@ test('keeps ScriptCard and Apply to Prompt reachable at 390x300', async () => {
   await page.close()
 })
 
-test('keeps the video mode header visible at 390x300', async () => {
+test('keeps the real image-to-video mode header visible at 390x300', async (t) => {
   const page = await renderScenario('video-mode')
-  await assertConstrainedSurface(page)
-  assert.equal(await page.locator('#prompt-mode').textContent(), 'Video task')
-  assert.equal(await page.locator('#prompt-mode').isVisible(), true)
+  const geometry = await assertConstrainedSurface(page)
+  const videoModeBar = page.locator('.canvas-video-mode-bar.is-image-to-video')
+  assert.equal(await videoModeBar.isVisible(), true)
+  await assert.doesNotReject(videoModeBar.getByText('图生视频').waitFor())
+  await assert.doesNotReject(videoModeBar.getByText('参考图：Upstream portrait').waitFor())
+  assert.ok(
+    geometry.promptHeaderHeight >= 50,
+    `expected the production video header, measured ${geometry.promptHeaderHeight}px`,
+  )
+  t.diagnostic(
+    `video compact geometry: fixedTop=${geometry.fixedTopHeight}px, fixedBottom=${geometry.fixedBottomHeight}px, `
+      + `header=${geometry.promptHeaderHeight}px, body=${geometry.promptBodyHeight}px, footer=${geometry.promptFooterHeight}px`,
+  )
   await page.close()
 })
 
