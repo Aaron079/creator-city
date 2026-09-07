@@ -21,7 +21,7 @@ function harnessSource() {
     import { createRoot } from 'react-dom/client'
     import styles from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas.module.css'))}
     import { CanvasPromptBox } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/CanvasPromptBox.tsx'))}
-    import { stabilizeCanvasTaskDialogSizing } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
+    import { getCanvasNodeContextSurfaceLayout, stabilizeCanvasTaskDialogSizing } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/canvasWorkspaceLayout.ts'))}
     import { LocalReferenceStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/LocalReferenceStrip.tsx'))}
     import { UpstreamTaskStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/UpstreamTaskStrip.tsx'))}
 
@@ -54,6 +54,8 @@ function harnessSource() {
     let uploadCount = 0
     let compactFixedControls = false
     let noncompactMeasurements = null
+    let nodeRect = { left: 71, top: 64, width: 248, height: 220 }
+    let latestStackLayout = null
     const sizingHistory = []
 
     function billingDetails() {
@@ -133,9 +135,35 @@ function harnessSource() {
         React.createElement(
           'div',
           {
+            id: 'canvas-stage',
+            style: { position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' },
+          },
+          React.createElement(
+            'div',
+            {
+              id: 'node-navigation',
+              style: { position: 'absolute', left: 20, top: 28, width: 350, height: 28 },
+            },
+            'Task navigation',
+          ),
+          React.createElement(
+            'div',
+            {
+              id: 'representative-node',
+              style: {
+                position: 'absolute', left: 71, top: 64, width: 248, height: 220,
+                boxSizing: 'border-box',
+                background: '#20242b', border: '1px solid rgba(255,255,255,0.12)',
+              },
+            },
+            'Image node',
+          ),
+          React.createElement(
+          'div',
+          {
             id: 'task-dialog',
             className: 'canvas-node-dialog create-floating-console',
-            style: { width: 358, height: 282 },
+            style: { position: 'absolute', left: 16, top: 292, width: 358, height: 282 },
           },
           React.createElement(
             'div',
@@ -197,7 +225,38 @@ function harnessSource() {
           ),
         ),
       ),
+      ),
     )
+
+    function applyStackLayout(stageHeight, dialogHeight) {
+      const stageElement = document.getElementById('canvas-stage')
+      const navigation = document.getElementById('node-navigation')
+      const node = document.getElementById('representative-node')
+      const dialog = document.getElementById('task-dialog')
+      const stage = { left: 0, top: 0, right: window.innerWidth, bottom: stageHeight }
+      stageElement.style.height = stageHeight + 'px'
+
+      let layout = getCanvasNodeContextSurfaceLayout({ node: nodeRect, stage, dialogHeight })
+      if (layout.panDeltaY !== 0) {
+        nodeRect = { ...nodeRect, top: nodeRect.top + layout.panDeltaY }
+        layout = getCanvasNodeContextSurfaceLayout({ node: nodeRect, stage, dialogHeight })
+      }
+
+      Object.assign(navigation.style, {
+        left: layout.navigation.left + 'px', top: layout.navigation.top + 'px',
+        width: layout.navigation.width + 'px', height: layout.navigation.height + 'px',
+      })
+      Object.assign(node.style, {
+        left: nodeRect.left + 'px', top: nodeRect.top + 'px',
+        width: nodeRect.width + 'px', height: nodeRect.height + 'px',
+      })
+      Object.assign(dialog.style, {
+        left: layout.dialog.left + 'px', top: layout.dialog.top + 'px',
+        width: layout.dialog.width + 'px', height: layout.dialog.height + 'px',
+      })
+      latestStackLayout = layout
+      return layout
+    }
 
     function runSizingPass(stageHeight) {
       const dialog = document.getElementById('task-dialog')
@@ -223,11 +282,14 @@ function harnessSource() {
       for (const element of [dialog, fixedTop, fixedBottom]) {
         element.classList.toggle('is-compact-fixed-controls', compactFixedControls)
       }
+      const stackLayout = applyStackLayout(stageHeight, sizing.height)
       const entry = {
         wasCompact,
         compactFixedControls,
         height: sizing.height,
         measurements,
+        isVerticallyConstrained: stackLayout.isVerticallyConstrained,
+        minimumStageHeight: stackLayout.minimumStageHeight,
       }
       sizingHistory.push(entry)
       return entry
@@ -246,6 +308,7 @@ function harnessSource() {
       removeCount() { return removeCount }, uploadCount() { return uploadCount },
       settleSizing,
       sizingHistory() { return sizingHistory.slice() },
+      stackLayout() { return latestStackLayout },
     }
   `
 }
@@ -295,6 +358,8 @@ type HarnessSizingEntry = {
   wasCompact: boolean
   compactFixedControls: boolean
   height: number
+  isVerticallyConstrained: boolean
+  minimumStageHeight: number
   measurements: {
     fixedTopHeight: number
     fixedBottomHeight: number
@@ -305,11 +370,15 @@ type HarnessSizingEntry = {
 type TaskDialogHarness = HarnessCounters & {
   settleSizing: (stageHeight: number, passCount?: number) => Promise<HarnessSizingEntry[]>
   sizingHistory: () => HarnessSizingEntry[]
+  stackLayout: () => {
+    isVerticallyConstrained: boolean
+    minimumStageHeight: number
+  }
 }
 
-async function renderScenario(scenario: string) {
+async function renderScenario(scenario: string, viewportHeight = 300) {
   assert.ok(browser)
-  const page = await browser.newPage({ viewport: { width: 390, height: 300 } })
+  const page = await browser.newPage({ viewport: { width: 390, height: viewportHeight } })
   page.setDefaultTimeout(5_000)
   await page.route('http://creator-city.test/**', (route) => route.fulfill({
     contentType: 'text/html',
@@ -326,6 +395,41 @@ async function renderScenario(scenario: string) {
   return page
 }
 
+async function assertStackOrdering(page: Page, expectedConstrained: boolean) {
+  const geometry = await page.evaluate(() => {
+    const stageRect = document.getElementById('canvas-stage')?.getBoundingClientRect()
+    const navigationRect = document.getElementById('node-navigation')?.getBoundingClientRect()
+    const nodeRect = document.getElementById('representative-node')?.getBoundingClientRect()
+    const dialogRect = document.getElementById('task-dialog')?.getBoundingClientRect()
+    if (!stageRect || !navigationRect || !nodeRect || !dialogRect) throw new Error('missing stack surface')
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
+    return {
+      stage: { top: stageRect.top, bottom: stageRect.bottom },
+      navigation: { top: navigationRect.top, bottom: navigationRect.bottom },
+      node: { top: nodeRect.top, bottom: nodeRect.bottom },
+      dialog: { top: dialogRect.top, bottom: dialogRect.bottom },
+      layout: harness.stackLayout(),
+    }
+  })
+
+  assert.equal(geometry.layout.isVerticallyConstrained, expectedConstrained)
+  assert.ok(geometry.navigation.bottom <= geometry.node.top)
+  assert.ok(geometry.node.bottom <= geometry.dialog.top)
+  assert.ok(geometry.dialog.top >= geometry.stage.top + 16)
+  assert.ok(geometry.dialog.bottom <= geometry.stage.bottom - 16)
+
+  if (expectedConstrained) {
+    assert.ok(geometry.layout.minimumStageHeight > geometry.stage.bottom - geometry.stage.top)
+    assert.ok(geometry.navigation.top < geometry.stage.top)
+  } else {
+    assert.ok(geometry.layout.minimumStageHeight <= geometry.stage.bottom - geometry.stage.top)
+    assert.ok(geometry.navigation.top >= geometry.stage.top + 16)
+    assert.ok(geometry.node.bottom <= geometry.stage.bottom - 16)
+  }
+
+  return geometry
+}
+
 async function harnessCount(page: Page, key: keyof HarnessCounters) {
   return page.evaluate((counterKey) => {
     const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
@@ -334,6 +438,7 @@ async function harnessCount(page: Page, key: keyof HarnessCounters) {
 }
 
 async function assertConstrainedSurface(page: Page) {
+  await assertStackOrdering(page, true)
   const dialogBox = await page.locator('#task-dialog').boundingBox()
   const topBox = await page.locator('#fixed-top').boundingBox()
   const bottomBox = await page.locator('#fixed-bottom').boundingBox()
@@ -392,6 +497,12 @@ async function assertConstrainedSurface(page: Page) {
     promptFooterHeight: footerBox.height,
   }
 }
+
+test('keeps the complete navigation-node-dialog stack inside a supported stage', async () => {
+  const page = await renderScenario('image-done', 800)
+  await assertStackOrdering(page, false)
+  await page.close()
+})
 
 test('keeps an uploading image reference and upload action reachable at 390x300', async () => {
   const page = await renderScenario('image-uploading')

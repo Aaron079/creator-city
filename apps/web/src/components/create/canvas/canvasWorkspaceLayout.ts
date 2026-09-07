@@ -8,6 +8,8 @@ export type CanvasContextSurfaceLayout = {
   navigation: CanvasSize & { left: number; top: number }
   dialog: CanvasSize & { left: number; top: number }
   panDeltaY: number
+  minimumStageHeight: number
+  isVerticallyConstrained: boolean
 }
 
 const CONTEXT_NAVIGATION = { width: 350, height: 28, gap: 8 }
@@ -250,12 +252,36 @@ export function getCanvasNodeContextSurfaceLayout({
   const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
   const dialogWidth = Math.min(CONTEXT_DIALOG.width, maxSurfaceWidth)
   const nodeCenter = node.left + node.width / 2
-  const navigationTop = Math.max(
-    stage.top + CONTEXT_STAGE_MARGIN,
-    node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap,
-  )
+  const navigationTop = node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap
   const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
-  const overflow = dialogTop + dialogHeight - (stage.bottom - CONTEXT_STAGE_MARGIN)
+  const minimumStageHeight = CONTEXT_STAGE_MARGIN * 2
+    + CONTEXT_NAVIGATION.height
+    + CONTEXT_NAVIGATION.gap
+    + node.height
+    + CONTEXT_DIALOG.gap
+    + dialogHeight
+  const stageHeight = Math.max(0, stage.bottom - stage.top)
+  const isVerticallyConstrained = stageHeight < minimumStageHeight
+  let panDeltaY = 0
+
+  if (isVerticallyConstrained) {
+    const constrainedDialogTop = clampCanvasDialogTopToStage(
+      dialogTop,
+      dialogHeight,
+      stage.top,
+      stage.bottom,
+      CONTEXT_STAGE_MARGIN,
+    )
+    panDeltaY = constrainedDialogTop - dialogTop
+  } else {
+    const minimumStackTop = stage.top + CONTEXT_STAGE_MARGIN
+    const maximumStackBottom = stage.bottom - CONTEXT_STAGE_MARGIN
+    if (navigationTop < minimumStackTop) {
+      panDeltaY = minimumStackTop - navigationTop
+    } else if (dialogTop + dialogHeight > maximumStackBottom) {
+      panDeltaY = maximumStackBottom - dialogTop - dialogHeight
+    }
+  }
 
   return {
     navigation: {
@@ -282,6 +308,8 @@ export function getCanvasNodeContextSurfaceLayout({
       width: dialogWidth,
       height: dialogHeight,
     },
-    panDeltaY: overflow > 0 ? -overflow : 0,
+    panDeltaY,
+    minimumStageHeight,
+    isVerticallyConstrained,
   }
 }

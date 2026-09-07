@@ -23,6 +23,21 @@ const renderedTaskDialogTestSource = readFileSync(
   'utf8',
 )
 
+function settleCanvasStack({
+  node,
+  stage,
+  dialogHeight,
+}: {
+  node: { left: number; top: number; width: number; height: number }
+  stage: { left: number; top: number; right: number; bottom: number }
+  dialogHeight: number
+}) {
+  const first = getCanvasNodeContextSurfaceLayout({ node, stage, dialogHeight })
+  const settledNode = { ...node, top: node.top + first.panDeltaY }
+  const settled = getCanvasNodeContextSurfaceLayout({ node: settledNode, stage, dialogHeight })
+  return { node: settledNode, layout: settled }
+}
+
 test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
   assert.deepEqual(getCanvasNodeSize('image'), { width: 248, height: 220 })
@@ -62,6 +77,49 @@ test('uses a taller task dialog height to calculate stage overflow', () => {
   assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
   assert.equal(layout.dialog.top, 348)
   assert.equal(layout.panDeltaY, -46)
+})
+
+test('settles navigation, node, and dialog as a rigid stack inside a supported stage', () => {
+  const stage = { left: 0, top: 0, right: 390, bottom: 800 }
+  const { node, layout } = settleCanvasStack({
+    node: { left: 71, top: 460, width: 248, height: 220 },
+    stage,
+    dialogHeight: 282,
+  })
+  const constraint = layout as typeof layout & {
+    isVerticallyConstrained?: boolean
+    minimumStageHeight?: number
+  }
+
+  assert.equal(constraint.isVerticallyConstrained, false)
+  assert.equal(constraint.minimumStageHeight, 578)
+  assert.ok(layout.navigation.top >= stage.top + 16)
+  assert.ok(layout.navigation.top + layout.navigation.height <= node.top)
+  assert.ok(node.top + node.height <= layout.dialog.top)
+  assert.ok(layout.dialog.top + layout.dialog.height <= stage.bottom - 16)
+  assert.equal(layout.panDeltaY, 0)
+})
+
+test('keeps constrained 390x300 stack ordered while prioritizing the usable dialog', () => {
+  const stage = { left: 0, top: 0, right: 390, bottom: 300 }
+  const { node, layout } = settleCanvasStack({
+    node: { left: 71, top: 64, width: 248, height: 220 },
+    stage,
+    dialogHeight: 232,
+  })
+  const constraint = layout as typeof layout & {
+    isVerticallyConstrained?: boolean
+    minimumStageHeight?: number
+  }
+
+  assert.equal(constraint.isVerticallyConstrained, true)
+  assert.equal(constraint.minimumStageHeight, 528)
+  assert.equal(layout.dialog.top, 52)
+  assert.equal(layout.dialog.top + layout.dialog.height, stage.bottom - 16)
+  assert.ok(layout.navigation.top + layout.navigation.height <= node.top)
+  assert.ok(node.top + node.height <= layout.dialog.top)
+  assert.ok(layout.navigation.top < stage.top, 'upper constrained stack should remain offscreen')
+  assert.equal(layout.panDeltaY, 0)
 })
 
 test('exposes pure task dialog sizing as a layout behavior boundary', () => {
@@ -131,9 +189,14 @@ test('reserves navigation height and gap while compacting fixed controls in a co
   })
 
   assert.equal(
-    settledLayout.dialog.top,
+    initialNode.top + firstLayout.panDeltaY,
     settledLayout.navigation.top + settledLayout.navigation.height + 8,
   )
+  assert.equal(
+    settledLayout.dialog.top,
+    initialNode.top + firstLayout.panDeltaY + initialNode.height + 8,
+  )
+  assert.equal(settledLayout.isVerticallyConstrained, true)
 })
 
 test('keeps prompt chrome reachable with one local reference and billing controls in a 390x300 stage', () => {
@@ -165,9 +228,14 @@ test('keeps prompt chrome reachable with one local reference and billing control
     { width: 358, height: 232 },
   )
   assert.equal(
-    settledLayout.dialog.top,
+    node.top + firstLayout.panDeltaY,
     settledLayout.navigation.top + settledLayout.navigation.height + 8,
   )
+  assert.equal(
+    settledLayout.dialog.top,
+    node.top + firstLayout.panDeltaY + node.height + 8,
+  )
+  assert.equal(settledLayout.isVerticallyConstrained, true)
 })
 
 test('reports compact mode without promising prompt space when the stage is physically impossible', () => {
@@ -412,7 +480,7 @@ test('renders the real CanvasPromptBox and image-to-video mode in the Chromium m
   assert.match(renderedTaskDialogTestSource, /require\.resolve\('esbuild\/bin\/esbuild'\)/)
   assert.doesNotMatch(renderedTaskDialogTestSource, /node_modules\/\.pnpm/)
   assert.match(renderedTaskDialogTestSource, /import \{ CanvasPromptBox \} from/)
-  assert.match(renderedTaskDialogTestSource, /import \{ stabilizeCanvasTaskDialogSizing \} from/)
+  assert.match(renderedTaskDialogTestSource, /stabilizeCanvasTaskDialogSizing \} from/)
   assert.match(renderedTaskDialogTestSource, /React\.createElement\(CanvasPromptBox,/)
   assert.match(renderedTaskDialogTestSource, /mode: 'image-to-video'/)
   assert.match(renderedTaskDialogTestSource, /sourceNodeTitle: 'Upstream portrait'/)
@@ -422,6 +490,14 @@ test('renders the real CanvasPromptBox and image-to-video mode in the Chromium m
     /className: 'canvas-node-dialog create-floating-console is-compact-fixed-controls'/,
   )
   assert.doesNotMatch(renderedTaskDialogTestSource, /style: \{ width: 358, height: 232 \}/)
+})
+
+test('renders navigation, node, and task dialog as a complete Chromium stack', () => {
+  assert.match(renderedTaskDialogTestSource, /import \{ getCanvasNodeContextSurfaceLayout,/)
+  assert.match(renderedTaskDialogTestSource, /id: 'canvas-stage'/)
+  assert.match(renderedTaskDialogTestSource, /id: 'node-navigation'/)
+  assert.match(renderedTaskDialogTestSource, /id: 'representative-node'/)
+  assert.match(renderedTaskDialogTestSource, /function assertStackOrdering/)
 })
 
 test('expands only the task surface from its measured fixed-control stack', () => {
