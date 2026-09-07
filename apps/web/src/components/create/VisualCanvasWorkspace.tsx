@@ -12,6 +12,7 @@ import {
   type CanvasNodeLayerVisualState,
 } from '@/components/create/canvas/canvasRenderPlanning'
 import {
+  getCanvasNodeContextPanAdjustmentKey,
   getCanvasNodeContextSurfaceLayout,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -10190,13 +10191,19 @@ export function VisualCanvasWorkspace({
   ])
 
   useEffect(() => {
-    if (!activeNode || !activeNodeContextCategory || !nodeContextSurfaceLayout) {
+    if (!activeNode || !activeNodeContextCategory || !nodeContextSurfaceLayout || !canvasStageBounds) {
       nodeContextPanAdjustmentKeyRef.current = null
       return
     }
     if (nodeContextSurfaceLayout.panDeltaY === 0) return
 
-    const adjustmentKey = `${activeNode.id}:${activeNodeContextCategory}:${nodeContextDialogHeight}`
+    const adjustmentKey = getCanvasNodeContextPanAdjustmentKey({
+      nodeId: activeNode.id,
+      category: activeNodeContextCategory,
+      dialogHeight: nodeContextDialogHeight,
+      stage: canvasStageBounds,
+      canvasZoom,
+    })
     if (nodeContextPanAdjustmentKeyRef.current === adjustmentKey) return
     nodeContextPanAdjustmentKeyRef.current = adjustmentKey
     const frame = window.requestAnimationFrame(() => {
@@ -10214,7 +10221,7 @@ export function VisualCanvasWorkspace({
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [activeNode, activeNodeContextCategory, canvasZoom, edges, nodeContextDialogHeight, nodeContextSurfaceLayout, nodes])
+  }, [activeNode, activeNodeContextCategory, canvasStageBounds, canvasZoom, edges, nodeContextDialogHeight, nodeContextSurfaceLayout, nodes])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || editingNode.id !== activeNode?.id || !nodeContextSurfaceLayout) return undefined

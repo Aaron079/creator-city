@@ -31,6 +31,29 @@ export type CanvasTaskDialogMeasurements = {
   promptChromeHeight: number
 }
 
+export function getCanvasNodeContextPanAdjustmentKey({
+  nodeId,
+  category,
+  dialogHeight,
+  stage,
+  canvasZoom,
+}: {
+  nodeId: string
+  category: string
+  dialogHeight: number
+  stage: Pick<CanvasStageRect, 'top' | 'bottom'>
+  canvasZoom: number
+}) {
+  return JSON.stringify([
+    nodeId,
+    category,
+    dialogHeight,
+    stage.top,
+    stage.bottom,
+    canvasZoom,
+  ])
+}
+
 function normalizeTaskDialogMeasurements(
   measurements: CanvasTaskDialogMeasurements,
 ): CanvasTaskDialogMeasurements {

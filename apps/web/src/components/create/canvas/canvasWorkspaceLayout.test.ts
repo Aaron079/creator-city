@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   clampCanvasDialogLeftToStage,
   clampCanvasDialogTopToStage,
+  getCanvasNodeContextPanAdjustmentKey,
   getCanvasNodeContextSurfaceLayout,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
@@ -77,6 +78,69 @@ test('uses a taller task dialog height to calculate stage overflow', () => {
   assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
   assert.equal(layout.dialog.top, 348)
   assert.equal(layout.panDeltaY, -46)
+})
+
+test('reapplies node context pan after a stage resize without looping on the pan itself', () => {
+  const nodeId = 'image-node'
+  const category = 'task'
+  const dialogHeight = 282
+  const canvasZoom = 1
+  let node = { left: 71, top: 300, width: 248, height: 220 }
+  let adjustmentKey: string | null = null
+
+  const applyWorkspacePan = (stage: { left: number; top: number; right: number; bottom: number }) => {
+    const layout = getCanvasNodeContextSurfaceLayout({ node, stage, dialogHeight })
+    if (layout.panDeltaY === 0) return 0
+
+    const nextKey = getCanvasNodeContextPanAdjustmentKey({
+      nodeId,
+      category,
+      dialogHeight,
+      stage,
+      canvasZoom,
+    })
+    if (adjustmentKey === nextKey) return 0
+
+    adjustmentKey = nextKey
+    node = { ...node, top: node.top + layout.panDeltaY }
+    return layout.panDeltaY
+  }
+
+  const supportedStage = { left: 0, top: 0, right: 390, bottom: 800 }
+  assert.equal(applyWorkspacePan(supportedStage), -26)
+  assert.equal(applyWorkspacePan(supportedStage), 0, 'auto-pan must not trigger another adjustment')
+
+  const resizedStage = { ...supportedStage, bottom: 600 }
+  assert.equal(applyWorkspacePan(resizedStage), -200, 'new stage bounds must permit a new adjustment')
+  assert.equal(applyWorkspacePan(resizedStage), 0, 'settled resized geometry must remain deduplicated')
+})
+
+test('keys node context pan by vertical stage bounds and zoom, never canvas pan', () => {
+  const geometry = {
+    nodeId: 'image-node',
+    category: 'task',
+    dialogHeight: 282,
+    stage: { left: 0, top: 0, right: 390, bottom: 800 },
+    canvasZoom: 1,
+  }
+  const initialKey = getCanvasNodeContextPanAdjustmentKey(geometry)
+
+  assert.equal(
+    getCanvasNodeContextPanAdjustmentKey({ ...geometry }),
+    initialKey,
+    'unchanged geometry, including a canvas-pan-only rerender, must retain one key',
+  )
+  assert.notEqual(
+    getCanvasNodeContextPanAdjustmentKey({
+      ...geometry,
+      stage: { ...geometry.stage, bottom: 600 },
+    }),
+    initialKey,
+  )
+  assert.notEqual(
+    getCanvasNodeContextPanAdjustmentKey({ ...geometry, canvasZoom: 0.8 }),
+    initialKey,
+  )
 })
 
 test('settles navigation, node, and dialog as a rigid stack inside a supported stage', () => {
@@ -377,6 +441,14 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(/)
   assert.match(visualCanvasWorkspaceSource, /setCanvasStageBounds\(\(current\) =>/)
   assert.match(visualCanvasWorkspaceSource, /nodeContextPanAdjustmentKeyRef/)
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /getCanvasNodeContextPanAdjustmentKey\(\{[\s\S]*?stage: canvasStageBounds,[\s\S]*?canvasZoom,[\s\S]*?\}\)/,
+  )
+  assert.doesNotMatch(
+    visualCanvasWorkspaceSource,
+    /const adjustmentKey = `\$\{activeNode\.id\}:\$\{activeNodeContextCategory\}:\$\{nodeContextDialogHeight\}`/,
+  )
   assert.match(visualCanvasWorkspaceSource, /window\.requestAnimationFrame/)
   const toolbarStyleStart = visualCanvasWorkspaceSource.indexOf('const toolbarFixedStyle')
   const toolbarStyleEnd = visualCanvasWorkspaceSource.indexOf('// Resolve upstream image', toolbarStyleStart)
