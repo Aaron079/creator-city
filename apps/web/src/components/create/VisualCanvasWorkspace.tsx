@@ -10100,6 +10100,7 @@ export function VisualCanvasWorkspace({
     return true
   }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
+  const nodeContextDialogHeight = activeNodeContextCategory === 'task' ? 282 : 210
   const nodeContextSurfaceLayout = useMemo(() => {
     const node = activeNode
     if (!node || typeof window === 'undefined') return undefined
@@ -10116,6 +10117,7 @@ export function VisualCanvasWorkspace({
         height: node.height * canvasZoom,
       },
       stage,
+      dialogHeight: nodeContextDialogHeight,
     })
   }, [
     activeNode,
@@ -10123,6 +10125,7 @@ export function VisualCanvasWorkspace({
     canvasPan.x,
     canvasPan.y,
     canvasZoom,
+    nodeContextDialogHeight,
   ])
 
   useEffect(() => {
@@ -12150,7 +12153,7 @@ export function VisualCanvasWorkspace({
       {editingNode && nodeDialogStyle ? (
         <div
           className="canvas-node-dialog create-floating-console"
-          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}
+          style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 32px)' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <UpstreamTaskStrip

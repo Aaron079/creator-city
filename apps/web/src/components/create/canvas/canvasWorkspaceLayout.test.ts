@@ -139,6 +139,16 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   assert.match(toolbarStyleSource, /position: 'fixed'/)
 })
 
+test('uses the taller fixed-surface height only for the task category', () => {
+  const start = visualCanvasWorkspaceSource.indexOf('const nodeContextDialogHeight')
+  const end = visualCanvasWorkspaceSource.indexOf('useEffect(() => {', start)
+  const layoutSource = visualCanvasWorkspaceSource.slice(start, end)
+
+  assert.notEqual(start, -1)
+  assert.match(layoutSource, /activeNodeContextCategory === 'task' \? 282 : 210/)
+  assert.match(layoutSource, /dialogHeight: nodeContextDialogHeight/)
+})
+
 test('uses node-anchored geometry without zoom-scaled dialog placement', () => {
   assert.match(visualCanvasWorkspaceSource, /getCanvasNodeContextSurfaceLayout\(/)
   assert.doesNotMatch(visualCanvasWorkspaceSource, /const dialogScale = clampNumber\(canvasZoom, 0\.56, 1\)/)
