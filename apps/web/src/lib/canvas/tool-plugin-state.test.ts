@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
 import {
+  clearRegisteredToolStateValue,
   copyRegisteredToolState,
   getDefaultRegisteredToolState,
+  getNodePromptBoosterKey,
   loadRegisteredToolState,
   saveRegisteredToolStateValue,
 } from './tool-plugin-state'
@@ -28,6 +30,7 @@ function installStorage(): Map<string, string> {
       localStorage: {
         getItem: (key: string) => values.get(key) ?? null,
         setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
       },
     },
   })
@@ -50,6 +53,113 @@ afterEach(() => {
 describe('tool plugin state', () => {
   test('returns defaults without a project or node identity', () => {
     assert.deepEqual(loadRegisteredToolState(null, null), getDefaultRegisteredToolState())
+  })
+
+  test('builds a node-scoped Prompt Booster storage key', () => {
+    assert.equal(
+      getNodePromptBoosterKey(projectId, sourceNodeId),
+      `creator-city:prompt-booster:${projectId}:${sourceNodeId}`,
+    )
+  })
+
+  test('returns null Prompt Booster state during SSR and when storage has no value', () => {
+    assert.equal(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, null)
+
+    installStorage()
+
+    assert.equal(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, null)
+  })
+
+  test('keeps Prompt Booster selections isolated per node and restores them from storage', () => {
+    const values = installStorage()
+
+    saveRegisteredToolStateValue(projectId, sourceNodeId, 'prompt-booster', {
+      suggestionId: '  suggestion-source  ',
+      title: '  Cinematic reveal  ',
+    })
+    values.set(
+      getNodePromptBoosterKey(projectId, childNodeId),
+      JSON.stringify({ suggestionId: 'suggestion-child', title: 'Quiet close-up' }),
+    )
+
+    assert.deepEqual(
+      JSON.parse(values.get(getNodePromptBoosterKey(projectId, sourceNodeId)) ?? 'null'),
+      {
+        suggestionId: 'suggestion-source',
+        title: 'Cinematic reveal',
+      },
+    )
+    assert.deepEqual(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, {
+      suggestionId: 'suggestion-source',
+      title: 'Cinematic reveal',
+    })
+    assert.deepEqual(loadRegisteredToolState(projectId, childNodeId).promptBooster, {
+      suggestionId: 'suggestion-child',
+      title: 'Quiet close-up',
+    })
+  })
+
+  test('rejects malformed, wrong, and blank Prompt Booster state', () => {
+    const values = installStorage()
+    const key = getNodePromptBoosterKey(projectId, sourceNodeId)
+
+    for (const value of [
+      '{broken',
+      JSON.stringify(null),
+      JSON.stringify([]),
+      JSON.stringify({ suggestionId: 42, title: 'Valid title' }),
+      JSON.stringify({ suggestionId: 'valid-id', title: false }),
+      JSON.stringify({ suggestionId: '   ', title: 'Valid title' }),
+      JSON.stringify({ suggestionId: 'valid-id', title: '   ' }),
+    ]) {
+      values.set(key, value)
+      assert.equal(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, null)
+    }
+  })
+
+  test('does not save blank Prompt Booster selections', () => {
+    const values = installStorage()
+    const key = getNodePromptBoosterKey(projectId, sourceNodeId)
+
+    saveRegisteredToolStateValue(projectId, sourceNodeId, 'prompt-booster', {
+      suggestionId: '   ',
+      title: 'Cinematic reveal',
+    })
+
+    assert.equal(values.has(key), false)
+  })
+
+  test('clears only the selected node Prompt Booster state', () => {
+    const values = installStorage()
+    const sourceKey = getNodePromptBoosterKey(projectId, sourceNodeId)
+    const childKey = getNodePromptBoosterKey(projectId, childNodeId)
+    values.set(sourceKey, JSON.stringify({ suggestionId: 'source', title: 'Source' }))
+    values.set(childKey, JSON.stringify({ suggestionId: 'child', title: 'Child' }))
+    values.set(getNodeCameraSettingsKey(projectId, sourceNodeId), '{"lens":"50mm"}')
+
+    clearRegisteredToolStateValue(projectId, sourceNodeId, 'prompt-booster')
+
+    assert.equal(values.has(sourceKey), false)
+    assert.equal(values.has(childKey), true)
+    assert.equal(values.has(getNodeCameraSettingsKey(projectId, sourceNodeId)), true)
+  })
+
+  test('copies Prompt Booster only to the child without rewriting the source', () => {
+    const values = installStorage()
+    const sourceKey = getNodePromptBoosterKey(projectId, sourceNodeId)
+    const childKey = getNodePromptBoosterKey(projectId, childNodeId)
+    const sourceValue = '{"suggestionId":" suggestion-source ","title":" Source title "}'
+    values.set(sourceKey, sourceValue)
+    values.set(getNodeCameraSettingsKey(projectId, childNodeId), '{"lens":"85mm"}')
+
+    copyRegisteredToolState(projectId, sourceNodeId, childNodeId, 'prompt-booster')
+
+    assert.equal(values.get(sourceKey), sourceValue)
+    assert.deepEqual(JSON.parse(values.get(childKey) ?? 'null'), {
+      suggestionId: 'suggestion-source',
+      title: 'Source title',
+    })
+    assert.equal(values.get(getNodeCameraSettingsKey(projectId, childNodeId)), '{"lens":"85mm"}')
   })
 
   test('keeps Camera and Lighting independently stored for one node', () => {
