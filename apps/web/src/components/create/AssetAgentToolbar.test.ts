@@ -1,55 +1,48 @@
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
-import {
-  resolveToolbarMenuPlacement,
-  resolveToolbarViewportCenter,
-} from './AssetAgentToolbar'
+import { test } from 'node:test'
+import * as React from 'react'
+import { AssetAgentToolbar } from './AssetAgentToolbar'
 
-describe('resolveToolbarMenuPlacement', () => {
-  test('opens down when the menu fits below the toolbar', () => {
-    assert.equal(resolveToolbarMenuPlacement({
-      spaceAbove: 500,
-      spaceBelow: 240,
-      menuHeight: 200,
-    }), 'down')
-  })
+;(globalThis as typeof globalThis & { React?: typeof React }).React = React
 
-  test('flips up when only the space above can contain the menu', () => {
-    assert.equal(resolveToolbarMenuPlacement({
-      spaceAbove: 500,
-      spaceBelow: 40,
-      menuHeight: 200,
-    }), 'up')
-  })
+type ElementProps = {
+  children?: React.ReactNode
+  onClick?: (event: { preventDefault(): void; stopPropagation(): void }) => void
+}
 
-  test('uses the larger side when the menu cannot fully fit either way', () => {
-    assert.equal(resolveToolbarMenuPlacement({
-      spaceAbove: 160,
-      spaceBelow: 80,
-      menuHeight: 200,
-    }), 'up')
-  })
-})
+function asChildren(node: React.ReactNode): React.ReactNode[] {
+  return React.Children.toArray(node)
+}
 
-describe('resolveToolbarViewportCenter', () => {
-  test('keeps the toolbar reachable when its selected node is beyond the right edge', () => {
-    assert.equal(resolveToolbarViewportCenter({
-      preferredCenterX: 1_934,
-      viewportWidth: 1_920,
-    }), 1_536)
-  })
+function textContent(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (!React.isValidElement(node)) return ''
+  return asChildren((node.props as ElementProps).children).map(textContent).join('')
+}
 
-  test('keeps the toolbar reachable when its selected node is beyond the left edge', () => {
-    assert.equal(resolveToolbarViewportCenter({
-      preferredCenterX: -120,
-      viewportWidth: 1_920,
-    }), 384)
-  })
+function buttons(node: React.ReactNode): Array<{ props: ElementProps }> {
+  if (!React.isValidElement(node)) return []
+  const props = node.props as ElementProps
+  const own = node.type === 'button' ? [{ props }] : []
+  return [...own, ...asChildren(props.children).flatMap(buttons)]
+}
 
-  test('centers within a narrow viewport while preserving the viewport gutter', () => {
-    assert.equal(resolveToolbarViewportCenter({
-      preferredCenterX: 10,
-      viewportWidth: 360,
-    }), 180)
+test('reports a selected category and owns no nested tool or asset menu', () => {
+  const categories: string[] = []
+  const tree = AssetAgentToolbar({
+    nodeKind: 'image',
+    nodeTitle: 'Frame',
+    activeCategory: 'tools',
+    onCategoryChange: (category) => categories.push(category),
   })
+  const visible = textContent(tree)
+
+  assert.match(visible, /任务/)
+  assert.match(visible, /工具/)
+  assert.match(visible, /资产/)
+  assert.doesNotMatch(visible, /推荐下一步/)
+  assert.doesNotMatch(visible, /下载图片/)
+
+  buttons(tree)[0]?.props.onClick?.({ preventDefault() {}, stopPropagation() {} })
+  assert.deepEqual(categories, ['task'])
 })

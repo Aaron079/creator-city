@@ -12,11 +12,10 @@ import {
   type CanvasNodeLayerVisualState,
 } from '@/components/create/canvas/canvasRenderPlanning'
 import {
-  clampCanvasDialogLeftToStage,
-  clampCanvasDialogTopToStage,
-  getCanvasNodeDialogSize,
+  getCanvasNodeContextSurfaceLayout,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
+  type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
@@ -230,9 +229,10 @@ import type { ScenePluginRun } from '@/lib/scene-plugins'
 import canvasStyles from '@/components/create/canvas.module.css'
 import {
   AssetAgentToolbar,
-  resolveToolbarViewportCenter,
+  type NodeContextCategory,
   type ReframeMode,
 } from '@/components/create/AssetAgentToolbar'
+import { NodeToolContextDialog } from '@/components/create/canvas/node-tools/NodeToolContextDialog'
 import { resolveImageInputForVideoNode } from '@/lib/workflow/resolveNodeInputs'
 import { clearProjectScopedLocalState } from '@/lib/client-storage/clearUserLocalState'
 import { appendBibleContextToPrompt, buildBiblePromptContext, hasBibleContent } from '@/lib/canvas/biblePromptContext'
@@ -642,7 +642,6 @@ const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
-const NODE_DIALOG_GAP = 56
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
 const REVIEW_WINDOW_MIN_WIDTH = 320
@@ -2611,6 +2610,8 @@ export function VisualCanvasWorkspace({
   const [isBottomDockExpanded, setIsBottomDockExpanded] = useState(false)
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [activeNodeContextCategory, setActiveNodeContextCategory] = useState<NodeContextCategory | null>(null)
+  const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -2724,8 +2725,7 @@ export function VisualCanvasWorkspace({
   } | null>(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
-  const [browserViewport, setBrowserViewport] = useState({ width: 0, height: 0 })
-  const [canvasStageBoundsVersion, setCanvasStageBoundsVersion] = useState(0)
+  const [canvasStageBounds, setCanvasStageBounds] = useState<CanvasStageRect | undefined>(undefined)
   const [isPanning, setIsPanning] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [isLocalImageDragOver, setIsLocalImageDragOver] = useState(false)
@@ -2781,21 +2781,21 @@ export function VisualCanvasWorkspace({
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
 
   useEffect(() => {
-    const syncViewport = () => {
-      setBrowserViewport({ width: window.innerWidth, height: window.innerHeight })
-    }
-
-    syncViewport()
-    window.addEventListener('resize', syncViewport)
-    return () => window.removeEventListener('resize', syncViewport)
-  }, [])
-
-  useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
 
     const updateCanvasStageBounds = () => {
-      setCanvasStageBoundsVersion((version) => version + 1)
+      const rect = viewport.getBoundingClientRect()
+      const next = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+      setCanvasStageBounds((current) => (
+        current
+        && current.left === next.left
+        && current.top === next.top
+        && current.right === next.right
+        && current.bottom === next.bottom
+          ? current
+          : next
+      ))
     }
 
     updateCanvasStageBounds()
@@ -3086,6 +3086,7 @@ export function VisualCanvasWorkspace({
     setIsStoryboardReferenceExtractorOpen(false)
     setIsAnnotationPanelOpen(false)
     setEditingNodeId(null)
+    setActiveNodeContextCategory(null)
     setLockedNodeToolContext(null)
     setScriptSegmentationSource(null)
     setNarrativeBeatSource(null)
@@ -5186,6 +5187,7 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     setReframeMode('original')
+    setActiveNodeContextCategory(null)
   }, [activeNodeId])
 
   useEffect(() => {
@@ -9816,6 +9818,7 @@ export function VisualCanvasWorkspace({
   const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (!canStartCanvasPan(event.target)) return
     setActiveNodeId(null)
+    setActiveNodeContextCategory(null)
   }, [canStartCanvasPan])
 
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -9827,6 +9830,7 @@ export function VisualCanvasWorkspace({
     closeEdgeDirector()
     setStoryboardPreviewOpen(false)
     setEditingNodeId(null)
+    setActiveNodeContextCategory(null)
     setIsPanning(true)
     setContextMenu(null)
     setNodeAddMenu(null)
@@ -10096,109 +10100,79 @@ export function VisualCanvasWorkspace({
     return true
   }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
-  const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!editingNode || typeof window === 'undefined') return undefined
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return undefined
-
-    const viewportMargin = 16
-    const viewportWidth = browserViewport.width || window.innerWidth
-    const viewportHeight = browserViewport.height || window.innerHeight
-    const dialogScale = clampNumber(canvasZoom, 0.56, 1)
-    const { width: dialogWidth, height: dialogHeight } = getCanvasNodeDialogSize(
-      Math.min(viewportWidth, rect.width),
-      Math.min(viewportHeight, rect.height),
-    )
-    const visualDialogWidth = dialogWidth * dialogScale
+  const nodeContextSurfaceLayout = useMemo(() => {
+    const node = activeNode
+    if (!node || typeof window === 'undefined') return undefined
+    if (node.kind !== 'text' && node.kind !== 'image' && node.kind !== 'video') return undefined
+    const stage = canvasStageBounds
+    if (!stage) return undefined
     const surfaceOffset = getSurfaceOffset(surfaceRef.current)
-    const nodeLeft = rect.left + surfaceOffset.left + canvasPan.x + editingNode.x * canvasZoom
-    const nodeTop = rect.top + surfaceOffset.top + canvasPan.y + editingNode.y * canvasZoom
-    const nodeWidth = editingNode.width * canvasZoom
-    const nodeHeight = editingNode.height * canvasZoom
-    const nodeBottom = nodeTop + nodeHeight
-    const nodeCenterX = nodeLeft + nodeWidth / 2
-    const visualDialogHeight = dialogHeight * dialogScale
-    const belowTop = nodeBottom + NODE_DIALOG_GAP
-    const aboveTop = nodeTop - NODE_DIALOG_GAP - visualDialogHeight
-    const hasRoomBelow = belowTop + visualDialogHeight <= rect.bottom - viewportMargin
-    const hasRoomAbove = aboveTop >= rect.top + viewportMargin
-    // Default to below; only flip above if the node bottom is at the screen edge AND there's room above
-    const top = (!hasRoomBelow && belowTop >= rect.bottom - viewportMargin && hasRoomAbove)
-      ? aboveTop
-      : clampCanvasDialogTopToStage(
-        belowTop,
-        visualDialogHeight,
-        rect.top,
-        rect.bottom,
-        viewportMargin,
-      )
 
-    return {
-      left: clampCanvasDialogLeftToStage(
-        nodeCenterX - visualDialogWidth / 2,
-        visualDialogWidth,
-        rect.left,
-        rect.right,
-        viewportMargin,
-      ),
-      height: dialogHeight,
-      top,
-      transform: `scale(${dialogScale})`,
-      transformOrigin: 'top left',
-      width: dialogWidth,
-    }
+    return getCanvasNodeContextSurfaceLayout({
+      node: {
+        left: stage.left + surfaceOffset.left + canvasPan.x + node.x * canvasZoom,
+        top: stage.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom,
+        width: node.width * canvasZoom,
+        height: node.height * canvasZoom,
+      },
+      stage,
+    })
   }, [
-    browserViewport.height,
-    browserViewport.width,
+    activeNode,
+    canvasStageBounds,
     canvasPan.x,
     canvasPan.y,
-    canvasStageBoundsVersion,
     canvasZoom,
-    editingNode,
-    isBottomDockExpanded,
-    isRightInspectorOpen,
   ])
 
-  // Toolbar position as fixed-screen coords so it escapes canvas-viewport overflow:hidden
-  const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
-    const node = activeNode
-    if (!node) return undefined
-    // Show toolbar for text (always), image (always), video (always).
-    // Configuration tools (camera/lighting/prompt) are useful before any result exists.
-    if (node.kind !== 'text' && node.kind !== 'image' && node.kind !== 'video') return undefined
-    if (typeof window === 'undefined') return undefined
-    const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return undefined
-    const surfaceOffset = getSurfaceOffset(surfaceRef.current)
-    const centerX = rect.left + surfaceOffset.left + canvasPan.x + (node.x + node.width / 2) * canvasZoom
-    const nodeScreenTop = rect.top + surfaceOffset.top + canvasPan.y + node.y * canvasZoom
-    const toolbarHeight = 48
-    const toolbarGap = 14
-    const shouldPlaceToolbarBelow = nodeScreenTop - toolbarGap - toolbarHeight < 12
+  useEffect(() => {
+    if (!activeNode || !activeNodeContextCategory || !nodeContextSurfaceLayout) {
+      nodeContextPanAdjustmentKeyRef.current = null
+      return
+    }
+    if (nodeContextSurfaceLayout.panDeltaY === 0) return
+
+    const adjustmentKey = `${activeNode.id}:${activeNodeContextCategory}`
+    if (nodeContextPanAdjustmentKeyRef.current === adjustmentKey) return
+    nodeContextPanAdjustmentKeyRef.current = adjustmentKey
+    const frame = window.requestAnimationFrame(() => {
+      setCanvasPan((current) => {
+        const next = {
+          ...current,
+          y: current.y + nodeContextSurfaceLayout.panDeltaY,
+        }
+        explicitCanvasAutosaveSuppressionRef.current = createCanvasAutosaveSuppression(
+          nodes,
+          edges,
+          { zoom: canvasZoom, pan: next },
+        )
+        return next
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeNode, activeNodeContextCategory, canvasZoom, edges, nodeContextSurfaceLayout, nodes])
+
+  const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!editingNode || editingNode.id !== activeNode?.id || !nodeContextSurfaceLayout) return undefined
     return {
-      position: 'fixed' as const,
-      left: Math.round(resolveToolbarViewportCenter({
-        preferredCenterX: centerX,
-        viewportWidth: browserViewport.width || window.innerWidth,
-      })),
-      top: Math.round(shouldPlaceToolbarBelow
-        ? nodeScreenTop + node.height * canvasZoom + toolbarGap
-        : nodeScreenTop - toolbarGap),
-      transform: shouldPlaceToolbarBelow
-        ? 'translateX(-50%)'
-        : 'translateX(-50%) translateY(-100%)',
+      height: nodeContextSurfaceLayout.dialog.height,
+      left: nodeContextSurfaceLayout.dialog.left,
+      top: nodeContextSurfaceLayout.dialog.top,
+      width: nodeContextSurfaceLayout.dialog.width,
+    }
+  }, [activeNode?.id, editingNode, nodeContextSurfaceLayout])
+
+  const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!nodeContextSurfaceLayout) return undefined
+    return {
+      height: nodeContextSurfaceLayout.navigation.height,
+      left: nodeContextSurfaceLayout.navigation.left,
+      top: nodeContextSurfaceLayout.navigation.top,
+      width: nodeContextSurfaceLayout.navigation.width,
       zIndex: 90,
       pointerEvents: 'auto',
     }
-  }, [
-    activeNode,
-    browserViewport.width,
-    canvasPan.x,
-    canvasPan.y,
-    canvasZoom,
-    isRightInspectorOpen,
-    isBottomDockExpanded,
-  ])
+  }, [nodeContextSurfaceLayout])
 
   // Resolve upstream image for video node editing dialog
   const videoModeInfo = useMemo(() => {
@@ -10613,6 +10587,67 @@ export function VisualCanvasWorkspace({
     </div>
   )
 
+  const closeNodeContext = useCallback(() => {
+    setActiveNodeContextCategory(null)
+    setEditingNodeId(null)
+  }, [])
+
+  const handleNodeContextToolAction = useCallback((actionId: string) => {
+    if (!activeNode) return
+    setActiveNodeContextCategory(null)
+
+    switch (actionId) {
+      case 'camera-control': openNodeScopedTool('camera-control', activeNode); break
+      case 'camera-lexicon':
+        setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
+        openNodeScopedTool('camera-lexicon', activeNode)
+        break
+      case 'scene-lighting': openNodeScopedTool('scene-lighting', activeNode); break
+      case 'prompt-booster': openNodeScopedTool('prompt-booster', activeNode); break
+      case 'script-segmentation': openScriptSegmentation(activeNode); break
+      case 'narrative-beat-analysis': openNarrativeBeatAnalysis(activeNode); break
+      case 'shot-list-builder': openShotListBuilderForNode(activeNode); break
+      case 'storyboard-director': handleStartStoryboardDirectorRecipe(activeNode.id); break
+      case 'look-package': openNodeScopedTool('look-package', activeNode); break
+      case 'variant-planner': openNodeScopedTool('variant-planner', activeNode); break
+      case 'color-grade': openNodeScopedTool('color-grade', activeNode); break
+      case 'keyframe-extractor': openCanvasPanel('keyframe-extractor'); break
+      case 'storyboard-reference-extractor': openNodeScopedTool('storyboard-reference-extractor', activeNode); break
+      case 'draw-annotation': openNodeScopedTool('draw-annotation', activeNode); break
+      case 'remove-background': openCanvasPanel('remove-background'); break
+      case 'hd-reconstruction': openCanvasPanel('hd-reconstruction'); break
+      default: break
+    }
+  }, [
+    activeNode,
+    handleStartStoryboardDirectorRecipe,
+    openCanvasPanel,
+    openNarrativeBeatAnalysis,
+    openNodeScopedTool,
+    openScriptSegmentation,
+    openShotListBuilderForNode,
+  ])
+
+  const handleNodeContextDownload = useCallback((node: VisualCanvasNode) => {
+    const sourceUrl = node.kind === 'image' ? getNodeImageUrl(node) : getNodeVideoUrl(node)
+    if (!sourceUrl) return
+    const anchor = document.createElement('a')
+    anchor.href = getProxiedMediaUrl(sourceUrl)
+    anchor.download = node.title || 'creator-city-asset'
+    anchor.rel = 'noopener noreferrer'
+    anchor.target = '_blank'
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+  }, [])
+
+  const handleNodeContextOpenAssets = useCallback((node: VisualCanvasNode) => {
+    const href = node.assetId
+      ? `/assets?highlight=${encodeURIComponent(node.assetId)}`
+      : `/assets?nodeId=${encodeURIComponent(node.id)}`
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }, [])
+
   const hasBlockingCanvasOverlay = Boolean(
     activeCanvasModal
     || editingNodeId
@@ -10711,7 +10746,6 @@ export function VisualCanvasWorkspace({
             setActiveNodeId(nodeId)
             setIsRightInspectorOpen(true)
           }}
-          onOpenGenerationDialog={(nodeId) => openGenerationDialog(nodeId)}
         />
       }
       showBottomDock
@@ -11893,68 +11927,49 @@ export function VisualCanvasWorkspace({
         >
           <AssetAgentToolbar
             nodeKind={activeNode.kind}
-            hasMediaResult={nodeHasMediaResult(activeNode)}
-            mediaUrl={activeNode.kind !== 'text' ? getProxiedMediaUrl(
-              activeNode.kind === 'image' ? getNodeImageUrl(activeNode) : getNodeVideoUrl(activeNode),
-            ) : ''}
             nodeTitle={activeNode.title}
-            nodeId={activeNode.id}
-            assetId={activeNode.assetId}
-            reframeMode={reframeMode}
-            onReframeChange={setReframeMode}
-            onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
-            onOpenGenerationDialog={() => openGenerationDialog(activeNode.id)}
-            assetTransformCaps={assetTransformCaps}
-            onOpenColorGrade={() => openNodeScopedTool('color-grade', activeNode)}
-            onOpenLookPackage={() => openNodeScopedTool('look-package', activeNode)}
-            onOpenVariantPlanner={() => openNodeScopedTool('variant-planner', activeNode)}
-            onOpenABCompare={() => openCanvasPanel('ab-compare')}
-            onOpenKeyframeExtractor={() => openCanvasPanel('keyframe-extractor')}
-            onOpenCameraControl={() => openNodeScopedTool('camera-control', activeNode)}
-            onOpenSceneLighting={() => openNodeScopedTool('scene-lighting', activeNode)}
-            onOpenCameraLexicon={() => {
-              setWorkflowContext({ sourceNodeId: activeNode.id, targetNodeId: activeNode.id })
-              openNodeScopedTool('camera-lexicon', activeNode)
+            activeCategory={activeNodeContextCategory}
+            onCategoryChange={(category) => {
+              setActiveNodeContextCategory(category)
+              setEditingNodeId(category === 'task' ? activeNode.id : null)
             }}
-            onOpenPromptBooster={() => openNodeScopedTool('prompt-booster', activeNode)}
-            onOpenScriptSegmentation={
-              activeNode.kind === 'text'
-                ? () => openScriptSegmentation(activeNode)
-                : undefined
-            }
-            onOpenNarrativeBeatAnalysis={
-              activeNode.kind === 'text'
-                ? () => openNarrativeBeatAnalysis(activeNode)
-                : undefined
-            }
-            onOpenShotListBuilder={
-              activeNode.kind === 'text'
-                ? () => openShotListBuilderForNode(activeNode)
-                : undefined
-            }
-            onOpenStoryboardDirector={() => handleStartStoryboardDirectorRecipe(activeNode.id)}
-            onOpenRemoveBackground={
-              activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.removeBackground
-                ? () => openCanvasPanel('remove-background')
-                : undefined
-            }
-            onOpenHdReconstruction={
-              activeNode.kind === 'image' && nodeHasMediaResult(activeNode) && assetTransformCaps.upscale
-                ? () => openCanvasPanel('hd-reconstruction')
-                : undefined
-            }
-            onOpenStoryboardReferenceExtractor={
-              activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
-                ? () => openNodeScopedTool('storyboard-reference-extractor', activeNode)
-                : undefined
-            }
-            onOpenDrawAnnotation={
-              activeNode.kind === 'image' && nodeHasMediaResult(activeNode)
-                ? () => openNodeScopedTool('draw-annotation', activeNode)
-                : undefined
-            }
           />
         </div>
+      ) : null}
+
+      {activeNode && activeNodeContextCategory && activeNodeContextCategory !== 'task' && nodeContextSurfaceLayout ? (
+        <NodeToolContextDialog
+          category={activeNodeContextCategory}
+          nodeKind={activeNode.kind}
+          nodeTitle={activeNode.title}
+          hasMediaResult={nodeHasMediaResult(activeNode)}
+          mediaUrl={activeNode.kind === 'image'
+            ? getProxiedMediaUrl(getNodeImageUrl(activeNode))
+            : activeNode.kind === 'video'
+              ? getProxiedMediaUrl(getNodeVideoUrl(activeNode))
+              : ''}
+          nodeId={activeNode.id}
+          assetId={activeNode.assetId}
+          reframeMode={reframeMode}
+          caps={assetTransformCaps}
+          onOpenGenerationDialog={() => {
+            setActiveNodeContextCategory('task')
+            setEditingNodeId(activeNode.id)
+          }}
+          onToolAction={handleNodeContextToolAction}
+          onDownload={() => handleNodeContextDownload(activeNode)}
+          onFullscreen={() => openNodePreview(activeNode, activeNode.kind === 'image' ? 'image' : 'video')}
+          onReframeChange={setReframeMode}
+          onOpenABCompare={() => openCanvasPanel('ab-compare')}
+          onOpenAssets={() => handleNodeContextOpenAssets(activeNode)}
+          onClose={closeNodeContext}
+          style={{
+            height: nodeContextSurfaceLayout.dialog.height,
+            left: nodeContextSurfaceLayout.dialog.left,
+            top: nodeContextSurfaceLayout.dialog.top,
+            width: nodeContextSurfaceLayout.dialog.width,
+          }}
+        />
       ) : null}
 
 

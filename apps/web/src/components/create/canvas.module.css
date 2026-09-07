@@ -8299,3 +8299,200 @@
   width: 26px;
   height: 26px;
 }
+
+/* P0-CANVAS-ANCHORED-DIALOG: selected-node surfaces stay in one visual column. */
+.scope :global(.asset-agent-toolbar) {
+  box-sizing: border-box;
+  display: flex;
+  height: 48px;
+  max-width: calc(100vw - 32px);
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(20, 23, 29, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.46);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.scope :global(.asset-agent-toolbar-identity) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  margin-right: 10px;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scope :global(.asset-agent-toolbar-kind-icon) {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.68;
+}
+
+.scope :global(.asset-agent-toolbar-kind-label) {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope :global(.asset-agent-toolbar-group) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.scope :global(.asset-agent-btn) {
+  height: 34px;
+  border-radius: 6px;
+}
+
+.scope :global(.canvas-node-dialog.create-floating-console),
+.scope :global(.canvas-node-context-dialog) {
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 90;
+  min-height: 0;
+  max-height: min(210px, calc(100vh - 32px));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(20, 23, 29, 0.98);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.scope :global(.canvas-node-dialog.create-floating-console) {
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-input-wrap),
+.scope :global(.canvas-node-dialog .canvas-prompt-input) {
+  min-height: 82px;
+  height: 82px;
+}
+
+.scope :global(.canvas-node-context-dialog) {
+  display: flex;
+  overflow: auto;
+  padding: 12px 44px 12px 14px;
+}
+
+.scope :global(.node-tool-context-dialog-body),
+.scope :global(.node-tool-context-list) {
+  min-width: 0;
+  width: 100%;
+}
+
+.scope :global(.node-tool-context-dialog-task) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.scope :global(.node-tool-context-dialog-eyebrow) {
+  margin: 0 0 5px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.scope :global(.node-tool-context-dialog-copy),
+.scope :global(.node-tool-context-dialog-blocked) {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.scope :global(.node-tool-context-dialog-primary) {
+  flex: 0 0 auto;
+  min-width: 124px;
+  height: 34px;
+  border: 1px solid rgba(110, 247, 230, 0.32);
+  border-radius: 6px;
+  background: rgba(110, 247, 230, 0.12);
+  color: rgba(215, 255, 250, 0.96);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.scope :global(.node-tool-context-dialog-actions),
+.scope :global(.node-tool-context-dialog-reframe) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.scope :global(.node-tool-context-dialog-actions button),
+.scope :global(.node-tool-context-dialog-reframe button) {
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  padding: 0 9px;
+}
+
+.scope :global(.node-tool-context-dialog-reframe) {
+  margin-top: 10px;
+}
+
+.scope :global(.node-tool-context-dialog-reframe > span) {
+  margin-right: 2px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 10px;
+}
+
+.scope :global(.node-tool-context-dialog-reframe button.is-active) {
+  border-color: rgba(110, 247, 230, 0.32);
+  background: rgba(110, 247, 230, 0.11);
+  color: rgba(215, 255, 250, 0.96);
+}
+
+.scope :global(.node-tool-context-dialog-close) {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0;
+}
+
+.scope :global(.node-tool-context-dialog-close::before) {
+  content: '×';
+  font-size: 18px;
+  line-height: 1;
+}
+
+.scope :global(.node-tool-context-list) {
+  column-gap: 14px;
+}
+
+.scope :global(.node-tool-context-list .ntb-menu-section-title) {
+  padding: 2px 0 5px;
+}
+
+.scope :global(.node-tool-context-list .ntb-menu-item) {
+  flex-wrap: wrap;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.scope :global(.node-tool-context-list .ntb-menu-item:disabled) {
+  cursor: not-allowed;
+  opacity: 0.56;
+}

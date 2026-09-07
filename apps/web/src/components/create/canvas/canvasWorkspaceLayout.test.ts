@@ -97,36 +97,33 @@ test('keeps the runtime task dialog max width within 16px viewport margins', () 
   assert.ok(dialogMaxWidths.every((maxWidth) => maxWidth !== '48'))
 })
 
-test('uses canvas-stage bounds for the runtime task dialog and connects the inspector dismissal', () => {
-  assert.match(visualCanvasWorkspaceSource, /clampCanvasDialogLeftToStage\([\s\S]*?rect\.left[\s\S]*?rect\.right/)
-  assert.match(visualCanvasWorkspaceSource, /clampCanvasDialogTopToStage\([\s\S]*?rect\.top[\s\S]*?rect\.bottom/)
-  assert.match(
-    visualCanvasWorkspaceSource,
-    /getCanvasNodeDialogSize\(\s*Math\.min\(viewportWidth, rect\.width\),\s*Math\.min\(viewportHeight, rect\.height\),\s*\)/,
-  )
+test('uses the shared stage-aware layout helper and retains inspector dismissal', () => {
+  assert.match(visualCanvasWorkspaceSource, /getCanvasNodeContextSurfaceLayout\(\{[\s\S]*?stage,/)
   assert.match(
     visualCanvasWorkspaceSource,
     /onDismissRightInspector=\{\(\) => setIsRightInspectorOpen\(false\)\}/,
   )
-  assert.match(visualCanvasWorkspaceSource, /const \[canvasStageBoundsVersion, setCanvasStageBoundsVersion\] = useState\(0\)/)
+  assert.match(visualCanvasWorkspaceSource, /const \[canvasStageBounds, setCanvasStageBounds\] = useState<CanvasStageRect \| undefined>\(undefined\)/)
+  assert.match(visualCanvasWorkspaceSource, /const rect = viewport\.getBoundingClientRect\(\)/)
   assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(/)
-  assert.match(visualCanvasWorkspaceSource, /const viewport = viewportRef\.current/)
-  assert.match(visualCanvasWorkspaceSource, /observer\.observe\(viewport\)/)
-  assert.match(visualCanvasWorkspaceSource, /observer\.disconnect\(\)/)
-  const nodeDialogStyleStart = visualCanvasWorkspaceSource.indexOf('const nodeDialogStyle = useMemo')
-  const nodeDialogStyleEnd = visualCanvasWorkspaceSource.indexOf('// Toolbar position', nodeDialogStyleStart)
-  assert.match(
-    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
-    /isBottomDockExpanded/,
-  )
-  assert.match(
-    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
-    /canvasStageBoundsVersion/,
-  )
-  assert.match(
-    visualCanvasWorkspaceSource.slice(nodeDialogStyleStart, nodeDialogStyleEnd),
-    /isRightInspectorOpen/,
-  )
+  assert.match(visualCanvasWorkspaceSource, /setCanvasStageBounds\(\(current\) =>/)
+  assert.match(visualCanvasWorkspaceSource, /nodeContextPanAdjustmentKeyRef/)
+  assert.match(visualCanvasWorkspaceSource, /window\.requestAnimationFrame/)
+})
+
+test('uses anchored below-node geometry without zoom-scaled or above-node dialog placement', () => {
+  assert.match(visualCanvasWorkspaceSource, /getCanvasNodeContextSurfaceLayout\(/)
+  assert.doesNotMatch(visualCanvasWorkspaceSource, /const dialogScale = clampNumber\(canvasZoom, 0\.56, 1\)/)
+  assert.doesNotMatch(visualCanvasWorkspaceSource, /const aboveTop = nodeTop - NODE_DIALOG_GAP/)
+})
+
+test('suppresses persistence for the automatic lower-viewport pan', () => {
+  const autoPanStart = visualCanvasWorkspaceSource.indexOf('const adjustmentKey =')
+  const autoPanEnd = visualCanvasWorkspaceSource.indexOf('const nodeDialogStyle = useMemo', autoPanStart)
+  const autoPanSource = visualCanvasWorkspaceSource.slice(autoPanStart, autoPanEnd)
+
+  assert.match(autoPanSource, /createCanvasAutosaveSuppression/)
+  assert.doesNotMatch(autoPanSource, /scheduleCanvasSave\(/)
 })
 
 test('migrates legacy default node dimensions to the compact canvas scale', () => {

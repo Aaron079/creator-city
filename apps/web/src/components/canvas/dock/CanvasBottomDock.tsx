@@ -57,7 +57,6 @@ export type CanvasBottomDockProps = {
   sourceNode?: VisualCanvasNode | null
   taskNodes: VisualCanvasNode[]
   onSelectNode(nodeId: string): void
-  onOpenGenerationDialog(nodeId: string): void
 }
 
 // ── main component ─────────────────────────────────────────────────────────
@@ -69,7 +68,6 @@ export function CanvasBottomDock({
   sourceNode,
   taskNodes,
   onSelectNode,
-  onOpenGenerationDialog,
 }: CanvasBottomDockProps) {
   const activeDraft = activeNode ? draftStatus(activeNode) : undefined
   const activeMeta = activeNode ? metaRecord(activeNode.metadataJson) : {}
@@ -196,14 +194,6 @@ export function CanvasBottomDock({
                     {activeNode.prompt}
                   </p>
                 ) : null}
-                {/* Open task */}
-                <button
-                  type="button"
-                  onClick={() => onOpenGenerationDialog(activeNode.id)}
-                  className="mt-3 w-full rounded-md border border-white/[0.10] bg-white/[0.03] py-1.5 text-[10px] font-medium text-white/50 transition hover:bg-white/[0.07] hover:text-white/80"
-                >
-                  打开任务
-                </button>
               </div>
             ) : (
               <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-white/[0.06]">

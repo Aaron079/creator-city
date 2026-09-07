@@ -37,6 +37,21 @@ test('isolated Preview canvas loads, selects a node, saves once, and reloads', a
   await expect(nodes).not.toHaveCount(0)
   await nodes.first().click()
 
+  const toolbar = page.locator('.asset-agent-toolbar')
+  await expect(toolbar).toBeVisible()
+  const toolbarBox = await toolbar.boundingBox()
+  const nodeBox = await nodes.first().boundingBox()
+  expect(toolbarBox).not.toBeNull()
+  expect(nodeBox).not.toBeNull()
+  expect(toolbarBox!.y).toBeGreaterThan(nodeBox!.y + nodeBox!.height)
+
+  await toolbar.getByRole('button', { name: '工具', exact: true }).click()
+  const contextDialog = page.locator('.canvas-node-context-dialog')
+  await expect(contextDialog).toBeVisible()
+  const dialogBox = await contextDialog.boundingBox()
+  expect(dialogBox).not.toBeNull()
+  expect(dialogBox!.y).toBeGreaterThan(toolbarBox!.y + toolbarBox!.height)
+
   await saveButton.click()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.locator('.canvas-viewport')).toBeVisible()
