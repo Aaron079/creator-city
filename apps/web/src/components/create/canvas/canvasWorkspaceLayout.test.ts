@@ -135,16 +135,16 @@ test('keeps prompt chrome reachable with one local reference and billing control
   const stage = { left: 0, top: 0, right: 390, bottom: 300 }
   const sizing = getCanvasTaskDialogSizing({
     stageHeight: stage.bottom - stage.top,
-    fixedTopHeight: 64,
+    fixedTopHeight: 70,
     fixedBottomHeight: 72,
-    promptChromeHeight: 96,
+    promptChromeHeight: 119,
   })
 
   assert.deepEqual(sizing, {
     height: 232,
     maxHeight: 232,
     compactFixedControls: true,
-    promptBodyHeight: 64,
+    promptBodyHeight: 41,
   })
 
   const node = { left: 71, top: 64, width: 248, height: 220 }
@@ -169,9 +169,9 @@ test('reports compact mode without promising prompt space when the stage is phys
   assert.deepEqual(
     getCanvasTaskDialogSizing({
       stageHeight: 120,
-      fixedTopHeight: 64,
+      fixedTopHeight: 70,
       fixedBottomHeight: 72,
-      promptChromeHeight: 96,
+      promptChromeHeight: 119,
     }),
     {
       height: 52,
@@ -327,9 +327,9 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
 })
 
 test('keeps reference and billing controls in fixed regions outside the prompt box', () => {
-  const topControlsStart = visualCanvasWorkspaceSource.indexOf('className="canvas-node-dialog-fixed-controls is-top"')
+  const topControlsStart = visualCanvasWorkspaceSource.indexOf('canvas-node-dialog-fixed-controls is-top')
   const promptStart = visualCanvasWorkspaceSource.indexOf('<CanvasPromptBox', topControlsStart)
-  const bottomControlsStart = visualCanvasWorkspaceSource.indexOf('className="canvas-node-dialog-fixed-controls is-bottom"', promptStart)
+  const bottomControlsStart = visualCanvasWorkspaceSource.indexOf('canvas-node-dialog-fixed-controls is-bottom', promptStart)
   const topControlsSource = visualCanvasWorkspaceSource.slice(topControlsStart, promptStart)
   const bottomControlsSource = visualCanvasWorkspaceSource.slice(bottomControlsStart)
 
@@ -338,6 +338,7 @@ test('keeps reference and billing controls in fixed regions outside the prompt b
   assert.ok(bottomControlsStart > promptStart, 'fixed billing controls must follow the prompt box')
   assert.match(topControlsSource, /<UpstreamTaskStrip/)
   assert.match(topControlsSource, /<LocalReferenceStrip/)
+  assert.match(topControlsSource, /nodeTaskDialogCompactControls \? ' is-compact-fixed-controls' : ''/)
   assert.match(bottomControlsSource, /SHOW_GENERATION_CONTEXT_CHIPS/)
   assert.match(bottomControlsSource, /API 费用来源/)
 })

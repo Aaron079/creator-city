@@ -48,6 +48,7 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
 
   return (
     <div
+      className="canvas-task-upstream-item"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -65,6 +66,7 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
       {/* Thumbnail or icon */}
       {thumbUrl ? (
         <img
+          className="canvas-task-upstream-thumbnail"
           src={thumbUrl}
           alt={node.title || node.kind}
           style={{
@@ -77,7 +79,7 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
           }}
         />
       ) : (
-        <div style={{
+        <div className="canvas-task-upstream-thumbnail" style={{
           width: 56, height: 40, borderRadius: 4, flexShrink: 0,
           background: 'rgba(255,255,255,0.06)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -93,18 +95,18 @@ function UpstreamTaskItem({ node, role }: { node: VisualCanvasNode; role: string
       )}
 
       {/* Title */}
-      <div style={{
+      <div className="canvas-task-upstream-title" style={{
         fontSize: 10, fontWeight: 600,
         color: 'rgba(255,255,255,0.6)',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         maxWidth: '100%',
         textAlign: 'center',
-      }}>
+      }} title={node.title || node.kind}>
         {node.title || node.kind}
       </div>
 
       {/* Role badge */}
-      <span style={{
+      <span className="canvas-task-upstream-role" style={{
         fontSize: 9, letterSpacing: '0.03em',
         color: 'rgba(0,210,255,0.6)',
         background: 'rgba(0,210,255,0.06)',
@@ -136,6 +138,7 @@ export function UpstreamTaskStrip({ targetNodeId, nodes, edges }: UpstreamTaskSt
 
   return (
     <div
+      className="canvas-task-upstream-strip"
       data-no-node-drag="true"
       style={{
         padding: '8px 12px',
@@ -143,13 +146,13 @@ export function UpstreamTaskStrip({ targetNodeId, nodes, edges }: UpstreamTaskSt
         background: 'rgba(255,255,255,0.015)',
       }}
     >
-      <div style={{
+      <div className="canvas-task-upstream-label" style={{
         fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase',
         color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600,
       }}>
         上游任务输入 ({incomingItems.length})
       </div>
-      <div style={{
+      <div className="canvas-task-upstream-list" style={{
         display: 'flex', flexDirection: 'row', gap: 6,
         overflowX: 'auto', paddingBottom: 2,
       }}>

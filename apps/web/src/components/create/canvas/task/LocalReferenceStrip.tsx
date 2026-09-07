@@ -39,6 +39,7 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
 
   return (
     <div
+      className="canvas-task-reference-card"
       style={{
         position: 'relative',
         display: 'flex',
@@ -83,6 +84,7 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
 
       {/* Thumbnail / spinner / error */}
       <div
+        className="canvas-task-reference-thumbnail"
         style={{
           width: 52,
           height: 38,
@@ -115,6 +117,7 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
 
       {/* Filename */}
       <div
+        className="canvas-task-reference-filename"
         style={{
           fontSize: 9,
           color: 'rgba(255,255,255,0.5)',
@@ -131,6 +134,7 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
 
       {/* Status badge */}
       <span
+        className="canvas-task-reference-status"
         style={{
           fontSize: 9,
           color: isError ? 'rgba(255,100,100,0.7)' : isUploading ? 'rgba(255,220,100,0.7)' : 'rgba(100,220,100,0.7)',
@@ -146,6 +150,7 @@ function RefCard({ entry, onRemove }: { entry: LocalRefEntry; onRemove: (id: str
       {/* Error message */}
       {isError && (
         <div
+          className="canvas-task-reference-error"
           style={{ fontSize: 8, color: 'rgba(255,100,100,0.6)', textAlign: 'center', maxWidth: '100%', wordBreak: 'break-all' }}
           title={entry.errorMessage ?? '上传失败'}
         >
@@ -167,6 +172,7 @@ function ScriptCard({
 }) {
   return (
     <div
+      className="canvas-task-script-card"
       style={{
         padding: '6px 8px',
         borderRadius: 8,
@@ -178,7 +184,7 @@ function ScriptCard({
       }}
     >
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+      <div className="canvas-task-script-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
           {entry.fileName}
         </span>
@@ -199,12 +205,13 @@ function ScriptCard({
       </div>
 
       {/* Char count */}
-      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>
+      <div className="canvas-task-script-card-count" style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>
         {entry.charCount.toLocaleString()} 字符
       </div>
 
       {/* Preview */}
       <div
+        className="canvas-task-script-card-preview"
         style={{
           fontSize: 9, color: 'rgba(255,255,255,0.45)',
           background: 'rgba(255,255,255,0.03)', borderRadius: 4,
@@ -213,12 +220,14 @@ function ScriptCard({
           maxHeight: 48, overflow: 'hidden',
           lineHeight: 1.4,
         }}
+        title={entry.textPreview || '（空文件）'}
       >
         {entry.textPreview || '（空文件）'}
       </div>
 
       {/* Apply button */}
       <button
+        className="canvas-task-script-card-apply"
         type="button"
         onClick={() => onApply(entry.fullText)}
         style={{
@@ -279,6 +288,7 @@ export function LocalReferenceStrip({
 
   return (
     <div
+      className="canvas-task-local-reference-strip"
       data-no-node-drag="true"
       style={{
         padding: '8px 12px',
@@ -288,12 +298,13 @@ export function LocalReferenceStrip({
     >
       {/* Image reference section */}
       {showImageSection && (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={labelStyle}>
+        <div className="canvas-task-reference-section">
+          <div className="canvas-task-reference-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div className="canvas-task-reference-label" style={labelStyle}>
               本地参考输入{refs.length > 0 ? ` (${refs.length})` : ''}
             </div>
             <button
+              className="canvas-task-reference-upload"
               type="button"
               style={uploadBtnStyle}
               onClick={() => imageInputRef.current?.click()}
@@ -302,12 +313,16 @@ export function LocalReferenceStrip({
             </button>
           </div>
 
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: refs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
+          <div
+            className="canvas-task-reference-description"
+            style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: refs.length > 0 ? 6 : 0, lineHeight: 1.4 }}
+            title="参考图已保存到任务上下文；当前 Provider 不支持直接参考图输入，可复制图片 URL 至 Prompt，或后续使用支持图生图的 Provider。"
+          >
             参考图已保存到任务上下文；当前 Provider 不支持直接参考图输入，可复制图片 URL 至 Prompt，或后续使用支持图生图的 Provider。
           </div>
 
           {refs.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            <div className="canvas-task-reference-list" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
               {refs.map((ref) => (
                 <RefCard key={ref.inputId} entry={ref} onRemove={onRemoveRef} />
               ))}
@@ -330,12 +345,13 @@ export function LocalReferenceStrip({
 
       {/* Script / text section */}
       {showScriptSection && (
-        <div style={{ marginTop: showImageSection ? 8 : 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={labelStyle}>
+        <div className="canvas-task-reference-section is-script" style={{ marginTop: showImageSection ? 8 : 0 }}>
+          <div className="canvas-task-reference-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div className="canvas-task-reference-label" style={labelStyle}>
               剧本 / 文本输入{scriptInputs.length > 0 ? ` (${scriptInputs.length})` : ''}
             </div>
             <button
+              className="canvas-task-reference-upload"
               type="button"
               style={uploadBtnStyle}
               onClick={() => scriptInputRef.current?.click()}
@@ -344,12 +360,16 @@ export function LocalReferenceStrip({
             </button>
           </div>
 
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: scriptInputs.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
+          <div
+            className="canvas-task-reference-description"
+            style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', marginBottom: scriptInputs.length > 0 ? 6 : 0, lineHeight: 1.4 }}
+            title={'TXT / Markdown / Fountain / SRT / VTT / CSV / JSON · 仅本次草稿，需"应用到 Prompt"后生效'}
+          >
             TXT / Markdown / Fountain / SRT / VTT / CSV / JSON · 仅本次草稿，需&quot;应用到 Prompt&quot;后生效
           </div>
 
           {scriptInputs.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            <div className="canvas-task-reference-list" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
               {scriptInputs.map((s) => (
                 <ScriptCard key={s.inputId} entry={s} onRemove={onRemoveScript} onApply={onApplyScript} />
               ))}

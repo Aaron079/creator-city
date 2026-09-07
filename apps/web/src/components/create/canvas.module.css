@@ -8546,6 +8546,136 @@
   width: min(340px, calc(100vw - 32px));
 }
 
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls > [data-no-node-drag='true']) {
+  display: flex;
+  height: 70px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-section) {
+  display: flex;
+  min-width: max-content;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-header) {
+  flex: 0 0 auto;
+  justify-content: flex-start !important;
+  gap: 6px;
+  margin-bottom: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-label),
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-upload),
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-description),
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-status),
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-error) {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-description) {
+  margin-bottom: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-list) {
+  flex: 0 0 auto;
+  overflow: visible !important;
+  padding-bottom: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-card) {
+  display: flex !important;
+  flex-direction: row !important;
+  width: auto !important;
+  min-width: 240px !important;
+  height: 54px;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 6px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-filename) {
+  max-width: 84px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-reference-error) {
+  max-width: none !important;
+  word-break: normal !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-script-card) {
+  display: flex !important;
+  flex-direction: row !important;
+  min-width: 560px !important;
+  max-width: none !important;
+  height: 54px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-script-card-header) {
+  flex: 0 0 170px;
+  margin-bottom: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-script-card-count) {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-script-card-preview) {
+  flex: 0 0 180px;
+  max-height: 34px !important;
+  margin-bottom: 0 !important;
+  overflow: hidden;
+  white-space: nowrap !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-script-card-apply) {
+  flex: 0 0 112px;
+  width: 112px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-upstream-label) {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-upstream-list) {
+  flex: 0 0 auto;
+  overflow: visible !important;
+  padding-bottom: 0 !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-upstream-item) {
+  display: flex !important;
+  flex-direction: row !important;
+  width: auto !important;
+  min-width: 220px !important;
+  height: 54px;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 6px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-upstream-title) {
+  max-width: 92px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls .canvas-task-upstream-role) {
+  white-space: nowrap;
+}
+
 .scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-prompt-box.is-node) {
   grid-column: 1 / -1;
   grid-row: 2;

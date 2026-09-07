@@ -12204,7 +12204,10 @@ export function VisualCanvasWorkspace({
           style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 68px)' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div ref={nodeTaskDialogFixedTopRef} className="canvas-node-dialog-fixed-controls is-top">
+          <div
+            ref={nodeTaskDialogFixedTopRef}
+            className={`canvas-node-dialog-fixed-controls is-top${nodeTaskDialogCompactControls ? ' is-compact-fixed-controls' : ''}`}
+          >
             <UpstreamTaskStrip
               targetNodeId={editingNode.id}
               nodes={nodes}
@@ -12294,7 +12297,10 @@ export function VisualCanvasWorkspace({
             onClose={() => closeCanvasPanel()}
             panelPortalTarget={panelPortalTarget}
           />
-          <div ref={nodeTaskDialogFixedBottomRef} className="canvas-node-dialog-fixed-controls is-bottom">
+          <div
+            ref={nodeTaskDialogFixedBottomRef}
+            className={`canvas-node-dialog-fixed-controls is-bottom${nodeTaskDialogCompactControls ? ' is-compact-fixed-controls' : ''}`}
+          >
             {SHOW_GENERATION_CONTEXT_CHIPS && (editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
               hasBibleContent({ characterBible, sceneBible, styleBible }) ||
               editingNode.kind === 'image' ||
