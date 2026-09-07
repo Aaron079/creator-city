@@ -33,6 +33,18 @@ test('anchors compact navigation above the selected display node and its dialog 
   assert.equal(layout.panDeltaY, 0)
 })
 
+test('supports a taller task dialog without moving its node navigation', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 248, height: 220 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 800 },
+    dialogHeight: 282,
+  })
+
+  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
+  assert.deepEqual(layout.dialog, { left: 174, top: 348, width: 700, height: 282 })
+  assert.equal(layout.panDeltaY, 0)
+})
+
 test('requests an upward Canvas pan for a below-node dialog without moving navigation away from the node', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 300, top: 460, width: 248, height: 220 },

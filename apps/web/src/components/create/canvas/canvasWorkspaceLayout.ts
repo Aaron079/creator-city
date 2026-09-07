@@ -94,9 +94,11 @@ export function clampCanvasDialogTopToStage(
 export function getCanvasNodeContextSurfaceLayout({
   node,
   stage,
+  dialogHeight = CONTEXT_DIALOG.height,
 }: {
   node: CanvasNodeScreenRect
   stage: CanvasStageRect
+  dialogHeight?: number
 }): CanvasContextSurfaceLayout {
   const stageWidth = Math.max(0, stage.right - stage.left)
   const maxSurfaceWidth = Math.max(0, stageWidth - CONTEXT_STAGE_MARGIN * 2)
@@ -108,7 +110,7 @@ export function getCanvasNodeContextSurfaceLayout({
     node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap,
   )
   const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
-  const overflow = dialogTop + CONTEXT_DIALOG.height - (stage.bottom - CONTEXT_STAGE_MARGIN)
+  const overflow = dialogTop + dialogHeight - (stage.bottom - CONTEXT_STAGE_MARGIN)
 
   return {
     navigation: {
@@ -133,7 +135,7 @@ export function getCanvasNodeContextSurfaceLayout({
       ),
       top: dialogTop,
       width: dialogWidth,
-      height: CONTEXT_DIALOG.height,
+      height: dialogHeight,
     },
     panDeltaY: overflow > 0 ? -overflow : 0,
   }
