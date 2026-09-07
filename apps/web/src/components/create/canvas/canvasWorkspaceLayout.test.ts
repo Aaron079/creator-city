@@ -137,14 +137,14 @@ test('keeps prompt chrome reachable with one local reference and billing control
     stageHeight: stage.bottom - stage.top,
     fixedTopHeight: 70,
     fixedBottomHeight: 72,
-    promptChromeHeight: 119,
+    promptChromeHeight: 123,
   })
 
   assert.deepEqual(sizing, {
     height: 232,
     maxHeight: 232,
     compactFixedControls: true,
-    promptBodyHeight: 41,
+    promptBodyHeight: 37,
   })
 
   const node = { left: 71, top: 64, width: 248, height: 220 }
@@ -171,7 +171,7 @@ test('reports compact mode without promising prompt space when the stage is phys
       stageHeight: 120,
       fixedTopHeight: 70,
       fixedBottomHeight: 72,
-      promptChromeHeight: 119,
+      promptChromeHeight: 123,
     }),
     {
       height: 52,

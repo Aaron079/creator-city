@@ -8676,6 +8676,53 @@
   white-space: nowrap;
 }
 
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls > .canvas-node-dialog-billing-controls) {
+  box-sizing: border-box;
+  height: 70px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-details) {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-account-state) {
+  display: flex !important;
+  min-width: max-content;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-note),
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-loading),
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-empty),
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-billing-warning) {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-account-list) {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls .canvas-node-dialog-account-card) {
+  min-height: 46px;
+  margin-top: 0 !important;
+  padding: 4px 8px !important;
+}
+
 .scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-prompt-box.is-node) {
   grid-column: 1 / -1;
   grid-row: 2;

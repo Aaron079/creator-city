@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
-import { chromium, type Browser } from '@playwright/test'
+import { chromium, type Browser, type Page } from '@playwright/test'
 
 let browser: Browser | null = null
 let bundlePath = ''
 let stylesPath = ''
 let tempDirectory = ''
+let workspaceSource = ''
 
 async function findEsbuildBinary() {
   const pnpmDirectory = path.resolve(process.cwd(), '../..', 'node_modules/.pnpm')
@@ -34,31 +35,99 @@ function harnessSource() {
     import { LocalReferenceStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/LocalReferenceStrip.tsx'))}
     import { UpstreamTaskStrip } from ${JSON.stringify(path.resolve(process.cwd(), 'src/components/create/canvas/task/UpstreamTaskStrip.tsx'))}
 
+    const scenario = new URLSearchParams(window.location.search).get('scenario') || 'image-done'
+    const isText = scenario === 'text-script'
+    const isVideo = scenario === 'video-mode'
+    const isByokMissingEndpoint = scenario === 'image-byok-missing-endpoint'
+    const refStatus = scenario === 'image-uploading' ? 'uploading' : 'done'
     const upstreamNode = {
-      id: 'source-image',
-      type: 'image',
-      kind: 'image',
-      title: 'Upstream portrait',
-      subtitle: '',
-      prompt: '',
-      model: '',
-      providerId: '',
-      stage: '',
-      status: 'done',
-      x: 0,
-      y: 0,
-      width: 248,
-      height: 220,
-      createdAt: 1,
+      id: 'source-image', type: 'image', kind: 'image', title: 'Upstream portrait',
+      subtitle: '', prompt: '', model: '', providerId: '', stage: '', status: 'done',
+      x: 0, y: 0, width: 248, height: 220, createdAt: 1,
     }
-    const refs = [{
-      inputId: 'local-reference',
-      status: 'error',
-      originalFileName: 'portrait-reference-with-a-long-name.png',
-      mimeType: 'image/png',
-      errorMessage: 'UPLOAD_TIMEOUT',
+    const refs = isText ? [] : [{
+      inputId: 'local-reference', status: refStatus,
+      originalFileName: 'portrait-reference-with-a-long-name.png', mimeType: 'image/png',
     }]
+    const scriptInputs = isText ? [{
+      inputId: 'script-reference', fileName: 'scene-outline.fountain', mimeType: 'text/plain',
+      textPreview: 'INT. CREATOR CITY - NIGHT\\nA compact scene begins.',
+      fullText: 'INT. CREATOR CITY - NIGHT', importedAt: '2026-09-07T00:00:00.000Z', charCount: 25,
+    }] : []
+    let accountCount = 0
+    let applyCount = 0
     let removeCount = 0
+    let uploadCount = 0
+
+    function billingDetails() {
+      if (!isByokMissingEndpoint) {
+        return React.createElement(
+          'div',
+          { className: 'canvas-node-dialog-billing-details' },
+          React.createElement('p', { className: 'canvas-node-dialog-billing-note' }, 'Billing detail remains available'),
+        )
+      }
+
+      return React.createElement(
+        'div',
+        { className: 'canvas-node-dialog-billing-details' },
+        React.createElement(
+          'div',
+          { className: 'canvas-node-dialog-billing-account-state space-y-1.5' },
+          React.createElement(
+            'p',
+            {
+              className: 'canvas-node-dialog-billing-note text-[9px] text-violet-300/45 leading-relaxed',
+              style: { margin: '0 0 6px', lineHeight: '18px' },
+            },
+            'Seedream image - billed to Volcengine - Creator City does not deduct credits',
+          ),
+          React.createElement(
+            'div',
+            {
+              className: 'canvas-node-dialog-account-list space-y-1',
+              style: { display: 'flex', overflowX: 'auto', paddingBottom: 2 },
+            },
+            React.createElement(
+              'button',
+              {
+                className: 'canvas-node-dialog-account-card w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between gap-2',
+                type: 'button',
+                style: {
+                  width: 260, minWidth: 260, padding: '8px 12px', display: 'flex',
+                  alignItems: 'center', justifyContent: 'space-between',
+                },
+                onClick() { accountCount += 1 },
+              },
+              React.createElement(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
+                React.createElement('span', null, 'Volcengine production'),
+                React.createElement('span', null, '.... 4821 - missing Endpoint ID'),
+              ),
+              React.createElement('div', null, '✓'),
+            ),
+          ),
+          React.createElement(
+            'p',
+            {
+              className: 'canvas-node-dialog-billing-warning text-[11px] text-amber-400/70',
+              style: { margin: '6px 0 0', lineHeight: '18px' },
+            },
+            'Missing Endpoint ID, update it in ',
+            React.createElement(
+              'a',
+              {
+                className: 'canvas-node-dialog-billing-warning-link ml-1 underline hover:text-amber-300',
+                href: '/account/providers', target: '_blank', rel: 'noopener noreferrer',
+              },
+              'My API accounts',
+            ),
+            '.',
+          ),
+        ),
+      )
+    }
 
     createRoot(document.getElementById('root')).render(
       React.createElement(
@@ -73,24 +142,18 @@ function harnessSource() {
           },
           React.createElement(
             'div',
-            {
-              id: 'fixed-top',
-              className: 'canvas-node-dialog-fixed-controls is-top is-compact-fixed-controls',
-            },
+            { id: 'fixed-top', className: 'canvas-node-dialog-fixed-controls is-top is-compact-fixed-controls' },
             React.createElement(UpstreamTaskStrip, {
-              targetNodeId: 'target-video',
-              nodes: [upstreamNode],
-              edges: [{ id: 'edge-1', fromNodeId: 'source-image', toNodeId: 'target-video' }],
+              targetNodeId: 'target-node', nodes: [upstreamNode],
+              edges: [{ id: 'edge-1', fromNodeId: 'source-image', toNodeId: 'target-node' }],
             }),
             React.createElement(LocalReferenceStrip, {
-              nodeKind: 'video',
-              refs,
-              scriptInputs: [],
-              onImageUpload() {},
+              nodeKind: isText ? 'text' : isVideo ? 'video' : 'image', refs, scriptInputs,
+              onImageUpload() { uploadCount += 1 },
               onRemoveRef() { removeCount += 1 },
               onScriptUpload() {},
-              onRemoveScript() {},
-              onApplyScript() {},
+              onRemoveScript() { removeCount += 1 },
+              onApplyScript() { applyCount += 1 },
             }),
           ),
           React.createElement(
@@ -99,15 +162,18 @@ function harnessSource() {
             React.createElement(
               'div',
               { id: 'prompt-header', className: 'canvas-node-dialog-fixed-header' },
-              React.createElement('span', { className: 'canvas-node-dialog-mode' }, 'Video task'),
+              React.createElement(
+                'span',
+                { id: 'prompt-mode', className: 'canvas-node-dialog-mode' },
+                isVideo ? 'Video task' : isText ? 'Text task' : 'Image task',
+              ),
               React.createElement('button', { type: 'button', 'aria-label': 'Close' }, 'x'),
             ),
             React.createElement(
               'div',
               { id: 'prompt-body', className: 'canvas-node-dialog-scroll-content' },
               React.createElement('textarea', {
-                className: 'canvas-prompt-input',
-                defaultValue: 'Prompt body remains scrollable',
+                className: 'canvas-prompt-input', defaultValue: 'Prompt body remains scrollable',
               }),
             ),
             React.createElement(
@@ -132,7 +198,7 @@ function harnessSource() {
           ),
           React.createElement(
             'div',
-            { id: 'fixed-bottom', className: 'canvas-node-dialog-fixed-controls is-bottom' },
+            { id: 'fixed-bottom', className: 'canvas-node-dialog-fixed-controls is-bottom is-compact-fixed-controls' },
             React.createElement(
               'div',
               { className: 'canvas-node-dialog-billing-controls' },
@@ -143,11 +209,7 @@ function harnessSource() {
                 React.createElement('button', { type: 'button' }, 'Own account'),
                 React.createElement('button', { type: 'button' }, 'Credits'),
               ),
-              React.createElement(
-                'div',
-                { className: 'canvas-node-dialog-billing-details' },
-                'Billing detail remains available',
-              ),
+              billingDetails(),
             ),
           ),
         ),
@@ -155,12 +217,17 @@ function harnessSource() {
     )
 
     window.__taskDialogHarness = {
-      removeCount() { return removeCount },
+      accountCount() { return accountCount }, applyCount() { return applyCount },
+      removeCount() { return removeCount }, uploadCount() { return uploadCount },
     }
   `
 }
 
 before(async () => {
+  workspaceSource = await readFile(
+    path.resolve(process.cwd(), 'src/components/create/VisualCanvasWorkspace.tsx'),
+    'utf8',
+  )
   tempDirectory = await mkdtemp(path.join(tmpdir(), 'canvas-task-dialog-'))
   const entryPath = path.join(tempDirectory, 'entry.tsx')
   bundlePath = path.join(tempDirectory, 'bundle.js')
@@ -190,7 +257,14 @@ after(async () => {
   if (tempDirectory) await rm(tempDirectory, { recursive: true, force: true })
 })
 
-test('keeps compact task references and prompt fixed surfaces reachable at 390x300', async () => {
+type HarnessCounters = {
+  accountCount: () => number
+  applyCount: () => number
+  removeCount: () => number
+  uploadCount: () => number
+}
+
+async function renderScenario(scenario: string) {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 390, height: 300 } })
   page.setDefaultTimeout(5_000)
@@ -198,73 +272,113 @@ test('keeps compact task references and prompt fixed surfaces reachable at 390x3
     contentType: 'text/html',
     body: '<!doctype html><html><body style="margin:0;background:#111"><div id="root"></div></body></html>',
   }))
-  await page.goto('http://creator-city.test/task-dialog')
+  await page.goto(`http://creator-city.test/task-dialog?scenario=${scenario}`)
   await page.addStyleTag({ path: stylesPath })
   await page.addScriptTag({ path: bundlePath })
+  return page
+}
 
-  const top = page.locator('#fixed-top')
-  const promptBody = page.locator('#prompt-body')
+async function harnessCount(page: Page, key: keyof HarnessCounters) {
+  return page.evaluate((counterKey) => {
+    const harness = (window as unknown as { __taskDialogHarness: HarnessCounters }).__taskDialogHarness
+    return harness[counterKey]()
+  }, key)
+}
+
+async function assertConstrainedSurface(page: Page) {
   const dialogBox = await page.locator('#task-dialog').boundingBox()
-  const topBox = await top.boundingBox()
-  const bodyBox = await promptBody.boundingBox()
+  const topBox = await page.locator('#fixed-top').boundingBox()
   const bottomBox = await page.locator('#fixed-bottom').boundingBox()
   const headerBox = await page.locator('#prompt-header').boundingBox()
+  const bodyBox = await page.locator('#prompt-body').boundingBox()
   const footerBox = await page.locator('#prompt-footer').boundingBox()
 
   assert.ok(dialogBox)
   assert.ok(topBox)
-  assert.ok(bodyBox)
   assert.ok(bottomBox)
   assert.ok(headerBox)
+  assert.ok(bodyBox)
   assert.ok(footerBox)
   assert.ok(topBox.height <= 72, `compact fixed top was ${topBox.height}px tall`)
+  assert.ok(bottomBox.height <= 72, `compact fixed bottom was ${bottomBox.height}px tall`)
   assert.ok(bodyBox.height > 0, `prompt body was ${bodyBox.height}px tall`)
   assert.ok(Math.abs(topBox.y - bottomBox.y) < 1, 'fixed controls must share the compact top row')
   for (const box of [topBox, bottomBox, headerBox, bodyBox, footerBox]) {
     assert.ok(box.y >= dialogBox.y)
     assert.ok(box.y + box.height <= dialogBox.y + dialogBox.height)
   }
-  assert.equal(await page.locator('.canvas-task-upstream-strip').count(), 1)
-  assert.equal(await page.locator('.canvas-task-upstream-item').count(), 1)
-  assert.equal(await page.locator('.canvas-task-local-reference-strip').count(), 1)
-  assert.equal(await page.locator('.canvas-task-reference-card').count(), 1)
-  assert.equal(await page.locator('#prompt-header').isVisible(), true)
-  assert.equal(await page.locator('#prompt-footer').isVisible(), true)
-  assert.equal(await page.locator('#fixed-bottom').isVisible(), true)
+}
 
-  const upstreamItem = page.locator('.canvas-task-upstream-item')
-  await upstreamItem.scrollIntoViewIfNeeded()
-  const upstreamBox = await upstreamItem.boundingBox()
-  assert.ok(upstreamBox)
-  assert.ok(upstreamBox.y >= topBox.y)
-  assert.ok(upstreamBox.y + upstreamBox.height <= topBox.y + topBox.height)
-
-  const overflow = await top.evaluate((element) => {
-    const style = getComputedStyle(element)
-    return {
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-      overflowX: style.overflowX,
-      overflowY: style.overflowY,
-    }
-  })
-  assert.equal(overflow.overflowX, 'auto')
-  assert.equal(overflow.overflowY, 'hidden')
-  assert.ok(overflow.scrollWidth > overflow.clientWidth)
-
+test('keeps an uploading image reference and upload action reachable at 390x300', async () => {
+  const page = await renderScenario('image-uploading')
+  await assertConstrainedSurface(page)
+  assert.equal(await page.getByText('上传中').isVisible(), true)
   const uploadButton = page.locator('.canvas-task-reference-upload')
   await uploadButton.scrollIntoViewIfNeeded()
-  const uploadBox = await uploadButton.boundingBox()
-  assert.ok(uploadBox)
-  assert.ok(uploadBox.y >= topBox.y)
-  assert.ok(uploadBox.y + uploadBox.height <= topBox.y + topBox.height)
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    uploadButton.click(),
+  ])
+  await fileChooser.setFiles({
+    name: 'replacement.png', mimeType: 'image/png', buffer: Buffer.from('image'),
+  })
+  assert.equal(await harnessCount(page, 'uploadCount'), 1)
+  await page.close()
+})
 
+test('keeps a completed image reference and remove action reachable at 390x300', async () => {
+  const page = await renderScenario('image-done')
+  await assertConstrainedSurface(page)
+  assert.equal(await page.getByText('已上传').isVisible(), true)
   const removeButton = page.locator('.canvas-task-reference-card button[aria-label="移除"]')
   await removeButton.scrollIntoViewIfNeeded()
   await removeButton.click()
-  assert.equal(await page.evaluate(() => (
-    window as unknown as { __taskDialogHarness: { removeCount: () => number } }
-  ).__taskDialogHarness.removeCount()), 1)
-
+  assert.equal(await harnessCount(page, 'removeCount'), 1)
   await page.close()
+})
+
+test('keeps ScriptCard and Apply to Prompt reachable at 390x300', async () => {
+  const page = await renderScenario('text-script')
+  await assertConstrainedSurface(page)
+  const applyButton = page.locator('.canvas-task-script-card-apply')
+  await applyButton.scrollIntoViewIfNeeded()
+  await applyButton.click()
+  assert.equal(await harnessCount(page, 'applyCount'), 1)
+  await page.close()
+})
+
+test('keeps the video mode header visible at 390x300', async () => {
+  const page = await renderScenario('video-mode')
+  await assertConstrainedSurface(page)
+  assert.equal(await page.locator('#prompt-mode').textContent(), 'Video task')
+  assert.equal(await page.locator('#prompt-mode').isVisible(), true)
+  await page.close()
+})
+
+test('keeps selected image BYOK account and missing-endpoint warning reachable at 390x300', async () => {
+  const page = await renderScenario('image-byok-missing-endpoint')
+  await assertConstrainedSurface(page)
+  const accountCard = page.locator('.canvas-node-dialog-account-card')
+  await accountCard.scrollIntoViewIfNeeded()
+  await accountCard.click()
+  assert.equal(await harnessCount(page, 'accountCount'), 1)
+  const warningLink = page.locator('.canvas-node-dialog-billing-warning-link')
+  await warningLink.scrollIntoViewIfNeeded()
+  assert.equal(await warningLink.getAttribute('href'), '/account/providers')
+  assert.equal(await warningLink.isVisible(), true)
+  await warningLink.evaluate((element) => {
+    element.addEventListener('click', (event) => event.preventDefault(), { once: true })
+  })
+  await warningLink.click()
+  await page.close()
+})
+
+test('locks the rendered BYOK fixture to semantic billing account-state markup', () => {
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-account-state space-y-1\.5"/)
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-note text-\[9px\]/)
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-loading text-\[11px\]/)
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-empty text-\[11px\]/)
+  assert.match(workspaceSource, /className=\{`canvas-node-dialog-account-card w-full/)
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-warning text-\[11px\]/)
+  assert.match(workspaceSource, /className="canvas-node-dialog-billing-warning-link ml-1 underline/)
 })

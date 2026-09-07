@@ -12392,23 +12392,23 @@ export function VisualCanvasWorkspace({
                       <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
                     )}
                     {billingMode === 'user_provider_account' && (
-                      <div className="space-y-1.5">
+                      <div className="canvas-node-dialog-billing-account-state space-y-1.5">
                       {editingNode.kind === 'image' ? (
-                        <p className="text-[9px] text-violet-300/45 leading-relaxed">
+                        <p className="canvas-node-dialog-billing-note text-[9px] text-violet-300/45 leading-relaxed">
                           Seedream 图片 · 费用计入 Volcengine 账户 · Creator City 不代扣
                         </p>
                       ) : (
-                        <p className="text-[9px] text-violet-300/45 leading-relaxed">Provider 费用直接计入你的服务商账户，Creator City 不代扣。</p>
+                        <p className="canvas-node-dialog-billing-note text-[9px] text-violet-300/45 leading-relaxed">Provider 费用直接计入你的服务商账户，Creator City 不代扣。</p>
                       )}
                       {userAccountsLoading ? (
-                        <p className="text-[11px] text-white/30">加载账户中…</p>
+                        <p className="canvas-node-dialog-billing-loading text-[11px] text-white/30">加载账户中…</p>
                       ) : (() => {
                         const matchingAccounts = editingNode.kind === 'image'
                           ? userProviderAccounts.filter((a) => a.providerId === 'volcengine-seedream-image' && a.status === 'active')
                           : userProviderAccounts.filter((a) => a.providerId === normalizedPromptModel && a.status === 'active')
                         if (matchingAccounts.length === 0) {
                           return (
-                            <p className="text-[11px] text-amber-400/70">
+                            <p className="canvas-node-dialog-billing-empty text-[11px] text-amber-400/70">
                               {editingNode.kind === 'image'
                                 ? '没有可用的 Volcengine / Seedream 账户（需要 API Key + Endpoint ID）。'
                                 : `没有与 ${normalizedPromptModel} 匹配的可用账户。`}
@@ -12430,7 +12430,7 @@ export function VisualCanvasWorkspace({
                                     key={a.id}
                                     type="button"
                                     onClick={() => setSelectedUserAccountId(isSelected ? '' : a.id)}
-                                    className={`w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between gap-2 ${isSelected ? 'border-violet-500/35 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/60 hover:border-white/[0.13] hover:text-white/80'}`}
+                                    className={`canvas-node-dialog-account-card w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between gap-2 ${isSelected ? 'border-violet-500/35 bg-violet-500/[0.09] text-violet-200' : 'border-white/[0.07] bg-white/[0.02] text-white/60 hover:border-white/[0.13] hover:text-white/80'}`}
                                   >
                                     <div className="flex flex-col gap-0.5 min-w-0">
                                       <span className="text-[11px] font-medium truncate">{a.accountLabel}</span>
@@ -12447,9 +12447,9 @@ export function VisualCanvasWorkspace({
                               })}
                             </div>
                             {missingEndpointId && (
-                              <p className="text-[11px] text-amber-400/70">
+                              <p className="canvas-node-dialog-billing-warning text-[11px] text-amber-400/70">
                                 ⚠ 缺少 Endpoint ID，请到
-                                <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">我的 API 账户</a>
+                                <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="canvas-node-dialog-billing-warning-link ml-1 underline hover:text-amber-300">我的 API 账户</a>
                                 补充火山方舟 Endpoint ID。
                               </p>
                             )}
