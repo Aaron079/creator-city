@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   clampCanvasDialogLeftToStage,
   clampCanvasDialogTopToStage,
+  getCanvasNodeContextSurfaceLayout,
   getCanvasNodeDialogSize,
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
@@ -19,6 +20,28 @@ test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
   assert.deepEqual(getCanvasNodeSize('image'), { width: 248, height: 220 })
   assert.deepEqual(getCanvasNodeSize('video'), { width: 248, height: 220 })
+})
+
+test('lays out selected-node navigation and dialog below its display node', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 248, height: 220 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 720 },
+  })
+
+  assert.deepEqual(layout.navigation, { left: 174, top: 358, width: 700, height: 48 })
+  assert.deepEqual(layout.dialog, { left: 174, top: 412, width: 700, height: 210 })
+  assert.equal(layout.panDeltaY, 0)
+})
+
+test('requests an upward Canvas pan instead of flipping the dialog above the node', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 300, top: 460, width: 248, height: 220 },
+    stage: { left: 0, top: 64, right: 1280, bottom: 720 },
+  })
+
+  assert.equal(layout.navigation.top, 698)
+  assert.equal(layout.dialog.top, 752)
+  assert.equal(layout.panDeltaY, -258)
 })
 
 test('uses a compact desktop task dialog without reducing its controls below usable size', () => {

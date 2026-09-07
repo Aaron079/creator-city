@@ -2,6 +2,18 @@ import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 
 type CanvasSize = { width: number; height: number }
 
+export type CanvasStageRect = { left: number; top: number; right: number; bottom: number }
+export type CanvasNodeScreenRect = { left: number; top: number; width: number; height: number }
+export type CanvasContextSurfaceLayout = {
+  navigation: CanvasSize & { left: number; top: number }
+  dialog: CanvasSize & { left: number; top: number }
+  panDeltaY: number
+}
+
+const CONTEXT_NAVIGATION = { width: 700, height: 48, gap: 18 }
+const CONTEXT_DIALOG = { width: 700, height: 210, gap: 6 }
+const CONTEXT_STAGE_MARGIN = 16
+
 const COMPACT_NODE_SIZES: Record<VisualCanvasNodeKind, CanvasSize> = {
   text: { width: 236, height: 208 },
   image: { width: 248, height: 220 },
@@ -77,4 +89,49 @@ export function clampCanvasDialogTopToStage(
   const maximumTop = stageBottom - dialogHeight - margin
 
   return Math.max(minimumTop, Math.min(top, maximumTop))
+}
+
+export function getCanvasNodeContextSurfaceLayout({
+  node,
+  stage,
+}: {
+  node: CanvasNodeScreenRect
+  stage: CanvasStageRect
+}): CanvasContextSurfaceLayout {
+  const stageWidth = Math.max(0, stage.right - stage.left)
+  const maxSurfaceWidth = Math.max(0, stageWidth - CONTEXT_STAGE_MARGIN * 2)
+  const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
+  const dialogWidth = Math.min(CONTEXT_DIALOG.width, maxSurfaceWidth)
+  const nodeCenter = node.left + node.width / 2
+  const navigationTop = node.top + node.height + CONTEXT_NAVIGATION.gap
+  const dialogTop = navigationTop + CONTEXT_NAVIGATION.height + CONTEXT_DIALOG.gap
+  const overflow = dialogTop + CONTEXT_DIALOG.height - (stage.bottom - CONTEXT_STAGE_MARGIN)
+
+  return {
+    navigation: {
+      left: clampCanvasDialogLeftToStage(
+        nodeCenter - navigationWidth / 2,
+        navigationWidth,
+        stage.left,
+        stage.right,
+        CONTEXT_STAGE_MARGIN,
+      ),
+      top: navigationTop,
+      width: navigationWidth,
+      height: CONTEXT_NAVIGATION.height,
+    },
+    dialog: {
+      left: clampCanvasDialogLeftToStage(
+        nodeCenter - dialogWidth / 2,
+        dialogWidth,
+        stage.left,
+        stage.right,
+        CONTEXT_STAGE_MARGIN,
+      ),
+      top: dialogTop,
+      width: dialogWidth,
+      height: CONTEXT_DIALOG.height,
+    },
+    panDeltaY: overflow > 0 ? -overflow : 0,
+  }
 }
