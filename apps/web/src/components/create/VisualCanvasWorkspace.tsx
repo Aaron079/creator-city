@@ -10121,7 +10121,6 @@ export function VisualCanvasWorkspace({
     })
   }, [
     activeNode,
-    activeNodeContextCategory,
     canvasStageBounds,
     canvasPan.x,
     canvasPan.y,
