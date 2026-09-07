@@ -45,6 +45,18 @@ test('supports a taller task dialog without moving its node navigation', () => {
   assert.equal(layout.panDeltaY, 0)
 })
 
+test('uses a taller task dialog height to calculate stage overflow', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 248, height: 220 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 600 },
+    dialogHeight: 282,
+  })
+
+  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
+  assert.equal(layout.dialog.top, 348)
+  assert.equal(layout.panDeltaY, -46)
+})
+
 test('requests an upward Canvas pan for a below-node dialog without moving navigation away from the node', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 300, top: 460, width: 248, height: 220 },
