@@ -549,129 +549,137 @@ export function CanvasPromptBox({
     <div ref={boxRef} className="canvas-prompt-box is-node">
       {renderFooterPanel()}
 
-      {onClose ? (
-        <button
-          type="button"
-          onClick={onClose}
-          className={`canvas-node-dialog-expand ${activeToolId === 'close' ? 'is-showing-label' : ''}`}
-          aria-label="关闭节点面板"
-          title="关闭节点面板"
-          onMouseEnter={() => showToolLabel('close')}
-          onMouseLeave={() => hideToolLabel('close')}
-          onFocus={() => showToolLabel('close')}
-          onBlur={() => hideToolLabel('close')}
-        >
-          <span className="canvas-node-dialog-close-icon" aria-hidden="true" />
-          <span className="canvas-node-tool-label" aria-hidden="true">关闭面板</span>
-        </button>
-      ) : null}
-
-      {videoModeInfo && videoModeInfo.mode !== 'text-to-video' ? (
-        <div className={`canvas-video-mode-bar${videoModeInfo.mode === 'image-to-video' ? ' is-image-to-video' : videoModeInfo.mode === 'image-missing' ? ' is-warning' : ''}`}>
-          {videoModeInfo.mode === 'image-to-video' ? (
-            <>
-              {videoModeInfo.thumbnailUrl ? (
-                <img
-                  src={videoModeInfo.thumbnailUrl}
-                  alt="参考图"
-                  className="canvas-video-mode-thumb"
-                />
-              ) : <span className="canvas-video-mode-icon">▦</span>}
-              <div className="canvas-video-mode-text">
-                <span className="canvas-video-mode-label">图生视频</span>
-                <span className="canvas-video-mode-desc">参考图：{videoModeInfo.sourceNodeTitle ?? 'Image'}</span>
-              </div>
-            </>
-          ) : videoModeInfo.mode === 'image-missing' ? (
-            <>
-              <span className="canvas-video-mode-icon">⚠</span>
-              <div className="canvas-video-mode-text">
-                <span className="canvas-video-mode-label">参考图缺失</span>
-                <span className="canvas-video-mode-desc">上游图片尚无可用 URL，请先生成图片</span>
-              </div>
-            </>
-          ) : videoModeInfo.mode === 'video-to-video' ? (
-            <>
-              {videoModeInfo.thumbnailUrl ? (
-                <img
-                  src={videoModeInfo.thumbnailUrl}
-                  alt="来源视频"
-                  className="canvas-video-mode-thumb"
-                />
-              ) : <span className="canvas-video-mode-icon">🎬</span>}
-              <div className="canvas-video-mode-text">
-                <span className="canvas-video-mode-label">来源视频：{videoModeInfo.sourceNodeTitle ?? 'Video'}</span>
-                <span className="canvas-video-mode-desc">视频到视频生成暂未开放，将以文生视频模式运行</span>
-              </div>
-            </>
+      <div className="canvas-node-dialog-fixed-header">
+        <div className="canvas-node-dialog-mode">
+          {videoModeInfo && videoModeInfo.mode !== 'text-to-video' ? (
+            <div className={`canvas-video-mode-bar${videoModeInfo.mode === 'image-to-video' ? ' is-image-to-video' : videoModeInfo.mode === 'image-missing' ? ' is-warning' : ''}`}>
+              {videoModeInfo.mode === 'image-to-video' ? (
+                <>
+                  {videoModeInfo.thumbnailUrl ? (
+                    <img
+                      src={videoModeInfo.thumbnailUrl}
+                      alt="参考图"
+                      className="canvas-video-mode-thumb"
+                    />
+                  ) : <span className="canvas-video-mode-icon">▦</span>}
+                  <div className="canvas-video-mode-text">
+                    <span className="canvas-video-mode-label">图生视频</span>
+                    <span className="canvas-video-mode-desc">参考图：{videoModeInfo.sourceNodeTitle ?? 'Image'}</span>
+                  </div>
+                </>
+              ) : videoModeInfo.mode === 'image-missing' ? (
+                <>
+                  <span className="canvas-video-mode-icon">⚠</span>
+                  <div className="canvas-video-mode-text">
+                    <span className="canvas-video-mode-label">参考图缺失</span>
+                    <span className="canvas-video-mode-desc">上游图片尚无可用 URL，请先生成图片</span>
+                  </div>
+                </>
+              ) : videoModeInfo.mode === 'video-to-video' ? (
+                <>
+                  {videoModeInfo.thumbnailUrl ? (
+                    <img
+                      src={videoModeInfo.thumbnailUrl}
+                      alt="来源视频"
+                      className="canvas-video-mode-thumb"
+                    />
+                  ) : <span className="canvas-video-mode-icon">🎬</span>}
+                  <div className="canvas-video-mode-text">
+                    <span className="canvas-video-mode-label">来源视频：{videoModeInfo.sourceNodeTitle ?? 'Video'}</span>
+                    <span className="canvas-video-mode-desc">视频到视频生成暂未开放，将以文生视频模式运行</span>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : taskInputModeLabel ? (
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', padding: '2px 0 4px', letterSpacing: '0.04em' }}>
+              {taskInputModeLabel}
+            </div>
           ) : null}
         </div>
-      ) : taskInputModeLabel ? (
-        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.28)', padding: '2px 0 4px', letterSpacing: '0.04em' }}>
-          {taskInputModeLabel}
-        </div>
-      ) : null}
 
-      <div className="canvas-prompt-input-wrap">
-        {promptInput}
-        {resultSummary ? (
-          <div className="canvas-prompt-result">{resultSummary}</div>
-        ) : null}
-        {errorMessage ? (
-          <div className="canvas-prompt-error">{errorMessage}</div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className={`canvas-node-dialog-expand ${activeToolId === 'close' ? 'is-showing-label' : ''}`}
+            aria-label="关闭节点面板"
+            title="关闭节点面板"
+            onMouseEnter={() => showToolLabel('close')}
+            onMouseLeave={() => hideToolLabel('close')}
+            onFocus={() => showToolLabel('close')}
+            onBlur={() => hideToolLabel('close')}
+          >
+            <span className="canvas-node-dialog-close-icon" aria-hidden="true" />
+            <span className="canvas-node-tool-label" aria-hidden="true">关闭面板</span>
+          </button>
         ) : null}
       </div>
 
-      {providerNotice && providerStatus !== 'available' ? (
-        <div className="canvas-provider-notice">
-          {providerNotice}
-        </div>
-      ) : null}
-
-      <div className="canvas-prompt-footer-nav">
-        <div className="canvas-prompt-footer-row1">
-          {providerItem ? (
-            <button
-              ref={(element) => { footerButtonRefs.current[providerItem.id] = element }}
-              type="button"
-              onClick={() => setOpenFooterId((current) => (current === providerItem.id ? null : providerItem.id))}
-              className={`canvas-footer-button is-primary-pill ${openFooterId === providerItem.id ? 'is-active' : ''}`}
-            >
-              <span className="canvas-footer-button-icon">◌</span>
-              <span className="canvas-footer-button-value">{modelLabel}</span>
-            </button>
+      <div className="canvas-node-dialog-scroll-content">
+        <div className="canvas-prompt-input-wrap">
+          {promptInput}
+          {resultSummary ? (
+            <div className="canvas-prompt-result">{resultSummary}</div>
           ) : null}
-          {onGenerate ? (
-            <button
-              type="button"
-              onClick={onGenerate}
-              disabled={generateDisabled}
-              className="create-iridescent-button canvas-generate-button"
-              aria-label={generateLabel}
-            >
-              <span className="canvas-credit-pill">{generateLabel === '生成' && estimatedCredits != null ? `◉ ${estimatedCredits}` : generateLabel}</span>
-              <span className="canvas-send-icon">↑</span>
-            </button>
+          {errorMessage ? (
+            <div className="canvas-prompt-error">{errorMessage}</div>
           ) : null}
         </div>
+      </div>
 
-        <div className="canvas-prompt-footer-row2">
-          <button
-            ref={(element) => { footerButtonRefs.current.params = element }}
-            type="button"
-            onClick={() => setOpenFooterId((current) => (current === 'params' ? null : 'params'))}
-            className={`canvas-footer-button is-reference-pill ${openFooterId === 'params' ? 'is-active' : ''}`}
-            aria-label="参数"
-            title="参数"
-          >
-            <span className="canvas-footer-param-chip">{ratio ?? '16:9'}</span>
-            <span className="canvas-footer-param-chip">{paramQuality}</span>
-            <span className="canvas-footer-param-chip">{paramDuration}</span>
-            {paramAudio ? <span className="canvas-footer-param-chip">♫</span> : null}
-          </button>
-          {estimatedCredits != null && (
-            <span className="canvas-footer-chip-pill">{estimatedCredits} credits</span>
-          )}
+      <div className="canvas-node-dialog-fixed-footer">
+        {providerNotice && providerStatus !== 'available' ? (
+          <div className="canvas-provider-notice">
+            {providerNotice}
+          </div>
+        ) : null}
+
+        <div className="canvas-prompt-footer-nav">
+          <div className="canvas-prompt-footer-row1">
+            {providerItem ? (
+              <button
+                ref={(element) => { footerButtonRefs.current[providerItem.id] = element }}
+                type="button"
+                onClick={() => setOpenFooterId((current) => (current === providerItem.id ? null : providerItem.id))}
+                className={`canvas-footer-button is-primary-pill ${openFooterId === providerItem.id ? 'is-active' : ''}`}
+              >
+                <span className="canvas-footer-button-icon">◌</span>
+                <span className="canvas-footer-button-value">{modelLabel}</span>
+              </button>
+            ) : null}
+            {onGenerate ? (
+              <button
+                type="button"
+                onClick={onGenerate}
+                disabled={generateDisabled}
+                className="create-iridescent-button canvas-generate-button"
+                aria-label={generateLabel}
+              >
+                <span className="canvas-credit-pill">{generateLabel === '生成' && estimatedCredits != null ? `◉ ${estimatedCredits}` : generateLabel}</span>
+                <span className="canvas-send-icon">↑</span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="canvas-prompt-footer-row2">
+            <button
+              ref={(element) => { footerButtonRefs.current.params = element }}
+              type="button"
+              onClick={() => setOpenFooterId((current) => (current === 'params' ? null : 'params'))}
+              className={`canvas-footer-button is-reference-pill ${openFooterId === 'params' ? 'is-active' : ''}`}
+              aria-label="参数"
+              title="参数"
+            >
+              <span className="canvas-footer-param-chip">{ratio ?? '16:9'}</span>
+              <span className="canvas-footer-param-chip">{paramQuality}</span>
+              <span className="canvas-footer-param-chip">{paramDuration}</span>
+              {paramAudio ? <span className="canvas-footer-param-chip">♫</span> : null}
+            </button>
+            {estimatedCredits != null && (
+              <span className="canvas-footer-chip-pill">{estimatedCredits} credits</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
