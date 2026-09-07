@@ -23,7 +23,9 @@ type StorageOperation = 'getItem' | 'setItem' | 'removeItem'
 
 function installStorage(throwOn?: StorageOperation): Map<string, string> {
   const values = new Map<string, string>()
-  originalWindowDescriptor ??= Object.getOwnPropertyDescriptor(globalThis, 'window')
+  if (!windowOverrideInstalled) {
+    originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  }
   windowOverrideInstalled = true
 
   Object.defineProperty(globalThis, 'window', {
