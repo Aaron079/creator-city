@@ -147,6 +147,10 @@ test('uses the taller fixed-surface height only for the task category', () => {
   assert.notEqual(start, -1)
   assert.match(layoutSource, /activeNodeContextCategory === 'task' \? 282 : 210/)
   assert.match(layoutSource, /dialogHeight: nodeContextDialogHeight/)
+  assert.match(
+    layoutSource,
+    /\}, \[[\s\S]*?\bactiveNodeContextCategory\b[\s\S]*?\]\)\s*$/,
+  )
 })
 
 test('uses node-anchored geometry without zoom-scaled dialog placement', () => {
