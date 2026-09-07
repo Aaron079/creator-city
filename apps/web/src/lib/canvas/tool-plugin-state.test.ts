@@ -6,6 +6,7 @@ import {
   getDefaultRegisteredToolState,
   getNodePromptBoosterKey,
   loadRegisteredToolState,
+  persistPromptBoosterSelectionForTarget as persistPromptBoosterSelection,
   saveRegisteredToolStateValue,
 } from './tool-plugin-state'
 import {
@@ -194,6 +195,71 @@ describe('tool plugin state', () => {
     assert.equal(values.has(sourceKey), false)
     assert.equal(values.has(childKey), true)
     assert.equal(values.has(getNodeCameraSettingsKey(projectId, sourceNodeId)), true)
+  })
+
+  test('persists and clears only the current node target when the lock switches nodes', () => {
+    const values = installStorage()
+    const nodeAKey = getNodePromptBoosterKey('project-a', 'node-a')
+    const nodeBKey = getNodePromptBoosterKey('project-a', 'node-b')
+    const nodeAValue = JSON.stringify({ suggestionId: 'suggestion-a', title: 'Node A' })
+    const nodeBValue = JSON.stringify({ suggestionId: 'suggestion-b', title: 'Node B' })
+
+    persistPromptBoosterSelection(
+      { projectId: 'project-a', nodeId: 'node-a' },
+      { suggestionId: 'suggestion-a', title: 'Node A' },
+    )
+    assert.deepEqual([...values.entries()], [[nodeAKey, nodeAValue]])
+
+    persistPromptBoosterSelection(
+      { projectId: 'project-a', nodeId: 'node-b' },
+      { suggestionId: 'suggestion-b', title: 'Node B' },
+    )
+    assert.deepEqual([...values.entries()], [
+      [nodeAKey, nodeAValue],
+      [nodeBKey, nodeBValue],
+    ])
+
+    persistPromptBoosterSelection({ projectId: 'project-a', nodeId: 'node-b' }, null)
+    assert.deepEqual([...values.entries()], [[nodeAKey, nodeAValue]])
+  })
+
+  test('persists and clears only the current project target when the lock switches projects', () => {
+    const values = installStorage()
+    const projectAKey = getNodePromptBoosterKey('project-a', 'node-shared')
+    const projectBKey = getNodePromptBoosterKey('project-b', 'node-shared')
+    const projectAValue = JSON.stringify({ suggestionId: 'suggestion-a', title: 'Project A' })
+    const projectBValue = JSON.stringify({ suggestionId: 'suggestion-b', title: 'Project B' })
+
+    persistPromptBoosterSelection(
+      { projectId: 'project-a', nodeId: 'node-shared' },
+      { suggestionId: 'suggestion-a', title: 'Project A' },
+    )
+    persistPromptBoosterSelection(
+      { projectId: 'project-b', nodeId: 'node-shared' },
+      { suggestionId: 'suggestion-b', title: 'Project B' },
+    )
+    assert.deepEqual([...values.entries()], [
+      [projectAKey, projectAValue],
+      [projectBKey, projectBValue],
+    ])
+
+    persistPromptBoosterSelection({ projectId: 'project-b', nodeId: 'node-shared' }, null)
+    assert.deepEqual([...values.entries()], [[projectAKey, projectAValue]])
+  })
+
+  test('does not mutate storage for incomplete Prompt Booster targets', () => {
+    const values = installStorage()
+    const existingKey = getNodePromptBoosterKey('project-a', 'node-a')
+    const existingValue = JSON.stringify({ suggestionId: 'existing', title: 'Existing' })
+    const selection = { suggestionId: 'suggestion-a', title: 'Node A' }
+    values.set(existingKey, existingValue)
+
+    persistPromptBoosterSelection({ projectId: null, nodeId: 'node-a' }, selection)
+    persistPromptBoosterSelection({ projectId: 'project-a', nodeId: undefined }, selection)
+    persistPromptBoosterSelection({ projectId: '', nodeId: 'node-a' }, null)
+    persistPromptBoosterSelection({ projectId: 'project-a', nodeId: '' }, null)
+
+    assert.deepEqual([...values.entries()], [[existingKey, existingValue]])
   })
 
   test('copies Prompt Booster only to the child without rewriting the source', () => {

@@ -237,10 +237,10 @@ import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
 import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { composeRegisteredToolPrompt, normalizeCanvasToolPluginNodeKind } from '@/lib/canvas/tool-plugin-registry'
 import {
-  clearRegisteredToolStateValue,
   copyRegisteredToolState,
   getDefaultRegisteredToolState,
   loadRegisteredToolState,
+  persistPromptBoosterSelectionForTarget,
   saveRegisteredToolStateValue,
   type PromptBoosterSelection,
 } from '@/lib/canvas/tool-plugin-state'
@@ -5197,7 +5197,7 @@ export function VisualCanvasWorkspace({
     if (activeNode.ratio) {
       setPromptRatio(activeNode.ratio)
     }
-    // Load per-node camera/lighting so chips + panel show this node's settings
+    // Load registered node tool state so chips + panel show this node's settings
     if (projectId) {
       const toolState = loadRegisteredToolState(projectId, activeNode.id)
       setCameraSettings(toolState.camera)
@@ -5209,7 +5209,7 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     setDialogError(null)
-    // Load per-node camera/lighting so generation dialog chips show the editing node's settings
+    // Load registered node tool state so generation dialog chips show the editing node's settings
     if (editingNodeId && projectId) {
       const toolState = loadRegisteredToolState(projectId, editingNodeId)
       setCameraSettings(toolState.camera)
@@ -11117,13 +11117,13 @@ export function VisualCanvasWorkspace({
               persistedSelection={promptBoosterSelection}
               onSelectionChange={(selection) => {
                 setPromptBoosterSelection(selection)
-                const targetId = lockedNodeToolContext?.targetNodeId
-                if (!projectId || !targetId) return
-                if (selection) {
-                  saveRegisteredToolStateValue(projectId, targetId, 'prompt-booster', selection)
-                  return
-                }
-                clearRegisteredToolStateValue(projectId, targetId, 'prompt-booster')
+                persistPromptBoosterSelectionForTarget(
+                  {
+                    projectId: lockedNodeToolContext?.projectId,
+                    nodeId: lockedNodeToolContext?.targetNodeId,
+                  },
+                  selection,
+                )
               }}
               onAppendPrompt={(nodeId, appendText) => {
                 const target = nodes.find((n) => n.id === nodeId)

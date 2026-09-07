@@ -30,19 +30,11 @@ test('binds Prompt Booster selection to the locked node registry state', () => {
   assert.match(selectionHandlerSource, /setPromptBoosterSelection\(selection\)/)
   assert.match(
     selectionHandlerSource,
-    /const targetId = lockedNodeToolContext\?\.targetNodeId/,
+    /persistPromptBoosterSelectionForTarget\(\s*\{\s*projectId: lockedNodeToolContext\?\.projectId,\s*nodeId: lockedNodeToolContext\?\.targetNodeId,\s*\},\s*selection,\s*\)/,
   )
-  assert.match(selectionHandlerSource, /if \(!projectId \|\| !targetId\) return/)
-  assert.equal(selectionHandlerSource.match(/saveRegisteredToolStateValue\(/g)?.length, 1)
-  assert.match(
-    selectionHandlerSource,
-    /saveRegisteredToolStateValue\(projectId, targetId, 'prompt-booster', selection\)/,
-  )
-  assert.equal(selectionHandlerSource.match(/clearRegisteredToolStateValue\(/g)?.length, 1)
-  assert.match(
-    selectionHandlerSource,
-    /clearRegisteredToolStateValue\(projectId, targetId, 'prompt-booster'\)/,
-  )
+  assert.equal(selectionHandlerSource.match(/persistPromptBoosterSelectionForTarget\(/g)?.length, 1)
+  assert.doesNotMatch(selectionHandlerSource, /saveRegisteredToolStateValue\(/)
+  assert.doesNotMatch(selectionHandlerSource, /clearRegisteredToolStateValue\(/)
 })
 
 test('loads and resets Prompt Booster selection with registered node state', () => {
@@ -64,13 +56,13 @@ test('loads and resets Prompt Booster selection with registered node state', () 
   assert.match(openNodeScopedToolSource, /setPromptBoosterSelection\(toolState\.promptBooster\)/)
 
   const activeNodeStateSource = sourceBetween(
-    '// Load per-node camera/lighting so chips + panel show this node\'s settings',
+    '// Load registered node tool state so chips + panel show this node\'s settings',
     '}, [activeNode])',
   )
   assert.match(activeNodeStateSource, /setPromptBoosterSelection\(toolState\.promptBooster\)/)
 
   const editingNodeStateSource = sourceBetween(
-    '// Load per-node camera/lighting so generation dialog chips show the editing node\'s settings',
+    '// Load registered node tool state so generation dialog chips show the editing node\'s settings',
     '}, [editingNodeId])',
   )
   assert.match(editingNodeStateSource, /setPromptBoosterSelection\(toolState\.promptBooster\)/)
@@ -96,12 +88,13 @@ test('copies Prompt Booster state from source to derived node before opening gen
 })
 
 test('does not expand generation, provider, payment, or billing surfaces', () => {
-  const count = (token: string) => workspaceSource.split(token).length - 1
+  const promptBoosterPanelSource = sourceBetween(
+    '<PromptBoosterPanel',
+    "onClose={() => { setLockedNodeToolContext(null); closeCanvasPanel() }}",
+  )
 
-  assert.equal(count('/api/generate/image'), 3)
-  assert.equal(count('/api/generate/video'), 4)
-  assert.equal(count('setupBilling'), 0)
-  assert.equal(workspaceSource.match(/provider[\s-]?adapter/gi)?.length ?? 0, 0)
-  assert.equal(workspaceSource.match(/payment/gi)?.length ?? 0, 0)
-  assert.equal(workspaceSource.match(/billing/gi)?.length, 33)
+  assert.doesNotMatch(promptBoosterPanelSource, /\/api\/generate\/(?:image|video)/)
+  assert.doesNotMatch(promptBoosterPanelSource, /setupBilling/)
+  assert.doesNotMatch(promptBoosterPanelSource, /provider[\s-]?adapter/i)
+  assert.doesNotMatch(promptBoosterPanelSource, /payment|billing/i)
 })

@@ -20,6 +20,11 @@ export type PromptBoosterSelection = Readonly<{
   title: string
 }>
 
+export type PromptBoosterStateTarget = Readonly<{
+  projectId: string | null | undefined
+  nodeId: string | null | undefined
+}>
+
 export type RegisteredToolStatePluginId =
   | 'camera-control'
   | 'scene-lighting'
@@ -181,6 +186,21 @@ export function clearRegisteredToolStateValue(
   } catch {
     // Storage may be unavailable.
   }
+}
+
+export function persistPromptBoosterSelectionForTarget(
+  target: PromptBoosterStateTarget,
+  selection: PromptBoosterSelection | null,
+): void {
+  const { projectId, nodeId } = target
+  if (!projectId || !nodeId) return
+
+  if (selection) {
+    saveRegisteredToolStateValue(projectId, nodeId, 'prompt-booster', selection)
+    return
+  }
+
+  clearRegisteredToolStateValue(projectId, nodeId, 'prompt-booster')
 }
 
 export function copyRegisteredToolState(
