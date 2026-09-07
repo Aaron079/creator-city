@@ -8541,6 +8541,11 @@
   grid-row: 1;
 }
 
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-top > [data-no-node-drag='true']) {
+  flex: 0 0 min(340px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 32px));
+}
+
 .scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-prompt-box.is-node) {
   grid-column: 1 / -1;
   grid-row: 2;
@@ -8660,6 +8665,7 @@
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 2px;
 }
 

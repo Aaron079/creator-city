@@ -131,19 +131,53 @@ test('reserves navigation height and gap while compacting fixed controls in a co
   )
 })
 
-test('shrinks only the prompt allowance after compacting controls when the stage is too short', () => {
+test('keeps prompt chrome reachable with one local reference and billing controls in a 390x300 stage', () => {
+  const stage = { left: 0, top: 0, right: 390, bottom: 300 }
+  const sizing = getCanvasTaskDialogSizing({
+    stageHeight: stage.bottom - stage.top,
+    fixedTopHeight: 64,
+    fixedBottomHeight: 72,
+    promptChromeHeight: 96,
+  })
+
+  assert.deepEqual(sizing, {
+    height: 232,
+    maxHeight: 232,
+    compactFixedControls: true,
+    promptBodyHeight: 64,
+  })
+
+  const node = { left: 71, top: 64, width: 248, height: 220 }
+  const firstLayout = getCanvasNodeContextSurfaceLayout({ node, stage, dialogHeight: sizing.height })
+  const settledLayout = getCanvasNodeContextSurfaceLayout({
+    node: { ...node, top: node.top + firstLayout.panDeltaY },
+    stage,
+    dialogHeight: sizing.height,
+  })
+
+  assert.deepEqual(
+    { width: settledLayout.dialog.width, height: settledLayout.dialog.height },
+    { width: 358, height: 232 },
+  )
+  assert.equal(
+    settledLayout.dialog.top,
+    settledLayout.navigation.top + settledLayout.navigation.height + 8,
+  )
+})
+
+test('reports compact mode without promising prompt space when the stage is physically impossible', () => {
   assert.deepEqual(
     getCanvasTaskDialogSizing({
-      stageHeight: 300,
-      fixedTopHeight: 70,
-      fixedBottomHeight: 90,
-      promptChromeHeight: 100,
+      stageHeight: 120,
+      fixedTopHeight: 64,
+      fixedBottomHeight: 72,
+      promptChromeHeight: 96,
     }),
     {
-      height: 232,
-      maxHeight: 232,
+      height: 52,
+      maxHeight: 52,
       compactFixedControls: true,
-      promptBodyHeight: 42,
+      promptBodyHeight: 0,
     },
   )
 })
@@ -280,6 +314,14 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
   assert.match(
     finalRules,
     /\.canvas-node-dialog-billing-controls\) \{[^}]*display: flex;[^}]*overflow-x: auto;/,
+  )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-controls\.is-top > \[data-no-node-drag='true'\]\) \{[^}]*flex: 0 0 min\(340px, calc\(100vw - 32px\)\);[^}]*width: min\(340px, calc\(100vw - 32px\)\);/,
+  )
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog-account-list\) \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;/,
   )
   assert.match(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls/)
 })
