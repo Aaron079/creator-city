@@ -145,8 +145,59 @@ test('uses the taller fixed-surface height only for the task category', () => {
   const layoutSource = visualCanvasWorkspaceSource.slice(start, end)
 
   assert.notEqual(start, -1)
-  assert.match(layoutSource, /activeNodeContextCategory === 'task' \? 282 : 210/)
+  assert.match(layoutSource, /activeNodeContextCategory === 'task' \? nodeTaskDialogHeight : 210/)
   assert.match(layoutSource, /dialogHeight: nodeContextDialogHeight/)
+})
+
+test('keeps node task shell static and assigns scrolling only to prompt content', () => {
+  const marker = '/* Node task dialog fixed surfaces */'
+  const markerIndex = canvasModuleSource.indexOf(marker)
+
+  assert.notEqual(markerIndex, -1, 'missing final fixed-surface CSS marker')
+
+  const finalRules = canvasModuleSource.slice(markerIndex)
+  assert.match(finalRules, /\.canvas-node-dialog\.create-floating-console\) \{[\s\S]*?overflow: hidden;/)
+  assert.match(finalRules, /\.canvas-node-dialog-scroll-content\) \{[\s\S]*?overflow-y: auto;/)
+  assert.match(finalRules, /\.canvas-node-dialog-fixed-header\) \{[\s\S]*?flex: 0 0 auto;/)
+  assert.match(finalRules, /\.canvas-node-dialog-fixed-footer\) \{[\s\S]*?flex: 0 0 auto;/)
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog \.canvas-prompt-box\.is-node\) \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\) auto;/,
+  )
+  assert.doesNotMatch(
+    finalRules,
+    /\.canvas-node-dialog \.canvas-prompt-box\.is-node\) \{[^}]*height: 100%;/,
+  )
+})
+
+test('keeps reference and billing controls in fixed regions outside the prompt box', () => {
+  const topControlsStart = visualCanvasWorkspaceSource.indexOf('className="canvas-node-dialog-fixed-controls is-top"')
+  const promptStart = visualCanvasWorkspaceSource.indexOf('<CanvasPromptBox', topControlsStart)
+  const bottomControlsStart = visualCanvasWorkspaceSource.indexOf('className="canvas-node-dialog-fixed-controls is-bottom"', promptStart)
+  const topControlsSource = visualCanvasWorkspaceSource.slice(topControlsStart, promptStart)
+  const bottomControlsSource = visualCanvasWorkspaceSource.slice(bottomControlsStart)
+
+  assert.notEqual(topControlsStart, -1, 'missing fixed reference-controls wrapper')
+  assert.ok(promptStart > topControlsStart, 'prompt box must follow fixed reference controls')
+  assert.ok(bottomControlsStart > promptStart, 'fixed billing controls must follow the prompt box')
+  assert.match(topControlsSource, /<UpstreamTaskStrip/)
+  assert.match(topControlsSource, /<LocalReferenceStrip/)
+  assert.match(bottomControlsSource, /SHOW_GENERATION_CONTEXT_CHIPS/)
+  assert.match(bottomControlsSource, /API 费用来源/)
+})
+
+test('expands only the task surface from its measured fixed-control stack', () => {
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /const \[nodeTaskDialogHeight, setNodeTaskDialogHeight\] = useState\(282\)/,
+  )
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /activeNodeContextCategory === 'task' \? nodeTaskDialogHeight : 210/,
+  )
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedTopRef/)
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskDialogFixedBottomRef/)
+  assert.match(visualCanvasWorkspaceSource, /new ResizeObserver\(measureTaskDialogHeight\)/)
 })
 
 test('uses node-anchored geometry without zoom-scaled dialog placement', () => {

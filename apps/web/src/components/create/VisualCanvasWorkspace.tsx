@@ -2611,7 +2611,10 @@ export function VisualCanvasWorkspace({
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeNodeContextCategory, setActiveNodeContextCategory] = useState<NodeContextCategory | null>(null)
+  const [nodeTaskDialogHeight, setNodeTaskDialogHeight] = useState(282)
   const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
+  const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
+  const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -10100,7 +10103,44 @@ export function VisualCanvasWorkspace({
     return true
   }, [flushLocalSnapshot, guardStoryboardDirectorNavigation])
 
-  const nodeContextDialogHeight = activeNodeContextCategory === 'task' ? 282 : 210
+  useEffect(() => {
+    if (activeNodeContextCategory !== 'task' || !editingNode) {
+      setNodeTaskDialogHeight(282)
+      return
+    }
+
+    const fixedTop = nodeTaskDialogFixedTopRef.current
+    const fixedBottom = nodeTaskDialogFixedBottomRef.current
+    const dialog = fixedTop?.parentElement
+    const promptHeader = dialog?.querySelector<HTMLElement>('.canvas-node-dialog-fixed-header')
+    const promptFooter = dialog?.querySelector<HTMLElement>('.canvas-node-dialog-fixed-footer')
+    if (!fixedTop || !fixedBottom || !promptHeader || !promptFooter) return
+
+    const measureTaskDialogHeight = () => {
+      const fixedHeight = fixedTop.offsetHeight
+        + fixedBottom.offsetHeight
+        + promptHeader.offsetHeight
+        + promptFooter.offsetHeight
+      const preferredHeight = Math.max(282, Math.ceil(fixedHeight + 58))
+      const stageHeight = canvasStageBounds
+        ? Math.max(0, canvasStageBounds.bottom - canvasStageBounds.top - 32)
+        : preferredHeight
+      const nextHeight = Math.min(preferredHeight, stageHeight)
+      setNodeTaskDialogHeight((current) => current === nextHeight ? current : nextHeight)
+    }
+
+    measureTaskDialogHeight()
+    if (typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(measureTaskDialogHeight)
+    observer.observe(fixedTop)
+    observer.observe(fixedBottom)
+    observer.observe(promptHeader)
+    observer.observe(promptFooter)
+    return () => observer.disconnect()
+  }, [activeNodeContextCategory, canvasStageBounds, editingNode])
+
+  const nodeContextDialogHeight = activeNodeContextCategory === 'task' ? nodeTaskDialogHeight : 210
   const nodeContextSurfaceLayout = useMemo(() => {
     const node = activeNode
     if (!node || typeof window === 'undefined') return undefined
@@ -10135,7 +10175,7 @@ export function VisualCanvasWorkspace({
     }
     if (nodeContextSurfaceLayout.panDeltaY === 0) return
 
-    const adjustmentKey = `${activeNode.id}:${activeNodeContextCategory}`
+    const adjustmentKey = `${activeNode.id}:${activeNodeContextCategory}:${nodeContextDialogHeight}`
     if (nodeContextPanAdjustmentKeyRef.current === adjustmentKey) return
     nodeContextPanAdjustmentKeyRef.current = adjustmentKey
     const frame = window.requestAnimationFrame(() => {
@@ -10153,7 +10193,7 @@ export function VisualCanvasWorkspace({
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [activeNode, activeNodeContextCategory, canvasZoom, edges, nodeContextSurfaceLayout, nodes])
+  }, [activeNode, activeNodeContextCategory, canvasZoom, edges, nodeContextDialogHeight, nodeContextSurfaceLayout, nodes])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || editingNode.id !== activeNode?.id || !nodeContextSurfaceLayout) return undefined
@@ -12156,21 +12196,23 @@ export function VisualCanvasWorkspace({
           style={{ ...nodeDialogStyle, maxHeight: 'calc(100vh - 32px)' }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <UpstreamTaskStrip
-            targetNodeId={editingNode.id}
-            nodes={nodes}
-            edges={edges}
-          />
-          <LocalReferenceStrip
-            nodeKind={editingNode.kind}
-            refs={dialogLocalRefs}
-            scriptInputs={dialogScriptInputs}
-            onImageUpload={(file) => { void handleDialogReferenceUpload(file) }}
-            onRemoveRef={handleDialogReferenceRemove}
-            onScriptUpload={(file) => { void handleDialogScriptUpload(file) }}
-            onRemoveScript={handleDialogScriptRemove}
-            onApplyScript={handleDialogScriptApply}
-          />
+          <div ref={nodeTaskDialogFixedTopRef} className="canvas-node-dialog-fixed-controls is-top">
+            <UpstreamTaskStrip
+              targetNodeId={editingNode.id}
+              nodes={nodes}
+              edges={edges}
+            />
+            <LocalReferenceStrip
+              nodeKind={editingNode.kind}
+              refs={dialogLocalRefs}
+              scriptInputs={dialogScriptInputs}
+              onImageUpload={(file) => { void handleDialogReferenceUpload(file) }}
+              onRemoveRef={handleDialogReferenceRemove}
+              onScriptUpload={(file) => { void handleDialogScriptUpload(file) }}
+              onRemoveScript={handleDialogScriptRemove}
+              onApplyScript={handleDialogScriptApply}
+            />
+          </div>
           <CanvasPromptBox
             layout="node"
             multiline
@@ -12244,12 +12286,13 @@ export function VisualCanvasWorkspace({
             onClose={() => closeCanvasPanel()}
             panelPortalTarget={panelPortalTarget}
           />
-          {SHOW_GENERATION_CONTEXT_CHIPS && (editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
-            hasBibleContent({ characterBible, sceneBible, styleBible }) ||
-            editingNode.kind === 'image' ||
-            editingNode.kind === 'video'
-          ) && (
-            <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
+          <div ref={nodeTaskDialogFixedBottomRef} className="canvas-node-dialog-fixed-controls is-bottom">
+            {SHOW_GENERATION_CONTEXT_CHIPS && (editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
+              hasBibleContent({ characterBible, sceneBible, styleBible }) ||
+              editingNode.kind === 'image' ||
+              editingNode.kind === 'video'
+            ) && (
+              <div className="border-t border-white/[0.06] px-4 pt-2.5 pb-2 flex flex-wrap gap-1.5">
               {/* Bible context chips — only when content is present */}
               {characterBible.characters.filter((c) => c.name?.trim()).length > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/70 bg-violet-500/[0.07] border border-violet-500/20 rounded-full px-2.5 py-0.5">
@@ -12286,10 +12329,10 @@ export function VisualCanvasWorkspace({
                   💡 {hasSceneLightingContext(sceneLightingSettings) ? `场景光线 ×${activeSceneLightingCount(sceneLightingSettings)}` : '场景光线'}
                 </button>
               )}
-            </div>
-          )}
-          {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
-            <div className="border-t border-white/[0.06] px-3 pb-2 pt-2 space-y-1.5">
+              </div>
+            )}
+            {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
+              <div className="canvas-node-dialog-billing-controls border-t border-white/[0.06] px-3 pb-2 pt-2 space-y-1.5">
               <p className="text-[9px] font-semibold uppercase tracking-wider text-white/25">API 费用来源</p>
               {/* Billing mode icon cards */}
               <div className="grid grid-cols-2 gap-1">
@@ -12363,7 +12406,7 @@ export function VisualCanvasWorkspace({
                         return (
                           <>
                             {/* Visual account card list */}
-                            <div className="space-y-1">
+                            <div className="canvas-node-dialog-account-list space-y-1">
                               {matchingAccounts.map((a) => {
                                 const isSelected = selectedUserAccountId === a.id
                                 const hasEndpoint = Boolean(a.fieldMeta?.endpointId)
@@ -12402,8 +12445,9 @@ export function VisualCanvasWorkspace({
                   )}
                 </>
               )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
 

@@ -8499,3 +8499,105 @@
   cursor: not-allowed;
   opacity: 0.56;
 }
+
+/* Node task dialog fixed surfaces */
+.scope :global(.canvas-node-dialog.create-floating-console) {
+  display: flex;
+  max-height: calc(100vh - 32px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 0;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls) {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+.scope :global(.canvas-node-dialog-fixed-header) {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 12px;
+}
+
+.scope :global(.canvas-node-dialog-mode) {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+}
+
+.scope :global(.canvas-node-dialog-scroll-content) {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 12px;
+  scrollbar-gutter: stable;
+}
+
+.scope :global(.canvas-node-dialog-scroll-content .canvas-prompt-input-wrap) {
+  min-height: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.scope :global(.canvas-node-dialog-scroll-content .canvas-prompt-input) {
+  min-height: 100%;
+  height: auto;
+  overflow-y: hidden;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  field-sizing: content;
+}
+
+.scope :global(.canvas-node-dialog-fixed-footer) {
+  display: block;
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 23, 29, 0.98);
+  padding: 6px 12px 8px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav) {
+  gap: 4px;
+  margin-top: 0;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row1) {
+  min-height: 32px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2) {
+  min-height: 26px;
+}
+
+.scope :global(.canvas-node-dialog-account-list) {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.scope :global(.canvas-node-dialog-account-list > button) {
+  flex: 0 0 min(260px, calc(100vw - 64px));
+  width: min(260px, calc(100vw - 64px));
+  margin-top: 0;
+  border-radius: 6px;
+}
