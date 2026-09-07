@@ -351,4 +351,3 @@ Do not run `git push` or deploy. After explicit authorization, push the current 
 - Existing optional controls are preserved and must be verified as reachable before completion.
 - `dialogHeight`, `canvas-node-dialog-fixed-header`, `canvas-node-dialog-scroll-content`, and `canvas-node-dialog-fixed-footer` are consistent across tests, TypeScript, and CSS.
 - It does not touch backend, accounts, billing semantics, providers, schemas, environments, or packages.
-
