@@ -19,7 +19,9 @@ const childNodeId = 'node-child'
 let originalWindowDescriptor: PropertyDescriptor | undefined
 let windowOverrideInstalled = false
 
-function installStorage(): Map<string, string> {
+type StorageOperation = 'getItem' | 'setItem' | 'removeItem'
+
+function installStorage(throwOn?: StorageOperation): Map<string, string> {
   const values = new Map<string, string>()
   originalWindowDescriptor ??= Object.getOwnPropertyDescriptor(globalThis, 'window')
   windowOverrideInstalled = true
@@ -28,9 +30,18 @@ function installStorage(): Map<string, string> {
     configurable: true,
     value: {
       localStorage: {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => values.set(key, value),
-        removeItem: (key: string) => values.delete(key),
+        getItem: (key: string) => {
+          if (throwOn === 'getItem') throw new Error('getItem unavailable')
+          return values.get(key) ?? null
+        },
+        setItem: (key: string, value: string) => {
+          if (throwOn === 'setItem') throw new Error('setItem unavailable')
+          values.set(key, value)
+        },
+        removeItem: (key: string) => {
+          if (throwOn === 'removeItem') throw new Error('removeItem unavailable')
+          values.delete(key)
+        },
       },
     },
   })
@@ -68,6 +79,45 @@ describe('tool plugin state', () => {
     installStorage()
 
     assert.equal(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, null)
+  })
+
+  test('returns null Prompt Booster state when storage reads throw', () => {
+    installStorage('getItem')
+
+    assert.equal(loadRegisteredToolState(projectId, sourceNodeId).promptBooster, null)
+  })
+
+  test('does not throw when Prompt Booster storage writes fail', () => {
+    installStorage('setItem')
+
+    assert.doesNotThrow(() => {
+      saveRegisteredToolStateValue(projectId, sourceNodeId, 'prompt-booster', {
+        suggestionId: 'suggestion-source',
+        title: 'Cinematic reveal',
+      })
+    })
+  })
+
+  test('does not throw when clearing Prompt Booster storage fails', () => {
+    installStorage('removeItem')
+
+    assert.doesNotThrow(() => {
+      clearRegisteredToolStateValue(projectId, sourceNodeId, 'prompt-booster')
+    })
+  })
+
+  test('does not throw when Prompt Booster storage reads or writes fail during copy', () => {
+    for (const operation of ['getItem', 'setItem'] as const) {
+      const values = installStorage(operation)
+      values.set(
+        getNodePromptBoosterKey(projectId, sourceNodeId),
+        JSON.stringify({ suggestionId: 'suggestion-source', title: 'Cinematic reveal' }),
+      )
+
+      assert.doesNotThrow(() => {
+        copyRegisteredToolState(projectId, sourceNodeId, childNodeId, 'prompt-booster')
+      })
+    }
   })
 
   test('keeps Prompt Booster selections isolated per node and restores them from storage', () => {
