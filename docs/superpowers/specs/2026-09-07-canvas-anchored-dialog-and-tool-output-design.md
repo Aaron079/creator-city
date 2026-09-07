@@ -1,6 +1,6 @@
 # Canvas Anchored Dialog and Tool Output Design
 
-**Status:** Founder-approved design, awaiting written-spec review
+**Status:** Founder-approved design, implementation plan ready
 
 ## Goal
 
@@ -98,10 +98,10 @@ frame.
 
 ## Opening and Positioning Behavior
 
-1. Selecting a display node opens its node category navigation and the compact
-   dialog underneath it.
-2. Selecting `Task`, `Tools`, or `Assets` replaces the category-specific
-   child-function choices and controls inside the already-open dialog.
+1. Selecting a display node opens its node category navigation underneath it.
+2. Selecting `Task`, `Tools`, or `Assets` opens the compact dialog below that
+   navigation and renders the category-specific child-function choices and
+   controls inside it.
 3. Selecting a child function replaces only the dialog's context, inputs,
    result label, and CTA.
 4. The preferred arrangement is always top-to-bottom: display node, navigation
