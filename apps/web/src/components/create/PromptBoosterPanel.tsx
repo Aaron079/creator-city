@@ -15,6 +15,7 @@ import {
   isBoostableNode,
   textAlreadyContains,
 } from '@/lib/canvas/prompt-booster'
+import type { PromptBoosterSelection } from '@/lib/canvas/tool-plugin-state'
 import { DirectorToolPanelFrame, type DirectorSourceNode } from '@/components/canvas/tools/DirectorToolPanelFrame'
 
 interface PromptBoosterPanelProps {
@@ -25,6 +26,8 @@ interface PromptBoosterPanelProps {
   onCreateDerived?: (nodeId: string, appendText: string, suggestionTitle?: string) => void
   onClose: () => void
   sourceNode?: DirectorSourceNode | null
+  persistedSelection?: PromptBoosterSelection | null
+  onSelectionChange?: (selection: PromptBoosterSelection | null) => void
 }
 
 const CHECK_STATUS_BADGE: Record<PromptBoostCheckStatus, { label: string; cls: string }> = {
@@ -75,6 +78,16 @@ function runAnalysis(node: PromptBoostNode | null): PromptBoostReport | null {
   })
 }
 
+export function restorePromptBoosterSelection(
+  report: PromptBoostReport | null,
+  persistedSelection?: PromptBoosterSelection | null,
+): PromptBoosterSelection | null {
+  if (!report || !persistedSelection) return null
+  const suggestion = report.suggestions.find((item) => item.id === persistedSelection.suggestionId)
+  if (!suggestion) return null
+  return { suggestionId: suggestion.id, title: suggestion.title }
+}
+
 export function PromptBoosterPanel({
   nodes,
   initialNodeId,
@@ -83,6 +96,8 @@ export function PromptBoosterPanel({
   onCreateDerived,
   onClose,
   sourceNode,
+  persistedSelection,
+  onSelectionChange,
 }: PromptBoosterPanelProps) {
   const supportedNodes = useMemo(() => nodes.filter(isBoostableNode), [nodes])
 
@@ -106,7 +121,9 @@ export function PromptBoosterPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [alreadyExistsId, setAlreadyExistsId] = useState<string | null>(null)
   const [copiedReport, setCopiedReport] = useState(false)
-  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null)
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(() => (
+    restorePromptBoosterSelection(report, persistedSelection)?.suggestionId ?? null
+  ))
 
   useEffect(() => {
     const node = nodes.find((n) => n.id === selectedNodeId) ?? null
@@ -114,8 +131,13 @@ export function PromptBoosterPanel({
     setDismissed(new Set())
     setAlreadyExistsId(null)
     setCopiedId(null)
-    setSelectedSuggestionId(null)
   }, [selectedNodeId, nodes])
+
+  useEffect(() => {
+    setSelectedSuggestionId(
+      restorePromptBoosterSelection(report, persistedSelection)?.suggestionId ?? null,
+    )
+  }, [report, persistedSelection])
 
   const handleReanalyze = useCallback(() => {
     const node = nodes.find((n) => n.id === selectedNodeId) ?? null
@@ -123,7 +145,6 @@ export function PromptBoosterPanel({
     setDismissed(new Set())
     setAlreadyExistsId(null)
     setCopiedId(null)
-    setSelectedSuggestionId(null)
   }, [selectedNodeId, nodes])
 
   const handleCopySuggestion = useCallback(async (sugg: PromptBoostSuggestion) => {
@@ -167,10 +188,28 @@ export function PromptBoosterPanel({
     onCreateDerived(selectedNodeId, sugg.appendText, sugg.title)
   }, [selectedNodeId, selectedSuggestionId, report, nodes, onCreateDerived])
 
+  const handleSelectSuggestion = useCallback((sugg: PromptBoostSuggestion) => {
+    if (selectedSuggestionId === sugg.id) {
+      setSelectedSuggestionId(null)
+      onSelectionChange?.(null)
+      return
+    }
+    setSelectedSuggestionId(sugg.id)
+    onSelectionChange?.({ suggestionId: sugg.id, title: sugg.title })
+  }, [onSelectionChange, selectedSuggestionId])
+
+  const handleClearSelection = useCallback(() => {
+    if (!selectedSuggestionId) return
+    setSelectedSuggestionId(null)
+    onSelectionChange?.(null)
+  }, [onSelectionChange, selectedSuggestionId])
+
   const handleDismiss = useCallback((id: string) => {
     setDismissed((prev) => new Set([...prev, id]))
-    if (selectedSuggestionId === id) setSelectedSuggestionId(null)
-  }, [selectedSuggestionId])
+    if (selectedSuggestionId !== id) return
+    setSelectedSuggestionId(null)
+    onSelectionChange?.(null)
+  }, [onSelectionChange, selectedSuggestionId])
 
   const handleCopyReport = useCallback(async () => {
     if (!report || !selectedNode) return
@@ -213,7 +252,7 @@ export function PromptBoosterPanel({
         primaryLabel="创建增强版本"
         primaryDisabled={!selectedSuggestionId || !onCreateDerived}
         onPrimary={handleCreateDerived}
-        onClear={selectedSuggestionId ? () => setSelectedSuggestionId(null) : undefined}
+        onClear={selectedSuggestionId ? handleClearSelection : undefined}
         onClose={onClose}
         ariaLabel="提示词增强 / Prompt Booster"
       >
@@ -357,7 +396,7 @@ export function PromptBoosterPanel({
                           hasDerivedMode={Boolean(onCreateDerived)}
                           onCopy={handleCopySuggestion}
                           onDirectAppend={handleDirectAppend}
-                          onSelect={(id) => setSelectedSuggestionId((prev) => prev === id ? null : id)}
+                          onSelect={handleSelectSuggestion}
                           onDismiss={handleDismiss}
                         />
                       ))}
@@ -407,7 +446,7 @@ interface SuggestionCardProps {
   hasDerivedMode: boolean
   onCopy: (sugg: PromptBoostSuggestion) => void
   onDirectAppend: (sugg: PromptBoostSuggestion) => void
-  onSelect: (id: string) => void
+  onSelect: (sugg: PromptBoostSuggestion) => void
   onDismiss: (id: string) => void
 }
 
@@ -457,7 +496,7 @@ function SuggestionCard({
         {hasDerivedMode ? (
           <button
             type="button"
-            onClick={() => onSelect(sugg.id)}
+            onClick={() => onSelect(sugg)}
             className={`flex-1 rounded-lg border py-1 text-[11px] transition ${
               alreadyExists
                 ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
