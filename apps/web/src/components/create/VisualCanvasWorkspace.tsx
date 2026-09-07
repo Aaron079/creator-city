@@ -236,7 +236,14 @@ import { appendCameraContextToPrompt, buildCameraPromptContext, buildCameraSumma
 import { getCameraModelLabel } from '@/lib/canvas/cameraModelDatabase'
 import { appendSceneLightingContextToPrompt, buildSceneLightingPromptContext, buildLightingSummaryText, hasSceneLightingContext, activeSceneLightingCount, type SceneLightingSettings } from '@/lib/canvas/sceneLightingPromptContext'
 import { composeRegisteredToolPrompt, normalizeCanvasToolPluginNodeKind } from '@/lib/canvas/tool-plugin-registry'
-import { copyRegisteredToolState, getDefaultRegisteredToolState, loadRegisteredToolState, saveRegisteredToolStateValue } from '@/lib/canvas/tool-plugin-state'
+import {
+  clearRegisteredToolStateValue,
+  copyRegisteredToolState,
+  getDefaultRegisteredToolState,
+  loadRegisteredToolState,
+  saveRegisteredToolStateValue,
+  type PromptBoosterSelection,
+} from '@/lib/canvas/tool-plugin-state'
 import { CinematicCameraControlPanel } from '@/components/create/CinematicCameraControlPanel'
 import { SceneLightingControlPanel } from '@/components/create/SceneLightingControlPanel'
 import { UpstreamTaskStrip } from '@/components/create/canvas/task/UpstreamTaskStrip'
@@ -2619,6 +2626,7 @@ export function VisualCanvasWorkspace({
   const [pendingAutoGenerateIds, setPendingAutoGenerateIds] = useState<string[]>([])
   const pendingAutoGenerateIdsRef = useRef<string[]>([])
   const [isPromptBoosterOpen, setIsPromptBoosterOpen] = useState(false)
+  const [promptBoosterSelection, setPromptBoosterSelection] = useState<PromptBoosterSelection | null>(() => getDefaultRegisteredToolState().promptBooster)
   const [isBatchRewriterOpen, setIsBatchRewriterOpen] = useState(false)
   const [isLookPackageOpen, setIsLookPackageOpen] = useState(false)
   const [isColorGradePaletteOpen, setIsColorGradePaletteOpen] = useState(false)
@@ -2935,6 +2943,7 @@ export function VisualCanvasWorkspace({
     const defaults = getDefaultRegisteredToolState()
     setCameraSettings(defaults.camera)
     setSceneLightingSettings(defaults.lighting)
+    setPromptBoosterSelection(defaults.promptBooster)
     try {
       const rawSkills = window.localStorage.getItem(getEnabledSkillsKey(projectId))
       const parsed = rawSkills ? JSON.parse(rawSkills) : null
@@ -3130,11 +3139,12 @@ export function VisualCanvasWorkspace({
 
   const openNodeScopedTool = useCallback(
     (panelId: CanvasModalId, node: VisualCanvasNode) => {
-      if (panelId === 'camera-control' || panelId === 'scene-lighting') {
+      if (panelId === 'camera-control' || panelId === 'scene-lighting' || panelId === 'prompt-booster') {
         directorTargetNodeIdRef.current = node.id
         const toolState = loadRegisteredToolState(projectId, node.id)
         setCameraSettings(toolState.camera)
         setSceneLightingSettings(toolState.lighting)
+        setPromptBoosterSelection(toolState.promptBooster)
       }
       // resetCanvasModalStates (called inside openCanvasPanel) sets lockedNodeToolContext to null.
       // Calling setLockedNodeToolContext(ctx) AFTER openCanvasPanel in the same event handler
@@ -5192,6 +5202,7 @@ export function VisualCanvasWorkspace({
       const toolState = loadRegisteredToolState(projectId, activeNode.id)
       setCameraSettings(toolState.camera)
       setSceneLightingSettings(toolState.lighting)
+      setPromptBoosterSelection(toolState.promptBooster)
       directorTargetNodeIdRef.current = activeNode.id
     }
   }, [activeNode])
@@ -5203,6 +5214,7 @@ export function VisualCanvasWorkspace({
       const toolState = loadRegisteredToolState(projectId, editingNodeId)
       setCameraSettings(toolState.camera)
       setSceneLightingSettings(toolState.lighting)
+      setPromptBoosterSelection(toolState.promptBooster)
       directorTargetNodeIdRef.current = editingNodeId
     }
   }, [editingNodeId])
@@ -11102,6 +11114,17 @@ export function VisualCanvasWorkspace({
               initialNodeId={boostTargetId ?? undefined}
               lockedNodeId={lockedNodeToolContext?.targetNodeId ?? undefined}
               sourceNode={boostSourceNode}
+              persistedSelection={promptBoosterSelection}
+              onSelectionChange={(selection) => {
+                setPromptBoosterSelection(selection)
+                const targetId = lockedNodeToolContext?.targetNodeId
+                if (!projectId || !targetId) return
+                if (selection) {
+                  saveRegisteredToolStateValue(projectId, targetId, 'prompt-booster', selection)
+                  return
+                }
+                clearRegisteredToolStateValue(projectId, targetId, 'prompt-booster')
+              }}
               onAppendPrompt={(nodeId, appendText) => {
                 const target = nodes.find((n) => n.id === nodeId)
                 if (!target) return
@@ -11149,6 +11172,7 @@ export function VisualCanvasWorkspace({
                     edgeToolIcon: '✨',
                   },
                 )
+                copyRegisteredToolState(projectId, sourceNode.id, node.id, 'prompt-booster')
                 openCanvasPanel('generation', { nodeId: node.id })
                 flushLocalSnapshot()
                 scheduleCanvasSave(0)
