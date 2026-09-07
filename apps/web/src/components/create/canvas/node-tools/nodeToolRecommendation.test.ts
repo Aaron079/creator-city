@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
   availableNodeTools,
+  contextNodeTools,
   recommendNodeTool,
 } from './nodeToolRecommendation'
 import { NODE_TOOL_REGISTRY } from './nodeToolRegistry'
@@ -71,5 +72,17 @@ describe('node tool recommendations', () => {
     })
 
     assert.equal(available.some((tool) => tool.openActionId === 'keyframe-extractor'), true)
+  })
+
+  test('keeps blocked transformations visible in the contextual tool list', () => {
+    const input = {
+      nodeKind: 'image' as const,
+      hasMediaResult: true,
+      caps: {},
+    }
+    const blockedItem = contextNodeTools(input).find((item) => item.tool.id === 'remove-background')
+
+    assert.equal(availableNodeTools(input).some((tool) => tool.id === 'remove-background'), false)
+    assert.equal(blockedItem?.unavailableReason, '主体抠图执行器尚不可用')
   })
 })

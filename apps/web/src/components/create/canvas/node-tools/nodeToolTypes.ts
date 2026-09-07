@@ -1,5 +1,13 @@
 export type NodeToolCategory = 'prompt-direction' | 'image-edit' | 'analysis-preview'
 export type NodeToolExecutionType = 'panel' | 'preview' | 'dialog'
+export type NodeToolOutputKind =
+  | 'configuration'
+  | 'structured-text'
+  | 'derived-image'
+  | 'derived-video'
+  | 'analysis'
+  | 'preview'
+  | 'generation'
 
 export interface NodeToolEntry {
   id: string
@@ -14,4 +22,8 @@ export interface NodeToolEntry {
   capabilityKey?: string
   available: boolean
   openActionId: string
+  outputKind: NodeToolOutputKind
+  outputLabel: string
+  primaryActionLabel: string
+  unavailableReason?: string
 }

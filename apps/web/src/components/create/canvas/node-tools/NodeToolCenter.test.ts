@@ -74,4 +74,33 @@ describe('NodeToolCenter recommendations', () => {
     recommended.props.onClick?.()
     assert.deepEqual(actions, ['camera-control'])
   })
+
+  test('labels configuration tools as task adjustments rather than generators', () => {
+    const tree = NodeToolCenter({
+      nodeKind: 'image',
+      hasMediaResult: true,
+      caps: {},
+      presentation: 'context-dialog',
+      onAction() {},
+    })
+    const visible = textContent(tree)
+
+    assert.match(visible, /摄影机控制/)
+    assert.match(visible, /调整任务参数/)
+    assert.doesNotMatch(visible, /摄影机控制.*生成图片/)
+  })
+
+  test('labels reference extraction as a derived image result', () => {
+    const tree = NodeToolCenter({
+      nodeKind: 'image',
+      hasMediaResult: true,
+      caps: {},
+      presentation: 'context-dialog',
+      onAction() {},
+    })
+    const visible = textContent(tree)
+
+    assert.match(visible, /分镜参考提取/)
+    assert.match(visible, /创建参考图节点/)
+  })
 })

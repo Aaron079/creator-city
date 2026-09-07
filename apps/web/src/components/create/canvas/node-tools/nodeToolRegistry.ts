@@ -14,6 +14,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'camera-control',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   {
     id: 'camera-lexicon',
@@ -27,6 +30,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'camera-lexicon',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   {
     id: 'scene-lighting',
@@ -40,6 +46,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'scene-lighting',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   {
     id: 'prompt-booster',
@@ -53,6 +62,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'prompt-booster',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   {
     id: 'script-segmentation',
@@ -66,6 +78,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'script-segmentation',
+    outputKind: 'structured-text',
+    outputLabel: '文本节点',
+    primaryActionLabel: '创建分场节点',
   },
   {
     id: 'narrative-beat-analysis',
@@ -79,6 +94,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'narrative-beat-analysis',
+    outputKind: 'structured-text',
+    outputLabel: '文本节点',
+    primaryActionLabel: '创建节拍节点',
   },
   {
     id: 'shot-list-builder',
@@ -92,6 +110,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'shot-list-builder',
+    outputKind: 'structured-text',
+    outputLabel: '文本节点',
+    primaryActionLabel: '创建分镜清单',
   },
   {
     id: 'storyboard-director',
@@ -105,6 +126,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'storyboard-director',
+    outputKind: 'structured-text',
+    outputLabel: '分镜工作流',
+    primaryActionLabel: '打开分镜导演',
   },
   {
     id: 'look-package',
@@ -118,6 +142,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'look-package',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   {
     id: 'variant-planner',
@@ -131,6 +158,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'variant-planner',
+    outputKind: 'configuration',
+    outputLabel: '调整任务参数',
+    primaryActionLabel: '应用到任务',
   },
   // ── Category B: 画面编辑 ─────────────────────────────────────────────────
   {
@@ -145,6 +175,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: true,
     available: true,
     openActionId: 'storyboard-reference-extractor',
+    outputKind: 'derived-image',
+    outputLabel: '图片节点',
+    primaryActionLabel: '创建参考图节点',
   },
   {
     id: 'draw-annotation',
@@ -158,6 +191,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'draw-annotation',
+    outputKind: 'derived-image',
+    outputLabel: '图片标注',
+    primaryActionLabel: '保存标注',
   },
   {
     id: 'remove-background',
@@ -172,6 +208,10 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     capabilityKey: 'removeBackground',
     available: false,
     openActionId: 'remove-background',
+    outputKind: 'derived-image',
+    outputLabel: '图片节点',
+    primaryActionLabel: '创建透明背景图',
+    unavailableReason: '主体抠图执行器尚不可用',
   },
   {
     id: 'hd-reconstruction',
@@ -186,6 +226,10 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     capabilityKey: 'upscale',
     available: false,
     openActionId: 'hd-reconstruction',
+    outputKind: 'derived-image',
+    outputLabel: '图片节点',
+    primaryActionLabel: '创建高清图片',
+    unavailableReason: '高清重建执行器尚不可用',
   },
   // ── Category C: 分析与预览 ───────────────────────────────────────────────
   {
@@ -200,6 +244,9 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'color-grade',
+    outputKind: 'preview',
+    outputLabel: '预览',
+    primaryActionLabel: '打开调色预览',
   },
   {
     id: 'keyframe-extractor',
@@ -213,5 +260,8 @@ export const NODE_TOOL_REGISTRY: readonly NodeToolEntry[] = [
     requiresAsset: false,
     available: true,
     openActionId: 'keyframe-extractor',
+    outputKind: 'analysis',
+    outputLabel: '关键帧结果',
+    primaryActionLabel: '提取关键帧',
   },
 ] as const
