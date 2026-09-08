@@ -64,13 +64,27 @@ test('treats a delayed or differently targeted right-click as a new first click'
   )
 })
 
-test('routes Canvas and node-card secondary clicks to creation pickers while retaining explicit node management', () => {
+test('routes one right-click to the matching node or Canvas context menu', () => {
+  const nodeHandlerStart = workspaceSource.indexOf('const handleNodeSecondaryClick = useCallback')
+  const nodeHandlerEnd = workspaceSource.indexOf('const startConnectionDrag', nodeHandlerStart)
+  const nodeHandlerSource = workspaceSource.slice(nodeHandlerStart, nodeHandlerEnd)
+  const canvasHandlerStart = workspaceSource.indexOf('const handleCanvasSecondaryClick = useCallback')
+  const canvasHandlerEnd = workspaceSource.indexOf('const handleShareCanvasLink', canvasHandlerStart)
+  const canvasHandlerSource = workspaceSource.slice(canvasHandlerStart, canvasHandlerEnd)
+
   assert.match(workspaceSource, /onContextMenu=\{handleCanvasSecondaryClick\}/)
-  assert.match(workspaceSource, /target: 'canvas'/)
-  assert.match(workspaceSource, /setNodeCreateMenu\(\{ \.\.\.position, worldX: worldPoint\.x, worldY: worldPoint\.y \}\)/)
   assert.match(workspaceSource, /onSecondaryClick: \(event\) => handleNodeSecondaryClick\(node\.id, event\)/)
-  assert.match(workspaceSource, /target: `node:\$\{nodeId\}`/)
-  assert.match(workspaceSource, /openNodeAddMenu\(nodeId, 'out'\)/)
+  assert.match(nodeHandlerSource, /openNodeContextMenu\(nodeId, event\.clientX, event\.clientY\)/)
+  assert.doesNotMatch(nodeHandlerSource, /registerSecondaryClick/)
+  assert.match(canvasHandlerSource, /setCanvasContextMenu\(/)
+  assert.doesNotMatch(canvasHandlerSource, /registerSecondaryClick/)
+  assert.match(workspaceSource, /className="canvas-canvas-context-menu"/)
+  assert.match(workspaceSource, />\s*上传素材\s*</)
+  assert.match(workspaceSource, />\s*粘贴节点\s*</)
+  assert.match(workspaceSource, />\s*打开任务\s*</)
+  assert.match(workspaceSource, /刷新结果/)
+  assert.match(workspaceSource, /window\.confirm\(/)
+  assert.doesNotMatch(workspaceSource, /markNodeSaved/)
 
   assert.match(nodeCardSource, /onContextMenu=\{\(event\) => \{[\s\S]*?onSecondaryClick\(event\)/)
   assert.match(nodeCardSource, /onClick=\{\(event\) => \{[\s\S]*?onOpenContextMenu\(event\)[\s\S]*?className="canvas-node-more"/)

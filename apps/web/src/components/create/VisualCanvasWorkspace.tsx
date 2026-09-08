@@ -27,10 +27,6 @@ import {
   resizeNodeRect,
   type CanvasResizeHandle,
 } from '@/components/create/canvas/canvasResizeGeometry'
-import {
-  registerSecondaryClick,
-  type SecondaryClickSequence,
-} from '@/components/create/canvas/secondaryClickSequence'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -663,7 +659,9 @@ const CONNECTION_DRAFT_HANDLE_OFFSET = 36
 const DOWNSTREAM_NODE_X_GAP = 820
 const DOWNSTREAM_NODE_Y_GAP = 220
 const NODE_MENU_WIDTH = 214
-const NODE_MENU_HEIGHT = 252
+const CONTEXT_MENU_WIDTH = 216
+const NODE_CONTEXT_MENU_HEIGHT = 322
+const CANVAS_CONTEXT_MENU_HEIGHT = 218
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
 const NODE_CREATE_MENU_HEIGHT = 320
@@ -2666,7 +2664,8 @@ export function VisualCanvasWorkspace({
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogNoncompactMeasurementsRef = useRef<CanvasTaskDialogMeasurements | null>(null)
-  const secondaryClickSequenceRef = useRef<SecondaryClickSequence | null>(null)
+  const canvasUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const canvasUploadTargetRef = useRef({ x: 420, y: 240 })
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -2745,6 +2744,7 @@ export function VisualCanvasWorkspace({
   const [sceneBible, setSceneBible] = useState<SceneBible>({ scenes: [] })
   const [enabledSkillIds, setEnabledSkillIds] = useState<string[]>(() => getDefaultCreatorSkillIds())
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const [canvasContextMenu, setCanvasContextMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeAddMenu, setNodeAddMenu] = useState<{ nodeId: string; direction: 'in' | 'out'; x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [nodeCreateMenu, setNodeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const [activePreviewNodeId, setActivePreviewNodeId] = useState<string | null>(null)
@@ -2769,7 +2769,8 @@ export function VisualCanvasWorkspace({
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
   const [generationHealth, setGenerationHealth] = useState<GenerationHealthResponse | null>(null)
-  const [, setClipboardNode] = useState<VisualCanvasNode | null>(null)
+  const [clipboardNode, setClipboardNode] = useState<VisualCanvasNode | null>(null)
+  const [refreshingNodeId, setRefreshingNodeId] = useState<string | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string>('')
   const [connectionDraft, setConnectionDraft] = useState<{
     nodeId: string
@@ -4884,6 +4885,7 @@ export function VisualCanvasWorkspace({
         handleCloseStoryboardDirector()
         closeCanvasPanel()
         setContextMenu(null)
+        setCanvasContextMenu(null)
         setNodeAddMenu(null)
         setNodeCreateMenu(null)
         setConnectionDraft(null)
@@ -5204,6 +5206,16 @@ export function VisualCanvasWorkspace({
     () => nodes.find((node) => node.id === contextMenu?.nodeId) ?? null,
     [contextMenu?.nodeId, nodes],
   )
+  const menuNodeAssetId = menuNode ? getNodeAssetId(menuNode) : ''
+  const menuNodeMetadata = metadataRecord(menuNode?.metadataJson)
+  const menuNodePersistenceStatus = stringValue(mediaPersistenceRecord(menuNodeMetadata).status)
+  const hasPendingMenuNodeAsset = menuNodePersistenceStatus === 'pending_persistence'
+    || stringValue(menuNodeMetadata.persistenceStatus) === 'pending_persistence'
+    || stringValue(menuNodeMetadata.assetStatus) === 'pending_persistence'
+  const canOpenMenuNodeAsset = Boolean(menuNodeAssetId) && !hasPendingMenuNodeAsset
+  const canRefreshMenuNode = Boolean(menuNodeAssetId)
+    && (menuNode?.kind === 'image' || menuNode?.kind === 'video')
+    && !isActiveGenerationStatus(menuNode?.status ?? 'idle')
   const connectorNode = useMemo(
     () => nodes.find((node) => node.id === nodeAddMenu?.nodeId) ?? null,
     [nodeAddMenu?.nodeId, nodes],
@@ -5355,12 +5367,13 @@ export function VisualCanvasWorkspace({
   }, [editingNodeId])
 
   useEffect(() => {
-    if (!contextMenu && !nodeAddMenu && !isAddMenuOpen && !nodeCreateMenu) return
+    if (!contextMenu && !canvasContextMenu && !nodeAddMenu && !isAddMenuOpen && !nodeCreateMenu) return
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('.canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-add-menu, .canvas-toolbar-shell, .canvas-side-panel, .canvas-user-menu')) return
+      if (target?.closest('.canvas-context-menu, .canvas-canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-add-menu, .canvas-toolbar-shell, .canvas-side-panel, .canvas-user-menu')) return
       setContextMenu(null)
+      setCanvasContextMenu(null)
       setNodeAddMenu(null)
       setNodeCreateMenu(null)
       setIsAddMenuOpen(false)
@@ -5368,7 +5381,7 @@ export function VisualCanvasWorkspace({
 
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [contextMenu, isAddMenuOpen, nodeAddMenu, nodeCreateMenu])
+  }, [canvasContextMenu, contextMenu, isAddMenuOpen, nodeAddMenu, nodeCreateMenu])
 
   const createNode = useCallback((
     kind: VisualCanvasNodeKind,
@@ -9710,17 +9723,6 @@ export function VisualCanvasWorkspace({
     openNodeAddMenuAt(nodeId, direction, position.x, position.y, resolved.x, resolved.y)
   }, [canvasPan.x, canvasPan.y, canvasZoom, nodes, openNodeAddMenuAt])
 
-  const handleNodeSecondaryClick = useCallback((nodeId: string, _event: React.MouseEvent<HTMLElement>) => {
-    const sequence = registerSecondaryClick(secondaryClickSequenceRef.current, {
-      target: `node:${nodeId}`,
-      occurredAt: Date.now(),
-    })
-    secondaryClickSequenceRef.current = sequence.next
-    if (!sequence.shouldOpenPicker) return
-
-    openNodeAddMenu(nodeId, 'out')
-  }, [openNodeAddMenu])
-
   const startConnectionDrag = useCallback((nodeId: string, direction: 'in' | 'out', event: React.PointerEvent<HTMLButtonElement>) => {
     if (
       event.button !== 0
@@ -9764,9 +9766,11 @@ export function VisualCanvasWorkspace({
   }, [activePreviewNodeId, closeActivePreview, isPanning, nodes])
 
   const openNodeContextMenu = useCallback((nodeId: string, clientX: number, clientY: number) => {
-    const position = clampMenuPosition(clientX, clientY, NODE_MENU_WIDTH, NODE_MENU_HEIGHT)
+    const position = clampMenuPosition(clientX, clientY, CONTEXT_MENU_WIDTH, NODE_CONTEXT_MENU_HEIGHT)
     setContextMenu({ nodeId, ...position })
+    setCanvasContextMenu(null)
     setNodeAddMenu(null)
+    setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
     setActiveNodeId(nodeId)
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
@@ -9774,18 +9778,48 @@ export function VisualCanvasWorkspace({
     }
   }, [activePreviewNodeId, closeActivePreview])
 
+  const handleNodeSecondaryClick = useCallback((nodeId: string, event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    openNodeContextMenu(nodeId, event.clientX, event.clientY)
+  }, [openNodeContextMenu])
+
   const copyNodeToClipboard = useCallback((node: VisualCanvasNode) => {
     setClipboardNode(node)
     setContextMenu(null)
   }, [])
 
-  const markNodeSaved = useCallback((nodeId: string, label: string) => {
-    handleNodePatch(nodeId, {
-      resultPreview: label,
-      outputLabel: label,
-    })
-    setContextMenu(null)
-  }, [handleNodePatch])
+  const refreshNodeResult = useCallback(async (node: VisualCanvasNode) => {
+    const assetId = getNodeAssetId(node)
+    if (!assetId || (node.kind !== 'image' && node.kind !== 'video') || isActiveGenerationStatus(node.status)) return
+
+    setRefreshingNodeId(node.id)
+    try {
+      const response = await fetch('/api/assets/resolve-batch', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ assetIds: [assetId] }),
+      })
+      const data = await response.json().catch(() => ({})) as { assets?: CanvasAssetResolveResult[]; message?: string; errorCode?: string }
+      const resolved = data.assets?.find((asset) => asset.assetId === assetId)
+      if (!response.ok || !resolved) {
+        throw new Error(data.message || data.errorCode || '刷新结果失败。')
+      }
+      commitNodes((current) => current.map((currentNode) => (
+        currentNode.id === node.id ? applyResolvedAssetToNode(currentNode, resolved) : currentNode
+      )))
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
+      showCanvasFeedback('结果已刷新。')
+    } catch (error) {
+      showCanvasFeedback(error instanceof Error ? error.message : '刷新结果失败。')
+    } finally {
+      setRefreshingNodeId(null)
+      setContextMenu(null)
+    }
+  }, [commitNodes, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
 
   const getViewportWorldPoint = useCallback((clientX: number, clientY: number) => {
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -9797,6 +9831,32 @@ export function VisualCanvasWorkspace({
       y: (clientY - rect.top - surfaceOffset.top - canvasPan.y) / canvasZoom,
     }
   }, [canvasPan.x, canvasPan.y, canvasZoom])
+
+  const pasteClipboardNode = useCallback((worldX: number, worldY: number) => {
+    if (!clipboardNode) return
+    const position = resolveNonOverlappingPosition({
+      x: worldX,
+      y: worldY,
+      width: clipboardNode.width,
+      height: clipboardNode.height,
+    }, nodes)
+    const nodeId = createNodeId(clipboardNode.kind)
+    const pastedNode: VisualCanvasNode = {
+      ...clipboardNode,
+      id: nodeId,
+      title: `${clipboardNode.title} 副本`,
+      x: position.x,
+      y: position.y,
+      status: isActiveGenerationStatus(clipboardNode.status) ? 'idle' : clipboardNode.status,
+      createdAt: Date.now(),
+    }
+    commitNodes((current) => [...current, pastedNode])
+    setActiveNodeId(nodeId)
+    setCanvasContextMenu(null)
+    setHasStarted(true)
+    scheduleCanvasSave(0)
+    showCanvasFeedback('节点已粘贴。')
+  }, [clipboardNode, commitNodes, nodes, scheduleCanvasSave, showCanvasFeedback])
 
   // ── Dialog local reference upload ──────────────────────────────────────────
 
@@ -9892,15 +9952,15 @@ export function VisualCanvasWorkspace({
 
   // ── End dialog local reference upload ──────────────────────────────────────
 
-  const handleLocalImageDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsLocalImageDragOver(false)
-
+  const importLocalMediaFiles = useCallback(async (
+    sourceFiles: File[],
+    basePos: { x: number; y: number },
+  ) => {
     const validFiles: Array<{ file: File; kind: 'image' | 'video' }> = []
     let hasInvalidType = false
     let hasTooLarge = false
 
-    for (const f of Array.from(e.dataTransfer.files)) {
+    for (const f of sourceFiles) {
       const v = validateLocalMediaFile(f)
       const kind = getLocalImportKind(f)
       if (v.ok) {
@@ -9924,7 +9984,6 @@ export function VisualCanvasWorkspace({
 
     if (files.length === 0) return
 
-    const basePos = getViewportWorldPoint(e.clientX, e.clientY)
     const NODE_H_OFFSET = 280
 
     const nodeEntries = files.map(({ file, kind }, index) => {
@@ -9978,7 +10037,23 @@ export function VisualCanvasWorkspace({
         }),
       )
     }
-  }, [createNode, flushLocalSnapshot, getViewportWorldPoint, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+  }, [createNode, flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+
+  const handleLocalImageDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsLocalImageDragOver(false)
+    void importLocalMediaFiles(
+      Array.from(event.dataTransfer.files),
+      getViewportWorldPoint(event.clientX, event.clientY),
+    )
+  }, [getViewportWorldPoint, importLocalMediaFiles])
+
+  const handleCanvasUploadInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!files.length) return
+    void importLocalMediaFiles(files, canvasUploadTargetRef.current)
+  }, [importLocalMediaFiles])
 
   const findConnectorTarget = useCallback((clientX: number, clientY: number): { nodeId: string; handle: 'left' | 'right' } | null => {
     const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null
@@ -10080,7 +10155,7 @@ export function VisualCanvasWorkspace({
 
   const canStartCanvasPan = useCallback((target: EventTarget | null) => {
     const element = target as HTMLElement | null
-    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-media-diagnostics="true"], [data-creative-assets="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
+    return !element?.closest('button, input, textarea, select, a, video, audio, [contenteditable="true"], [data-node-preview-overlay="true"], [data-prompt-inspector="true"], [data-media-diagnostics="true"], [data-creative-assets="true"], [data-storyboard-preview="true"], [data-edge-director="true"], .canvas-node-card, .canvas-node-dialog, .canvas-prompt-box, .canvas-prompt-console, .canvas-topbar, .canvas-toolbar-shell, .canvas-add-menu, .canvas-zoom-controls, .canvas-context-menu, .canvas-canvas-context-menu, .canvas-node-add-menu, .canvas-node-create-menu, .canvas-side-panel, .canvas-user-menu')
   }, [])
 
   // Keep a ref so the wheel handler always reads the current zoom without
@@ -10292,6 +10367,7 @@ export function VisualCanvasWorkspace({
     const worldPoint = getViewportWorldPoint(event.clientX, event.clientY)
     setNodeCreateMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
     setContextMenu(null)
+    setCanvasContextMenu(null)
     setNodeAddMenu(null)
     setIsAddMenuOpen(false)
   }, [canStartCanvasPan, getViewportWorldPoint])
@@ -10301,18 +10377,12 @@ export function VisualCanvasWorkspace({
     event.preventDefault()
     event.stopPropagation()
 
-    const sequence = registerSecondaryClick(secondaryClickSequenceRef.current, {
-      target: 'canvas',
-      occurredAt: Date.now(),
-    })
-    secondaryClickSequenceRef.current = sequence.next
-    if (!sequence.shouldOpenPicker) return
-
-    const position = clampMenuPosition(event.clientX, event.clientY, NODE_MENU_WIDTH, NODE_CREATE_MENU_HEIGHT)
+    const position = clampMenuPosition(event.clientX, event.clientY, CONTEXT_MENU_WIDTH, CANVAS_CONTEXT_MENU_HEIGHT)
     const worldPoint = getViewportWorldPoint(event.clientX, event.clientY)
-    setNodeCreateMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
+    setCanvasContextMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
     setContextMenu(null)
     setNodeAddMenu(null)
+    setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
   }, [canStartCanvasPan, getViewportWorldPoint])
 
@@ -11173,9 +11243,9 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const handleNodeContextOpenAssets = useCallback((node: VisualCanvasNode) => {
-    const href = node.assetId
-      ? `/assets?highlight=${encodeURIComponent(node.assetId)}`
-      : `/assets?nodeId=${encodeURIComponent(node.id)}`
+    const assetId = getNodeAssetId(node)
+    if (!assetId) return
+    const href = `/assets/${encodeURIComponent(assetId)}`
     window.open(href, '_blank', 'noopener,noreferrer')
   }, [])
 
@@ -13246,47 +13316,127 @@ export function VisualCanvasWorkspace({
         </div>
       ) : null}
 
+      {(contextMenu || canvasContextMenu) ? <div className="canvas-context-menu-backdrop" aria-hidden="true" /> : null}
+
+      <input
+        ref={canvasUploadInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+        multiple
+        className="sr-only"
+        onChange={handleCanvasUploadInputChange}
+      />
+
+      {canvasContextMenu ? (
+        <div
+          className="canvas-canvas-context-menu"
+          style={{ left: canvasContextMenu.x, top: canvasContextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="canvas-menu-label">画布</div>
+          <button
+            type="button"
+            onClick={() => {
+              canvasUploadTargetRef.current = { x: canvasContextMenu.worldX, y: canvasContextMenu.worldY }
+              canvasUploadInputRef.current?.click()
+              setCanvasContextMenu(null)
+            }}
+            className="canvas-menu-item"
+          >
+            上传素材
+          </button>
+          <button
+            type="button"
+            disabled={!clipboardNode}
+            onClick={() => pasteClipboardNode(canvasContextMenu.worldX, canvasContextMenu.worldY)}
+            className="canvas-menu-item"
+          >
+            粘贴节点
+          </button>
+          <div className="canvas-menu-divider" />
+          <button
+            type="button"
+            onClick={() => {
+              fitCanvasView()
+              setCanvasContextMenu(null)
+            }}
+            className="canvas-menu-item"
+          >
+            适应画布
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              resetCanvasView()
+              setCanvasContextMenu(null)
+            }}
+            className="canvas-menu-item"
+          >
+            重置视图
+          </button>
+        </div>
+      ) : null}
+
       {contextMenu && menuNode ? (
         <div
           className="canvas-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
+          <div className="canvas-menu-label">{menuNode.title || getEntryKindLabel(menuNode.kind)}</div>
           <button
             type="button"
-            onClick={() => markNodeSaved(menuNode.id, '已模拟保存到素材库，可在 Assets 中继续接入真实素材库。')}
+            onClick={() => {
+              focusPromptForNode(menuNode)
+              setContextMenu(null)
+            }}
+            className="canvas-menu-item"
+          >
+            打开任务
+          </button>
+          <button
+            type="button"
+            disabled={!canOpenMenuNodeAsset}
+            onClick={() => {
+              handleNodeContextOpenAssets(menuNode)
+              setContextMenu(null)
+            }}
             className="canvas-menu-item"
           >
             保存到素材库
           </button>
           <button
             type="button"
+            disabled={!canRefreshMenuNode || refreshingNodeId === menuNode.id}
+            onClick={() => { void refreshNodeResult(menuNode) }}
+            className="canvas-menu-item"
+          >
+            {refreshingNodeId === menuNode.id ? '刷新中…' : '刷新结果'}
+          </button>
+          <button
+            type="button"
             onClick={() => copyNodeToClipboard(menuNode)}
             className="canvas-menu-item"
           >
-            复制
+            复制节点
           </button>
           <button
             type="button"
             onClick={() => duplicateNode(menuNode)}
             className="canvas-menu-item"
           >
-            副本
+            创建副本
           </button>
           <div className="canvas-menu-divider" />
           <button
             type="button"
-            onClick={() => deleteNode(menuNode.id)}
+            onClick={() => {
+              if (!window.confirm(`确认删除“${menuNode.title || getEntryKindLabel(menuNode.kind)}”吗？`)) return
+              deleteNode(menuNode.id)
+            }}
             className="canvas-menu-item is-danger"
           >
             删除
-          </button>
-          <button
-            type="button"
-            onClick={() => markNodeSaved(menuNode.id, '已记录问题反馈占位，后续可接入真实反馈系统。')}
-            className="canvas-menu-item"
-          >
-            问题反馈
           </button>
         </div>
       ) : null}
