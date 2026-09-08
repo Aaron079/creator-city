@@ -483,7 +483,10 @@ async function assertConstrainedSurface(page: Page) {
     return element.scrollTop
   })
   assert.ok(scrollTop > 0, 'long prompt did not produce a usable scroll offset')
-  assert.ok(Math.abs(topBox.y - bottomBox.y) < 1, 'fixed controls must share the compact top row')
+  assert.ok(topBox.y + topBox.height <= headerBox.y, 'top context rail must precede the prompt header')
+  assert.ok(footerBox.y + footerBox.height <= bottomBox.y, 'billing rail must follow the prompt footer')
+  assert.ok(Math.abs(topBox.width - dialogBox.width) < 1, 'top context rail must use full dialog width')
+  assert.ok(Math.abs(bottomBox.width - dialogBox.width) < 1, 'billing rail must use full dialog width')
   for (const box of [topBox, bottomBox, headerBox, bodyBox, footerBox]) {
     assert.ok(box.y >= dialogBox.y)
     assert.ok(box.y + box.height <= dialogBox.y + dialogBox.height)
