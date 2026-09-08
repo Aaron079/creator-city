@@ -8546,24 +8546,15 @@
   height: 10px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(190, 232, 255, 0.88);
-  border-radius: 2px;
-  background: rgba(20, 28, 39, 0.96);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.52);
-  opacity: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
   /* Keep the edge targets available before hover so a resize can begin at once. */
   pointer-events: auto;
   touch-action: none;
   transition: opacity 0.14s ease, background 0.14s ease;
-}
-
-.scope :global(.canvas-node-dialog-scroll-content:hover .canvas-task-editor-resize-handle),
-.scope :global(.canvas-task-editor-resize-handle:focus-visible) {
-  opacity: 1;
-}
-
-.scope :global(.canvas-task-editor-resize-handle:hover) {
-  background: rgba(124, 255, 234, 0.94);
 }
 
 .scope :global(.canvas-task-editor-resize-handle.is-nw) { top: 2px; left: 2px; cursor: nwse-resize; }

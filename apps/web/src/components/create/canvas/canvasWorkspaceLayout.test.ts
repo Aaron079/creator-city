@@ -669,6 +669,7 @@ test('resizes the task editor with eight handles while retaining fixed dialog ra
   assert.match(canvasPromptBoxSource, /data-canvas-task-editor-resize-handle=\{handle\}/)
   assert.match(canvasPromptBoxSource, /\['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'\]/)
   assert.match(canvasModuleSource, /\.canvas-task-editor-resize-handle\) \{[\s\S]*?pointer-events: auto;/)
+  assert.match(canvasModuleSource, /\.canvas-task-editor-resize-handle\) \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/)
   assert.match(resizeSource, /flushLocalSnapshot\(\)/)
   assert.match(resizeSource, /scheduleCanvasSave\(0, \{ snapshot: 'already-flushed' \}\)/)
   assert.match(canvasModuleSource, /canvas-task-editor-resize-handle/)
