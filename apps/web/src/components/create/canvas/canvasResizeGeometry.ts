@@ -38,19 +38,42 @@ const editorBounds: CanvasResizeBounds = {
   maxHeight: 720,
 }
 
+const nodeHandles = new Set<CanvasResizeCorner>(['nw', 'ne', 'se', 'sw'])
+const editorHandles = new Set<CanvasResizeHandle>(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'])
+
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
+function validateFinite(value: number, name: string) {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`${name} must be finite`)
+  }
+}
+
 function validatePositiveFinite(value: number, name: string) {
-  if (!Number.isFinite(value) || value <= 0) {
+  validateFinite(value, name)
+  if (value <= 0) {
     throw new RangeError(`${name} must be finite and greater than zero`)
   }
 }
 
 function validateRect(rect: CanvasResizeRect) {
+  validateFinite(rect.x, 'rect.x')
+  validateFinite(rect.y, 'rect.y')
   validatePositiveFinite(rect.width, 'rect.width')
   validatePositiveFinite(rect.height, 'rect.height')
+}
+
+function validateDeltas(deltaX: number, deltaY: number) {
+  validateFinite(deltaX, 'deltaX')
+  validateFinite(deltaY, 'deltaY')
+}
+
+function validateHandle(handle: string, allowedHandles: ReadonlySet<string>) {
+  if (!allowedHandles.has(handle)) {
+    throw new RangeError(`invalid resize handle: ${handle}`)
+  }
 }
 
 function validateBounds(bounds: CanvasResizeBounds) {
@@ -72,7 +95,9 @@ export function resizeNodeRect({
   bounds = nodeBounds,
 }: ResizeArgs<CanvasResizeCorner>): CanvasResizeRect {
   validateRect(rect)
+  validateDeltas(deltaX, deltaY)
   validateBounds(bounds)
+  validateHandle(handle, nodeHandles)
 
   const resizeFromWest = handle === 'nw' || handle === 'sw'
   const resizeFromNorth = handle === 'nw' || handle === 'ne'
@@ -108,7 +133,9 @@ export function resizeEditorRect({
   bounds = editorBounds,
 }: ResizeArgs<CanvasResizeHandle>): CanvasResizeRect {
   validateRect(rect)
+  validateDeltas(deltaX, deltaY)
   validateBounds(bounds)
+  validateHandle(handle, editorHandles)
 
   const resizeFromWest = handle === 'nw' || handle === 'w' || handle === 'sw'
   const resizeFromEast = handle === 'ne' || handle === 'e' || handle === 'se'

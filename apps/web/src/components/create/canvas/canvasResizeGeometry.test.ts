@@ -265,4 +265,40 @@ describe('canvas resize geometry', () => {
       bounds: { minWidth: 500, minHeight: 1, maxWidth: 1000, maxHeight: 200 },
     }), RangeError)
   })
+
+  test('rejects non-finite rect positions and drag deltas', () => {
+    assert.throws(() => resizeEditorRect({
+      rect: { ...editorRect, x: Number.NaN },
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+    assert.throws(() => resizeNodeRect({
+      rect: { ...nodeRect, y: Number.POSITIVE_INFINITY },
+      handle: 'se',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+    assert.throws(() => resizeEditorRect({
+      rect: editorRect,
+      handle: 'e',
+      deltaX: Number.NaN,
+      deltaY: 0,
+    }), RangeError)
+    assert.throws(() => resizeNodeRect({
+      rect: nodeRect,
+      handle: 'se',
+      deltaX: 0,
+      deltaY: Number.NEGATIVE_INFINITY,
+    }), RangeError)
+  })
+
+  test('rejects invalid runtime resize handles', () => {
+    assert.throws(() => resizeEditorRect({
+      rect: editorRect,
+      handle: 'invalid' as unknown as 'e',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+  })
 })
