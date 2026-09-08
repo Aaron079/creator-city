@@ -58,6 +58,39 @@ test('anchors a 1:2 node-to-dialog creative-workbench stack on one centerline', 
   assert.equal(layout.panDeltaY, 0)
 })
 
+test('uses a requested dialog size while preserving the shared node centerline', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 380, height: 194 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 900 },
+    dialogSize: { width: 920, height: 388 },
+  })
+
+  assert.deepEqual(layout.dialog, { left: 130, top: 322, width: 920, height: 388 })
+  assert.equal(layout.dialog.left + layout.dialog.width / 2, 590)
+})
+
+test('clamps a requested dialog width without resizing navigation', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 380, height: 194 },
+    stage: { left: 0, top: 64, right: 640, bottom: 900 },
+    dialogSize: { width: 920, height: 388 },
+  })
+
+  assert.equal(layout.dialog.width, 608)
+  assert.equal(layout.navigation.width, 380)
+})
+
+test('prefers dialogSize height over the legacy dialogHeight argument', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 380, height: 194 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 900 },
+    dialogHeight: 282,
+    dialogSize: { width: 920, height: 388 },
+  })
+
+  assert.equal(layout.dialog.height, 388)
+})
+
 test('supports a taller task dialog without moving its node navigation', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 400, top: 120, width: 248, height: 220 },

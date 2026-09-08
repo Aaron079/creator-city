@@ -273,15 +273,18 @@ export function getCanvasNodeContextSurfaceLayout({
   node,
   stage,
   dialogHeight = CONTEXT_DIALOG.height,
+  dialogSize,
 }: {
   node: CanvasNodeScreenRect
   stage: CanvasStageRect
   dialogHeight?: number
+  dialogSize?: CanvasSize
 }): CanvasContextSurfaceLayout {
   const stageWidth = Math.max(0, stage.right - stage.left)
   const maxSurfaceWidth = Math.max(0, stageWidth - CONTEXT_STAGE_MARGIN * 2)
   const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
-  const dialogWidth = Math.min(CONTEXT_DIALOG.width, maxSurfaceWidth)
+  const dialogWidth = Math.min(dialogSize?.width ?? CONTEXT_DIALOG.width, maxSurfaceWidth)
+  const resolvedDialogHeight = dialogSize?.height ?? dialogHeight
   const nodeCenter = node.left + node.width / 2
   const navigationTop = node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap
   const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
@@ -290,7 +293,7 @@ export function getCanvasNodeContextSurfaceLayout({
     + CONTEXT_NAVIGATION.gap
     + node.height
     + CONTEXT_DIALOG.gap
-    + dialogHeight
+    + resolvedDialogHeight
   const stageHeight = Math.max(0, stage.bottom - stage.top)
   const isVerticallyConstrained = stageHeight < minimumStageHeight
   let panDeltaY = 0
@@ -298,7 +301,7 @@ export function getCanvasNodeContextSurfaceLayout({
   if (isVerticallyConstrained) {
     const constrainedDialogTop = clampCanvasDialogTopToStage(
       dialogTop,
-      dialogHeight,
+      resolvedDialogHeight,
       stage.top,
       stage.bottom,
       CONTEXT_STAGE_MARGIN,
@@ -309,8 +312,8 @@ export function getCanvasNodeContextSurfaceLayout({
     const maximumStackBottom = stage.bottom - CONTEXT_STAGE_MARGIN
     if (navigationTop < minimumStackTop) {
       panDeltaY = minimumStackTop - navigationTop
-    } else if (dialogTop + dialogHeight > maximumStackBottom) {
-      panDeltaY = maximumStackBottom - dialogTop - dialogHeight
+    } else if (dialogTop + resolvedDialogHeight > maximumStackBottom) {
+      panDeltaY = maximumStackBottom - dialogTop - resolvedDialogHeight
     }
   }
 
@@ -337,7 +340,7 @@ export function getCanvasNodeContextSurfaceLayout({
       ),
       top: dialogTop,
       width: dialogWidth,
-      height: dialogHeight,
+      height: resolvedDialogHeight,
     },
     panDeltaY,
     minimumStageHeight,
