@@ -54,6 +54,7 @@ function harnessSource() {
     let removeCount = 0
     let uploadCount = 0
     let editorResizeHandle = ''
+    let nodeResizeHandle = ''
     let compactFixedControls = false
     let noncompactMeasurements = null
     let nodeRect = { left: 530, top: 64, width: 380, height: 194 }
@@ -172,13 +173,32 @@ function harnessSource() {
             'div',
             {
               id: 'representative-node',
+              className: 'canvas-node-card is-active',
               style: {
                 position: 'absolute', left: 530, top: 64, width: 380, height: 194,
                 boxSizing: 'border-box',
                 background: '#20242b', border: '1px solid rgba(255,255,255,0.12)',
               },
             },
-            'Image node',
+            React.createElement(
+              React.Fragment,
+              null,
+              'Image node',
+              ...[
+                ['nw', 'Resize from top left'], ['n', 'Resize from top'],
+                ['ne', 'Resize from top right'], ['e', 'Resize from right'],
+                ['se', 'Resize from bottom right'], ['s', 'Resize from bottom'],
+                ['sw', 'Resize from bottom left'], ['w', 'Resize from left'],
+              ].map(([handle, label]) => React.createElement('button', {
+                key: handle,
+                type: 'button',
+                tabIndex: -1,
+                className: 'canvas-node-resize-handle is-' + handle,
+                'data-canvas-node-resize-handle': handle,
+                'aria-label': label,
+                onPointerDown() { nodeResizeHandle = handle },
+              })),
+            ),
           ),
           React.createElement(
           'div',
@@ -330,6 +350,7 @@ function harnessSource() {
       accountCount() { return accountCount }, applyCount() { return applyCount },
       removeCount() { return removeCount }, uploadCount() { return uploadCount },
       editorResizeHandle() { return editorResizeHandle },
+      nodeResizeHandle() { return nodeResizeHandle },
       settleSizing,
       sizingHistory() { return sizingHistory.slice() },
       stackLayout() { return latestStackLayout },
@@ -377,6 +398,7 @@ type HarnessCounters = {
   removeCount: () => number
   uploadCount: () => number
   editorResizeHandle: () => string
+  nodeResizeHandle: () => string
 }
 
 type HarnessSizingEntry = {
@@ -631,6 +653,36 @@ test('uses invisible full-edge resize targets for the task editor', async () => 
   const handle = await page.evaluate(() => {
     const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
     return harness.editorResizeHandle()
+  })
+  assert.equal(handle, 'e')
+  await page.close()
+})
+
+test('uses invisible full-edge resize targets for active canvas nodes', async () => {
+  const page = await renderScenario('image-done', 900, 1440)
+  const northHandle = page.locator('[data-canvas-node-resize-handle="n"]')
+  const eastHandle = page.locator('[data-canvas-node-resize-handle="e"]')
+  const [northBox, eastBox, styles] = await Promise.all([
+    northHandle.boundingBox(),
+    eastHandle.boundingBox(),
+    eastHandle.evaluate((element) => {
+      const computed = getComputedStyle(element)
+      return { background: computed.backgroundColor, borderWidth: computed.borderWidth, pointerEvents: computed.pointerEvents }
+    }),
+  ])
+
+  assert.ok(northBox)
+  assert.ok(eastBox)
+  assert.ok(northBox.width > 300, `node north resize zone was only ${northBox.width}px wide`)
+  assert.ok(eastBox.height > 120, `node east resize zone was only ${eastBox.height}px tall`)
+  assert.equal(styles.background, 'rgba(0, 0, 0, 0)')
+  assert.equal(styles.borderWidth, '0px')
+  assert.equal(styles.pointerEvents, 'auto')
+
+  await eastHandle.dispatchEvent('pointerdown', { button: 0, isPrimary: true, pointerId: 29 })
+  const handle = await page.evaluate(() => {
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
+    return harness.nodeResizeHandle()
   })
   assert.equal(handle, 'e')
   await page.close()

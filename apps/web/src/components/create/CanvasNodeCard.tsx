@@ -14,7 +14,7 @@ import { getDerivedToolVisual } from '@/lib/canvas/derivedToolVisualConfig'
 import { readAnnotationMetadata } from '@/lib/canvas/annotationMetadata'
 import type { CanvasResizeHandle } from '@/components/create/canvas/canvasResizeGeometry'
 
-type CanvasNodeResizeHandle = Extract<CanvasResizeHandle, 'nw' | 'ne' | 'se' | 'sw'>
+type CanvasNodeResizeHandle = CanvasResizeHandle
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -96,9 +96,13 @@ export interface CanvasNodeCardProps {
 
 const nodeResizeHandles: Array<{ handle: CanvasNodeResizeHandle; label: string }> = [
   { handle: 'nw', label: 'Resize from top left' },
+  { handle: 'n', label: 'Resize from top' },
   { handle: 'ne', label: 'Resize from top right' },
+  { handle: 'e', label: 'Resize from right' },
   { handle: 'se', label: 'Resize from bottom right' },
+  { handle: 's', label: 'Resize from bottom' },
   { handle: 'sw', label: 'Resize from bottom left' },
+  { handle: 'w', label: 'Resize from left' },
 ]
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {

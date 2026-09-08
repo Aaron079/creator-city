@@ -88,10 +88,10 @@ test('opens the Canvas task picker on double-click instead of immediately creati
   assert.doesNotMatch(handlerSource, /focusPromptForNode\(/)
 })
 
-test('wires active node corner handles to proportional resizing without replacing existing Canvas interactions', () => {
+test('wires active node edge and corner handles to proportional resizing without replacing existing Canvas interactions', () => {
   assert.match(nodeCardSource, /data-canvas-node-resize-handle=\{handle\}/)
   assert.match(nodeCardSource, /onResizeStart: \(event: React\.PointerEvent<HTMLButtonElement>, handle: CanvasNodeResizeHandle\) => void/)
-  for (const handle of ['nw', 'ne', 'se', 'sw']) {
+  for (const handle of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
     assert.match(nodeCardSource, new RegExp(`handle: '${handle}'`))
   }
   assert.match(nodeLayerSource, /onResizeStart=\{\(event, handle\) => latestCardProps\(\)\.onResizeStart\(event, handle\)\}/)

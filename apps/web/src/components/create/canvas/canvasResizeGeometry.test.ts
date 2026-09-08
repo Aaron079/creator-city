@@ -59,6 +59,21 @@ describe('canvas resize geometry', () => {
     })
   })
 
+  test('resizes a node from each edge proportionally without relying on a corner target', () => {
+    assert.deepEqual(resizeNodeRect({ rect: nodeRect, handle: 'e', deltaX: 40, deltaY: 0 }), {
+      x: 100,
+      y: 190,
+      width: 440,
+      height: 220,
+    })
+    assert.deepEqual(resizeNodeRect({ rect: nodeRect, handle: 'n', deltaX: 0, deltaY: -20 }), {
+      x: 80,
+      y: 180,
+      width: 440,
+      height: 220,
+    })
+  })
+
   test('clamps node dimensions to the default minimum and maximum bounds', () => {
     assert.deepEqual(resizeNodeRect({ rect: nodeRect, handle: 'se', deltaX: -1000, deltaY: 0 }), {
       x: 100,

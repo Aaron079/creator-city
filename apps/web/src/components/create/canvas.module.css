@@ -650,9 +650,13 @@
 }
 
 .scope :global(.canvas-node-resize-handle.is-nw) { top: 0; left: 0; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-n) { top: 0; left: 18px; width: calc(100% - 36px); height: 16px; cursor: ns-resize; }
 .scope :global(.canvas-node-resize-handle.is-ne) { top: 0; right: 0; cursor: nesw-resize; }
+.scope :global(.canvas-node-resize-handle.is-e) { top: 18px; right: 0; width: 16px; height: calc(100% - 36px); cursor: ew-resize; }
 .scope :global(.canvas-node-resize-handle.is-se) { right: 0; bottom: 0; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-s) { bottom: 0; left: 18px; width: calc(100% - 36px); height: 16px; cursor: ns-resize; }
 .scope :global(.canvas-node-resize-handle.is-sw) { bottom: 0; left: 0; cursor: nesw-resize; }
+.scope :global(.canvas-node-resize-handle.is-w) { top: 18px; left: 0; width: 16px; height: calc(100% - 36px); cursor: ew-resize; }
 
 .scope :global(.canvas-node-card.is-generating)::before {
   content: '';

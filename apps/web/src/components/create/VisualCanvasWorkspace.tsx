@@ -476,7 +476,7 @@ function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
   console.debug(`[perf] ${name}`)
 }
 
-type CanvasNodeResizeHandle = Extract<CanvasResizeHandle, 'nw' | 'ne' | 'se' | 'sw'>
+type CanvasNodeResizeHandle = CanvasResizeHandle
 type CanvasTaskEditorResizeHandle = CanvasResizeHandle
 
 type CanvasTaskEditorSize = {
