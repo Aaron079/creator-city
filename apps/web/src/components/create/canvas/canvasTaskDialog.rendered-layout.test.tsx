@@ -53,6 +53,7 @@ function harnessSource() {
     let applyCount = 0
     let removeCount = 0
     let uploadCount = 0
+    let editorResizeHandle = ''
     let compactFixedControls = false
     let noncompactMeasurements = null
     let nodeRect = { left: 530, top: 64, width: 380, height: 194 }
@@ -224,6 +225,7 @@ function harnessSource() {
               onSelect() {},
             }],
             taskInputModeLabel: isVideo ? undefined : isText ? 'Text task' : 'Image task',
+            onEditorResizeStart(_event, handle) { editorResizeHandle = handle },
             videoModeInfo: isVideo ? {
               mode: 'image-to-video', sourceNodeTitle: 'Upstream portrait',
             } : undefined,
@@ -327,6 +329,7 @@ function harnessSource() {
     window.__taskDialogHarness = {
       accountCount() { return accountCount }, applyCount() { return applyCount },
       removeCount() { return removeCount }, uploadCount() { return uploadCount },
+      editorResizeHandle() { return editorResizeHandle },
       settleSizing,
       sizingHistory() { return sizingHistory.slice() },
       stackLayout() { return latestStackLayout },
@@ -373,6 +376,7 @@ type HarnessCounters = {
   applyCount: () => number
   removeCount: () => number
   uploadCount: () => number
+  editorResizeHandle: () => string
 }
 
 type HarnessSizingEntry = {
@@ -599,6 +603,36 @@ test('renders the approved creative-workbench stack with compact one-line rails'
   if (process.env.CANVAS_TASK_DIALOG_SCREENSHOT) {
     await page.screenshot({ path: process.env.CANVAS_TASK_DIALOG_SCREENSHOT })
   }
+  await page.close()
+})
+
+test('uses invisible full-edge resize targets for the task editor', async () => {
+  const page = await renderScenario('image-done', 900, 1440)
+  const northHandle = page.locator('[data-canvas-task-editor-resize-handle="n"]')
+  const eastHandle = page.locator('[data-canvas-task-editor-resize-handle="e"]')
+  const [northBox, eastBox, styles] = await Promise.all([
+    northHandle.boundingBox(),
+    eastHandle.boundingBox(),
+    eastHandle.evaluate((element) => {
+      const computed = getComputedStyle(element)
+      return { background: computed.backgroundColor, borderWidth: computed.borderWidth, pointerEvents: computed.pointerEvents }
+    }),
+  ])
+
+  assert.ok(northBox)
+  assert.ok(eastBox)
+  assert.ok(northBox.width > 300, `north resize zone was only ${northBox.width}px wide`)
+  assert.ok(eastBox.height > 80, `east resize zone was only ${eastBox.height}px tall`)
+  assert.equal(styles.background, 'rgba(0, 0, 0, 0)')
+  assert.equal(styles.borderWidth, '0px')
+  assert.equal(styles.pointerEvents, 'auto')
+
+  await eastHandle.dispatchEvent('pointerdown', { button: 0, isPrimary: true, pointerId: 27 })
+  const handle = await page.evaluate(() => {
+    const harness = (window as unknown as { __taskDialogHarness: TaskDialogHarness }).__taskDialogHarness
+    return harness.editorResizeHandle()
+  })
+  assert.equal(handle, 'e')
   await page.close()
 })
 

@@ -636,30 +636,23 @@
 .scope :global(.canvas-node-resize-handle) {
   position: absolute;
   z-index: 24;
-  width: 12px;
-  height: 12px;
+  width: 18px;
+  height: 18px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(191, 237, 255, 0.92);
-  border-radius: 2px;
-  background: rgba(24, 34, 48, 0.94);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
-  opacity: 0;
-  touch-action: none;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-
-.scope :global(.canvas-node-card:hover .canvas-node-resize-handle),
-.scope :global(.canvas-node-card.is-active .canvas-node-resize-handle),
-.scope :global(.canvas-node-resize-handle:hover) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   opacity: 1;
+  pointer-events: auto;
+  touch-action: none;
 }
 
-.scope :global(.canvas-node-resize-handle:hover) { background: rgba(124, 255, 234, 0.96); }
-.scope :global(.canvas-node-resize-handle.is-nw) { top: 2px; left: 2px; cursor: nwse-resize; }
-.scope :global(.canvas-node-resize-handle.is-ne) { top: 2px; right: 2px; cursor: nesw-resize; }
-.scope :global(.canvas-node-resize-handle.is-se) { right: 2px; bottom: 2px; cursor: nwse-resize; }
-.scope :global(.canvas-node-resize-handle.is-sw) { bottom: 2px; left: 2px; cursor: nesw-resize; }
+.scope :global(.canvas-node-resize-handle.is-nw) { top: 0; left: 0; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-ne) { top: 0; right: 0; cursor: nesw-resize; }
+.scope :global(.canvas-node-resize-handle.is-se) { right: 0; bottom: 0; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-sw) { bottom: 0; left: 0; cursor: nesw-resize; }
 
 .scope :global(.canvas-node-card.is-generating)::before {
   content: '';
@@ -8542,8 +8535,8 @@
   position: absolute;
   z-index: 4;
   display: block;
-  width: 10px;
-  height: 10px;
+  width: 18px;
+  height: 18px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -8554,17 +8547,16 @@
   /* Keep the edge targets available before hover so a resize can begin at once. */
   pointer-events: auto;
   touch-action: none;
-  transition: opacity 0.14s ease, background 0.14s ease;
 }
 
-.scope :global(.canvas-task-editor-resize-handle.is-nw) { top: 2px; left: 2px; cursor: nwse-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-n) { top: 2px; left: calc(50% - 5px); cursor: ns-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-ne) { top: 2px; right: 2px; cursor: nesw-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-e) { top: calc(50% - 5px); right: 2px; cursor: ew-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-se) { right: 2px; bottom: 2px; cursor: nwse-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-s) { bottom: 2px; left: calc(50% - 5px); cursor: ns-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-sw) { bottom: 2px; left: 2px; cursor: nesw-resize; }
-.scope :global(.canvas-task-editor-resize-handle.is-w) { top: calc(50% - 5px); left: 2px; cursor: ew-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-nw) { top: 0; left: 0; cursor: nwse-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-n) { top: 0; left: 18px; width: calc(100% - 36px); height: 16px; cursor: ns-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-ne) { top: 0; right: 0; cursor: nesw-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-e) { top: 18px; right: 0; width: 16px; height: calc(100% - 36px); cursor: ew-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-se) { right: 0; bottom: 0; cursor: nwse-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-s) { bottom: 0; left: 18px; width: calc(100% - 36px); height: 16px; cursor: ns-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-sw) { bottom: 0; left: 0; cursor: nesw-resize; }
+.scope :global(.canvas-task-editor-resize-handle.is-w) { top: 18px; left: 0; width: 16px; height: calc(100% - 36px); cursor: ew-resize; }
 
 .scope :global(.canvas-node-dialog-fixed-controls) {
   display: flex;
