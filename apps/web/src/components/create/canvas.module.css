@@ -8551,7 +8551,8 @@
   background: rgba(20, 28, 39, 0.96);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.52);
   opacity: 0;
-  pointer-events: none;
+  /* Keep the edge targets available before hover so a resize can begin at once. */
+  pointer-events: auto;
   touch-action: none;
   transition: opacity 0.14s ease, background 0.14s ease;
 }
@@ -8559,7 +8560,6 @@
 .scope :global(.canvas-node-dialog-scroll-content:hover .canvas-task-editor-resize-handle),
 .scope :global(.canvas-task-editor-resize-handle:focus-visible) {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .scope :global(.canvas-task-editor-resize-handle:hover) {
