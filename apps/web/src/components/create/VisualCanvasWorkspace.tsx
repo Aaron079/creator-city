@@ -7539,7 +7539,7 @@ export function VisualCanvasWorkspace({
     if (activePreviewNodeId && activePreviewNodeId !== nodeId) {
       closeActivePreview({ closeReviewWindows: false })
     }
-    setEditingNodeId(null)
+    setEditingNodeId((current) => current === nodeId ? current : null)
     setDraggingNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)

@@ -459,6 +459,16 @@ test('uses the shared stage-aware layout helper and retains inspector dismissal'
   assert.match(toolbarStyleSource, /zIndex: 92/)
 })
 
+test('keeps an open node context attached while the node card is dragged from its surface', () => {
+  const dragStart = visualCanvasWorkspaceSource.indexOf('const handleNodeDragStart = useCallback')
+  const dragEnd = visualCanvasWorkspaceSource.indexOf('const pendingCommentCount', dragStart)
+  const dragSource = visualCanvasWorkspaceSource.slice(dragStart, dragEnd)
+
+  assert.notEqual(dragStart, -1, 'missing node drag handler')
+  assert.match(dragSource, /setActiveNodeId\(nodeId\)/)
+  assert.doesNotMatch(dragSource, /setEditingNodeId\(null\)/)
+})
+
 test('normal generation entry restores both the editing node and Task category after reset', () => {
   const openPanelStart = visualCanvasWorkspaceSource.indexOf('const openCanvasPanel = useCallback')
   const openPanelEnd = visualCanvasWorkspaceSource.indexOf('const openGenerationDialog', openPanelStart)
