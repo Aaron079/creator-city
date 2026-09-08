@@ -76,3 +76,14 @@ test('routes Canvas and node-card secondary clicks to creation pickers while ret
   assert.match(nodeCardSource, /onClick=\{\(event\) => \{[\s\S]*?onOpenContextMenu\(event\)[\s\S]*?className="canvas-node-more"/)
   assert.match(nodeLayerSource, /onSecondaryClick=\{\(event\) => latestCardProps\(\)\.onSecondaryClick\(event\)\}/)
 })
+
+test('opens the Canvas task picker on double-click instead of immediately creating a video node', () => {
+  const handlerStart = workspaceSource.indexOf('const handleCanvasDoubleClick = useCallback')
+  const handlerEnd = workspaceSource.indexOf('const handleCanvasSecondaryClick', handlerStart)
+  const handlerSource = workspaceSource.slice(handlerStart, handlerEnd)
+
+  assert.notEqual(handlerStart, -1, 'missing Canvas double-click handler')
+  assert.match(handlerSource, /setNodeCreateMenu\(\{ \.\.\.position, worldX: worldPoint\.x, worldY: worldPoint\.y \}\)/)
+  assert.doesNotMatch(handlerSource, /createNode\('video'/)
+  assert.doesNotMatch(handlerSource, /focusPromptForNode\(/)
+})

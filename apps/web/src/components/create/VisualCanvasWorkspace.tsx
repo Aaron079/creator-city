@@ -744,10 +744,6 @@ function clampCanvasZoom(value: number) {
   return Math.max(MIN_CANVAS_ZOOM, Math.min(value, MAX_CANVAS_ZOOM))
 }
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(value, max))
-}
-
 function getProviderIdsForKind(kind: VisualCanvasNodeKind) {
   if (kind === 'text') return TEXT_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
   if (kind === 'image') return IMAGE_NODE_PROVIDER_OPTIONS.map((provider) => provider.value)
@@ -10018,30 +10014,13 @@ export function VisualCanvasWorkspace({
     event.stopPropagation()
 
     setHasStarted(true)
-    closeActivePreview()
-    const viewportRect = viewportRef.current?.getBoundingClientRect()
-    const referencePoint = viewportRect
-      ? getViewportWorldPoint(
-        viewportRect.left + viewportRect.width / 2,
-        viewportRect.top + clampNumber(viewportRect.height * 0.24, 150, 230),
-      )
-      : getViewportWorldPoint(event.clientX, event.clientY)
-    syncPromptPreset('video')
-    const node = createNode('video', {
-      title: NODE_META.video.title,
-      model: NODE_META.video.model,
-      ratio: NODE_META.video.ratio,
-      position: {
-        x: referencePoint.x - getNodeSize('video').width / 2,
-        y: referencePoint.y - getNodeSize('video').height / 2,
-      },
-    })
-    focusPromptForNode(node)
+    const position = clampMenuPosition(event.clientX, event.clientY, NODE_MENU_WIDTH, NODE_CREATE_MENU_HEIGHT)
+    const worldPoint = getViewportWorldPoint(event.clientX, event.clientY)
+    setNodeCreateMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
     setContextMenu(null)
     setNodeAddMenu(null)
-    setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
-  }, [canStartCanvasPan, closeActivePreview, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
+  }, [canStartCanvasPan, getViewportWorldPoint])
 
   const handleCanvasSecondaryClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (!canStartCanvasPan(event.target)) return
