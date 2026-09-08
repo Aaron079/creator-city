@@ -80,12 +80,9 @@ function getCanvasTaskDialogSizingForMode({
       - CONTEXT_NAVIGATION.height
       - CONTEXT_NAVIGATION.gap,
   )
-  const fixedHeight = compactFixedControls
-    ? Math.max(measurements.fixedTopHeight, measurements.fixedBottomHeight)
-      + measurements.promptChromeHeight
-    : measurements.fixedTopHeight
-      + measurements.fixedBottomHeight
-      + measurements.promptChromeHeight
+  const fixedHeight = measurements.fixedTopHeight
+    + measurements.fixedBottomHeight
+    + measurements.promptChromeHeight
   const preferredHeight = Math.max(
     TASK_DIALOG_BASE_HEIGHT,
     fixedHeight + TASK_DIALOG_PROMPT_BODY_HEIGHT,

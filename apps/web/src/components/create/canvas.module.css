@@ -8531,24 +8531,22 @@
 }
 
 .scope :global(.canvas-node-dialog.is-compact-fixed-controls) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
 }
 
-.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-top) {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-top > [data-no-node-drag='true']) {
-  flex: 0 0 min(340px, calc(100vw - 32px));
-  width: min(340px, calc(100vw - 32px));
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-top),
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-bottom) {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
 }
 
 .scope :global(.canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls > [data-no-node-drag='true']) {
   display: flex;
-  height: 70px;
+  height: 52px;
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
@@ -8595,7 +8593,7 @@
   flex-direction: row !important;
   width: auto !important;
   min-width: 240px !important;
-  height: 54px;
+  height: 44px;
   align-items: center !important;
   gap: 5px !important;
   padding: 4px 6px !important;
@@ -8615,7 +8613,7 @@
   flex-direction: row !important;
   min-width: 560px !important;
   max-width: none !important;
-  height: 54px;
+  height: 44px;
   align-items: center;
   gap: 6px;
   padding: 4px 6px !important;
@@ -8662,7 +8660,7 @@
   flex-direction: row !important;
   width: auto !important;
   min-width: 220px !important;
-  height: 54px;
+  height: 44px;
   align-items: center !important;
   gap: 5px !important;
   padding: 4px 6px !important;
@@ -8678,7 +8676,7 @@
 
 .scope :global(.canvas-node-dialog-fixed-controls.is-bottom.is-compact-fixed-controls > .canvas-node-dialog-billing-controls) {
   box-sizing: border-box;
-  height: 70px;
+  height: 52px;
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
@@ -8721,16 +8719,6 @@
   min-height: 46px;
   margin-top: 0 !important;
   padding: 4px 8px !important;
-}
-
-.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-prompt-box.is-node) {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-
-.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-controls.is-bottom) {
-  grid-column: 2;
-  grid-row: 1;
 }
 
 .scope :global(.canvas-node-dialog .canvas-prompt-box.is-node) {
@@ -8817,6 +8805,24 @@
 
 .scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer) {
   padding: 3px 8px 4px;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav) {
+  flex-direction: row;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 6px;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row1),
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2) {
+  flex: 0 0 auto;
+  min-height: 32px;
+}
+
+.scope :global(.canvas-node-dialog.is-compact-fixed-controls .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2) {
+  flex-wrap: nowrap;
 }
 
 .scope :global(.canvas-node-dialog-context-controls) {

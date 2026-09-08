@@ -224,7 +224,7 @@ test('uses the smallest expanded task height that preserves fixed controls and p
   )
 })
 
-test('reserves navigation height and gap while compacting fixed controls in a constrained stage', () => {
+test('caps an uncollapsed task dialog while preserving its navigation and stage bounds', () => {
   const stage = { left: 0, top: 64, right: 1280, bottom: 484 }
   const sizing = getCanvasTaskDialogSizing({
     stageHeight: stage.bottom - stage.top,
@@ -237,7 +237,7 @@ test('reserves navigation height and gap while compacting fixed controls in a co
     height: 352,
     maxHeight: 352,
     compactFixedControls: true,
-    promptBodyHeight: 58,
+    promptBodyHeight: 0,
   })
 
   const initialNode = { left: 300, top: 220, width: 248, height: 220 }
@@ -267,16 +267,16 @@ test('keeps prompt chrome reachable with one local reference and billing control
   const stage = { left: 0, top: 0, right: 390, bottom: 300 }
   const sizing = getCanvasTaskDialogSizing({
     stageHeight: stage.bottom - stage.top,
-    fixedTopHeight: 70,
-    fixedBottomHeight: 72,
-    promptChromeHeight: 123,
+    fixedTopHeight: 52,
+    fixedBottomHeight: 52,
+    promptChromeHeight: 90,
   })
 
   assert.deepEqual(sizing, {
     height: 232,
     maxHeight: 232,
     compactFixedControls: true,
-    promptBodyHeight: 37,
+    promptBodyHeight: 38,
   })
 
   const node = { left: 71, top: 64, width: 248, height: 220 }
@@ -339,9 +339,9 @@ test('retains compact task sizing across compact remeasurement until noncompact 
   const compactRemeasurement = stabilizeCanvasTaskDialogSizing({
     stageHeight: 420,
     measurements: {
-      fixedTopHeight: 70,
-      fixedBottomHeight: 70,
-      promptChromeHeight: 125,
+      fixedTopHeight: 52,
+      fixedBottomHeight: 52,
+      promptChromeHeight: 90,
     },
     compactFixedControls: first.compactFixedControls,
     noncompactMeasurements: first.noncompactMeasurements,
@@ -354,9 +354,9 @@ test('retains compact task sizing across compact remeasurement until noncompact 
   const largerStage = stabilizeCanvasTaskDialogSizing({
     stageHeight: 570,
     measurements: {
-      fixedTopHeight: 70,
-      fixedBottomHeight: 70,
-      promptChromeHeight: 125,
+      fixedTopHeight: 52,
+      fixedBottomHeight: 52,
+      promptChromeHeight: 90,
     },
     compactFixedControls: compactRemeasurement.compactFixedControls,
     noncompactMeasurements: compactRemeasurement.noncompactMeasurements,
@@ -509,7 +509,7 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
   )
   assert.match(
     finalRules,
-    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-controls\.is-top > \[data-no-node-drag='true'\]\) \{[^}]*flex: 0 0 min\(340px, calc\(100vw - 32px\)\);[^}]*width: min\(340px, calc\(100vw - 32px\)\);/,
+    /\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-controls\.is-top\),[\s\S]*?\.canvas-node-dialog\.is-compact-fixed-controls \.canvas-node-dialog-fixed-controls\.is-bottom\) \{[^}]*width: 100%;[^}]*max-width: 100%;/,
   )
   assert.match(
     finalRules,
@@ -538,8 +538,8 @@ test('keeps compact task controls in one vertical column', () => {
     finalRules,
     /\.canvas-node-dialog\.is-compact-fixed-controls\) \{[\s\S]*?display: flex;[\s\S]*?flex-direction: column;/,
   )
-  assert.doesNotMatch(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls\) \{[\s\S]*?display: grid;/)
-  assert.doesNotMatch(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls[\s\S]*?grid-column: 2;/)
+  assert.doesNotMatch(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls\) \{\s*display:\s*grid;/)
+  assert.doesNotMatch(finalRules, /grid-column:\s*2;/)
   assert.match(
     canvasWorkspaceLayoutSource,
     /const fixedHeight = measurements\.fixedTopHeight\s*\+ measurements\.fixedBottomHeight\s*\+ measurements\.promptChromeHeight/,
